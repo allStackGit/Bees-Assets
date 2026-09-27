@@ -790,8 +790,8 @@ Manual-only protection is acceptable only when the record explains why determini
 ### REG-090 — RL healing reservation could trigger a null squad dereference
 **Area:** `Scripts/Entities/Ships/Beehive.cs`, RL healing action lifecycle  
 **Symptom:** an RL-controlled ship without a squad could be reserved in `Beehive.ShipsHealingHere` by the policy healing action. When it entered the beehive trigger or the beehive was destroyed, the trigger and cleanup loop called `Squad.GetCommand()` and could throw. The RL controller permits squadless bindings and its healing path does not require a squad.  
-**Root cause:** the beehive's collision callback assumed every ship in its healing reservation set had a non-null squad.  
-**Fix:** the trigger now uses a null-conditional squad command lookup. It still dispatches squad healing only when a `Heal` command exists; RL's direct healing path can safely use the shared reservation set.  
+**Root cause:** beehive collision and destruction callbacks assumed every ship in their healing reservation set had a non-null squad.  
+**Fix:** both callbacks now use null-conditional squad command lookups. The beehive still dispatches squad healing only when a `Heal` command exists; RL's direct healing path can safely use the shared reservation set.  
 **Permanent protection:** `RlSpecialActionSmokeTests.BeehiveTriggerIgnoresRlHealingReservationsWithoutSquads` guards the null-safe lookups in both collision entry and hive destruction cleanup. The test was added but not run, per the static-only audit scope.  
-**Verification:** statically traced agent ship binding, the policy healing reservation, and the beehive trigger callback. No tests, builds, Unity, simulations, or runtime checks were run.  
+**Verification:** statically traced agent ship binding, the policy healing reservation, and the beehive collision and destruction callbacks. No tests, builds, Unity, simulations, or runtime checks were run.  
 **Invariant/knowledge:** a ship reservation may outlive or exist without command ownership; collision callbacks must guard optional squad state before reading its command.
