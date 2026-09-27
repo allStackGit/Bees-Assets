@@ -9,6 +9,6 @@ _None logged at this checkpoint. The repository audit remains in progress; this 
 ## Audit status
 
 - Complete clean finding passes since the latest production changes: **0 / 2**.
-- Current focus: distributed actor ownership, shutdown upload draining, batch retry/deduplication, managed-child restart accounting, and shared build installation races.
+- Current focus: broad post-fix passes across continual-learning orchestration and candidate registration, then continue systematically through the remaining repository subsystems. REG-047 fixed non-finite candidate-monitor scan intervals; its regression test was added but not run.
 - Test fixtures requiring explicit process identities were updated; an orderly-close lifecycle regression case was added.
 - No tests, builds, Unity, simulations, or other runtime validation were run, per the static-only audit scope.
