@@ -409,7 +409,7 @@ class ElasticBrokerTests(unittest.TestCase):
         self.assertEqual(first, 0)
         self.assertEqual(second, 1)
 
-    def test_same_remote_identity_reclaims_its_slot(self):
+    def test_registered_actor_instance_renews_its_slot(self):
         broker, specs = self._broker()
         actor_id = broker.claim_actor({**broker.release_identity, "actor_key": "machine-a", "actor_instance_id": "process-a", "env_count": 8})
         broker.register_actor(
@@ -424,13 +424,38 @@ class ElasticBrokerTests(unittest.TestCase):
             }
         )
         self.assertEqual(
-            broker.claim_actor({**broker.release_identity, "actor_key": "machine-a", "actor_instance_id": "process-a2", "env_count": 16}),
+            broker.claim_actor({**broker.release_identity, "actor_key": "machine-a", "actor_instance_id": "process-a", "env_count": 8}),
             actor_id,
         )
         self.assertEqual(
             broker.claim_actor({**broker.release_identity, "actor_key": "machine-b", "actor_instance_id": "process-b", "env_count": 4}),
             1,
         )
+
+    def test_active_manual_slot_cannot_be_overwritten_by_another_process(self):
+        broker, specs = self._broker()
+        broker.register_actor(
+            {
+                **broker.release_identity,
+                "actor_id": 0,
+                "actor_instance_id": "manual-process-a",
+                "env_count": 8,
+                "control_epoch": 1,
+                "behavior_specs": specs,
+            }
+        )
+
+        with self.assertRaisesRegex(ValueError, "already registered by another process"):
+            broker.register_actor(
+                {
+                    **broker.release_identity,
+                    "actor_id": 0,
+                    "actor_instance_id": "manual-process-b",
+                    "env_count": 8,
+                    "control_epoch": 1,
+                    "behavior_specs": specs,
+                }
+            )
 
     def test_claimed_slot_cannot_be_registered_by_another_identity(self):
         broker, specs = self._broker()
@@ -470,6 +495,9 @@ class ElasticBrokerTests(unittest.TestCase):
                 "behavior_specs": specs,
             }
         )
+        broker._claims["machine-a"]["last_seen"] -= broker.options.actor_lease_seconds + 1
+        broker._registrations[actor_id]["last_seen"] -= broker.options.actor_lease_seconds + 1
+        self.assertEqual(broker.active_actor_snapshot(), {})
         self.assertEqual(
             broker.claim_actor(
                 {**broker.release_identity, "actor_key": "machine-a", "actor_instance_id": "new-process", "env_count": 8}
@@ -513,7 +541,11 @@ class ElasticBrokerTests(unittest.TestCase):
             ),
             actor_id,
         )
-        self.assertNotIn("machine-a", broker._claims)
+        self.assertIn("machine-a", broker._claims)
+        with self.assertRaisesRegex(ValueError, "claimed by another remote process"):
+            broker.claim_actor(
+                {**broker.release_identity, "actor_key": "machine-a", "actor_instance_id": "old-process", "env_count": 8}
+            )
         with self.assertRaisesRegex(ValueError, "another remote process"):
             broker.acknowledge_reset(
                 {
