@@ -1029,3 +1029,12 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** direct distributed workers must share the session's canonical training build identity before rollout processes start. No tests were run or added under the static-only audit instruction.
 **Verification:** statically traced build identity from spec creation through the spec hash, remote validation, and the pre-launch error path. No tests, builds, Unity, simulations, or runtime checks were run.
 **Invariant/knowledge:** pinning runtime arguments is insufficient when distributed samples depend on the code/build that interprets those arguments.
+
+### REG-116 — Unity sidecar changes could bypass continual-service run identity
+**Area:** `Training/bees_continual_service.py`, `_service_contract_sha256`
+**Symptom:** replacing or changing Unity data/runtime files beside the training executable while keeping the executable and declared build version unchanged did not invalidate the persisted service contract. A restart could therefore resume PPO checkpoints against a changed environment build.
+**Root cause:** the service fingerprint hashed only `options.training_env`, which is the executable file. Unity builds also depend on the data directory and platform runtime files packaged beside that executable.
+**Fix:** the service now hashes the sorted relative paths, sizes, and content digests of every file under the training executable's build directory and binds that digest into the persisted training contract.
+**Permanent protection:** resumable optimizer state must be bound to the complete Unity build file set, not only its entrypoint. No tests were run or added under the static-only audit instruction.
+**Verification:** statically traced service-contract creation/loading and confirmed the canonical build packaging path includes the full build directory. No tests, builds, Unity, simulations, or runtime checks were run.
+**Invariant/knowledge:** an executable path identifies only the entrypoint; platform assets and runtime sidecars also determine the environment's behavior.
