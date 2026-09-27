@@ -49,6 +49,29 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void PlutoOneResolvesMissionShipsByConfiguredSideAndType()
+        {
+            string pluto = Read("Level.Campaign.Pluto.cs");
+            int start = pluto.IndexOf("public void Pluto1Anomaly");
+            int end = pluto.IndexOf("public void Pluto2Reinforcements", start);
+            Assert.That(start, Is.GreaterThanOrEqualTo(0));
+            Assert.That(end, Is.GreaterThan(start));
+            string mission = pluto.Substring(start, end - start);
+
+            StringAssert.Contains(
+                "State.GetShips(ConfigData.Configuration.UserSide).First(ship => ship.ShipType == ConfigData.ShipTypes.Scout)",
+                mission);
+            StringAssert.Contains(
+                "State.GetShips(ConfigData.Configuration.AISide).First(ship => ship.ShipType == ConfigData.ShipTypes.Honeybee)",
+                mission);
+            StringAssert.Contains(
+                "State.GetShips(ConfigData.Configuration.UserSide).First(ship => ship.ShipType == ConfigData.ShipTypes.Gunship)",
+                mission);
+            StringAssert.DoesNotContain("State.GetHumanShips()", mission);
+            StringAssert.DoesNotContain("State.GetBeeShips()", mission);
+        }
+
+        [Test]
         public void PlutoFourFleetTutorialUsesConfiguredUserSide()
         {
             string mission = Read("Level.Campaign.Pluto4.cs");
