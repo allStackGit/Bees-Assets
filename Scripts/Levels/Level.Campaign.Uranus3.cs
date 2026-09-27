@@ -67,7 +67,7 @@ namespace Assets.Scripts.Levels
                 Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.Uranus_ANewThreat.GetRange(1, 5)));
             AddTimer(_dialogueTimer);
 
-            bool hasCarrierInLevel = State.GetHumanShipTypes().Contains(ConfigData.ShipTypes.Carrier);
+            bool hasCarrierInLevel = State.GetUserShipTypes().Contains(ConfigData.ShipTypes.Carrier);
             if (hasCarrierInLevel)
             {
                 NextTriggers.Add(new Trigger(
