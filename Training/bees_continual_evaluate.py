@@ -886,19 +886,22 @@ def _merge_env_args(
 
 
 def load_competency_suite(
-    path: Optional[os.PathLike[str] | str],
+    source_value: Optional[os.PathLike[str] | str | Mapping[str, Any]],
     *,
     default_matches: int,
 ) -> List[CompetencyCase]:
-    if path is None:
+    if source_value is None:
         return []
-    source = Path(path)
-    try:
-        raw = json.loads(source.read_text(encoding="utf-8"))
-    except FileNotFoundError as exc:
-        raise ValidationError(f"Competency suite not found: {source}") from exc
-    except json.JSONDecodeError as exc:
-        raise ValidationError(f"Invalid competency suite JSON {source}: {exc}") from exc
+    if isinstance(source_value, Mapping):
+        raw = dict(source_value)
+    else:
+        source = Path(source_value)
+        try:
+            raw = json.loads(source.read_text(encoding="utf-8"))
+        except FileNotFoundError as exc:
+            raise ValidationError(f"Competency suite not found: {source}") from exc
+        except json.JSONDecodeError as exc:
+            raise ValidationError(f"Invalid competency suite JSON {source}: {exc}") from exc
     if not isinstance(raw, dict) or raw.get("schema_version") != 1:
         raise ValidationError("Competency suite must be an object with schema_version=1.")
     cases = raw.get("cases")
