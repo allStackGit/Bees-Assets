@@ -320,6 +320,28 @@ class ContinualEvaluateTests(unittest.TestCase):
                 0.8,
             )
 
+    def test_competency_suite_accepts_already_pinned_mapping(self):
+        cases = load_competency_suite(
+            {
+                "schema_version": 1,
+                "cases": [
+                    {
+                        "name": "large-map-baseline",
+                        "opponent_model_id": "history",
+                        "matches": 7,
+                        "minimum": 0.45,
+                        "metric": "score_rate",
+                        "critical": True,
+                        "env_args": ["--rl-map-size=48"],
+                    }
+                ],
+            },
+            default_matches=11,
+        )
+        self.assertEqual(cases[0].name, "large-map-baseline")
+        self.assertEqual(cases[0].matches, 7)
+        self.assertEqual(cases[0].env_args, ("--rl-map-size=48",))
+
     def test_evaluate_candidate_rejects_tampered_registered_model(self):
         with tempfile.TemporaryDirectory() as temp:
             store = FakeStore(temp)
