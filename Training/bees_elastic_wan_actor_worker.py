@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import secrets
 import signal
@@ -139,6 +140,7 @@ class _SessionFailureTelemetry:
                 and (
                     not isinstance(last_failure, (int, float))
                     or isinstance(last_failure, bool)
+                    or not math.isfinite(float(last_failure))
                     or float(last_failure) < 0.0
                 )
             )
