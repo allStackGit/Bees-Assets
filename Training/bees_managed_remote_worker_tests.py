@@ -51,6 +51,32 @@ class WorkerAgentHealthTests(unittest.TestCase):
             with mock.patch.object(worker_agent.time, "time", return_value=1005.0):
                 self.assertEqual(managed_process.health_error(), "")
 
+    def test_throughput_pid_prefers_authenticated_child_health_pid(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            health_path = root / "child-health.json"
+            health_path.write_text(
+                '{"schema_version":1,"token":"token","state":"ready",'
+                '"error":"","updated_unix_seconds":1000.0,"pid":13108}\n',
+                encoding="utf-8",
+            )
+            managed_process = worker_agent.ManagedProcess()
+            managed_process.process = mock.Mock()
+            managed_process.process.pid = 2884
+            managed_process.health_required = True
+            managed_process.health_file = health_path
+            managed_process.health_token = "token"
+
+            self.assertEqual(managed_process.throughput_expected_pid(), 13108)
+
+    def test_throughput_pid_falls_back_to_launcher_without_valid_child_health(self):
+        managed_process = worker_agent.ManagedProcess()
+        managed_process.process = mock.Mock()
+        managed_process.process.pid = 2884
+        managed_process.health_required = False
+
+        self.assertEqual(managed_process.throughput_expected_pid(), 2884)
+
     def test_stale_starting_health_is_reported_as_hung_startup(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
