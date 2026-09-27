@@ -276,6 +276,18 @@ class ContinualServiceTests(unittest.TestCase):
     def test_release_and_hot_publish_commands_keep_validation_boundaries(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             options = self._options(Path(temp_dir))
+            options = service.ServiceOptions(
+                **{
+                    **options.__dict__,
+                    "environment_args": (
+                        "--rl-ships-per-side=2",
+                        "--rl-map-size-min=32",
+                        "--rl-map-size-max=48",
+                        "--rl-episode-timeout=30",
+                        "--rl-health-ratio=.05",
+                    ),
+                }
+            )
             release = service.release_command(options)
             self.assertTrue(any("bees_continual_release.py" in item for item in release))
             self.assertIn(f"--env={options.training_env}", release)
@@ -288,6 +300,7 @@ class ContinualServiceTests(unittest.TestCase):
             self.assertEqual(parsed_release.root, str(options.root))
             self.assertEqual(parsed_release.env, str(options.training_env))
             self.assertEqual(parsed_release.training_run_id, options.run_id)
+            self.assertEqual(parsed_release.env_arg, list(options.environment_args))
 
             stage = service.stage_command(options)
             self.assertTrue(any("bees_continual_unity_bundle.py" in item for item in stage))
@@ -356,6 +369,54 @@ class ContinualServiceTests(unittest.TestCase):
             self.assertTrue(
                 any("bees_continual_auto_train.py" in item for item in calls[0])
             )
+
+    def test_resumed_release_phase_reports_ready_health_before_evaluation(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            options = self._options(root)
+            deployment = "deploy-" + "b" * 24
+            state = service.load_state(options)
+            state["phase"] = "release"
+            state["training_started"] = True
+            state["last_hot_deployment_id"] = deployment
+            service.save_state(options, state)
+            health_path = root / "managed-health.json"
+            observed = []
+
+            def runner(command, **_kwargs):
+                observed.append(
+                    json.loads(health_path.read_text(encoding="utf-8"))
+                )
+                return mock.Mock(returncode=0)
+
+            with (
+                mock.patch.object(
+                    service,
+                    "current_compatible_champion_id",
+                    return_value="bees-rl-test-champion",
+                ),
+                mock.patch.object(
+                    service,
+                    "current_deployment_id",
+                    return_value=deployment,
+                ),
+                mock.patch.dict(
+                    os.environ,
+                    {
+                        process_safety.HEALTH_FILE_ENV: str(health_path),
+                        process_safety.HEALTH_TOKEN_ENV: "test-health-token",
+                    },
+                    clear=False,
+                ),
+            ):
+                result = service.run_service(options, runner=runner)
+
+            self.assertEqual(result, 0)
+            self.assertEqual(observed[0]["state"], "ready")
+            self.assertEqual(observed[0]["details"]["phase"], "release")
+            final_health = json.loads(health_path.read_text(encoding="utf-8"))
+            self.assertEqual(final_health["state"], "ready")
+            self.assertEqual(final_health["details"]["phase"], "publish")
 
     def test_current_deployment_reader_requires_canonical_identity(self):
         with tempfile.TemporaryDirectory() as temp_dir:
