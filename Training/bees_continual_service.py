@@ -132,6 +132,26 @@ def _file_sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _training_environment_sha256(environment: Path) -> str:
+    """Hash the complete Unity build directory containing the selected executable."""
+    build_root = environment.parent
+    files = sorted(
+        (path for path in build_root.rglob("*") if path.is_file()),
+        key=lambda path: path.relative_to(build_root).as_posix(),
+    )
+    if environment not in files:
+        raise ValueError(f"Training environment is not in its own build file set: {environment}")
+    digest = hashlib.sha256()
+    for path in files:
+        relative = path.relative_to(build_root).as_posix().encode("utf-8")
+        stat = path.stat()
+        digest.update(len(relative).to_bytes(8, "big"))
+        digest.update(relative)
+        digest.update(int(stat.st_size).to_bytes(8, "big"))
+        digest.update(_file_sha256(path).encode("ascii"))
+    return digest.hexdigest()
+
+
 def _runtime_training_contract_sha256(root: Path) -> str:
     """Hash runtime Python sources and dependency manifests used by the trainer wrappers."""
     digest = hashlib.sha256()
@@ -169,7 +189,7 @@ def _service_contract_sha256(options: ServiceOptions) -> str:
         "python_executable": options.python_executable,
         "trainer_config_sha256": _file_sha256(options.trainer_config),
         "continual_config_sha256": _file_sha256(options.continual_config),
-        "training_env_sha256": _file_sha256(options.training_env),
+        "training_env_sha256": _training_environment_sha256(options.training_env),
         "training_env_path": str(options.training_env.resolve()),
         "game_build_version": options.game_build_version,
         "generation_steps": options.generation_steps,
