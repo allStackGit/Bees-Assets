@@ -54,7 +54,17 @@ namespace Assets.Scripts.Levels
 
         public void CancelTimer(ScaledTimer scaledTimer)
         {
-            if (Timers.Remove(scaledTimer))
+            if (scaledTimer == null)
+            {
+                return;
+            }
+
+            bool removed = false;
+            while (Timers.Remove(scaledTimer))
+            {
+                removed = true;
+            }
+            if (removed)
             {
                 _timerCollectionVersion++;
             }
@@ -63,6 +73,11 @@ namespace Assets.Scripts.Levels
 
         public void AddTimer(ScaledTimer scaledTimer)
         {
+            if (scaledTimer == null || Timers.Contains(scaledTimer))
+            {
+                return;
+            }
+
             Timers.Add(scaledTimer);
             _timerCollectionVersion++;
         }
