@@ -101,13 +101,13 @@ namespace Assets.Scripts.Entities.Ships
                     FogOfWarVision.Kill(3, false);
                 }
 
-                RemoveFromIncomingWeaponRanges();
-
                 // Own all common death accounting here. Do not also increment ShipsLost or
                 // set FleetShip.IsDead in this special path; LogKilledStats already does it.
                 LogKilledStats();
             }
 
+            // Death and retreat both remove this ship from active targeting consideration.
+            RemoveFromIncomingWeaponRanges();
             Level.State.RemoveShip(this);
             Squad.RemoveShip(this);
 
