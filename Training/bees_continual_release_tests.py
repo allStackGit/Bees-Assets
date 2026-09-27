@@ -350,7 +350,7 @@ class ReleaseCycleTests(unittest.TestCase):
         self.assertEqual(recovered["initial_release_health_status"], "healthy")
         self.assertEqual(self.store.current_champion_id(), candidate["model_id"])
 
-    def test_required_competency_suite_blocks_before_publication_when_source_is_missing(self):
+    def test_pinned_competency_suite_is_reused_without_external_file(self):
         first = self.bootstrap()
         strict_config = copy.deepcopy(TEST_CONFIG)
         strict_config["promotion"]["min_competency_cases"] = 1
@@ -371,17 +371,103 @@ class ReleaseCycleTests(unittest.TestCase):
                 ],
             }
         )
-        published = []
 
-        with self.assertRaisesRegex(ReleaseError, "requires --competency-suite"):
+        result = run_release_cycle(
+            strict_store,
+            environment_path="unused-test-environment",
+            evaluator=self.passing_evaluator,
+            publisher=self.publisher,
+            health_checker=self.health_checker,
+        )
+
+        self.assertEqual(result["status"], "idle")
+        self.assertEqual(self.published_model_ids, [first["model_id"]])
+
+    def test_missing_pinned_suite_still_fails_closed_without_bootstrap_policy(self):
+        self.bootstrap()
+        strict_config = copy.deepcopy(TEST_CONFIG)
+        strict_config["promotion"]["min_competency_cases"] = 1
+        strict_store = ContinualLearningStore(self.root, strict_config)
+
+        with self.assertRaisesRegex(ReleaseError, "bootstrap_competency_cases"):
             run_release_cycle(
                 strict_store,
                 environment_path="unused-test-environment",
                 evaluator=self.passing_evaluator,
-                publisher=lambda _store: published.append(True) or {},
+                publisher=self.publisher,
+                health_checker=self.health_checker,
             )
 
-        self.assertEqual(published, [])
+        self.assertEqual(self.published_model_ids, [])
+
+    def test_existing_champion_auto_pins_source_controlled_competency_baseline(self):
+        first = self.bootstrap()
+        strict_config = copy.deepcopy(TEST_CONFIG)
+        strict_config["promotion"]["min_competency_cases"] = 1
+        strict_config["promotion"]["bootstrap_competency_cases"] = [
+            {
+                "name": "large-map-baseline",
+                "matches": 7,
+                "minimum": 0.45,
+                "metric": "score_rate",
+                "critical": True,
+                "env_args": ["--rl-map-size=48"],
+            }
+        ]
+        strict_store = ContinualLearningStore(self.root, strict_config)
+
+        result = run_release_cycle(
+            strict_store,
+            environment_path="unused-test-environment",
+            evaluator=self.passing_evaluator,
+            publisher=self.publisher,
+            health_checker=self.health_checker,
+        )
+
+        self.assertEqual(result["status"], "idle")
+        pinned = strict_store.permanent_competency_suite()
+        self.assertIsNotNone(pinned)
+        self.assertEqual(pinned["cases"][0]["opponent_model_id"], first["model_id"])
+        self.assertEqual(pinned["cases"][0]["matches"], 7)
+        self.assertEqual(pinned["cases"][0]["env_args"], ["--rl-map-size=48"])
+
+    def test_generation_zero_bootstrap_also_pins_source_controlled_competency_baseline(self):
+        strict_config = copy.deepcopy(TEST_CONFIG)
+        strict_config["promotion"]["min_competency_cases"] = 1
+        strict_config["promotion"]["bootstrap_competency_cases"] = [
+            {
+                "name": "large-map-baseline",
+                "matches": 7,
+                "minimum": 0.45,
+                "metric": "score_rate",
+                "critical": True,
+                "env_args": ["--rl-map-size=48"],
+            }
+        ]
+        strict_store = ContinualLearningStore(self.root, strict_config)
+        strict_store.initialize()
+        artifact = self.artifact_dir / "generation-zero-strict.onnx"
+        artifact.write_bytes(b"generation-zero-strict")
+        candidate = strict_store.register_model(
+            artifact,
+            training_run_id="release-test",
+            training_step=100,
+            game_build_version="test-build",
+            status="candidate",
+        )
+
+        result = run_release_cycle(
+            strict_store,
+            environment_path="unused-test-environment",
+            training_run_id="release-test",
+            evaluator=self.passing_evaluator,
+            publisher=self.publisher,
+            health_checker=self.health_checker,
+        )
+
+        self.assertEqual(result["status"], "bootstrapped")
+        pinned = strict_store.permanent_competency_suite()
+        self.assertEqual(pinned["cases"][0]["opponent_model_id"], candidate["model_id"])
 
     def test_invalid_candidate_limit_fails_before_state_changes(self):
         self.bootstrap()
