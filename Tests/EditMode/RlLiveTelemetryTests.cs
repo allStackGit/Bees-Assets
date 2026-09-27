@@ -70,6 +70,18 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void GameplayTelemetryUsesTheInferencePolicyCoordinateFrame()
+        {
+            string recorder = System.IO.File.ReadAllText(System.IO.Path.Combine(
+                UnityEngine.Application.dataPath, "Scripts", "Scenes", "RlLiveTelemetryRecorder.cs"));
+
+            Assert.That(recorder, Does.Contain("GetPolicyFrameQuarterTurns(ship.Level, ship.Side)"));
+            Assert.That(recorder, Does.Contain("CollectPolicyObservations(\n            _perception, ship, ship.Side, sensor, frameQuarterTurns)"));
+            Assert.That(recorder, Does.Contain("WorldToPolicy("));
+            Assert.That(recorder, Does.Not.Contain("CollectPolicyObservations(_perception, ship, ship.Side, sensor, 0)"));
+        }
+
+        [Test]
         public void DraftRecoveryPreservesKnownTerminalResultsAndDefaultsUnknownResultsToTimeout()
         {
             Type recorder = RuntimeAssembly.GetType("RlLiveTelemetryRecorder");
