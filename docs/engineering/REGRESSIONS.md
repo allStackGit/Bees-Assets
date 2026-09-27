@@ -543,3 +543,11 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** chunk reads retain the exact quota-window record they reserved against and refund the reserved byte count on failure; the refund is ignored if cleanup or a later request has replaced that user's window record. `rlModelDistribution.module.test.js` removes the bundle after metadata validation and verifies an open failure does not leave quota charged.  
 **Verification:** statically traced successful and failed read paths, including concurrent reservations and rate-window replacement. The focused regression was added but not run; no runtime checks were performed, per the static-only audit scope.  
 **Invariant/knowledge:** download byte quota measures bytes successfully returned as chunks; failed reads must release only their own reservation.
+
+### REG-061 — Model cache missed same-size file replacement
+**Area:** `BeesServer~/rlModelDistribution.js`, published pointer and bundle cache identity  
+**Symptom:** replacing a current-deployment pointer with same-size content while preserving its modification time could leave the in-memory cache serving the previous deployment identity. The same cache check could miss a same-size bundle replacement with preserved modification time.  
+**Root cause:** cached pointer and bundle identity was validated using only file size and modification time, which can be preserved across replacements.  
+**Permanent protection:** cache records now include change time and inode for both pointer and bundle files; reuse requires all recorded identity metadata to match. `rlModelDistribution.module.test.js` caches a pointer, replaces its same-size contents, preserves modification time, and verifies that the new deployment is observed.  
+**Verification:** statically traced cache reuse and invalidation for pointer and bundle records. The focused regression was added but not run; no runtime checks were performed, per the static-only audit scope.  
+**Invariant/knowledge:** file caches that protect deployment identity must detect replacement even when size and modification time are unchanged.
