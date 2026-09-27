@@ -8,6 +8,8 @@ Static-only repository audit on `rl/initial-design-work`. This ledger is the cur
 
 - REG-104 fixes persisted artifact catalog paths: stored paths must exactly match the role/platform/build/hash path emitted by the publisher, preventing malformed state from causing pruning to unlink an arbitrary path. Static source review only; no tests run.
 
+- REG-105 closes a WAN actor cohort race: dequeue and actor-block registration now happen under the same broker condition used for admission, preventing one actor from contributing a second accepted batch to the same multi-actor cohort. The source change was statically reviewed; no tests were run.
+
 ## Audit status
 
 - ML-Agents launcher review found and fixed a `--results-dir` argument-boundary defect: the default is now inserted before `--env-args`, and Unity-side flags no longer count as trainer settings. A focused regression case and REG-103 documentation were added; neither was executed. Static source review only.
