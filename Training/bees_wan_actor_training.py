@@ -600,10 +600,15 @@ class WanActorBroker:
             self._server = None
             server.server_close()
             raise
-        print(
-            f"[Bees WAN] actor broker listening only on 127.0.0.1:{self.options.broker_port}; "
-            "remote machines must use the managed authenticated private forward."
-        )
+        try:
+            print(
+                f"[Bees WAN] actor broker listening only on 127.0.0.1:{self.options.broker_port}; "
+                "remote machines must use the managed authenticated private forward."
+            )
+        except (OSError, ValueError):
+            # Logging must not turn a successfully started broker into a failed
+            # environment-manager construction with a live listener behind it.
+            pass
 
     def close(self) -> None:
         with self._condition:
