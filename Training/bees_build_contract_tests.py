@@ -402,6 +402,28 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         self.assertLess(spawn, active)
         self.assertIn("argv_transport: 'node-spawn-array-v1'", block)
 
+    def test_bundle_falls_back_to_durable_run_state_after_one_offline_control_probe(self):
+        diagnostics = read_operator("diagnostics.js")
+        build = read_operator("build.js")
+
+        self.assertIn("let controlOnline = false;", diagnostics)
+        self.assertIn(
+            "Training control is offline; collecting the diagnostic bundle from durable local state.",
+            diagnostics,
+        )
+        self.assertIn("await getActiveRunId(config, '')", diagnostics)
+        self.assertIn(
+            "Server: OFFLINE/UNREACHABLE - diagnostic bundle is using durable local state",
+            diagnostics,
+        )
+        self.assertIn("if (targetRun) args.push('--run-id', String(targetRun));", diagnostics)
+        self.assertNotIn(
+            "if (options.runId) args.push('--run-id', String(options.runId));",
+            diagnostics,
+        )
+        self.assertIn("exists(paths.latestReleasePath)", build)
+        self.assertIn("readJson(paths.latestReleasePath).run_id", build)
+
     def test_bundle_evaluation_is_opt_in_and_timeout_retains_evidence(self):
         powershell = (ROOT / "bees.ps1").read_text(encoding="utf-8")
         operator = (ROOT / "Training" / "bees_operator.js").read_text(encoding="utf-8")
