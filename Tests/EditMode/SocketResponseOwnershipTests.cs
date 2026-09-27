@@ -53,9 +53,58 @@ namespace Bees.Tests.EditMode
         [Test]
         public void DuplicateResponseHashCanBeClaimedOnlyOnce()
         {
-            Assert.That(RuntimeAssembly.Invoke(_socket, "TryClaimResponse", 7001L), Is.True);
-            Assert.That(RuntimeAssembly.Invoke(_socket, "TryClaimResponse", 7001L), Is.False);
+            object request = RuntimeAssembly.CreateUninitialized("Assets.Scripts.Server.CommandRequest");
+            SetFieldIncludingBase(request, "Hash", 7001L);
+            SetFieldIncludingBase(request, "Type", Enum.Parse(_requestTypes, "GetStrategy"));
+            RuntimeAssembly.AddToCollection(_standingRequests, request);
+
+            Assert.That(RuntimeAssembly.Invoke(
+                _socket,
+                "TryClaimResponse",
+                7001L,
+                Enum.Parse(_requestTypes, "GetStrategy")), Is.True);
+            Assert.That(RuntimeAssembly.Invoke(
+                _socket,
+                "TryClaimResponse",
+                7001L,
+                Enum.Parse(_requestTypes, "GetStrategy")), Is.False);
             Assert.That(RuntimeAssembly.GetCount(RuntimeAssembly.GetField(_socket, "HandledRequests")), Is.EqualTo(1));
+        }
+
+        [Test]
+        public void WrongResponseTypeDoesNotClaimOrRetireTheStandingRequest()
+        {
+            const long hash = 7002L;
+            object request = RuntimeAssembly.CreateUninitialized("Assets.Scripts.Server.CommandRequest");
+            SetFieldIncludingBase(request, "Hash", hash);
+            SetFieldIncludingBase(request, "Type", Enum.Parse(_requestTypes, "GetStrategy"));
+            RuntimeAssembly.AddToCollection(_standingRequests, request);
+
+            object response = RuntimeAssembly.CreateUninitialized("Assets.Scripts.Server.ServerResponse");
+            SetFieldIncludingBase(response, "Hash", hash);
+            SetFieldIncludingBase(response, "Status", 200);
+            SetFieldIncludingBase(response, "RequestType", Enum.Parse(_requestTypes, "GetMatchupStrategy"));
+
+            bool suppressed = (bool)RuntimeAssembly.InvokeStatic(
+                RuntimeAssembly.GetType("Assets.Scripts.Server.SocketResponseLifecycleGuard"),
+                "ShouldSuppressResponse",
+                _socket,
+                response);
+
+            Assert.That(suppressed, Is.True);
+            Assert.That(RuntimeAssembly.GetCount(_standingRequests), Is.EqualTo(1));
+            Assert.That(RuntimeAssembly.GetCount(RuntimeAssembly.GetField(_socket, "HandledRequests")), Is.Zero);
+            Assert.That(RuntimeAssembly.Invoke(
+                _socket,
+                "TryClaimResponse",
+                hash,
+                Enum.Parse(_requestTypes, "GetMatchupStrategy")), Is.False);
+            Assert.That(RuntimeAssembly.Invoke(
+                _socket,
+                "TryClaimResponse",
+                hash,
+                Enum.Parse(_requestTypes, "GetStrategy")), Is.True,
+                "The correct response must still be able to claim the same request hash.");
         }
 
         [Test]
