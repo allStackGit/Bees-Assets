@@ -56,6 +56,26 @@ class DistributedOptionTests(unittest.TestCase):
                 distributed.DistributedOptions(external_envs=3, remote_spec="remote.json"),
             )
 
+    def test_topology_rejects_worker_ports_above_tcp_range(self):
+        with self.assertRaisesRegex(SystemExit, "valid TCP port range"):
+            distributed.training_topology(
+                ["config.yaml", "--num-envs=2", "--base-port=65535"],
+                distributed.DistributedOptions(),
+            )
+
+        with self.assertRaisesRegex(SystemExit, "valid TCP port range"):
+            distributed.training_topology(
+                ["config.yaml", "--num-envs=8", "--base-port=65530"],
+                distributed.DistributedOptions(external_envs=2, remote_spec="remote.json"),
+            )
+
+    def test_topology_accepts_highest_valid_worker_port(self):
+        total, base_port, workers = distributed.training_topology(
+            ["config.yaml", "--num-envs=2", "--base-port=65534"],
+            distributed.DistributedOptions(),
+        )
+        self.assertEqual((total, base_port, workers), (2, 65534, ()))
+
     def test_zero_external_envs_preserves_standard_topology(self):
         total, base_port, workers = distributed.training_topology(
             ["config.yaml"], distributed.DistributedOptions()
