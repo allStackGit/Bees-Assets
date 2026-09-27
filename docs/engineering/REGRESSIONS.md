@@ -1020,3 +1020,12 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** never expose a mutable scratch buffer that is also owned as a semantic cache. Static source trace only; no tests were run or added.
 **Verification:** traced `Weapon.MakeSortedTargetingList`, cache invalidation flags, the public range-query caller in Pluto II, and the new independent buffer flow. No tests, builds, Unity, simulations, or runtime checks were run.
 **Invariant/knowledge:** scratch-list reuse is safe only when the scratch storage is not aliased by a long-lived cache or external caller.
+
+### REG-115 — Direct distributed workers could use a mismatched Unity build
+**Area:** `Training/bees_distributed_training.py`, `Training/bees_remote_worker.py`, direct ML-Agents setup
+**Symptom:** a remote direct-mode worker could launch a different Unity training build from the central learner while matching the worker IDs, ports, run ID, and Unity environment arguments in the session spec.
+**Root cause:** the content-hashed session spec did not include build identity, and the remote helper did not compare its build identity with the central session.
+**Fix:** the session spec schema now pins `BEES_TRAINING_BUILD_ID`; spec creation and remote startup fail closed when the identity is missing, and the remote helper rejects a mismatch before launching Unity. The setup guide documents setting the same canonical build ID on all participating machines.
+**Permanent protection:** direct distributed workers must share the session's canonical training build identity before rollout processes start. No tests were run or added under the static-only audit instruction.
+**Verification:** statically traced build identity from spec creation through the spec hash, remote validation, and the pre-launch error path. No tests, builds, Unity, simulations, or runtime checks were run.
+**Invariant/knowledge:** pinning runtime arguments is insufficient when distributed samples depend on the code/build that interprets those arguments.
