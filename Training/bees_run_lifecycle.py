@@ -30,9 +30,8 @@ def _sha256_bytes(value: bytes) -> str:
     return hashlib.sha256(value).hexdigest()
 
 
-def _semantic_csharp_sha256(path: Path) -> str:
+def _semantic_csharp_text_sha256(text: str) -> str:
     """Hash C# code while ignoring comments and indentation-only formatting changes."""
-    text = path.read_text(encoding="utf-8")
     output: list[str] = []
     index = 0
     state = "code"
@@ -95,6 +94,45 @@ def _semantic_csharp_sha256(path: Path) -> str:
     return _sha256_bytes("".join(output).strip().encode("utf-8"))
 
 
+def _semantic_csharp_sha256(path: Path) -> str:
+    return _semantic_csharp_text_sha256(path.read_text(encoding="utf-8"))
+
+
+_EPISODE_COORDINATOR_DIAGNOSTIC_CONSTANTS = (
+    (
+        re.compile(r"\bprivate\s+const\s+int\s+EpisodeMetricsLogInterval\s*=\s*\d+\s*;"),
+        "private const int EpisodeMetricsLogInterval = 10;",
+    ),
+    (
+        re.compile(r"\bprivate\s+const\s+int\s+SummaryIntervalEpisodes\s*=\s*\d+\s*;"),
+        "private const int SummaryIntervalEpisodes = 100;",
+    ),
+    (
+        re.compile(r"\bprivate\s+const\s+int\s+FullEpisodeDiagnosticsInterval\s*=\s*\d+\s*;"),
+        "private const int FullEpisodeDiagnosticsInterval = 1000;",
+    ),
+    (
+        re.compile(
+            r"\bprivate\s+const\s+long\s+TrainingDiagnosticMaxBytes\s*=\s*[^;]+;"
+        ),
+        "private const long TrainingDiagnosticMaxBytes = 8L * 1024L * 1024L;",
+    ),
+)
+
+
+def _episode_coordinator_semantic_sha256(path: Path) -> str:
+    """Hash training semantics while keeping diagnostics-only cadence backward-compatible."""
+    text = path.read_text(encoding="utf-8")
+    for pattern, baseline in _EPISODE_COORDINATOR_DIAGNOSTIC_CONSTANTS:
+        text, count = pattern.subn(baseline, text, count=1)
+        if count != 1:
+            raise ValueError(
+                "episode coordinator compatibility source is missing expected "
+                f"diagnostic constant: {pattern.pattern}"
+            )
+    return _semantic_csharp_text_sha256(text)
+
+
 def _network_settings_block(text: str) -> str:
     lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
     start = None
@@ -130,10 +168,10 @@ def contract_payload(assets_root: Path) -> dict[str, Any]:
     scenes_root = assets_root / "Scripts" / "Scenes"
     reward_path = scenes_root / "RlOneVsOneReward.cs"
     policy_path = scenes_root / "RlPolicySchema.cs"
+    episode_coordinator_path = scenes_root / "RlOneVsOneEpisodeCoordinator.cs"
     semantic_sources = {
         "combat_perception_source_sha256": scenes_root / "RlCombatPerception.cs",
         "agent_action_source_sha256": scenes_root / "RlOneVsOneAgent.cs",
-        "episode_coordinator_source_sha256": scenes_root / "RlOneVsOneEpisodeCoordinator.cs",
         "team_exploration_source_sha256": scenes_root / "RlTeamExplorationGrid.cs",
         "episode_identity_source_sha256": scenes_root / "RlEpisodeShipIdentity.cs",
     }
@@ -142,6 +180,7 @@ def contract_payload(assets_root: Path) -> dict[str, Any]:
         trainer_path,
         reward_path,
         policy_path,
+        episode_coordinator_path,
         *semantic_sources.values(),
     ):
         if not path.is_file():
@@ -164,6 +203,9 @@ def contract_payload(assets_root: Path) -> dict[str, Any]:
     # reuse an optimizer lineage before its mirrored JSON signature is corrected.
     payload["reward_source_sha256"] = _semantic_csharp_sha256(reward_path)
     payload["policy_schema_source_sha256"] = _semantic_csharp_sha256(policy_path)
+    payload["episode_coordinator_source_sha256"] = (
+        _episode_coordinator_semantic_sha256(episode_coordinator_path)
+    )
     for name, path in semantic_sources.items():
         payload[name] = _semantic_csharp_sha256(path)
     return payload
@@ -297,6 +339,48 @@ def commit_plan(state_path: Path, plan: Mapping[str, Any]) -> dict[str, Any]:
     return state
 
 
+def recover_active_run(
+    assets_root: Path,
+    state_path: Path,
+    *,
+    run_id: str,
+    expected_compatibility_key: str,
+) -> dict[str, Any]:
+    """Repair local lifecycle state only when live authority matches current source."""
+    if not re.fullmatch(r"[A-Za-z0-9._-]+", run_id):
+        raise ValueError("run_id must contain only safe release-id characters")
+    expected = str(expected_compatibility_key or "").strip().lower()
+    if len(expected) != 64 or any(ch not in "0123456789abcdef" for ch in expected):
+        raise ValueError("expected compatibility key must be 64 lowercase hex characters")
+
+    fingerprint = contract_fingerprint(assets_root)
+    actual = str(fingerprint["compatibility_key"]).lower()
+    if actual != expected:
+        raise ValueError(
+            "refusing lifecycle recovery because current source compatibility "
+            f"{actual} does not match authoritative active key {expected}"
+        )
+
+    now = _utc_now().isoformat()
+    existing = _load_state(state_path)
+    created = (
+        existing.get("created_utc")
+        if existing and existing.get("run_id") == run_id
+        else now
+    )
+    state = {
+        "schema_version": SCHEMA_VERSION,
+        "run_id": run_id,
+        "compatibility_key": actual,
+        "contract": dict(fingerprint["contract"]),
+        "created_utc": created,
+        "last_build_utc": now,
+        "recovered_utc": now,
+    }
+    _atomic_json(state_path, state)
+    return state
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
     sub = parser.add_subparsers(dest="command", required=True)
@@ -329,6 +413,12 @@ def _parser() -> argparse.ArgumentParser:
     commit = sub.add_parser("commit")
     commit.add_argument("--state", required=True)
     commit.add_argument("--plan", required=True)
+
+    recover = sub.add_parser("recover-active")
+    recover.add_argument("--assets-root", required=True)
+    recover.add_argument("--state", required=True)
+    recover.add_argument("--run-id", required=True)
+    recover.add_argument("--expected-compatibility-key", required=True)
 
     fingerprint = sub.add_parser("fingerprint")
     fingerprint.add_argument("--assets-root", required=True)
@@ -367,6 +457,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if args.command == "commit":
         plan = json.loads(Path(args.plan).read_text(encoding="utf-8"))
         value = commit_plan(Path(args.state), plan)
+        print(json.dumps(value, sort_keys=True))
+        return 0
+    if args.command == "recover-active":
+        value = recover_active_run(
+            Path(args.assets_root),
+            Path(args.state),
+            run_id=args.run_id,
+            expected_compatibility_key=args.expected_compatibility_key,
+        )
         print(json.dumps(value, sort_keys=True))
         return 0
     if args.command == "fingerprint":
