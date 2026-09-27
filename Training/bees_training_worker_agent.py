@@ -591,8 +591,27 @@ class TrainingLogUploader:
                 data=data,
             )
             if next_offset < 0:
-                self._positions[log_path] = -next_offset - 1
-                continue
+                expected_offset = -next_offset - 1
+                if expected_offset > size:
+                    # The supervisor may have restarted after this same run-scoped file was
+                    # truncated. Its in-memory offset is gone, but the server still has the old
+                    # longer copy; reset that copy before replaying the current local bytes.
+                    next_offset = client.upload_log_chunk(
+                        trainer_id=trainer_id,
+                        run_id=run_id,
+                        relative_path=relative,
+                        offset=0,
+                        data=b"",
+                        reset=True,
+                    )
+                    if next_offset < 0:
+                        self._positions[log_path] = -next_offset - 1
+                        continue
+                    self._positions[log_path] = next_offset
+                    position = next_offset
+                else:
+                    self._positions[log_path] = expected_offset
+                    continue
             self._positions[log_path] = next_offset
             budget -= len(data)
             uploaded += len(data)
