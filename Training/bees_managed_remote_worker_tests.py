@@ -102,6 +102,27 @@ class WorkerAgentHealthTests(unittest.TestCase):
 
             self.assertIn("startup health has not refreshed", error)
 
+class WorkerLiveThroughputTests(unittest.TestCase):
+    def test_live_throughput_accepts_recent_learner_consumption_rate(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "worker-throughput.json"
+            path.write_text(
+                '{"pid":13108,"env_count":1,"accepted_steps_total":1000,'
+                '"accepted_trajectories_total":10,"learner_consumed_steps_total":900,'
+                '"learner_consumed_steps_per_sec":96.25,"upload_queue_depth":0}\n',
+                encoding="utf-8",
+            )
+
+            result = worker_agent.read_throughput_metrics(
+                path,
+                expected_pid=13108,
+                expected_env_count=1,
+            )
+
+            self.assertEqual(result["learner_consumed_steps_total"], 900)
+            self.assertEqual(result["learner_consumed_steps_per_sec"], 96.25)
+
+
 class WorkerTrafficMetricsTests(unittest.TestCase):
     def test_persisted_network_totals_fill_session_gap_for_same_run(self):
         with tempfile.TemporaryDirectory() as temp:

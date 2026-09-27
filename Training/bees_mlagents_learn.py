@@ -766,6 +766,11 @@ def main() -> None:
             "hybrid CPU inference is implemented by the cross-worker batching path."
         )
 
+    # Install the managed tee before ML-Agents configures logging. Python logging handlers bind
+    # their output stream when they are created; installing this later leaves ML-Agents summaries
+    # pointed at the original stderr and learner-live.log sees only ordinary Bees print() calls.
+    live_log_streams = _install_managed_live_log()
+
     import mlagents.trainers
     import mlagents.trainers.subprocess_env_manager as subprocess_env_manager_module
     from mlagents import torch_utils
@@ -826,7 +831,6 @@ def main() -> None:
     previous_sigbreak_handler = _install_windows_break_interrupt()
     managed_stop_event, managed_stop_watcher = _start_managed_stop_watcher()
     original_maybe_save_model = _install_model_snapshot_requests()
-    live_log_streams = _install_managed_live_log()
     torch_utils.torch.load = device_safe_torch_load
     sys.argv = [previous_argv[0], *trainer_args]
     try:

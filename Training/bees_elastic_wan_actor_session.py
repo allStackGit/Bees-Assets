@@ -20,6 +20,7 @@ class ElasticActorSession(worker.ActorSession):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self.topology_epoch = -1
+        self._last_consumed_sample = None
 
     def _heartbeat(self) -> None:
         self.client.reset_ack(
@@ -37,8 +38,20 @@ class ElasticActorSession(worker.ActorSession):
         value = consumed.get(str(self.actor_id), consumed.get(self.actor_id, 0))
         if not isinstance(value, int) or isinstance(value, bool) or value < 0:
             raise RuntimeError("Elastic WAN central state has malformed consumed-step metrics")
+        now = time.monotonic()
         with self._throughput_lock:
+            previous = self._last_consumed_sample
+            if previous is not None:
+                previous_time, previous_value = previous
+                elapsed = now - previous_time
+                if value < previous_value:
+                    self._learner_consumed_steps_per_sec = None
+                elif elapsed >= 0.5:
+                    self._learner_consumed_steps_per_sec = (
+                        value - previous_value
+                    ) / elapsed
             self._learner_consumed_steps_total = value
+            self._last_consumed_sample = (now, value)
         self._write_throughput_metrics()
 
     def _apply_live_rollout_horizons(self, state: Mapping[str, Any]) -> None:
