@@ -19,6 +19,7 @@ These are cross-cutting rules future changes must preserve. Keep this file conci
 - Multiplayer command envelopes use positive, monotonically increasing per-player sequences. Duplicate or older sequences are rejected before gameplay mutation; sequenced envelopes are invalid outside an active Free Play `MatchSession`.
 - Multiplayer wire packets are versioned and bound to the current `MatchSession.MatchId` and positive `Level.MatchLevelId`; routing to the owning `GameState` must occur before command-sequence consumption. Oversized, malformed, schema-mismatched, or wrong-match packets must be rejected before they enter the received-command queue; the Bees P2P protocol is separate from the existing BeesServer request/response contract.
 - Network/transport callbacks may enqueue copied command data only; they must not invoke Unity gameplay mutations directly. The per-Level received-command queue is bounded, cleared on Level reset/end, and drained with a per-frame budget on Unity's main thread.
+- Non-authoritative outbound player commands are owned by one match-wide queue, not separate Level queues, because command sequence numbers are match/player scoped. Level reset removes only queued commands for that Level.
 
 ## Async and ordering
 

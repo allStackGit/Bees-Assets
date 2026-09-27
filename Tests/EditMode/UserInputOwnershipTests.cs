@@ -786,7 +786,7 @@ namespace Bees.Tests.EditMode
                     new Vector2(2f, 3f),
                     Vector2.zero), Is.EqualTo(true));
 
-                object outgoing = RuntimeAssembly.GetField(state, "_outgoingPlayerCommands");
+                object outgoing = RuntimeAssembly.GetField(session, "_outgoingPlayerCommands");
                 Assert.That(RuntimeAssembly.GetCount(outgoing), Is.EqualTo(1));
             }
             finally
@@ -838,17 +838,29 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void OutgoingClientCommandQueueIsBoundedAndClearedWithLevelState()
+        public void OutgoingClientCommandQueueIsMatchOwnedBoundedAndLevelResetAware()
         {
             string commandPath = Path.Combine(Application.dataPath, "Scripts", "Levels", "GameState.Commands.cs");
             string statePath = Path.Combine(Application.dataPath, "Scripts", "Levels", "GameState.cs");
             string commandSource = File.ReadAllText(commandPath);
             string stateSource = File.ReadAllText(statePath);
 
-            StringAssert.Contains("public const int MaxOutgoingPlayerCommands = 1024;", commandSource);
-            StringAssert.Contains("TryDequeueOutgoingPlayerCommand", commandSource);
-            StringAssert.Contains("_outgoingPlayerCommands.Clear();", commandSource);
-            StringAssert.Contains("ClearQueuedPlayerCommands();", stateSource);
+            StringAssert.Contains("matchSession.QueueOutgoingPlayerCommand(MatchLevelId, command)", commandSource);
+            StringAssert.Contains("public const int MaxOutgoingPlayerCommands = 1024;", stateSource);
+            StringAssert.Contains("TryDequeueOutgoingPlayerCommand(", stateSource);
+            StringAssert.Contains("RemoveOutgoingPlayerCommandsForLevel(MatchLevelId)", stateSource);
+        }
+
+        [Test]
+        public void SteamReceiveUsesFixedArraySizedBatches()
+        {
+            string steamPath = Path.Combine(Application.dataPath, "Scripts", "Steamworks.NET", "SteamManager.cs");
+            string source = File.ReadAllText(steamPath);
+
+            StringAssert.Contains("ReceiveMessagesOnChannel(", source);
+            StringAssert.Contains("_receivePointers,", source);
+            StringAssert.Contains("ReceiveBatchSize);", source);
+            StringAssert.DoesNotContain("_receivePointers,\n                    maxBatch", source);
         }
 
         [Test]
