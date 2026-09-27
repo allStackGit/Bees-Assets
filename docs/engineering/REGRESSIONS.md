@@ -534,11 +534,4 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** authenticated chunk/completion requests now reserve their session before the first asynchronous yield, and expiry cleanup skips sessions with active or queued operations. `rlDemonstrationUploads.module.test.js` holds a chunk operation open across the idle cutoff and asserts that cleanup retains the session and permits the chunk to finish.  
 **Verification:** statically traced request ownership, the per-session operation tail, completion-result cleanup, and the new focused regression. The test was added but not run; no runtime checks were performed, per the static-only audit scope.  
 **Invariant/knowledge:** idle expiry must not delete files owned by an active asynchronous operation; reserve session ownership before yielding to cleanup.
-
-### REG-059 — Expiry cleanup removed active demonstration uploads
-**Area:** `BeesServer~/rlDemonstrationUploads.js`, demonstration upload session ownership  
-**Symptom:** a slow chunk or completion operation could cross the idle timeout while another request ran global cleanup, causing the session and partial archive to be deleted before the operation finished.  
-**Root cause:** request handling awaited expiry cleanup before reserving the authenticated session operation, and cleanup used only `lastActivityAt` without considering queued or in-flight work.  
-**Permanent protection:** authenticated chunk/completion requests now reserve their session before the first asynchronous yield, and expiry cleanup skips sessions with active or queued operations. `rlDemonstrationUploads.module.test.js` holds a chunk operation open across the idle cutoff and asserts that cleanup retains the session and permits the chunk to finish.  
-**Verification:** statically traced request ownership, the per-session operation tail, completion-result cleanup, and the new focused regression. The test was added but not run; no runtime checks were performed, per the static-only audit scope.  
-**Invariant/knowledge:** idle expiry must not delete files owned by an active asynchronous operation; reserve session ownership before yielding to cleanup.  
+  
