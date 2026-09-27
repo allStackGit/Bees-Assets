@@ -269,3 +269,12 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** the callback captures the probed child and discards its result if the supervisor is stopping, the current child changed, or the probed child exited while awaiting the response.  \
 **Verification:** source-level event ordering confirmed the restart can occur before the awaited health probe returns; the post-await identity guard prevents stale results from changing restart counters or signaling a replacement. No tests or runtime checks were run, per the static-only audit constraint.  \
 **Invariant/knowledge:** asynchronous health results must be scoped to the process instance they observed before mutating supervisor state.
+
+
+### REG-029 — Pluto II ships-range tooltip gained repeated trailing letters
+**Area:** `Scripts/UI Components/CampaignFeedbackAdjustmentGuard.cs`, Pluto II campaign tutorial tooltip  \\
+**Symptom:** the tooltip changed “ships’ range” to “ships’ ranges” on every frame, causing repeated trailing “s” characters (and the same issue for ASCII apostrophes).  \\
+**Root cause:** the singular phrase remained a substring of the pluralized phrase, so the per-frame replacement was not idempotent.  \\
+**Permanent protection:** the replacement now requires a word boundary after “range”; once the text is plural, the singular pattern no longer matches.  \\
+**Verification:** the regex and its repeated per-frame application were reviewed statically for both apostrophe forms. No tests or runtime checks were run, per the static-only audit constraint.  \\
+**Invariant/knowledge:** per-frame UI text corrections must not match their own output.
