@@ -130,11 +130,40 @@ def _file_sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _runtime_training_contract_sha256(root: Path) -> str:
+    """Hash runtime Python sources and dependency manifests used by the trainer wrappers."""
+    digest = hashlib.sha256()
+    manifest_names = {"pyproject.toml", "poetry.lock", "uv.lock", "Pipfile.lock"}
+    files = sorted(
+        (
+            path
+            for path in root.rglob("*")
+            if path.is_file()
+            and (
+                (path.suffix == ".py" and not path.name.endswith("_tests.py") and not path.name.startswith("test_"))
+                or path.name in manifest_names
+                or (path.name.startswith("requirements") and path.suffix in (".txt", ".in"))
+            )
+        ),
+        key=lambda path: path.relative_to(root).as_posix(),
+    )
+    for path in files:
+        relative = path.relative_to(root).as_posix().encode("utf-8")
+        payload = path.read_bytes()
+        digest.update(len(relative).to_bytes(8, "big"))
+        digest.update(relative)
+        digest.update(len(payload).to_bytes(8, "big"))
+        digest.update(payload)
+    return digest.hexdigest()
+
+
 def _service_contract_sha256(options: ServiceOptions) -> str:
-    """Bind a resumable optimizer lineage to the config and environment that created it."""
+    """Bind resumable optimizer state to the trainer code, config, and environment that created it."""
     contract = {
         "schema_version": 1,
         "run_id": options.run_id,
+        "runtime_training_root": str(options.runtime_training_root.resolve()),
+        "runtime_training_sha256": _runtime_training_contract_sha256(options.runtime_training_root),
         "trainer_config_sha256": _file_sha256(options.trainer_config),
         "continual_config_sha256": _file_sha256(options.continual_config),
         "training_env_sha256": _file_sha256(options.training_env),
