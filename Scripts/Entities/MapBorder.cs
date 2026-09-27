@@ -111,7 +111,7 @@ namespace Assets.Scripts.Entities
             {
                 _collisionAsteroid = _collidingThing.GetComponent<CollisionAsteroid>() ??
                     _collidingThing.GetComponentInParent<CollisionAsteroid>();
-                if (_collisionAsteroid == null)
+                if (_collisionAsteroid == null || Level == null || _collisionAsteroid.Level != Level)
                 {
                     return;
                 }
