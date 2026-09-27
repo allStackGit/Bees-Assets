@@ -135,9 +135,9 @@ There are two supported ways to add remote rollout machines. Both keep exactly o
 
 ### Direct ML-Agents workers
 
-The original direct mode is appropriate for LAN or otherwise low-latency connections. External workers are a suffix of ML-Agents worker IDs. The central launcher writes a content-hashed remote spec that pins assigned worker IDs, base port, run ID, and the exact final Unity `--env-args`, including frozen gameplay-derived pressure.
+The original direct mode is appropriate for LAN or otherwise low-latency connections. External workers are a suffix of ML-Agents worker IDs. Before starting the central trainer, set `BEES_TRAINING_BUILD_ID` to the canonical build ID for the Unity training build on every machine. The central launcher writes a content-hashed remote spec that pins this build ID alongside assigned worker IDs, base port, run ID, and the exact final Unity `--env-args`, including frozen gameplay-derived pressure. The launcher and each remote helper fail closed if the build ID is missing or differs from the session spec.
 
-The remote machine runs `Training/bees_remote_worker.py` with that spec. The helper validates the spec, creates SSH local forwards to loopback-only ML-Agents ports on the trainer, and launches only its assigned Unity workers. Every ML-Agents decision still crosses the tunnel in this mode.
+The remote machine runs `Training/bees_remote_worker.py` with that spec and the same `BEES_TRAINING_BUILD_ID`. The helper validates the spec, creates SSH local forwards to loopback-only ML-Agents ports on the trainer, and launches only its assigned Unity workers. Every ML-Agents decision still crosses the tunnel in this mode.
 
 ### Elastic WAN actors with local inference
 
