@@ -593,6 +593,30 @@ class RemoteActorHelperTests(unittest.TestCase):
             actor._validate_session(session, 2)
 
 
+class WanActorSyntheticStepTests(unittest.TestCase):
+    def test_synthetic_reset_step_survives_all_actor_leases_expiring(self):
+        options = wan.WanActorOptions(
+            actor_count=2,
+            envs_per_actor=1,
+            auth_token_file="unused",
+        )
+        broker = SimpleNamespace(
+            merged_behavior_specs=lambda: {"BeesRL1v1": object()},
+            registered_actor_ids=lambda: (),
+        )
+        manager = SimpleNamespace(
+            _bees_wan_options=options,
+            _bees_wan_broker=broker,
+        )
+
+        with mock.patch("mlagents.trainers.env_manager.EnvironmentStep") as environment_step:
+            steps = wan.WanActorEnvManagerMixin._synthetic_steps(manager)
+
+        environment_step.assert_called_once()
+        self.assertEqual(steps, [environment_step.return_value])
+        self.assertEqual(environment_step.call_args.args[1], 0)
+
+
 class WanActorBackpressureTests(unittest.TestCase):
     def test_topology_update_during_backpressure_preserves_completed_batch(self):
         session = actor.ActorSession.__new__(actor.ActorSession)
