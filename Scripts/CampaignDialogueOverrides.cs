@@ -175,14 +175,17 @@ public static class CampaignDialogueOverrides
             return;
         }
 
-        Set(lines, 10, "Alejandra", "Affirmative. Good luck, commander.");
+        string text = "Affirmative. Good luck, commander.";
         if (!TitaniaRouteState.DidWinTitaniaOne)
         {
             // The current mission starts the base dialogue synchronously before the campaign
             // override guard can enqueue another line. Keep the authored loss-only warning in the
             // same Alejandra turn so it still appears before control is returned to the player.
-            lines[10].Text += "\n\nWe’re already under heavy fire. You have your work cut out for you, but we’ll focus our efforts on an expedient evacuation.";
+            text += "\n\nWe’re already under heavy fire. You have your work cut out for you, but we’ll focus our efforts on an expedient evacuation.";
         }
+        // Overrides are reapplied before every dialogue section. Set a canonical value each time
+        // instead of appending to the shared DialogueLine, which would duplicate the warning.
+        Set(lines, 10, "Alejandra", text);
     }
 
     private static void PatchUranusOnTheOffensive(List<DialogueLine> lines)
