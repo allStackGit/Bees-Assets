@@ -1215,7 +1215,8 @@ class TrainingControlStore {
         }
 
         const requestedBuildId = this.state.canonical_build_id;
-        const requestedTraining = Object.prototype.hasOwnProperty.call(patch, 'training_enabled')
+        const hasTrainingPatch = Object.prototype.hasOwnProperty.call(patch, 'training_enabled');
+        const requestedTraining = hasTrainingPatch
             ? patch.training_enabled
             : this.state.training_enabled;
         if (typeof requestedTraining !== 'boolean') {
@@ -1237,33 +1238,40 @@ class TrainingControlStore {
             }
         }
 
-        let changed = false;
-        if (Object.prototype.hasOwnProperty.call(patch, 'training_enabled')) {
-            if (typeof patch.training_enabled !== 'boolean') {
-                throw Object.assign(new Error('training_enabled must be boolean'), { statusCode: 400 });
-            }
-            if (patch.training_enabled !== this.state.training_enabled) {
-                this.state.training_enabled = patch.training_enabled;
-                changed = true;
-            }
-        }
+        // Validate and stage every field before mutating shared desired state. A rejected
+        // environment_args field must not leave an earlier training_enabled change in memory.
+        let requestedEnvironmentArgs = this.state.environment_args;
+        let environmentArgsChanged = false;
         if (Object.prototype.hasOwnProperty.call(patch, 'environment_args')) {
-            const args = normalizeEnvironmentArgs(patch.environment_args);
-            if (JSON.stringify(args) !== JSON.stringify(this.state.environment_args)) {
-                if (this.state.canonical_build_id) {
-                    throw Object.assign(
-                        new Error(
-                            'environment_args are rollout-owned once a canonical build exists; ' +
-                            'stage the canonical release with validated environment_args instead'),
-                        { statusCode: 409 });
-                }
-                this.state.environment_args = args;
-                changed = true;
+            const normalizedArgs = normalizeEnvironmentArgs(patch.environment_args);
+            environmentArgsChanged =
+                JSON.stringify(normalizedArgs) !== JSON.stringify(this.state.environment_args);
+            if (environmentArgsChanged && this.state.canonical_build_id) {
+                throw Object.assign(
+                    new Error(
+                        'environment_args are rollout-owned once a canonical build exists; ' +
+                        'stage the canonical release with validated environment_args instead'),
+                    { statusCode: 409 });
             }
+            if (environmentArgsChanged) requestedEnvironmentArgs = normalizedArgs;
         }
-        if (changed) {
-            this.state.revision++;
-            this._persist();
+
+        const trainingChanged =
+            hasTrainingPatch && requestedTraining !== this.state.training_enabled;
+        if (trainingChanged || environmentArgsChanged) {
+            const previousState = this.state;
+            this.state = {
+                ...previousState,
+                training_enabled: requestedTraining,
+                environment_args: requestedEnvironmentArgs,
+                revision: previousState.revision + 1,
+            };
+            try {
+                this._persist();
+            } catch (error) {
+                this.state = previousState;
+                throw error;
+            }
         }
         this._advanceRollout();
         return this.desiredState();
