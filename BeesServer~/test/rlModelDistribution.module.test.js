@@ -182,6 +182,56 @@ test('published pointer cannot escape the configured distribution root', async t
     assert.equal(resolveInsideRoot(f.root, '../outside.bundle'), null);
 });
 
+test('model bundle symlink cannot escape the configured distribution root', async t => {
+    const f = await fixture(t);
+    const outsidePath = path.join(os.tmpdir(), `${path.basename(f.root)}-outside.bundle`);
+    t.after(() => fsp.rm(outsidePath, { force: true }));
+    await fsp.writeFile(outsidePath, f.bundle);
+    const relativeBundle = `packages/${f.deploymentId}/${f.platform}/escaped.bundle`;
+    const escapedBundlePath = path.join(f.root, relativeBundle);
+    await fsp.mkdir(path.dirname(escapedBundlePath), { recursive: true });
+    try {
+        await fsp.symlink(outsidePath, escapedBundlePath, 'file');
+    } catch (error) {
+        if (['EPERM', 'EACCES', 'ENOTSUP'].includes(error?.code)) {
+            t.skip('file symlinks are unavailable in this environment');
+            return;
+        }
+        throw error;
+    }
+    f.pointer.identity.bundle_path = relativeBundle;
+    await fsp.writeFile(f.pointerPath, `${JSON.stringify(f.pointer, null, 2)}\\n`);
+
+    await assert.rejects(
+        f.manager.handle(currentRequest(f.platform), f.context),
+        error => error instanceof RlModelDistributionError &&
+            error.statusCode === 500 && error.code === 'distribution-corrupt',
+    );
+});
+
+test('model pointer symlink cannot escape the configured distribution root', async t => {
+    const f = await fixture(t);
+    const outsidePath = path.join(os.tmpdir(), `${path.basename(f.root)}-outside-pointer.json`);
+    t.after(() => fsp.rm(outsidePath, { force: true }));
+    await fsp.writeFile(outsidePath, `${JSON.stringify(f.pointer, null, 2)}\\n`);
+    await fsp.unlink(f.pointerPath);
+    try {
+        await fsp.symlink(outsidePath, f.pointerPath, 'file');
+    } catch (error) {
+        if (['EPERM', 'EACCES', 'ENOTSUP'].includes(error?.code)) {
+            t.skip('file symlinks are unavailable in this environment');
+            return;
+        }
+        throw error;
+    }
+
+    await assert.rejects(
+        f.manager.handle(currentRequest(f.platform), f.context),
+        error => error instanceof RlModelDistributionError &&
+            error.statusCode === 500 && error.code === 'distribution-corrupt',
+    );
+});
+
 test('bundle hash mismatch fails closed instead of serving changed bytes', async t => {
     const f = await fixture(t);
     await fsp.writeFile(f.bundlePath, Buffer.alloc(f.bundle.length, 7));
