@@ -195,6 +195,21 @@ internal sealed class RlLiveTelemetryRecorder : MonoBehaviour
                 Debug.LogWarning("Could not finalize gameplay telemetry during teardown: " + exception.Message);
             }
         }
+        foreach (LevelSession session in _pendingFinalization)
+        {
+            if (session == null || session.Completed)
+            {
+                continue;
+            }
+            try
+            {
+                CompleteSession(session, session.CompletionResult ?? "timeout");
+            }
+            catch (Exception exception)
+            {
+                Debug.LogWarning("Could not retry gameplay telemetry finalization during teardown: " + exception.Message);
+            }
+        }
 #endif
         if (_instance == this)
         {
@@ -210,6 +225,16 @@ internal sealed class RlLiveTelemetryRecorder : MonoBehaviour
         if (!enabled || _stage == null)
         {
             return;
+        }
+
+        for (int i = _pendingFinalization.Count - 1; i >= 0; i--)
+        {
+            LevelSession pending = _pendingFinalization[i];
+            if (pending == null || pending.Completed ||
+                CompleteSession(pending, pending.CompletionResult ?? "timeout"))
+            {
+                _pendingFinalization.RemoveAt(i);
+            }
         }
 
         IReadOnlyList<Level> levels = _stage.Levels;
