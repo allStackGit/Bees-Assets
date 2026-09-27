@@ -405,12 +405,12 @@ async function invokeBundle(options = {}) {
         const targetRun = options.runId
             ? String(options.runId)
             : await getActiveRunId(config, admin);
+        await requestCentralDiagnosticModelSnapshot(
+            status,
+            targetRun,
+            snapshotJson,
+        );
         if (options.evaluate) {
-            await requestCentralDiagnosticModelSnapshot(
-                status,
-                targetRun,
-                snapshotJson,
-            );
             await invokeCentralDiagnosticBenchmark(
                 targetRun,
                 snapshotJson,
