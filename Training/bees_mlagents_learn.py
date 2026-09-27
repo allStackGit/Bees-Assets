@@ -126,6 +126,9 @@ def _extract_bees_options(
 
     while index < len(argv):
         argument = argv[index]
+        if argument == "--env-args":
+            trainer_args.extend(argv[index:])
+            break
         if argument == THREAD_FLAG:
             if index + 1 >= len(argv) or argv[index + 1].startswith("--"):
                 raise SystemExit(f"{THREAD_FLAG} requires a value.")
