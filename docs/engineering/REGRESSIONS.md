@@ -233,3 +233,12 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** dedicated workers now report a SHA-256 identity for their active environment arguments. The server requires that identity to match the pending arguments before accepting a rollout acknowledgement. The focused server regression covers a stale central heartbeat followed by a correctly configured acknowledgement.  
 **Verification:** regression coverage was added but not executed, per the static-only audit constraint.  
 **Invariant/knowledge:** promote a same-build environment transition only after every required trainer proves its live process has the pending ordered argument list.
+
+
+### REG-025 — Titania failure warning accumulated on each dialogue section
+**Area:** `Scripts/CampaignDialogueOverrides.cs`, Titania Beenoculars dialogue  
+**Symptom:** the loss-only evacuation warning could appear repeatedly in the same dialogue line after multiple dialogue sections.  
+**Root cause:** `DialogueManager.StartDialogue` reapplies campaign overrides before every section, while the Titania I failure patch appended text to a shared `DialogueLine` rather than rebuilding its text.  
+**Permanent protection:** the patch now constructs the full line from the route outcome and assigns it with `Set`, making repeated application idempotent. `CampaignDialogueDocumentSyncTests` now protects against mutation-by-append.  
+**Verification:** regression coverage was added but not executed, per the static-only audit constraint.  
+**Invariant/knowledge:** presentation-time overrides can run repeatedly; shared dialogue lines must be reset to deterministic content on each application.
