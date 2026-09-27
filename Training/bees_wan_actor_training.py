@@ -663,6 +663,12 @@ class WanActorBroker:
         signatures = {str(name): _behavior_spec_signature(spec) for name, spec in behavior_specs.items()}
 
         with self._condition:
+            # Control can advance after the optimistic check above while this request waits
+            # for the broker lock. Never publish a registration for an already-stale epoch.
+            if control_epoch != self._control_epoch:
+                raise StaleActorStateError(
+                    f"actor control epoch {control_epoch!r} != central epoch {self._control_epoch}"
+                )
             if self._registrations:
                 reference = next(iter(self._registrations.values()))["signatures"]
                 if signatures != reference:
