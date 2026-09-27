@@ -765,3 +765,13 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** `ElasticBrokerTests.test_stale_reset_ack_does_not_refresh_actor_lease` checks that stale control state raises and leaves `last_seen` unchanged. The test was not run, per the static-only audit scope.  
 **Verification:** traced the elastic override and base acknowledgment contract, then reread the atomic check and regression case. No tests, builds, Unity, simulations, or runtime checks were run.  
 **Invariant/knowledge:** only an acknowledgment for the current control epoch may renew an actor registration lease.
+
+
+### REG-088 — Delayed squad strategy responses dereferenced retired levels
+**Area:** `Scripts/Server/Socket.cs`, delayed command and matchup responses  \
+**Symptom:** a response arriving after its captured level was torn down could throw while recording the simulation input, before the existing stale level/squad guard ran.  \
+**Root cause:** both strategy response handlers dereferenced the captured `Level` before calling `CanApplySquadResponse`, whose null/live-state checks were intended to reject stale responses.  \
+**Fix:** simulation-input recording now occurs only after the captured level and squad pass the liveness check. Stale replies are consumed and discarded without touching a retired level.  \
+**Permanent protection:** `SocketResponseOwnershipTests` now covers delayed command and matchup responses whose captured level is null and requires both handlers to return without throwing. The tests were not run, per the static-only audit scope.  \
+**Verification:** traced both response handlers through standing-request consumption and the existing liveness predicate, then reread the updated handler order and regression cases. No tests, builds, Unity, simulations, or runtime checks were run.  \
+**Invariant/knowledge:** asynchronous responses must establish captured runtime ownership before dereferencing a scene-owned level or squad.
