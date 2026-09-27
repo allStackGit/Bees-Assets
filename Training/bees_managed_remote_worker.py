@@ -632,8 +632,10 @@ class RuntimeUpdater:
         self.versions_root.mkdir(parents=True, exist_ok=True)
         self.ready_build_path = install_root / "runtime-ready-build.txt"
         self._stop = threading.Event()
+        self._refresh = threading.Event()
         self._lock = threading.Lock()
         self._thread = threading.Thread(target=self._run, name="bees-runtime-updater", daemon=True)
+        self._started = False
         archive = Path(args.runtime_archive).expanduser().resolve()
         self.current_sha256 = _sha256_file(archive) if archive.is_file() else ""
         self.current_version = _runtime_version_from_root(Path(__file__).resolve().parent)
@@ -642,14 +644,28 @@ class RuntimeUpdater:
         self.staged_bridge: Optional[Path] = None
         self.staged_python: Optional[Path] = None
         self.staged_build_id = ""
+        self.verified_build_id = ""
         self.last_error = ""
 
     def start(self) -> None:
+        if self._started:
+            self.request_refresh()
+            return
+        self._started = True
         self._thread.start()
+
+    def request_refresh(self) -> None:
+        self._refresh.set()
 
     def stop(self) -> None:
         self._stop.set()
-        self._thread.join(timeout=5)
+        self._refresh.set()
+        if self._started:
+            self._thread.join(timeout=5)
+
+    def verified(self) -> tuple[str, str]:
+        with self._lock:
+            return self.verified_build_id, self.last_error
 
     def staged(
         self,
@@ -886,6 +902,7 @@ class RuntimeUpdater:
                 self.staged_bridge = None
                 self.staged_python = None
                 self.staged_build_id = ""
+                self.verified_build_id = staged_build_id
                 self.last_error = ""
                 _atomic_bytes(
                     self.ready_build_path,
@@ -922,6 +939,7 @@ class RuntimeUpdater:
             self.staged_bridge = staged_bridge
             self.staged_python = staged_python
             self.staged_build_id = staged_build_id
+            self.verified_build_id = staged_build_id
             self.last_error = ""
         _atomic_bytes(
             self.ready_build_path,
@@ -950,7 +968,8 @@ class RuntimeUpdater:
             except (OSError, ValueError, RuntimeError, urllib.error.URLError, zipfile.BadZipFile) as exc:
                 with self._lock:
                     self.last_error = f"{type(exc).__name__}: {exc}"
-            self._stop.wait(self.args.runtime_poll_seconds)
+            self._refresh.wait(self.args.runtime_poll_seconds)
+            self._refresh.clear()
 
 
 def _control_state(args: argparse.Namespace, trainer_id: str) -> Optional[Mapping[str, object]]:
@@ -1125,37 +1144,47 @@ def _runtime_cutover_selected(
     return None
 
 
-def _wait_for_dependency_repair_cutover(
+def _wait_for_runtime_alignment(
     args: argparse.Namespace,
     trainer_id: str,
     updater: RuntimeUpdater,
     tailnet: subprocess.Popen,
     stop: list[bool],
-) -> Optional[Path]:
-    if _python_remote_dependencies_ok(Path(sys.executable)):
-        return None
+) -> tuple[bool, Optional[Path]]:
+    """Fail closed until this supervisor has verified the canonical Training runtime."""
 
-    print(
-        "[Bees remote] active Python dependencies are incomplete; "
-        "waiting for the staged dependency repair before launching the WAN actor.",
-        file=sys.stderr,
-        flush=True,
-    )
+    updater.start()
     next_status = 0.0
     while not stop[0] and tailnet.poll() is None:
         runtime_cutover = _runtime_cutover_selected(args, trainer_id, updater)
         if runtime_cutover is not None:
-            return runtime_cutover
+            return True, runtime_cutover
+
+        status = _control_status(args)
+        desired = status.get("desired") if isinstance(status, Mapping) else None
+        canonical_build = (
+            str(desired.get("canonical_build_id", "") or "")
+            if isinstance(desired, Mapping)
+            else ""
+        )
+        verified_build, update_error = updater.verified()
+        if canonical_build and verified_build == canonical_build:
+            return True, None
+
+        updater.request_refresh()
         now = time.monotonic()
         if now >= next_status:
+            waiting_for = canonical_build or "(canonical build unavailable)"
+            suffix = f" error={update_error}" if update_error else ""
             print(
-                _remote_status_summary(args, trainer_id, updater),
+                "[Bees remote] waiting for matching Training runtime before rollout: "
+                f"canonical={waiting_for} verified={verified_build or '-'}{suffix}",
+                file=sys.stderr,
                 flush=True,
             )
             next_status = now + 5.0
         time.sleep(0.5)
-    return None
-
+    return False, None
 
 def _worker_command(args: argparse.Namespace, root: Path, actor_key: str) -> list[str]:
     trainer_id = f"remote-{socket.gethostname().lower()}-{actor_key[:8]}"
@@ -1291,7 +1320,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     sys.stdout = _RunScopedTee(original_stdout, log_sink)
     sys.stderr = _RunScopedTee(original_stderr, log_sink)
     updater = RuntimeUpdater(args, install_root)
-    updater.start()
     stop = [False]
     shutdown_watcher = threading.Thread(
         target=_watch_shutdown_request,
@@ -1342,7 +1370,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         if isinstance(current_desired, Mapping):
                             log_sink.set_run_id(str(current_desired.get("run_id", "") or ""))
 
-                    runtime_cutover = _wait_for_dependency_repair_cutover(
+                    runtime_aligned, runtime_cutover = _wait_for_runtime_alignment(
                         args,
                         trainer_id,
                         updater,
@@ -1352,9 +1380,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     if runtime_cutover is not None:
                         print(
                             f"[Bees remote] activating staged worker runtime "
-                            f"{runtime_cutover.name[:12]} after dependency repair."
+                            f"{runtime_cutover.name[:12]} before rollout."
                         )
-                    elif not stop[0] and tailnet.poll() is None:
+                    elif runtime_aligned and not stop[0] and tailnet.poll() is None:
                         worker, worker_log_thread = _start_logged_process(
                             _worker_command(args, root, actor_key)
                         )
