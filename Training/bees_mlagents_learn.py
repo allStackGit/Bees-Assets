@@ -571,29 +571,15 @@ def _install_fast_env_manager():
         worker_steps = []
         step_workers = set()
 
-        def queue_recovery_steps() -> None:
-            # Successful responses in worker_steps have not been postprocessed yet, so their
-            # workers still hold the previous_step that produced those responses. Keep those
-            # workers marked busy while recovering failed workers to avoid issuing the same
-            # observation/action twice.
-            completed_workers = [
-                self.env_workers[worker_id] for worker_id in step_workers
-            ]
-            for worker in completed_workers:
-                worker.waiting = True
-            try:
-                self._queue_steps()
-            finally:
-                for worker in completed_workers:
-                    worker.waiting = False
-
         def accept_response(step) -> bool:
             """Return True when a worker failure caused a manager restart."""
             if step.cmd == EnvironmentCommand.ENV_EXITED:
                 self._restart_failed_workers(step)
-                # Keep successful responses already consumed from the queue. Clearing them loses
-                # healthy-worker experience and leaves those workers' state unprocessed.
-                queue_recovery_steps()
+                # Recovery resets the full worker cohort. Discard responses collected before
+                # that reset so stale observations cannot replace each worker's reset state.
+                worker_steps.clear()
+                step_workers.clear()
+                self._queue_steps()
                 return True
             if step.worker_id not in step_workers:
                 self.env_workers[step.worker_id].waiting = False
