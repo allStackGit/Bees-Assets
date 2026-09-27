@@ -46,8 +46,15 @@ namespace Assets.Scripts.Levels
 
         public bool QueueReceivedPlayerCommand(int sourcePeerId, PlayerCommandEnvelope command)
         {
-            if (sourcePeerId <= 0 || command == null || command.PlayerId <= MatchSession.UnownedPlayerId ||
-                command.Sequence <= 0 || command.SquadCommandId <= 0)
+            MatchSession matchSession = Stage != null ? Stage.MatchSession : null;
+            if (matchSession == null ||
+                !matchSession.IsLocalAuthority ||
+                sourcePeerId <= 0 ||
+                command == null ||
+                command.PlayerId <= MatchSession.UnownedPlayerId ||
+                command.Sequence <= 0 ||
+                command.SquadCommandId <= 0 ||
+                !matchSession.DoesPeerOwnPlayer(sourcePeerId, command.PlayerId))
             {
                 return false;
             }

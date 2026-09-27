@@ -266,6 +266,8 @@ public sealed class SteamMultiplayerTransport : IMultiplayerTransport
         new List<(int MatchLevelId, PlayerCommandEnvelope Command)>();
     private readonly Dictionary<(int PlayerId, long Sequence), float> _lastCommandSendTimes =
         new Dictionary<(int PlayerId, long Sequence), float>();
+    private readonly HashSet<(int PlayerId, long Sequence)> _pendingCommandKeys =
+        new HashSet<(int PlayerId, long Sequence)>();
     private readonly List<(int PlayerId, long Sequence)> _acknowledgedSendKeys =
         new List<(int PlayerId, long Sequence)>();
     private Callback<SteamNetworkingMessagesSessionRequest_t> _sessionRequest;
@@ -340,6 +342,7 @@ public sealed class SteamMultiplayerTransport : IMultiplayerTransport
         _peerIdsByTransportIdentity.Clear();
         _outgoingCommandBuffer.Clear();
         _lastCommandSendTimes.Clear();
+        _pendingCommandKeys.Clear();
         _acknowledgedSendKeys.Clear();
         _hasPendingAcknowledgement = false;
         _pendingAcknowledgementTargetPeerId = 0;
@@ -445,6 +448,7 @@ public sealed class SteamMultiplayerTransport : IMultiplayerTransport
         _session.CopyOutgoingPlayerCommands(
             _outgoingCommandBuffer,
             MatchSession.MaxOutgoingPlayerCommands);
+        PruneCommandSendTimes();
         float now = Time.realtimeSinceStartup;
         int sent = 0;
         for (int i = 0; i < _outgoingCommandBuffer.Count && sent < MaxMessagesPerUpdate; i++)
@@ -490,6 +494,34 @@ public sealed class SteamMultiplayerTransport : IMultiplayerTransport
             _lastCommandSendTimes[key] = now;
             sent++;
         }
+    }
+
+    private void PruneCommandSendTimes()
+    {
+        _pendingCommandKeys.Clear();
+        for (int i = 0; i < _outgoingCommandBuffer.Count; i++)
+        {
+            PlayerCommandEnvelope command = _outgoingCommandBuffer[i].Command;
+            if (command != null)
+            {
+                _pendingCommandKeys.Add((command.PlayerId, command.Sequence));
+            }
+        }
+
+        _acknowledgedSendKeys.Clear();
+        foreach (KeyValuePair<(int PlayerId, long Sequence), float> sent in _lastCommandSendTimes)
+        {
+            if (!_pendingCommandKeys.Contains(sent.Key))
+            {
+                _acknowledgedSendKeys.Add(sent.Key);
+            }
+        }
+        for (int i = 0; i < _acknowledgedSendKeys.Count; i++)
+        {
+            _lastCommandSendTimes.Remove(_acknowledgedSendKeys[i]);
+        }
+        _acknowledgedSendKeys.Clear();
+        _pendingCommandKeys.Clear();
     }
 
     private void SendOutgoingAcknowledgements()

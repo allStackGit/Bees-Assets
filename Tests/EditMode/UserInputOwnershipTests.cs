@@ -774,6 +774,7 @@ namespace Bees.Tests.EditMode
                 RuntimeAssembly.Invoke(session, "TryBeginBattle");
                 RuntimeAssembly.SetField(stage, "MatchSession", session);
                 RuntimeAssembly.SetField(state, "Stage", stage);
+                RuntimeAssembly.SetField(state, "<MatchLevelId>k__BackingField", 1);
 
                 Type kindType = RuntimeAssembly.GetType("Assets.Scripts.Levels.PlayerCommandKind");
                 object moveKind = Enum.Parse(kindType, "Move");
@@ -1015,6 +1016,61 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains("TrySerializeAcknowledgement(", source);
             StringAssert.Contains("sourcePeerId == _session.AuthorityPeerId", source);
             StringAssert.Contains("AcknowledgeOutgoingPlayerCommands(playerId, sequence)", source);
+        }
+
+        [Test]
+        public void SpoofedPeerPlayerCommandIsRejectedBeforeQueueAdmission()
+        {
+            GameObject stageObject = new GameObject("Spoof Queue Stage");
+            GameObject stateObject = new GameObject("Spoof Queue State");
+            try
+            {
+                Component stage = stageObject.AddComponent(RuntimeAssembly.GetType("Stage"));
+                Component state = stateObject.AddComponent(RuntimeAssembly.GetType("Assets.Scripts.Levels.GameState"));
+                Type sessionType = RuntimeAssembly.GetType("Assets.Scripts.Levels.MatchSession");
+                Type commandType = RuntimeAssembly.GetType("Assets.Scripts.Levels.PlayerCommandEnvelope");
+                Type kindType = RuntimeAssembly.GetType("Assets.Scripts.Levels.PlayerCommandKind");
+                object session = Activator.CreateInstance(sessionType);
+
+                RuntimeAssembly.Invoke(session, "AddPlayer", 1, 1, true);
+                RuntimeAssembly.Invoke(session, "AddPeer", 10, false, "peer-a");
+                RuntimeAssembly.Invoke(session, "AddPeer", 11, false, "peer-b");
+                RuntimeAssembly.Invoke(session, "AddPlayerToPeer", 2, 1, 10);
+                RuntimeAssembly.Invoke(session, "AddPlayerToPeer", 3, 2, 11);
+                RuntimeAssembly.Invoke(session, "TryBeginBattle");
+                RuntimeAssembly.SetField(stage, "MatchSession", session);
+                RuntimeAssembly.SetField(state, "Stage", stage);
+
+                object command = Activator.CreateInstance(commandType);
+                RuntimeAssembly.SetField(command, "PlayerId", 3);
+                RuntimeAssembly.SetField(command, "Sequence", 1L);
+                RuntimeAssembly.SetField(command, "Kind", Enum.Parse(kindType, "Move"));
+                RuntimeAssembly.SetField(command, "SquadCommandId", 9L);
+
+                Assert.That(RuntimeAssembly.Invoke(
+                    state,
+                    "QueueReceivedPlayerCommand",
+                    10,
+                    command), Is.EqualTo(false));
+                Assert.That(RuntimeAssembly.GetCount(
+                    RuntimeAssembly.GetField(state, "_queuedPlayerCommands")), Is.Zero);
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(stateObject);
+                UnityEngine.Object.DestroyImmediate(stageObject);
+            }
+        }
+
+        [Test]
+        public void SteamResendBookkeepingPrunesCommandsRemovedByLifecycle()
+        {
+            string steamPath = Path.Combine(Application.dataPath, "Scripts", "Steamworks.NET", "SteamManager.cs");
+            string source = File.ReadAllText(steamPath);
+
+            StringAssert.Contains("PruneCommandSendTimes();", source);
+            StringAssert.Contains("_pendingCommandKeys", source);
+            StringAssert.Contains("if (!_pendingCommandKeys.Contains(sent.Key))", source);
         }
     }
 }
