@@ -226,6 +226,14 @@ def ingest_public_quarantine(
         staged_manifest = policy_root / "capture-manifest.json"
         shutil.copy2(quarantine["demo_path"], staged_demo)
         shutil.copy2(quarantine["manifest_path"], staged_manifest)
+        if sha256_file(staged_demo) != quarantine["demo_sha256"]:
+            raise ValidationError(
+                f"Staged public demonstration changed after quarantine validation for {quarantine['batch_id']}."
+            )
+        if sha256_file(staged_manifest) != quarantine["manifest_sha256"]:
+            raise ValidationError(
+                f"Staged public demonstration manifest changed after quarantine validation for {quarantine['batch_id']}."
+            )
 
         result = dict(ingest_native_demonstration(
             store,
