@@ -382,6 +382,40 @@ test('publishing a build copies and hashes a server-owned canonical artifact', (
     });
 });
 
+test('failed artifact catalog persistence removes the unreferenced canonical copy', () => {
+    withTempDir(root => {
+        const source = path.join(root, 'source.zip');
+        const bytes = Buffer.from('uncatalogued-canonical-build');
+        fs.writeFileSync(source, bytes);
+        const archiveSha = crypto.createHash('sha256').update(bytes).digest('hex');
+        const store = new TrainingControlStore({
+            statePath: path.join(root, 'state.json'),
+            artifactRoot: path.join(root, 'artifacts'),
+        });
+        store._persist = () => {
+            throw new Error('synthetic control-state write failure');
+        };
+
+        assert.throws(() => store.publishArtifact({
+            role: 'dedicated',
+            platform: 'LinuxPlayer',
+            buildId: 'uncommitted-release',
+            archivePath: source,
+            entrypoint: 'Bees.x86_64',
+        }), /synthetic control-state write failure/);
+
+        const canonicalCopy = path.join(
+            root,
+            'artifacts',
+            'dedicated',
+            'LinuxPlayer',
+            'uncommitted-release-' + archiveSha + '.zip',
+        );
+        assert.equal(fs.existsSync(canonicalCopy), false);
+        assert.equal(store.artifact('dedicated', 'LinuxPlayer', 'uncommitted-release'), null);
+    });
+});
+
 test('publishing an identical canonical build is idempotent', () => {
     withTempDir(root => {
         const source = path.join(root, 'source.zip');
@@ -485,6 +519,10 @@ test('a platform/build identity cannot be silently replaced with different bytes
             archivePath: second,
             entrypoint: 'Bees.exe',
         }), /immutable/);
+        const storedCopies = fs.readdirSync(path.join(root, 'artifacts', 'dedicated', 'WindowsPlayer'))
+            .filter(name => name.endsWith('.zip'));
+        assert.equal(storedCopies.length, 1,
+            'rejected immutable publication must not leave an unreferenced archive copy');
     });
 });
 
