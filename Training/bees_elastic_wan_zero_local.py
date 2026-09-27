@@ -168,6 +168,8 @@ class ZeroLocalElasticWanEnvManagerMixin(elastic.ElasticWanEnvManagerMixin):
         return len(step_infos)
 
     def _inject_batches(self, batches: List[Any] | tuple[Any, ...]) -> None:
+        from mlagents.trainers.behavior_id_utils import BehaviorIdentifiers
+
         for batch in batches:
             for trajectory in batch["trajectories"]:
                 manager = self.agent_managers.get(trajectory.behavior_id)
@@ -176,11 +178,13 @@ class ZeroLocalElasticWanEnvManagerMixin(elastic.ElasticWanEnvManagerMixin):
                         f"WAN actor uploaded trajectory for behavior {trajectory.behavior_id!r} "
                         "before trainer registration."
                     )
-                if len(trajectory.steps) > manager._max_trajectory_length:
+                identifiers = BehaviorIdentifiers.from_name_behavior_id(trajectory.behavior_id)
+                trainer_settings = self._bees_wan_broker.run_options.behaviors.get(identifiers.brain_name)
+                if trainer_settings is None:
                     raise RuntimeError(
-                        f"WAN actor trajectory length {len(trajectory.steps)} exceeds "
-                        f"time_horizon {manager._max_trajectory_length} for {trajectory.behavior_id}."
+                        f"WAN actor trajectory uses unconfigured behavior {trajectory.behavior_id!r}."
                     )
+                elastic.validate_trajectory_length(trajectory, trainer_settings, trajectory.behavior_id)
                 manager.trajectory_queue.put(trajectory)
 
     def _wait_for_current_remote_batch(self) -> Any:
