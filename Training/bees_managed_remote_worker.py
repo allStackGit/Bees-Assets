@@ -982,14 +982,14 @@ class RuntimeUpdater:
                 self.staged_root = None
                 self.staged_bridge = None
                 self.staged_python = None
-                self.staged_build_id = ""
-                self.verified_build_id = staged_build_id
-                self.last_error = ""
                 _atomic_bytes(
                     self.ready_build_path,
                     (staged_build_id + "\n").encode("ascii"),
                     0o600,
                 )
+                self.staged_build_id = ""
+                self.verified_build_id = staged_build_id
+                self.last_error = ""
                 return
             staged_bridge_matches = (
                 self.staged_bridge is None and not bridge_changed
@@ -1022,6 +1022,11 @@ class RuntimeUpdater:
             staged_bridge = bridge_path.with_name("bees-tailnet-bridge.next" + suffix)
             _atomic_bytes(staged_bridge, bridge_bytes, 0o700)
 
+        _atomic_bytes(
+            self.ready_build_path,
+            (staged_build_id + "\n").encode("ascii"),
+            0o600,
+        )
         with self._lock:
             self.staged_sha256 = runtime_sha
             self.staged_root = runtime_root
@@ -1030,11 +1035,6 @@ class RuntimeUpdater:
             self.staged_build_id = staged_build_id
             self.verified_build_id = staged_build_id
             self.last_error = ""
-        _atomic_bytes(
-            self.ready_build_path,
-            (staged_build_id + "\n").encode("ascii"),
-            0o600,
-        )
         _prune_version_directories(
             self.versions_root,
             preserve_paths=[Path(__file__).resolve().parent, runtime_root],
