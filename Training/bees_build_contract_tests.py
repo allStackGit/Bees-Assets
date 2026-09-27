@@ -6,6 +6,7 @@ import json
 import re
 import shutil
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -656,6 +657,52 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         self.assertIn("['python_executable', 'learner_python']", source)
         self.assertIn("keepNewest", source)
         self.assertIn("pruneLearnerPythonRuntimes([venvPython])", source)
+
+    def test_windows_npm_shim_is_executed_through_node_without_shell_reparse(self):
+        common_source = read_operator("common.js")
+        server_source = read_operator("server.js")
+        self.assertIn("function npmInvocationFromCommand", common_source)
+        self.assertIn("node_modules',\n        'npm',\n        'bin',\n        'npm-cli.js'", common_source)
+        self.assertIn("resolveNpmInvocation(node)", server_source)
+        self.assertIn("runSync(npm.executable, [...npm.args, 'ci']", server_source)
+        self.assertNotIn(
+            "resolveCommand(process.platform === 'win32' ? 'npm.cmd' : 'npm')",
+            server_source,
+        )
+
+        node = node_executable()
+        if not node:
+            self.skipTest("node is not available")
+        with tempfile.TemporaryDirectory() as temp_dir:
+            shim = Path(temp_dir) / "Program Files" / "nodejs" / "npm.cmd"
+            cli = shim.parent / "node_modules" / "npm" / "bin" / "npm-cli.js"
+            cli.parent.mkdir(parents=True)
+            shim.write_text("@echo off\r\n", encoding="utf-8")
+            cli.write_text("// fixture\n", encoding="utf-8")
+            common = OPERATOR_ROOT / "common.js"
+            script = (
+                "const c=require(process.argv[1]);"
+                "process.stdout.write(JSON.stringify("
+                "c.npmInvocationFromCommand(process.argv[2],process.argv[3])));"
+            )
+            completed = subprocess.run(
+                [node, "-e", script, str(common), str(shim), str(Path(node).resolve())],
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=False,
+            )
+            self.assertEqual(completed.returncode, 0, msg=completed.stderr)
+            invocation = json.loads(completed.stdout)
+            self.assertEqual(
+                Path(invocation["executable"]).resolve(),
+                Path(node).resolve(),
+            )
+            self.assertEqual(
+                [Path(value).resolve() for value in invocation["args"]],
+                [cli.resolve()],
+            )
 
     def test_server_runtime_retention_never_prunes_active_or_candidate_runtime(self):
         source = read_operator("server.js")
