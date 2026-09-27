@@ -1455,5 +1455,42 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains("\"Multiplayer\"", source);
             StringAssert.DoesNotContain("return _squadOwnerAssignments", source);
         }
+
+        [Test]
+        public void SteamLobbyTransportUsesDedicatedPreBattleChannelAndRepeatedSnapshots()
+        {
+            string steamPath = Path.Combine(Application.dataPath, "Scripts", "Steamworks.NET", "SteamManager.cs");
+            string source = File.ReadAllText(steamPath);
+
+            StringAssert.Contains("private const int LobbyChannel = 46;", source);
+            StringAssert.Contains("BroadcastIntervalSeconds = 0.5f", source);
+            StringAssert.Contains("TryCreateLobbySnapshot(out MatchLobbySnapshot snapshot)", source);
+            StringAssert.Contains("TrySerializeLobbySnapshot(snapshot", source);
+            StringAssert.Contains("TryDeserializeLobbySnapshot(", source);
+            StringAssert.Contains("TryCreateFromLobbySnapshot(", source);
+        }
+
+        [Test]
+        public void SteamLobbyClientAcceptsSnapshotsOnlyFromConfiguredAuthorityIdentity()
+        {
+            string steamPath = Path.Combine(Application.dataPath, "Scripts", "Steamworks.NET", "SteamManager.cs");
+            string source = File.ReadAllText(steamPath);
+
+            StringAssert.Contains("_authorityCanonicalIdentity", source);
+            StringAssert.Contains("return string.Equals(", source);
+            StringAssert.Contains("canonicalIdentity,", source);
+            StringAssert.Contains("_authorityCanonicalIdentity,", source);
+            StringAssert.Contains("StringComparison.Ordinal", source);
+        }
+
+        [Test]
+        public void LobbyAndBattleSteamChannelsRemainSeparate()
+        {
+            string steamPath = Path.Combine(Application.dataPath, "Scripts", "Steamworks.NET", "SteamManager.cs");
+            string source = File.ReadAllText(steamPath);
+
+            StringAssert.Contains("private const int LobbyChannel = 46;", source);
+            StringAssert.Contains("private const int CommandChannel = 47;", source);
+        }
     }
 }

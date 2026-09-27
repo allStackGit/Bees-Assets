@@ -1276,6 +1276,13 @@ namespace Assets.Scripts.Levels
     }
 
 
+    public interface IMultiplayerLobbyTransport : IDisposable
+    {
+        bool IsAvailable { get; }
+        void Update();
+        bool TryTakeReceivedSession(out MatchSession session);
+    }
+
     public interface IMultiplayerTransport : IDisposable
     {
         bool IsAvailable { get; }

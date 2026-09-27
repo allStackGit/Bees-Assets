@@ -203,6 +203,60 @@ public class SteamManager : MonoBehaviour {
 }
 
 
+public static class SteamMultiplayerLobbyTransportFactory
+{
+    public static IMultiplayerLobbyTransport CreateHost(MatchSession session)
+    {
+#if !DISABLESTEAMWORKS
+        if (session == null ||
+            !session.IsConfiguring ||
+            !session.IsLocalAuthority ||
+            !session.HasRemotePeer ||
+            !SteamManager.Initialized)
+        {
+            return null;
+        }
+
+        SteamMultiplayerLobbyTransport transport =
+            SteamMultiplayerLobbyTransport.CreateHost(session);
+        if (transport == null || !transport.IsAvailable)
+        {
+            transport?.Dispose();
+            return null;
+        }
+        return transport;
+#else
+        return null;
+#endif
+    }
+
+    public static IMultiplayerLobbyTransport CreateClient(string authorityTransportIdentity)
+    {
+#if !DISABLESTEAMWORKS
+        if (string.IsNullOrWhiteSpace(authorityTransportIdentity) ||
+            !SteamManager.Initialized ||
+            !SteamMultiplayerTransportFactory.TryGetLocalTransportIdentity(
+                out string localTransportIdentity))
+        {
+            return null;
+        }
+
+        SteamMultiplayerLobbyTransport transport =
+            SteamMultiplayerLobbyTransport.CreateClient(
+                authorityTransportIdentity,
+                localTransportIdentity);
+        if (transport == null || !transport.IsAvailable)
+        {
+            transport?.Dispose();
+            return null;
+        }
+        return transport;
+#else
+        return null;
+#endif
+    }
+}
+
 public static class SteamMultiplayerTransportFactory
 {
     public static IMultiplayerTransport Create(Stage stage, MatchSession session)
@@ -243,6 +297,410 @@ public static class SteamMultiplayerTransportFactory
 #endif
     }
 }
+
+#if !DISABLESTEAMWORKS
+public sealed class SteamMultiplayerLobbyTransport : IMultiplayerLobbyTransport
+{
+    private const int LobbyChannel = 46;
+    private const int ReceiveBatchSize = 4;
+    private const int MaxMessagesPerUpdate = 16;
+    private const float BroadcastIntervalSeconds = 0.5f;
+    private const int SendFlags =
+        Constants.k_nSteamNetworkingSend_ReliableNoNagle |
+        Constants.k_nSteamNetworkingSend_AutoRestartBrokenSession;
+
+    private readonly bool _isHost;
+    private readonly MatchSession _hostSession;
+    private readonly string _localTransportIdentity;
+    private readonly Dictionary<int, SteamNetworkingIdentity> _remoteIdentitiesByPeerId =
+        new Dictionary<int, SteamNetworkingIdentity>();
+    private readonly Dictionary<string, int> _allowedPeerIdsByTransportIdentity =
+        new Dictionary<string, int>(StringComparer.Ordinal);
+    private readonly IntPtr[] _receivePointers = new IntPtr[ReceiveBatchSize];
+    private SteamNetworkingIdentity _authorityIdentity;
+    private string _authorityCanonicalIdentity;
+    private Callback<SteamNetworkingMessagesSessionRequest_t> _sessionRequest;
+    private Callback<SteamNetworkingMessagesSessionFailed_t> _sessionFailed;
+    private MatchSession _receivedSession;
+    private float _nextBroadcastAt;
+    private float _nextFailureLogAt;
+    private bool _disposed;
+    private bool _isAvailable;
+
+    public bool IsAvailable => _isAvailable && !_disposed && SteamManager.Initialized;
+
+    private SteamMultiplayerLobbyTransport(
+        bool isHost,
+        MatchSession hostSession,
+        string localTransportIdentity)
+    {
+        _isHost = isHost;
+        _hostSession = hostSession;
+        _localTransportIdentity = localTransportIdentity ?? string.Empty;
+    }
+
+    public static SteamMultiplayerLobbyTransport CreateHost(MatchSession session)
+    {
+        if (!SteamMultiplayerTransportFactory.TryGetLocalTransportIdentity(
+                out string localIdentity))
+        {
+            return null;
+        }
+
+        SteamMultiplayerLobbyTransport transport =
+            new SteamMultiplayerLobbyTransport(true, session, localIdentity);
+        if (!transport.ConfigureHost())
+        {
+            transport.Dispose();
+            return null;
+        }
+        transport.RegisterCallbacks();
+        transport._isAvailable = true;
+        return transport;
+    }
+
+    public static SteamMultiplayerLobbyTransport CreateClient(
+        string authorityTransportIdentity,
+        string localTransportIdentity)
+    {
+        SteamMultiplayerLobbyTransport transport =
+            new SteamMultiplayerLobbyTransport(false, null, localTransportIdentity);
+        if (!transport.ConfigureClient(authorityTransportIdentity))
+        {
+            transport.Dispose();
+            return null;
+        }
+        transport.RegisterCallbacks();
+        transport._isAvailable = true;
+        return transport;
+    }
+
+    public void Update()
+    {
+        if (!IsAvailable)
+        {
+            return;
+        }
+
+        if (_isHost)
+        {
+            BroadcastLobbySnapshot();
+        }
+        else
+        {
+            ReceiveLobbySnapshots();
+        }
+    }
+
+    public bool TryTakeReceivedSession(out MatchSession session)
+    {
+        if (_isHost || _receivedSession == null)
+        {
+            session = null;
+            return false;
+        }
+
+        session = _receivedSession;
+        _receivedSession = null;
+        return true;
+    }
+
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+        _sessionRequest?.Dispose();
+        _sessionFailed?.Dispose();
+        _sessionRequest = null;
+        _sessionFailed = null;
+
+        if (SteamManager.Initialized)
+        {
+            foreach (SteamNetworkingIdentity remoteIdentity in _remoteIdentitiesByPeerId.Values)
+            {
+                SteamNetworkingIdentity identity = remoteIdentity;
+                TryCloseSession(ref identity);
+            }
+
+            if (!_isHost && !string.IsNullOrEmpty(_authorityCanonicalIdentity))
+            {
+                SteamNetworkingIdentity identity = _authorityIdentity;
+                TryCloseSession(ref identity);
+            }
+        }
+
+        _remoteIdentitiesByPeerId.Clear();
+        _allowedPeerIdsByTransportIdentity.Clear();
+        _receivedSession = null;
+        _isAvailable = false;
+    }
+
+    private bool ConfigureHost()
+    {
+        if (_hostSession == null ||
+            !_hostSession.IsConfiguring ||
+            !_hostSession.IsLocalAuthority ||
+            !_hostSession.HasRemotePeer)
+        {
+            return false;
+        }
+
+        IReadOnlyList<MatchPeer> peers = _hostSession.Peers;
+        for (int i = 0; i < peers.Count; i++)
+        {
+            MatchPeer peer = peers[i];
+            if (peer.IsLocal)
+            {
+                if (!string.Equals(
+                        peer.TransportIdentity,
+                        _localTransportIdentity,
+                        StringComparison.Ordinal))
+                {
+                    return false;
+                }
+                continue;
+            }
+
+            if (!TryParseIdentity(
+                    peer.TransportIdentity,
+                    out SteamNetworkingIdentity identity,
+                    out string canonicalIdentity) ||
+                _allowedPeerIdsByTransportIdentity.ContainsKey(canonicalIdentity))
+            {
+                return false;
+            }
+
+            _remoteIdentitiesByPeerId.Add(peer.Id, identity);
+            _allowedPeerIdsByTransportIdentity.Add(canonicalIdentity, peer.Id);
+        }
+
+        return _remoteIdentitiesByPeerId.Count > 0;
+    }
+
+    private bool ConfigureClient(string authorityTransportIdentity)
+    {
+        if (string.IsNullOrWhiteSpace(_localTransportIdentity) ||
+            string.Equals(
+                authorityTransportIdentity,
+                _localTransportIdentity,
+                StringComparison.Ordinal) ||
+            !TryParseIdentity(
+                authorityTransportIdentity,
+                out _authorityIdentity,
+                out _authorityCanonicalIdentity))
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    private void RegisterCallbacks()
+    {
+        _sessionRequest = Callback<SteamNetworkingMessagesSessionRequest_t>.Create(
+            OnSessionRequest);
+        _sessionFailed = Callback<SteamNetworkingMessagesSessionFailed_t>.Create(
+            OnSessionFailed);
+    }
+
+    private void OnSessionRequest(SteamNetworkingMessagesSessionRequest_t request)
+    {
+        if (!IsAllowedIdentity(request.m_identityRemote))
+        {
+            return;
+        }
+
+        SteamNetworkingIdentity identity = request.m_identityRemote;
+        SteamNetworkingMessages.AcceptSessionWithUser(ref identity);
+    }
+
+    private void OnSessionFailed(SteamNetworkingMessagesSessionFailed_t failure)
+    {
+        if (!IsAllowedIdentity(failure.m_info.m_identityRemote))
+        {
+            return;
+        }
+
+        if (Time.realtimeSinceStartup >= _nextFailureLogAt)
+        {
+            Debug.LogWarning(
+                $"Steam multiplayer lobby session failed: " +
+                $"{failure.m_info.m_eState} / {failure.m_info.m_eEndReason}.");
+            _nextFailureLogAt = Time.realtimeSinceStartup + 2f;
+        }
+    }
+
+    private bool IsAllowedIdentity(SteamNetworkingIdentity identity)
+    {
+        identity.ToString(out string canonicalIdentity);
+        if (_isHost)
+        {
+            return _allowedPeerIdsByTransportIdentity.ContainsKey(canonicalIdentity);
+        }
+
+        return string.Equals(
+            canonicalIdentity,
+            _authorityCanonicalIdentity,
+            StringComparison.Ordinal);
+    }
+
+    private void BroadcastLobbySnapshot()
+    {
+        float now = Time.realtimeSinceStartup;
+        if (now < _nextBroadcastAt)
+        {
+            return;
+        }
+        _nextBroadcastAt = now + BroadcastIntervalSeconds;
+
+        if (!_hostSession.TryCreateLobbySnapshot(out MatchLobbySnapshot snapshot) ||
+            !MultiplayerProtocol.TrySerializeLobbySnapshot(snapshot, out byte[] payload))
+        {
+            return;
+        }
+
+        foreach (KeyValuePair<int, SteamNetworkingIdentity> peer in _remoteIdentitiesByPeerId)
+        {
+            SteamNetworkingIdentity identity = peer.Value;
+            EResult result = Send(identity, payload);
+            if (result != EResult.k_EResultOK && now >= _nextFailureLogAt)
+            {
+                Debug.LogWarning(
+                    $"Could not send multiplayer lobby snapshot to peer {peer.Key}: {result}.");
+                _nextFailureLogAt = now + 2f;
+            }
+        }
+    }
+
+    private void ReceiveLobbySnapshots()
+    {
+        int maxBatches = MaxMessagesPerUpdate / ReceiveBatchSize;
+        for (int batch = 0; batch < maxBatches; batch++)
+        {
+            int received;
+            try
+            {
+                received = SteamNetworkingMessages.ReceiveMessagesOnChannel(
+                    LobbyChannel,
+                    _receivePointers,
+                    ReceiveBatchSize);
+            }
+            catch (Exception exception)
+            {
+                if (Time.realtimeSinceStartup >= _nextFailureLogAt)
+                {
+                    Debug.LogWarning(
+                        $"Steam multiplayer lobby receive failed: " +
+                        $"{exception.GetType().Name}: {exception.Message}");
+                    _nextFailureLogAt = Time.realtimeSinceStartup + 2f;
+                }
+                return;
+            }
+
+            if (received <= 0)
+            {
+                return;
+            }
+
+            for (int i = 0; i < received; i++)
+            {
+                IntPtr pointer = _receivePointers[i];
+                if (pointer == IntPtr.Zero)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    SteamNetworkingMessage_t message =
+                        SteamNetworkingMessage_t.FromIntPtr(pointer);
+                    if (message.m_cbSize <= 0 ||
+                        message.m_cbSize > MultiplayerProtocol.MaxLobbyPacketBytes ||
+                        !IsAllowedIdentity(message.m_identityPeer))
+                    {
+                        continue;
+                    }
+
+                    byte[] payload = new byte[message.m_cbSize];
+                    Marshal.Copy(message.m_pData, payload, 0, message.m_cbSize);
+                    if (MultiplayerProtocol.TryDeserializeLobbySnapshot(
+                            payload,
+                            out MatchLobbySnapshot snapshot) &&
+                        MatchSession.TryCreateFromLobbySnapshot(
+                            snapshot,
+                            _localTransportIdentity,
+                            out MatchSession session))
+                    {
+                        _receivedSession = session;
+                    }
+                }
+                finally
+                {
+                    SteamNetworkingMessage_t.Release(pointer);
+                    _receivePointers[i] = IntPtr.Zero;
+                }
+            }
+
+            if (received < ReceiveBatchSize)
+            {
+                return;
+            }
+        }
+    }
+
+    private static bool TryParseIdentity(
+        string transportIdentity,
+        out SteamNetworkingIdentity identity,
+        out string canonicalIdentity)
+    {
+        identity = new SteamNetworkingIdentity();
+        canonicalIdentity = string.Empty;
+        if (string.IsNullOrWhiteSpace(transportIdentity) ||
+            !identity.ParseString(transportIdentity))
+        {
+            return false;
+        }
+
+        identity.ToString(out canonicalIdentity);
+        return !string.IsNullOrWhiteSpace(canonicalIdentity);
+    }
+
+    private static EResult Send(SteamNetworkingIdentity identity, byte[] payload)
+    {
+        IntPtr data = Marshal.AllocHGlobal(payload.Length);
+        try
+        {
+            Marshal.Copy(payload, 0, data, payload.Length);
+            return SteamNetworkingMessages.SendMessageToUser(
+                ref identity,
+                data,
+                (uint)payload.Length,
+                SendFlags,
+                LobbyChannel);
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(data);
+        }
+    }
+
+    private static void TryCloseSession(ref SteamNetworkingIdentity identity)
+    {
+        try
+        {
+            SteamNetworkingMessages.CloseSessionWithUser(ref identity);
+        }
+        catch (Exception)
+        {
+            // Steam may already be shutting down.
+        }
+    }
+}
+#endif
 
 #if !DISABLESTEAMWORKS
 public sealed class SteamMultiplayerTransport : IMultiplayerTransport
