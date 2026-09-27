@@ -487,6 +487,8 @@ class ElasticWanBroker(base.WanActorBroker):
                 for actor_id, record in self._registrations.items()
             }
             self.diagnostics.topology_changed(len(snapshot), sum(snapshot.values()))
+            # Lease expiry changes the topology observed by long-polling actors.
+            self._condition.notify_all()
         return {
             int(actor_id): int(record["env_count"])
             for actor_id, record in self._registrations.items()
