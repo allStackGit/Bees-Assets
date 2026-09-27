@@ -35,6 +35,7 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 
+from bees_process_safety import atomic_write_text
 import bees_wan_actor_training as wan
 
 
@@ -148,9 +149,8 @@ class BrokerClient:
         if path is None:
             return
         try:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            temporary = path.with_name(path.name + f".tmp-{os.getpid()}")
-            temporary.write_text(
+            atomic_write_text(
+                path,
                 json.dumps(
                     {
                         "run_id": self._traffic_run_id,
@@ -162,7 +162,6 @@ class BrokerClient:
                 + "\n",
                 encoding="utf-8",
             )
-            os.replace(temporary, path)
         except OSError:
             return
 
@@ -582,13 +581,11 @@ class ActorSession:
                 payload.update(failure_snapshot())
             payload.update(self.client.traffic_snapshot())
             try:
-                path.parent.mkdir(parents=True, exist_ok=True)
-                temporary = path.with_name(path.name + f".tmp-{os.getpid()}")
-                temporary.write_text(
+                atomic_write_text(
+                    path,
                     json.dumps(payload, sort_keys=True) + "\n",
                     encoding="utf-8",
                 )
-                os.replace(temporary, path)
                 self._last_throughput_write = now
             except OSError:
                 # Metrics are advisory. Never stop training because status publication failed.

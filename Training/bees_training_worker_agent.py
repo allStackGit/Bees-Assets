@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Any, Callable, Mapping, Optional, Sequence
 
 from bees_process_safety import (
+    atomic_write_text,
     configure_child_health,
     popen_owned,
     read_managed_health,
@@ -1038,10 +1039,11 @@ def write_local_state(
         "last_error": last_error,
         "updated_unix_seconds": time.time(),
     }
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(path.suffix + ".tmp")
-    temporary.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    os.replace(temporary, path)
+    atomic_write_text(
+        path,
+        json.dumps(value, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -1209,13 +1211,11 @@ def _write_runtime_state(
         "updated_unix_seconds": time.time(),
     }
     path = Path(path_value).expanduser().resolve()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(path.suffix + ".tmp")
-    temporary.write_text(
+    atomic_write_text(
+        path,
         json.dumps(value, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
-    os.replace(temporary, path)
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:

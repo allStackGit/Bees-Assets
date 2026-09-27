@@ -68,11 +68,51 @@ function getEnvironmentArgs(config, options) {
     return Array.isArray(config.environmentArgs) ? config.environmentArgs.map(String) : [];
 }
 
+async function reconcilePersistedTrainingAfterServerStart(config, admin) {
+    const status = await getStatus(config, admin);
+    if (!status.desired || !status.desired.training_enabled) return;
+    if (!exists(paths.latestReleasePath)) {
+        throw new Error(
+            'Training control recovered with training enabled but no latest release metadata exists.'
+        );
+    }
+
+    removeUtf8BomIfPresent(paths.latestReleasePath);
+    const release = getLatestRelease();
+    const bootstrapPython = resolvePython(config);
+    if (!testPythonCode(
+        bootstrapPython,
+        'import sys; raise SystemExit(0 if sys.version_info[:2] == (3,10) else 1)'
+    )) {
+        throw new Error(
+            "Recovered training requires Python 3.10. Configured python resolved to '" +
+            bootstrapPython + "'."
+        );
+    }
+
+    ensureTokenFile(paths.wanTokenPath);
+    const unity = resolveUnityEditor(config);
+    const preparedRuntime = prepareCentralReleaseRuntime(
+        config,
+        bootstrapPython,
+        unity,
+        release,
+    );
+    await startCentralAgentIfNeeded(
+        config,
+        bootstrapPython,
+        unity,
+        release,
+        preparedRuntime,
+    );
+}
+
 async function invokeServer() {
     const config = loadConfig();
     const worker = ensureTokenFile(paths.workerTokenPath);
     const admin = ensureTokenFile(paths.adminTokenPath);
     await startBeesServerIfNeeded(config, worker, admin);
+    await reconcilePersistedTrainingAfterServerStart(config, admin);
     console.log(
         'BeesServer test mode is online on port ' + GAMEPLAY_SERVER_PORT +
         ' for Unity Editor/gameplay connections. No Unity build or Steam authentication is required.'

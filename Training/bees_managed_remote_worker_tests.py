@@ -11,6 +11,7 @@ from pathlib import Path
 from unittest import mock
 
 import bees_managed_remote_worker as managed
+import bees_process_safety as process_safety
 
 
 class ManagedRemoteWorkerTests(unittest.TestCase):
@@ -45,6 +46,58 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
             return_value=8 * gib,
         ):
             self.assertEqual(managed._memory_env_limit(), 14)
+
+    def test_transient_low_free_memory_does_not_permanently_reduce_auto_capacity(self):
+        gib = 1024 * 1024 * 1024
+        with (
+            mock.patch.object(
+                managed,
+                "_available_memory_bytes",
+                return_value=int(1.4 * gib),
+            ),
+            mock.patch.object(
+                managed,
+                "_total_memory_bytes",
+                return_value=16 * gib,
+            ),
+            mock.patch.object(managed, "_available_cpu_threads", return_value=8),
+        ):
+            self.assertEqual(managed._memory_env_limit(), 1)
+            self.assertEqual(managed._default_envs(), 1)
+            self.assertEqual(managed._memory_env_capacity_limit(), 30)
+
+        source = Path(managed.__file__).read_text(encoding="utf-8")
+        self.assertIn(
+            "args.max_envs = min(requested_max, memory_capacity_cap)",
+            source,
+        )
+
+    def test_atomic_text_publication_retries_transient_sharing_failure(self):
+        with tempfile.TemporaryDirectory() as temp:
+            target = Path(temp) / "state.json"
+            real_replace = process_safety.os.replace
+            attempts = []
+
+            def flaky_replace(source, destination):
+                attempts.append((source, destination))
+                if len(attempts) < 3:
+                    raise PermissionError("simulated sharing violation")
+                return real_replace(source, destination)
+
+            with (
+                mock.patch.object(
+                    process_safety.os,
+                    "replace",
+                    side_effect=flaky_replace,
+                ),
+                mock.patch.object(process_safety.time, "sleep") as sleep,
+            ):
+                process_safety.atomic_write_text(target, "{\"ok\": true}\n")
+
+            self.assertEqual(target.read_text(encoding="utf-8"), "{\"ok\": true}\n")
+            self.assertEqual(len(attempts), 3)
+            self.assertEqual(sleep.call_count, 2)
+            self.assertEqual(list(target.parent.glob("state.json.tmp-*")), [])
 
     def test_runtime_updater_retries_transient_connection_reset_without_publishing_error(self):
         with tempfile.TemporaryDirectory() as temp:

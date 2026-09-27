@@ -16,6 +16,7 @@ class ReleaseRuntimeTests(unittest.TestCase):
         training = root / "Assets" / "Training"
         training.mkdir(parents=True)
         for name in (
+            "bees_process_safety.py",
             "bees_training_worker_agent.py",
             "bees_continual_elastic_wan_service.py",
             "bees_managed_remote_worker.py",
@@ -28,6 +29,19 @@ class ReleaseRuntimeTests(unittest.TestCase):
         (training / "rl_1v1_config.yaml").write_text("behaviors: {}\n", encoding="utf-8")
         (training / "continual_learning_config.json").write_text("{}\n", encoding="utf-8")
         return training
+
+    def test_process_safety_module_is_required_by_release_runtime(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            training = self._training_root(root)
+            (training / "bees_process_safety.py").unlink()
+            with self.assertRaisesRegex(ValueError, "bees_process_safety.py"):
+                runtime.package_runtime(
+                    assets_root=root / "Assets",
+                    output=root / "runtime.zip",
+                    build_id="build-missing-safety",
+                    source_commit="missing",
+                )
 
     def test_package_verify_and_install_are_content_addressed(self):
         with tempfile.TemporaryDirectory() as temp_dir:
