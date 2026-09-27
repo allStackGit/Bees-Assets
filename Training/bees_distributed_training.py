@@ -30,7 +30,8 @@ from typing import Callable, List, Mapping, Optional, Sequence, Tuple
 EXPECTED_MLAGENTS_VERSION = "1.1.0"
 EXTERNAL_ENVS_FLAG = "--bees-external-envs"
 REMOTE_SPEC_FLAG = "--bees-remote-spec"
-REMOTE_SPEC_SCHEMA_VERSION = 1
+REMOTE_SPEC_SCHEMA_VERSION = 2
+TRAINING_BUILD_ID_ENV = "BEES_TRAINING_BUILD_ID"
 DEFAULT_NUM_ENVS = 1
 DEFAULT_BASE_PORT = 5005
 
@@ -217,15 +218,26 @@ def _canonical_json(value: Mapping[str, object]) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
 
 
+def required_training_build_id() -> str:
+    build_id = os.environ.get(TRAINING_BUILD_ID_ENV, "").strip()
+    if not build_id:
+        raise ValueError(
+            f"distributed training requires {TRAINING_BUILD_ID_ENV} to identify the Unity build"
+        )
+    return build_id
+
+
 def _remote_spec_identity(
     *,
     base_port: int,
     worker_ids: Sequence[int],
     run_id: Optional[str],
     unity_args: Sequence[str],
+    build_id: str,
 ) -> dict:
     return {
         "schema_version": REMOTE_SPEC_SCHEMA_VERSION,
+        "build_id": build_id,
         "base_port": int(base_port),
         "worker_ids": [int(value) for value in worker_ids],
         "run_id": run_id or "",
@@ -260,6 +272,7 @@ def write_remote_worker_spec(
         worker_ids=normalized_worker_ids,
         run_id=_string_trainer_arg(trainer_args, "--run-id"),
         unity_args=unity_environment_args(trainer_args),
+        build_id=required_training_build_id(),
     )
     identity_hash = hashlib.sha256(_canonical_json(identity).encode("utf-8")).hexdigest()
     body = {
@@ -303,6 +316,7 @@ def load_remote_worker_spec(path: str | os.PathLike[str]) -> Mapping[str, object
     worker_ids = value.get("worker_ids")
     unity_args = value.get("unity_args")
     run_id = value.get("run_id")
+    build_id = value.get("build_id")
     identity_sha256 = value.get("identity_sha256")
     if not isinstance(base_port, int) or isinstance(base_port, bool) or base_port <= 0:
         raise ValueError("remote worker spec base_port must be a positive integer")
@@ -318,6 +332,8 @@ def load_remote_worker_spec(path: str | os.PathLike[str]) -> Mapping[str, object
         raise ValueError("remote worker spec unity_args must be a string list")
     if not isinstance(run_id, str):
         raise ValueError("remote worker spec run_id must be a string")
+    if not isinstance(build_id, str) or not build_id.strip():
+        raise ValueError("remote worker spec build_id must be a non-empty string")
     if not isinstance(identity_sha256, str) or len(identity_sha256) != 64:
         raise ValueError("remote worker spec identity_sha256 must be a SHA-256 digest")
 
@@ -326,6 +342,7 @@ def load_remote_worker_spec(path: str | os.PathLike[str]) -> Mapping[str, object
         worker_ids=worker_ids,
         run_id=run_id,
         unity_args=unity_args,
+        build_id=build_id,
     )
     expected = hashlib.sha256(_canonical_json(identity).encode("utf-8")).hexdigest()
     if identity_sha256 != expected:
