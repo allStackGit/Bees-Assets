@@ -191,7 +191,7 @@ namespace Assets.Scripts.Levels
                     Ship activeShip = Ships[i];
                     if (activeShip != null && activeShip.PathfindingRequestId == RequestIds[i])
                     {
-                        InvalidatePathRequest(activeShip);
+                        activeShip.InvalidatePathfindingForObstacleChange();
                     }
                 }
             }
