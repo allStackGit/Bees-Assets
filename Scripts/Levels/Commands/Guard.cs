@@ -86,10 +86,10 @@ namespace Assets.Scripts.Levels.Commands
                     {
                         _timer_offsetFromSquad = new Vector2(GetSquad().GetWidth() + _timer_offset, GetSquad().GetHeight() + _timer_offset);
                     }
-                    catch (Exception e)
+                    catch
                     {
                         Debug.LogError($"Squad: {GetSquad()}, Command: {this}, Squad Ships: {Utilities.ListToString(GetSquad().GetShips())}");
-                        throw e;
+                        throw;
                     }
 
                     switch (GuardPosition)
