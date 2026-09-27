@@ -252,6 +252,7 @@ namespace Assets.Scripts.Entities.Ships
             LastKilled = 0;
             CannotChangeMovementOrders = false;
             IsRlPolicyControlled = false;
+            RlOneVsOneAgent.ClearCommunication(this);
             RlMovementDirection = 360;
             IsFollowingPath = false;
             InCombat = false;
