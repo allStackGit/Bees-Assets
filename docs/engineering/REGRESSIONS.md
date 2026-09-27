@@ -845,3 +845,13 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** `RlLiveTelemetryTests.TelemetryUploaderPreservesPendingFilesOnReadFailure` guards the retry path and keeps contract-invalid payload quarantine behavior. The test was added but not run, per the static-only audit scope.  
 **Verification:** statically traced pending-file enumeration, read failure handling, payload parsing, quarantine moves, and upload ordering. No tests, builds, Unity, simulations, or runtime checks were run.  
 **Invariant/knowledge:** a failed read is not evidence of corrupt content; preserve the source file and retry transient storage failures.
+
+
+### REG-097 — Learner startup failures could leak process-wide ML-Agents patches
+**Area:** `Training/bees_mlagents_learn.py`, learner setup and teardown  
+**Symptom:** optional batching, PPO compatibility, snapshot, signal, and stop-watcher patches were installed before the launcher's cleanup scope. If a later setup step failed, earlier global changes could remain active when the launcher was invoked again in the same Python process.  
+**Root cause:** the `try/finally` began only immediately before `learn.main()`, after several stateful setup operations.  
+**Fix:** moved all process-wide setup into the cleanup scope and initialized restoration handles before setup. PPO compatibility cleanup now runs only after its installer returns successfully; that installer already rolls back its own partial failures.  
+**Permanent protection:** no test was added or run, per the static-only audit scope. The structural invariant is that every successful process-wide patch installation is inside the same `try/finally` that restores it.  
+**Verification:** statically traced each launcher setup mutation and its corresponding restoration path, including failure during later initialization. No tests, builds, Unity, simulations, or runtime checks were run.  
+**Invariant/knowledge:** long-lived launcher processes must restore global vendor monkey patches even when initialization fails before training starts.
