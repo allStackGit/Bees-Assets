@@ -486,7 +486,7 @@ class RlTelemetryUploadManager {
             await fsp.writeFile(partialPath, Buffer.alloc(0), { flag: 'wx' });
         } catch (error) {
             try {
-                await safeUnlink(partialPath);
+                if (error?.code !== 'EEXIST') await safeUnlink(partialPath);
             } finally {
                 this._releaseQuota(userId, quotaReservation, totalBytes);
             }
