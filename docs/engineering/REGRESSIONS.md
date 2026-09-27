@@ -745,3 +745,13 @@ Manual-only protection is acceptable only when the record explains why determini
 **Fix:** `SetTriggers` now clears both trigger collections before configuring the current mission.  
 **Permanent protection:** `CampaignTriggerStructureTests.RebuildingCampaignTriggersDiscardsDeferredTriggersFromThePreviousLevel` guards both clears and their ordering. The regression test was not run, per the static-only audit scope.  
 **Invariant/knowledge:** rebuilding a mission trigger graph must discard both active and deferred triggers from the previous level.
+
+
+### REG-086 — elastic WAN option parsing consumed Unity arguments
+**Area:** `Training/bees_elastic_wan_training.py`, elastic WAN launcher argument boundary  
+**Symptom:** a Unity argument after `--env-args` that matched an elastic WAN option could be removed from the Unity argument list and applied as a trainer setting.  
+**Root cause:** `extract_elastic_wan_options` continued scanning the complete argument vector after the ML-Agents `--env-args` boundary.  
+**Fix:** the parser now preserves the marker and every following token for Unity. It rejects the unsupported `--env-args=` form, consistent with the distributed training parser's boundary contract.  
+**Permanent protection:** `ElasticWanUnityArgumentTests` checks that WAN-looking tokens after the marker stay in the Unity arguments and that the equals form is rejected. The regression tests were not run, per the static-only audit scope.  
+**Verification:** traced elastic WAN option extraction and compared its boundary handling with `Training/bees_distributed_training.py`; reread the updated parser and regression cases. No tests, builds, Unity, simulations, or runtime checks were run.  
+**Invariant/knowledge:** launcher-specific arguments must never consume tokens owned by Unity after `--env-args`.
