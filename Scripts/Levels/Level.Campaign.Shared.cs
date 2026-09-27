@@ -47,6 +47,10 @@ namespace Assets.Scripts.Levels
             {
                 Uranus1OnTheOffensiveWithAuthoredFog();
             }
+            else if (missionId == 10)
+            {
+                Uranus2OnTheDefensiveWithEndingContinuation();
+            }
             else
             {
                 CampaignMissionCatalog.Configure(this, missionId);
