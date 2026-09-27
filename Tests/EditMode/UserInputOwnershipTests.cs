@@ -270,5 +270,93 @@ namespace Bees.Tests.EditMode
             StringAssert.DoesNotContain("Level.State.GetPrimaryInputPlayerId()", selectorSource);
             StringAssert.Contains("Selector.Setup(PrimaryLevel, SelectionBox, primaryPlayerId)", stageSource);
         }
+
+        [Test]
+        public void PlayerCommandAuthorizationRejectsOtherAndUnknownPlayers()
+        {
+            GameObject stageObject = new GameObject("Command Authorization Stage");
+            GameObject levelObject = new GameObject("Command Authorization Level");
+            GameObject stateObject = new GameObject("Command Authorization State");
+            GameObject squadObject = new GameObject("Command Authorization Squad");
+            try
+            {
+                Component stage = stageObject.AddComponent(RuntimeAssembly.GetType("Stage"));
+                Component level = levelObject.AddComponent(RuntimeAssembly.GetType("Assets.Scripts.Levels.Level"));
+                Component state = stateObject.AddComponent(RuntimeAssembly.GetType("Assets.Scripts.Levels.GameState"));
+                Component squad = squadObject.AddComponent(RuntimeAssembly.GetType("Assets.Scripts.Levels.Squad"));
+                Type sessionType = RuntimeAssembly.GetType("Assets.Scripts.Levels.MatchSession");
+                object session = Activator.CreateInstance(sessionType);
+
+                RuntimeAssembly.Invoke(session, "AddPlayer", 1, 1, true);
+                RuntimeAssembly.Invoke(session, "AddPlayer", 2, 1, false);
+                RuntimeAssembly.SetField(stage, "MatchSession", session);
+                RuntimeAssembly.SetField(level, "Stage", stage);
+                RuntimeAssembly.SetField(level, "State", state);
+                RuntimeAssembly.SetField(level, "HasPlayer", true);
+                RuntimeAssembly.SetField(state, "Level", level);
+                RuntimeAssembly.SetField(state, "Stage", stage);
+                RuntimeAssembly.SetField(squad, "Level", level);
+                RuntimeAssembly.SetField(squad, "Stage", stage);
+                RuntimeAssembly.SetField(squad, "Side", 1);
+                RuntimeAssembly.SetField(squad, "IsDead", false);
+                RuntimeAssembly.Invoke(squad, "SetOwnerPlayerId", 1);
+                RuntimeAssembly.AddToCollection(RuntimeAssembly.GetField(state, "Squads"), squad);
+
+                Assert.That(RuntimeAssembly.Invoke(state, "CanPlayerCommandSquad", 1, squad), Is.EqualTo(true));
+                Assert.That(RuntimeAssembly.Invoke(state, "CanPlayerCommandSquad", 2, squad), Is.EqualTo(false));
+                Assert.That(RuntimeAssembly.Invoke(state, "CanPlayerCommandSquad", 999, squad), Is.EqualTo(false));
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(squadObject);
+                UnityEngine.Object.DestroyImmediate(stateObject);
+                UnityEngine.Object.DestroyImmediate(levelObject);
+                UnityEngine.Object.DestroyImmediate(stageObject);
+            }
+        }
+
+        [Test]
+        public void UnknownPlayerSelectionDoesNotCreateSelectionRegistry()
+        {
+            GameObject stageObject = new GameObject("Unknown Selection Stage");
+            GameObject levelObject = new GameObject("Unknown Selection Level");
+            GameObject stateObject = new GameObject("Unknown Selection State");
+            try
+            {
+                Component stage = stageObject.AddComponent(RuntimeAssembly.GetType("Stage"));
+                Component level = levelObject.AddComponent(RuntimeAssembly.GetType("Assets.Scripts.Levels.Level"));
+                Component state = stateObject.AddComponent(RuntimeAssembly.GetType("Assets.Scripts.Levels.GameState"));
+                Type sessionType = RuntimeAssembly.GetType("Assets.Scripts.Levels.MatchSession");
+                object session = Activator.CreateInstance(sessionType);
+
+                RuntimeAssembly.Invoke(session, "AddPlayer", 1, 1, true);
+                RuntimeAssembly.SetField(stage, "MatchSession", session);
+                RuntimeAssembly.SetField(level, "Stage", stage);
+                RuntimeAssembly.SetField(state, "Level", level);
+                RuntimeAssembly.SetField(state, "Stage", stage);
+
+                object result = RuntimeAssembly.Invoke(state, "GetSelectedSquadsForPlayer", 999);
+
+                Assert.That(RuntimeAssembly.GetCount(result), Is.Zero);
+                Assert.That(RuntimeAssembly.GetCount(
+                    RuntimeAssembly.GetField(state, "_selectedSquadsByNonPrimaryPlayer")), Is.Zero);
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(stateObject);
+                UnityEngine.Object.DestroyImmediate(levelObject);
+                UnityEngine.Object.DestroyImmediate(stageObject);
+            }
+        }
+
+        [Test]
+        public void LocalMovementUsesSameAuthorizationGatewayAsRemoteCommands()
+        {
+            string inputPath = Path.Combine(Application.dataPath, "Scripts", "Levels", "LevelInputManager.cs");
+            string source = File.ReadAllText(inputPath);
+
+            StringAssert.Contains("Level.State.TryPlayerMoveSquad(", source);
+            StringAssert.DoesNotContain("_moveSquads_selectedSquads[_moveSquads_i].Move(", source);
+        }
     }
 }

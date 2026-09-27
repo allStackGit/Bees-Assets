@@ -12,6 +12,7 @@ These are cross-cutting rules future changes must preserve. Keep this file conci
 - `Squad.OwnerPlayerId` is match-local transient ownership, not persistent fleet identity or a network entity id, and must reset on every pooled squad lifetime.
 - Hive Mind command scheduling must exclude every `Squad.IsPlayerControlled` squad, including remote or same-side co-op ownership; it must not infer human ownership only from `Configuration.UserSide`.
 - Squad selection and command dispatch are scoped by match player id. A non-primary player's selection must not enter the primary-local `SelectedSquads`/`IsSelected` UI state, and all player-scoped selections must be forgotten before pooled squad reuse.
+- External/session-scoped player commands must fail closed for unknown players, dead/foreign squads, or squads owned by another player, and must enter gameplay through the ownership-validating `GameState.TryPlayer*` command gateway rather than directly invoking trusted `Squad.User*` methods.
 
 ## Async and ordering
 
