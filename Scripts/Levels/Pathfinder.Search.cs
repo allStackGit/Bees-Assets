@@ -611,15 +611,7 @@ namespace Assets.Scripts.Levels
                     CheckNearestWalkableIndex(ToIndex(minX, y), endIndex, minimumClearance, clearanceMap, ref bestIndex, ref bestCost);
                     CheckNearestWalkableIndex(ToIndex(maxX, y), endIndex, minimumClearance, clearanceMap, ref bestIndex, ref bestCost);
                 }
-                // Every cell outside this square is at least radius + 1
-                // cardinal steps away. Continue past the first occupied ring when its
-                // best candidate could still be farther than a cell on a later ring.
-                if (bestIndex >= 0 &&
-                    (radius == maxRadius ||
-                     bestCost <= (radius + 1) * HORIZONTAL_COST))
-                {
-                    return bestIndex;
-                }
+                if (bestIndex >= 0) return bestIndex;
             }
             return -1;
         }
