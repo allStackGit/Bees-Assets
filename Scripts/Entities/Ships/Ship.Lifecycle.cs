@@ -195,6 +195,9 @@ namespace Assets.Scripts.Entities.Ships
                 gameObject.name = Name;
             }
             ClearData();
+            IsPlayerControlled = squad.IsPlayerControlled;
+            IsUserControlled = squad.IsUserControlled;
+            IsHiveMindControlled = Stage.IsTrainingNueralNetwork || !IsPlayerControlled;
             IsSpawnedShip = FleetShip.Id < 0;
 
             if (!Level.Stage.IsTraining)
@@ -251,6 +254,9 @@ namespace Assets.Scripts.Entities.Ships
             FinalDestination = Vector2.zero;
             LastKilled = 0;
             CannotChangeMovementOrders = false;
+            IsPlayerControlled = false;
+            IsUserControlled = false;
+            IsHiveMindControlled = false;
             IsRlPolicyControlled = false;
             RlMovementDirection = 360;
             IsFollowingPath = false;

@@ -28,6 +28,7 @@ namespace Assets.Scripts.Entities.Ships
         public SortingGroup SortingGroup;
 
         public bool IsDead;
+        public bool IsPlayerControlled;
         public bool IsUserControlled;
         public bool IsMobile;
         public bool IsRlPolicyControlled;

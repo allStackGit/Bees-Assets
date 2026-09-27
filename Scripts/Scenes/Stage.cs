@@ -408,6 +408,15 @@ public class Stage : Scene
         {
             MatchSession = Assets.Scripts.Levels.MatchSession.CreateSolo(ConfigData.Configuration.UserSide);
         }
+
+        int primaryLocalSide = MatchSession.GetPlayerSide(MatchSession.PrimaryLocalPlayerId);
+        if ((primaryLocalSide == ConfigData.Configuration.BeeSide ||
+             primaryLocalSide == ConfigData.Configuration.HumanSide) &&
+            primaryLocalSide != ConfigData.Configuration.UserSide)
+        {
+            ConfigData.SwapSides();
+        }
+
         if (!MatchSession.TryBeginBattle())
         {
             Debug.LogError("Could not start configured Free Play match session. Falling back to solo ownership.");
@@ -425,14 +434,6 @@ public class Stage : Scene
 
         UIAudioController.Instance.PauseMusic();
 
-        if (IsMainScene && LevelCount > 0)
-        {
-            Prefabs.LoadConversions();
-            Pool.Setup(this);
-            SpawnLevels();
-        }
-
-
         if (DoesUserHaveController)
         {
             if ((OverrideUserSide == 1 || OverrideUserSide == 2) && OverrideUserSide != ConfigData.Configuration.UserSide)
@@ -441,7 +442,17 @@ public class Stage : Scene
             }
         }
 
+        // Resolve Free Play player/session ownership before pools create side-sensitive ship UI
+        // and vision helpers. This is required when a configured multiplayer lobby makes the
+        // primary local player the opposite side from the prior global UserSide.
         SetupMatchSession();
+
+        if (IsMainScene && LevelCount > 0)
+        {
+            Prefabs.LoadConversions();
+            Pool.Setup(this);
+            SpawnLevels();
+        }
 
         if (IsTrainingHiveMind || IsTrainingNueralNetwork)
         {
