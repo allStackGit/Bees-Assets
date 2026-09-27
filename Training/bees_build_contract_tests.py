@@ -402,6 +402,21 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         self.assertLess(spawn, active)
         self.assertIn("argv_transport: 'node-spawn-array-v1'", block)
 
+    def test_transient_control_unavailability_does_not_poison_worker_instability_heartbeat(self):
+        source = (ROOT / "Training" / "bees_training_worker_agent.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn(
+            "transient_control_error = isinstance(exc, ControlUnavailable) and not offline",
+            source,
+        )
+        self.assertIn("if not transient_control_error:", source)
+        self.assertIn("last_error = error_text", source)
+        self.assertIn(
+            "transient control transport interruption within the active lease",
+            source,
+        )
+
     def test_episode_status_sidecar_records_every_episode_with_bounded_storage(self):
         source = (ROOT / "Scripts" / "Scenes" / "RlOneVsOneEpisodeCoordinator.cs").read_text(
             encoding="utf-8"
