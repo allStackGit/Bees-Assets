@@ -5,6 +5,7 @@ Static-only repository audit on `rl/initial-design-work`. This ledger is the cur
 ## Active validated defects
 
 - **BUG-009 — Resolved as REG-115.** The direct distributed session spec now hashes the canonical `BEES_TRAINING_BUILD_ID`; central and remote launchers require it, and remote workers reject any differing ID before launching Unity. The setup guide now documents the requirement. Static source review only; no tests or runtime checks were run.
+- **BUG-010 — Resolved as REG-116.** The continual-learning service previously fingerprinted only the Unity executable when deciding whether a saved optimizer lineage matched its training environment. It now hashes every file in the executable's build directory, including Unity data and sidecar runtime files, so a changed build cannot silently resume under the old service contract. Static source review only; no tests or runtime checks were run.
 
 - **BUG-002 — Resolved as REG-113.** An authoritative exact-version miss now returns terminal client status 404; `ServerSettings.WaitForResponse` records the failure and removes the standing request instead of retrying forever. Verified by static trace across the server response and both Unity client paths; no tests or runtime checks were run.
 - **BUG-003 — Resolved as REG-114.** The public in-range target query no longer mutates the internal cached strategy-order list. Static source trace confirmed Pluto II polls the public query while weapon targeting caches the same previous list by reference; no tests or runtime checks were run.
