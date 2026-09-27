@@ -1,5 +1,6 @@
 import hashlib
 import json
+import os
 import struct
 import sys
 import tempfile
@@ -18,6 +19,7 @@ from bees_continual_evaluate import (
     MatchSummary,
     OnnxPolicy,
     _evaluation_environment_args,
+    _managed_stop_requested,
     _merge_env_args,
     behavior_team_id,
     build_allow_action_mask,
@@ -28,6 +30,20 @@ from bees_continual_evaluate import (
     parse_episode_message,
     summarize_results,
 )
+
+
+class ManagedStopTests(unittest.TestCase):
+    def test_managed_stop_request_tracks_inherited_stop_file(self):
+        with tempfile.TemporaryDirectory() as temp:
+            stop_file = Path(temp) / "stop.request"
+            with patch.dict(
+                os.environ,
+                {"BEES_TRAINING_STOP_FILE": str(stop_file)},
+                clear=False,
+            ):
+                self.assertFalse(_managed_stop_requested())
+                stop_file.write_text("stop\\n", encoding="ascii")
+                self.assertTrue(_managed_stop_requested())
 
 
 class BufferMessage:
