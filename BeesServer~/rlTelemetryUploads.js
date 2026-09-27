@@ -506,6 +506,7 @@ class RlTelemetryUploadManager {
             modelSha256,
             deploymentId,
             partialPath,
+            quotaReservation,
             nextOffset: 0,
             updatedAt: now,
             inFlight: 0,
@@ -649,6 +650,12 @@ class RlTelemetryUploadManager {
         await Promise.all(expired.map(async session => {
             this.sessions.delete(session.uploadId);
             if (this.logicalUploads.get(session.logicalKey) === session.uploadId) this.logicalUploads.delete(session.logicalKey);
+            const unreceivedBytes = Math.max(0, session.totalBytes - session.nextOffset);
+            this._releaseQuota(
+                session.userId,
+                session.quotaReservation,
+                unreceivedBytes,
+            );
             await safeUnlink(session.partialPath);
         }));
         return expired.length;
