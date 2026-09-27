@@ -4,13 +4,9 @@ Static-only repository audit on `rl/initial-design-work`. This ledger is the cur
 
 ## Active validated defects
 
-### BUG-002 — Expired telemetry quota records accumulate indefinitely
-**Location:** `BeesServer~/rlTelemetryUploads.js`, `RlTelemetryUploadManager.userQuotas` and `cleanupExpired()`  
-**Description:** Each user's first upload in a rate window creates a `userQuotas` entry. Entries are replaced when that same user uploads again, but no code removes entries for users who never return, so long-running servers retain every historical uploader identity indefinitely.
-
 ## Audit status
 
 - Complete clean finding passes since the latest production changes: **0 / 2**.
-- Current focus: broad post-fix passes across continual-learning orchestration, RL action/movement and telemetry behavior, campaign dialogue/presentation, combat targeting, and remaining gameplay, persistence, networking, and UI subsystems. REG-047 through REG-057 are fixed. Focused regression tests for REG-047 through REG-052 and REG-055 through REG-057 were added but not run; REG-053 and REG-054 correct exception-stack diagnostics and are documented in the regression log.
+- Current focus: broad post-fix passes across continual-learning orchestration, RL action/movement and telemetry behavior, campaign dialogue/presentation, combat targeting, and remaining gameplay, persistence, networking, and UI subsystems. REG-047 through REG-058 are fixed. Focused regression tests for REG-047 through REG-052 and REG-055 through REG-058 were added but not run; REG-053 and REG-054 correct exception-stack diagnostics and are documented in the regression log.
 - Test fixtures requiring explicit process identities were updated; an orderly-close lifecycle regression case was added.
 - No tests, builds, Unity, simulations, or other runtime validation were run, per the static-only audit scope.
