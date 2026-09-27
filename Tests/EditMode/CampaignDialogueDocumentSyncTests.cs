@@ -35,6 +35,16 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void TitaniaFailureDialogueOverrideIsIdempotentAcrossSections()
+        {
+            string source = Read("Scripts", "CampaignDialogueOverrides.cs");
+
+            StringAssert.Contains("string text = \"Affirmative. Good luck, commander.\";", source);
+            StringAssert.Contains("Set(lines, 10, \"Alejandra\", text);", source);
+            StringAssert.DoesNotContain("lines[10].Text +=", source);
+        }
+
+        [Test]
         public void AmiUranusDialogueDependsOnPersistedBeenocularsOutcome()
         {
             string dialogue = Read("Scripts", "CampaignDialogueOverrides.cs");
