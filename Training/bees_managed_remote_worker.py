@@ -1051,7 +1051,7 @@ class RuntimeUpdater:
         while not self._stop.is_set():
             try:
                 self._stage_once()
-            except (OSError, ValueError, RuntimeError, urllib.error.URLError, zipfile.BadZipFile) as exc:
+            except (OSError, ValueError, RuntimeError, KeyError, urllib.error.URLError, zipfile.BadZipFile) as exc:
                 with self._lock:
                     self.last_error = f"{type(exc).__name__}: {exc}"
             self._refresh.wait(self.args.runtime_poll_seconds)
