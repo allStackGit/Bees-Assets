@@ -66,6 +66,25 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void UranusCarrierTutorialGateUsesTheConfiguredUserFleet()
+        {
+            string uranus1 = Read("Level.Campaign.Uranus1.cs");
+            int start = uranus1.IndexOf("public void SelectedCarrierTrigger()");
+            int end = uranus1.IndexOf("private void FinishCarrierIntroduction", start);
+            Assert.That(start, Is.GreaterThanOrEqualTo(0));
+            Assert.That(end, Is.GreaterThan(start));
+            string method = uranus1.Substring(start, end - start);
+
+            StringAssert.Contains(
+                "State.GetUserShipTypes().Contains(ConfigData.ShipTypes.Carrier)",
+                method);
+            StringAssert.Contains(
+                "State.GetSquadsBySide(ConfigData.Configuration.UserSide)",
+                method);
+            StringAssert.DoesNotContain("State.GetHumanShipTypes()", method);
+        }
+
+        [Test]
         public void Uranus3HiveMindStartupDoesNotRequireCarrierTutorial()
         {
             string uranus3 = Read("Level.Campaign.Uranus3.cs");
