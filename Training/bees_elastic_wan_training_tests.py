@@ -210,7 +210,8 @@ class ElasticBrokerTests(unittest.TestCase):
                 {
                     **broker.release_identity,
                     "actor_id": actor_id,
-                    "env_count": 8,
+                    "actor_instance_id": f"manual-process-actor_id",
+                "env_count": 8,
                     "control_epoch": 1,
                     "behavior_specs": specs,
                 }
@@ -255,7 +256,8 @@ class ElasticBrokerTests(unittest.TestCase):
                 {
                     **broker.release_identity,
                     "actor_id": actor_id,
-                    "env_count": 8,
+                    "actor_instance_id": f"manual-process-actor_id",
+                "env_count": 8,
                     "control_epoch": 1,
                     "behavior_specs": specs,
                 }
@@ -316,6 +318,44 @@ class ElasticBrokerTests(unittest.TestCase):
         self.assertEqual(after["consumed_steps_by_actor"]["0"], 37)
         self.assertEqual(after["trajectory_queue_depth"], 0)
 
+    def test_orderly_release_frees_slot_and_fences_old_process(self):
+        broker, specs = self._broker()
+        old_owner = {
+            **broker.release_identity,
+            "actor_key": "machine-orderly",
+            "actor_instance_id": "process-old",
+            "env_count": 8,
+        }
+        actor_id = broker.claim_actor(old_owner)
+        broker.register_actor(
+            {
+                **old_owner,
+                "actor_id": actor_id,
+                "control_epoch": broker.control_epoch,
+                "behavior_specs": specs,
+            }
+        )
+
+        broker.release_actor({**old_owner, "actor_id": actor_id})
+
+        self.assertEqual(broker.active_actor_snapshot(), {})
+        self.assertNotIn("machine-orderly", broker._claims)
+        new_owner = {**old_owner, "actor_instance_id": "process-new"}
+        self.assertEqual(broker.claim_actor(new_owner), actor_id)
+        broker.register_actor(
+            {
+                **new_owner,
+                "actor_id": actor_id,
+                "control_epoch": broker.control_epoch,
+                "behavior_specs": specs,
+            }
+        )
+
+        with self.assertRaisesRegex(ValueError, "another remote process"):
+            broker.release_actor({**old_owner, "actor_id": actor_id})
+        self.assertEqual(broker.active_actor_snapshot(), {actor_id: 8})
+
+
     def test_claim_accepts_compatible_actor_from_a_different_build(self):
         broker, _specs = self._broker()
         payload = {
@@ -343,6 +383,7 @@ class ElasticBrokerTests(unittest.TestCase):
         payload = {
             **broker.release_identity,
             "actor_id": 0,
+            "actor_instance_id": "manual-process-0",
             "env_count": 8,
             "control_epoch": 1,
             "batch_id": "lookup-straddled-reset",
@@ -416,6 +457,7 @@ class ElasticBrokerTests(unittest.TestCase):
             {
                 **broker.release_identity,
                 "actor_id": actor_id,
+                "actor_instance_id": f"manual-process-actor_id",
                 "actor_key": "machine-a",
                 "actor_instance_id": "process-a",
                 "env_count": 8,
@@ -465,7 +507,8 @@ class ElasticBrokerTests(unittest.TestCase):
                 {
                     **broker.release_identity,
                     "actor_id": actor_id,
-                    "actor_key": "machine-b",
+                    "actor_instance_id": f"manual-process-actor_id",
+                "actor_key": "machine-b",
                     "actor_instance_id": "process-b",
                     "env_count": 8,
                     "control_epoch": 1,
@@ -488,6 +531,7 @@ class ElasticBrokerTests(unittest.TestCase):
             {
                 **broker.release_identity,
                 "actor_id": actor_id,
+                "actor_instance_id": f"manual-process-actor_id",
                 "actor_key": "machine-a",
                 "actor_instance_id": "old-process",
                 "env_count": 8,
@@ -532,6 +576,7 @@ class ElasticBrokerTests(unittest.TestCase):
             {
                 **broker.release_identity,
                 "actor_id": actor_id,
+                "actor_instance_id": f"manual-process-actor_id",
                 "actor_key": "machine-a",
                 "actor_instance_id": "new-process",
                 "env_count": 8,
