@@ -282,6 +282,8 @@ class CapacityDiagnostics:
             return None
         first_time, first_step = self._trainer_samples[0]
         last_time, last_step = self._trainer_samples[-1]
+        if current - last_time > TRAINING_RATE_WINDOW_SECONDS:
+            return None
         elapsed = last_time - first_time
         if elapsed <= 1.0 or last_step < first_step:
             return None
