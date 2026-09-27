@@ -37,6 +37,15 @@ function getLocalLearnerStats(runId = '') {
     const operatorLogRoot = path.join(paths.logsRoot, 'Training');
     files.push(...listLogFiles(operatorLogRoot, false));
 
+    if (runId) {
+        const managedLearnerLogRoot = path.join(
+            paths.centralAgentInstallRoot,
+            'logs',
+            runId,
+        );
+        files.push(...listLogFiles(managedLearnerLogRoot, false));
+    }
+
     let trainerResultsRoot = path.join(paths.trainingRoot, 'trainer-results');
     if (runId) trainerResultsRoot = path.join(trainerResultsRoot, runId);
     files.push(...listLogFiles(trainerResultsRoot, true));
