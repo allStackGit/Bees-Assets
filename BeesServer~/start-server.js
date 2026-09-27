@@ -223,16 +223,14 @@ function runSupervisor(options, runtime = {}) {
         });
         launched.once('exit', (code, signal) => {
             if (child === launched) child = null;
-            if (stopping) return;
-            if (!launchFailed) {
-                console.error(
-                    '[Bees server supervisor] server exited unexpectedly ' +
-                    'pid=' + (launched && launched.pid ? launched.pid : 'unknown') +
-                    ' code=' + (code ?? 'none') +
-                    ' signal=' + (signal || 'none') + '; restarting'
-                );
-            }
-            scheduleRestart(launchFailed ? 'failed launch exit' : 'unexpected exit');
+            if (stopping || launchFailed) return;
+            console.error(
+                '[Bees server supervisor] server exited unexpectedly ' +
+                'pid=' + (launched && launched.pid ? launched.pid : 'unknown') +
+                ' code=' + (code ?? 'none') +
+                ' signal=' + (signal || 'none') + '; restarting'
+            );
+            scheduleRestart('unexpected exit');
         });
     };
 
