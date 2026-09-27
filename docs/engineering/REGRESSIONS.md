@@ -865,3 +865,13 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** no test was added or run, per the static-only audit scope. The structural invariant is that failed thread startup closes the bound socket, and post-start logging cannot invalidate a healthy broker.  
 **Verification:** statically traced loopback server construction, thread startup, server state assignment, close behavior, and the post-start log call. No tests, builds, Unity, simulations, or runtime checks were run.  
 **Invariant/knowledge:** any resource acquired before a later startup step succeeds must be released on failure, and optional logging must not strand a live service in a failed constructor.
+
+
+### REG-099 — Remote supervisor startup failures could leave stale ownership state
+**Area:** `Training/bees_managed_remote_worker.py`, managed supervisor initialization  
+**Symptom:** after publishing its PID and redirecting output, the supervisor constructed the runtime updater, started the shutdown watcher, and installed signal handlers before entering its cleanup scope. An initialization failure could leave a stale PID file or redirected process streams. Separately, a thread-start failure marked the updater started before its thread actually existed, so cleanup could fail while joining it. File-removal errors could also abort the remaining cleanup.  
+**Root cause:** startup state was mutated before the outer `try/finally`; updater start state represented intent rather than successful thread creation; cleanup assumed stop-file removal could only fail because the file was absent.  
+**Fix:** moved updater, watcher, and signal setup into the outer cleanup scope; restore only signal handlers that were installed; join only a live watcher; mark the updater started only after its thread starts; and make cleanup file removal best-effort so stream and signal restoration continue.  
+**Permanent protection:** no test was added or run, per the static-only audit scope. The source invariant is that every post-PID startup operation is covered by the supervisor finalizer and updater start state reflects a successfully started thread.  
+**Verification:** statically traced PID creation, tee installation, updater construction/start/stop, watcher lifecycle, signal registration/restoration, and stop/PID file cleanup. No tests, builds, Unity, simulations, or runtime checks were run.  
+**Invariant/knowledge:** a supervisor must clean up its published identity and process-global state when any later initialization step fails; thread lifecycle flags must describe completed OS thread creation.
