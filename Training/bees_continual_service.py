@@ -453,6 +453,9 @@ def _run_managed_subprocess(command: Sequence[str], options: ServiceOptions) -> 
         kwargs["start_new_session"] = True
 
     process = popen_owned(list(command), **kwargs)
+    # The managed parent treats this child as healthy only after it publishes ready.
+    # Publish readiness once the service has successfully launched an owned phase process.
+    write_managed_health("ready", details={"component": "continual-service"})
     stop_requested = False
     while process.poll() is None:
         if _managed_stop_requested() and not stop_requested:
