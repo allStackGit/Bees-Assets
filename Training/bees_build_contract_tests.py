@@ -1456,6 +1456,33 @@ server.listen(0,'127.0.0.1',async()=>{
         self.assertIn("'recover-active'", recovery)
         self.assertIn("'--expected-compatibility-key'", recovery)
 
+    def test_build_supersedes_only_exact_unhealthy_compatible_pending_release(self):
+        build = read_operator("build.js")
+        reconcile = build[
+            build.index("async function reconcileLatestReleaseBeforeBuild"):
+            build.index("async function invokeBuild")
+        ]
+        self.assertIn("!Boolean(pending.incompatible)", reconcile)
+        self.assertIn("!Boolean(release.incompatible)", reconcile)
+        self.assertIn("centralError", reconcile)
+        self.assertIn("centralState !== 'running'", reconcile)
+        self.assertIn(
+            "return { supersedeCompatibleBuildId: releaseBuild }",
+            reconcile,
+        )
+
+        invoke = build[build.index("async function invokeBuild"):]
+        self.assertIn("let supersedeCompatibleBuildId = ''", invoke)
+        self.assertIn("{ supersedeCompatibleBuildId }", invoke)
+
+        control = read_operator("control.js")
+        stage = control[
+            control.index("async function stageRelease"):
+            control.index("function rolloutTrainerRecord")
+        ]
+        self.assertIn("options.supersedeCompatibleBuildId", stage)
+        self.assertIn("body.supersede_compatible_build_id", stage)
+
     def test_build_does_not_commit_release_lifecycle_before_environment_validation(self):
         build = read_operator("build.js")
         start = build.index("async function invokeBuild")
