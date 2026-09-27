@@ -11,6 +11,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
+from bees_continual_behavior_sanity import apply_behavior_sanity
 from bees_continual_bootstrap import bootstrap_champion
 from bees_continual_learning import ContinualLearningStore, ValidationError
 from bees_continual_release import ReleaseError, run_release_cycle
@@ -105,20 +106,34 @@ class ReleaseCycleTests(unittest.TestCase):
     @staticmethod
     def _evaluation(store, candidate_model_id: str, *, passed: bool):
         champion_id = store.current_champion_id()
-        report = {
-            "candidate_model_id": candidate_model_id,
-            "champion_model_id": champion_id,
-            "candidate_vs_champion": (
-                {"wins": 2, "losses": 0, "draws": 0}
-                if passed
-                else {"wins": 0, "losses": 2, "draws": 0}
-            ),
-            "historical": [],
-            "competencies": [],
-            "behavior_sanity_passed": True,
-            "runtime_compatible": True,
-            "runtime_checks_passed": True,
-        }
+        wins = 2 if passed else 0
+        losses = 0 if passed else 2
+        report = apply_behavior_sanity(
+            {
+                "candidate_model_id": candidate_model_id,
+                "champion_model_id": champion_id,
+                "candidate_vs_champion": {
+                    "matches": 2,
+                    "wins": wins,
+                    "losses": losses,
+                    "draws": 0,
+                    "timeouts": 0,
+                    "candidate_starting_tsv": 20,
+                    "candidate_final_tsv": 10,
+                    "candidate_shots": 2,
+                    "candidate_hits": 1,
+                    "candidate_damage": 1,
+                },
+                "historical": [],
+                "competencies": [],
+                "runtime_compatible": True,
+                "runtime_checks_passed": True,
+                "evaluator": {
+                    "authoritative_match_runner": True,
+                    "authoritative_telemetry_validated": True,
+                },
+            }
+        )
         recorded = store.record_evaluation(report)
         return {"report": report, "recorded": recorded, "league_updates": []}
 
