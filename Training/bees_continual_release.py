@@ -138,6 +138,11 @@ def _bootstrap_competency_contract(
                 "Source-controlled bootstrap competency cases must not hard-code "
                 "opponent_model_id; the first compatible champion is bound exactly once."
             )
+        case.setdefault("matches", int(promotion["min_matches_vs_champion"]))
+        case.setdefault("minimum", float(promotion["min_win_rate_vs_champion"]))
+        case.setdefault("metric", "score_rate")
+        case.setdefault("critical", True)
+        case.setdefault("env_args", [])
         case["opponent_model_id"] = baseline_model_id
         cases.append(case)
 
@@ -241,7 +246,7 @@ def run_release_cycle(
     *,
     environment_path: os.PathLike[str] | str,
     env_args: Sequence[str] = (),
-    competency_suite: Optional[os.PathLike[str] | str] = None,
+    competency_suite: Optional[os.PathLike[str] | str | Mapping[str, Any]] = None,
     champion_matches: Optional[int] = None,
     historical_matches: Optional[int] = None,
     competency_default_matches: Optional[int] = None,
