@@ -270,7 +270,12 @@ class BrokerClient:
             raise RuntimeError("WAN broker state response is malformed")
         return value
 
-    def policy(self, session_id: str, behavior: str, version: int) -> Optional[Mapping[str, Any]]:
+    def policy_with_version(
+        self,
+        session_id: str,
+        behavior: str,
+        version: int,
+    ) -> Optional[Tuple[Mapping[str, Any], int]]:
         status, headers, body = self._request(
             "GET",
             "/policy",
@@ -283,10 +288,21 @@ class BrokerClient:
         expected_hash = headers.get("X-Bees-Policy-Sha256")
         if expected_hash and hashlib.sha256(body).hexdigest() != expected_hash:
             raise RuntimeError("WAN policy payload failed transport SHA-256 verification")
+        version_header = headers.get("X-Bees-Policy-Version")
+        try:
+            policy_version = int(version_header)
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError("WAN policy response is missing its version identity") from exc
+        if policy_version <= 0:
+            raise RuntimeError("WAN policy response has an invalid version identity")
         value = wan.decode_payload(body)
         if not isinstance(value, Mapping):
             raise RuntimeError("WAN broker policy payload is malformed")
-        return value
+        return value, policy_version
+
+    def policy(self, session_id: str, behavior: str, version: int) -> Optional[Mapping[str, Any]]:
+        response = self.policy_with_version(session_id, behavior, version)
+        return None if response is None else response[0]
 
     def control(self, session_id: str, epoch: int) -> Optional[Mapping[str, Any]]:
         status, _headers, body = self._request(
@@ -809,10 +825,16 @@ class ActorSession:
             path.write_bytes(model_bytes)
         return path
 
-    def _apply_policy(self, behavior: str, version: int) -> None:
-        payload = self.client.policy(self.session_id, behavior, -1)
-        if payload is None:
+    def _apply_policy(self, behavior: str, version: int) -> int:
+        response = self.client.policy_with_version(self.session_id, behavior, -1)
+        if response is None:
             raise RuntimeError(f"Central WAN policy {behavior} unexpectedly returned no payload")
+        payload, applied_version = response
+        if applied_version < version:
+            raise RuntimeError(
+                f"Central WAN policy {behavior} regressed from requested version {version} "
+                f"to {applied_version}."
+            )
         template = self.templates.get(behavior)
         if template is None:
             raise RuntimeError(f"Central WAN policy references unknown behavior {behavior!r}")
@@ -836,7 +858,8 @@ class ActorSession:
         else:
             raise RuntimeError(f"Unsupported WAN policy kind {kind!r}")
         self.manager.set_policy(behavior, policy)
-        self.policy_versions[behavior] = version
+        self.policy_versions[behavior] = applied_version
+        return applied_version
 
     def _synchronize_state(self, *, require_policy: bool = False) -> None:
         state = self.client.state(
@@ -915,13 +938,16 @@ class ActorSession:
                 raise RuntimeError(f"Unsupported WAN central control kind {kind!r}")
             self.control_epoch = new_control
 
+        synchronized_versions: Dict[str, int] = {}
         for behavior, version in sorted(remote_versions.items()):
             if self.policy_versions.get(behavior) != version:
-                self._apply_policy(behavior, version)
+                synchronized_versions[behavior] = self._apply_policy(behavior, version)
+            else:
+                synchronized_versions[behavior] = version
         missing = sorted(set(self.policy_versions) - set(remote_versions))
         if missing:
             raise RuntimeError(f"Central WAN policy set unexpectedly removed behaviors: {missing}")
-        self.policy_versions = remote_versions
+        self.policy_versions = synchronized_versions
         self.policy_epoch = int(state.get("policy_epoch", self.policy_epoch))
         self._state_changed.clear()
         self._stale.clear()
