@@ -194,7 +194,8 @@ namespace Assets.Scripts.Levels
                 Stage.CutsceneManager.PlaySingleDialogueLine(dialogueLines[Utilities.RandomInt(dialogueLines.Count)]);
 
                 NextTriggers.Add(new Trigger(
-                    () => State.IsSideKilled(ConfigData.Configuration.AISide),
+                    () => State.IsSideKilled(ConfigData.Configuration.AISide) &&
+                          !State.IsSideKilled(ConfigData.Configuration.UserSide),
                     () =>
                     {
                         WinningSide = ConfigData.Configuration.UserSide;
@@ -218,6 +219,17 @@ namespace Assets.Scripts.Levels
                     QueueUranus2FinalDialogue();
                 },
                 "Level 10 Player defeated or retreated"));
+        }
+
+        public void Uranus2OnTheDefensiveWithEndingContinuation()
+        {
+            Uranus2OnTheDefensive();
+            Uranus2EndingContinuation continuation = gameObject.GetComponent<Uranus2EndingContinuation>();
+            if (continuation == null)
+            {
+                continuation = gameObject.AddComponent<Uranus2EndingContinuation>();
+            }
+            continuation.Level = this;
         }
 
         private void QueueUranus2FinalDialogue()
@@ -261,6 +273,32 @@ namespace Assets.Scripts.Levels
                 }
             };
             return exitZone;
+        }
+    }
+
+    internal sealed class Uranus2EndingContinuation : MonoBehaviour
+    {
+        private const string ContinuationName = "Level 10 Ended dialogue";
+        internal Level Level;
+
+        private void Update()
+        {
+            if (Level == null || Level.IsLevelConnectedToServer || Level.Stage == null ||
+                Level.Stage.CutsceneManager == null || !Level.Stage.CutsceneManager.HitDialogueBreak)
+            {
+                return;
+            }
+
+            Trigger continuation = Level.NextTriggers.Find(trigger =>
+                trigger != null && trigger.Name == ContinuationName);
+            if (continuation == null || !continuation.Conditional())
+            {
+                return;
+            }
+
+            Level.NextTriggers.Remove(continuation);
+            continuation.Action();
+            enabled = false;
         }
     }
 }
