@@ -324,12 +324,14 @@ async function stopCentralAgentGracefully(pid, timeoutSeconds = 150) {
     );
 }
 
-function commandIdentity(bootstrapPython, agent, supervisorArgs) {
+function commandIdentity(bootstrapPython, agent, supervisorArgs, learnerLaunchCommand) {
     return sha256Text(
         path.resolve(bootstrapPython) + os.EOL +
         sha256File(agent) + os.EOL +
         sha256File(paths.workerTokenPath) + os.EOL +
-        supervisorArgs.map(String).join(os.EOL)
+        supervisorArgs.map(String).join(os.EOL) + os.EOL +
+        '--managed-learner-launch--' + os.EOL +
+        learnerLaunchCommand.map(String).join(os.EOL)
     );
 }
 
@@ -370,7 +372,12 @@ async function startCentralAgentIfNeeded(
         '--runtime-state-file', paths.centralRuntimeStatePath,
         '--shutdown-request-file', paths.centralAgentShutdownRequestPath,
     ];
-    const commandHash = commandIdentity(bootstrapPython, agent, supervisorArgs);
+    const commandHash = commandIdentity(
+        bootstrapPython,
+        agent,
+        supervisorArgs,
+        fallback.launch_command,
+    );
 
     let existing = null;
     if (exists(paths.centralAgentStatePath)) {
