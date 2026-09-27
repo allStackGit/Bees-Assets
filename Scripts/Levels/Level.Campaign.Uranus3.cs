@@ -125,9 +125,14 @@ namespace Assets.Scripts.Levels
                         () =>
                         {
                             bool isBargeSquadDead = bargeSquad.IsDead;
+                            bool isPlayerSideKilled = State.IsSideKilled(ConfigData.Configuration.UserSide);
+                            bool didPlayerWin = !isPlayerSideKilled && !isBargeSquadDead;
+                            WinningSide = didPlayerWin
+                                ? ConfigData.Configuration.UserSide
+                                : ConfigData.Configuration.AISide;
                             CancelTimer(reinforcements);
                             CloseLevel();
-                            if (isBargeSquadDead)
+                            if (!didPlayerWin)
                             {
                                 Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.Uranus_ANewThreat.GetRange(30, 12), true);
                             }
