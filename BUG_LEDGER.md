@@ -4,7 +4,9 @@ Static-only repository audit on `rl/initial-design-work`. This ledger is the cur
 
 ## Active validated defects
 
-_None logged at this checkpoint. The repository audit remains in progress; this is not a claim that the codebase has no other defects._
+### BUG-001 — Elastic WAN topology growth rejects queued rollouts
+**Location:** `Training/bees_elastic_wan_actor_session.py`, `_apply_live_rollout_horizons`; `Training/bees_elastic_wan_training.py` and `Training/bees_elastic_wan_zero_local.py`, `_inject_remote_batches`  
+**Description:** When remote workers join, the actor lowers its dynamic rollout horizon, but already-completed trajectories may remain in its upload queue or the central learner queue with the previous, larger horizon. The learner then compares those in-flight trajectories against the new smaller `AgentManager._max_trajectory_length` and raises, failing training even though the batch was produced under the same policy/control epoch and remains within the configured ML-Agents `time_horizon`.
 
 ## Audit status
 
