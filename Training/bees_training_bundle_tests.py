@@ -278,7 +278,7 @@ class TrainingBundleTests(unittest.TestCase):
                 )
             self.assertFalse(live.exists())
 
-    def test_live_snapshot_newer_than_summary_clamps_model_lag_to_zero(self) -> None:
+    def test_live_snapshot_newer_than_summary_marks_learner_telemetry_stale(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             run_id = "bees-v20-current"
@@ -323,9 +323,41 @@ class TrainingBundleTests(unittest.TestCase):
 
             with zipfile.ZipFile(archive) as zipped:
                 manifest = json.loads(zipped.read("manifest.json"))
-                self.assertEqual(manifest["learner_step"], 10000)
+                self.assertEqual(manifest["reported_learner_step"], 10000)
+                self.assertEqual(manifest["learner_step"], 10100)
                 self.assertEqual(manifest["model_step"], 10100)
                 self.assertEqual(manifest["model_lag_steps"], 0)
+                self.assertTrue(
+                    any(
+                        item.get("kind") == "learner-step-stale"
+                        and item.get("reported_learner_step") == 10000
+                        and item.get("snapshot_step") == 10100
+                        for item in manifest["diagnostics"]
+                    )
+                )
+                self.assertTrue(
+                    any(
+                        "newer than learner-step telemetry" in warning
+                        for warning in manifest["warnings"]
+                    )
+                )
+
+    def test_learner_log_scan_ignores_unrelated_candidate_step_messages(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            logs = root / "logs"
+            logs.mkdir()
+            (logs / "learner-live.log").write_text(
+                "[Bees continual] registered candidate model=x step=999999\n"
+                "[INFO] BeesRL1v1. Step: 12,500. Time Elapsed: 30.0 s. "
+                "Mean Reward: 0.2. ELO: 1200.0.\n",
+                encoding="utf-8",
+            )
+
+            self.assertEqual(
+                bundle._learner_step(None, logs, None),
+                12500,
+            )
 
     def test_stale_fallback_model_produces_model_lag_warning(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
