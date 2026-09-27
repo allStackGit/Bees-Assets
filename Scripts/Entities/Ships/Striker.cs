@@ -89,7 +89,10 @@ namespace Assets.Scripts.Entities.Ships
             if (_collidingThing.CompareTag("Ship") && Collider.IsTouching(collider))
             {
                 TouchingShip = _collidingThing.GetComponent<Ship>();
-                if (TouchingShip.Side != Side && Squad.HasCommand && Bomb.TargetShip == TouchingShip && IsBombReady)
+                if (TouchingShip != null &&
+                    TouchingShip.Level == Level &&
+                    TouchingShip.Side != Side &&
+                    Squad.HasCommand && Bomb.TargetShip == TouchingShip && IsBombReady)
                 {
                     ContactedShip = TouchingShip;
                     DropBomb();
