@@ -33,6 +33,20 @@ class EpisodeLogMetricsTests(unittest.TestCase):
         self.assertEqual(snapshot["last_episode"], 1)
 
 
+class BackgroundBuildPreparerTests(unittest.TestCase):
+    def test_wait_for_build_joins_only_matching_preparation(self):
+        preparer = agent.BackgroundBuildPreparer.__new__(agent.BackgroundBuildPreparer)
+        preparer._lock = threading.Lock()
+        preparer._requested_build_id = "build-a"
+        preparer._thread = mock.Mock()
+
+        preparer.wait_for_build({"build_id": "build-b"})
+        preparer._thread.join.assert_not_called()
+
+        preparer.wait_for_build({"build_id": "build-a"})
+        preparer._thread.join.assert_called_once_with()
+
+
 class ManagedProcessRestartTests(unittest.TestCase):
     def test_same_launch_records_exit_observed_before_restart(self):
         with tempfile.TemporaryDirectory() as directory:
