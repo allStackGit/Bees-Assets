@@ -551,22 +551,22 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     env_count=args.envs,
                 )
                 startup_health.start()
-                actor_session = elastic_session.ElasticActorSession(
-                    client,
-                    session,
-                    actor_id=actor_id,
-                    env_path=env_path,
-                    local_base_port=args.local_base_port,
-                    torch_device=args.torch_device,
-                    graphics=args.graphics,
-                    stop=stop,
-                    upload_queue_size=args.upload_queue,
-                    startup_health=startup_health.set_phase,
-                )
-                actor_session.worker_offset = worker_offset
-                actor_session.total_envs = int(raw_session["remote_worker_base"]) + args.envs
-                actor_session._session_failure_telemetry = failure_telemetry
                 try:
+                    actor_session = elastic_session.ElasticActorSession(
+                        client,
+                        session,
+                        actor_id=actor_id,
+                        env_path=env_path,
+                        local_base_port=args.local_base_port,
+                        torch_device=args.torch_device,
+                        graphics=args.graphics,
+                        stop=stop,
+                        upload_queue_size=args.upload_queue,
+                        startup_health=startup_health.set_phase,
+                    )
+                    actor_session.worker_offset = worker_offset
+                    actor_session.total_envs = int(raw_session["remote_worker_base"]) + args.envs
+                    actor_session._session_failure_telemetry = failure_telemetry
                     actor_session.start()
                     startup_health.stop()
                     startup_health = None
@@ -583,7 +583,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 finally:
                     if startup_health is not None:
                         startup_health.stop()
-                    actor_session.close()
+                    if actor_session is not None:
+                        actor_session.close()
             except worker.BrokerSessionChanged:
                 reconnect_backoff.reset()
                 print("[Bees WAN actor] central generation changed; reconnecting to the next trainer session.")
