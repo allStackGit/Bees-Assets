@@ -961,3 +961,13 @@ Manual-only protection is acceptable only when the record explains why determini
 **Verification:** statically traced threaded broker request handling, `observe_remote_batch`, `report_capacity` in the environment-manager step, and `remote_rate` iteration. No tests, builds, Unity, simulations, or runtime checks were run.  
 **Invariant/knowledge:** locks must cover iteration as well as mutation of shared collections when producers run on request threads.
 
+
+
+### REG-109 — Pluto II tutorial highlight used map-local coordinates as world coordinates
+**Area:** `Scripts/Levels/Level.Campaign.Pluto.cs`, Pluto II Scout tutorial highlight
+**Symptom:** the Scout tutorial highlight could appear displaced from its squad when the map transform has a nonzero world offset.
+**Root cause:** `Squad.GetPosition()` returns the squad transform's map-local position, but the highlight is parented to `Map.transform` and the code assigned that point through `transform.position`, which expects world coordinates.
+**Fix:** both Pluto II highlight creation paths now assign the squad point through `transform.localPosition`.
+**Permanent protection:** source invariant: map-parented tutorial markers that consume `Squad.GetPosition()` must use local coordinates. No tests were run or added under the static-only audit instruction.
+**Verification:** statically confirmed `Entity.GetPosition()` returns `Transform.localPosition`, verified both map-parented highlight assignments now use `localPosition`, and traced the error to a non-identity map transform. No tests, builds, Unity, simulations, or runtime checks were run.
+**Invariant/knowledge:** a child transform's local point must be assigned through `localPosition`; world-space `position` is only correct after transforming the point.
