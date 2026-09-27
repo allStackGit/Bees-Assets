@@ -25,6 +25,30 @@ const { getActiveRunId } = require('./build');
 const { getStatusFrameLines } = require('./status');
 const { killProcessTree } = require('./validation');
 
+const DIAGNOSTIC_BENCHMARK_MATCHES = 20;
+const DIAGNOSTIC_BENCHMARK_EPISODE_TIMEOUT_SECONDS = 30;
+const DIAGNOSTIC_BENCHMARK_STARTUP_GRACE_MS = 120000;
+
+function diagnosticBenchmarkTimeoutMs(
+    matches = DIAGNOSTIC_BENCHMARK_MATCHES,
+    episodeTimeoutSeconds = DIAGNOSTIC_BENCHMARK_EPISODE_TIMEOUT_SECONDS,
+) {
+    return Math.max(
+        180000,
+        Number(matches) * Number(episodeTimeoutSeconds) * 1000 +
+            DIAGNOSTIC_BENCHMARK_STARTUP_GRACE_MS,
+    );
+}
+
+function boundedDiagnosticTail(filePath, lines = 40) {
+    if (!filePath || !exists(filePath)) return '';
+    try {
+        return readText(filePath).split(/\r?\n/).slice(-lines).join('\n');
+    } catch (_) {
+        return '';
+    }
+}
+
 async function requestCentralDiagnosticModelSnapshot(status, targetRunId, outputPath) {
     let result = {
         schema_version: 1,
@@ -107,28 +131,31 @@ async function requestCentralDiagnosticModelSnapshot(status, targetRunId, output
     }
 }
 
-function waitForExit(child, timeoutMs) {
-    return new Promise((resolve, reject) => {
-        let settled = false;
-        const timer = setTimeout(() => {
-            if (settled) return;
-            settled = true;
-            killProcessTree(child);
-            resolve({ timeout: true, code: null });
-        }, timeoutMs);
-        child.once('error', error => {
-            if (settled) return;
-            settled = true;
-            clearTimeout(timer);
-            reject(error);
-        });
-        child.once('exit', code => {
-            if (settled) return;
-            settled = true;
-            clearTimeout(timer);
-            resolve({ timeout: false, code });
-        });
+async function waitForExit(child, timeoutMs) {
+    let spawnError = null;
+    child.once('error', error => {
+        spawnError = error;
     });
+
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+        if (spawnError) throw spawnError;
+        if (child.exitCode !== null || child.signalCode !== null) {
+            return { timeout: false, code: child.exitCode };
+        }
+        await sleep(100);
+    }
+
+    // taskkill/process.kill can return before inherited file handles have fully closed. Wait for
+    // process termination before diagnostic cleanup so a best-effort timeout cannot make bundle
+    // collection fail with a transient sharing violation.
+    killProcessTree(child);
+    const killDeadline = Date.now() + 5000;
+    while (Date.now() < killDeadline) {
+        if (child.exitCode !== null || child.signalCode !== null) break;
+        await sleep(100);
+    }
+    return { timeout: true, code: child.exitCode };
 }
 
 async function invokeCentralDiagnosticBenchmark(targetRunId, snapshotJson, outputJson) {
@@ -250,7 +277,8 @@ async function invokeCentralDiagnosticBenchmark(targetRunId, snapshotJson, outpu
         let child;
         try {
             console.log(
-                'Running deterministic diagnostic benchmark (20 fixed 1v1 matches)...'
+                'Running deterministic diagnostic benchmark (' +
+                DIAGNOSTIC_BENCHMARK_MATCHES + ' fixed 1v1 matches)...'
             );
             child = spawn(
                 learnerPython,
@@ -259,6 +287,7 @@ async function invokeCentralDiagnosticBenchmark(targetRunId, snapshotJson, outpu
                     '--env', environmentPath,
                     '--model', modelPath,
                     '--output', outputJson,
+                    '--matches', String(DIAGNOSTIC_BENCHMARK_MATCHES),
                 ],
                 {
                     cwd: paths.assetsRoot,
@@ -271,19 +300,29 @@ async function invokeCentralDiagnosticBenchmark(targetRunId, snapshotJson, outpu
             fs.closeSync(stderrFd);
         }
 
-        const exit = await waitForExit(child, 180000);
+        const timeoutMs = diagnosticBenchmarkTimeoutMs();
+        const exit = await waitForExit(child, timeoutMs);
         if (exit.timeout) {
             result.status = 'timeout';
-            result.reason = 'deterministic benchmark exceeded 180 seconds';
+            result.reason =
+                'deterministic benchmark exceeded ' +
+                Math.round(timeoutMs / 1000) + ' seconds';
+            result.stdout_tail = boundedDiagnosticTail(stdout);
+            result.stderr_tail = boundedDiagnosticTail(stderr);
             writeJsonAtomic(outputJson, result);
             console.warn(result.reason);
             return;
         }
 
         if (exit.code !== 0) {
+            const stdoutTail = boundedDiagnosticTail(stdout);
+            const stderrTail = boundedDiagnosticTail(stderr);
             if (exists(outputJson)) {
                 try {
                     const failure = readJson(outputJson);
+                    failure.stdout_tail = stdoutTail;
+                    failure.stderr_tail = stderrTail;
+                    writeJsonAtomic(outputJson, failure);
                     console.warn(
                         'Deterministic benchmark failed: ' +
                         String(failure.error || failure.reason || '')
@@ -291,13 +330,12 @@ async function invokeCentralDiagnosticBenchmark(targetRunId, snapshotJson, outpu
                     return;
                 } catch (_) {}
             }
-            const tail = exists(stderr)
-                ? readText(stderr).split(/\r?\n/).slice(-20).join(' ')
-                : '';
             result.status = 'failed';
             result.reason =
                 'benchmark process exited with code ' + exit.code +
-                (tail ? ': ' + tail : '');
+                (stderrTail ? ': ' + stderrTail.split(/\r?\n/).slice(-1)[0] : '');
+            result.stdout_tail = stdoutTail;
+            result.stderr_tail = stderrTail;
             writeJsonAtomic(outputJson, result);
             console.warn(result.reason);
             return;
@@ -372,11 +410,17 @@ async function invokeBundle(options = {}) {
             targetRun,
             snapshotJson,
         );
-        await invokeCentralDiagnosticBenchmark(
-            targetRun,
-            snapshotJson,
-            benchmarkJson,
-        );
+        if (options.evaluate) {
+            await invokeCentralDiagnosticBenchmark(
+                targetRun,
+                snapshotJson,
+                benchmarkJson,
+            );
+        } else {
+            console.log(
+                'Deterministic policy evaluation skipped; use bundle -Evaluate to include it.'
+            );
+        }
 
         try {
             if (await testControl(String(config.controlUrl), admin)) {
@@ -425,6 +469,7 @@ async function invokeBundle(options = {}) {
 }
 
 module.exports = {
+    diagnosticBenchmarkTimeoutMs,
     invokeBundle,
     invokeCentralDiagnosticBenchmark,
     requestCentralDiagnosticModelSnapshot,

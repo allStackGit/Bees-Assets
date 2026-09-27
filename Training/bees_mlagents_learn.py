@@ -41,7 +41,67 @@ MANAGED_STOP_FILE_ENV = "BEES_TRAINING_STOP_FILE"
 MODEL_SNAPSHOT_REQUEST_FILE_ENV = "BEES_TRAINING_MODEL_SNAPSHOT_REQUEST_FILE"
 MODEL_SNAPSHOT_RESPONSE_FILE_ENV = "BEES_TRAINING_MODEL_SNAPSHOT_RESPONSE_FILE"
 MANAGED_STOP_POLL_SECONDS = 0.25
+MANAGED_LOG_DIR_ENV = "BEES_TRAINING_LOG_DIR"
+LIVE_LEARNER_LOG_NAME = "learner-live.log"
+LIVE_LEARNER_LOG_MAX_BYTES = 16 * 1024 * 1024
 _ORIGINAL_MLAGENTS_WORKER = None
+
+
+class _LiveLogSink:
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        self._lock = threading.Lock()
+
+    def write(self, value: str) -> None:
+        text = str(value)
+        if not text:
+            return
+        encoded = text.encode("utf-8", errors="replace")
+        with self._lock:
+            try:
+                self.path.parent.mkdir(parents=True, exist_ok=True)
+                current = self.path.stat().st_size if self.path.is_file() else 0
+                if current + len(encoded) > LIVE_LEARNER_LOG_MAX_BYTES:
+                    self.path.write_text("", encoding="utf-8")
+                with self.path.open("a", encoding="utf-8", errors="replace") as handle:
+                    handle.write(text)
+                    handle.flush()
+            except OSError:
+                pass
+
+
+class _LiveLogTee:
+    def __init__(self, primary, sink: _LiveLogSink) -> None:
+        self.primary = primary
+        self.sink = sink
+
+    def write(self, value):
+        result = self.primary.write(value)
+        self.sink.write(value)
+        return result
+
+    def flush(self) -> None:
+        self.primary.flush()
+
+    def __getattr__(self, name):
+        return getattr(self.primary, name)
+
+
+def _install_managed_live_log():
+    root = os.environ.get(MANAGED_LOG_DIR_ENV, "").strip()
+    if not root:
+        return None
+    sink = _LiveLogSink(Path(root).expanduser().resolve() / LIVE_LEARNER_LOG_NAME)
+    originals = (sys.stdout, sys.stderr)
+    sys.stdout = _LiveLogTee(originals[0], sink)
+    sys.stderr = _LiveLogTee(originals[1], sink)
+    return originals
+
+
+def _restore_managed_live_log(originals) -> None:
+    if originals is None:
+        return
+    sys.stdout, sys.stderr = originals
 
 
 def _parse_positive_int(value: str, flag: str) -> int:
@@ -766,12 +826,14 @@ def main() -> None:
     previous_sigbreak_handler = _install_windows_break_interrupt()
     managed_stop_event, managed_stop_watcher = _start_managed_stop_watcher()
     original_maybe_save_model = _install_model_snapshot_requests()
+    live_log_streams = _install_managed_live_log()
     torch_utils.torch.load = device_safe_torch_load
     sys.argv = [previous_argv[0], *trainer_args]
     try:
         learn.main()
     finally:
         sys.argv = previous_argv
+        _restore_managed_live_log(live_log_streams)
         if managed_stop_event is not None:
             managed_stop_event.set()
         if managed_stop_watcher is not None:

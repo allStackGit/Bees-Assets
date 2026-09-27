@@ -22,6 +22,7 @@ const {
     sleep,
     testManagedProcessIdentity,
     testPythonCode,
+    waitForSpawn,
     writeJsonAtomic,
     writeTextAtomic,
 } = require('./common');
@@ -121,18 +122,30 @@ function prepareCentralReleaseRuntime(config, bootstrapPython, unity, release) {
 }
 
 async function getCentralFallbackLaunchCommand(config, unity, preparedRuntime) {
-    let canonicalBuild = '';
-    if (exists(paths.adminTokenPath)) {
-        try {
-            const admin = readText(paths.adminTokenPath).trim();
-            if (admin) {
-                const status = await getStatus(config, admin);
-                canonicalBuild = String(status.desired && status.desired.canonical_build_id || '').trim();
-            }
-        } catch (_) {
-            canonicalBuild = '';
-        }
+    if (!exists(paths.adminTokenPath)) {
+        throw new Error(
+            'Cannot choose a safe central fallback runtime because the training-control admin token is missing.'
+        );
     }
+    const admin = readText(paths.adminTokenPath).trim();
+    if (!admin) {
+        throw new Error(
+            'Cannot choose a safe central fallback runtime because the training-control admin token is empty.'
+        );
+    }
+
+    let status;
+    try {
+        status = await getStatus(config, admin);
+    } catch (error) {
+        throw new Error(
+            'Cannot choose a safe central fallback runtime because canonical training-control state is unavailable: ' +
+            error.message
+        );
+    }
+    const canonicalBuild = String(
+        status.desired && status.desired.canonical_build_id || ''
+    ).trim();
 
     if (!canonicalBuild || canonicalBuild === String(preparedRuntime.build_id)) {
         return {
@@ -463,6 +476,7 @@ async function startCentralAgentIfNeeded(
         fs.closeSync(stdoutFd);
         fs.closeSync(stderrFd);
     }
+    await waitForSpawn(child, 'Central training supervisor');
     if (!child.pid) throw new Error('Central supervisor process did not return a PID.');
     child.unref();
 

@@ -368,14 +368,17 @@ class TrainingEnvOptimizer {
         const recentSessionFailure =
             sessionFailureAgeSeconds !== null &&
             sessionFailureAgeSeconds * 1000 < this.instabilityHoldMs;
-        const plannedRestartStarting =
-            state.phase === 'awaiting-restart' &&
+        const expectedStarting =
             processState === 'starting' &&
-            !reportedError;
+            !reportedError &&
+            (
+                state.phase === 'awaiting-restart' ||
+                state.baseline_envs === null
+            );
         const currentProcessFailure =
             (processState &&
                 processState !== 'running' &&
-                !plannedRestartStarting) ||
+                !expectedStarting) ||
             Boolean(reportedError);
         const workerUnstable = currentProcessFailure || recentSessionFailure;
         if (workerUnstable) {

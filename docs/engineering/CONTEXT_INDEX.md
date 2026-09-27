@@ -5,7 +5,7 @@ Secondary router for ambiguous or cross-cutting work. This file is **not startup
 | Area / aliases | Detailed route | Start with current symbols / assets |
 |---|---|---|
 | RL, ML-Agents, training, continual learning, unified training, Hive Mind training | `context/RL.md` | `RlOneVsOne*`, `Training/`, `HiveMindTrainingBootstrap` |
-| distributed training control, trainer leases, canonical builds | `context/RL.md`; `BeesServer~/docs/TRAINING_CONTROL.md` | `Training/bees_training_worker_agent.py`, `Training/bees_training_control.py`, `BeesServer~/trainingControl.js` |
+| distributed training control, trainer leases, canonical builds, operator commands | `context/RL.md`; `BeesServer~/docs/TRAINING_CONTROL.md` | thin `bees.ps1`; `Training/bees_operator.js`; `Training/operator/*.js`; `Training/bees_training_worker_agent.py`; `BeesServer~/trainingControl.js` |
 | runtime, startup, identity, persistence, pooling, Level reset | `context/RUNTIME.md` | `ConfigData`, `Level`, `GameState`, `Ships`, `DataFile` |
 | pathfinding, movement, obstacles, worker ownership, performance | `context/PATHFINDING.md` | `Pathfinder*`, `Ship.Movement`, obstacle code |
 | combat, TSV, targeting, weapons, visibility | `context/COMBAT.md` | `Ship.Combat`, `Weapon`, `RangeCollider`, command/outcome code |

@@ -35,6 +35,7 @@ FOCUSED_PYTHON_SUITES = (
     "bees_continual_train_tests.py",
     "bees_mlagents_learn_tests.py",
     "bees_continual_elastic_wan_service_tests.py",
+    "bees_training_robustness_qualification_tests.py",
 )
 
 UNITY_REQUIRED_TEST = (
@@ -50,6 +51,7 @@ class Check:
     required: bool = True
     result_xml: Path | None = None
     required_test_substring: str | None = None
+    diagnostic_log: Path | None = None
 
 
 def _resolve_go(bees_root: Path) -> str | None:
@@ -76,6 +78,19 @@ def _python_suites(training_root: Path, full_python: bool) -> tuple[str, ...]:
         for path in sorted(training_root.glob("*_tests.py"))
         if path.name != "bees_training_robustness_qualification_tests.py"
     )
+
+
+def _operator_js_files(training_root: Path) -> tuple[Path, ...]:
+    entrypoint = training_root / "bees_operator.js"
+    operator_root = training_root / "operator"
+    if not entrypoint.is_file():
+        raise ValueError(f"required Node operator entrypoint is missing: {entrypoint}")
+    if not operator_root.is_dir():
+        raise ValueError(f"required Node operator module directory is missing: {operator_root}")
+    modules = tuple(sorted(operator_root.glob("*.js")))
+    if not modules:
+        raise ValueError(f"Node operator module directory contains no JavaScript files: {operator_root}")
+    return (entrypoint, *modules)
 
 
 def build_checks(
@@ -106,8 +121,17 @@ def build_checks(
         )
 
     if not skip_node:
+        operator_js_files = _operator_js_files(training_root)
         node = shutil.which("node")
         if not node:
+            checks.append(
+                Check(
+                    name="node:operator-syntax",
+                    command=(),
+                    cwd=training_root,
+                    required=True,
+                )
+            )
             checks.append(
                 Check(
                     name="node:training-control",
@@ -117,6 +141,14 @@ def build_checks(
                 )
             )
         else:
+            for operator_file in operator_js_files:
+                checks.append(
+                    Check(
+                        name=f"node:operator-syntax:{operator_file.relative_to(training_root)}",
+                        command=(node, "--check", str(operator_file)),
+                        cwd=training_root,
+                    )
+                )
             checks.append(
                 Check(
                     name="node:training-control",
@@ -161,6 +193,7 @@ def build_checks(
                 cwd=bees_root,
                 result_xml=unity_results,
                 required_test_substring=UNITY_REQUIRED_TEST,
+                diagnostic_log=unity_log,
             )
         )
 
@@ -170,7 +203,7 @@ def build_checks(
             checks.append(
                 Check(
                     name="go:tailnet-bridge",
-                    command=(go, "test", "./..."),
+                    command=(go, "test", "-mod=mod", "./..."),
                     cwd=bridge_root,
                 )
             )
@@ -231,6 +264,50 @@ def _validate_unity_results(
     return True, ""
 
 
+def _unity_failed_cases(result_path: Path, maximum_cases: int = 50) -> tuple[str, ...]:
+    if not result_path.is_file():
+        return ()
+    try:
+        root = ET.parse(result_path).getroot()
+    except (OSError, ET.ParseError):
+        return ()
+
+    failed = [
+        case for case in root.findall(".//test-case")
+        if case.attrib.get("result") == "Failed"
+    ]
+    details: list[str] = []
+    for case in failed[:maximum_cases]:
+        identity = case.attrib.get("fullname") or case.attrib.get("name") or "(unnamed test)"
+        message = ""
+        failure = case.find("failure")
+        if failure is not None:
+            message_node = failure.find("message")
+            if message_node is not None and message_node.text:
+                message = " ".join(message_node.text.split())
+        details.append(identity + (f": {message}" if message else ""))
+    if len(failed) > maximum_cases:
+        details.append(f"... {len(failed) - maximum_cases} additional failed tests omitted")
+    return tuple(details)
+
+
+def _log_tail(path: Path, maximum_lines: int = 80, maximum_bytes: int = 256 * 1024) -> str:
+    if not path.is_file():
+        return ""
+    try:
+        size = path.stat().st_size
+        with path.open("rb") as handle:
+            handle.seek(max(0, size - maximum_bytes))
+            data = handle.read()
+    except OSError:
+        return ""
+    text = data.decode("utf-8", errors="replace")
+    lines = text.splitlines()
+    if size > maximum_bytes and lines:
+        lines = lines[1:]
+    return "\n".join(lines[-maximum_lines:])
+
+
 def _run_check(check: Check) -> tuple[bool, float]:
     if not check.command:
         if check.required:
@@ -243,6 +320,12 @@ def _run_check(check: Check) -> tuple[bool, float]:
         check.result_xml.parent.mkdir(parents=True, exist_ok=True)
         try:
             check.result_xml.unlink()
+        except FileNotFoundError:
+            pass
+    if check.diagnostic_log is not None:
+        check.diagnostic_log.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            check.diagnostic_log.unlink()
         except FileNotFoundError:
             pass
 
@@ -269,6 +352,20 @@ def _run_check(check: Check) -> tuple[bool, float]:
         f"[FAIL] {check.name}: exit={completed.returncode} ({elapsed:.1f}s)",
         flush=True,
     )
+    if check.result_xml is not None:
+        failed_cases = _unity_failed_cases(check.result_xml)
+        if failed_cases:
+            print(
+                f"[XML ] {check.name}: failed tests:\n- " + "\n- ".join(failed_cases),
+                flush=True,
+            )
+    if check.diagnostic_log is not None:
+        tail = _log_tail(check.diagnostic_log)
+        if tail:
+            print(
+                f"[LOG ] {check.name}: tail of {check.diagnostic_log}:\n{tail}",
+                flush=True,
+            )
     return False, elapsed
 
 

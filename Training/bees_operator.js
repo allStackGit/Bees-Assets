@@ -29,7 +29,7 @@ function usage() {
         '  node Training/bees_operator.js start [--new-run] [--env-arg VALUE ...]',
         '  node Training/bees_operator.js stop [--server]',
         '  node Training/bees_operator.js status [--once] [--refresh-seconds N]',
-        '  node Training/bees_operator.js bundle [--run-id ID] [--log-percent PCT]',
+        '  node Training/bees_operator.js bundle [--run-id ID] [--log-percent PCT] [--evaluate]',
         '  node Training/bees_operator.js qualify',
         '',
         'The public PowerShell shim Assets\\bees.ps1 preserves the existing operator syntax.',
@@ -80,6 +80,7 @@ function parseArgs(argv = process.argv.slice(2)) {
         runId: '',
         explicitLogPercent: false,
         explicitRunId: false,
+        evaluate: false,
     };
 
     for (let index = 1; index < argv.length; index++) {
@@ -122,6 +123,8 @@ function parseArgs(argv = process.argv.slice(2)) {
             options.runId = String(requireValue(argv, index, arg));
             options.explicitRunId = true;
             index++;
+        } else if (arg === '--evaluate') {
+            options.evaluate = true;
         } else if (arg === '-h' || arg === '--help') {
             options.help = true;
         } else {
@@ -137,6 +140,9 @@ function parseArgs(argv = process.argv.slice(2)) {
     }
     if (options.explicitRunId && command !== 'bundle') {
         throw new Error('--run-id is only valid with the bundle command.');
+    }
+    if (options.evaluate && command !== 'bundle') {
+        throw new Error('--evaluate is only valid with the bundle command.');
     }
 
     return { command, options };

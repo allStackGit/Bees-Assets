@@ -860,17 +860,19 @@ class TrainingControlStore {
             .filter(spec => !rolled.has(spec.trainer_id));
         if (!remaining.length) return null;
 
-        const buildTransition = pending.build_id !== this.state.canonical_build_id;
         const environmentTransition =
             Object.prototype.hasOwnProperty.call(pending, 'environment_args') &&
             JSON.stringify(pending.environment_args) !== JSON.stringify(this.state.environment_args);
-        // WAN admission is exact-build scoped. Switch the authoritative learner first so a
-        // remote moved to the pending build can immediately join the new broker session.
-        if (buildTransition || environmentTransition) {
+        // Environment semantics are learner-owned: move central first so its broker identity
+        // changes before any remote can contribute newly configured trajectories. Ordinary
+        // compatible code releases keep remotes first and central last, reducing optimizer
+        // interruption while remotes prestage/restart one at a time.
+        if (environmentTransition) {
             const central = remaining.find(spec => spec.trainer_id === 'central-learner');
             if (central) return central.trainer_id;
         }
-        return remaining[0].trainer_id;
+        const remote = remaining.find(spec => spec.trainer_id !== 'central-learner');
+        return remote ? remote.trainer_id : remaining[0].trainer_id;
     }
 
     _promotePendingRelease() {

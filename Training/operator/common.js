@@ -224,6 +224,42 @@ function resolveCommand(command) {
     return path.resolve(first);
 }
 
+function npmInvocationFromCommand(npmCommand, node = process.execPath) {
+    const resolvedNpm = path.resolve(String(npmCommand));
+    if (!/\.(?:cmd|bat)$/i.test(resolvedNpm)) {
+        return {
+            executable: resolvedNpm,
+            args: [],
+        };
+    }
+
+    // Node cannot reliably spawn Windows command shims directly with shell=false. Do not
+    // reintroduce cmd.exe quoting: npm's installer shim lives beside its JavaScript CLI, so
+    // execute that CLI through the already-selected Node runtime with a structured argv array.
+    const npmCli = path.join(
+        path.dirname(resolvedNpm),
+        'node_modules',
+        'npm',
+        'bin',
+        'npm-cli.js',
+    );
+    if (!exists(npmCli)) {
+        throw new Error(
+            'npm Windows shim was found at ' + resolvedNpm +
+            ', but its sibling JavaScript CLI is missing: ' + npmCli
+        );
+    }
+    return {
+        executable: path.resolve(node),
+        args: [path.resolve(npmCli)],
+    };
+}
+
+function resolveNpmInvocation(node = process.execPath) {
+    const npmCommand = resolveCommand(process.platform === 'win32' ? 'npm.cmd' : 'npm');
+    return npmInvocationFromCommand(npmCommand, node);
+}
+
 function loadConfig() {
     if (!exists(paths.configPath)) {
         throw new Error('Tracked training configuration is missing: ' + paths.configPath);
@@ -304,12 +340,42 @@ function runSync(executable, args = [], options = {}) {
 }
 
 function runChecked(executable, args = [], cwd = paths.assetsRoot, env = process.env) {
-    const result = runSync(executable, args, { cwd, env });
-    const output = String(result.stdout || '');
-    if (output) process.stdout.write(output);
-    const errorOutput = String(result.stderr || '');
-    if (errorOutput) process.stderr.write(errorOutput);
-    return result;
+    // Setup/build helpers can run for minutes. Preserve the old operator's live child output
+    // instead of buffering an entire pip/npm/go/archive operation until it exits.
+    return runSync(executable, args, {
+        cwd,
+        env,
+        stdio: 'inherit',
+    });
+}
+
+function waitForSpawn(child, label, timeoutMs = 5000) {
+    return new Promise((resolve, reject) => {
+        let settled = false;
+        const timer = setTimeout(() => {
+            if (settled) return;
+            settled = true;
+            reject(new Error(label + ' did not report a successful spawn within ' + timeoutMs + ' ms.'));
+        }, timeoutMs);
+
+        child.once('spawn', () => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            resolve(child);
+        });
+        child.once('error', error => {
+            if (settled) {
+                // Keep a post-spawn error from becoming an unhandled EventEmitter error while
+                // still leaving the process lifecycle visible in the operator logs.
+                console.error(label + ' process error: ' + error.message);
+                return;
+            }
+            settled = true;
+            clearTimeout(timer);
+            reject(new Error(label + ' failed to spawn: ' + error.message));
+        });
+    });
 }
 
 function testPythonCode(python, code) {
@@ -362,11 +428,22 @@ function getNamedFileSetSha256(entries) {
     return sha256Text(JSON.stringify(manifest));
 }
 
-function requestJson(baseUrl, token, method, requestPath, payload = null, timeoutMs = 5000) {
+function requestJsonOnce(baseUrl, token, method, requestPath, payload, timeoutMs) {
     const url = new URL(requestPath, baseUrl.endsWith('/') ? baseUrl : baseUrl + '/');
     const transport = url.protocol === 'https:' ? https : http;
     const body = payload === null ? null : Buffer.from(JSON.stringify(payload) + '\n', 'utf8');
     return new Promise((resolve, reject) => {
+        let settled = false;
+        const finishResolve = value => {
+            if (settled) return;
+            settled = true;
+            resolve(value);
+        };
+        const finishReject = error => {
+            if (settled) return;
+            settled = true;
+            reject(error);
+        };
         const request = transport.request(url, {
             method,
             headers: {
@@ -380,42 +457,99 @@ function requestJson(baseUrl, token, method, requestPath, payload = null, timeou
         }, response => {
             const chunks = [];
             response.on('data', chunk => chunks.push(chunk));
+            response.on('aborted', () => {
+                const error = new Error(
+                    'training-control response was aborted for ' +
+                    String(method).toUpperCase() + ' ' + requestPath
+                );
+                error.code = 'ECONNRESET';
+                finishReject(error);
+            });
+            response.on('error', finishReject);
             response.on('end', () => {
                 const text = Buffer.concat(chunks).toString('utf8');
                 let value = {};
                 try {
                     if (text) value = JSON.parse(text);
                 } catch (_) {
-                    reject(new Error('Control server returned invalid JSON: ' + text));
+                    finishReject(new Error('Control server returned invalid JSON: ' + text));
                     return;
                 }
                 if (response.statusCode < 200 || response.statusCode >= 300) {
-                    reject(new Error('Control server HTTP ' + response.statusCode + ': ' + text));
+                    finishReject(new Error('Control server HTTP ' + response.statusCode + ': ' + text));
                     return;
                 }
-                resolve(value);
+                finishResolve(value);
             });
         });
-        request.setTimeout(timeoutMs, () => request.destroy(new Error('training-control request timed out')));
-        request.on('error', reject);
+        request.setTimeout(
+            timeoutMs,
+            () => {
+                const error = new Error(
+                    'training-control ' + String(method).toUpperCase() +
+                    ' request timed out after ' + timeoutMs + ' ms'
+                );
+                error.code = 'ETIMEDOUT';
+                request.destroy(error);
+            },
+        );
+        request.on('error', finishReject);
         if (body) request.write(body);
         request.end();
     });
 }
 
+function isTransientControlTransportError(error) {
+    const code = String(error && error.code || '').toUpperCase();
+    return code === 'ECONNRESET' ||
+        code === 'ECONNREFUSED' ||
+        code === 'EPIPE' ||
+        code === 'ETIMEDOUT' ||
+        code === 'EHOSTUNREACH' ||
+        code === 'ENETUNREACH';
+}
+
+async function requestJson(baseUrl, token, method, requestPath, payload = null, timeoutMs = null) {
+    const effectiveTimeoutMs = timeoutMs == null
+        ? (String(method).toUpperCase() === 'GET' ? 5000 : 30000)
+        : Number(timeoutMs);
+    const maximumAttempts = 4;
+    let lastError = null;
+    for (let attempt = 1; attempt <= maximumAttempts; attempt++) {
+        try {
+            return await requestJsonOnce(
+                baseUrl,
+                token,
+                method,
+                requestPath,
+                payload,
+                effectiveTimeoutMs,
+            );
+        } catch (error) {
+            lastError = error;
+            if (!isTransientControlTransportError(error) || attempt >= maximumAttempts) {
+                throw error;
+            }
+            const delayMs = 250 * attempt;
+            console.warn(
+                'Transient training-control transport failure (' +
+                String(error.code || error.message) + ') for ' +
+                String(method).toUpperCase() + ' ' + requestPath +
+                '; retrying attempt ' + (attempt + 1) + '/' + maximumAttempts + '.'
+            );
+            await sleep(delayMs);
+        }
+    }
+    throw lastError;
+}
+
 async function testControl(baseUrl, token) {
     try {
-        await requestJson(baseUrl, token, 'GET', '/v1/status', null, 1500);
+        await requestJson(baseUrl, token, 'GET', '/v1/status', null, 5000);
         return true;
     } catch (_) {
         return false;
     }
-}
-
-function normalizeIso(value) {
-    const date = new Date(value);
-    if (!Number.isFinite(date.getTime())) return '';
-    return date.toISOString();
 }
 
 function powershellExecutable() {
@@ -453,7 +587,9 @@ function getProcessIdentity(pid) {
         const value = JSON.parse(String(result.stdout || '').trim());
         return {
             pid: Number(value.pid),
-            process_start_utc: normalizeIso(value.process_start_utc),
+            // Preserve PowerShell's exact round-trip timestamp. Parsing through JS Date truncates
+            // Windows process-start precision and weakens the PID-reuse ownership check.
+            process_start_utc: String(value.process_start_utc || ''),
             executable_path: path.resolve(String(value.executable_path)),
         };
     } catch (_) {
@@ -483,7 +619,7 @@ function testManagedProcessIdentity(state, expectedExecutable = '') {
     if (!state || !state.pid || !state.process_start_utc || !state.executable_path) return false;
     const current = getProcessIdentity(Number(state.pid));
     if (!current) return false;
-    if (normalizeIso(current.process_start_utc) !== normalizeIso(state.process_start_utc)) return false;
+    if (String(current.process_start_utc) !== String(state.process_start_utc)) return false;
     if (!samePath(current.executable_path, state.executable_path)) return false;
     if (expectedExecutable && !samePath(current.executable_path, expectedExecutable)) return false;
     return true;
@@ -581,7 +717,6 @@ module.exports = {
     invokePythonJson,
     isProcessAlive,
     loadConfig,
-    normalizeIso,
     path,
     paths,
     powershellExecutable,
@@ -593,8 +728,10 @@ module.exports = {
     requestJson,
     resolveCommand,
     resolveGit,
+    resolveNpmInvocation,
     resolvePython,
     resolveUnityEditor,
+    npmInvocationFromCommand,
     runChecked,
     runSync,
     samePath,
@@ -607,6 +744,7 @@ module.exports = {
     testControl,
     testManagedProcessIdentity,
     testPythonCode,
+    waitForSpawn,
     writeJsonAtomic,
     writeTextAtomic,
 };

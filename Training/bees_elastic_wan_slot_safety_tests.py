@@ -53,6 +53,7 @@ class SlotSafetyTests(unittest.TestCase):
                 elastic.BUILD_ID_ENV: "slot-build",
                 elastic.RUN_ID_ENV: "slot-test",
                 elastic.COMPATIBILITY_KEY_ENV: "f" * 64,
+                elastic.ENVIRONMENT_ID_ENV: "e" * 64,
             },
             clear=False,
         ):

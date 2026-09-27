@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import tempfile
 import unittest
 from types import SimpleNamespace
 from unittest import mock
@@ -98,6 +99,70 @@ class ContinualElasticWanServiceTests(unittest.TestCase):
             captured,
             {"index": 0, "resume": False, "force_fresh": True},
         )
+
+
+    def test_exact_central_operator_option_shape_parses_without_argparse_exit(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = service.Path(temp_dir)
+            assets = root / "Assets"
+            runtime = root / "ReleaseTraining"
+            project = root / "Bees"
+            training_root = root / "TrainingState"
+            telemetry = training_root / "Telemetry"
+            models = training_root / "Models"
+            for directory in (assets, runtime, project):
+                directory.mkdir(parents=True, exist_ok=True)
+
+            environment = root / "Bees RL Training.exe"
+            unity = root / "Unity.exe"
+            trainer = runtime / "rl_1v1_config.yaml"
+            continual = runtime / "continual_learning_config.json"
+            auth = root / "wan.token"
+            for file_path in (environment, unity, trainer, continual, auth):
+                file_path.write_text("placeholder\n", encoding="utf-8")
+
+            argv = [
+                "--root", str(training_root),
+                "--assets-root", str(assets),
+                "--runtime-training-root", str(runtime),
+                "--training-env", str(environment),
+                "--telemetry-quarantine", str(telemetry),
+                "--model-distribution-root", str(models),
+                "--game-build-version", "build-123",
+                "--run-id", "bees-v20-test",
+                "--trainer-config", str(trainer),
+                "--continual-config", str(continual),
+                "--unity-editor", str(unity),
+                "--unity-project-root", str(project),
+                "--generation-steps", "1000000",
+                "--num-envs", "0",
+                "--platform", "WindowsPlayer",
+                "--bees-wan-actors", "12",
+                "--bees-wan-min-actors", "0",
+                "--bees-wan-broker-port", "55051",
+                "--bees-wan-auth-token-file", str(auth),
+            ]
+
+            service_args, actor_options = service.elastic.extract_elastic_wan_options(argv)
+            options = service.parse_elastic_service_options(service_args)
+
+            self.assertEqual(options.root, training_root.resolve())
+            self.assertEqual(options.assets_root, assets.resolve())
+            self.assertEqual(options.runtime_training_root, runtime.resolve())
+            self.assertEqual(options.training_env, environment.resolve())
+            self.assertEqual(options.unity_editor, unity.resolve())
+            self.assertEqual(options.unity_project_root, project.resolve())
+            self.assertEqual(options.run_id, "bees-v20-test")
+            self.assertEqual(options.num_envs, 0)
+            self.assertEqual(options.platform, "WindowsPlayer")
+            self.assertEqual(actor_options.max_actors, 12)
+            self.assertEqual(actor_options.min_actors, 0)
+            self.assertEqual(actor_options.broker_port, 55051)
+            self.assertEqual(
+                service.Path(actor_options.auth_token_file).resolve(),
+                auth.resolve(),
+            )
+
 
     def test_wan_flags_append_when_no_environment_args_exist(self):
         self.assertEqual(

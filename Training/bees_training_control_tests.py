@@ -188,6 +188,7 @@ class TrainingControlClientTests(unittest.TestCase):
             prepared_build_id="",
             preparation_error="runtime download failed",
             last_error="runtime download failed",
+            environment_id="e" * 64,
         )
 
         self.assertEqual(
@@ -196,6 +197,7 @@ class TrainingControlClientTests(unittest.TestCase):
         )
         self.assertEqual(heartbeat["last_error"], "runtime download failed")
         self.assertEqual(heartbeat["prepared_build_id"], "")
+        self.assertEqual(heartbeat["environment_id"], "e" * 64)
 
     def test_worker_control_requests_fail_fast_inside_server_lease(self):
         self.assertEqual(
@@ -209,6 +211,7 @@ class TrainingControlClientTests(unittest.TestCase):
         reordered = agent.environment_args_identity(("--rl-health-ratio=.25", "--rl-map-size=32"))
         self.assertEqual(first, second)
         self.assertEqual(len(first), 64)
+        self.assertEqual(first, "f1e00a70d7208ecbd776146fc91a62f78bfc24101a63b7b7eb672f73b1b91334")
         self.assertNotEqual(first, reordered)
 
     def test_dedicated_child_health_gates_running_state_and_surfaces_errors(self):
@@ -267,9 +270,10 @@ class TrainingControlClientTests(unittest.TestCase):
         fake.wait.return_value = 0
 
         with (
-            mock.patch.object(agent.os, "name", "posix"),
-            mock.patch.object(agent.subprocess, "Popen", return_value=fake) as popen,
-            mock.patch.object(agent.os, "killpg") as killpg,
+            mock.patch.object(agent, "_is_windows", return_value=False),
+            mock.patch.object(process_safety, "_is_windows", return_value=False),
+            mock.patch.object(process_safety.subprocess, "Popen", return_value=fake) as popen,
+            mock.patch.object(agent.os, "killpg", create=True) as killpg,
         ):
             managed = agent.ManagedProcess()
             managed.start(
@@ -325,7 +329,7 @@ class TrainingControlClientTests(unittest.TestCase):
             )
             managed.stop()
 
-        killpg.assert_called_once_with(4242, signal.SIGTERM)
+        killpg.assert_called_once_with(4242, agent._POSIX_SIGTERM)
 
     def test_managed_process_retains_ownership_when_forced_stop_cannot_confirm_exit(self):
         fake = mock.Mock()
@@ -334,8 +338,8 @@ class TrainingControlClientTests(unittest.TestCase):
         fake.wait.side_effect = TimeoutError("still running")
 
         with (
-            mock.patch.object(agent.os, "name", "posix"),
-            mock.patch.object(agent.os, "killpg") as killpg,
+            mock.patch.object(agent, "_is_windows", return_value=False),
+            mock.patch.object(agent.os, "killpg", create=True) as killpg,
         ):
             managed = agent.ManagedProcess()
             managed.process = fake
@@ -347,8 +351,8 @@ class TrainingControlClientTests(unittest.TestCase):
         self.assertEqual(
             killpg.call_args_list,
             [
-                mock.call(4342, signal.SIGTERM),
-                mock.call(4342, signal.SIGKILL),
+                mock.call(4342, agent._POSIX_SIGTERM),
+                mock.call(4342, agent._POSIX_SIGKILL),
             ],
         )
         fake.kill.assert_called_once()
@@ -362,9 +366,10 @@ class TrainingControlClientTests(unittest.TestCase):
             fake.wait.return_value = 0
 
             with (
-                mock.patch.object(agent.os, "name", "posix"),
-                mock.patch.object(agent.subprocess, "Popen", return_value=fake) as popen,
-                mock.patch.object(agent.os, "killpg") as killpg,
+                mock.patch.object(agent, "_is_windows", return_value=False),
+                mock.patch.object(process_safety, "_is_windows", return_value=False),
+                mock.patch.object(process_safety.subprocess, "Popen", return_value=fake) as popen,
+                mock.patch.object(agent.os, "killpg", create=True) as killpg,
                 mock.patch.object(agent.time, "sleep"),
             ):
                 managed = agent.ManagedProcess()
@@ -399,9 +404,10 @@ class TrainingControlClientTests(unittest.TestCase):
             fake.wait.return_value = 0
 
             with (
-                mock.patch.object(agent.os, "name", "posix"),
-                mock.patch.object(agent.subprocess, "Popen", return_value=fake) as popen,
-                mock.patch.object(agent.os, "killpg") as killpg,
+                mock.patch.object(agent, "_is_windows", return_value=False),
+                mock.patch.object(process_safety, "_is_windows", return_value=False),
+                mock.patch.object(process_safety.subprocess, "Popen", return_value=fake) as popen,
+                mock.patch.object(agent.os, "killpg", create=True) as killpg,
                 mock.patch.object(agent.time, "sleep"),
             ):
                 managed = agent.ManagedProcess()
@@ -435,9 +441,10 @@ class TrainingControlClientTests(unittest.TestCase):
             fake.poll.return_value = None
 
             with (
-                mock.patch.object(agent.os, "name", "posix"),
-                mock.patch.object(agent.subprocess, "Popen", return_value=fake),
-                mock.patch.object(agent.os, "killpg") as killpg,
+                mock.patch.object(agent, "_is_windows", return_value=False),
+                mock.patch.object(process_safety, "_is_windows", return_value=False),
+                mock.patch.object(process_safety.subprocess, "Popen", return_value=fake),
+                mock.patch.object(agent.os, "killpg", create=True) as killpg,
                 mock.patch.object(agent, "GRACEFUL_CHECKPOINT_STOP_SECONDS", 0.0),
             ):
                 managed = agent.ManagedProcess()
@@ -466,7 +473,7 @@ class TrainingControlClientTests(unittest.TestCase):
         fake.wait.return_value = 0
 
         with (
-            mock.patch.object(agent.os, "name", "nt"),
+            mock.patch.object(agent, "_is_windows", return_value=True),
             mock.patch.object(agent.subprocess, "run") as run,
         ):
             managed = agent.ManagedProcess()
@@ -667,7 +674,7 @@ class TrainingControlClientTests(unittest.TestCase):
                 "python",
                 "worker.py",
                 "--env",
-                "/tmp/Bees.x86_64",
+                str(Path("/tmp/Bees.x86_64")),
                 "--build-id=release-42",
                 "--run-id=run-42",
                 "--env-args",

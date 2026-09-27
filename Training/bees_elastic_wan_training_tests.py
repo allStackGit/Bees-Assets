@@ -316,6 +316,19 @@ class ElasticBrokerTests(unittest.TestCase):
         self.assertEqual(after["consumed_steps_by_actor"]["0"], 37)
         self.assertEqual(after["trajectory_queue_depth"], 0)
 
+    def test_claim_accepts_compatible_actor_from_a_different_build(self):
+        broker, _specs = self._broker()
+        payload = {
+            **broker.release_identity,
+            "actor_key": "machine-compatible",
+            "actor_instance_id": "process-compatible",
+            "env_count": 8,
+        }
+        payload["build_id"] = "elastic-build-other"
+        actor_id = broker.claim_actor(payload)
+        self.assertEqual(actor_id, 0)
+
+
     def test_stale_generation_takes_precedence_over_duplicate_ack(self):
         broker, specs = self._broker()
         broker.register_actor(
@@ -346,20 +359,7 @@ class ElasticBrokerTests(unittest.TestCase):
         with self.assertRaisesRegex(elastic.base.StaleActorStateError, "control epoch"):
             broker.submit_trajectory_batch(payload)
 
-    def test_claim_rejects_actor_from_a_different_release(self):
-        broker, _specs = self._broker()
-        payload = {
-            **broker.release_identity,
-            "actor_key": "machine-stale",
-            "actor_instance_id": "process-stale",
-            "env_count": 8,
-        }
-        payload["build_id"] = "elastic-build-other"
-        with self.assertRaisesRegex(ValueError, "release identity"):
-            broker.claim_actor(payload)
-        self.assertEqual(broker.active_actor_snapshot(), {})
-
-    def test_actor_rejects_session_from_a_different_release(self):
+    def test_actor_accepts_different_build_but_rejects_different_semantic_lineage(self):
         expected = {
             "build_id": "build-a",
             "run_id": "run-a",
@@ -369,13 +369,10 @@ class ElasticBrokerTests(unittest.TestCase):
         session = {"release_identity": dict(expected)}
         actor_worker._validate_session_release_identity(session, expected)
 
-        # Policy/checkpoint compatibility may remain unchanged across builds, but rollout actors
-        # must never mix trajectories from two compiled simulation builds in one learner session.
+        # Compatible code releases may overlap compiled build ids during rolling replacement.
         session["release_identity"]["build_id"] = "build-b"
-        with self.assertRaisesRegex(RuntimeError, "does not match"):
-            actor_worker._validate_session_release_identity(session, expected)
+        actor_worker._validate_session_release_identity(session, expected)
 
-        session["release_identity"]["build_id"] = "build-a"
         session["release_identity"]["compatibility_key"] = "b" * 64
         with self.assertRaisesRegex(RuntimeError, "does not match"):
             actor_worker._validate_session_release_identity(session, expected)

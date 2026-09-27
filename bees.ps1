@@ -10,7 +10,8 @@ param(
     [ValidateRange(1,60)][int]$RefreshSeconds=2,
     [switch]$Server,
     [ValidateRange(0.1,100.0)][double]$LogPercent=10.0,
-    [string]$RunId
+    [string]$RunId,
+    [switch]$Evaluate
 )
 
 Set-StrictMode -Version Latest
@@ -24,6 +25,9 @@ if($Command -ne 'bundle' -and $PSBoundParameters.ContainsKey('LogPercent')){
 }
 if($Command -ne 'bundle' -and $RunId){
     throw '-RunId is only valid with the bundle command.'
+}
+if($Evaluate -and $Command -ne 'bundle'){
+    throw '-Evaluate is only valid with the bundle command.'
 }
 
 $assetsRoot=[IO.Path]::GetFullPath($PSScriptRoot)
@@ -65,6 +69,7 @@ if($PSBoundParameters.ContainsKey('LogPercent')){
     $arguments+=@('--log-percent',$LogPercent.ToString('G',[Globalization.CultureInfo]::InvariantCulture))
 }
 if($RunId){$arguments+=@('--run-id',$RunId)}
+if($Evaluate){$arguments+='--evaluate'}
 
 & $node @arguments
 $exitCode=$LASTEXITCODE

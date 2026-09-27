@@ -133,7 +133,8 @@ namespace Bees.Tests.EditMode
             Assert.That(agent, Does.Contain("int aimStart = WeaponAimContinuousActionStart + slot * WeaponAimContinuousActionsPerSlot;"));
             Assert.That(agent, Does.Contain("Vector2 policyAim = new Vector2(continuous[aimStart], continuous[aimStart + 1]);"));
             Assert.That(agent, Does.Contain("_weaponAimDirections[slot] = RlPolicyCoordinateFrame.PolicyToWorld("));
-            Assert.That(agent, Does.Contain("bool fire = discrete[WeaponFireBranchStart + slot] == FireWeaponAction;"));
+            Assert.That(agent, Does.Contain("bool fire = allowWeaponFire &&"));
+            Assert.That(agent, Does.Contain("discrete[WeaponFireBranchStart + slot] == FireWeaponAction;"));
             Assert.That(agent, Does.Contain("ApplyWeaponCommand(_ship, slot, _weaponAimDirections[slot], fire);"));
             Assert.That(agent, Does.Not.Contain("_lastAimDirection"),
                 "Independent weapon branches must not secretly share one retained aim vector.");

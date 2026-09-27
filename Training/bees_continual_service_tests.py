@@ -35,15 +35,14 @@ class ContinualServiceTests(unittest.TestCase):
             with (
                 mock.patch.object(service.os, "name", "posix"),
                 mock.patch.object(service, "_managed_stop_requested", side_effect=[False, True]),
-                mock.patch.object(service.subprocess, "Popen", return_value=fake) as popen,
-                mock.patch.object(service.os, "killpg") as killpg,
+                mock.patch.object(service, "popen_owned", return_value=fake) as popen,
                 mock.patch.object(service.time, "sleep"),
             ):
                 with self.assertRaises(KeyboardInterrupt):
                     service._run_managed_subprocess(["python", "trainer.py"], options)
 
             self.assertTrue(popen.call_args.kwargs["start_new_session"])
-            killpg.assert_not_called()
+            self.assertEqual(popen.call_args.args[0], ["python", "trainer.py"])
 
     def test_fast_child_exit_still_treats_stop_file_as_interrupted_generation(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -54,7 +53,7 @@ class ContinualServiceTests(unittest.TestCase):
 
             with (
                 mock.patch.object(service, "_managed_stop_requested", side_effect=[False, True]),
-                mock.patch.object(service.subprocess, "Popen", return_value=fake),
+                mock.patch.object(service, "popen_owned", return_value=fake),
             ):
                 with self.assertRaises(KeyboardInterrupt):
                     service._run_managed_subprocess(["python", "trainer.py"], options)
@@ -241,7 +240,7 @@ class ContinualServiceTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             service.parse_environment_args_json('[""]')
 
-    def test_state_rejects_run_id_change_and_preserves_phase(self):
+    def test_state_is_run_scoped_and_preserves_each_run_phase(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             options = self._options(root)
@@ -250,14 +249,29 @@ class ContinualServiceTests(unittest.TestCase):
             state["phase"] = "release"
             state["training_started"] = True
             service.save_state(options, state)
+
             loaded = service.load_state(options)
             self.assertEqual(loaded["generation_index"], 7)
             self.assertEqual(loaded["phase"], "release")
             self.assertTrue(loaded["training_started"])
 
             changed = service.ServiceOptions(**{**options.__dict__, "run_id": "different"})
-            with self.assertRaises(ValueError):
-                service.load_state(changed)
+            fresh = service.load_state(changed)
+            self.assertEqual(fresh["run_id"], "different")
+            self.assertEqual(fresh["generation_index"], 0)
+            self.assertEqual(fresh["phase"], "train")
+            self.assertFalse(fresh["training_started"])
+
+            # Starting another run must not overwrite the old run's resumable phase state.
+            service.save_state(changed, fresh)
+            original = service.load_state(options)
+            self.assertEqual(original["generation_index"], 7)
+            self.assertEqual(original["phase"], "release")
+            self.assertTrue(original["training_started"])
+            self.assertNotEqual(
+                service._service_root(options),
+                service._service_root(changed),
+            )
 
     def test_release_and_hot_publish_commands_keep_validation_boundaries(self):
         with tempfile.TemporaryDirectory() as temp_dir:

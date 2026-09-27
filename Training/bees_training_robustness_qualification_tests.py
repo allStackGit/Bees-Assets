@@ -10,6 +10,14 @@ from unittest import mock
 import bees_training_robustness_qualification as qualification
 
 
+def _write_operator_placeholders(training: Path) -> None:
+    (training / "bees_operator.js").write_text("'use strict';\n", encoding="utf-8")
+    operator = training / "operator"
+    operator.mkdir()
+    (operator / "common.js").write_text("'use strict';\n", encoding="utf-8")
+    (operator / "commands.js").write_text("'use strict';\n", encoding="utf-8")
+
+
 class RobustnessQualificationTests(unittest.TestCase):
     def test_focused_suite_covers_control_runtime_bootstrap_and_wan_layers(self):
         expected = {
@@ -29,6 +37,7 @@ class RobustnessQualificationTests(unittest.TestCase):
             "bees_continual_train_tests.py",
             "bees_mlagents_learn_tests.py",
             "bees_continual_elastic_wan_service_tests.py",
+            "bees_training_robustness_qualification_tests.py",
         }
         self.assertEqual(set(qualification.FOCUSED_PYTHON_SUITES), expected)
 
@@ -59,6 +68,7 @@ class RobustnessQualificationTests(unittest.TestCase):
             bridge.mkdir(parents=True)
             for name in qualification.FOCUSED_PYTHON_SUITES:
                 (training / name).write_text("# placeholder\n", encoding="utf-8")
+            _write_operator_placeholders(training)
 
             with (
                 mock.patch.object(qualification.shutil, "which", return_value=None),
@@ -72,8 +82,11 @@ class RobustnessQualificationTests(unittest.TestCase):
                     skip_go=False,
                 )
 
+            operator = next(check for check in checks if check.name == "node:operator-syntax")
             node = next(check for check in checks if check.name == "node:training-control")
             go = next(check for check in checks if check.name == "go:tailnet-bridge")
+            self.assertTrue(operator.required)
+            self.assertEqual(operator.command, ())
             self.assertTrue(node.required)
             self.assertEqual(node.command, ())
             self.assertFalse(go.required)
@@ -91,6 +104,7 @@ class RobustnessQualificationTests(unittest.TestCase):
             bridge.mkdir(parents=True)
             for name in qualification.FOCUSED_PYTHON_SUITES:
                 (training / name).write_text("# placeholder\n", encoding="utf-8")
+            _write_operator_placeholders(training)
 
             with (
                 mock.patch.object(
@@ -108,12 +122,73 @@ class RobustnessQualificationTests(unittest.TestCase):
                     skip_go=True,
                 )
 
+            syntax_checks = [
+                check for check in checks
+                if check.name.startswith("node:operator-syntax:")
+            ]
+            self.assertEqual(len(syntax_checks), 3)
+            self.assertTrue(all(check.command[1] == "--check" for check in syntax_checks))
+            checked_paths = {Path(check.command[2]).name for check in syntax_checks}
+            self.assertEqual(
+                checked_paths,
+                {"bees_operator.js", "common.js", "commands.js"},
+            )
+
             node = next(check for check in checks if check.name == "node:training-control")
             command = " ".join(node.command)
             self.assertIn("startServerLauncher.module.test.js", command)
             self.assertIn("trainingControl.module.test.js", command)
             self.assertIn("trainingControlCli.module.test.js", command)
             self.assertIn("trainingEnvOptimizer.module.test.js", command)
+
+    def test_operator_js_file_discovery_requires_entrypoint_and_module_directory(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            training = Path(temp_dir)
+            with self.assertRaisesRegex(ValueError, "entrypoint"):
+                qualification._operator_js_files(training)
+
+            (training / "bees_operator.js").write_text("'use strict';\n", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "module directory"):
+                qualification._operator_js_files(training)
+
+            operator = training / "operator"
+            operator.mkdir()
+            (operator / "z.js").write_text("'use strict';\n", encoding="utf-8")
+            (operator / "a.js").write_text("'use strict';\n", encoding="utf-8")
+            self.assertEqual(
+                tuple(path.name for path in qualification._operator_js_files(training)),
+                ("bees_operator.js", "a.js", "z.js"),
+            )
+
+    def test_go_qualification_uses_same_module_resolution_mode_as_bridge_build(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            bees_root = Path(temp_dir)
+            assets = bees_root / "Assets"
+            training = assets / "Training"
+            server = assets / "BeesServer~"
+            bridge = assets / "Tools~" / "bees-tailnet-bridge"
+            training.mkdir(parents=True)
+            server.mkdir()
+            bridge.mkdir(parents=True)
+            for name in qualification.FOCUSED_PYTHON_SUITES:
+                (training / name).write_text("# placeholder\n", encoding="utf-8")
+            _write_operator_placeholders(training)
+
+            with (
+                mock.patch.object(qualification.shutil, "which", return_value=None),
+                mock.patch.object(qualification, "_resolve_go", return_value="/tool/go"),
+            ):
+                checks = qualification.build_checks(
+                    bees_root=bees_root,
+                    assets_root=assets,
+                    full_python=False,
+                    skip_node=True,
+                    skip_go=False,
+                    skip_unity=True,
+                )
+
+            go = next(check for check in checks if check.name == "go:tailnet-bridge")
+            self.assertEqual(go.command, ("/tool/go", "test", "-mod=mod", "./..."))
 
     def test_unity_qualification_runs_foundation_editmode_and_requires_rl_contract(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -150,6 +225,7 @@ class RobustnessQualificationTests(unittest.TestCase):
                 qualification.UNITY_REQUIRED_TEST,
             )
             self.assertIsNotNone(unity.result_xml)
+            self.assertIsNotNone(unity.diagnostic_log)
 
     def test_unity_result_validation_requires_specific_passing_rl_contract(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -174,6 +250,53 @@ class RobustnessQualificationTests(unittest.TestCase):
                 ),
                 (True, ""),
             )
+
+    def test_run_check_surfaces_bounded_diagnostic_log_tail_on_failure(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            log = root / "unity.log"
+            result = root / "unity.xml"
+            check = qualification.Check(
+                name="unity-example",
+                command=("unity", "-batchmode"),
+                cwd=root,
+                result_xml=result,
+                diagnostic_log=log,
+            )
+            completed = mock.Mock(returncode=2)
+
+            def run_and_write_log(*_args, **_kwargs):
+                log.write_text("first\nsecond\nthird\n", encoding="utf-8")
+                result.write_text(
+                    '<test-run passed="1" failed="1">'
+                    '<test-case fullname="Bees.Tests.ExampleFailure" result="Failed">'
+                    '<failure><message>expected true but was false</message></failure>'
+                    '</test-case>'
+                    '</test-run>',
+                    encoding="utf-8",
+                )
+                return completed
+
+            with (
+                mock.patch.object(
+                    qualification.subprocess,
+                    "run",
+                    side_effect=run_and_write_log,
+                ),
+                mock.patch("builtins.print") as printer,
+            ):
+                ok, _elapsed = qualification._run_check(check)
+
+            self.assertFalse(ok)
+            output = "\n".join(
+                " ".join(str(value) for value in call.args)
+                for call in printer.call_args_list
+            )
+            self.assertIn("failed tests", output)
+            self.assertIn("Bees.Tests.ExampleFailure", output)
+            self.assertIn("expected true but was false", output)
+            self.assertIn("tail of", output)
+            self.assertIn("third", output)
 
     def test_run_check_propagates_nonzero_exit(self):
         check = qualification.Check(
