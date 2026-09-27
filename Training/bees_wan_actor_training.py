@@ -582,13 +582,24 @@ class WanActorBroker:
             daemon_threads = True
             allow_reuse_address = True
 
-        self._server = Server(("127.0.0.1", self.options.broker_port), Handler)
-        self._server_thread = threading.Thread(
-            target=self._server.serve_forever,
+        server = Server(("127.0.0.1", self.options.broker_port), Handler)
+        server_thread = threading.Thread(
+            target=server.serve_forever,
             name="bees-wan-actor-broker",
             daemon=True,
         )
-        self._server_thread.start()
+        self._server = server
+        self._server_thread = server_thread
+        try:
+            server_thread.start()
+        except BaseException:
+            # Thread startup can fail after the listening socket has been bound.
+            # Roll back the partially initialized broker so a retry in this
+            # process does not leave the port occupied.
+            self._server_thread = None
+            self._server = None
+            server.server_close()
+            raise
         print(
             f"[Bees WAN] actor broker listening only on 127.0.0.1:{self.options.broker_port}; "
             "remote machines must use the managed authenticated private forward."
