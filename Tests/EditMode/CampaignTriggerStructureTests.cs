@@ -49,6 +49,23 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void PlutoFourFleetTutorialUsesConfiguredUserSide()
+        {
+            string mission = Read("Level.Campaign.Pluto4.cs");
+            StringAssert.Contains("HashSet<ShipTypes> shipTypes = State.GetUserShipTypes();", mission);
+            StringAssert.DoesNotContain("State.GetHumanShipTypes()", mission);
+
+            string queries = Read("GameState.Queries.cs");
+            int start = queries.IndexOf("public HashSet<ConfigData.ShipTypes> GetUserShipTypes()");
+            int end = queries.IndexOf("public List<Ship> GetBeeShips()", start);
+            Assert.That(start, Is.GreaterThanOrEqualTo(0));
+            Assert.That(end, Is.GreaterThan(start));
+            StringAssert.Contains(
+                "return GetShipTypes(ConfigData.Configuration.UserSide);",
+                queries.Substring(start, end - start));
+        }
+
+        [Test]
         public void Uranus3HiveMindStartupDoesNotRequireCarrierTutorial()
         {
             string uranus3 = Read("Level.Campaign.Uranus3.cs");
