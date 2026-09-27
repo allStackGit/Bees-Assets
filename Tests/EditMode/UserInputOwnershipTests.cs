@@ -654,13 +654,17 @@ namespace Bees.Tests.EditMode
             Type sessionType = RuntimeAssembly.GetType("Assets.Scripts.Levels.MatchSession");
             object session = Activator.CreateInstance(sessionType);
             Guid adopted = Guid.NewGuid();
+            PropertyInfo matchIdProperty = sessionType.GetProperty(
+                "MatchId",
+                BindingFlags.Instance | BindingFlags.Public);
 
+            Assert.That(matchIdProperty, Is.Not.Null);
             Assert.That(RuntimeAssembly.Invoke(session, "TrySetMatchId", adopted), Is.EqualTo(true));
-            Assert.That(RuntimeAssembly.GetField(session, "MatchId"), Is.EqualTo(adopted));
+            Assert.That(matchIdProperty.GetValue(session), Is.EqualTo(adopted));
             Assert.That(RuntimeAssembly.Invoke(session, "AddPlayer", 1, 1, true), Is.EqualTo(true));
             Assert.That(RuntimeAssembly.Invoke(session, "TryBeginBattle"), Is.EqualTo(true));
             Assert.That(RuntimeAssembly.Invoke(session, "TrySetMatchId", Guid.NewGuid()), Is.EqualTo(false));
-            Assert.That(RuntimeAssembly.GetField(session, "MatchId"), Is.EqualTo(adopted));
+            Assert.That(matchIdProperty.GetValue(session), Is.EqualTo(adopted));
         }
 
         [Test]
@@ -725,6 +729,125 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains("MultiplayerProtocol.TryDeserializeCommand(payload, MatchId", source);
             StringAssert.Contains("return QueueReceivedPlayerCommand(sourcePeerId, command);", source);
             StringAssert.Contains("public const int MaxPacketBytes = 4096;", source);
+        }
+
+        [Test]
+        public void AuthorityPeerCanBeRemoteButFreezesAtBattleStart()
+        {
+            Type sessionType = RuntimeAssembly.GetType("Assets.Scripts.Levels.MatchSession");
+            object session = Activator.CreateInstance(sessionType);
+
+            Assert.That(RuntimeAssembly.Invoke(session, "AddPlayer", 1, 1, true), Is.EqualTo(true));
+            Assert.That(RuntimeAssembly.Invoke(session, "AddPeer", 10, false, "host"), Is.EqualTo(true));
+            Assert.That(RuntimeAssembly.Invoke(session, "TrySetAuthorityPeer", 10), Is.EqualTo(true));
+            Assert.That(RuntimeAssembly.Invoke(session, "TryBeginBattle"), Is.EqualTo(true));
+            Assert.That(RuntimeAssembly.Invoke(session, "TrySetAuthorityPeer", 1), Is.EqualTo(false));
+
+            PropertyInfo authorityProperty = sessionType.GetProperty(
+                "AuthorityPeerId",
+                BindingFlags.Instance | BindingFlags.Public);
+            PropertyInfo localAuthorityProperty = sessionType.GetProperty(
+                "IsLocalAuthority",
+                BindingFlags.Instance | BindingFlags.Public);
+
+            Assert.That(authorityProperty.GetValue(session), Is.EqualTo(10));
+            Assert.That(localAuthorityProperty.GetValue(session), Is.EqualTo(false));
+        }
+
+        [Test]
+        public void NonAuthoritativeLocalOrdersQueueForHostInsteadOfMutatingGameplay()
+        {
+            GameObject stageObject = new GameObject("Client Authority Stage");
+            GameObject stateObject = new GameObject("Client Authority State");
+            try
+            {
+                Component stage = stageObject.AddComponent(RuntimeAssembly.GetType("Stage"));
+                Component state = stateObject.AddComponent(RuntimeAssembly.GetType("Assets.Scripts.Levels.GameState"));
+                Type sessionType = RuntimeAssembly.GetType("Assets.Scripts.Levels.MatchSession");
+                object session = Activator.CreateInstance(sessionType);
+
+                RuntimeAssembly.Invoke(session, "AddPlayer", 1, 1, true);
+                RuntimeAssembly.Invoke(session, "AddPeer", 10, false, "host");
+                RuntimeAssembly.Invoke(session, "TrySetAuthorityPeer", 10);
+                RuntimeAssembly.Invoke(session, "TryBeginBattle");
+                RuntimeAssembly.SetField(stage, "MatchSession", session);
+                RuntimeAssembly.SetField(state, "Stage", stage);
+
+                Type kindType = RuntimeAssembly.GetType("Assets.Scripts.Levels.PlayerCommandKind");
+                object moveKind = Enum.Parse(kindType, "Move");
+                Assert.That(RuntimeAssembly.Invoke(
+                    state,
+                    "TryIssuePlayerCommand",
+                    1,
+                    moveKind,
+                    99L,
+                    0L,
+                    new Vector2(2f, 3f),
+                    Vector2.zero), Is.EqualTo(true));
+
+                object outgoing = RuntimeAssembly.GetField(state, "_outgoingPlayerCommands");
+                Assert.That(RuntimeAssembly.GetCount(outgoing), Is.EqualTo(1));
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(stateObject);
+                UnityEngine.Object.DestroyImmediate(stageObject);
+            }
+        }
+
+        [Test]
+        public void NonAuthoritativePeerCannotExecuteReceivedPlayerCommands()
+        {
+            GameObject stageObject = new GameObject("Client Receive Stage");
+            GameObject stateObject = new GameObject("Client Receive State");
+            try
+            {
+                Component stage = stageObject.AddComponent(RuntimeAssembly.GetType("Stage"));
+                Component state = stateObject.AddComponent(RuntimeAssembly.GetType("Assets.Scripts.Levels.GameState"));
+                Type sessionType = RuntimeAssembly.GetType("Assets.Scripts.Levels.MatchSession");
+                object session = Activator.CreateInstance(sessionType);
+
+                RuntimeAssembly.Invoke(session, "AddPlayer", 1, 1, true);
+                RuntimeAssembly.Invoke(session, "AddPeer", 10, false, "host");
+                RuntimeAssembly.Invoke(session, "AddPlayerToPeer", 2, 2, 10);
+                RuntimeAssembly.Invoke(session, "TrySetAuthorityPeer", 10);
+                RuntimeAssembly.Invoke(session, "TryBeginBattle");
+                RuntimeAssembly.SetField(stage, "MatchSession", session);
+                RuntimeAssembly.SetField(state, "Stage", stage);
+
+                Type commandType = RuntimeAssembly.GetType("Assets.Scripts.Levels.PlayerCommandEnvelope");
+                Type kindType = RuntimeAssembly.GetType("Assets.Scripts.Levels.PlayerCommandKind");
+                object command = Activator.CreateInstance(commandType);
+                RuntimeAssembly.SetField(command, "PlayerId", 2);
+                RuntimeAssembly.SetField(command, "Sequence", 1L);
+                RuntimeAssembly.SetField(command, "Kind", Enum.Parse(kindType, "Move"));
+                RuntimeAssembly.SetField(command, "SquadCommandId", 9L);
+
+                Assert.That(RuntimeAssembly.Invoke(
+                    state,
+                    "TryExecuteReceivedPlayerCommand",
+                    10,
+                    command), Is.EqualTo(false));
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(stateObject);
+                UnityEngine.Object.DestroyImmediate(stageObject);
+            }
+        }
+
+        [Test]
+        public void OutgoingClientCommandQueueIsBoundedAndClearedWithLevelState()
+        {
+            string commandPath = Path.Combine(Application.dataPath, "Scripts", "Levels", "GameState.Commands.cs");
+            string statePath = Path.Combine(Application.dataPath, "Scripts", "Levels", "GameState.cs");
+            string commandSource = File.ReadAllText(commandPath);
+            string stateSource = File.ReadAllText(statePath);
+
+            StringAssert.Contains("public const int MaxOutgoingPlayerCommands = 1024;", commandSource);
+            StringAssert.Contains("TryDequeueOutgoingPlayerCommand", commandSource);
+            StringAssert.Contains("_outgoingPlayerCommands.Clear();", commandSource);
+            StringAssert.Contains("ClearQueuedPlayerCommands();", stateSource);
         }
     }
 }
