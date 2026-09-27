@@ -173,6 +173,22 @@ test('bundle hash mismatch fails closed instead of serving changed bytes', async
     );
 });
 
+test('failed bundle reads release their reserved per-user quota', async t => {
+    const f = await fixture(t);
+    const loadCurrent = f.manager._loadCurrent.bind(f.manager);
+    f.manager._loadCurrent = async platform => {
+        const record = await loadCurrent(platform);
+        await fsp.unlink(record.bundlePath);
+        return record;
+    };
+
+    await assert.rejects(
+        f.manager.handle(chunkRequest(f, 0, 4), f.context),
+        error => error?.code === 'ENOENT',
+    );
+    assert.equal(f.manager.userQuotas.has(f.context.userId), false);
+});
+
 test('per-user download quota bounds repeated bundle reads', async t => {
     const f = await fixture(t, { userBytesPerWindow: 5, maxChunkBytes: 4 });
     await f.manager.handle(chunkRequest(f, 0, 4), f.context);
