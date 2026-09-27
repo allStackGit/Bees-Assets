@@ -543,6 +543,9 @@ def run_service(
 
     while True:
         try:
+            if _managed_stop_requested():
+                return 130
+
             # Ensure the current validated champion is server-visible immediately after supervisor
             # startup, even before the next training generation finishes. An old deployment pointer
             # may legitimately belong to a previous incompatible ABI; do not try to restage it under
@@ -667,6 +670,8 @@ def run_service(
                 f"[Bees continuous] phase failed safely: {message}",
                 file=sys.stderr,
             )
+            if _managed_stop_requested():
+                return 130
             if options.once:
                 return 2
             sleeper(options.retry_seconds)
