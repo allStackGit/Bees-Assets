@@ -648,6 +648,7 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         self.assertIn("seconds_since_last_session_failure", status)
         self.assertIn("last_session_failure_type", status)
         self.assertIn("last_instability_ms", status)
+        self.assertIn("last_instability_reason", status)
         self.assertIn("Optimizer, ", status)
         self.assertIn("centralWithoutLocalEnvs", status)
         self.assertIn("Number(config.numLocalEnvs) === 0", status)
