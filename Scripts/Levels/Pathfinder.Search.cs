@@ -255,14 +255,16 @@ namespace Assets.Scripts.Levels
             public readonly Ship Ship;
             public readonly int RequestId, LifecycleId, ThreadIndex;
             public readonly Path Path;
+            public readonly Exception Error;
 
-            public PathResult(Ship ship, int requestId, int lifecycleId, int threadIndex, Path path)
+            public PathResult(Ship ship, int requestId, int lifecycleId, int threadIndex, Path path, Exception error = null)
             {
                 Ship = ship;
                 RequestId = requestId;
                 LifecycleId = lifecycleId;
                 ThreadIndex = threadIndex;
                 Path = path;
+                Error = error;
             }
         }
 
@@ -638,39 +640,38 @@ namespace Assets.Scripts.Levels
             }
         }
 
-        public async Task BTFindPath(int threadIndex)
+        public Task BTFindPath(int threadIndex)
         {
             Ship ship = Ships[threadIndex];
             int requestId = RequestIds[threadIndex];
             int lifecycleId = LifecycleIds[threadIndex];
-            try
+            Task worker = Task.Run(() =>
             {
-                await Task.Run(() =>
+                SW.Stopwatch stopwatch = Totals[threadIndex];
+                if (stopwatch == null)
                 {
-                    SW.Stopwatch stopwatch = Totals[threadIndex];
-                    if (stopwatch == null)
-                    {
-                        stopwatch = new SW.Stopwatch();
-                        Totals[threadIndex] = stopwatch;
-                    }
-                    stopwatch.Restart();
-                    Path path;
-                    try
-                    {
-                        path = RunPathSearch(threadIndex);
-                    }
-                    finally
-                    {
-                        stopwatch.Stop();
-                    }
-                    _completedPaths.Enqueue(new PathResult(ship, requestId, lifecycleId, threadIndex, path));
-                });
-            }
-            catch (Exception exception)
-            {
-                Debug.LogException(exception);
-                _completedPaths.Enqueue(new PathResult(ship, requestId, lifecycleId, threadIndex, null));
-            }
+                    stopwatch = new SW.Stopwatch();
+                    Totals[threadIndex] = stopwatch;
+                }
+                stopwatch.Restart();
+                Path path = null;
+                Exception error = null;
+                try
+                {
+                    path = RunPathSearch(threadIndex);
+                }
+                catch (Exception exception)
+                {
+                    error = exception;
+                }
+                finally
+                {
+                    stopwatch.Stop();
+                    _completedPaths.Enqueue(new PathResult(ship, requestId, lifecycleId, threadIndex, path, error));
+                }
+            });
+            _pathWorkerTasks[threadIndex] = worker;
+            return worker;
         }
 
         public void InvalidatePathRequest(Ship ship)
