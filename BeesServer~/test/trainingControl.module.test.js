@@ -3517,6 +3517,18 @@ test('trainer logs append by verified offset under their run and trainer namespa
             reset: false,
             data: Buffer.from('bad'),
         }), /unsafe/);
+        for (const identity of [
+            { trainerId: '..', runId: 'run-a' },
+            { trainerId: 'trainer-a', runId: '..' },
+        ]) {
+            assert.throws(() => store.appendTrainerLog({
+                ...identity,
+                relativePath: 'Player-0.log',
+                offset: 0,
+                reset: false,
+                data: Buffer.from('bad'),
+            }), error => error.statusCode === 400);
+        }
     });
 });
 
