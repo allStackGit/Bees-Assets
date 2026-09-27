@@ -486,3 +486,12 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** retained the contextual error log and changed propagation to a bare rethrow, preserving the original stack.  
 **Verification:** reviewed the current catch block and confirmed it logs context then uses `throw;`. No tests, builds, Unity, simulations, or runtime checks were run, per the static-only audit scope.  
 **Invariant/knowledge:** diagnostic catch blocks should preserve the exception's original stack when rethrowing.
+
+
+### REG-055 — Moving-asteroid overlap prevented clearance egress
+**Area:** `Scripts/Levels/Pathfinder.Search.cs`, `Scripts/Entities/Ships/Ship.Movement.cs`, dynamic obstacle path recovery  
+**Symptom:** after a ship overlapped a moving asteroid, its current grid cell could fail dynamic clearance while remaining safe in the static map. The path search requested egress, but the egress helper rejected every start that was not inside a static obstacle, so the ship could not plan out of the moving-asteroid clearance region.  
+**Root cause:** egress eligibility was determined only from static signed clearance, even though the search enters egress whenever combined static/dynamic clearance at the start is insufficient.  
+**Permanent protection:** egress now handles both static obstruction and dynamic-only clearance failure. Dynamic-only egress keeps every waypoint statically safe, never decreases dynamic clearance, and exits once the requested clearance is restored. `DynamicObstacleQualificationTests.ShipOverlappingMovingAsteroidCanFindClearanceEgressPath` covers a start cell blocked only by a moving asteroid. The test was added but not run, per the static-only audit scope.  
+**Verification:** traced asteroid contact through `CollisionAsteroid.ShipCollision` and `Ship.FoundNearbyAsteroid` into path dispatch, then traced clearance-layer construction, worker search, and egress result assembly. Reviewed the updated algorithm and focused regression case statically. No tests or runtime checks were run.  
+**Invariant/knowledge:** when a movement start fails combined clearance, recovery must distinguish static geometry from dynamic obstacles and preserve static-safe cells while escaping dynamic-only obstruction.
