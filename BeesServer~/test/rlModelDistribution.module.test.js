@@ -105,6 +105,25 @@ test('current pointer returns immutable compatible bundle metadata and up-to-dat
     assert.equal(current.UpToDate, true);
 });
 
+test('same-size pointer replacement with preserved modification time refreshes the deployment cache', async t => {
+    const f = await fixture(t);
+    const preservedTime = 1_700_000_000;
+    await fsp.utimes(f.pointerPath, preservedTime, preservedTime);
+    await f.manager.handle(currentRequest(f.platform), f.context);
+
+    const replacementDeploymentId = `deploy-${'e'.repeat(24)}`;
+    f.pointer.identity.deployment_id = replacementDeploymentId;
+    await fsp.writeFile(f.pointerPath, `${JSON.stringify(f.pointer, null, 2)}\\n`);
+    await fsp.utimes(f.pointerPath, preservedTime, preservedTime);
+
+    const refreshed = await f.manager.handle(
+        currentRequest(f.platform, { CurrentDeploymentId: replacementDeploymentId }),
+        f.context,
+    );
+    assert.equal(refreshed.DeploymentId, replacementDeploymentId);
+    assert.equal(refreshed.UpToDate, true);
+});
+
 test('chunk returns bounded canonical bytes and terminal offset', async t => {
     const f = await fixture(t, { maxChunkBytes: 8 });
     const first = await f.manager.handle(chunkRequest(f, 0, 8), f.context);
