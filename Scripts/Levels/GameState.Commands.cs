@@ -647,7 +647,8 @@ namespace Assets.Scripts.Levels
         };
         private static readonly HashSet<string> LobbyFields = new HashSet<string>
         {
-            "v", "type", "match", "seed", "authority", "peers", "players", "squads"
+            "v", "type", "match", "seed", "authority", "peers", "players",
+            "beeTypes", "humanTypes", "squads"
         };
         private static readonly HashSet<string> LobbyPeerFields = new HashSet<string>
         {
@@ -739,6 +740,9 @@ namespace Assets.Scripts.Levels
                 });
             }
 
+            JArray beeTypes = new JArray(snapshot.BeeRandomShipTypes);
+            JArray humanTypes = new JArray(snapshot.HumanRandomShipTypes);
+
             JArray squads = new JArray();
             for (int i = 0; i < snapshot.Squads.Count; i++)
             {
@@ -787,6 +791,8 @@ namespace Assets.Scripts.Levels
                 ["authority"] = snapshot.AuthorityPeerId,
                 ["peers"] = peers,
                 ["players"] = players,
+                ["beeTypes"] = beeTypes,
+                ["humanTypes"] = humanTypes,
                 ["squads"] = squads
             };
 
@@ -840,6 +846,8 @@ namespace Assets.Scripts.Levels
                 !(json["players"] is JArray players) ||
                 players.Count == 0 ||
                 players.Count > MatchSession.MaxLobbyPlayers ||
+                !(json["beeTypes"] is JArray beeTypes) ||
+                !(json["humanTypes"] is JArray humanTypes) ||
                 !(json["squads"] is JArray squads) ||
                 squads.Count > MatchSession.MaxLobbySquads)
             {
@@ -892,6 +900,34 @@ namespace Assets.Scripts.Levels
                     (int)playerId,
                     (int)peerId,
                     (int)side));
+            }
+
+            for (int i = 0; i < beeTypes.Count; i++)
+            {
+                if (beeTypes[i].Type != JTokenType.Integer)
+                {
+                    return false;
+                }
+                long value = beeTypes[i].Value<long>();
+                if (value < int.MinValue || value > int.MaxValue)
+                {
+                    return false;
+                }
+                parsed.BeeRandomShipTypes.Add((int)value);
+            }
+
+            for (int i = 0; i < humanTypes.Count; i++)
+            {
+                if (humanTypes[i].Type != JTokenType.Integer)
+                {
+                    return false;
+                }
+                long value = humanTypes[i].Value<long>();
+                if (value < int.MinValue || value > int.MaxValue)
+                {
+                    return false;
+                }
+                parsed.HumanRandomShipTypes.Add((int)value);
             }
 
             for (int i = 0; i < squads.Count; i++)

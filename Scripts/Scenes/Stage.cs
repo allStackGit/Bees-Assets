@@ -410,6 +410,15 @@ public class Stage : Scene
             MatchSession = Assets.Scripts.Levels.MatchSession.CreateSolo(ConfigData.Configuration.UserSide);
         }
 
+        if (MatchSession.HasRemotePeer &&
+            MatchSession.TryGetRandomShipTypes(
+                out List<ConfigData.ShipTypes> beeRandomShipTypes,
+                out List<ConfigData.ShipTypes> humanRandomShipTypes))
+        {
+            ConfigData.BeeShipTypes = beeRandomShipTypes.ToHashSet();
+            ConfigData.HumanShipTypes = humanRandomShipTypes.ToHashSet();
+        }
+
         int primaryLocalSide = MatchSession.GetPlayerSide(MatchSession.PrimaryLocalPlayerId);
         if ((primaryLocalSide == ConfigData.Configuration.BeeSide ||
              primaryLocalSide == ConfigData.Configuration.HumanSide) &&

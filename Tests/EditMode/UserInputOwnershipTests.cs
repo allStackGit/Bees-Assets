@@ -1696,5 +1696,61 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains("pendingSession.IsLocalAuthority", source);
             StringAssert.Contains("SteamMultiplayerLobbyTransportFactory.CreateClient(", source);
         }
+
+        [Test]
+        public void LobbySnapshotCarriesHostRandomShipTypePools()
+        {
+            Type sessionType = RuntimeAssembly.GetType("Assets.Scripts.Levels.MatchSession");
+            Type shipType = RuntimeAssembly.GetType("Assets.Scripts.ConfigData+ShipTypes");
+            object session = Activator.CreateInstance(sessionType);
+            Array bees = Array.CreateInstance(shipType, 1);
+            bees.SetValue(Enum.Parse(shipType, "Wasp"), 0);
+            Array humans = Array.CreateInstance(shipType, 1);
+            humans.SetValue(Enum.Parse(shipType, "Gunship"), 0);
+
+            Assert.That(RuntimeAssembly.Invoke(
+                session,
+                "TrySetRandomShipTypes",
+                bees,
+                humans), Is.EqualTo(true));
+            RuntimeAssembly.Invoke(session, "AddPlayer", 1, 1, true);
+            RuntimeAssembly.Invoke(session, "TrySetPeerTransportIdentity", 1, "steam:host");
+
+            MethodInfo createSnapshot = sessionType.GetMethod(
+                "TryCreateLobbySnapshot",
+                BindingFlags.Instance | BindingFlags.Public);
+            object[] args = { null };
+            Assert.That((bool)createSnapshot.Invoke(session, args), Is.True);
+
+            Assert.That(RuntimeAssembly.GetCount(
+                RuntimeAssembly.GetField(args[0], "BeeRandomShipTypes")), Is.EqualTo(1));
+            Assert.That(RuntimeAssembly.GetCount(
+                RuntimeAssembly.GetField(args[0], "HumanRandomShipTypes")), Is.EqualTo(1));
+        }
+
+        [Test]
+        public void SquadMakerContinuouslyRefreshesHostRandomShipPoolsDuringLobby()
+        {
+            string path = Path.Combine(Application.dataPath, "Scripts", "Scenes", "SquadMaker.cs");
+            string source = File.ReadAllText(path);
+
+            StringAssert.Contains("RefreshHostingRandomShipTypes(session)", source);
+            StringAssert.Contains("RefreshHostingRandomShipTypes(MultiplayerLobbySession)", source);
+            StringAssert.Contains("session.TrySetRandomShipTypes(beeTypes, humanTypes)", source);
+        }
+
+        [Test]
+        public void StageUsesLobbyRandomShipPoolsBeforeLevelSetup()
+        {
+            string path = Path.Combine(Application.dataPath, "Scripts", "Scenes", "Stage.cs");
+            string source = File.ReadAllText(path);
+
+            int poolIndex = source.IndexOf("MatchSession.TryGetRandomShipTypes(");
+            int setupLevelsIndex = source.IndexOf("SetupLevels();");
+            Assert.That(poolIndex, Is.GreaterThanOrEqualTo(0));
+            Assert.That(setupLevelsIndex, Is.GreaterThan(poolIndex));
+            StringAssert.Contains("ConfigData.BeeShipTypes = beeRandomShipTypes.ToHashSet();", source);
+            StringAssert.Contains("ConfigData.HumanShipTypes = humanRandomShipTypes.ToHashSet();", source);
+        }
     }
 }

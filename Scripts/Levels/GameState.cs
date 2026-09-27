@@ -461,6 +461,8 @@ namespace Assets.Scripts.Levels
         public int AuthorityPeerId;
         public List<MatchLobbyPeerSnapshot> Peers = new List<MatchLobbyPeerSnapshot>();
         public List<MatchLobbyPlayerSnapshot> Players = new List<MatchLobbyPlayerSnapshot>();
+        public List<int> BeeRandomShipTypes = new List<int>();
+        public List<int> HumanRandomShipTypes = new List<int>();
         public List<MatchLobbySquadSnapshot> Squads = new List<MatchLobbySquadSnapshot>();
     }
 
@@ -496,6 +498,10 @@ namespace Assets.Scripts.Levels
         public const int MaxOutgoingCommandAcknowledgements = 1024;
         private readonly Dictionary<Guid, (int PlayerId, int Side, SavedSquad Squad)> _squadOwnerAssignments =
             new Dictionary<Guid, (int PlayerId, int Side, SavedSquad Squad)>();
+        private readonly List<ConfigData.ShipTypes> _beeRandomShipTypes =
+            new List<ConfigData.ShipTypes>();
+        private readonly List<ConfigData.ShipTypes> _humanRandomShipTypes =
+            new List<ConfigData.ShipTypes>();
 
         public IReadOnlyList<MatchPeer> Peers => _peers;
         public IReadOnlyList<MatchPlayer> Players => _players;
@@ -609,6 +615,16 @@ namespace Assets.Scripts.Levels
                 playerSides.Add(player.PlayerId, player.Side);
             }
 
+            if (!IsValidRandomShipTypePool(
+                    snapshot.BeeRandomShipTypes,
+                    ConfigData.Configuration.BeeSide) ||
+                !IsValidRandomShipTypePool(
+                    snapshot.HumanRandomShipTypes,
+                    ConfigData.Configuration.HumanSide))
+            {
+                return false;
+            }
+
             if (snapshot.Squads == null || snapshot.Squads.Count > MaxLobbySquads)
             {
                 return false;
@@ -720,6 +736,15 @@ namespace Assets.Scripts.Levels
                     peer.TransportIdentity));
             }
 
+            for (int i = 0; i < _beeRandomShipTypes.Count; i++)
+            {
+                candidate.BeeRandomShipTypes.Add((int)_beeRandomShipTypes[i]);
+            }
+            for (int i = 0; i < _humanRandomShipTypes.Count; i++)
+            {
+                candidate.HumanRandomShipTypes.Add((int)_humanRandomShipTypes[i]);
+            }
+
             HashSet<int> playerIds = new HashSet<int>();
             for (int i = 0; i < _players.Count; i++)
             {
@@ -823,7 +848,10 @@ namespace Assets.Scripts.Levels
 
             MatchSession candidate = new MatchSession();
             if (!candidate.TrySetMatchId(matchId) ||
-                !candidate.TrySetSetupSeed(snapshot.SetupSeed))
+                !candidate.TrySetSetupSeed(snapshot.SetupSeed) ||
+                !candidate.TrySetRandomShipTypes(
+                    snapshot.BeeRandomShipTypes.Select(value => (ConfigData.ShipTypes)value),
+                    snapshot.HumanRandomShipTypes.Select(value => (ConfigData.ShipTypes)value)))
             {
                 return false;
             }

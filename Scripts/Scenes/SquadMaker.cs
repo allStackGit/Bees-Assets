@@ -179,6 +179,32 @@ namespace Assets.Scripts.Scenes
                 return false;
             }
 
+        private bool RefreshHostingRandomShipTypes(MatchSession session)
+        {
+            if (session == null || !session.IsConfiguring || !session.IsLocalAuthority)
+            {
+                return false;
+            }
+
+            IEnumerable<ConfigData.ShipTypes> beeTypes =
+                ConfigData.BeeShipTypes != null && ConfigData.BeeShipTypes.Count > 0
+                    ? ConfigData.BeeShipTypes
+                    : ConfigData.UserProgressData?.VisibleBeeShipTypes;
+            IEnumerable<ConfigData.ShipTypes> humanTypes =
+                ConfigData.HumanShipTypes != null && ConfigData.HumanShipTypes.Count > 0
+                    ? ConfigData.HumanShipTypes
+                    : ConfigData.UserProgressData?.VisibleHumanShipTypes;
+
+            return beeTypes != null &&
+                   humanTypes != null &&
+                   session.TrySetRandomShipTypes(beeTypes, humanTypes);
+        }
+
+            if (!RefreshHostingRandomShipTypes(session))
+            {
+                return false;
+            }
+
             MatchPeer localPeer = session.Peers.FirstOrDefault(peer => peer.IsLocal);
             if (localPeer == null ||
                 !SteamMultiplayerTransportFactory.TryGetLocalTransportIdentity(
@@ -281,6 +307,12 @@ namespace Assets.Scripts.Scenes
         protected override void Update()
         {
             base.Update();
+            if (MultiplayerLobbySession != null &&
+                MultiplayerLobbySession.IsLocalAuthority &&
+                MultiplayerLobbySession.IsConfiguring)
+            {
+                RefreshHostingRandomShipTypes(MultiplayerLobbySession);
+            }
             _multiplayerLobbyTransport?.Update();
 
             if (_multiplayerLobbyTransport != null &&
