@@ -157,8 +157,16 @@ namespace Bees.Tests.EditMode
             Assert.That(agent, Does.Contain("ShipCommunications[ship] = new Vector4("));
             Assert.That(agent, Does.Contain("ShipCommunications.Remove(ship);"));
             Assert.That(agent, Does.Contain("ShipCommunications.TryGetValue(ally, out Vector4 communication)"));
-            Assert.That(lifecycle, Does.Contain("RlOneVsOneAgent.ClearCommunication(this);"),
-                "Pooled ship reuse must not expose communication from its previous lifecycle.");
+            int clearData = lifecycle.IndexOf("public virtual void ClearData()", System.StringComparison.Ordinal);
+            int clearCommunication = lifecycle.IndexOf(
+                "RlOneVsOneAgent.ClearCommunication(this);",
+                clearData,
+                System.StringComparison.Ordinal);
+            int clearDataEnd = lifecycle.IndexOf("protected void FixedUpdate()", clearData, System.StringComparison.Ordinal);
+            Assert.That(clearData, Is.GreaterThanOrEqualTo(0));
+            Assert.That(clearCommunication, Is.GreaterThan(clearData),
+                "Pooled ship reuse must clear communication in the reset path.");
+            Assert.That(clearDataEnd, Is.GreaterThan(clearCommunication));
             Assert.That(perception, Does.Contain("AddAllySlots(sensor, _allyCandidates, MaxObservedAllies, origin, frameQuarterTurns);"));
             Assert.That(perception, Does.Contain("AddEntitySlots(sensor, _enemyCandidates, MaxObservedEnemies, origin, frameQuarterTurns);"),
                 "Enemy observations must not receive the private allied communication tail.");
