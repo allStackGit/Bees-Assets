@@ -311,8 +311,11 @@ async function invokeStart(options = {}) {
     let staged;
     let desired;
     if (performForcedNewRun) {
+        const sameRunRelease = release.incompatible
+            ? { ...release, incompatible: false }
+            : release;
         staged = await stageRelease(
-            config, admin, release, envArgs, environmentValidationKey
+            config, admin, sameRunRelease, envArgs, environmentValidationKey
         );
         desired = await setDesiredState(config, admin, { training_enabled: true });
     } else {
