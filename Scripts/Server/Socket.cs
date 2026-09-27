@@ -387,7 +387,33 @@ namespace Assets.Scripts.Server
             }
             else
             {
-                _nativeWebSocket.SendText(json);
+                NativeWebSocket.WebSocket socket = _nativeWebSocket;
+                int generation = Volatile.Read(ref _socketGeneration);
+                if (socket == null || !IsOpen || socket.State != NativeWebSocket.WebSocketState.Open)
+                {
+                    Debug.LogWarning("Deferring server request because the WebSocket is not open.");
+                    return;
+                }
+
+                SendNativeMessage(socket, generation, json);
+            }
+        }
+
+        private async void SendNativeMessage(
+            NativeWebSocket.WebSocket socket,
+            int generation,
+            string json)
+        {
+            try
+            {
+                await socket.SendText(json);
+            }
+            catch (Exception exception)
+            {
+                if (IsCurrentNativeSocket(generation, socket))
+                {
+                    Error(exception.Message);
+                }
             }
         }
 
