@@ -162,12 +162,52 @@ namespace Assets.Scripts.Server
             }
             else
             {
-                _nativeWebSocket = new NativeWebSocket.WebSocket(_websocketURL, "game");
-                _nativeWebSocket.OnOpen += Open;
-                _nativeWebSocket.OnError += Error;
-                _nativeWebSocket.OnClose += (e) => Close();
-                _nativeWebSocket.OnMessage += (bytes) => MessageQueue.Enqueue(bytes);
-                await _nativeWebSocket.Connect();
+                if (Interlocked.CompareExchange(ref _connectionAttemptInFlight, 1, 0) != 0)
+                {
+                    return;
+                }
+
+                int generation = Interlocked.Increment(ref _socketGeneration);
+                NativeWebSocket.WebSocket socket = new NativeWebSocket.WebSocket(_websocketURL, "game");
+                _nativeWebSocket = socket;
+                socket.OnOpen += () =>
+                {
+                    if (!IsCurrentNativeSocket(generation, socket)) return;
+                    Interlocked.Exchange(ref _connectionAttemptInFlight, 0);
+                    Open();
+                };
+                socket.OnError += error =>
+                {
+                    if (!IsCurrentNativeSocket(generation, socket)) return;
+                    Interlocked.Exchange(ref _connectionAttemptInFlight, 0);
+                    Error(error);
+                };
+                socket.OnClose += (e) =>
+                {
+                    if (!IsCurrentNativeSocket(generation, socket)) return;
+                    Interlocked.Exchange(ref _connectionAttemptInFlight, 0);
+                    Close();
+                };
+                socket.OnMessage += bytes =>
+                {
+                    if (IsCurrentNativeSocket(generation, socket))
+                    {
+                        MessageQueue.Enqueue(bytes);
+                    }
+                };
+
+                try
+                {
+                    await socket.Connect();
+                }
+                catch (Exception error)
+                {
+                    if (IsCurrentNativeSocket(generation, socket))
+                    {
+                        Interlocked.Exchange(ref _connectionAttemptInFlight, 0);
+                        Error(error.Message);
+                    }
+                }
             }
         }
 
@@ -175,6 +215,12 @@ namespace Assets.Scripts.Server
         {
             return generation == Volatile.Read(ref _socketGeneration) &&
                    ReferenceEquals(socket, _webSocketSharpSocket);
+        }
+
+        private bool IsCurrentNativeSocket(int generation, NativeWebSocket.WebSocket socket)
+        {
+            return generation == Volatile.Read(ref _socketGeneration) &&
+                   ReferenceEquals(socket, _nativeWebSocket);
         }
 
         private void EnqueueMainThread(int generation, WebSocketSharp.WebSocket socket, Action action)
