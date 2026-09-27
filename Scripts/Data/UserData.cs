@@ -163,7 +163,20 @@ namespace Assets.Scripts.Data
             }
 
             Debug.LogError($"User data '{filename}' is malformed or incompatible and will be rebuilt from safe defaults. {originalError.GetType().Name}: {originalError.Message}");
-            file.WriteData(defaults);
+            try
+            {
+                file.WriteData(defaults);
+            }
+            catch (Exception writeError)
+            {
+                MarkFailedLoadAsUnready();
+                if (!_hasLoggedMalformedRecoveryFailure)
+                {
+                    _hasLoggedMalformedRecoveryFailure = true;
+                    Debug.LogError($"Could not persist recovery defaults for user data '{filename}'. Startup will keep the data unavailable. {writeError.GetType().Name}: {writeError.Message}");
+                }
+                return;
+            }
 
             try
             {
