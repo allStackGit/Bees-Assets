@@ -402,4 +402,12 @@ Manual-only protection is acceptable only when the record explains why determini
 **Root cause:** `ActorSession.close()` set the shared uploader stop flag, and `_upload_loop` used that flag as an unconditional exit condition instead of draining accepted in-memory work.  
 **Permanent protection:** shutdown now gives the uploader a bounded drain window, retries transient backpressure/unavailability within that window, and joins it before orderly lease release. Session changes, stale ownership, permanent uploader errors, or the drain deadline still terminate the drain. `ElasticActorClaimShutdownTests.test_upload_loop_drains_queued_batch_after_shutdown_signal` protects the queued-batch case; `test_orderly_close_drains_session_then_stops_and_releases_lease` protects teardown ordering. Tests were added but not run, per the static-only audit constraint.  
 **Verification:** uploader loop, stop signaling, bounded deadline, and actor lease release order were reviewed statically. No tests or runtime checks were run.  
-**Invariant/knowledge:** orderly actor shutdown drains pending rollout uploads for a bounded period and joins the uploader before releasing ownership; a crash or unavailable broker falls back to lease expiry.  
+**Invariant/knowledge:** orderly actor shutdown drains pending rollout uploads for a bounded period and joins the uploader before releasing ownership; a crash or unavailable broker falls back to lease expiry.
+
+### REG-045 — Same-launch exit could bypass managed restart backoff
+**Area:** `Training/bees_training_worker_agent.py`, managed child restart reconciliation  
+**Symptom:** if a child exited after the supervisor's last poll but before the next desired-state reconciliation, the next `ManagedProcess.start()` could clear the dead process reference and relaunch the same failing command without recording the exit.  
+**Root cause:** `start()` treated an already-exited process as an ordinary stopped child; only the heartbeat polling loop called `record_exit()`.  
+**Permanent protection:** a same-launch start now records a dead child's exit before evaluating its backoff. The replacement path also rechecks backoff if the child exits between the first check and `stop()`. `ManagedProcessRestartTests.test_same_launch_records_exit_observed_before_restart` protects the missed-poll case. The test was added but not run, per the static-only audit constraint.  
+**Verification:** same-launch identity comparison, exit accounting, restart deadline, and the focused regression case were reviewed statically. No tests or runtime checks were run.  
+**Invariant/knowledge:** every unexpected child exit observed before a same-launch replacement contributes to that launch's backoff; unrelated control revisions do not clear it.  
