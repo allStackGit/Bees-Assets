@@ -64,6 +64,7 @@ These are cross-cutting rules future changes must preserve. Keep this file conci
 - Transient range/contact visibility state with multiple simultaneous observers must use ownership semantics; one observer exiting must not erase another observer's still-active contribution.
 - **Hive Mind learned visibility is deliberately different from transient visibility.** `GameState.VisionCache` and the side-wide Hive Mind environment caches are faction memory: once any Hive Mind observer sees a live enemy or environment object, the faction retains that knowledge for the remainder of that object's current `Level` lifecycle. An observer moving away, exiting range, or dying must not erase that learned sighting. The observed object's own removal/destruction or a `Level` reset/teardown may remove it.
 - Physics- or frame-dependent behavior should be validated in PlayMode when EditMode cannot reproduce the Unity lifecycle contract.
+- RL communication values are per-lifetime ship state: pool reset clears them before reuse, and private communication is observed only through allied ship slots.
 
 ## Testing and regressions
 
