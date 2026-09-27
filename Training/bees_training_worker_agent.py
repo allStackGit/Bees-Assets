@@ -773,6 +773,28 @@ class ManagedProcess:
         if not run_id:
             raise ValueError("managed training process requires a non-empty run_id")
 
+        normalized_environment_args = tuple(str(value) for value in environment_args)
+        command_changed = tuple(command) != self.command or (
+            revision != self.revision
+            or build_sha256 != self.build_sha256
+            or build_id != self.build_id
+            or str(run_id) != self.run_id
+            or compatibility_key != self.compatibility_key
+            or normalized_environment_args != self.environment_args
+            or worker_env_count != self.worker_env_count
+            or bool(graceful_checkpoint) != self.graceful_checkpoint
+            or bool(graceful_remote_stop) != self.graceful_remote_stop
+            or bool(require_child_health) != self.health_required
+        )
+        if command_changed:
+            self.clear_restart_backoff()
+        restart_delay = self.restart_delay(command)
+        if restart_delay > 0.0:
+            raise RuntimeError(
+                "managed process restart deferred for "
+                f"{restart_delay:.1f}s after repeated early exits"
+            )
+
         # Validate the launch identity before stopping any currently owned child.
         self.stop(progress_callback=stop_progress)
         environment = os.environ.copy()
