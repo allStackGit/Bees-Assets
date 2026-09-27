@@ -125,7 +125,29 @@ namespace Assets.Scripts.Levels
                 return false;
             }
 
-            return TryExecutePlayerCommand(command);
+            long lastAccepted = matchSession.GetLastAcceptedPlayerCommandSequence(command.PlayerId);
+            if (command.Sequence <= lastAccepted)
+            {
+                matchSession.QueuePlayerCommandAcknowledgement(
+                    sourcePeerId,
+                    command.PlayerId,
+                    lastAccepted);
+                return true;
+            }
+            if (command.Sequence != lastAccepted + 1)
+            {
+                return false;
+            }
+
+            bool executed = TryExecutePlayerCommand(command);
+            if (matchSession.GetLastAcceptedPlayerCommandSequence(command.PlayerId) >= command.Sequence)
+            {
+                matchSession.QueuePlayerCommandAcknowledgement(
+                    sourcePeerId,
+                    command.PlayerId,
+                    command.Sequence);
+            }
+            return executed;
         }
 
         public bool TryIssuePlayerCommand(
@@ -603,11 +625,16 @@ namespace Assets.Scripts.Levels
         public const int Version = 1;
         public const int MaxPacketBytes = 4096;
         private const string CommandPacketType = "command";
+        private const string AcknowledgementPacketType = "ack";
         private static readonly UTF8Encoding StrictUtf8 = new UTF8Encoding(false, true);
         private static readonly HashSet<string> CommandFields = new HashSet<string>
         {
             "v", "match", "type", "level", "player", "seq", "kind", "squad", "target",
             "ax", "ay", "bx", "by"
+        };
+        private static readonly HashSet<string> AcknowledgementFields = new HashSet<string>
+        {
+            "v", "match", "type", "player", "seq"
         };
 
         public static bool TrySerializeCommand(
@@ -646,6 +673,94 @@ namespace Assets.Scripts.Levels
             }
 
             payload = encoded;
+            return true;
+        }
+
+        public static bool TrySerializeAcknowledgement(
+            Guid matchId,
+            int playerId,
+            long sequence,
+            out byte[] payload)
+        {
+            payload = null;
+            if (matchId == Guid.Empty ||
+                playerId <= MatchSession.UnownedPlayerId ||
+                sequence <= 0)
+            {
+                return false;
+            }
+
+            JObject json = new JObject
+            {
+                ["v"] = Version,
+                ["match"] = matchId.ToString("N"),
+                ["type"] = AcknowledgementPacketType,
+                ["player"] = playerId,
+                ["seq"] = sequence
+            };
+
+            byte[] encoded = StrictUtf8.GetBytes(json.ToString(Formatting.None));
+            if (encoded.Length == 0 || encoded.Length > MaxPacketBytes)
+            {
+                return false;
+            }
+
+            payload = encoded;
+            return true;
+        }
+
+        public static bool TryDeserializeAcknowledgement(
+            byte[] payload,
+            Guid expectedMatchId,
+            out int playerId,
+            out long sequence)
+        {
+            playerId = MatchSession.UnownedPlayerId;
+            sequence = 0;
+            if (expectedMatchId == Guid.Empty ||
+                payload == null ||
+                payload.Length == 0 ||
+                payload.Length > MaxPacketBytes)
+            {
+                return false;
+            }
+
+            JObject json;
+            try
+            {
+                string text = StrictUtf8.GetString(payload);
+                json = JObject.Parse(text);
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+
+            foreach (JProperty property in json.Properties())
+            {
+                if (!AcknowledgementFields.Contains(property.Name))
+                {
+                    return false;
+                }
+            }
+            if (json.Count != AcknowledgementFields.Count ||
+                !TryReadInt64(json, "v", out long version) || version != Version ||
+                !TryReadString(json, "type", out string packetType) ||
+                packetType != AcknowledgementPacketType ||
+                !TryReadString(json, "match", out string matchText) ||
+                !Guid.TryParseExact(matchText, "N", out Guid matchId) ||
+                matchId != expectedMatchId ||
+                !TryReadInt64(json, "player", out long playerIdValue) ||
+                playerIdValue <= MatchSession.UnownedPlayerId ||
+                playerIdValue > int.MaxValue ||
+                !TryReadInt64(json, "seq", out sequence) ||
+                sequence <= 0)
+            {
+                sequence = 0;
+                return false;
+            }
+
+            playerId = (int)playerIdValue;
             return true;
         }
 
