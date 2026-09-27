@@ -1038,3 +1038,12 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** resumable optimizer state must be bound to the complete Unity build file set, not only its entrypoint. No tests were run or added under the static-only audit instruction.
 **Verification:** statically traced service-contract creation/loading and confirmed the canonical build packaging path includes the full build directory. No tests, builds, Unity, simulations, or runtime checks were run.
 **Invariant/knowledge:** an executable path identifies only the entrypoint; platform assets and runtime sidecars also determine the environment's behavior.
+
+### REG-117 — WAN actor lease expiry could stall an already-sufficient cohort
+**Area:** `Training/bees_wan_actor_training.py`, `WanActorBroker.next_trajectory_cohort`
+**Symptom:** while the learner waited for a minimum cohort, an actor lease could expire and lower the required number of live actors, but the pending current-policy batches were not returned until another batch arrived or the full environment timeout elapsed.
+**Root cause:** the cohort loop recomputed the live-actor threshold but did not recheck its already-selected actors before waiting; lease expiry also did not notify the condition.
+**Fix:** after recomputing topology and policy generation, the loop immediately returns a pending cohort that meets the updated threshold. When the queue is empty, it waits only until the earlier of the overall timeout or the next actor lease expiry, then recomputes.
+**Permanent protection:** pending cohort readiness must be re-evaluated as actor leases change, even when no new trajectory arrives. No tests were run or added under the static-only audit instruction.
+**Verification:** statically traced pending batch collection, live actor lease calculations, condition waits, topology refresh, and pending-cohort release. No tests, builds, Unity, simulations, or runtime checks were run.
+**Invariant/knowledge:** topology changes can make already accepted rollout data sufficient; lease expiry must wake cohort selection rather than making the learner wait for unrelated actor traffic.
