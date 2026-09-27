@@ -54,6 +54,7 @@ COMPATIBILITY_KEY_ENV = "BEES_TRAINING_COMPATIBILITY_KEY"
 ENVIRONMENT_ID_ENV = "BEES_TRAINING_ENVIRONMENT_ID"
 GRACEFUL_CHECKPOINT_STOP_SECONDS = 120.0
 CHILD_HEALTH_STARTUP_GRACE_SECONDS = 30.0
+CHILD_HEALTH_STALE_SECONDS = 30.0
 GRACEFUL_REMOTE_STOP_SECONDS = 20.0
 MANAGED_RESTART_STABLE_SECONDS = 60.0
 MANAGED_RESTART_BACKOFF_SECONDS = (1.0, 2.0, 5.0, 10.0, 30.0, 60.0, 120.0)
@@ -801,6 +802,18 @@ class ManagedProcess:
             return {"state": "ready", "error": ""}
         return read_managed_health(self.health_file, self.health_token)
 
+    def _starting_health_error(self, health: Mapping[str, Any]) -> str:
+        updated = health.get("updated_unix_seconds")
+        if not isinstance(updated, (int, float)) or isinstance(updated, bool):
+            return "managed child startup health timestamp is invalid"
+        age = max(0.0, time.time() - float(updated))
+        if age >= CHILD_HEALTH_STALE_SECONDS:
+            return (
+                "managed child startup health has not refreshed for "
+                f"{age:.1f} seconds"
+            )
+        return ""
+
     def health_error(self) -> str:
         if not self.health_required or not self.alive():
             return ""
@@ -819,17 +832,8 @@ class ManagedProcess:
         state = str(health.get("state", ""))
         if state == "error":
             return str(health.get("error") or "managed child reported an internal failure")
-        if (
-            state != "ready"
-            and self.started_monotonic > 0.0
-            and time.monotonic() - self.started_monotonic
-            >= CHILD_HEALTH_STARTUP_GRACE_SECONDS
-        ):
-            return (
-                "managed child remained in "
-                f"{state or 'unknown'} health for more than "
-                f"{CHILD_HEALTH_STARTUP_GRACE_SECONDS:g} seconds"
-            )
+        if state == "starting":
+            return self._starting_health_error(health)
         return ""
 
     def state(self, role: str, offline: bool = False) -> str:
@@ -850,6 +854,8 @@ class ManagedProcess:
             health_state = str(health.get("state", ""))
             if health_state == "error":
                 return "error"
+            if health_state == "starting":
+                return "error" if self._starting_health_error(health) else "starting"
             if health_state != "ready":
                 if (
                     self.started_monotonic > 0.0
