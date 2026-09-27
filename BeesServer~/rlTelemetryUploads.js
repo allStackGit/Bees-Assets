@@ -279,6 +279,8 @@ class RlTelemetryUploadManager {
         const userId = requireString(context?.userId, 'authenticated user ID');
         const connectionId = requireString(String(context?.connectionId ?? ''), 'connection ID');
         const uploadId = typeof params.UploadId === 'string' ? params.UploadId.trim() : '';
+        // Reserve authenticated activity before yielding so concurrent expiry cleanup cannot
+        // unlink a partial file while this request waits in the session operation queue.
         const session = (
             params.Type === 'rl-telemetry-chunk' ||
             params.Type === 'rl-telemetry-complete'
