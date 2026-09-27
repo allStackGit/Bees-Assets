@@ -15,6 +15,7 @@ namespace Assets.Scripts.Settings
          */
         public string Name;
         public bool IsLoaded;
+        public int ServerReadFailureStatus { get; private set; }
         public ulong UserId = 0;
         private SettingsRequest _request = null;
 
@@ -35,6 +36,15 @@ namespace Assets.Scripts.Settings
                 SettingsRequest standingRequest = ConfigData.Socket.GetStandingRequest(_request.Hash) as SettingsRequest;
                 if (standingRequest == null)
                 {
+                    return;
+                }
+
+                if (standingRequest.Status == 403)
+                {
+                    ServerReadFailureStatus = standingRequest.Status;
+                    ConfigData.Socket.StandingRequests.Remove(standingRequest);
+                    _request = null;
+                    Debug.LogError($"Server denied access to settings '{Name}'. Settings remain unavailable.");
                     return;
                 }
 
@@ -70,6 +80,7 @@ namespace Assets.Scripts.Settings
                 }
             }
 
+            ServerReadFailureStatus = 0;
             _request = new SettingsRequest(new GetUserSettingsData(ConfigData.GetUserId(), Name, ConfigData.Version),
                 this, Configuration.GetStandardMaxTimeOnQueue());
             ConfigData.Socket.SendRequest(_request);
