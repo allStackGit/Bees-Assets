@@ -254,17 +254,15 @@ class BrokerClient:
         wait_seconds: float,
         actor_id: Optional[int] = None,
     ) -> Mapping[str, Any]:
-        status, _headers, body = self._request(
-            "GET",
-            "/state",
-            query={
-                "session": session_id,
-                "policy_epoch": policy_epoch,
-                "control_epoch": control_epoch,
-                "wait": wait_seconds,
-                "actor_id": actor_id,
-            },
-        )
+        query = {
+            "session": session_id,
+            "policy_epoch": policy_epoch,
+            "control_epoch": control_epoch,
+            "wait": wait_seconds,
+        }
+        if actor_id is not None:
+            query["actor_id"] = actor_id
+        status, _headers, body = self._request("GET", "/state", query=query)
         if status != 200:
             raise RuntimeError(f"Unexpected WAN broker state status {status}")
         value = json.loads(body.decode("utf-8"))
