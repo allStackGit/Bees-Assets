@@ -679,6 +679,13 @@ namespace Assets.Scripts.Levels
             endX = Mathf.Clamp(endX, 0, _grid.MaxX);
             endY = Mathf.Clamp(endY, 0, _grid.MaxY);
 
+            if (_staticObstacleRebuildPending || _staticObstacleLayerDirty)
+            {
+                QueuePathRequest(new PathWaiting(
+                    ship, startX, startY, endX, endY, maximumClearance, requestId, lifecycleId));
+                return;
+            }
+
             for (int threadIndex = 0; threadIndex < ConfigData.MaxThreads; threadIndex++)
             {
                 if (!IsThreadActive[threadIndex])
