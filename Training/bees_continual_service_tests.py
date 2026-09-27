@@ -44,6 +44,60 @@ class ContinualServiceTests(unittest.TestCase):
             self.assertTrue(popen.call_args.kwargs["start_new_session"])
             self.assertEqual(popen.call_args.args[0], ["python", "trainer.py"])
 
+    def test_managed_stop_interrupts_release_child_without_waiting_for_checkpoint(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            options = self._options(Path(temp_dir))
+            fake = mock.Mock()
+            fake.pid = 7171
+            fake.poll.side_effect = [None, None]
+            fake.wait.return_value = 0
+
+            with (
+                mock.patch.object(service.os, "name", "posix"),
+                mock.patch.object(
+                    service,
+                    "_managed_stop_requested",
+                    side_effect=[False, True],
+                ),
+                mock.patch.object(service, "popen_owned", return_value=fake),
+                mock.patch.object(service.os, "killpg") as killpg,
+                mock.patch.object(service.time, "sleep"),
+            ):
+                with self.assertRaises(KeyboardInterrupt):
+                    service._run_managed_subprocess(
+                        ["python", "release.py"],
+                        options,
+                        interruptible_on_stop=True,
+                    )
+
+            killpg.assert_called_once_with(fake.pid, service.signal.SIGTERM)
+            fake.wait.assert_any_call(
+                timeout=service.MANAGED_INTERRUPTIBLE_STOP_SECONDS
+            )
+
+    def test_interruptible_phase_escalates_if_graceful_termination_does_not_exit(self):
+        fake = mock.Mock()
+        fake.pid = 8181
+        fake.poll.return_value = None
+        fake.wait.side_effect = [
+            service.subprocess.TimeoutExpired("release.py", 5),
+            0,
+        ]
+
+        with (
+            mock.patch.object(service.os, "name", "posix"),
+            mock.patch.object(service.os, "killpg") as killpg,
+        ):
+            service._stop_interruptible_managed_child(fake)
+
+        self.assertEqual(
+            killpg.call_args_list,
+            [
+                mock.call(fake.pid, service.signal.SIGTERM),
+                mock.call(fake.pid, service.signal.SIGKILL),
+            ],
+        )
+
     def test_fast_child_exit_still_treats_stop_file_as_interrupted_generation(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             options = self._options(Path(temp_dir))
