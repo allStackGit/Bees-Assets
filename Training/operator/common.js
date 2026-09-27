@@ -84,8 +84,20 @@ function ensureDir(directory) {
 }
 
 function removeIfExists(target, options = {}) {
+    const recursive = Boolean(options.recursive);
+    const maxRetries = recursive
+        ? Math.max(0, Number.isInteger(options.maxRetries) ? options.maxRetries : 50)
+        : 0;
+    const retryDelay = recursive
+        ? Math.max(0, Number.isInteger(options.retryDelay) ? options.retryDelay : 100)
+        : 0;
     try {
-        fs.rmSync(target, { force: true, recursive: Boolean(options.recursive) });
+        fs.rmSync(target, {
+            force: true,
+            recursive,
+            maxRetries,
+            retryDelay,
+        });
     } catch (error) {
         if (error.code !== 'ENOENT') throw error;
     }
