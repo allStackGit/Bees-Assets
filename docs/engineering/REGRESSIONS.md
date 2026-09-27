@@ -1136,3 +1136,10 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** launcher-only options must be parsed exclusively before `--env-args`; preserve its tail byte-for-byte at the argument-list level. No test was added or run under the user's static-analysis-only instruction.
 **Verification:** compared `_extract_bees_options` with the pinned ML-Agents CLI definition, which declares `--env-args` using `nargs=argparse.REMAINDER`. No tests, builds, Unity, simulations, or runtime checks were run.
 **Invariant/knowledge:** once the remainder delimiter is reached, downstream argument meaning is owned by the environment, not the launcher.
+### REG-128 — RL communication survived pooled ship reset
+**Area:** `Scripts/Scenes/RlOneVsOneAgent.cs` communication observations; `Scripts/Entities/Ships/Ship.Lifecycle.cs` `ClearData`
+**Symptom:** allied RL observations could read a pooled ship's previous communication vector after that ship object had begun a new logical lifetime.
+**Root cause:** communication was stored in a static dictionary keyed by the retained `Ship` object and cleared on agent release/rebind, but the ship's own pool reset did not clear the value.
+**Fix:** clear that ship's communication as part of `Ship.ClearData`, before the reused object is registered into its new level state.
+**Permanent protection:** pooled ship reset clears state keyed by the `Ship` instance; allied perception remains the only observation path that appends private communication. The existing policy-schema contract test now asserts the lifecycle cleanup call.
+**Verification:** static trace confirms `Setup` assigns the new runtime ID, calls `ClearData`, then registers the ship; communication observations are emitted only for ally slots. The focused source contract was added but not run. No runtime validation was performed.
