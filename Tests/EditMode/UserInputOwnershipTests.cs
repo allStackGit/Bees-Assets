@@ -145,5 +145,47 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains("!squad.IsHiveMindControlled", commandStateSource);
             StringAssert.Contains("squad.IsHiveMindControlled", commandStateSource);
         }
+
+        [Test]
+        public void SavedSquadOwnershipSurvivesUnambiguousLevelOptionClone()
+        {
+            Type sessionType = RuntimeAssembly.GetType("Assets.Scripts.Levels.MatchSession");
+            object session = Activator.CreateInstance(sessionType);
+            object sourceSquad = RuntimeAssembly.CreateUninitialized("Assets.Scripts.Data.SavedSquad");
+            object clonedSquad = RuntimeAssembly.CreateUninitialized("Assets.Scripts.Data.SavedSquad");
+            RuntimeAssembly.SetField(sourceSquad, "Id", 77L);
+            RuntimeAssembly.SetField(sourceSquad, "Side", 1);
+            RuntimeAssembly.SetField(clonedSquad, "Id", 77L);
+            RuntimeAssembly.SetField(clonedSquad, "Side", 1);
+
+            RuntimeAssembly.Invoke(session, "AddPlayer", 1, 1, true);
+            RuntimeAssembly.Invoke(session, "AddPlayer", 2, 1, false);
+            RuntimeAssembly.Invoke(session, "TryAssignSavedSquadOwner", sourceSquad, 2);
+
+            Assert.That(RuntimeAssembly.Invoke(session, "ResolveSquadOwner", clonedSquad, 1), Is.EqualTo(2));
+        }
+
+        [Test]
+        public void SavedSquadOwnershipDoesNotGuessAcrossIdCollision()
+        {
+            Type sessionType = RuntimeAssembly.GetType("Assets.Scripts.Levels.MatchSession");
+            object session = Activator.CreateInstance(sessionType);
+            object firstSquad = RuntimeAssembly.CreateUninitialized("Assets.Scripts.Data.SavedSquad");
+            object secondSquad = RuntimeAssembly.CreateUninitialized("Assets.Scripts.Data.SavedSquad");
+            object clonedSquad = RuntimeAssembly.CreateUninitialized("Assets.Scripts.Data.SavedSquad");
+
+            foreach (object squad in new[] { firstSquad, secondSquad, clonedSquad })
+            {
+                RuntimeAssembly.SetField(squad, "Id", 88L);
+                RuntimeAssembly.SetField(squad, "Side", 1);
+            }
+
+            RuntimeAssembly.Invoke(session, "AddPlayer", 1, 1, true);
+            RuntimeAssembly.Invoke(session, "AddPlayer", 2, 1, false);
+            RuntimeAssembly.Invoke(session, "TryAssignSavedSquadOwner", firstSquad, 1);
+            RuntimeAssembly.Invoke(session, "TryAssignSavedSquadOwner", secondSquad, 2);
+
+            Assert.That(RuntimeAssembly.Invoke(session, "ResolveSquadOwner", clonedSquad, 1), Is.EqualTo(0));
+        }
     }
 }

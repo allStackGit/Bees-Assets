@@ -343,6 +343,12 @@ namespace Assets.Scripts.Levels
             return playerId != UnownedPlayerId && playerId == PrimaryLocalPlayerId;
         }
 
+        public int GetPlayerSide(int playerId)
+        {
+            MatchPlayer player = _players.FirstOrDefault(candidate => candidate.Id == playerId);
+            return player == null ? 0 : player.Side;
+        }
+
         public bool TryAssignSavedSquadOwner(SavedSquad savedSquad, int playerId)
         {
             if (savedSquad == null)
@@ -384,6 +390,39 @@ namespace Assets.Scripts.Levels
                     MatchPlayer assignedPlayer = _players.FirstOrDefault(candidate => candidate.Id == assignment.PlayerId);
                     return assignedPlayer != null && assignedPlayer.Side == side
                         ? assignment.PlayerId
+                        : UnownedPlayerId;
+                }
+
+                // LevelOptions can clone SavedSquad instances before spawning. Preserve the
+                // match assignment across that clone when the persistent/transient squad id is
+                // unambiguous on this side. If two different players own the same id, refuse to
+                // guess; a later network loadout layer will supply a dedicated match-squad id.
+                int fallbackPlayerId = UnownedPlayerId;
+                for (int i = 0; i < _squadOwnerAssignments.Count; i++)
+                {
+                    (SavedSquad Squad, int PlayerId) assignment = _squadOwnerAssignments[i];
+                    if (assignment.Squad == null ||
+                        assignment.Squad.Side != side ||
+                        assignment.Squad.Id != savedSquad.Id)
+                    {
+                        continue;
+                    }
+
+                    if (fallbackPlayerId == UnownedPlayerId)
+                    {
+                        fallbackPlayerId = assignment.PlayerId;
+                    }
+                    else if (fallbackPlayerId != assignment.PlayerId)
+                    {
+                        return UnownedPlayerId;
+                    }
+                }
+
+                if (fallbackPlayerId != UnownedPlayerId)
+                {
+                    MatchPlayer fallbackPlayer = _players.FirstOrDefault(candidate => candidate.Id == fallbackPlayerId);
+                    return fallbackPlayer != null && fallbackPlayer.Side == side
+                        ? fallbackPlayerId
                         : UnownedPlayerId;
                 }
             }
