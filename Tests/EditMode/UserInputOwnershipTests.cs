@@ -541,7 +541,7 @@ namespace Bees.Tests.EditMode
                 RuntimeAssembly.SetField(command, "Sequence", 1L);
                 RuntimeAssembly.SetField(command, "SquadCommandId", 1L);
 
-                Assert.That(RuntimeAssembly.Invoke(state, "QueueReceivedPlayerCommand", command), Is.EqualTo(false));
+                Assert.That(RuntimeAssembly.Invoke(state, "QueueReceivedPlayerCommand", 10, command), Is.EqualTo(false));
             }
             finally
             {
@@ -603,6 +603,48 @@ namespace Bees.Tests.EditMode
             string toJsonSource = source.Substring(toJsonIndex);
             StringAssert.Contains("public Guid MatchOwnershipToken;", source);
             StringAssert.DoesNotContain("[\"MatchOwnershipToken\"]", toJsonSource);
+        }
+
+        [Test]
+        public void MultipleLocalPlayersShareOneTransportPeer()
+        {
+            Type sessionType = RuntimeAssembly.GetType("Assets.Scripts.Levels.MatchSession");
+            object session = Activator.CreateInstance(sessionType);
+
+            Assert.That(RuntimeAssembly.Invoke(session, "AddPlayer", 1, 1, true), Is.EqualTo(true));
+            Assert.That(RuntimeAssembly.Invoke(session, "AddPlayer", 2, 1, true), Is.EqualTo(true));
+
+            Assert.That(RuntimeAssembly.Invoke(session, "GetPlayerPeerId", 1), Is.EqualTo(1));
+            Assert.That(RuntimeAssembly.Invoke(session, "GetPlayerPeerId", 2), Is.EqualTo(1));
+            Assert.That(RuntimeAssembly.Invoke(session, "DoesPeerOwnPlayer", 1, 1), Is.EqualTo(true));
+            Assert.That(RuntimeAssembly.Invoke(session, "DoesPeerOwnPlayer", 1, 2), Is.EqualTo(true));
+        }
+
+        [Test]
+        public void RemotePeerCannotClaimAnotherPeersPlayerId()
+        {
+            Type sessionType = RuntimeAssembly.GetType("Assets.Scripts.Levels.MatchSession");
+            object session = Activator.CreateInstance(sessionType);
+
+            Assert.That(RuntimeAssembly.Invoke(session, "AddPeer", 10, false, "remote-a"), Is.EqualTo(true));
+            Assert.That(RuntimeAssembly.Invoke(session, "AddPeer", 11, false, "remote-b"), Is.EqualTo(true));
+            Assert.That(RuntimeAssembly.Invoke(session, "AddPlayerToPeer", 2, 1, 10), Is.EqualTo(true));
+            Assert.That(RuntimeAssembly.Invoke(session, "AddPlayerToPeer", 3, 2, 11), Is.EqualTo(true));
+
+            Assert.That(RuntimeAssembly.Invoke(session, "DoesPeerOwnPlayer", 10, 2), Is.EqualTo(true));
+            Assert.That(RuntimeAssembly.Invoke(session, "DoesPeerOwnPlayer", 10, 3), Is.EqualTo(false));
+            Assert.That(RuntimeAssembly.Invoke(session, "DoesPeerOwnPlayer", 11, 2), Is.EqualTo(false));
+        }
+
+        [Test]
+        public void ReceivedCommandExecutionChecksSourcePeerBeforeRawEnvelopeExecution()
+        {
+            string commandPath = Path.Combine(Application.dataPath, "Scripts", "Levels", "GameState.Commands.cs");
+            string source = File.ReadAllText(commandPath);
+
+            StringAssert.Contains("TryExecuteReceivedPlayerCommand(queuedCommand.SourcePeerId, queuedCommand.Command)", source);
+            StringAssert.Contains("!matchSession.DoesPeerOwnPlayer(sourcePeerId, command.PlayerId)", source);
+            StringAssert.Contains("private bool TryExecutePlayerCommand(PlayerCommandEnvelope command)", source);
         }
     }
 }
