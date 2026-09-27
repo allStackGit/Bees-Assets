@@ -51,6 +51,7 @@ class _RunScopedLogSink:
     """Mirror supervisor/child console output into the run-scoped uploaded log tree."""
 
     MAX_BYTES = 16 * 1024 * 1024
+    MAX_ROTATED_FILES = 4
 
     def __init__(self, root: Path) -> None:
         self.root = root
@@ -80,12 +81,19 @@ class _RunScopedLogSink:
                 encoded_size = len(value.encode("utf-8", errors="replace"))
                 current_size = path.stat().st_size if path.is_file() else 0
                 if current_size > 0 and current_size + encoded_size > self.MAX_BYTES:
-                    rotated = path.with_name(path.name + ".1")
-                    try:
-                        rotated.unlink()
-                    except FileNotFoundError:
-                        pass
+                    rotated = path.with_name(
+                        f"remote-supervisor-{time.time_ns():020d}.log"
+                    )
                     os.replace(path, rotated)
+                    retained = sorted(
+                        path.parent.glob("remote-supervisor-*.log"),
+                        key=lambda item: item.name,
+                    )
+                    for expired in retained[:-self.MAX_ROTATED_FILES]:
+                        try:
+                            expired.unlink()
+                        except FileNotFoundError:
+                            pass
                 with path.open("a", encoding="utf-8", errors="replace") as handle:
                     handle.write(value)
             except OSError:
