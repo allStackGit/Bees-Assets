@@ -631,8 +631,10 @@ namespace Assets.Scripts.Levels
     {
         public const int Version = 1;
         public const int MaxPacketBytes = 4096;
+        public const int MaxLobbyPacketBytes = 16384;
         private const string CommandPacketType = "command";
         private const string AcknowledgementPacketType = "ack";
+        private const string LobbyPacketType = "lobby";
         private static readonly UTF8Encoding StrictUtf8 = new UTF8Encoding(false, true);
         private static readonly HashSet<string> CommandFields = new HashSet<string>
         {
@@ -642,6 +644,18 @@ namespace Assets.Scripts.Levels
         private static readonly HashSet<string> AcknowledgementFields = new HashSet<string>
         {
             "v", "match", "type", "player", "seq"
+        };
+        private static readonly HashSet<string> LobbyFields = new HashSet<string>
+        {
+            "v", "type", "match", "authority", "peers", "players"
+        };
+        private static readonly HashSet<string> LobbyPeerFields = new HashSet<string>
+        {
+            "id", "identity"
+        };
+        private static readonly HashSet<string> LobbyPlayerFields = new HashSet<string>
+        {
+            "id", "peer", "side"
         };
 
         public static bool TrySerializeCommand(
@@ -680,6 +694,156 @@ namespace Assets.Scripts.Levels
             }
 
             payload = encoded;
+            return true;
+        }
+
+        public static bool TrySerializeLobbySnapshot(
+            MatchLobbySnapshot snapshot,
+            out byte[] payload)
+        {
+            payload = null;
+            if (!MatchSession.IsValidLobbySnapshot(snapshot))
+            {
+                return false;
+            }
+
+            JArray peers = new JArray();
+            for (int i = 0; i < snapshot.Peers.Count; i++)
+            {
+                MatchLobbyPeerSnapshot peer = snapshot.Peers[i];
+                peers.Add(new JObject
+                {
+                    ["id"] = peer.PeerId,
+                    ["identity"] = peer.TransportIdentity
+                });
+            }
+
+            JArray players = new JArray();
+            for (int i = 0; i < snapshot.Players.Count; i++)
+            {
+                MatchLobbyPlayerSnapshot player = snapshot.Players[i];
+                players.Add(new JObject
+                {
+                    ["id"] = player.PlayerId,
+                    ["peer"] = player.PeerId,
+                    ["side"] = player.Side
+                });
+            }
+
+            JObject json = new JObject
+            {
+                ["v"] = Version,
+                ["type"] = LobbyPacketType,
+                ["match"] = snapshot.MatchId,
+                ["authority"] = snapshot.AuthorityPeerId,
+                ["peers"] = peers,
+                ["players"] = players
+            };
+
+            byte[] encoded = StrictUtf8.GetBytes(json.ToString(Formatting.None));
+            if (encoded.Length == 0 || encoded.Length > MaxLobbyPacketBytes)
+            {
+                return false;
+            }
+
+            payload = encoded;
+            return true;
+        }
+
+        public static bool TryDeserializeLobbySnapshot(
+            byte[] payload,
+            out MatchLobbySnapshot snapshot)
+        {
+            snapshot = null;
+            if (payload == null ||
+                payload.Length == 0 ||
+                payload.Length > MaxLobbyPacketBytes)
+            {
+                return false;
+            }
+
+            JObject json;
+            try
+            {
+                json = JObject.Parse(StrictUtf8.GetString(payload));
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+
+            if (!HasExactFields(json, LobbyFields) ||
+                !TryReadInt64(json, "v", out long version) ||
+                version != Version ||
+                !TryReadString(json, "type", out string packetType) ||
+                packetType != LobbyPacketType ||
+                !TryReadString(json, "match", out string matchId) ||
+                !TryReadInt64(json, "authority", out long authorityPeerId) ||
+                authorityPeerId <= 0 ||
+                authorityPeerId > int.MaxValue ||
+                !(json["peers"] is JArray peers) ||
+                peers.Count == 0 ||
+                peers.Count > MatchSession.MaxLobbyPeers ||
+                !(json["players"] is JArray players) ||
+                players.Count == 0 ||
+                players.Count > MatchSession.MaxLobbyPlayers)
+            {
+                return false;
+            }
+
+            MatchLobbySnapshot parsed = new MatchLobbySnapshot
+            {
+                Version = (int)version,
+                MatchId = matchId,
+                AuthorityPeerId = (int)authorityPeerId
+            };
+
+            for (int i = 0; i < peers.Count; i++)
+            {
+                if (!(peers[i] is JObject peerJson) ||
+                    !HasExactFields(peerJson, LobbyPeerFields) ||
+                    !TryReadInt64(peerJson, "id", out long peerId) ||
+                    peerId <= 0 ||
+                    peerId > int.MaxValue ||
+                    !TryReadString(peerJson, "identity", out string identity) ||
+                    string.IsNullOrWhiteSpace(identity) ||
+                    identity.Length > MatchSession.MaxTransportIdentityLength)
+                {
+                    return false;
+                }
+
+                parsed.Peers.Add(new MatchLobbyPeerSnapshot((int)peerId, identity));
+            }
+
+            for (int i = 0; i < players.Count; i++)
+            {
+                if (!(players[i] is JObject playerJson) ||
+                    !HasExactFields(playerJson, LobbyPlayerFields) ||
+                    !TryReadInt64(playerJson, "id", out long playerId) ||
+                    playerId <= MatchSession.UnownedPlayerId ||
+                    playerId > int.MaxValue ||
+                    !TryReadInt64(playerJson, "peer", out long peerId) ||
+                    peerId <= 0 ||
+                    peerId > int.MaxValue ||
+                    !TryReadInt64(playerJson, "side", out long side) ||
+                    side < int.MinValue ||
+                    side > int.MaxValue)
+                {
+                    return false;
+                }
+
+                parsed.Players.Add(new MatchLobbyPlayerSnapshot(
+                    (int)playerId,
+                    (int)peerId,
+                    (int)side));
+            }
+
+            if (!MatchSession.IsValidLobbySnapshot(parsed))
+            {
+                return false;
+            }
+
+            snapshot = parsed;
             return true;
         }
 
@@ -877,6 +1041,23 @@ namespace Assets.Scripts.Levels
                 return false;
             }
 
+            return true;
+        }
+
+        private static bool HasExactFields(JObject json, HashSet<string> fields)
+        {
+            if (json == null || json.Count != fields.Count)
+            {
+                return false;
+            }
+
+            foreach (JProperty property in json.Properties())
+            {
+                if (!fields.Contains(property.Name))
+                {
+                    return false;
+                }
+            }
             return true;
         }
 

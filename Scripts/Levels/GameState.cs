@@ -383,6 +383,7 @@ namespace Assets.Scripts.Levels
         public const int LocalPeerId = 1;
         public const int MaxLobbyPeers = 16;
         public const int MaxLobbyPlayers = 32;
+        public const int MaxTransportIdentityLength = 256;
         private const int LegacyRemotePeerIdOffset = 1000000;
 
         private readonly List<MatchPeer> _peers = new List<MatchPeer>();
@@ -417,6 +418,63 @@ namespace Assets.Scripts.Levels
             return session;
         }
 
+        public static bool IsValidLobbySnapshot(MatchLobbySnapshot snapshot)
+        {
+            if (snapshot == null ||
+                snapshot.Version != MatchLobbySnapshot.CurrentVersion ||
+                string.IsNullOrWhiteSpace(snapshot.MatchId) ||
+                !Guid.TryParseExact(snapshot.MatchId, "N", out Guid matchId) ||
+                matchId == Guid.Empty ||
+                snapshot.AuthorityPeerId <= 0 ||
+                snapshot.Peers == null ||
+                snapshot.Peers.Count == 0 ||
+                snapshot.Peers.Count > MaxLobbyPeers ||
+                snapshot.Players == null ||
+                snapshot.Players.Count == 0 ||
+                snapshot.Players.Count > MaxLobbyPlayers)
+            {
+                return false;
+            }
+
+            HashSet<int> peerIds = new HashSet<int>();
+            HashSet<string> transportIdentities = new HashSet<string>(StringComparer.Ordinal);
+            for (int i = 0; i < snapshot.Peers.Count; i++)
+            {
+                MatchLobbyPeerSnapshot peer = snapshot.Peers[i];
+                if (peer == null ||
+                    peer.PeerId <= 0 ||
+                    string.IsNullOrWhiteSpace(peer.TransportIdentity) ||
+                    peer.TransportIdentity.Length > MaxTransportIdentityLength ||
+                    !peerIds.Add(peer.PeerId) ||
+                    !transportIdentities.Add(peer.TransportIdentity))
+                {
+                    return false;
+                }
+            }
+
+            if (!peerIds.Contains(snapshot.AuthorityPeerId))
+            {
+                return false;
+            }
+
+            HashSet<int> playerIds = new HashSet<int>();
+            for (int i = 0; i < snapshot.Players.Count; i++)
+            {
+                MatchLobbyPlayerSnapshot player = snapshot.Players[i];
+                if (player == null ||
+                    player.PlayerId <= UnownedPlayerId ||
+                    !playerIds.Add(player.PlayerId) ||
+                    !peerIds.Contains(player.PeerId) ||
+                    (player.Side != ConfigData.Configuration.BeeSide &&
+                     player.Side != ConfigData.Configuration.HumanSide))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
         public bool TryCreateLobbySnapshot(out MatchLobbySnapshot snapshot)
         {
             snapshot = null;
@@ -446,6 +504,7 @@ namespace Assets.Scripts.Levels
                 if (peer == null ||
                     peer.Id <= 0 ||
                     string.IsNullOrWhiteSpace(peer.TransportIdentity) ||
+                    peer.TransportIdentity.Length > MaxTransportIdentityLength ||
                     !peerIds.Add(peer.Id) ||
                     !transportIdentities.Add(peer.TransportIdentity))
                 {
@@ -477,6 +536,11 @@ namespace Assets.Scripts.Levels
                     player.Side));
             }
 
+            if (!IsValidLobbySnapshot(candidate))
+            {
+                return false;
+            }
+
             snapshot = candidate;
             return true;
         }
@@ -487,19 +551,10 @@ namespace Assets.Scripts.Levels
             out MatchSession session)
         {
             session = null;
-            if (snapshot == null ||
-                snapshot.Version != MatchLobbySnapshot.CurrentVersion ||
-                string.IsNullOrWhiteSpace(snapshot.MatchId) ||
-                !Guid.TryParseExact(snapshot.MatchId, "N", out Guid matchId) ||
-                matchId == Guid.Empty ||
-                snapshot.AuthorityPeerId <= 0 ||
+            if (!IsValidLobbySnapshot(snapshot) ||
                 string.IsNullOrWhiteSpace(localTransportIdentity) ||
-                snapshot.Peers == null ||
-                snapshot.Peers.Count == 0 ||
-                snapshot.Peers.Count > MaxLobbyPeers ||
-                snapshot.Players == null ||
-                snapshot.Players.Count == 0 ||
-                snapshot.Players.Count > MaxLobbyPlayers)
+                localTransportIdentity.Length > MaxTransportIdentityLength ||
+                !Guid.TryParseExact(snapshot.MatchId, "N", out Guid matchId))
             {
                 return false;
             }

@@ -1159,5 +1159,63 @@ namespace Bees.Tests.EditMode
             Assert.That((bool)createSnapshot.Invoke(host, afterBattle), Is.False);
             Assert.That(afterBattle[0], Is.Null);
         }
+
+        [Test]
+        public void LobbySnapshotProtocolRoundTripsWithExactSchema()
+        {
+            Type sessionType = RuntimeAssembly.GetType("Assets.Scripts.Levels.MatchSession");
+            Type protocolType = RuntimeAssembly.GetType("Assets.Scripts.Levels.MultiplayerProtocol");
+            object host = Activator.CreateInstance(sessionType);
+
+            RuntimeAssembly.Invoke(host, "AddPlayer", 1, 1, true);
+            RuntimeAssembly.Invoke(host, "TrySetPeerTransportIdentity", 1, "steam:host");
+            RuntimeAssembly.Invoke(host, "AddPeer", 10, false, "steam:client");
+            RuntimeAssembly.Invoke(host, "AddPlayerToPeer", 2, 2, 10);
+
+            MethodInfo createSnapshot = sessionType.GetMethod(
+                "TryCreateLobbySnapshot",
+                BindingFlags.Instance | BindingFlags.Public);
+            object[] snapshotArgs = { null };
+            Assert.That((bool)createSnapshot.Invoke(host, snapshotArgs), Is.True);
+
+            MethodInfo serialize = protocolType.GetMethod(
+                "TrySerializeLobbySnapshot",
+                BindingFlags.Public | BindingFlags.Static);
+            object[] serializeArgs = { snapshotArgs[0], null };
+            Assert.That((bool)serialize.Invoke(null, serializeArgs), Is.True);
+            byte[] payload = (byte[])serializeArgs[1];
+
+            MethodInfo deserialize = protocolType.GetMethod(
+                "TryDeserializeLobbySnapshot",
+                BindingFlags.Public | BindingFlags.Static);
+            object[] deserializeArgs = { payload, null };
+            Assert.That((bool)deserialize.Invoke(null, deserializeArgs), Is.True);
+
+            object parsed = deserializeArgs[1];
+            Assert.That(RuntimeAssembly.GetField(parsed, "AuthorityPeerId"), Is.EqualTo(1));
+            Assert.That(RuntimeAssembly.GetCount(RuntimeAssembly.GetField(parsed, "Peers")), Is.EqualTo(2));
+            Assert.That(RuntimeAssembly.GetCount(RuntimeAssembly.GetField(parsed, "Players")), Is.EqualTo(2));
+        }
+
+        [Test]
+        public void LobbySnapshotProtocolRejectsUnknownNestedFieldsAndOversize()
+        {
+            Type protocolType = RuntimeAssembly.GetType("Assets.Scripts.Levels.MultiplayerProtocol");
+            MethodInfo deserialize = protocolType.GetMethod(
+                "TryDeserializeLobbySnapshot",
+                BindingFlags.Public | BindingFlags.Static);
+
+            string matchId = Guid.NewGuid().ToString("N");
+            string invalid =
+                "{\"v\":1,\"type\":\"lobby\",\"match\":\"" + matchId +
+                "\",\"authority\":1,\"peers\":[{\"id\":1,\"identity\":\"steam:host\",\"extra\":1}]," +
+                "\"players\":[{\"id\":1,\"peer\":1,\"side\":1}]}";
+            object[] invalidArgs = { System.Text.Encoding.UTF8.GetBytes(invalid), null };
+            Assert.That((bool)deserialize.Invoke(null, invalidArgs), Is.False);
+
+            byte[] oversized = new byte[16385];
+            object[] oversizedArgs = { oversized, null };
+            Assert.That((bool)deserialize.Invoke(null, oversizedArgs), Is.False);
+        }
     }
 }
