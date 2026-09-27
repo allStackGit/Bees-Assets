@@ -1567,6 +1567,20 @@ class TrainingControlStore {
             persistentHeartbeatStateChanged = this._rememberDedicatedTrainer(record) ||
                 persistentHeartbeatStateChanged;
         }
+        this.trainers.set(trainerId, record);
+        if (persistentHeartbeatStateChanged) {
+            try {
+                this._persist();
+            } catch (error) {
+                this.state = previousState;
+                if (previousTrainerRecord) this.trainers.set(trainerId, previousTrainerRecord);
+                else this.trainers.delete(trainerId);
+                throw error;
+            }
+        }
+
+        // A heartbeat whose persistent trainer-registry update failed is not accepted. Do not
+        // advance the in-memory env-count optimizer from that rejected observation.
         const canonicalBuild = this._catalogForRole(role)[platform]?.[this.state.canonical_build_id];
         const optimizerContextKey = [
             this.state.run_id,
@@ -1580,17 +1594,6 @@ class TrainingControlStore {
                 !this.state.pending_release &&
                 Boolean(canonicalBuild),
         });
-        this.trainers.set(trainerId, record);
-        if (persistentHeartbeatStateChanged) {
-            try {
-                this._persist();
-            } catch (error) {
-                this.state = previousState;
-                if (previousTrainerRecord) this.trainers.set(trainerId, previousTrainerRecord);
-                else this.trainers.delete(trainerId);
-                throw error;
-            }
-        }
         this._advanceRollout();
         return this.stateFor({ trainerId, role, platform });
     }
