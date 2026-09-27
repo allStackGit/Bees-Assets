@@ -699,13 +699,13 @@ Manual-only protection is acceptable only when the record explains why determini
 **Verification:** statically traced initial action dispatch, response dequeue/state updates, worker restart, recovery dispatch, and trajectory postprocessing. The focused regression guard was updated but not run; no tests or runtime checks were performed, per the static-only audit scope.  
 **Invariant/knowledge:** do not issue a second action from a worker's prior observation until its already-consumed response has been postprocessed.
 
-### REG-080 — PPO compatibility patch weakened continuous entropy scale
+### REG-080 — PPO compatibility patch changed continuous entropy scale under weapon masking
 **Area:** `Training/bees_mlagents_ppo_compat.py`, inactive weapon-aim masking  
-**Symptom:** after masking nonexistent weapon aim dimensions, the compatibility patch averaged the remaining continuous entropies. ML-Agents 1.1.0 sums entropy across action dimensions, so this changed the balance between continuous exploration and discrete exploration, especially for ships with few active weapon slots.  
-**Root cause:** active continuous entropy was divided by the number of active dimensions instead of preserving the trainer's sum-over-actions contract.  
-**Permanent protection:** the patch now sums entropy for active continuous dimensions and excludes only inactive aim dimensions. `InactiveContinuousActionMaskTests.test_masked_entropy_sums_only_active_continuous_dimensions` protects the scale.  
-**Verification:** compared the project patch with the pinned ML-Agents 1.1.0 action model's entropy aggregation and statically traced the active-dimension mask. The focused regression guard was added but not run; no tests or runtime checks were performed, per the static-only audit scope.  
-**Invariant/knowledge:** masking inactive action dimensions must preserve ML-Agents' entropy aggregation scale for all remaining dimensions.
+**Symptom:** PPO's continuous entropy contribution varied with the number of active weapon-aim dimensions, changing its scale relative to the discrete exploration terms for ships with different weapon counts.  
+**Root cause:** the compatibility patch summed active Gaussian entropy dimensions. The pinned ML-Agents 1.1.0 `GaussianDistInstance.entropy()` averages entropy over dimension 1; replacing inactive dimensions with a sum changed that contract.  
+**Permanent protection:** the patch now computes the mean Gaussian entropy over active continuous dimensions only, retaining ML-Agents' scale when all dimensions are active while excluding nonexistent aim slots. `InactiveContinuousActionMaskTests.test_masked_entropy_averages_only_active_continuous_dimensions` protects this behavior.  
+**Verification:** compared the custom calculation with the pinned `release_22` source, whose trainer package declares version 1.1.0, and traced how `ActionModel` adds continuous entropy to per-branch discrete entropy. The focused regression guard was updated but not run; no tests or runtime checks were performed, per the static-only audit scope.  
+**Invariant/knowledge:** masking inactive continuous dimensions must average over the remaining active Gaussian dimensions to preserve ML-Agents' continuous entropy scale.
 
 ### REG-081 — Legacy Pluto IV could omit the terminal evacuation interval from its score
 **Area:** `Scripts/Levels/Level.Campaign.Pluto.cs`, legacy Pluto IV evacuation objective accounting  
