@@ -138,6 +138,13 @@ function normalizeEnvironmentArgs(value) {
     return value.map(String);
 }
 
+function environmentArgsIdentity(environmentArgs) {
+    return crypto
+        .createHash('sha256')
+        .update(JSON.stringify(normalizeEnvironmentArgs(environmentArgs)), 'utf8')
+        .digest('hex');
+}
+
 function publicBuildDescriptor(record) {
     if (!record) return null;
     return {
@@ -822,11 +829,18 @@ class TrainingControlStore {
         const record = this._requiredTrainerRecord(spec);
         if (!record) return false;
         const artifact = this._catalogForRole('dedicated')[spec.platform]?.[pending.build_id];
+        const environmentTransition =
+            Object.prototype.hasOwnProperty.call(pending, 'environment_args') &&
+            JSON.stringify(pending.environment_args) !== JSON.stringify(this.state.environment_args);
+        const environmentMatches =
+            !environmentTransition ||
+            record.environment_id === environmentArgsIdentity(pending.environment_args);
         return Boolean(artifact) &&
             record.process_state === 'running' &&
             !record.last_error &&
             record.build_id === pending.build_id &&
             record.build_sha256 === artifact.archive_sha256 &&
+            environmentMatches &&
             record.applied_revision >= pending.phase_revision;
     }
 
@@ -1395,6 +1409,10 @@ class TrainingControlStore {
                 : '',
             applied_revision: Number.isInteger(payload.applied_revision) ? payload.applied_revision : -1,
             last_error: typeof payload.last_error === 'string' ? payload.last_error.slice(0, 2048) : '',
+            environment_id: (
+                typeof payload.environment_id === 'string' &&
+                /^[0-9a-f]{64}$/.test(payload.environment_id)
+            ) ? payload.environment_id : '',
             metrics: payload.metrics && typeof payload.metrics === 'object' && !Array.isArray(payload.metrics)
                 ? payload.metrics
                 : {},
