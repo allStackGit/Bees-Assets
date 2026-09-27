@@ -4,6 +4,10 @@ Static-only repository audit on `rl/initial-design-work`. This ledger is the cur
 
 ## Active validated defects
 
+### BUG-003 — Expiry cleanup can delete an in-flight demonstration upload
+**Location:** `BeesServer~/rlDemonstrationUploads.js`, `RlDemonstrationUploadManager.handle()` and `cleanupExpired()`  
+**Description:** A chunk or completion can be queued and performing asynchronous file work when another request runs global expiry cleanup. Cleanup checks only `lastActivityAt`, not the session's queued/in-flight operation, so a slow operation crossing the idle timeout can have its partial archive unlinked before it finishes.
+
 ## Audit status
 
 - Complete clean finding passes since the latest production changes: **0 / 2**.
