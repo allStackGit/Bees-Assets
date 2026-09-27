@@ -35,10 +35,30 @@ class EpisodeLogMetricsTests(unittest.TestCase):
 
 
 class BackgroundBuildPreparerTests(unittest.TestCase):
+    def test_wait_for_build_heartbeats_and_can_yield_for_new_state(self):
+        preparer = worker.BackgroundBuildPreparer.__new__(worker.BackgroundBuildPreparer)
+        preparer._lock = threading.Lock()
+        preparer._requested_build_id = "build-a"
+        preparer.prepared_build_id = ""
+        preparer._thread = mock.Mock()
+        preparer._thread.is_alive.side_effect = [True, True]
+        progress = mock.Mock(return_value=False)
+
+        ready = preparer.wait_for_build(
+            {"build_id": "build-a"},
+            progress_callback=progress,
+            poll_seconds=0.5,
+        )
+
+        self.assertFalse(ready)
+        preparer._thread.join.assert_called_once_with(timeout=0.5)
+        progress.assert_called_once_with()
+
     def test_wait_for_build_joins_only_matching_preparation(self):
         preparer = worker.BackgroundBuildPreparer.__new__(worker.BackgroundBuildPreparer)
         preparer._lock = threading.Lock()
         preparer._requested_build_id = "build-a"
+        preparer.prepared_build_id = ""
         preparer._thread = mock.Mock()
 
         preparer.wait_for_build({"build_id": "build-b"})
