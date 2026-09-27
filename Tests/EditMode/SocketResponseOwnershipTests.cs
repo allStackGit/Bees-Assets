@@ -253,6 +253,44 @@ namespace Bees.Tests.EditMode
             RuntimeAssembly.AddToCollection(_standingRequests, request);
         }
 
+        [Test]
+        public void ForbiddenProfileReadResponsesAreTerminalWithoutPretendingDataIsMissing()
+        {
+            AssertForbiddenReadRequestMarkedTerminal(
+                "Assets.Scripts.Server.DataFileRequest",
+                "GetUserData",
+                8301L);
+            AssertForbiddenReadRequestMarkedTerminal(
+                "Assets.Scripts.Server.SettingsRequest",
+                "GetSettings",
+                8302L);
+        }
+
+        private void AssertForbiddenReadRequestMarkedTerminal(
+            string requestTypeName,
+            string requestKind,
+            long hash)
+        {
+            object request = RuntimeAssembly.CreateUninitialized(requestTypeName);
+            SetFieldIncludingBase(request, "Hash", hash);
+            SetFieldIncludingBase(request, "Type", Enum.Parse(_requestTypes, requestKind));
+            RuntimeAssembly.AddToCollection(_standingRequests, request);
+
+            object response = RuntimeAssembly.CreateUninitialized("Assets.Scripts.Server.ServerResponse");
+            SetFieldIncludingBase(response, "Hash", hash);
+            SetFieldIncludingBase(response, "Status", 403);
+            SetFieldIncludingBase(response, "RequestType", Enum.Parse(_requestTypes, requestKind));
+
+            Assert.That(RuntimeAssembly.InvokeStatic(
+                RuntimeAssembly.GetType("Assets.Scripts.Server.SocketResponseLifecycleGuard"),
+                "ShouldSuppressResponse",
+                _socket,
+                response), Is.True);
+            Assert.That(RuntimeAssembly.GetCount(_standingRequests), Is.EqualTo(1),
+                "The waitable owner must receive the terminal status before its request is retired.");
+            Assert.That(RuntimeAssembly.GetField(request, "Status"), Is.EqualTo(403));
+        }
+
         private bool CanApply(int expectedItemId)
         {
             return (bool)RuntimeAssembly.InvokeStatic(
