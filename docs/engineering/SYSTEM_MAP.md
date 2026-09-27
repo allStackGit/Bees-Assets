@@ -23,6 +23,7 @@ Do not treat all IDs as interchangeable:
 
 - **account/user identity** — Steam/user profile identity used by Unity and BeesServer; the backend preserves Steam64-sized values exactly rather than through JavaScript `Number`;
 - **persistent fleet identity** — `FleetShip.Id`, `SavedSquad.Id`, and `SquadShip.FleetId`; negative IDs identify generated/transient fleet/squad records;
+- **lobby squad ownership identity** — transient `SavedSquad.MatchOwnershipToken`; generated when a lobby assigns a squad, copied by `SavedSquad.Clone()`, deliberately omitted from persistent JSON, and used so different players' overlapping persistent squad IDs never determine ownership;
 - **match player identity** — `MatchPlayer.Id` and `Squad.OwnerPlayerId`; transient within one Free Play match, reset on pooled squad reuse, and distinct from account or network-entity identity. `Squad.IsPlayerControlled` means any player owns the squad; legacy `IsUserControlled` remains the primary-local UI/input perspective during the multiplayer refactor.
 - **match squad identity** — `Squad.MatchSquadId` is allocated monotonically by the current `MatchSession` for each runtime squad lifetime and is the player-command/network boundary identity. `Squad.CommandSquadId` exposes it in Free Play and falls back to the legacy runtime `ItemId` only when no match session exists.
 - **runtime pooled identity** — `Squad.ItemId`, runtime `Ship.Id`, command/weapon/object IDs from `GameState`/`Pool`; valid only for the current Level/object lifetime;

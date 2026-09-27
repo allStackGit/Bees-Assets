@@ -591,5 +591,18 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains("IsUserControlled = false;", source);
             StringAssert.Contains("IsHiveMindControlled = false;", source);
         }
+
+        [Test]
+        public void MatchOwnershipTokenIsTransientAndNotPersisted()
+        {
+            string savedSquadPath = Path.Combine(Application.dataPath, "Scripts", "Data", "SavedSquad.cs");
+            string source = File.ReadAllText(savedSquadPath);
+            int toJsonIndex = source.IndexOf("public string ToJson()");
+            Assert.That(toJsonIndex, Is.GreaterThanOrEqualTo(0));
+
+            string toJsonSource = source.Substring(toJsonIndex);
+            StringAssert.Contains("public Guid MatchOwnershipToken;", source);
+            StringAssert.DoesNotContain("[\"MatchOwnershipToken\"]", toJsonSource);
+        }
     }
 }
