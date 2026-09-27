@@ -100,7 +100,8 @@ internal static class RlEpisodeShipIdentity
     {
         if (!IdentityRandoms.TryGetValue(level, out System.Random random))
         {
-            random = new System.Random(Guid.NewGuid().GetHashCode());
+            random = new System.Random(
+                RlOneVsOneScenarioSeed.Create(level, RlOneVsOneScenarioSeed.IdentityStreamSalt));
             IdentityRandoms.Add(level, random);
         }
         return random;
