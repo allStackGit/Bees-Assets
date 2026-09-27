@@ -553,15 +553,24 @@ class FastEnvManagerTests(unittest.TestCase):
             def __init__(self):
                 self.step_queue = FakeQueue()
                 self.env_workers = [
-                    SimpleNamespace(waiting=True),
-                    SimpleNamespace(waiting=True),
+                    SimpleNamespace(waiting=False),
+                    SimpleNamespace(waiting=False),
                 ]
                 self.queue_steps_calls = 0
+                self.queued_workers = []
 
             def _queue_steps(self):
                 self.queue_steps_calls += 1
+                ready = [
+                    index for index, worker in enumerate(self.env_workers)
+                    if not worker.waiting
+                ]
+                self.queued_workers.append(ready)
+                for index in ready:
+                    self.env_workers[index].waiting = True
 
             def _restart_failed_workers(self, step):
+                self.env_workers[step.worker_id].waiting = False
                 self.step_queue.values.append(restarted)
 
             @staticmethod
@@ -574,6 +583,7 @@ class FastEnvManagerTests(unittest.TestCase):
         self.assertEqual(result, [completed])
         self.assertEqual(manager.step_queue.values, [restarted])
         self.assertEqual(manager.queue_steps_calls, 2)
+        self.assertEqual(manager.queued_workers, [[0, 1], [1]])
 
     def test_blocking_first_result_then_drains_ready_workers(self):
         from queue import Empty
