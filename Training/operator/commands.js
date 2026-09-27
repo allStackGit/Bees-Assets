@@ -5,7 +5,9 @@ const path = require('node:path');
 
 const {
     GAMEPLAY_SERVER_PORT,
+    ensureDir,
     ensureTokenFile,
+    getGitShortSha,
     exists,
     getProcessIdentity,
     getStateReferencedLivePid,
@@ -40,7 +42,9 @@ const {
     ensureRunLifecycleMatchesRelease,
     getLatestRelease,
     getPendingForcedNewRunPlan,
+    getTrainingCompatibilityFingerprint,
     installReleaseTrainingRuntime,
+    newReleaseTrainingRuntime,
     newTrainingRunPlan,
     saveLatestRelease,
 } = require('./runtime');
@@ -106,6 +110,132 @@ async function reconcilePersistedTrainingAfterServerStart(config, admin) {
         preparedRuntime,
     );
 }
+
+async function invokeRuntime() {
+    const config = loadConfig();
+    if (!exists(paths.latestReleasePath)) {
+        throw new Error(
+            "No training release exists. Run '.\\Assets\\bees.ps1 build' first."
+        );
+    }
+
+    removeUtf8BomIfPresent(paths.latestReleasePath);
+    const release = getLatestRelease();
+    const buildId = String(release.build_id || '').trim();
+    const releaseRun = String(release.run_id || '').trim();
+    const releaseKey = String(release.compatibility_key || '').trim().toLowerCase();
+    if (!buildId || !releaseRun || !releaseKey) {
+        throw new Error('Latest release is missing build/run compatibility identity.');
+    }
+
+    const python = resolvePython(config);
+    if (!testPythonCode(
+        python,
+        'import sys; raise SystemExit(0 if sys.version_info[:2] == (3,10) else 1)'
+    )) {
+        throw new Error(
+            "Bees runtime repair requires Python 3.10. Configured python resolved to '" +
+            python + "'."
+        );
+    }
+
+    const fingerprint = getTrainingCompatibilityFingerprint(python);
+    const sourceKey = String(fingerprint.compatibility_key || '').trim().toLowerCase();
+    if (!sourceKey || sourceKey !== releaseKey) {
+        throw new Error(
+            'Current source changes the RL compatibility contract. Runtime-only deployment is ' +
+            "not safe; use '.\\Assets\\bees.ps1 build -Force' so Unity and runtime artifacts " +
+            'are rebuilt together.'
+        );
+    }
+
+    ensureRunLifecycleMatchesRelease(python, release);
+
+    const worker = ensureTokenFile(paths.workerTokenPath);
+    const admin = ensureTokenFile(paths.adminTokenPath);
+    ensureTokenFile(paths.wanTokenPath);
+    ensureTokenFile(paths.bootstrapTokenPath);
+    await startBeesServerIfNeeded(config, worker, admin);
+    if (!(await testControl(String(config.controlUrl), admin))) {
+        throw new Error(
+            'Training control is not reachable; refusing to update runtime metadata without ' +
+            'verifying the active release identity.'
+        );
+    }
+
+    const status = await getStatus(config, admin);
+    const desired = status.desired || {};
+    const activeRun = String(desired.run_id || '').trim();
+    const activeKey = String(desired.compatibility_key || '').trim().toLowerCase();
+    const canonicalBuild = String(desired.canonical_build_id || '').trim();
+    const pending = desired.pending_release;
+    const pendingBuild = pending && typeof pending === 'object'
+        ? String(pending.build_id || '').trim()
+        : '';
+
+    if (activeRun !== releaseRun || activeKey !== releaseKey) {
+        throw new Error(
+            'Latest release does not match the active training run. active=' +
+            activeRun + '/' + activeKey + ' release=' + releaseRun + '/' + releaseKey
+        );
+    }
+    if (buildId !== canonicalBuild && buildId !== pendingBuild) {
+        throw new Error(
+            'Latest release build ' + buildId +
+            ' is neither canonical nor the active pending release. Refusing to guess which ' +
+            'Unity build should own this runtime.'
+        );
+    }
+
+    const sourceSha = getGitShortSha();
+    const packageRoot = path.join(paths.buildsRoot, 'Packages', buildId);
+    ensureDir(packageRoot);
+    const runtimeArchive = path.join(
+        packageRoot,
+        'training-runtime-' + sourceSha + '.zip',
+    );
+    const runtime = newReleaseTrainingRuntime(
+        python,
+        buildId,
+        sourceSha,
+        runtimeArchive,
+    );
+    const updatedRelease = {
+        ...release,
+        training_runtime: runtime,
+        runtime_source_commit: sourceSha,
+        runtime_updated_utc: new Date().toISOString(),
+    };
+    saveLatestRelease(updatedRelease);
+
+    const unity = resolveUnityEditor(config);
+    assertCentralAgentCheckpointSafe();
+    const preparedRuntime = prepareCentralReleaseRuntime(
+        config,
+        python,
+        unity,
+        updatedRelease,
+    );
+    await startCentralAgentIfNeeded(
+        config,
+        python,
+        unity,
+        updatedRelease,
+        preparedRuntime,
+    );
+
+    if (exists(paths.tailnetAddressPath)) {
+        prepareRemoteBootstrap(config, python, updatedRelease);
+        await startTailnetGatewayIfNeeded(config);
+    }
+
+    console.log(
+        'Training runtime updated without rebuilding Unity: build=' + buildId +
+        ' runtime=' + String(runtime.runtime_version || '').slice(0, 12) +
+        ' source=' + sourceSha + '.'
+    );
+}
+
 
 async function invokeServer() {
     const config = loadConfig();
@@ -589,6 +719,7 @@ module.exports = {
     getEnvironmentArgs,
     invokeBuild,
     invokeQualify,
+    invokeRuntime,
     invokeServer,
     invokeStart,
     invokeStatus,
