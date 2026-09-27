@@ -15,6 +15,7 @@ same phase rather than silently skipping work.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import os
@@ -30,7 +31,7 @@ from typing import Callable, Dict, Mapping, Optional, Sequence
 from bees_process_safety import popen_owned, write_managed_health
 
 
-SERVICE_SCHEMA_VERSION = 1
+SERVICE_SCHEMA_VERSION = 2
 DEFAULT_RUN_ID = "bees-continuous-v8"
 DEFAULT_GENERATION_STEPS = 1_000_000
 DEFAULT_NUM_ENVS = 4
@@ -121,6 +122,32 @@ def _service_root(options: ServiceOptions) -> Path:
     return options.root / "metadata" / "continuous-service" / options.run_id
 
 
+def _file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _service_contract_sha256(options: ServiceOptions) -> str:
+    """Bind a resumable optimizer lineage to the config and environment that created it."""
+    contract = {
+        "schema_version": 1,
+        "run_id": options.run_id,
+        "trainer_config_sha256": _file_sha256(options.trainer_config),
+        "continual_config_sha256": _file_sha256(options.continual_config),
+        "training_env_sha256": _file_sha256(options.training_env),
+        "training_env_path": str(options.training_env.resolve()),
+        "game_build_version": options.game_build_version,
+        "generation_steps": options.generation_steps,
+        "num_envs": options.num_envs,
+        "environment_args": list(options.environment_args),
+    }
+    payload = json.dumps(contract, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
 def generation_id(index: int) -> str:
     if not isinstance(index, int) or isinstance(index, bool) or index < 0:
         raise ValueError("generation index must be a non-negative integer")
@@ -190,6 +217,7 @@ def _initial_state(options: ServiceOptions) -> Dict[str, object]:
     return {
         "schema_version": SERVICE_SCHEMA_VERSION,
         "run_id": options.run_id,
+        "training_contract_sha256": _service_contract_sha256(options),
         "generation_index": 0,
         "phase": "train",
         "training_started": False,
@@ -205,7 +233,7 @@ def load_state(options: ServiceOptions) -> Dict[str, object]:
         state = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         raise ValueError(f"Continuous-learning service state is invalid JSON: {path}: {exc}") from exc
-    if not isinstance(state, dict) or state.get("schema_version") != SERVICE_SCHEMA_VERSION:
+    if not isinstance(state, dict) or state.get("schema_version") not in (1, SERVICE_SCHEMA_VERSION):
         raise ValueError(f"Continuous-learning service state is incompatible: {path}")
     if state.get("run_id") != options.run_id:
         raise ValueError(
@@ -219,6 +247,27 @@ def load_state(options: ServiceOptions) -> Dict[str, object]:
         or not isinstance(state.get("training_started"), bool)
     ):
         raise ValueError(f"Continuous-learning service state is malformed: {path}")
+    expected_contract = _service_contract_sha256(options)
+    stored_contract = state.get("training_contract_sha256")
+    if not isinstance(stored_contract, str) or not stored_contract:
+        if (
+            int(state["generation_index"]) > 0
+            or state["training_started"]
+            or training_checkpoint_exists(options)
+        ):
+            raise ValueError(
+                "Continuous-learning service state has no saved training contract identity; "
+                "choose a new --run-id to avoid resuming an unverified optimizer lineage."
+            )
+        state["schema_version"] = SERVICE_SCHEMA_VERSION
+        state["training_contract_sha256"] = expected_contract
+    elif stored_contract != expected_contract:
+        raise ValueError(
+            "Training configuration, build, or environment arguments changed for this run-id; "
+            "choose a new --run-id to preserve the existing optimizer lineage."
+        )
+    else:
+        state["schema_version"] = SERVICE_SCHEMA_VERSION
     hot = state.get("last_hot_deployment_id")
     if hot is not None and (not isinstance(hot, str) or not _DEPLOYMENT_ID.fullmatch(hot)):
         raise ValueError(f"Continuous-learning service hot-deployment state is malformed: {path}")
