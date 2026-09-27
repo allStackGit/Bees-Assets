@@ -12,6 +12,7 @@ from unittest.mock import patch
 import numpy as np
 
 from bees_continual_evaluate import (
+    CHAMPION_GATE_SHORT_CIRCUIT,
     EVALUATION_MODE_FLAG,
     EVALUATION_PROTOCOL_VERSION,
     EpisodeResult,
@@ -143,6 +144,7 @@ class FakeStore:
         self.config = {
             "promotion": {
                 "min_matches_vs_champion": 5,
+                "min_win_rate_vs_champion": 0.52,
                 "min_historical_matches_per_opponent": 3,
             }
         }
@@ -399,6 +401,53 @@ class ContinualEvaluateTests(unittest.TestCase):
                     match_runner=fake_runner,
                 )
             self.assertEqual(calls, [])
+
+    def test_failed_champion_gate_short_circuits_downstream_match_groups(self):
+        with tempfile.TemporaryDirectory() as temp:
+            store = FakeStore(temp)
+            suite = {
+                "schema_version": 1,
+                "cases": [
+                    {
+                        "name": "should-not-run",
+                        "opponent_model_id": "history",
+                        "matches": 4,
+                        "minimum": 0.5,
+                        "metric": "score_rate",
+                        "critical": True,
+                        "env_args": [],
+                    }
+                ],
+            }
+            calls = []
+
+            def fake_runner(**kwargs):
+                calls.append(kwargs)
+                return validated_summary(
+                    kwargs["matches"],
+                    0,
+                    kwargs["matches"],
+                    0,
+                    0,
+                    20.0,
+                )
+
+            report = evaluate_candidate(
+                store,
+                candidate_model_id="candidate",
+                environment_path="fake.exe",
+                competency_suite=suite,
+                match_runner=fake_runner,
+            )
+
+            self.assertEqual(len(calls), 1)
+            self.assertEqual(calls[0]["matches"], 5)
+            self.assertEqual(report["historical"], [])
+            self.assertEqual(report["competencies"], [])
+            self.assertEqual(
+                report["evaluator"]["short_circuit"]["reason"],
+                CHAMPION_GATE_SHORT_CIRCUIT,
+            )
 
     def test_evaluate_candidate_builds_champion_historical_and_competency_report(self):
         with tempfile.TemporaryDirectory() as temp:
