@@ -296,3 +296,12 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** the service now persists a SHA-256 contract identity covering both configs, the training executable, game build label, generation size, environment count, and ordered environment arguments. Mismatches fail closed with guidance to use a new `--run-id`; legacy progressed state without an identity also fails closed. `ContinualServiceTests.test_changed_training_contract_cannot_resume_same_run_id` protects config drift. The test was added but not run, per the static-only audit constraint.  
 **Verification:** state loading, checkpoint discovery, and the service's `--resume` decision were traced statically. No tests or runtime checks were run.  
 **Invariant/knowledge:** an optimizer checkpoint may resume only when its persisted training contract still matches the active service configuration.  
+
+
+### REG-032 — Socket request history grew until a level reset
+**Area:** `Scripts/Server/Socket.cs`, `Scripts/Server/StandingRequestSet.cs`, stale squad-response lifecycle  \
+**Symptom:** a long-lived online level accumulated completed server-request objects in process-wide `ConfigData.RequestHistory`; cleanup previously occurred only when resetting a level.  
+**Root cause:** every request was appended to history, while the lifecycle guard only needs recent command/matchup requests to identify late responses for retired squad instances.  
+**Permanent protection:** normal request logging now retains only command/matchup history and caps it at the same 4,096 entries kept during level reset. Explicit `WatchServerRequests` mode preserves the full diagnostic history. `SocketResponseLifecycleGuardTests.BoundedRequestHistoryRetainsTheNewestRequests` protects the bounded collection’s retention and duplicate behavior; the test was added but not run, per the static-only audit constraint.  
+**Verification:** request creation, stale-squad lookup, and existing level-reset retention were traced statically. No tests or runtime checks were run.  
+**Invariant/knowledge:** process-wide historical request tracking must stay bounded during normal play while retaining the newest entries needed for late-response ownership checks.  
