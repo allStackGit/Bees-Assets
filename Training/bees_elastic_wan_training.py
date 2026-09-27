@@ -643,6 +643,12 @@ class ElasticWanBroker(base.WanActorBroker):
 
         now = time.monotonic()
         with self._condition:
+            # Recheck after acquiring the lock: control can advance between the
+            # optimistic check above and committing this registration.
+            if payload.get("control_epoch") != self._control_epoch:
+                raise base.StaleActorStateError(
+                    f"actor control epoch {payload.get('control_epoch')!r} != central epoch {self._control_epoch}"
+                )
             self._active_snapshot_locked(now=now)
             self._expire_claims_locked(now)
             previous = self._registrations.get(actor_id)
