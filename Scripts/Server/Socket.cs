@@ -825,9 +825,22 @@ namespace Assets.Scripts.Server
                     _handleMatchupResponse_squad,
                     _handleMatchupResponse_standingRequest.SquadId))
                 {
+                    ConfigData.MatchupStrategyTypes matchupType;
+                    long outcomeId = _handleMatchupResponse_matchupResponse.OutcomeId;
+                    if (!Utilities.ConvertMatchupStrategyNameToType.TryGetValue(
+                        _handleMatchupResponse_matchupResponse.Name ?? string.Empty,
+                        out matchupType))
+                    {
+                        Debug.LogError(
+                            $"Received unknown matchup strategy '{_handleMatchupResponse_matchupResponse.Name ?? "<null>"}'; using Random.");
+                        matchupType = ConfigData.MatchupStrategyTypes.Random;
+                        // The unknown server outcome cannot be credited to the fallback strategy.
+                        outcomeId = 0;
+                    }
+
                     _handleMatchupResponse_squad.MatchupStrategy.Setup(
-                        Utilities.ConvertMatchupStrategyNameToType[_handleMatchupResponse_matchupResponse.Name],
-                        _handleMatchupResponse_matchupResponse.OutcomeId,
+                        matchupType,
+                        outcomeId,
                         _handleMatchupResponse_squad);
                     _handleMatchupResponse_targetSquad = _handleMatchupResponse_squad.MatchupStrategy.SortSquads();
                     _handleMatchupResponse_level.HandledRequests.Add(_handleMatchupResponse_standingRequest.Hash);
