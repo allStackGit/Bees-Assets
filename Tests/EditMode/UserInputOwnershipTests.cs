@@ -1223,18 +1223,24 @@ namespace Bees.Tests.EditMode
         {
             Type sessionType = RuntimeAssembly.GetType("Assets.Scripts.Levels.MatchSession");
             object host = Activator.CreateInstance(sessionType);
-            object squad = RuntimeAssembly.CreateUninitialized("Assets.Scripts.Data.SavedSquad");
-            RuntimeAssembly.SetField(squad, "Id", 9001L);
-            RuntimeAssembly.SetField(squad, "Side", 1);
-            RuntimeAssembly.SetField(squad, "Name", "Persistent Squad");
-            RuntimeAssembly.SetField(squad, "Color", Color.white);
-            RuntimeAssembly.SetField(squad, "StartingPosition", Vector2.zero);
-            RuntimeAssembly.SetField(
-                squad,
-                "ChosenShootingStrategy",
-                Enum.Parse(
-                    RuntimeAssembly.GetType("Assets.Scripts.ConfigData+ShootingStrategyTypes"),
-                    "FirstSeen"));
+            Type savedSquadType = RuntimeAssembly.GetType("Assets.Scripts.Data.SavedSquad");
+            Type strategyType = RuntimeAssembly.GetType("Assets.Scripts.ConfigData+ShootingStrategyTypes");
+            Type statsType = RuntimeAssembly.GetType("Assets.Scripts.Data.SquadStatBlock");
+            object stats = Activator.CreateInstance(
+                statsType,
+                "Persistent Commander",
+                10, 7, 3, 100, 80, 4);
+            object squad = Activator.CreateInstance(
+                savedSquadType,
+                9001L,
+                1,
+                "Persistent Squad",
+                Vector2.zero,
+                false,
+                false,
+                Enum.Parse(strategyType, "FirstSeen"),
+                Color.white,
+                stats);
 
             object fleetShip = Activator.CreateInstance(
                 RuntimeAssembly.GetType("Assets.Scripts.Data.FleetShip"),
@@ -1345,7 +1351,12 @@ namespace Bees.Tests.EditMode
             Assert.That((bool)createSession.Invoke(null, args), Is.True);
             object session = args[2];
 
-            object assigned = RuntimeAssembly.Invoke(session, "GetLobbyAssignedSquads");
+            MethodInfo canonicalMethod = sessionType.GetMethod(
+                "TryCreateCanonicalLobbySquads",
+                BindingFlags.Instance | BindingFlags.Public);
+            object[] canonicalArgs = { null };
+            Assert.That((bool)canonicalMethod.Invoke(session, canonicalArgs), Is.True);
+            object assigned = canonicalArgs[0];
             Assert.That(RuntimeAssembly.GetCount(assigned), Is.EqualTo(1));
             object reconstructed = ((System.Collections.IList)assigned)[0];
             Assert.That(RuntimeAssembly.GetField(reconstructed, "Id"), Is.EqualTo(-1L));
@@ -1429,6 +1440,20 @@ namespace Bees.Tests.EditMode
             Assert.That(RuntimeAssembly.GetCount(parsedShips), Is.EqualTo(1));
             object parsedShip = ((System.Collections.IList)parsedShips)[0];
             Assert.That(RuntimeAssembly.GetField(parsedShip, "TransientFleetId"), Is.EqualTo(-1L));
+        }
+
+        [Test]
+        public void HostCanonicalLobbySquadsDoNotExposePersistentIdsOrStats()
+        {
+            string statePath = Path.Combine(Application.dataPath, "Scripts", "Levels", "GameState.cs");
+            string source = File.ReadAllText(statePath);
+
+            StringAssert.Contains("TryCreateCanonicalLobbySquads", source);
+            StringAssert.Contains("snapshot.TransientSquadId", source);
+            StringAssert.Contains("shipSnapshot.TransientFleetId", source);
+            StringAssert.Contains("new SquadStatBlock(", source);
+            StringAssert.Contains("\"Multiplayer\"", source);
+            StringAssert.DoesNotContain("return _squadOwnerAssignments", source);
         }
     }
 }

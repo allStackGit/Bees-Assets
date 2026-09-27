@@ -808,49 +808,12 @@ namespace Assets.Scripts.Levels
                     return false;
                 }
 
-                SavedSquad squad = new SavedSquad(
-                    squadSnapshot.TransientSquadId,
-                    squadSnapshot.Side,
-                    squadSnapshot.Name,
-                    new Vector2(squadSnapshot.StartingX, squadSnapshot.StartingY),
-                    squadSnapshot.CeaseFire,
-                    squadSnapshot.IsMatchingSpeed,
-                    (ConfigData.ShootingStrategyTypes)squadSnapshot.ShootingStrategy,
-                    new Color(
-                        squadSnapshot.ColorR,
-                        squadSnapshot.ColorG,
-                        squadSnapshot.ColorB,
-                        squadSnapshot.ColorA),
-                    new SquadStatBlock(
-                        "Multiplayer",
-                        0,
-                        0,
-                        0,
-                        0,
-                        0,
-                        0));
-                squad.IsSetToChase = squadSnapshot.IsSetToChase;
-                squad.MatchOwnershipToken = ownershipToken;
-
-                for (int shipIndex = 0; shipIndex < squadSnapshot.Ships.Count; shipIndex++)
+                if (!TryCreateTransientSavedSquad(
+                        squadSnapshot,
+                        ownershipToken,
+                        out SavedSquad squad))
                 {
-                    MatchLobbyShipSnapshot shipSnapshot = squadSnapshot.Ships[shipIndex];
-                    FleetShip fleetShip = new FleetShip(
-                        shipSnapshot.TransientFleetId,
-                        (ConfigData.ShipTypes)shipSnapshot.ShipType,
-                        false,
-                        false,
-                        0,
-                        0,
-                        0,
-                        0,
-                        0,
-                        0,
-                        0,
-                        shipSnapshot.Name);
-                    squad.AddShipToSquad(new SquadShip(
-                        fleetShip,
-                        new Vector2(shipSnapshot.OffsetX, shipSnapshot.OffsetY)));
+                    return false;
                 }
 
                 if (!candidate.TryAssignSavedSquadOwner(
@@ -1430,13 +1393,95 @@ namespace Assets.Scripts.Levels
             return true;
         }
 
-        public IReadOnlyList<SavedSquad> GetLobbyAssignedSquads()
+        public bool TryCreateCanonicalLobbySquads(out List<SavedSquad> squads)
         {
-            return _squadOwnerAssignments
-                .OrderBy(pair => pair.Key)
-                .Select(pair => pair.Value.Squad)
-                .Where(squad => squad != null)
-                .ToList();
+            squads = null;
+            if (!TryCreateLobbySnapshot(out MatchLobbySnapshot snapshot))
+            {
+                return false;
+            }
+
+            List<SavedSquad> canonical = new List<SavedSquad>(snapshot.Squads.Count);
+            for (int i = 0; i < snapshot.Squads.Count; i++)
+            {
+                MatchLobbySquadSnapshot squadSnapshot = snapshot.Squads[i];
+                if (!Guid.TryParseExact(
+                        squadSnapshot.OwnershipToken,
+                        "N",
+                        out Guid ownershipToken) ||
+                    !TryCreateTransientSavedSquad(
+                        squadSnapshot,
+                        ownershipToken,
+                        out SavedSquad squad))
+                {
+                    return false;
+                }
+
+                canonical.Add(squad);
+            }
+
+            squads = canonical;
+            return true;
+        }
+
+        private static bool TryCreateTransientSavedSquad(
+            MatchLobbySquadSnapshot snapshot,
+            Guid ownershipToken,
+            out SavedSquad squad)
+        {
+            squad = null;
+            if (snapshot == null || ownershipToken == Guid.Empty)
+            {
+                return false;
+            }
+
+            SavedSquad created = new SavedSquad(
+                snapshot.TransientSquadId,
+                snapshot.Side,
+                snapshot.Name,
+                new Vector2(snapshot.StartingX, snapshot.StartingY),
+                snapshot.CeaseFire,
+                snapshot.IsMatchingSpeed,
+                (ConfigData.ShootingStrategyTypes)snapshot.ShootingStrategy,
+                new Color(
+                    snapshot.ColorR,
+                    snapshot.ColorG,
+                    snapshot.ColorB,
+                    snapshot.ColorA),
+                new SquadStatBlock(
+                    "Multiplayer",
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0));
+            created.IsSetToChase = snapshot.IsSetToChase;
+            created.MatchOwnershipToken = ownershipToken;
+
+            for (int shipIndex = 0; shipIndex < snapshot.Ships.Count; shipIndex++)
+            {
+                MatchLobbyShipSnapshot shipSnapshot = snapshot.Ships[shipIndex];
+                FleetShip fleetShip = new FleetShip(
+                    shipSnapshot.TransientFleetId,
+                    (ConfigData.ShipTypes)shipSnapshot.ShipType,
+                    false,
+                    false,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    shipSnapshot.Name);
+                created.AddShipToSquad(new SquadShip(
+                    fleetShip,
+                    new Vector2(shipSnapshot.OffsetX, shipSnapshot.OffsetY)));
+            }
+
+            squad = created;
+            return true;
         }
 
         public int ResolveSquadOwner(SavedSquad savedSquad, int side)
