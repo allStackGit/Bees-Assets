@@ -26,6 +26,7 @@ namespace Assets.Scripts.Levels
         private void SetTriggers()
         {
             Triggers.Clear();
+            NextTriggers.Clear();
 
             int missionId = ConfigData.UserProgressData.GetCurrentLevel(
                 ConfigData.Configuration.UserSide,
