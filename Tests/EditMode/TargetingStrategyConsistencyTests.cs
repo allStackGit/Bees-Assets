@@ -30,6 +30,20 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void ClosestAndFurthestTargetPriorityRefreshesForCachedQueues()
+        {
+            string weapon = Read("Scripts", "Entities", "Ships", "Weapons", "Weapon.cs");
+            int start = weapon.IndexOf("bool refreshDynamicPriority = IsUsingCachedTargetingQueue");
+            int end = weapon.IndexOf("if (!IsUsingCachedTargetingQueue || refreshDynamicPriority)", start);
+            Assert.That(start, Is.GreaterThanOrEqualTo(0));
+            Assert.That(end, Is.GreaterThan(start));
+            string refreshCondition = weapon.Substring(start, end - start);
+
+            Assert.That(refreshCondition, Does.Contain("strategy == ConfigData.ShootingStrategyTypes.Closest"));
+            Assert.That(refreshCondition, Does.Contain("strategy == ConfigData.ShootingStrategyTypes.Furthest"));
+        }
+
+        [Test]
         public void WeaponTargetDistanceUsesConsistentWorldSpaceCoordinates()
         {
             string weapon = Read("Scripts", "Entities", "Ships", "Weapons", "Weapon.cs");
