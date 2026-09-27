@@ -19,6 +19,7 @@ These are cross-cutting rules future changes must preserve. Keep this file conci
 - Managed child restart backoff is tied to the complete launch identity and must account for each unexpected exit observed before replacement; a shared control revision alone does not reset it.
 - Background preparation and activation must not materialize the same build identity concurrently into a shared install path; finish matching preparation before activation.
 - Deterministic evidence must not rely on unordered collection iteration or cosmetic/global random-state side effects.
+- After a distributed learner worker failure resets the full environment cohort, discard every pre-reset worker response and resume all workers from their reset observations; never pair an action with a stale observation from the prior environment state.
 
 ## Maps, prefabs, scenes, and assets
 
