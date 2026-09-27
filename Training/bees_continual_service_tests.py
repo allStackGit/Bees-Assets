@@ -345,6 +345,39 @@ class ContinualServiceTests(unittest.TestCase):
             self.assertTrue(any("bees_continual_hot_bundle.py" in item for item in publish))
             self.assertIn(f"--distribution-root={options.model_distribution_root}", publish)
 
+    def test_service_reports_readiness_before_slow_bootstrap_work(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            options = self._options(Path(temp_dir))
+            events = []
+
+            def record_health(state, *, details=None, **_kwargs):
+                events.append(("health", state, details))
+
+            def inspect_champion(_options):
+                self.assertEqual(events[0][0:2], ("health", "ready"))
+                self.assertEqual(
+                    events[0][2],
+                    {"component": "continual-service", "phase": "initialized"},
+                )
+                events.append(("bootstrap", "champion lookup"))
+                return None
+
+            with (
+                mock.patch.object(service, "write_managed_health", side_effect=record_health),
+                mock.patch.object(
+                    service, "current_compatible_champion_id", side_effect=inspect_champion
+                ),
+                mock.patch.object(service, "current_deployment_id", return_value=None),
+            ):
+                result = service.run_service(
+                    options,
+                    runner=lambda _command, **_kwargs: mock.Mock(returncode=7),
+                    sleeper=lambda _seconds: None,
+                )
+
+            self.assertEqual(result, 2)
+            self.assertEqual(events[1], ("bootstrap", "champion lookup"))
+
     def test_incompatible_old_deployment_does_not_block_new_generation_training(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             options = self._options(Path(temp_dir))

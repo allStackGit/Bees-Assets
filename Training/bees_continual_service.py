@@ -515,7 +515,15 @@ def run_service(
     runner: Runner = subprocess.run,
     sleeper: Callable[[float], None] = time.sleep,
 ) -> int:
+    # Validate the persisted training contract before expensive champion lookup or release
+    # preparation. The supervisor has a bounded health startup grace, so publish readiness once
+    # this service is initialized rather than leaving a healthy slow bootstrap indistinguishable
+    # from a child that never became ready.
     state = load_state(options)
+    write_managed_health(
+        "ready",
+        details={"component": "continual-service", "phase": "initialized"},
+    )
 
     while True:
         try:
