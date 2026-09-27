@@ -192,6 +192,18 @@ class RlModelDistributionManager {
             const buffer = Buffer.alloc(length);
             let bytesRead;
             try {
+                const openedStats = await handle.stat();
+                if (!openedStats.isFile() ||
+                    openedStats.dev !== record.bundleDev ||
+                    openedStats.ino !== record.bundleIno ||
+                    openedStats.size !== record.bundleSizeBytes) {
+                    this.pointerCache.delete(platform);
+                    throw new RlModelDistributionError(
+                        503,
+                        'distribution-read-failed',
+                        'RL model bundle changed or became unreadable during download.',
+                    );
+                }
                 ({ bytesRead } = await handle.read(buffer, 0, length, offset));
             } finally {
                 await handle.close();
@@ -322,6 +334,7 @@ class RlModelDistributionManager {
                 bundleStats.isFile() && bundleStats.size === cached.bundleSizeBytes &&
                 bundleStats.mtimeMs === cached.bundleMtimeMs &&
                 bundleStats.ctimeMs === cached.bundleCtimeMs &&
+                bundleStats.dev === cached.bundleDev &&
                 bundleStats.ino === cached.bundleIno) {
                 return cached;
             }
@@ -397,6 +410,7 @@ class RlModelDistributionManager {
             pointerSize: pointerStats.size,
             bundleMtimeMs: bundleStats.mtimeMs,
             bundleCtimeMs: bundleStats.ctimeMs,
+            bundleDev: bundleStats.dev,
             bundleIno: bundleStats.ino,
         };
         this.pointerCache.set(platform, record);
