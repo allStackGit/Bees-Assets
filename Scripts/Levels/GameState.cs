@@ -689,6 +689,36 @@ namespace Assets.Scripts.Levels
             return true;
         }
 
+        private static bool IsValidRandomShipTypePool(
+            List<int> shipTypes,
+            int expectedSide)
+        {
+            if (shipTypes == null)
+            {
+                return false;
+            }
+
+            HashSet<int> unique = new HashSet<int>();
+            for (int i = 0; i < shipTypes.Count; i++)
+            {
+                int value = shipTypes[i];
+                if (!unique.Add(value) ||
+                    !Enum.IsDefined(typeof(ConfigData.ShipTypes), value))
+                {
+                    return false;
+                }
+
+                ConfigData.ShipTypes shipType = (ConfigData.ShipTypes)value;
+                if (!Utilities.ConvertShipTypeToSide.TryGetValue(shipType, out int side) ||
+                    side != expectedSide)
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
         private static bool IsFiniteLobbyFloat(float value)
         {
             return !float.IsNaN(value) && !float.IsInfinity(value);
@@ -956,6 +986,50 @@ namespace Assets.Scripts.Levels
 
             session = candidate;
             return true;
+        }
+
+        public bool TrySetRandomShipTypes(
+            IEnumerable<ConfigData.ShipTypes> beeTypes,
+            IEnumerable<ConfigData.ShipTypes> humanTypes)
+        {
+            if (!IsConfiguring || beeTypes == null || humanTypes == null)
+            {
+                return false;
+            }
+
+            List<ConfigData.ShipTypes> bees = beeTypes
+                .Distinct()
+                .OrderBy(type => (int)type)
+                .ToList();
+            List<ConfigData.ShipTypes> humans = humanTypes
+                .Distinct()
+                .OrderBy(type => (int)type)
+                .ToList();
+
+            if (!IsValidRandomShipTypePool(
+                    bees.Select(type => (int)type).ToList(),
+                    ConfigData.Configuration.BeeSide) ||
+                !IsValidRandomShipTypePool(
+                    humans.Select(type => (int)type).ToList(),
+                    ConfigData.Configuration.HumanSide))
+            {
+                return false;
+            }
+
+            _beeRandomShipTypes.Clear();
+            _beeRandomShipTypes.AddRange(bees);
+            _humanRandomShipTypes.Clear();
+            _humanRandomShipTypes.AddRange(humans);
+            return true;
+        }
+
+        public bool TryGetRandomShipTypes(
+            out List<ConfigData.ShipTypes> beeTypes,
+            out List<ConfigData.ShipTypes> humanTypes)
+        {
+            beeTypes = new List<ConfigData.ShipTypes>(_beeRandomShipTypes);
+            humanTypes = new List<ConfigData.ShipTypes>(_humanRandomShipTypes);
+            return beeTypes.Count > 0 && humanTypes.Count > 0;
         }
 
         public bool TrySetMatchId(Guid matchId)
