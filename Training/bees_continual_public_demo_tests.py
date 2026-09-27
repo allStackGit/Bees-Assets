@@ -158,6 +158,23 @@ class PublicDemoQuarantineTests(unittest.TestCase):
             self.ingest()
         self.assertEqual(self.store.status()["demonstration_batches"], 0)
 
+    def test_staged_demo_tampering_after_validation_is_rejected(self):
+        original_copy2 = public.shutil.copy2
+
+        def copy_then_tamper(source, destination, *args, **kwargs):
+            result = original_copy2(source, destination, *args, **kwargs)
+            if Path(source) == self.demo_path:
+                Path(destination).write_bytes(b"changed-after-quarantine-validation")
+            return result
+
+        public.shutil.copy2 = copy_then_tamper
+        try:
+            with self.assertRaises(continual.ValidationError):
+                self.ingest()
+        finally:
+            public.shutil.copy2 = original_copy2
+        self.assertEqual(self.store.status()["demonstration_batches"], 0)
+
     def test_manifest_sidecar_disagreement_is_rejected(self):
         altered = dict(self.manifest)
         altered["policyAbiVersion"] += 1
