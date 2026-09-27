@@ -124,6 +124,7 @@ class TrainingEnvOptimizer {
             retest_after_ms: 0,
             instability_hold_until_ms: 0,
             last_instability_ms: null,
+            last_instability_reason: '',
             last_update_ms: now,
             metrics_missing_since_ms: null,
         };
@@ -404,6 +405,17 @@ class TrainingEnvOptimizer {
             const holdUntil = useSessionFailureTime
                 ? timestamp + Math.max(0, this.instabilityHoldMs - sessionFailureAgeMs)
                 : timestamp + this.instabilityHoldMs;
+            const instabilityReason = reportedError
+                ? 'worker-reported error: ' + reportedError
+                : recentSessionFailure
+                    ? 'WAN actor session failure'
+                    : 'worker process state ' + (processState || 'unknown');
+            if (
+                state.last_instability_ms === null ||
+                instabilityTime >= state.last_instability_ms
+            ) {
+                state.last_instability_reason = instabilityReason;
+            }
             state.last_instability_ms = Math.max(
                 state.last_instability_ms ?? Number.NEGATIVE_INFINITY,
                 instabilityTime,
@@ -580,6 +592,7 @@ class TrainingEnvOptimizer {
             probing: this.activeProbeTrainerId === trainerId,
             stability_hold_until_ms: state.instability_hold_until_ms,
             last_instability_ms: state.last_instability_ms,
+            last_instability_reason: state.last_instability_reason,
         };
     }
 
