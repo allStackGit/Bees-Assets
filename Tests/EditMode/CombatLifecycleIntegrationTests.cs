@@ -153,6 +153,24 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void DeactivatingRangeColliderClearsBothShipRangeRegistries()
+        {
+            GameObject rangeObject = new GameObject("Range collider");
+            _entityObjects.Add(rangeObject);
+            object rangeCollider = rangeObject.AddComponent(RuntimeAssembly.GetType(
+                "Assets.Scripts.Entities.Ships.Weapons.RangeCollider"));
+            CircleCollider2D circleCollider = rangeObject.AddComponent<CircleCollider2D>();
+            RuntimeAssembly.SetField(rangeCollider, "Weapon", _weapon);
+            RuntimeAssembly.SetField(rangeCollider, "Collider", circleCollider);
+
+            RuntimeAssembly.Invoke(rangeCollider, "Deactivate");
+
+            Assert.That(((IDictionary)RuntimeAssembly.GetField(_weapon, "ShipsWithinRange")).Contains(202L), Is.False);
+            Assert.That(RuntimeAssembly.GetCount(RuntimeAssembly.GetField(_target, "WeaponsThatHaveUsWithinRange")), Is.Zero);
+            Assert.That(RuntimeAssembly.GetField(_weapon, "HasCachedChanged"), Is.True);
+        }
+
+        [Test]
         public void HarmlessModePreservesHealthTsvAndStatistics()
         {
             RuntimeAssembly.SetField(_stage, "MakeShotsHarmless", true);
