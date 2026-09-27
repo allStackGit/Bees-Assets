@@ -340,6 +340,37 @@ class ContinualServiceTests(unittest.TestCase):
             self.assertTrue(any("bees_continual_hot_bundle.py" in item for item in publish))
             self.assertIn(f"--distribution-root={options.model_distribution_root}", publish)
 
+    def test_run_service_publishes_ready_health_after_loading_state(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            options = self._options(Path(temp_dir))
+            state = {
+                "generation_index": 4,
+                "phase": "publish",
+                "training_started": False,
+                "last_hot_deployment_id": "deploy-" + "a" * 24,
+            }
+            with (
+                mock.patch.object(service, "load_state", return_value=state),
+                mock.patch.object(
+                    service,
+                    "current_compatible_champion_id",
+                    return_value="bees-rl-v6-champion",
+                ),
+                mock.patch.object(
+                    service,
+                    "current_deployment_id",
+                    return_value="deploy-" + "a" * 24,
+                ),
+                mock.patch.object(service, "save_state"),
+                mock.patch.object(service, "write_managed_health") as write_health,
+            ):
+                self.assertEqual(service.run_service(options), 0)
+
+            write_health.assert_called_once_with(
+                "ready",
+                details={"phase": "publish", "generation_index": 4},
+            )
+
     def test_incompatible_old_deployment_does_not_block_new_generation_training(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             options = self._options(Path(temp_dir))
