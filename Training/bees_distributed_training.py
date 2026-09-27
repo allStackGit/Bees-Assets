@@ -76,6 +76,12 @@ def extract_distributed_options(argv: Sequence[str]) -> Tuple[List[str], Distrib
     remote_spec: Optional[str] = None
     index = 0
     while index < len(argv):
+        if argv[index] == "--env-args":
+            # From this marker onward, arguments belong to Unity. Preserve them verbatim so
+            # application flags cannot be consumed as distributed-launcher options.
+            cleaned.extend(argv[index:])
+            break
+
         value, next_index = _read_value(argv, index, EXTERNAL_ENVS_FLAG)
         if value is not None:
             if external_envs is not None:
