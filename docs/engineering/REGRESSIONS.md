@@ -785,3 +785,13 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** `SocketResponseOwnershipTests.ForbiddenProfileReadResponsesAreTerminalWithoutPretendingDataIsMissing` checks both read request types receive terminal status. `SocketResponseLifecycleGuardTests.ForbiddenProfileReadsReachTheirWaitersAsTerminalFailures` protects propagation and resend suppression. The tests were not run, per the static-only audit scope.  \
 **Verification:** traced the server's claimed-user mismatch 403 response through Unity parsing, the read guard, resend loop, and both waitable consumers; reread the updated guard, consumers, and regression cases. No tests, builds, Unity, simulations, or runtime checks were run.  \
 **Invariant/knowledge:** an authorization failure must stop retries and remain distinct from a genuinely missing profile or settings record.
+
+
+### REG-090 — RL healing reservation could trigger a null squad dereference
+**Area:** `Scripts/Entities/Ships/Beehive.cs`, RL healing action lifecycle  
+**Symptom:** an RL-controlled ship without a squad could be reserved in `Beehive.ShipsHealingHere` by the policy healing action. When it entered the beehive trigger, the trigger called `Squad.GetCommand()` and could throw. The RL controller permits squadless bindings and its healing path does not require a squad.  
+**Root cause:** the beehive's collision callback assumed every ship in its healing reservation set had a non-null squad.  
+**Fix:** the trigger now uses a null-conditional squad command lookup. It still dispatches squad healing only when a `Heal` command exists; RL's direct healing path can safely use the shared reservation set.  
+**Permanent protection:** `RlSpecialActionSmokeTests.BeehiveTriggerIgnoresRlHealingReservationsWithoutSquads` guards the null-safe lookup. The test was added but not run, per the static-only audit scope.  
+**Verification:** statically traced agent ship binding, the policy healing reservation, and the beehive trigger callback. No tests, builds, Unity, simulations, or runtime checks were run.  
+**Invariant/knowledge:** a ship reservation may outlive or exist without command ownership; collision callbacks must guard optional squad state before reading its command.
