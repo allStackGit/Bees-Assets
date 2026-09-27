@@ -59,6 +59,14 @@ MANAGED_RESTART_BACKOFF_SECONDS = (1.0, 2.0, 5.0, 10.0, 30.0, 60.0, 120.0)
 
 
 MAX_RETAINED_RUN_LOG_DIRS = 3
+RUN_ID_RE = re.compile(r"^[A-Za-z0-9._-]+$")
+
+
+def _validate_run_id(run_id: str) -> str:
+    value = str(run_id or "")
+    if value and (value in {".", ".."} or not RUN_ID_RE.fullmatch(value)):
+        raise ValueError(f"unsafe training run id: {value!r}")
+    return value
 
 
 def _prune_run_log_directories(root: Path, current_run_id: str) -> None:
@@ -115,7 +123,7 @@ class EpisodeLogMetrics:
         self._run_id = ""
 
     def refresh(self, run_id: str = "") -> dict[str, object]:
-        run_id = str(run_id or "")
+        run_id = _validate_run_id(run_id)
         if run_id != self._run_id:
             self._run_id = run_id
             self._episodes.clear()
@@ -123,8 +131,14 @@ class EpisodeLogMetrics:
             self._pending.clear()
         scan_root = self.root / run_id if run_id else self.root
         if scan_root.is_dir():
-            bounded_logs = sorted(scan_root.rglob("BeesEpisode-*.log"))
-            log_paths = bounded_logs or sorted(scan_root.rglob("Player-*.log"))
+            bounded_logs = sorted(
+                path for path in scan_root.rglob("BeesEpisode-*.log")
+                if not path.is_symlink()
+            )
+            log_paths = bounded_logs or sorted(
+                path for path in scan_root.rglob("Player-*.log")
+                if not path.is_symlink()
+            )
             for log_path in log_paths:
                 self._read_new(log_path)
         return self.snapshot()
@@ -143,11 +157,22 @@ class EpisodeLogMetrics:
             self._pending.pop(log_path, None)
         try:
             with log_path.open("rb") as handle:
+                previous_byte = b""
+                if first_read and position > 0:
+                    handle.seek(position - 1)
+                    previous_byte = handle.read(1)
                 handle.seek(position)
-                data = handle.read()
+                raw_data = handle.read()
         except OSError:
             return
-        self._positions[log_path] = position + len(data)
+        data = raw_data
+        if first_read and position > 0 and previous_byte not in (b"\n", b"\r"):
+            separators = [
+                index for index in (data.find(b"\n"), data.find(b"\r"))
+                if index >= 0
+            ]
+            data = data[min(separators) + 1:] if separators else b""
+        self._positions[log_path] = position + len(raw_data)
         if not data:
             return
         text = self._pending.get(log_path, "") + data.decode("utf-8", errors="replace")
@@ -157,8 +182,6 @@ class EpisodeLogMetrics:
             self._pending[log_path] = lines.pop()
         else:
             self._pending[log_path] = ""
-        if first_read and position > 0 and lines:
-            lines = lines[1:]
         for line in lines:
             match = EPISODE_LOG_PATTERN.search(line)
             if not match:
@@ -512,6 +535,7 @@ class TrainingLogUploader:
         trainer_id: str,
         run_id: str,
     ) -> int:
+        run_id = _validate_run_id(run_id)
         if not run_id:
             return 0
         run_root = self.root / run_id
@@ -522,7 +546,11 @@ class TrainingLogUploader:
         for log_path in sorted(run_root.rglob("*")):
             if budget <= 0:
                 break
-            if not log_path.is_file() or log_path.suffix.lower() not in (".log", ".txt", ".json"):
+            if (
+                not log_path.is_file()
+                or log_path.is_symlink()
+                or log_path.suffix.lower() not in (".log", ".txt", ".json")
+            ):
                 continue
             relative = log_path.relative_to(run_root).as_posix()
             try:
@@ -566,26 +594,57 @@ class TrainingLogUploader:
                 data=data,
             )
             if next_offset < 0:
-                self._positions[log_path] = -next_offset - 1
-                continue
+                expected_offset = -next_offset - 1
+                if expected_offset > size:
+                    # The supervisor may have restarted after this same run-scoped file was
+                    # truncated. Its in-memory offset is gone, but the server still has the old
+                    # longer copy; reset that copy before replaying the current local bytes.
+                    next_offset = client.upload_log_chunk(
+                        trainer_id=trainer_id,
+                        run_id=run_id,
+                        relative_path=relative,
+                        offset=0,
+                        data=b"",
+                        reset=True,
+                    )
+                    if next_offset < 0:
+                        self._positions[log_path] = -next_offset - 1
+                        continue
+                    self._positions[log_path] = next_offset
+                    position = next_offset
+                    # The bytes already read came from the old offset. Retry from the
+                    # reset offset on the next pass instead of counting that stale chunk.
+                    continue
+                else:
+                    self._positions[log_path] = expected_offset
+                    continue
             self._positions[log_path] = next_offset
             budget -= len(data)
             uploaded += len(data)
         return uploaded
 
     def _has_pending_local_bytes(self, run_id: str) -> bool:
+        run_id = _validate_run_id(run_id)
         run_root = self.root / run_id
         if not run_root.is_dir():
             return False
         for log_path in sorted(run_root.rglob("*")):
-            if not log_path.is_file() or log_path.suffix.lower() not in (".log", ".txt", ".json"):
+            if (
+                not log_path.is_file()
+                or log_path.is_symlink()
+                or log_path.suffix.lower() not in (".log", ".txt", ".json")
+            ):
                 continue
             try:
                 size = log_path.stat().st_size
             except OSError:
                 continue
             terminal_offset = min(size, self.MAX_FILE_UPLOAD_BYTES)
-            if self._positions.get(log_path, 0) != terminal_offset:
+            uploaded_position = min(
+                self._positions.get(log_path, 0),
+                self.MAX_FILE_UPLOAD_BYTES,
+            )
+            if uploaded_position != terminal_offset:
                 return True
         return False
 
@@ -738,19 +797,6 @@ class ManagedProcess:
         require_child_health: bool = False,
         stop_progress: Optional[Callable[[], None]] = None,
     ) -> None:
-        restart_delay = self.restart_delay(command)
-        if restart_delay > 0.0:
-            raise RuntimeError(
-                "managed process restart deferred for "
-                f"{restart_delay:.1f}s after repeated early exits"
-            )
-        command_changed = tuple(command) != self.command
-        self.stop(progress_callback=stop_progress)
-        if command_changed:
-            self.clear_restart_backoff()
-        environment = os.environ.copy()
-        environment["BEES_TRAINING_CONTROL_STATE_FILE"] = str(state_file)
-        environment["BEES_TRAINING_ENV_ARGS_JSON"] = json.dumps(list(environment_args))
         build_id = str(build_id).strip()
         compatibility_key = str(compatibility_key).strip().lower()
         if not build_id:
@@ -759,6 +805,36 @@ class ManagedProcess:
             ch not in "0123456789abcdef" for ch in compatibility_key
         ):
             raise ValueError("managed training process requires a 64-hex compatibility_key")
+        if not run_id:
+            raise ValueError("managed training process requires a non-empty run_id")
+
+        normalized_environment_args = tuple(str(value) for value in environment_args)
+        command_changed = tuple(command) != self.command or (
+            revision != self.revision
+            or build_sha256 != self.build_sha256
+            or build_id != self.build_id
+            or str(run_id) != self.run_id
+            or compatibility_key != self.compatibility_key
+            or normalized_environment_args != self.environment_args
+            or worker_env_count != self.worker_env_count
+            or bool(graceful_checkpoint) != self.graceful_checkpoint
+            or bool(graceful_remote_stop) != self.graceful_remote_stop
+            or bool(require_child_health) != self.health_required
+        )
+        if command_changed:
+            self.clear_restart_backoff()
+        restart_delay = self.restart_delay(command)
+        if restart_delay > 0.0:
+            raise RuntimeError(
+                "managed process restart deferred for "
+                f"{restart_delay:.1f}s after repeated early exits"
+            )
+
+        # Validate the launch identity before stopping any currently owned child.
+        self.stop(progress_callback=stop_progress)
+        environment = os.environ.copy()
+        environment["BEES_TRAINING_CONTROL_STATE_FILE"] = str(state_file)
+        environment["BEES_TRAINING_ENV_ARGS_JSON"] = json.dumps(list(environment_args))
         environment["BEES_TRAINING_RUN_ID"] = str(run_id)
         environment[BUILD_ID_ENV] = build_id
         environment[COMPATIBILITY_KEY_ENV] = compatibility_key
@@ -777,8 +853,6 @@ class ManagedProcess:
         except FileNotFoundError:
             pass
         environment[THROUGHPUT_METRICS_ENV] = str(throughput_metrics_file)
-        if not run_id:
-            raise ValueError("managed training process requires a non-empty run_id")
         logs_root = state_file.parent / "logs"
         log_dir = logs_root / run_id
         log_dir.mkdir(parents=True, exist_ok=True)
@@ -1205,8 +1279,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     raw_argv = list(sys.argv[1:] if argv is None else argv)
     args = _parser().parse_args(raw_argv)
     startup_source_sha = file_sha256(Path(__file__).resolve())
-    if args.heartbeat_seconds <= 0 or args.request_timeout_seconds <= 0:
-        print("error: heartbeat and request timeout must be positive", file=sys.stderr)
+    if (
+        not math.isfinite(args.heartbeat_seconds)
+        or not math.isfinite(args.request_timeout_seconds)
+        or args.heartbeat_seconds <= 0
+        or args.request_timeout_seconds <= 0
+    ):
+        print("error: heartbeat and request timeout must be finite positive values", file=sys.stderr)
         return 2
     if args.worker_envs is not None:
         if (
@@ -1401,10 +1480,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             )
             desired_process_safe = False
             try:
-                desired = client.heartbeat(heartbeat)
+                received_state = client.heartbeat(heartbeat)
+                received_lease_seconds = float(received_state["lease_seconds"])
+                if not math.isfinite(received_lease_seconds) or received_lease_seconds <= 0:
+                    raise ValueError("server lease_seconds must be a finite positive value")
+                desired = received_state
                 received_desired = True
+                lease_seconds = received_lease_seconds
                 last_contact = time.monotonic()
-                lease_seconds = float(desired["lease_seconds"])
                 last_error = ""
 
                 mode = str(desired["desired_mode"])
@@ -1730,6 +1813,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 managed.stop(progress_callback=stopping_keepalive)
             except RuntimeError as exc:
                 print(f"[Bees control] {type(exc).__name__}: {exc}", file=sys.stderr)
+                # A persistent stop-request I/O failure returns immediately. Keep retrying the
+                # fail-closed shutdown, but avoid a tight loop that floods stderr and burns CPU.
+                time.sleep(1.0)
                 continue
         if shutdown_request_file is not None:
             try:
