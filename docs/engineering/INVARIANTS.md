@@ -30,6 +30,7 @@ These are cross-cutting rules future changes must preserve. Keep this file conci
 
 ## UI and display layout
 
+- While a multipage tooltip sequence is active, its sequence controller owns the live page text. Campaign and presentation guards may inspect that text but must not replace it.
 - Screen-space UI must remain usable and correctly positioned across reasonable desktop resolutions and aspect ratios, including 16:9, 16:10, 3:2, 4:3 and ultrawide displays; the historic 1366x768 authoring size is a reference, not a required viewport.
 - Root screen-space canvases must use resolution-independent scaling and live screen dimensions. Root canvases created after scene load require the same treatment as scene-authored canvases. Safe-area insets may be used only where the UI contract actually requires them; they must not push desktop edge HUD away from its intended screen edge.
 - Large fixed screen-relative `RectTransform`s must not leave controls attached to an obsolete reference rectangle. Convert viewport-like axes to stretch anchors while preserving intentional authored edge margins; do not stretch ordinary centered panels merely because they are large. Full-stretch anchors alone do not prove that a child is a viewport owner: deliberately inset panels must retain their authored offsets.
