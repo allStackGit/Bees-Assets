@@ -283,7 +283,9 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         start = source.index("async function invokeBuild")
         block = source[start:]
         linux_build = block.index("'BeesCommandLineBuild.BuildLinuxRl'")
-        fingerprint = block.index("getTrainingCompatibilityFingerprint(python)")
+        fingerprint = block.index(
+            "const postBuildFingerprint = getTrainingCompatibilityFingerprint(python)"
+        )
         save_release = block.index("saveLatestRelease(release)")
         self.assertLess(linux_build, fingerprint)
         self.assertLess(fingerprint, save_release)
@@ -1449,7 +1451,7 @@ server.listen(0,'127.0.0.1',async()=>{
         runtime = read_operator("runtime.js")
         recovery = runtime[
             runtime.index("function recoverTrainingRunLifecycle"):
-            runtime.index("function ensureRunLifecycleMatchesRelease"),
+            runtime.index("function ensureRunLifecycleMatchesRelease")
         ]
         self.assertIn("'recover-active'", recovery)
         self.assertIn("'--expected-compatibility-key'", recovery)
