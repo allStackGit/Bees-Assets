@@ -113,8 +113,8 @@ def extract_continual_options(argv: Sequence[str]) -> Tuple[List[str], Continual
                 seconds = float(value)
             except ValueError as exc:
                 raise SystemExit(f"{SCAN_SECONDS_FLAG} requires a positive number.") from exc
-            if seconds <= 0:
-                raise SystemExit(f"{SCAN_SECONDS_FLAG} requires a positive number.")
+            if not math.isfinite(seconds) or seconds <= 0:
+                raise SystemExit(f"{SCAN_SECONDS_FLAG} requires a finite positive number.")
             values["scan_seconds"] = seconds
             index = next_index
             continue
