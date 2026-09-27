@@ -578,7 +578,7 @@ def _clear_pid_file_if_owned(path: Path, pid: int) -> None:
         return
     try:
         path.unlink()
-    except FileNotFoundError:
+    except OSError:
         pass
 
 
@@ -1584,7 +1584,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             updater.stop()
         try:
             shutdown_request_file.unlink()
-        except FileNotFoundError:
+        except OSError:
             pass
         _clear_pid_file_if_owned(pid_file, os.getpid())
         if old_sigint is not None:
