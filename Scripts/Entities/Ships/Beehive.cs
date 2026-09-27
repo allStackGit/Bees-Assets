@@ -31,7 +31,10 @@ namespace Assets.Scripts.Entities.Ships
             if (_collidingThing.CompareTag("Ship") && HealCollider.IsTouching(collider))
             {
                 _collidingShip = collider.GetComponent<Ship>();
-                if (ShipsHealingHere.Contains(_collidingShip) && _collidingShip.Squad.GetCommand() is Heal healCommand)
+                if (_collidingShip != null &&
+                    _collidingShip.Level == Level &&
+                    ShipsHealingHere.Contains(_collidingShip) &&
+                    _collidingShip.Squad.GetCommand() is Heal healCommand)
                 {
                     _command = healCommand;
                     _command.ShipReachedBeehive(_collidingShip);
