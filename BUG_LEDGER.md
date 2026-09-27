@@ -8,6 +8,7 @@ Static-only repository audit on `rl/initial-design-work`. This ledger is the cur
 
 ## Audit status
 
+- ML-Agents launcher review found and fixed a `--results-dir` argument-boundary defect: the default is now inserted before `--env-args`, and Unity-side flags no longer count as trainer settings. A focused regression case and REG-103 documentation were added; neither was executed. Static source review only.
 - Uranus II now resolves the simultaneous-elimination case once, honoring the campaign tie rule (player loss), and its post-close dialogue continuation is driven after normal level polling stops. Confirmed from the trigger loop, `CloseLevel`, and level update lifecycle; source changes only, no tests or runtime checks run.
 - Neptune II's AI-elimination trigger now excludes simultaneous player elimination, preventing win/loss callbacks from both running in one trigger pass. Both loss/retreat callbacks explicitly record the AI winner before teardown, so tie losses are not left with an unset winner. This follows the same tie-as-player-loss rule; verified by static trigger-order analysis only.
 - Uranus III now requires a surviving mobile player side as well as surviving barges for the success branch. Its immobile Barge does not prevent `IsSideKilled` from reporting the player side eliminated; source review confirmed that mismatch.
