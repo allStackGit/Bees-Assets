@@ -10,6 +10,52 @@ namespace Bees.Tests.EditMode
     [Category("BeesFoundation")]
     public class UserInputOwnershipTests
     {
+        private Type _configDataType;
+        private object _originalConfiguration;
+        private bool _installedTestConfiguration;
+
+        [SetUp]
+        public void EnsureSideConfiguration()
+        {
+            _configDataType = RuntimeAssembly.GetType("Assets.Scripts.ConfigData");
+            _originalConfiguration = RuntimeAssembly.GetStaticField(
+                _configDataType,
+                "Configuration");
+            _installedTestConfiguration = _originalConfiguration == null;
+            if (!_installedTestConfiguration)
+            {
+                return;
+            }
+
+            object configuration = RuntimeAssembly.CreateUninitialized(
+                "Assets.Scripts.Settings.Configuration");
+            RuntimeAssembly.SetField(configuration, "BeeSide", 1);
+            RuntimeAssembly.SetField(configuration, "HumanSide", 2);
+            RuntimeAssembly.SetField(configuration, "UserSide", 1);
+            RuntimeAssembly.SetField(configuration, "AISide", 2);
+            RuntimeAssembly.SetField(configuration, "MaxSquadSize", 16);
+            RuntimeAssembly.SetStaticField(
+                _configDataType,
+                "Configuration",
+                configuration);
+        }
+
+        [TearDown]
+        public void RestoreSideConfiguration()
+        {
+            if (_installedTestConfiguration && _configDataType != null)
+            {
+                RuntimeAssembly.SetStaticField(
+                    _configDataType,
+                    "Configuration",
+                    _originalConfiguration);
+            }
+
+            _configDataType = null;
+            _originalConfiguration = null;
+            _installedTestConfiguration = false;
+        }
+
         [Test]
         public void RawMovementRespectsCampaignInputLock()
         {
