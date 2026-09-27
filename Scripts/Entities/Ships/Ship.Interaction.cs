@@ -34,13 +34,19 @@ namespace Assets.Scripts.Entities.Ships
             {
                 playerId = Level.State.GetPrimaryInputPlayerId();
             }
-            int playerSide = Stage.MatchSession == null
-                ? ConfigData.Configuration.UserSide
-                : Stage.MatchSession.GetPlayerSide(playerId);
-            if (playerSide != ConfigData.Configuration.BeeSide &&
-                playerSide != ConfigData.Configuration.HumanSide)
+            int playerSide;
+            if (Stage.MatchSession == null)
             {
                 playerSide = ConfigData.Configuration.UserSide;
+            }
+            else
+            {
+                playerSide = Stage.MatchSession.GetPlayerSide(playerId);
+                if (playerSide != ConfigData.Configuration.BeeSide &&
+                    playerSide != ConfigData.Configuration.HumanSide)
+                {
+                    return;
+                }
             }
             bool isFriendlyToPlayer = Side == playerSide;
 

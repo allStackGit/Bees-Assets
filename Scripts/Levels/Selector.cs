@@ -20,7 +20,7 @@ namespace Assets.Scripts.Levels
             Level = level;
             this.box = box;
             PlayerId = playerId == MatchSession.UnownedPlayerId
-                ? Level.State.GetPrimaryInputPlayerId()
+                ? MatchSession.LegacyLocalPlayerId
                 : playerId;
         }
         public void SelectShip(Ship ship)

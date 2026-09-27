@@ -461,7 +461,11 @@ public class Stage : Scene
 
             // Setup Selection Box
             Selector = SelectionBox.GetComponentInChildren<Selector>();
-            Selector.Setup(PrimaryLevel, SelectionBox);
+            int primaryPlayerId = MatchSession == null ||
+                MatchSession.PrimaryLocalPlayerId == Assets.Scripts.Levels.MatchSession.UnownedPlayerId
+                ? Assets.Scripts.Levels.MatchSession.LegacyLocalPlayerId
+                : MatchSession.PrimaryLocalPlayerId;
+            Selector.Setup(PrimaryLevel, SelectionBox, primaryPlayerId);
             // Setup input manager
             InputManager = new LevelInputManager(this, Selector);
 
