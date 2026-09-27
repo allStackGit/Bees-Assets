@@ -207,8 +207,13 @@ def ingest_native_demonstration(
             "Native demonstration plus capture manifest exceeds configured maximum size."
         )
 
+    demo_hash = sha256_file(source)
     native_loader = loader or _default_native_demo_loader
     behavior_spec, pair_infos, total_expected = native_loader(str(source))
+    if sha256_file(source) != demo_hash:
+        raise ValidationError(
+            f"Native demonstration changed while being parsed: {source}"
+        )
     try:
         parsed_count = len(pair_infos)
     except TypeError as exc:
@@ -233,7 +238,6 @@ def ingest_native_demonstration(
     _validate_native_behavior(behavior_spec, capture_manifest)
     trainable_example_count = parsed_count - 1
 
-    demo_hash = sha256_file(source)
     content_identity = {
         "schema_version": NATIVE_DEMO_ARCHIVE_SCHEMA_VERSION,
         "model_id": model_id,
