@@ -62,7 +62,10 @@ namespace Assets.Scripts.Entities.Ships
             if (_collidingThing.CompareTag("Ship") && WarpCollider.IsTouching(collider))
             {
                 _collidingShip = collider.GetComponent<Ship>();
-                if (_collidingShip.Side == Side && _collidingShip.Squad?.GetCommand()?.CommandType == ConfigData.CommandTypes.FullRetreat && _collidingShip.ShipType != this.ShipType)
+                if (_collidingShip != null &&
+                    _collidingShip.Level == Level &&
+                    _collidingShip.Side == Side &&
+                    _collidingShip.Squad?.GetCommand()?.CommandType == ConfigData.CommandTypes.FullRetreat && _collidingShip.ShipType != this.ShipType)
                 {
                     _command = (FullRetreat)_collidingShip.Squad.GetCommand();
                     if (_command.TargetWarpGate == this)
