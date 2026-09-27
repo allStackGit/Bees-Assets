@@ -41,6 +41,7 @@ internal sealed class RlLivePolicyAgent : Agent
     private bool _hasStoredSquadControlState;
     private float _nextMiningActionTime;
     private float _nextHealingActionTime;
+    private Beehive _reservedHealingBeehive;
     private readonly Vector2[] _weaponAimDirections = new Vector2[RlOneVsOneAgent.MaxWeaponSlots];
     private readonly List<Ship> _bindCandidates = new List<Ship>();
     private readonly RlCombatPerception _perception = new RlCombatPerception();
@@ -276,7 +277,7 @@ internal sealed class RlLivePolicyAgent : Agent
         actionMask.SetActionEnabled(RlOneVsOneAgent.SpecialActionBranch, RlOneVsOneAgent.MiningAction,
             canControl && RlOneVsOneAgent.CanUseMiningAction(_ship));
         actionMask.SetActionEnabled(RlOneVsOneAgent.SpecialActionBranch, RlOneVsOneAgent.HealingAction,
-            canControl && RlOneVsOneAgent.CanUseHealingAction(_ship));
+            canControl && RlOneVsOneAgent.CanUseHealingAction(_ship) && HasTouchingBeehiveWithCapacity(_ship));
         actionMask.SetActionEnabled(RlOneVsOneAgent.SpecialActionBranch, RlOneVsOneAgent.WarpAction,
             canControl && RlOneVsOneAgent.CanUseWarpAction(_ship));
 
@@ -298,6 +299,10 @@ internal sealed class RlLivePolicyAgent : Agent
         RlOneVsOneAgent.SetCommunicationActions(_ship, continuous);
 
         ActionSegment<int> discrete = actions.DiscreteActions;
+        if (discrete[RlOneVsOneAgent.SpecialActionBranch] != RlOneVsOneAgent.HealingAction)
+        {
+            ReleaseHealingReservation();
+        }
         bool allowWeaponFire = RlOneVsOneAgent.SpecialActionAllowsWeaponFire(
             discrete[RlOneVsOneAgent.SpecialActionBranch]);
         for (int slot = 0; slot < RlOneVsOneAgent.MaxWeaponSlots; slot++)
@@ -432,15 +437,37 @@ internal sealed class RlLivePolicyAgent : Agent
 
     private void TryApplyHealingAction()
     {
-        if (!RlOneVsOneAgent.CanUseHealingAction(_ship) || Time.time < _nextHealingActionTime ||
-            _ship.Health >= _ship.MaxHealth || _ship.Level == null || _ship.Level.State == null ||
-            _ship.Collider == null || _ship.FleetShip == null)
+        if (!RlOneVsOneAgent.CanUseHealingAction(_ship) || _ship.Health >= _ship.MaxHealth ||
+            _ship.Level == null || _ship.Level.State == null || _ship.Collider == null ||
+            _ship.FleetShip == null)
         {
+            ReleaseHealingReservation();
             return;
         }
 
-        Beehive beehive = FindTouchingBeehive();
+        if (_reservedHealingBeehive != null &&
+            (_reservedHealingBeehive.IsDead || _reservedHealingBeehive.HealCollider == null ||
+             !_reservedHealingBeehive.HealCollider.IsTouching(_ship.Collider)))
+        {
+            ReleaseHealingReservation();
+        }
+
+        Beehive beehive = _reservedHealingBeehive ?? FindTouchingBeehive();
         if (beehive == null)
+        {
+            return;
+        }
+        if (!beehive.ShipsHealingHere.Contains(_ship))
+        {
+            // Match Heal.AssignAvailableHealingSlots: at most four ships may occupy one hive.
+            if (beehive.ShipsHealingHere.Count >= 4)
+            {
+                return;
+            }
+            beehive.ShipsHealingHere.Add(_ship);
+            _reservedHealingBeehive = beehive;
+        }
+        if (Time.time < _nextHealingActionTime)
         {
             return;
         }
@@ -460,6 +487,10 @@ internal sealed class RlLivePolicyAgent : Agent
         {
             beehive.SpawnHealingCross();
         }
+        if (_ship.Health >= _ship.MaxHealth)
+        {
+            ReleaseHealingReservation();
+        }
     }
 
     private Beehive FindTouchingBeehive()
@@ -469,7 +500,8 @@ internal sealed class RlLivePolicyAgent : Agent
         for (int i = 0; i < allies.Count; i++)
         {
             if (!(allies[i] is Beehive beehive) || beehive.IsDead || beehive.HealCollider == null ||
-                !beehive.HealCollider.IsTouching(_ship.Collider))
+                !beehive.HealCollider.IsTouching(_ship.Collider) ||
+                (!beehive.ShipsHealingHere.Contains(_ship) && beehive.ShipsHealingHere.Count >= 4))
             {
                 continue;
             }
@@ -645,6 +677,7 @@ internal sealed class RlLivePolicyAgent : Agent
 
     private void ReleaseShip()
     {
+        ReleaseHealingReservation();
         if (_ship != null)
         {
             RlOneVsOneAgent.ClearCommunication(_ship);
