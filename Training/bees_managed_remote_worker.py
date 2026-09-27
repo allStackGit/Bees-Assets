@@ -988,10 +988,18 @@ class RuntimeUpdater:
                     0o600,
                 )
                 return
+            staged_bridge_matches = (
+                self.staged_bridge is None and not bridge_changed
+            ) or (
+                self.staged_bridge is not None
+                and self.staged_bridge.is_file()
+                and _sha256_file(self.staged_bridge) == bridge_sha
+            )
             if (
                 runtime_sha == self.staged_sha256
                 and self.staged_root is not None
-                and (not bridge_changed or self.staged_bridge is not None)
+                and staged_build_id == self.staged_build_id
+                and staged_bridge_matches
             ):
                 return
 
