@@ -51,7 +51,9 @@ namespace Assets.Scripts.Entities.Ships
             if (Level.HasObstacles && IsInBounds())
             {
                 _startPosition = Level.ForceBounds(GetPosition());
-                if (!foundObstacle && Vector2.Distance(destination, TargetCoordinates) < ConfigData.CloseEnoughCoordinateVariance)
+                Vector2 currentMovementDestination = IsFollowingPath ? FinalDestination : TargetCoordinates;
+                if (!foundObstacle && HasTargetCoordinates &&
+                    Vector2.Distance(destination, currentMovementDestination) < ConfigData.CloseEnoughCoordinateVariance)
                 {
                     return;
                 }
