@@ -1217,5 +1217,144 @@ namespace Bees.Tests.EditMode
             object[] oversizedArgs = { oversized, null };
             Assert.That((bool)deserialize.Invoke(null, oversizedArgs), Is.False);
         }
+
+        [Test]
+        public void LobbyLoadoutSnapshotUsesTransientIdsInsteadOfPersistentFleetIdentity()
+        {
+            Type sessionType = RuntimeAssembly.GetType("Assets.Scripts.Levels.MatchSession");
+            object host = Activator.CreateInstance(sessionType);
+            object squad = RuntimeAssembly.CreateUninitialized("Assets.Scripts.Data.SavedSquad");
+            RuntimeAssembly.SetField(squad, "Id", 9001L);
+            RuntimeAssembly.SetField(squad, "Side", 1);
+            RuntimeAssembly.SetField(squad, "Name", "Persistent Squad");
+            RuntimeAssembly.SetField(squad, "Color", Color.white);
+            RuntimeAssembly.SetField(squad, "StartingPosition", Vector2.zero);
+            RuntimeAssembly.SetField(
+                squad,
+                "ChosenShootingStrategy",
+                Enum.Parse(
+                    RuntimeAssembly.GetType("ConfigData+ShootingStrategyTypes"),
+                    "Default"));
+
+            object fleetShip = Activator.CreateInstance(
+                RuntimeAssembly.GetType("Assets.Scripts.Data.FleetShip"),
+                12345L,
+                Enum.Parse(RuntimeAssembly.GetType("ConfigData+ShipTypes"), "Wasp"),
+                false,
+                false,
+                0, 0, 0, 0, 0, 0, 0,
+                "Persistent Ship");
+            object squadShip = Activator.CreateInstance(
+                RuntimeAssembly.GetType("Assets.Scripts.Data.SquadShip"),
+                fleetShip,
+                new Vector2(1f, 2f));
+            RuntimeAssembly.Invoke(squad, "AddShipToSquad", squadShip);
+
+            RuntimeAssembly.Invoke(host, "AddPlayer", 1, 1, true);
+            RuntimeAssembly.Invoke(host, "TrySetPeerTransportIdentity", 1, "steam:host");
+            RuntimeAssembly.Invoke(host, "AddPeer", 10, false, "steam:client");
+            RuntimeAssembly.Invoke(host, "AddPlayerToPeer", 2, 2, 10);
+            Assert.That(RuntimeAssembly.Invoke(
+                host,
+                "TryAssignSavedSquadOwner",
+                squad,
+                1), Is.EqualTo(true));
+
+            MethodInfo createSnapshot = sessionType.GetMethod(
+                "TryCreateLobbySnapshot",
+                BindingFlags.Instance | BindingFlags.Public);
+            object[] args = { null };
+            Assert.That((bool)createSnapshot.Invoke(host, args), Is.True);
+
+            object snapshot = args[0];
+            object squads = RuntimeAssembly.GetField(snapshot, "Squads");
+            Assert.That(RuntimeAssembly.GetCount(squads), Is.EqualTo(1));
+
+            object firstSquad = ((System.Collections.IList)squads)[0];
+            Assert.That((long)RuntimeAssembly.GetField(firstSquad, "TransientSquadId"), Is.LessThan(0));
+            Assert.That((long)RuntimeAssembly.GetField(firstSquad, "TransientSquadId"), Is.Not.EqualTo(9001L));
+
+            object ships = RuntimeAssembly.GetField(firstSquad, "Ships");
+            object firstShip = ((System.Collections.IList)ships)[0];
+            Assert.That((long)RuntimeAssembly.GetField(firstShip, "TransientFleetId"), Is.LessThan(0));
+            Assert.That((long)RuntimeAssembly.GetField(firstShip, "TransientFleetId"), Is.Not.EqualTo(12345L));
+        }
+
+        [Test]
+        public void ReconstructedLobbyLoadoutRetainsOwnerTokenWithoutPersistentIds()
+        {
+            Type sessionType = RuntimeAssembly.GetType("Assets.Scripts.Levels.MatchSession");
+            Type snapshotType = RuntimeAssembly.GetType("Assets.Scripts.Levels.MatchLobbySnapshot");
+            Type peerType = RuntimeAssembly.GetType("Assets.Scripts.Levels.MatchLobbyPeerSnapshot");
+            Type playerType = RuntimeAssembly.GetType("Assets.Scripts.Levels.MatchLobbyPlayerSnapshot");
+            Type squadType = RuntimeAssembly.GetType("Assets.Scripts.Levels.MatchLobbySquadSnapshot");
+            Type shipType = RuntimeAssembly.GetType("Assets.Scripts.Levels.MatchLobbyShipSnapshot");
+            object snapshot = Activator.CreateInstance(snapshotType);
+
+            RuntimeAssembly.SetField(snapshot, "MatchId", Guid.NewGuid().ToString("N"));
+            RuntimeAssembly.SetField(snapshot, "AuthorityPeerId", 1);
+            RuntimeAssembly.AddToCollection(
+                RuntimeAssembly.GetField(snapshot, "Peers"),
+                Activator.CreateInstance(peerType, 1, "steam:host"));
+            RuntimeAssembly.AddToCollection(
+                RuntimeAssembly.GetField(snapshot, "Peers"),
+                Activator.CreateInstance(peerType, 10, "steam:client"));
+            RuntimeAssembly.AddToCollection(
+                RuntimeAssembly.GetField(snapshot, "Players"),
+                Activator.CreateInstance(playerType, 1, 1, 1));
+            RuntimeAssembly.AddToCollection(
+                RuntimeAssembly.GetField(snapshot, "Players"),
+                Activator.CreateInstance(playerType, 2, 10, 2));
+
+            object squadSnapshot = Activator.CreateInstance(squadType);
+            Guid token = Guid.NewGuid();
+            RuntimeAssembly.SetField(squadSnapshot, "OwnershipToken", token.ToString("N"));
+            RuntimeAssembly.SetField(squadSnapshot, "OwnerPlayerId", 2);
+            RuntimeAssembly.SetField(squadSnapshot, "TransientSquadId", -1L);
+            RuntimeAssembly.SetField(squadSnapshot, "Side", 2);
+            RuntimeAssembly.SetField(squadSnapshot, "Name", "Remote Squad");
+            RuntimeAssembly.SetField(squadSnapshot, "ColorR", 1f);
+            RuntimeAssembly.SetField(squadSnapshot, "ColorG", 1f);
+            RuntimeAssembly.SetField(squadSnapshot, "ColorB", 1f);
+            RuntimeAssembly.SetField(squadSnapshot, "ColorA", 1f);
+            RuntimeAssembly.SetField(
+                squadSnapshot,
+                "ShootingStrategy",
+                (int)Enum.Parse(
+                    RuntimeAssembly.GetType("ConfigData+ShootingStrategyTypes"),
+                    "Default"));
+
+            object shipSnapshot = Activator.CreateInstance(shipType);
+            RuntimeAssembly.SetField(shipSnapshot, "TransientFleetId", -1L);
+            RuntimeAssembly.SetField(
+                shipSnapshot,
+                "ShipType",
+                (int)Enum.Parse(RuntimeAssembly.GetType("ConfigData+ShipTypes"), "Gunship"));
+            RuntimeAssembly.SetField(shipSnapshot, "Name", "Remote Ship");
+            RuntimeAssembly.AddToCollection(
+                RuntimeAssembly.GetField(squadSnapshot, "Ships"),
+                shipSnapshot);
+            RuntimeAssembly.AddToCollection(
+                RuntimeAssembly.GetField(snapshot, "Squads"),
+                squadSnapshot);
+
+            MethodInfo createSession = sessionType.GetMethod(
+                "TryCreateFromLobbySnapshot",
+                BindingFlags.Static | BindingFlags.Public);
+            object[] args = { snapshot, "steam:client", null };
+            Assert.That((bool)createSession.Invoke(null, args), Is.True);
+            object session = args[2];
+
+            object assigned = RuntimeAssembly.Invoke(session, "GetLobbyAssignedSquads");
+            Assert.That(RuntimeAssembly.GetCount(assigned), Is.EqualTo(1));
+            object reconstructed = ((System.Collections.IList)assigned)[0];
+            Assert.That(RuntimeAssembly.GetField(reconstructed, "Id"), Is.EqualTo(-1L));
+            Assert.That(RuntimeAssembly.GetField(reconstructed, "MatchOwnershipToken"), Is.EqualTo(token));
+            Assert.That(RuntimeAssembly.Invoke(
+                session,
+                "ResolveSquadOwner",
+                reconstructed,
+                2), Is.EqualTo(2));
+        }
     }
 }

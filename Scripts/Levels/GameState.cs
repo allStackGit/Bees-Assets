@@ -362,6 +362,37 @@ namespace Assets.Scripts.Levels
     }
 
     [Serializable]
+    public sealed class MatchLobbyShipSnapshot
+    {
+        public long TransientFleetId;
+        public int ShipType;
+        public string Name;
+        public float OffsetX;
+        public float OffsetY;
+    }
+
+    [Serializable]
+    public sealed class MatchLobbySquadSnapshot
+    {
+        public string OwnershipToken;
+        public int OwnerPlayerId;
+        public long TransientSquadId;
+        public int Side;
+        public string Name;
+        public float StartingX;
+        public float StartingY;
+        public float ColorR;
+        public float ColorG;
+        public float ColorB;
+        public float ColorA;
+        public bool CeaseFire;
+        public bool IsMatchingSpeed;
+        public bool IsSetToChase;
+        public int ShootingStrategy;
+        public List<MatchLobbyShipSnapshot> Ships = new List<MatchLobbyShipSnapshot>();
+    }
+
+    [Serializable]
     public sealed class MatchLobbySnapshot
     {
         public const int CurrentVersion = 1;
@@ -370,6 +401,7 @@ namespace Assets.Scripts.Levels
         public int AuthorityPeerId;
         public List<MatchLobbyPeerSnapshot> Peers = new List<MatchLobbyPeerSnapshot>();
         public List<MatchLobbyPlayerSnapshot> Players = new List<MatchLobbyPlayerSnapshot>();
+        public List<MatchLobbySquadSnapshot> Squads = new List<MatchLobbySquadSnapshot>();
     }
 
     /// <summary>
@@ -383,6 +415,9 @@ namespace Assets.Scripts.Levels
         public const int LocalPeerId = 1;
         public const int MaxLobbyPeers = 16;
         public const int MaxLobbyPlayers = 32;
+        public const int MaxLobbySquads = 64;
+        public const int MaxLobbyShipsPerSquad = 32;
+        public const int MaxLobbyNameLength = 128;
         public const int MaxTransportIdentityLength = 256;
         private const int LegacyRemotePeerIdOffset = 1000000;
 
@@ -399,8 +434,8 @@ namespace Assets.Scripts.Levels
         private readonly object _outgoingCommandAcknowledgementsLock = new object();
         public const int MaxOutgoingPlayerCommands = 1024;
         public const int MaxOutgoingCommandAcknowledgements = 1024;
-        private readonly Dictionary<Guid, (int PlayerId, int Side)> _squadOwnerAssignments =
-            new Dictionary<Guid, (int PlayerId, int Side)>();
+        private readonly Dictionary<Guid, (int PlayerId, int Side, SavedSquad Squad)> _squadOwnerAssignments =
+            new Dictionary<Guid, (int PlayerId, int Side, SavedSquad Squad)>();
 
         public IReadOnlyList<MatchPeer> Peers => _peers;
         public IReadOnlyList<MatchPlayer> Players => _players;
@@ -458,6 +493,7 @@ namespace Assets.Scripts.Levels
             }
 
             HashSet<int> playerIds = new HashSet<int>();
+            Dictionary<int, int> playerSides = new Dictionary<int, int>();
             for (int i = 0; i < snapshot.Players.Count; i++)
             {
                 MatchLobbyPlayerSnapshot player = snapshot.Players[i];
@@ -470,9 +506,76 @@ namespace Assets.Scripts.Levels
                 {
                     return false;
                 }
+                playerSides.Add(player.PlayerId, player.Side);
+            }
+
+            if (snapshot.Squads == null || snapshot.Squads.Count > MaxLobbySquads)
+            {
+                return false;
+            }
+
+            HashSet<Guid> ownershipTokens = new HashSet<Guid>();
+            HashSet<long> transientSquadIds = new HashSet<long>();
+            HashSet<long> transientFleetIds = new HashSet<long>();
+            for (int i = 0; i < snapshot.Squads.Count; i++)
+            {
+                MatchLobbySquadSnapshot squad = snapshot.Squads[i];
+                if (squad == null ||
+                    string.IsNullOrWhiteSpace(squad.OwnershipToken) ||
+                    !Guid.TryParseExact(squad.OwnershipToken, "N", out Guid ownershipToken) ||
+                    ownershipToken == Guid.Empty ||
+                    !ownershipTokens.Add(ownershipToken) ||
+                    squad.OwnerPlayerId <= UnownedPlayerId ||
+                    !playerSides.TryGetValue(squad.OwnerPlayerId, out int ownerSide) ||
+                    ownerSide != squad.Side ||
+                    squad.TransientSquadId >= 0 ||
+                    !transientSquadIds.Add(squad.TransientSquadId) ||
+                    string.IsNullOrEmpty(squad.Name) ||
+                    squad.Name.Length > MaxLobbyNameLength ||
+                    !IsFiniteLobbyFloat(squad.StartingX) ||
+                    !IsFiniteLobbyFloat(squad.StartingY) ||
+                    !IsFiniteLobbyFloat(squad.ColorR) ||
+                    !IsFiniteLobbyFloat(squad.ColorG) ||
+                    !IsFiniteLobbyFloat(squad.ColorB) ||
+                    !IsFiniteLobbyFloat(squad.ColorA) ||
+                    !Enum.IsDefined(typeof(ConfigData.ShootingStrategyTypes), squad.ShootingStrategy) ||
+                    squad.Ships == null ||
+                    squad.Ships.Count == 0 ||
+                    squad.Ships.Count > MaxLobbyShipsPerSquad)
+                {
+                    return false;
+                }
+
+                for (int shipIndex = 0; shipIndex < squad.Ships.Count; shipIndex++)
+                {
+                    MatchLobbyShipSnapshot ship = squad.Ships[shipIndex];
+                    if (ship == null ||
+                        ship.TransientFleetId >= 0 ||
+                        !transientFleetIds.Add(ship.TransientFleetId) ||
+                        !Enum.IsDefined(typeof(ConfigData.ShipTypes), ship.ShipType) ||
+                        string.IsNullOrEmpty(ship.Name) ||
+                        ship.Name.Length > MaxLobbyNameLength ||
+                        !IsFiniteLobbyFloat(ship.OffsetX) ||
+                        !IsFiniteLobbyFloat(ship.OffsetY))
+                    {
+                        return false;
+                    }
+
+                    ConfigData.ShipTypes shipType = (ConfigData.ShipTypes)ship.ShipType;
+                    if (!Utilities.ConvertShipTypeToSide.TryGetValue(shipType, out int shipSide) ||
+                        shipSide != squad.Side)
+                    {
+                        return false;
+                    }
+                }
             }
 
             return true;
+        }
+
+        private static bool IsFiniteLobbyFloat(float value)
+        {
+            return !float.IsNaN(value) && !float.IsInfinity(value);
         }
 
         public bool TryCreateLobbySnapshot(out MatchLobbySnapshot snapshot)
@@ -534,6 +637,64 @@ namespace Assets.Scripts.Levels
                     player.Id,
                     player.PeerId,
                     player.Side));
+            }
+
+            long nextTransientSquadId = -1;
+            long nextTransientFleetId = -1;
+            foreach (KeyValuePair<Guid, (int PlayerId, int Side, SavedSquad Squad)> assignment in
+                _squadOwnerAssignments.OrderBy(pair => pair.Key))
+            {
+                SavedSquad source = assignment.Value.Squad;
+                if (source == null ||
+                    source.Side != assignment.Value.Side ||
+                    source.GetSquadShips() == null ||
+                    source.GetSquadShips().Count == 0)
+                {
+                    return false;
+                }
+
+                MatchLobbySquadSnapshot squadSnapshot = new MatchLobbySquadSnapshot
+                {
+                    OwnershipToken = assignment.Key.ToString("N"),
+                    OwnerPlayerId = assignment.Value.PlayerId,
+                    TransientSquadId = nextTransientSquadId--,
+                    Side = source.Side,
+                    Name = string.IsNullOrEmpty(source.Name) ? "Squad" : source.Name,
+                    StartingX = source.StartingPosition.x,
+                    StartingY = source.StartingPosition.y,
+                    ColorR = source.Color.r,
+                    ColorG = source.Color.g,
+                    ColorB = source.Color.b,
+                    ColorA = source.Color.a,
+                    CeaseFire = source.CeaseFire,
+                    IsMatchingSpeed = source.IsMatchingSpeed,
+                    IsSetToChase = source.IsSetToChase,
+                    ShootingStrategy = (int)source.ChosenShootingStrategy
+                };
+
+                List<SquadShip> sourceShips = source.GetSquadShips();
+                for (int shipIndex = 0; shipIndex < sourceShips.Count; shipIndex++)
+                {
+                    SquadShip sourceShip = sourceShips[shipIndex];
+                    FleetShip fleetShip = sourceShip?.GetFleetShip();
+                    if (sourceShip == null || fleetShip == null)
+                    {
+                        return false;
+                    }
+
+                    squadSnapshot.Ships.Add(new MatchLobbyShipSnapshot
+                    {
+                        TransientFleetId = nextTransientFleetId--,
+                        ShipType = (int)sourceShip.ShipType,
+                        Name = string.IsNullOrEmpty(fleetShip.Name)
+                            ? $"Ship-{shipIndex + 1}"
+                            : fleetShip.Name,
+                        OffsetX = sourceShip.Offset.x,
+                        OffsetY = sourceShip.Offset.y
+                    });
+                }
+
+                candidate.Squads.Add(squadSnapshot);
             }
 
             if (!IsValidLobbySnapshot(candidate))
@@ -634,6 +795,62 @@ namespace Assets.Scripts.Levels
                 candidate.PrimaryLocalPlayerId == UnownedPlayerId)
             {
                 return false;
+            }
+
+            for (int i = 0; i < snapshot.Squads.Count; i++)
+            {
+                MatchLobbySquadSnapshot squadSnapshot = snapshot.Squads[i];
+                if (!Guid.TryParseExact(
+                        squadSnapshot.OwnershipToken,
+                        "N",
+                        out Guid ownershipToken))
+                {
+                    return false;
+                }
+
+                SavedSquad squad = new SavedSquad(
+                    squadSnapshot.TransientSquadId,
+                    squadSnapshot.Side,
+                    squadSnapshot.Name,
+                    new Vector2(squadSnapshot.StartingX, squadSnapshot.StartingY),
+                    squadSnapshot.CeaseFire,
+                    squadSnapshot.IsMatchingSpeed,
+                    (ConfigData.ShootingStrategyTypes)squadSnapshot.ShootingStrategy,
+                    new Color(
+                        squadSnapshot.ColorR,
+                        squadSnapshot.ColorG,
+                        squadSnapshot.ColorB,
+                        squadSnapshot.ColorA));
+                squad.IsSetToChase = squadSnapshot.IsSetToChase;
+                squad.MatchOwnershipToken = ownershipToken;
+
+                for (int shipIndex = 0; shipIndex < squadSnapshot.Ships.Count; shipIndex++)
+                {
+                    MatchLobbyShipSnapshot shipSnapshot = squadSnapshot.Ships[shipIndex];
+                    FleetShip fleetShip = new FleetShip(
+                        shipSnapshot.TransientFleetId,
+                        (ConfigData.ShipTypes)shipSnapshot.ShipType,
+                        false,
+                        false,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        shipSnapshot.Name);
+                    squad.AddShipToSquad(new SquadShip(
+                        fleetShip,
+                        new Vector2(shipSnapshot.OffsetX, shipSnapshot.OffsetY)));
+                }
+
+                if (!candidate.TryAssignSavedSquadOwner(
+                        squad,
+                        squadSnapshot.OwnerPlayerId))
+                {
+                    return false;
+                }
             }
 
             session = candidate;
@@ -1167,7 +1384,7 @@ namespace Assets.Scripts.Levels
         private void RemoveSquadAssignmentsForPlayer(int playerId, int? retainedSide)
         {
             List<Guid> tokensToRemove = new List<Guid>();
-            foreach (KeyValuePair<Guid, (int PlayerId, int Side)> assignment in _squadOwnerAssignments)
+            foreach (KeyValuePair<Guid, (int PlayerId, int Side, SavedSquad Squad)> assignment in _squadOwnerAssignments)
             {
                 if (assignment.Value.PlayerId == playerId &&
                     (!retainedSide.HasValue || assignment.Value.Side != retainedSide.Value))
@@ -1201,8 +1418,17 @@ namespace Assets.Scripts.Levels
                 savedSquad.MatchOwnershipToken = token;
             }
 
-            _squadOwnerAssignments[token] = (playerId, savedSquad.Side);
+            _squadOwnerAssignments[token] = (playerId, savedSquad.Side, savedSquad);
             return true;
+        }
+
+        public IReadOnlyList<SavedSquad> GetLobbyAssignedSquads()
+        {
+            return _squadOwnerAssignments
+                .OrderBy(pair => pair.Key)
+                .Select(pair => pair.Value.Squad)
+                .Where(squad => squad != null)
+                .ToList();
         }
 
         public int ResolveSquadOwner(SavedSquad savedSquad, int side)
@@ -1211,7 +1437,7 @@ namespace Assets.Scripts.Levels
                 savedSquad.MatchOwnershipToken != Guid.Empty &&
                 _squadOwnerAssignments.TryGetValue(
                     savedSquad.MatchOwnershipToken,
-                    out (int PlayerId, int Side) assignment))
+                    out (int PlayerId, int Side, SavedSquad Squad) assignment))
             {
                 MatchPlayer assignedPlayer = _players.FirstOrDefault(candidate => candidate.Id == assignment.PlayerId);
                 return assignment.Side == side &&
