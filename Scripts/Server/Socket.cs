@@ -603,7 +603,16 @@ namespace Assets.Scripts.Server
             {
                 _waitableRequests.Add(request);
             }
-            ConfigData.RequestHistory.Add(request);
+            if (ConfigData.SocketManager != null && ConfigData.SocketManager.WatchServerRequests)
+            {
+                ConfigData.RequestHistory.Add(request);
+            }
+            else if (request is CommandRequest || request is MatchupStrategyRequest)
+            {
+                ConfigData.RequestHistory.AddBounded(
+                    request,
+                    SocketResponseLifecycleGuard.MaxTrackedStaleSquadRequests);
+            }
             if (isResendRequest)
             {
                 request.StartTime = ConfigData.Stopwatch.ElapsedMilliseconds;
