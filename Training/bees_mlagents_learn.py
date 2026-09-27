@@ -566,8 +566,8 @@ def _install_fast_env_manager():
             """Return True when a worker failure caused a manager restart."""
             if step.cmd == EnvironmentCommand.ENV_EXITED:
                 self._restart_failed_workers(step)
-                worker_steps.clear()
-                step_workers.clear()
+                # Keep successful responses already consumed from the queue. Clearing them loses
+                # healthy-worker experience and leaves those workers' state unprocessed.
                 self._queue_steps()
                 return True
             if step.worker_id not in step_workers:
