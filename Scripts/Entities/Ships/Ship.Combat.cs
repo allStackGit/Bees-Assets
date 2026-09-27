@@ -316,19 +316,7 @@ namespace Assets.Scripts.Entities.Ships
                 }
                 if (ShipType != ConfigData.ShipTypes.Beacon) LogKilledStats();
                 if (HasUserFogOfWarVision) FogOfWarVision.Kill(0, false);
-                if (WeaponsThatHaveUsWithinRange.Count > 0)
-                {
-                    foreach (Weapon weapon in WeaponsThatHaveUsWithinRange)
-                    {
-                        if (weapon.ShipsWithinRange.Remove(Id))
-                {
-                    // The cached targeting queue can still contain this ship after removal.
-                    // Invalidate it so the weapon immediately considers its other in-range targets.
-                    weapon.HasCachedChanged = true;
-                }
-                    }
-                    WeaponsThatHaveUsWithinRange.Clear();
-                }
+                RemoveFromIncomingWeaponRanges();
             }
             else if (Side == ConfigData.Configuration.UserSide) Level.State.PlayerShipsReturned++;
 
@@ -383,6 +371,20 @@ namespace Assets.Scripts.Entities.Ships
             }
             CancelOwnedTimers();
             Deactivate();
+        }
+
+        protected void RemoveFromIncomingWeaponRanges()
+        {
+            foreach (Weapon weapon in WeaponsThatHaveUsWithinRange)
+            {
+                if (weapon != null && weapon.ShipsWithinRange.Remove(Id))
+                {
+                    // The cached targeting queue can still contain this ship after removal.
+                    // Invalidate it so the weapon immediately considers its other in-range targets.
+                    weapon.HasCachedChanged = true;
+                }
+            }
+            WeaponsThatHaveUsWithinRange.Clear();
         }
 
         public Ship SetAndGetTargetEnemy()
