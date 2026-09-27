@@ -7,6 +7,11 @@ namespace Assets.Scripts.Entities.Ships.Weapons
     {
         private Vector2 _targetPoint, _frontOfShip, _colliderPoint, _globalTargetPosition, _globalTurretPosition;
 
+        protected Vector2 GetManualTargetPoint()
+        {
+            return Level.Map.Transform.InverseTransformPoint(Stage.InputManager.GetMousePosition());
+        }
+
         protected void MoveTargetingMarker()
         {
             if (!HasTargetingMarker)
@@ -17,7 +22,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             bool shouldShowMarker = Ship.Squad.IsSelected && IsAlignedWithTargetPoint && !IsFiringManually;
             if (shouldShowMarker)
             {
-                TargetingMarker.transform.position = TargetPoint;
+                TargetingMarker.transform.localPosition = TargetPoint;
             }
             if (TargetingMarker.activeSelf != shouldShowMarker)
             {
@@ -35,7 +40,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             }
             else if (IsFiringManually)
             {
-                TargetPoint = Stage.InputManager.GetMousePosition();
+                TargetPoint = GetManualTargetPoint();
                 IsAlignedWithTargetPoint = Utilities.TimedRotation(this, GetDegreesTowardsPoint(TargetPoint), RotationRate);
             }
             else if (ShouldFire)
