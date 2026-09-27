@@ -26,3 +26,5 @@ None currently confirmed. The active audit continues; resolved findings have bee
 - REG-119 fixes POSIX owned-child cleanup returning before signal-status re-delivery when no process group remains. Verified statically; no tests or runtime checks were performed. This production fix resets the post-fix clean-pass count to **0 / 2**.
 
 - REG-120 moves remote SSH tunnel creation inside installed signal handling and its cleanup scope, preventing a stop during startup from orphaning the tunnel. Verified statically only; no tests or runtime checks were performed. This production fix resets the post-fix clean-pass count to **0 / 2**.
+
+- REG-121 fixes stale pre-reset worker results being published after full-cohort recovery; all workers now resume from reset observations. Verified through static comparison with the pinned ML-Agents recovery/reset flow and response postprocessing. No tests or runtime checks were run. This production fix resets the post-fix clean-pass count to **0 / 2**.
