@@ -19,7 +19,7 @@ namespace Assets.Scripts.Entities
 
         public void ShipCollision(Ship ship)
         {
-            if (ship == null || Level == null || ship.Level != Level)
+            if (ship == null || Level == null || ship.Level != Level || IsDead || Health <= 0)
             {
                 return;
             }
@@ -63,7 +63,7 @@ namespace Assets.Scripts.Entities
 
         public void ObstacleCollision(Obstacle obstacle)
         {
-            if (obstacle == null || Level == null || obstacle.Level != Level)
+            if (obstacle == null || Level == null || obstacle.Level != Level || IsDead || Health <= 0)
             {
                 return;
             }
