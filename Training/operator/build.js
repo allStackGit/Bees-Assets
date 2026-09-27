@@ -32,6 +32,7 @@ const {
     getTrainingCompatibilityFingerprint,
     newReleaseTrainingRuntime,
     newTrainingRunPlan,
+    recoverTrainingRunLifecycle,
     saveLatestRelease,
     ensureRunLifecycleMatchesRelease,
 } = require('./runtime');
@@ -397,7 +398,29 @@ async function invokeBuild(options = {}) {
                 );
             }
             const currentRelease = getLatestRelease();
-            if (currentRelease.run_id && currentRelease.compatibility_key) {
+            const controlStatus = await getStatus(config, admin);
+            const desired = controlStatus.desired || {};
+            const activeRun = String(desired.run_id || '').trim();
+            const activeKey = String(desired.compatibility_key || '').trim().toLowerCase();
+            const fingerprint = getTrainingCompatibilityFingerprint(python);
+            const sourceKey = String(fingerprint.compatibility_key || '').trim().toLowerCase();
+            const releaseRun = String(currentRelease.run_id || '').trim();
+            const releaseKey = String(currentRelease.compatibility_key || '').trim().toLowerCase();
+
+            if (
+                activeRun &&
+                activeKey &&
+                sourceKey === activeKey &&
+                (releaseRun !== activeRun || releaseKey !== activeKey)
+            ) {
+                console.warn(
+                    'Latest release metadata is not canonical and current source exactly matches ' +
+                    'the active cluster compatibility contract; treating the persisted release as ' +
+                    'an interrupted/stale build and recovering lifecycle state to active run ' +
+                    activeRun + '.'
+                );
+                recoverTrainingRunLifecycle(python, activeRun, activeKey);
+            } else if (currentRelease.run_id && currentRelease.compatibility_key) {
                 await reconcileLatestReleaseBeforeBuild(
                     config, python, unity, admin, currentRelease
                 );
@@ -533,8 +556,13 @@ async function invokeBuild(options = {}) {
         artifacts,
         training_runtime: trainingRuntime,
     };
-    saveLatestRelease(release);
-    commitTrainingRunPlan(python);
+    let releasePersisted = false;
+    const persistReleaseLifecycle = () => {
+        if (releasePersisted) return;
+        saveLatestRelease(release);
+        commitTrainingRunPlan(python);
+        releasePersisted = true;
+    };
 
     console.log('');
     console.log('Build complete: ' + buildId + '  run=' + release.run_id);
@@ -561,6 +589,10 @@ async function invokeBuild(options = {}) {
             const validationKey = await assertRlEnvironmentArgsValid(
                 config, release, environmentArgs, python
             );
+            // Do not advance latest-release/run lifecycle state until the newly built
+            // artifacts have passed environment validation. If validation fails, the
+            // previously canonical release remains the durable recovery point.
+            persistReleaseLifecycle();
             assertCentralAgentCheckpointSafe();
             const centralRuntime = prepareCentralReleaseRuntime(config, python, unity, release);
             await startCentralAgentIfNeeded(config, python, unity, release, centralRuntime);
@@ -606,6 +638,9 @@ async function invokeBuild(options = {}) {
         }
     }
 
+    // Offline builds have no control-plane validation step, so persist only after all
+    // local build/package work above has completed successfully.
+    persistReleaseLifecycle();
     return release;
 }
 
