@@ -20,6 +20,7 @@ sys.modules[SPEC.name] = continual
 assert SPEC.loader is not None
 SPEC.loader.exec_module(continual)
 
+from bees_continual_behavior_sanity import apply_behavior_sanity
 from bees_continual_bootstrap import bootstrap_champion
 
 
@@ -98,27 +99,55 @@ class PermanentCompetencySuiteTests(unittest.TestCase):
         }
 
     def report(self, candidate_id: str, minimum: float = 0.5):
-        return {
-            "candidate_model_id": candidate_id,
-            "champion_model_id": self.champion["model_id"],
-            "candidate_vs_champion": {"wins": 6, "losses": 4, "draws": 0},
-            "historical": [],
-            "competencies": [
-                {
-                    "name": "smoke",
-                    "opponent_model_id": self.champion["model_id"],
-                    "matches": 5,
-                    "minimum": minimum,
-                    "metric": "score_rate",
-                    "critical": True,
-                    "env_args": ["--rl-map-size", "64"],
-                    "score": 1.0,
-                }
-            ],
-            "behavior_sanity_passed": True,
-            "runtime_compatible": True,
-            "runtime_checks_passed": True,
-        }
+        return apply_behavior_sanity(
+            {
+                "candidate_model_id": candidate_id,
+                "champion_model_id": self.champion["model_id"],
+                "candidate_vs_champion": {
+                    "matches": 10,
+                    "wins": 6,
+                    "losses": 4,
+                    "draws": 0,
+                    "timeouts": 0,
+                    "candidate_starting_tsv": 100,
+                    "candidate_final_tsv": 50,
+                    "candidate_shots": 10,
+                    "candidate_hits": 5,
+                    "candidate_damage": 5,
+                },
+                "historical": [],
+                "competencies": [
+                    {
+                        "name": "smoke",
+                        "opponent_model_id": self.champion["model_id"],
+                        "matches": 5,
+                        "minimum": minimum,
+                        "metric": "score_rate",
+                        "critical": True,
+                        "env_args": ["--rl-map-size", "64"],
+                        "score": 1.0,
+                        "summary": {
+                            "matches": 5,
+                            "wins": 5,
+                            "losses": 0,
+                            "draws": 0,
+                            "timeouts": 0,
+                            "candidate_starting_tsv": 50,
+                            "candidate_final_tsv": 25,
+                            "candidate_shots": 5,
+                            "candidate_hits": 2,
+                            "candidate_damage": 2,
+                        },
+                    }
+                ],
+                "runtime_compatible": True,
+                "runtime_checks_passed": True,
+                "evaluator": {
+                    "authoritative_match_runner": True,
+                    "authoritative_telemetry_validated": True,
+                },
+            }
+        )
 
     def test_evaluation_fails_until_permanent_suite_is_pinned(self):
         candidate = self.register(
