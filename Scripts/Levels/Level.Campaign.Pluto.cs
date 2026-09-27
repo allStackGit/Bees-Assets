@@ -727,6 +727,12 @@ namespace Assets.Scripts.Levels
                                         personnelLost = (humanTarget.MaxHealth - humanTarget.Health) / 200;
                                         Stage.Menus.PlutoShieldHealthBar.transform.localScale = new Vector2(((float)(15 - personnelLost) / 15) * 150, 1);
 
+                                        personnelEvacuated = Mathf.Clamp(
+                                            Mathf.FloorToInt(
+                                                (Time.time - evacuationStartTime) / evacuationIntervalSeconds),
+                                            0,
+                                            Mathf.FloorToInt(
+                                                evacuationDurationSeconds / evacuationIntervalSeconds));
                                         if (timeLeft <= 0 || personnelLost >= 15)
                                         {
                                             _questPoints = personnelEvacuated;
@@ -741,12 +747,6 @@ namespace Assets.Scripts.Levels
                                         }
                                         else
                                         {
-                                            personnelEvacuated = Mathf.Clamp(
-                                                Mathf.FloorToInt(
-                                                    (Time.time - evacuationStartTime) / evacuationIntervalSeconds),
-                                                0,
-                                                Mathf.FloorToInt(
-                                                    evacuationDurationSeconds / evacuationIntervalSeconds));
                                             counterText.text = $"{personnelEvacuated}";
                                             clockText.text = $"{minutesLeft}:{secondsLeft:D2}";
                                         }
