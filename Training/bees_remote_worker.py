@@ -28,6 +28,17 @@ DEFAULT_BASE_PORT = distributed.DEFAULT_BASE_PORT
 CONTROL_ENV_ARGS_VARIABLE = "BEES_TRAINING_ENV_ARGS_JSON"
 
 
+def validate_training_build(spec: Mapping[str, object]) -> None:
+    expected = str(spec.get("build_id", "")).strip()
+    actual = os.environ.get(distributed.TRAINING_BUILD_ID_ENV, "").strip()
+    if not actual:
+        raise ValueError(
+            f"remote rollout requires {distributed.TRAINING_BUILD_ID_ENV} to identify the Unity build"
+        )
+    if actual != expected:
+        raise ValueError("remote Unity build identity does not match the central training session")
+
+
 def controlled_environment_args(spec_args: Sequence[str]) -> Tuple[str, ...]:
     pinned_args = tuple(str(value) for value in spec_args)
     raw = os.environ.get(CONTROL_ENV_ARGS_VARIABLE)
@@ -206,6 +217,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
     try:
         spec = distributed.load_remote_worker_spec(args.spec)
+        validate_training_build(spec)
         worker_ids = select_worker_ids(spec, args.worker_ids)
         base_port = int(spec["base_port"])
         ports = worker_ports(base_port, worker_ids)
