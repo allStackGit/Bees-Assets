@@ -1424,9 +1424,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         snapshot = episode_metrics.refresh(run_id)
         process = managed.process
         if managed.alive() and process is not None:
+            health = managed.health()
+            health_pid = health.get("pid") if health is not None else None
+            if not isinstance(health_pid, int) or isinstance(health_pid, bool):
+                # On POSIX, popen_owned's guardian PID differs from the launched command PID.
+                # The per-launch metrics file is cleared before startup, so use its PID only
+                # when a matching managed-health record is available.
+                health_pid = process.pid if os.name == "nt" else None
             throughput = read_throughput_metrics(
                 managed.throughput_metrics_file,
-                expected_pid=process.pid,
+                expected_pid=health_pid,
                 expected_env_count=managed.worker_env_count,
             )
             if throughput:
