@@ -43,6 +43,7 @@ namespace Assets.Scripts.Levels
         };
 
         public int UserCommands, AICommands;
+        public Guid MatchId { get; private set; }
         public bool IsPaused;
         public bool GameOver;
         public bool LevelEnded;
@@ -109,6 +110,9 @@ namespace Assets.Scripts.Levels
         {
             Level = level;
             Stage = Level.Stage;
+            MatchId = Stage != null && Stage.MatchSession != null
+                ? Stage.MatchSession.MatchId
+                : Guid.Empty;
         }
 
         public HashSet<MapObject> GetPlayerVisibleMapObjects(int side)
@@ -339,6 +343,7 @@ namespace Assets.Scripts.Levels
 
         public IReadOnlyList<MatchPeer> Peers => _peers;
         public IReadOnlyList<MatchPlayer> Players => _players;
+        public Guid MatchId { get; private set; } = Guid.NewGuid();
         public int PrimaryLocalPlayerId { get; private set; } = UnownedPlayerId;
         public MatchSessionPhase Phase { get; private set; } = MatchSessionPhase.Lobby;
         public bool IsMultiplayer => _players.Count > 1;
@@ -349,6 +354,17 @@ namespace Assets.Scripts.Levels
             MatchSession session = new MatchSession();
             session.AddPlayer(LegacyLocalPlayerId, side, true);
             return session;
+        }
+
+        public bool TrySetMatchId(Guid matchId)
+        {
+            if (!IsConfiguring || matchId == Guid.Empty)
+            {
+                return false;
+            }
+
+            MatchId = matchId;
+            return true;
         }
 
         public bool AddPeer(int peerId, bool isLocal, string transportIdentity = null)
@@ -576,7 +592,8 @@ namespace Assets.Scripts.Levels
 
         public bool TryBeginBattle()
         {
-            if (!IsConfiguring || _players.Count == 0 || PrimaryLocalPlayerId == UnownedPlayerId)
+            if (!IsConfiguring || MatchId == Guid.Empty ||
+                _players.Count == 0 || PrimaryLocalPlayerId == UnownedPlayerId)
             {
                 return false;
             }

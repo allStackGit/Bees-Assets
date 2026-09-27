@@ -1,8 +1,11 @@
 using System;
 using System.Collections.Generic;
+using System.Text;
 using Assets.Scripts.Entities.Ships;
 using Assets.Scripts.Levels.Commands;
 using Assets.Scripts.Server;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using UnityEngine;
 
 namespace Assets.Scripts.Levels
@@ -24,6 +27,16 @@ namespace Assets.Scripts.Levels
         public int AddUserCommand()
         {
             return UserCommands++;
+        }
+
+        public bool QueueReceivedPlayerCommandPacket(int sourcePeerId, byte[] payload)
+        {
+            if (!MultiplayerProtocol.TryDeserializeCommand(payload, MatchId, out PlayerCommandEnvelope command))
+            {
+                return false;
+            }
+
+            return QueueReceivedPlayerCommand(sourcePeerId, command);
         }
 
         public bool QueueReceivedPlayerCommand(int sourcePeerId, PlayerCommandEnvelope command)
@@ -569,6 +582,228 @@ namespace Assets.Scripts.Levels
             TargetSquadCommandId = targetSquadCommandId;
             PointA = pointA;
             PointB = pointB;
+        }
+    }
+
+
+    public static class MultiplayerProtocol
+    {
+        public const int Version = 1;
+        public const int MaxPacketBytes = 4096;
+        private const string CommandPacketType = "command";
+        private static readonly UTF8Encoding StrictUtf8 = new UTF8Encoding(false, true);
+        private static readonly HashSet<string> CommandFields = new HashSet<string>
+        {
+            "v", "match", "type", "player", "seq", "kind", "squad", "target",
+            "ax", "ay", "bx", "by"
+        };
+
+        public static bool TrySerializeCommand(
+            Guid matchId,
+            PlayerCommandEnvelope command,
+            out byte[] payload)
+        {
+            payload = null;
+            if (matchId == Guid.Empty || !IsValidCommand(command))
+            {
+                return false;
+            }
+
+            JObject json = new JObject
+            {
+                ["v"] = Version,
+                ["match"] = matchId.ToString("N"),
+                ["type"] = CommandPacketType,
+                ["player"] = command.PlayerId,
+                ["seq"] = command.Sequence,
+                ["kind"] = (int)command.Kind,
+                ["squad"] = command.SquadCommandId,
+                ["target"] = command.TargetSquadCommandId,
+                ["ax"] = command.PointA.x,
+                ["ay"] = command.PointA.y,
+                ["bx"] = command.PointB.x,
+                ["by"] = command.PointB.y
+            };
+
+            byte[] encoded = StrictUtf8.GetBytes(json.ToString(Formatting.None));
+            if (encoded.Length == 0 || encoded.Length > MaxPacketBytes)
+            {
+                return false;
+            }
+
+            payload = encoded;
+            return true;
+        }
+
+        public static bool TryDeserializeCommand(
+            byte[] payload,
+            Guid expectedMatchId,
+            out PlayerCommandEnvelope command)
+        {
+            command = null;
+            if (expectedMatchId == Guid.Empty ||
+                payload == null ||
+                payload.Length == 0 ||
+                payload.Length > MaxPacketBytes)
+            {
+                return false;
+            }
+
+            JObject json;
+            try
+            {
+                string text = StrictUtf8.GetString(payload);
+                json = JObject.Parse(text);
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+
+            foreach (JProperty property in json.Properties())
+            {
+                if (!CommandFields.Contains(property.Name))
+                {
+                    return false;
+                }
+            }
+            if (json.Count != CommandFields.Count)
+            {
+                return false;
+            }
+
+            if (!TryReadInt64(json, "v", out long version) || version != Version ||
+                !TryReadString(json, "type", out string packetType) || packetType != CommandPacketType ||
+                !TryReadString(json, "match", out string matchText) ||
+                !Guid.TryParseExact(matchText, "N", out Guid matchId) ||
+                matchId != expectedMatchId ||
+                !TryReadInt64(json, "player", out long playerIdValue) ||
+                playerIdValue <= MatchSession.UnownedPlayerId ||
+                playerIdValue > int.MaxValue ||
+                !TryReadInt64(json, "seq", out long sequence) || sequence <= 0 ||
+                !TryReadInt64(json, "kind", out long kindValue) ||
+                kindValue < int.MinValue || kindValue > int.MaxValue ||
+                !Enum.IsDefined(typeof(PlayerCommandKind), (int)kindValue) ||
+                !TryReadInt64(json, "squad", out long squadCommandId) || squadCommandId <= 0 ||
+                !TryReadInt64(json, "target", out long targetSquadCommandId) || targetSquadCommandId < 0 ||
+                !TryReadFloat(json, "ax", out float ax) ||
+                !TryReadFloat(json, "ay", out float ay) ||
+                !TryReadFloat(json, "bx", out float bx) ||
+                !TryReadFloat(json, "by", out float by))
+            {
+                return false;
+            }
+
+            PlayerCommandEnvelope parsed = new PlayerCommandEnvelope(
+                (int)playerIdValue,
+                sequence,
+                (PlayerCommandKind)(int)kindValue,
+                squadCommandId,
+                targetSquadCommandId,
+                new Vector2(ax, ay),
+                new Vector2(bx, by));
+
+            if (!IsValidCommand(parsed))
+            {
+                return false;
+            }
+
+            command = parsed;
+            return true;
+        }
+
+        private static bool IsValidCommand(PlayerCommandEnvelope command)
+        {
+            if (command == null ||
+                command.PlayerId <= MatchSession.UnownedPlayerId ||
+                command.Sequence <= 0 ||
+                command.SquadCommandId <= 0 ||
+                command.TargetSquadCommandId < 0 ||
+                !Enum.IsDefined(typeof(PlayerCommandKind), command.Kind) ||
+                !IsFinite(command.PointA) ||
+                !IsFinite(command.PointB))
+            {
+                return false;
+            }
+
+            bool requiresTarget =
+                command.Kind == PlayerCommandKind.TargetEnemy ||
+                command.Kind == PlayerCommandKind.Guard ||
+                command.Kind == PlayerCommandKind.FullRetreat ||
+                command.Kind == PlayerCommandKind.Heal;
+            if (requiresTarget != (command.TargetSquadCommandId > 0))
+            {
+                return false;
+            }
+
+            return true;
+        }
+
+        private static bool TryReadInt64(JObject json, string name, out long value)
+        {
+            value = 0;
+            JToken token = json[name];
+            if (token == null || token.Type != JTokenType.Integer)
+            {
+                return false;
+            }
+
+            try
+            {
+                value = token.Value<long>();
+                return true;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
+        private static bool TryReadFloat(JObject json, string name, out float value)
+        {
+            value = 0;
+            JToken token = json[name];
+            if (token == null ||
+                (token.Type != JTokenType.Integer && token.Type != JTokenType.Float))
+            {
+                return false;
+            }
+
+            try
+            {
+                double parsed = token.Value<double>();
+                if (double.IsNaN(parsed) || double.IsInfinity(parsed) ||
+                    parsed > float.MaxValue || parsed < -float.MaxValue)
+                {
+                    return false;
+                }
+
+                value = (float)parsed;
+                return true;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
+        private static bool TryReadString(JObject json, string name, out string value)
+        {
+            value = null;
+            JToken token = json[name];
+            if (token == null || token.Type != JTokenType.String)
+            {
+                return false;
+            }
+
+            value = token.Value<string>();
+            return value != null;
+        }
+
+        private static bool IsFinite(Vector2 value)
+        {
+            return !float.IsNaN(value.x) && !float.IsInfinity(value.x) &&
+                   !float.IsNaN(value.y) && !float.IsInfinity(value.y);
         }
     }
 
