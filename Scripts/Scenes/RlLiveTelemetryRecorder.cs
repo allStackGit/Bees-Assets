@@ -530,6 +530,7 @@ internal sealed class RlLiveTelemetryRecorder : MonoBehaviour
         }
 
         FlushDraft(session);
+        bool allFinalized = true;
         for (int i = 0; i < session.DraftPaths.Count; i++)
         {
             string draft = session.DraftPaths[i];
@@ -543,20 +544,26 @@ internal sealed class RlLiveTelemetryRecorder : MonoBehaviour
                 if (payload == null || payload.steps == null || payload.steps.Count == 0)
                 {
                     File.Delete(draft);
+                    string emptyMarker = GetCompletionMarkerPath(draft);
+                    if (File.Exists(emptyMarker)) File.Delete(emptyMarker);
                     continue;
                 }
+                WriteCompletionMarker(draft, result);
                 payload.result = result;
                 Directory.CreateDirectory(GetPendingDirectory());
                 string pending = Path.Combine(GetPendingDirectory(), payload.match_id + ".json");
                 WriteAtomic(pending, JsonConvert.SerializeObject(payload, Formatting.None));
                 File.Delete(draft);
+                string completionMarker = GetCompletionMarkerPath(draft);
+                if (File.Exists(completionMarker)) File.Delete(completionMarker);
             }
             catch (Exception exception)
             {
+                allFinalized = false;
                 Debug.LogWarning("Could not finalize gameplay telemetry segment: " + exception.Message);
             }
         }
-        session.Completed = true;
+        session.Completed = allFinalized;
     }
 
     private static string ResolveCompletedResult(Level level)
@@ -752,17 +759,61 @@ internal sealed class RlLiveTelemetryRecorder : MonoBehaviour
                     File.Delete(path);
                     continue;
                 }
-                payload.result = "timeout";
+                string markerPath = GetCompletionMarkerPath(path);
+                string completionResult = File.Exists(markerPath) ? File.ReadAllText(markerPath) : null;
+                payload.result = ResolveRecoveredDraftResult(completionResult);
                 Directory.CreateDirectory(GetPendingDirectory());
                 string pending = Path.Combine(GetPendingDirectory(), payload.match_id + ".json");
                 WriteAtomic(pending, JsonConvert.SerializeObject(payload, Formatting.None));
                 File.Delete(path);
+                if (File.Exists(markerPath)) File.Delete(markerPath);
             }
             catch (Exception exception)
             {
                 Debug.LogWarning("Could not recover abandoned gameplay telemetry draft: " + exception.Message);
             }
         }
+
+        foreach (string marker in Directory.GetFiles(draftDirectory, "*.draft.json.result"))
+        {
+            string draft = marker.Substring(0, marker.Length - ".result".Length);
+            if (!File.Exists(draft))
+            {
+                try { File.Delete(marker); }
+                catch (Exception exception)
+                {
+                    Debug.LogWarning("Could not remove orphaned gameplay telemetry marker: " + exception.Message);
+                }
+            }
+        }
+    }
+
+    internal static string ResolveRecoveredDraftResult(string completionResult)
+    {
+        return completionResult == "bee_win" || completionResult == "human_win" ||
+               completionResult == "draw" || completionResult == "timeout"
+            ? completionResult
+            : "timeout";
+    }
+
+    private static string GetCompletionMarkerPath(string draftPath)
+    {
+        return draftPath + ".result";
+    }
+
+    private static void WriteCompletionMarker(string draftPath, string result)
+    {
+        string markerPath = GetCompletionMarkerPath(draftPath);
+        string normalizedResult = ResolveRecoveredDraftResult(result);
+        if (File.Exists(markerPath))
+        {
+            if (!string.Equals(File.ReadAllText(markerPath), normalizedResult, StringComparison.Ordinal))
+            {
+                throw new IOException("Telemetry completion marker does not match the final result.");
+            }
+            return;
+        }
+        WriteAtomic(markerPath, normalizedResult);
     }
 
     private static void WriteAtomic(string destination, string text)
