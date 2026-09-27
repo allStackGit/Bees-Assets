@@ -551,3 +551,11 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** cache records now include change time and inode for both pointer and bundle files; reuse requires all recorded identity metadata to match. `rlModelDistribution.module.test.js` caches a pointer, replaces its same-size contents, preserves modification time, and verifies that the new deployment is observed.  
 **Verification:** statically traced cache reuse and invalidation for pointer and bundle records. The focused regression was added but not run; no runtime checks were performed, per the static-only audit scope.  
 **Invariant/knowledge:** file caches that protect deployment identity must detect replacement even when size and modification time are unchanged.
+
+### REG-062 — Pluto II tutorial controlled the hard-coded Human squads
+**Area:** `Scripts/Levels/Level.Campaign.Pluto.cs`, Pluto II tutorial squad ownership  
+**Symptom:** when the configured campaign user played as the Bee side, Pluto II's tutorial disabled and queried Human-side squads even though the tutorial squads were spawned for `UserSide`. The actual user squads could remain uncontrollable and tutorial triggers could wait on the wrong squads.  
+**Root cause:** `Pluto2Reinforcements()` used `HumanSide` for its four tutorial squad lookups, while spawn placement and campaign routing use `UserSide`.  
+**Permanent protection:** all four lookups now use `UserSide`. `InitialDesignPresentationRegressionTests.PlutoTwoTutorialOwnsSizingAndDialogueOrderBeforeRendering` isolates the Pluto II mission block and requires user-side lookups while rejecting hard-coded Human-side lookups.  
+**Verification:** statically compared the mission's spawn side, four squad lookups, and existing campaign-side selection logic. The regression test was updated but not run; no Unity or gameplay checks were performed, per the static-only audit scope.  
+**Invariant/knowledge:** campaign tutorials must bind to the configured user side, which may be Bee or Human; hard-coded Human-side squad ownership is invalid.
