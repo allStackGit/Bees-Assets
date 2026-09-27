@@ -167,6 +167,16 @@ class NativeDemoIngestionTests(unittest.TestCase):
             self.ingest()
         self.assertEqual(self.store.status()["demonstration_batches"], 1)
 
+    def test_demo_changes_during_native_parsing_are_rejected(self):
+        def changing_loader(path):
+            result = self.loader(path)
+            self.demo.write_bytes(b"changed-during-native-parse")
+            return result
+
+        with self.assertRaises(ValidationError):
+            self.ingest(loader=changing_loader)
+        self.assertEqual(self.store.status()["demonstration_batches"], 0)
+
     def test_observation_shape_mismatch_is_rejected_before_archival(self):
         def wrong_loader(_path):
             return self.behavior_spec(observation_size=17), [object(), object()], 2
