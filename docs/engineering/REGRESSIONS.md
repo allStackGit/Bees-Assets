@@ -616,3 +616,12 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** the gate now uses `GetUserShipTypes()`. `CampaignTriggerStructureTests.Uranus3HiveMindStartupDoesNotRequireCarrierTutorial` guards the user-side query and the no-Carrier HiveMind startup path. The guard was updated but not run, per the static-only audit scope.  
 **Verification:** traced the Uranus III gate to `SelectedCarrierTrigger()`, which checks and selects carriers from the configured user fleet; confirmed the same gate also has a direct HiveMind startup path when no user-side Carrier is present. Source and guard were reread after the edits. No tests, builds, Unity, simulations, or runtime checks were run.  
 **Invariant/knowledge:** eligibility checks for optional player tutorials must inspect the same configured side the tutorial controls.
+
+
+### REG-070 — failed telemetry upload allocation consumed user quota
+**Area:** `BeesServer~/rlTelemetryUploads.js`, authenticated telemetry begin and partial-file allocation  
+**Symptom:** the server reserved the full declared upload size against the authenticated user before creating the partial file. If file creation failed, the request left the reservation charged for the rest of the rate window, preventing a retry despite there being no session or uploaded data.  
+**Root cause:** the allocation failure path did not roll back its quota reservation.  
+**Permanent protection:** quota reservation now returns an identity token and is released when partial-file creation fails. The cleanup preserves an already-existing partial file when exclusive creation fails with `EEXIST`. `BeesServer~/test/rlTelemetryUploads.module.test.js` covers quota rollback and preservation of the colliding file. The regression case was added but not run, per the static-only audit scope.  
+**Verification:** traced begin admission from quota reservation through exclusive partial-file creation and confirmed session maps are populated only after successful allocation. The failure path releases quota in a `finally` and avoids unlinking a file it did not create. Source and guard were reread after editing. No tests or runtime checks were run.  
+**Invariant/knowledge:** failures before session ownership is established must release reserved upload quota without disturbing pre-existing upload state.
