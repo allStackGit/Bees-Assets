@@ -481,7 +481,19 @@ class TrainingControlStore {
                             'training-control persisted build descriptor is invalid for ' +
                             role + '/' + platform + '/' + buildId);
                     }
-                    record.archive_path = path.resolve(record.archive_path);
+                    const resolvedArchivePath = path.resolve(record.archive_path);
+                    const expectedArchivePath = path.join(
+                        this.artifactRoot,
+                        role,
+                        platform,
+                        buildId + '-' + record.archive_sha256 + '.zip',
+                    );
+                    if (resolvedArchivePath !== expectedArchivePath) {
+                        throw new Error(
+                            'training-control persisted artifact path is invalid for ' +
+                            role + '/' + platform + '/' + buildId);
+                    }
+                    record.archive_path = resolvedArchivePath;
                 }
             }
         }
