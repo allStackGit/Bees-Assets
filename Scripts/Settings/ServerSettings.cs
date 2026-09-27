@@ -39,12 +39,15 @@ namespace Assets.Scripts.Settings
                     return;
                 }
 
-                if (standingRequest.Status == 403)
+                if (standingRequest.Status == 403 || standingRequest.Status == 404)
                 {
                     ServerReadFailureStatus = standingRequest.Status;
                     ConfigData.Socket.StandingRequests.Remove(standingRequest);
                     _request = null;
-                    Debug.LogError($"Server denied access to settings '{Name}'. Settings remain unavailable.");
+                    Debug.LogError(
+                        standingRequest.Status == 403
+                            ? $"Server denied access to settings '{Name}'. Settings remain unavailable."
+                            : $"Settings '{Name}' are not available for this version.");
                     return;
                 }
 
