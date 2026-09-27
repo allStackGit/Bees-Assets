@@ -286,7 +286,7 @@ namespace Assets.Scripts.Levels
 
             if (clearanceMap[startIndex] < hardClearance)
             {
-                egressIndexes = FindStaticEgressPath(startIndex, hardClearance, clearanceMap, staticSignedClearance, threadIndex);
+                egressIndexes = FindClearanceEgressPath(startIndex, hardClearance, clearanceMap, staticSignedClearance, threadIndex);
                 if (egressIndexes == null || egressIndexes.Count == 0)
                 {
                     return null;
@@ -375,9 +375,15 @@ namespace Assets.Scripts.Levels
             return searchStamp;
         }
 
-        private List<int> FindStaticEgressPath(int startIndex, int hardClearance, int[] clearanceMap, int[] staticSignedClearance, int threadIndex)
+        private List<int> FindClearanceEgressPath(int startIndex, int hardClearance, int[] clearanceMap, int[] staticSignedClearance, int threadIndex)
         {
-            if (staticSignedClearance == null || staticSignedClearance[startIndex] >= hardClearance)
+            if (staticSignedClearance == null)
+            {
+                return null;
+            }
+
+            bool escapingStaticObstacle = staticSignedClearance[startIndex] < hardClearance;
+            if (!escapingStaticObstacle && clearanceMap[startIndex] >= hardClearance)
             {
                 return null;
             }
@@ -428,10 +434,13 @@ namespace Assets.Scripts.Levels
                     }
 
                     int neighborIndex = ToIndex(neighborX, neighborY);
+                    int minimumStaticClearance = escapingStaticObstacle
+                        ? currentSignedClearance
+                        : hardClearance;
                     if (closedStamp[neighborIndex] == searchStamp ||
-                        staticSignedClearance[neighborIndex] < currentSignedClearance ||
+                        staticSignedClearance[neighborIndex] < minimumStaticClearance ||
                         clearanceMap[neighborIndex] < currentCombinedClearance ||
-                        IsEgressDiagonalBlocked(currentX, currentY, neighborX, neighborY, currentSignedClearance, currentCombinedClearance, staticSignedClearance, clearanceMap))
+                        IsEgressDiagonalBlocked(currentX, currentY, neighborX, neighborY, minimumStaticClearance, currentCombinedClearance, staticSignedClearance, clearanceMap))
                     {
                         continue;
                     }
@@ -441,7 +450,9 @@ namespace Assets.Scripts.Levels
                     if (openStamp[neighborIndex] != searchStamp || newCost < costs[neighborIndex])
                     {
                         costs[neighborIndex] = newCost;
-                        tieBreakers[neighborIndex] = -staticSignedClearance[neighborIndex];
+                        tieBreakers[neighborIndex] = -(escapingStaticObstacle
+                            ? staticSignedClearance[neighborIndex]
+                            : clearanceMap[neighborIndex]);
                         previousIndex[neighborIndex] = currentIndex;
                         openStamp[neighborIndex] = searchStamp;
                         open.Push(neighborIndex);
