@@ -855,6 +855,14 @@ internal sealed class RlOneVsOneAgent : Agent
                 : result.HumanTerminalReward + result.HumanTimeReward);
         }
 
+        // Release control at the arena boundary itself. ML-Agents may deliver OnEpisodeBegin on
+        // a later Academy step; retaining this binding until then can leave a retired team holding
+        // policy movement, turret, communication, or squad-control state through level reset.
+        ReleaseShip();
+        _hasBoundShip = false;
+        _boundRuntimeShipId = 0;
+        _hasParticipatedThisEpisode = false;
+
         // Every team agent must close at the Unity arena boundary. Otherwise an inactive team
         // carries its ML-Agents episode across the arena reset and joins unrelated battles into one
         // trajectory. Only the team that acted receives the terminal reward above.
