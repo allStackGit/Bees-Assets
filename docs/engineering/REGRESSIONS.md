@@ -1000,3 +1000,13 @@ Manual-only protection is acceptable only when the record explains why determini
 **Verification:** statically traced registration validation, lock acquisition, central control updates, and registration commit. No tests, builds, Unity, simulations, or runtime checks were run.
 **Invariant/knowledge:** optimistic validation before a shared-state lock must be repeated under the lock when the shared state can change before commit.
 
+
+
+### REG-113 — Missing exact-version settings response caused endless retries
+**Area:** `Scripts/Server/Socket.cs`, `Scripts/Settings/ServerSettings.cs`
+**Symptom:** when no settings row existed for the requested exact version, Unity logged the empty response and retried indefinitely.
+**Root cause:** the server's authoritative missing-settings response contains null filename and contents, while the client only completed successful responses and otherwise retried handled requests.
+**Fix:** the response handler marks an empty settings response as terminal status 404; the settings loader records that status, removes the standing request, and reports that this version's settings are unavailable.
+**Permanent protection:** missing-version responses must terminate the current settings request rather than start another identical lookup. Static source analysis only; no tests were run or added.
+**Verification:** traced the server's exact-version null response, Unity's settings response handling, and the settings wait/retry branch. No tests, builds, Unity, simulations, or runtime checks were run.
+**Invariant/knowledge:** an authoritative not-found result is terminal for a versioned lookup; transient failures must be represented distinctly and retain retry behavior.
