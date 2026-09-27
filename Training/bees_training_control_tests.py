@@ -543,6 +543,52 @@ class TrainingControlClientTests(unittest.TestCase):
             )
             self.assertNotIn(("worker-a", "run-new", "Player-0.log"), client.files)
 
+    def test_training_log_uploader_resets_when_log_file_is_replaced(self):
+        class UploadClient:
+            def __init__(self):
+                self.files = {}
+
+            def upload_log_chunk(
+                self,
+                *,
+                trainer_id,
+                run_id,
+                relative_path,
+                offset,
+                data,
+                reset=False,
+            ):
+                key = (trainer_id, run_id, relative_path)
+                current = self.files.get(key, b"")
+                if reset:
+                    current = b""
+                if len(current) != offset:
+                    return -len(current) - 1
+                current += data
+                self.files[key] = current
+                return len(current)
+
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            run = root / "run"
+            run.mkdir()
+            log_path = run / "Player-0.log"
+            log_path.write_bytes(b"old file contents")
+            replacement = run / "replacement.tmp"
+            replacement.write_bytes(b"new replacement file with a longer prefix")
+            uploader = agent.TrainingLogUploader(root)
+            client = UploadClient()
+
+            uploader.flush_all(client, trainer_id="worker-a", run_id="run")
+            log_path.unlink()
+            replacement.rename(log_path)
+            uploader.flush_all(client, trainer_id="worker-a", run_id="run")
+
+            self.assertEqual(
+                client.files[("worker-a", "run", "Player-0.log")],
+                b"new replacement file with a longer prefix",
+            )
+
     def test_training_log_uploader_caps_each_uploaded_file(self):
         class UploadClient:
             def __init__(self):
