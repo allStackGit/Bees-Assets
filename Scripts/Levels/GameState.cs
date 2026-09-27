@@ -191,6 +191,7 @@ namespace Assets.Scripts.Levels
         public void ResetState()
         {
             CleanupRuntimeObjectsForReset();
+            Stage?.MatchSession?.RemoveOutgoingPlayerCommandsForLevel(MatchLevelId);
 
             if (Level != null)
             {
@@ -340,6 +341,10 @@ namespace Assets.Scripts.Levels
         private long _nextMatchSquadId = 1;
         private readonly Dictionary<int, long> _nextPlayerCommandSequences = new Dictionary<int, long>();
         private readonly Dictionary<int, long> _lastAcceptedPlayerCommandSequences = new Dictionary<int, long>();
+        private readonly Queue<(int MatchLevelId, PlayerCommandEnvelope Command)> _outgoingPlayerCommands =
+            new Queue<(int MatchLevelId, PlayerCommandEnvelope Command)>();
+        private readonly object _outgoingPlayerCommandsLock = new object();
+        public const int MaxOutgoingPlayerCommands = 1024;
         private readonly Dictionary<Guid, (int PlayerId, int Side)> _squadOwnerAssignments =
             new Dictionary<Guid, (int PlayerId, int Side)>();
 
@@ -647,6 +652,7 @@ namespace Assets.Scripts.Levels
                 return false;
             }
 
+            ClearOutgoingPlayerCommands();
             Phase = MatchSessionPhase.Ended;
             return true;
         }
@@ -675,6 +681,100 @@ namespace Assets.Scripts.Levels
             }
             _nextPlayerCommandSequences[playerId] = nextSequence + 1;
             return nextSequence;
+        }
+
+        public bool QueueOutgoingPlayerCommand(
+            int matchLevelId,
+            PlayerCommandEnvelope command)
+        {
+            if (Phase != MatchSessionPhase.Battle ||
+                IsLocalAuthority ||
+                matchLevelId <= 0 ||
+                command == null ||
+                !IsLocalPlayer(command.PlayerId) ||
+                command.Sequence <= 0)
+            {
+                return false;
+            }
+
+            PlayerCommandEnvelope queuedCopy = new PlayerCommandEnvelope(
+                command.PlayerId,
+                command.Sequence,
+                command.Kind,
+                command.SquadCommandId,
+                command.TargetSquadCommandId,
+                command.PointA,
+                command.PointB);
+
+            lock (_outgoingPlayerCommandsLock)
+            {
+                if (_outgoingPlayerCommands.Count >= MaxOutgoingPlayerCommands)
+                {
+                    return false;
+                }
+
+                _outgoingPlayerCommands.Enqueue((matchLevelId, queuedCopy));
+                return true;
+            }
+        }
+
+        public bool TryDequeueOutgoingPlayerCommand(
+            out int matchLevelId,
+            out PlayerCommandEnvelope command)
+        {
+            lock (_outgoingPlayerCommandsLock)
+            {
+                if (_outgoingPlayerCommands.Count == 0)
+                {
+                    matchLevelId = 0;
+                    command = null;
+                    return false;
+                }
+
+                (int MatchLevelId, PlayerCommandEnvelope Command) queued =
+                    _outgoingPlayerCommands.Dequeue();
+                matchLevelId = queued.MatchLevelId;
+                PlayerCommandEnvelope source = queued.Command;
+                command = new PlayerCommandEnvelope(
+                    source.PlayerId,
+                    source.Sequence,
+                    source.Kind,
+                    source.SquadCommandId,
+                    source.TargetSquadCommandId,
+                    source.PointA,
+                    source.PointB);
+                return true;
+            }
+        }
+
+        public void RemoveOutgoingPlayerCommandsForLevel(int matchLevelId)
+        {
+            if (matchLevelId <= 0)
+            {
+                return;
+            }
+
+            lock (_outgoingPlayerCommandsLock)
+            {
+                int count = _outgoingPlayerCommands.Count;
+                for (int i = 0; i < count; i++)
+                {
+                    (int MatchLevelId, PlayerCommandEnvelope Command) queued =
+                        _outgoingPlayerCommands.Dequeue();
+                    if (queued.MatchLevelId != matchLevelId)
+                    {
+                        _outgoingPlayerCommands.Enqueue(queued);
+                    }
+                }
+            }
+        }
+
+        public void ClearOutgoingPlayerCommands()
+        {
+            lock (_outgoingPlayerCommandsLock)
+            {
+                _outgoingPlayerCommands.Clear();
+            }
         }
 
         public bool TryAcceptPlayerCommandSequence(int playerId, long sequence)

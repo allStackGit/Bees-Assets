@@ -467,21 +467,9 @@ public sealed class SteamMultiplayerTransport : IMultiplayerTransport
 
     private bool TryTakeNextOutgoingCommand()
     {
-        List<Level> levels = _stage.Levels;
-        for (int i = 0; i < levels.Count; i++)
-        {
-            Level level = levels[i];
-            if (level != null &&
-                level.State != null &&
-                level.State.TryDequeueOutgoingPlayerCommand(out PlayerCommandEnvelope command))
-            {
-                _pendingOutgoingLevelId = level.State.MatchLevelId;
-                _pendingOutgoingCommand = command;
-                return true;
-            }
-        }
-
-        return false;
+        return _session.TryDequeueOutgoingPlayerCommand(
+            out _pendingOutgoingLevelId,
+            out _pendingOutgoingCommand);
     }
 
     private static EResult Send(SteamNetworkingIdentity identity, byte[] payload)
@@ -505,17 +493,16 @@ public sealed class SteamMultiplayerTransport : IMultiplayerTransport
 
     private void ReceiveIncomingCommands()
     {
-        int receivedThisUpdate = 0;
-        while (receivedThisUpdate < MaxMessagesPerUpdate)
+        int maxBatches = MaxMessagesPerUpdate / ReceiveBatchSize;
+        for (int batch = 0; batch < maxBatches; batch++)
         {
-            int maxBatch = Math.Min(ReceiveBatchSize, MaxMessagesPerUpdate - receivedThisUpdate);
             int received;
             try
             {
                 received = SteamNetworkingMessages.ReceiveMessagesOnChannel(
                     CommandChannel,
                     _receivePointers,
-                    maxBatch);
+                    ReceiveBatchSize);
             }
             catch (Exception exception)
             {
@@ -558,7 +545,10 @@ public sealed class SteamMultiplayerTransport : IMultiplayerTransport
                 }
             }
 
-            receivedThisUpdate += received;
+            if (received < ReceiveBatchSize)
+            {
+                return;
+            }
         }
     }
 }

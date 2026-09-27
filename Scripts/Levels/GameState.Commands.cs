@@ -20,12 +20,8 @@ namespace Assets.Scripts.Levels
         private readonly HashSet<Squad> _squadsAwaitingCommandSet = new HashSet<Squad>(ReferenceIdentityComparer<Squad>.Instance);
         private readonly Queue<(int SourcePeerId, PlayerCommandEnvelope Command)> _queuedPlayerCommands =
             new Queue<(int SourcePeerId, PlayerCommandEnvelope Command)>();
-        private readonly Queue<PlayerCommandEnvelope> _outgoingPlayerCommands =
-            new Queue<PlayerCommandEnvelope>();
         private readonly object _queuedPlayerCommandsLock = new object();
-        private readonly object _outgoingPlayerCommandsLock = new object();
         public const int MaxQueuedPlayerCommands = 1024;
-        public const int MaxOutgoingPlayerCommands = 1024;
         public const int MaxPlayerCommandsPerFrame = 64;
 
         public int AddUserCommand()
@@ -77,48 +73,6 @@ namespace Assets.Scripts.Levels
             }
         }
 
-        private bool QueueOutgoingPlayerCommand(PlayerCommandEnvelope command)
-        {
-            if (command == null)
-            {
-                return false;
-            }
-
-            lock (_outgoingPlayerCommandsLock)
-            {
-                if (_outgoingPlayerCommands.Count >= MaxOutgoingPlayerCommands)
-                {
-                    return false;
-                }
-
-                _outgoingPlayerCommands.Enqueue(command);
-                return true;
-            }
-        }
-
-        public bool TryDequeueOutgoingPlayerCommand(out PlayerCommandEnvelope command)
-        {
-            lock (_outgoingPlayerCommandsLock)
-            {
-                if (_outgoingPlayerCommands.Count == 0)
-                {
-                    command = null;
-                    return false;
-                }
-
-                PlayerCommandEnvelope queued = _outgoingPlayerCommands.Dequeue();
-                command = new PlayerCommandEnvelope(
-                    queued.PlayerId,
-                    queued.Sequence,
-                    queued.Kind,
-                    queued.SquadCommandId,
-                    queued.TargetSquadCommandId,
-                    queued.PointA,
-                    queued.PointB);
-                return true;
-            }
-        }
-
         public int ProcessQueuedPlayerCommands(int maxCommands = MaxPlayerCommandsPerFrame)
         {
             if (maxCommands <= 0)
@@ -159,10 +113,6 @@ namespace Assets.Scripts.Levels
             lock (_queuedPlayerCommandsLock)
             {
                 _queuedPlayerCommands.Clear();
-            }
-            lock (_outgoingPlayerCommandsLock)
-            {
-                _outgoingPlayerCommands.Clear();
             }
         }
 
@@ -217,7 +167,7 @@ namespace Assets.Scripts.Levels
 
             if (matchSession != null && !matchSession.IsLocalAuthority)
             {
-                return QueueOutgoingPlayerCommand(command);
+                return matchSession.QueueOutgoingPlayerCommand(MatchLevelId, command);
             }
 
             return TryExecutePlayerCommand(command);
