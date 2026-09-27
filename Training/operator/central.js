@@ -20,6 +20,7 @@ const {
     sha256File,
     sha256Text,
     sleep,
+    stopManagedProcessTree,
     testManagedProcessIdentity,
     testPythonCode,
     waitForSpawn,
@@ -281,6 +282,57 @@ function assertCentralAgentCheckpointSafe() {
     }
 }
 
+function durablePostCheckpointCentralPhase() {
+    if (!exists(paths.runStatePath)) return null;
+    let lifecycle;
+    try {
+        lifecycle = readJson(paths.runStatePath);
+    } catch (_) {
+        return null;
+    }
+    const runId = String(lifecycle.run_id || '').trim();
+    if (!runId || !/^[A-Za-z0-9._-]+$/.test(runId)) return null;
+
+    const serviceStatePath = path.join(
+        paths.trainingRoot,
+        'metadata',
+        'continuous-service',
+        runId,
+        'state.json',
+    );
+    if (!exists(serviceStatePath)) return null;
+
+    let serviceState;
+    try {
+        serviceState = readJson(serviceStatePath);
+    } catch (_) {
+        return null;
+    }
+    const phase = String(serviceState.phase || '').trim();
+    if (
+        String(serviceState.run_id || '').trim() !== runId ||
+        !Boolean(serviceState.training_started) ||
+        (phase !== 'release' && phase !== 'publish')
+    ) {
+        return null;
+    }
+
+    const behaviorRoot = path.join(
+        paths.trainingRoot,
+        'trainer-results',
+        runId,
+        'BeesRL1v1',
+    );
+    if (
+        !exists(path.join(behaviorRoot, 'checkpoint.pt')) ||
+        !exists(path.join(paths.trainingRoot, 'trainer-results', runId, 'BeesRL1v1.onnx'))
+    ) {
+        return null;
+    }
+    return { run_id: runId, phase };
+}
+
+
 async function stopCentralAgentGracefully(pid, timeoutSeconds = 150) {
     if (pid <= 0) return true;
     let state = null;
@@ -309,13 +361,44 @@ async function stopCentralAgentGracefully(pid, timeoutSeconds = 150) {
     removeIfExists(paths.centralAgentShutdownRequestPath);
     writeTextAtomic(paths.centralAgentShutdownRequestPath, 'stop\n');
 
-    const deadline = Date.now() + timeoutSeconds * 1000;
+    const initialPostCheckpointPhase = durablePostCheckpointCentralPhase();
+    const gracefulSeconds = initialPostCheckpointPhase
+        ? Math.min(timeoutSeconds, 10)
+        : timeoutSeconds;
+    const deadline = Date.now() + gracefulSeconds * 1000;
     while (Date.now() < deadline) {
         if (!testManagedProcessIdentity(state)) {
             removeIfExists(paths.centralAgentShutdownRequestPath);
             return true;
         }
         await sleep(250);
+    }
+
+    const postCheckpointPhase = durablePostCheckpointCentralPhase();
+    if (
+        initialPostCheckpointPhase &&
+        postCheckpointPhase &&
+        initialPostCheckpointPhase.run_id === postCheckpointPhase.run_id &&
+        initialPostCheckpointPhase.phase === postCheckpointPhase.phase
+    ) {
+        console.warn(
+            'Central supervisor did not exit cooperatively during durable post-checkpoint ' +
+            postCheckpointPhase.phase + ' phase for run ' + postCheckpointPhase.run_id +
+            '; safely terminating the verified owned process tree so release evaluation can ' +
+            'restart under the prepared runtime. Optimizer checkpoint/model files are already durable.'
+        );
+        stopManagedProcessTree(state, '', 'central training supervisor');
+        const forcedDeadline = Date.now() + 15000;
+        while (Date.now() < forcedDeadline) {
+            if (!testManagedProcessIdentity(state)) {
+                removeIfExists(paths.centralAgentShutdownRequestPath);
+                return true;
+            }
+            await sleep(250);
+        }
+        throw new Error(
+            'Verified central supervisor process tree remained alive after safe post-checkpoint termination.'
+        );
     }
 
     throw new Error(
