@@ -48,6 +48,7 @@ These are cross-cutting rules future changes must preserve. Keep this file conci
 - In-development missions must remain explicitly guarded until their real runtime/persistence dependencies are ready.
 - Persistent fleet/squad/progress/stat data must remain attached to the correct user, mode, level, squad, and ship identity.
 - A write failure or malformed input must not partially mutate a different persistence target.
+- Externally configured identifiers used in artifact filenames must be sanitized as single path components and remain within the resolved output directory.
 
 ## Networking
 
