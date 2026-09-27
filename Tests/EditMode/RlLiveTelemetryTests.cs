@@ -82,6 +82,22 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void LiveTelemetryPreservesNeuralCommunicationActions()
+        {
+            Type agent = RuntimeAssembly.GetType("RlOneVsOneAgent");
+            MethodInfo getCommunication = agent.GetMethod("GetCommunicationActions", StaticFlags);
+            Assert.That(getCommunication, Is.Not.Null);
+            Assert.That(getCommunication.Invoke(null, new object[] { null }),
+                Is.EqualTo(UnityEngine.Vector4.zero));
+
+            string recorder = System.IO.File.ReadAllText(System.IO.Path.Combine(
+                UnityEngine.Application.dataPath, "Scripts", "Scenes", "RlLiveTelemetryRecorder.cs"));
+            Assert.That(recorder, Does.Contain("ControllerKind.NeuralNetwork"));
+            Assert.That(recorder, Does.Contain("GetCommunicationActions(ship)"));
+            Assert.That(recorder, Does.Contain("continuous[communicationStart + 3] = communication.w;"));
+        }
+
+        [Test]
         public void DraftRecoveryPreservesKnownTerminalResultsAndDefaultsUnknownResultsToTimeout()
         {
             Type recorder = RuntimeAssembly.GetType("RlLiveTelemetryRecorder");
