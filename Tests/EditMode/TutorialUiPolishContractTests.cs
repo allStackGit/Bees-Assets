@@ -270,6 +270,24 @@ namespace Bees.Tests.EditMode
             Assert.That(combat, Does.Contain("RecordPlayerShipLost(ShipType)"));
         }
 
+        [Test]
+        public void PlutoTwoSequenceTextIsAuthoredAndNotRewrittenByCampaignGuard()
+        {
+            string guard = ReadSource("Scripts", "UI Components", "CampaignFeedbackAdjustmentGuard.cs");
+            string mission = ReadSource("Scripts", "Levels", "Level.Campaign.Pluto.cs");
+            int plutoTwo = mission.IndexOf("public void Pluto2Reinforcements()", System.StringComparison.Ordinal);
+            int sequence = mission.IndexOf("basicTooltip.ShowSequence", plutoTwo, System.StringComparison.Ordinal);
+            int sequenceEnd = mission.IndexOf("}, true, () =>", sequence, System.StringComparison.Ordinal);
+            Assert.That(plutoTwo, Is.GreaterThanOrEqualTo(0));
+            Assert.That(sequence, Is.GreaterThan(plutoTwo));
+            Assert.That(sequenceEnd, Is.GreaterThan(sequence));
+
+            string authoredPages = mission.Substring(sequence, sequenceEnd - sequence);
+            Assert.That(guard, Does.Not.Contain("TooltipText.text ="));
+            Assert.That(authoredPages, Does.Contain("selected ships’ ranges at any time by holding R."));
+            Assert.That(authoredPages, Does.Not.Contain("selected ships’ range at any time by holding R."));
+        }
+
         private static string ReadSource(params string[] pathParts)
         {
             string path = Application.dataPath;
