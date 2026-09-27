@@ -301,6 +301,78 @@ class RobustnessQualificationTests(unittest.TestCase):
             self.assertIn("tail of", output)
             self.assertIn("third", output)
 
+    def test_unity_native_access_violation_retries_once(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            result = root / "unity.xml"
+            log = root / "unity.log"
+            check = qualification.Check(
+                name="unity-example",
+                command=("unity", "-batchmode"),
+                cwd=root,
+                result_xml=result,
+                required_test_substring=qualification.UNITY_REQUIRED_TEST,
+                diagnostic_log=log,
+            )
+
+            def run_side_effect(*_args, **_kwargs):
+                call_index = run.call_count
+                if call_index == 1:
+                    log.write_text("native crash\n", encoding="utf-8")
+                    return mock.Mock(returncode=0xC0000005)
+                result.write_text(
+                    '<test-run passed="1" failed="0">'
+                    '<test-case '
+                    'fullname="Bees.Tests.EditMode.RlPolicySchemaContractTests.'
+                    'ContinualLearningConfigTracksFrozenPolicyAbi" '
+                    'name="ContinualLearningConfigTracksFrozenPolicyAbi" '
+                    'result="Passed" />'
+                    '</test-run>',
+                    encoding="utf-8",
+                )
+                return mock.Mock(returncode=0)
+
+            with (
+                mock.patch.object(
+                    qualification.subprocess,
+                    "run",
+                    side_effect=run_side_effect,
+                ) as run,
+                mock.patch("builtins.print") as printer,
+            ):
+                ok, _elapsed = qualification._run_check(check)
+
+            self.assertTrue(ok)
+            self.assertEqual(run.call_count, 2)
+            output = "\n".join(
+                " ".join(str(value) for value in call.args)
+                for call in printer.call_args_list
+            )
+            self.assertIn("[RETRY]", output)
+
+    def test_unity_native_access_violation_fails_after_one_retry(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            check = qualification.Check(
+                name="unity-example",
+                command=("unity", "-batchmode"),
+                cwd=root,
+                result_xml=root / "unity.xml",
+                diagnostic_log=root / "unity.log",
+            )
+            with mock.patch.object(
+                qualification.subprocess,
+                "run",
+                side_effect=[
+                    mock.Mock(returncode=0xC0000005),
+                    mock.Mock(returncode=0xC0000005),
+                ],
+            ) as run:
+                ok, _elapsed = qualification._run_check(check)
+
+            self.assertFalse(ok)
+            self.assertEqual(run.call_count, 2)
+
     def test_run_check_propagates_nonzero_exit(self):
         check = qualification.Check(
             name="example",
