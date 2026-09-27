@@ -136,7 +136,7 @@ namespace Assets.Scripts
         }
         public bool Equals(ScaledTimer other)
         {
-            return Id == other.Id;
+            return !System.Object.ReferenceEquals(other, null) && Id == other.Id;
         }
 
         public override int GetHashCode()
