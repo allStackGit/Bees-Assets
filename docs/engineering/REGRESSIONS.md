@@ -658,3 +658,11 @@ Manual-only protection is acceptable only when the record explains why determini
 **Verification:** statically traced quarantine hash validation, copy, staged-hash checks, native import, and provenance creation. The focused regression guard was added but not run; no tests or runtime checks were performed, per the static-only audit scope.  
 **Invariant/knowledge:** every file passed to native parsing must be byte-identical to the authenticated quarantine payload whose hashes are recorded as provenance.
 
+### REG-075 — Native demo hash was recorded after parsing
+**Area:** `Training/bees_continual_native_demo.py`, native demonstration parser input integrity  
+**Symptom:** native demonstrations were parsed before the importer computed the source SHA-256. A persistent file change during parsing could therefore make the importer archive and identify bytes that were not present when parsing began, without detecting the change.  
+**Root cause:** the importer established content identity after invoking the path-based parser rather than hashing the source before parsing and verifying it afterward.  
+**Permanent protection:** the importer now captures the source hash before invoking the native loader and rejects a changed source immediately after parsing; its existing post-archive check remains in place. `NativeDemoIngestionTests.test_demo_changes_during_native_parsing_are_rejected` mutates the source from the loader and requires rejection before a batch is stored.  
+**Verification:** statically traced source validation, pre-parse hash, loader call, post-parse hash, archive copy, and post-archive hash check. The focused regression guard was added but not run; no tests or runtime checks were performed, per the static-only audit scope.  
+**Invariant/knowledge:** content identity must be captured before parsing and remain stable through parsing and archival.
+
