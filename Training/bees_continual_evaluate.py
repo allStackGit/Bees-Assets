@@ -36,6 +36,7 @@ EVALUATION_MODE_FLAG = "--bees-rl-evaluator"
 TEAM_PATTERN = re.compile(r"(?:\?|&)team=(\d+)(?:&|$)")
 DEFAULT_MAX_ENVIRONMENT_STEPS_PER_MATCH = 200_000
 MANAGED_STOP_FILE_ENV = "BEES_TRAINING_STOP_FILE"
+CHAMPION_GATE_SHORT_CIRCUIT = "champion_score_below_threshold"
 
 
 def _managed_stop_requested() -> bool:
@@ -1147,6 +1148,46 @@ def evaluate_candidate(
     if champion_id is not None:
         champion_summary = run(champion_id, champion_match_count)
         champion_comparison = champion_summary.to_dict()
+        champion_threshold = float(promotion["min_win_rate_vs_champion"])
+        if champion_summary.score_rate < champion_threshold:
+            latency_evidence = _runtime_latency_evidence(
+                candidate_runtime_summaries,
+                latency_threshold,
+            )
+            report: Dict[str, Any] = {
+                "candidate_model_id": candidate_model_id,
+                "champion_model_id": champion_id,
+                "candidate_vs_champion": champion_comparison,
+                "historical": [],
+                "competencies": [],
+                "runtime_compatible": authoritative_runner,
+                "runtime_checks_passed": (
+                    authoritative_runner and bool(latency_evidence["passed"])
+                ),
+                "evaluator": {
+                    "protocol_version": EVALUATION_PROTOCOL_VERSION,
+                    "behavior_name": behavior_name,
+                    "candidate_team_id": 0,
+                    "deterministic_actions": True,
+                    "base_env_args": list(base_env_args),
+                    "seed": seed,
+                    "match_groups": run_number,
+                    "completed_match_groups": completed_match_groups,
+                    "authoritative_match_runner": authoritative_runner,
+                    "authoritative_telemetry_validated": bool(
+                        champion_summary.telemetry_validated
+                    ),
+                    "artifact_integrity_verified": True,
+                    "compatibility_metadata_verified": True,
+                    "runtime_latency": latency_evidence,
+                    "short_circuit": {
+                        "reason": CHAMPION_GATE_SHORT_CIRCUIT,
+                        "observed_score_rate": champion_summary.score_rate,
+                        "minimum_score_rate": champion_threshold,
+                    },
+                },
+            }
+            return apply_behavior_sanity(report)
 
     expected_compatibility = store.compatibility.to_dict()
     historical_models = [

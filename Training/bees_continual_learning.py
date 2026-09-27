@@ -49,6 +49,7 @@ COMPETENCY_METRICS = {"score_rate", "win_rate", "non_timeout_rate"}
 AUTHORITATIVE_HISTORICAL_MATCHUP_TAG = "authoritative_candidate_evaluation"
 HISTORICAL_EVALUATION_TAG_PREFIX = "evaluation:"
 DRAW_AWARE_HISTORICAL_POLICY_SCHEMA_VERSION = 3
+CHAMPION_GATE_SHORT_CIRCUIT = "champion_score_below_threshold"
 
 
 class ContinualLearningError(RuntimeError):
@@ -902,6 +903,7 @@ class ContinualLearningStore:
             reasons.append("first champion evaluation must not claim an existing champion")
 
         comparison = report.get("candidate_vs_champion")
+        champion_gate_failed = False
         if champion_id is not None:
             if not isinstance(comparison, dict):
                 reasons.append("candidate_vs_champion result is required")
@@ -919,10 +921,28 @@ class ContinualLearningStore:
                     if matches > 0:
                         win_rate = (wins + draws * 0.5) / matches
                         if win_rate < float(promotion["min_win_rate_vs_champion"]):
+                            champion_gate_failed = (
+                                matches >= int(promotion["min_matches_vs_champion"])
+                            )
                             reasons.append(
                                 f"champion win rate {win_rate:.4f} below "
                                 f"{float(promotion['min_win_rate_vs_champion']):.4f}"
                             )
+
+        evaluator = report.get("evaluator")
+        short_circuit = evaluator.get("short_circuit") if isinstance(evaluator, dict) else None
+        champion_short_circuit = False
+        if short_circuit is not None:
+            if not isinstance(short_circuit, dict):
+                reasons.append("evaluator.short_circuit must be an object")
+            elif short_circuit.get("reason") != CHAMPION_GATE_SHORT_CIRCUIT:
+                reasons.append("evaluator.short_circuit reason is unsupported")
+            elif not champion_gate_failed:
+                reasons.append(
+                    "champion short-circuit requires a complete champion gate that is below threshold"
+                )
+            else:
+                champion_short_circuit = True
 
         historical = report.get("historical", [])
         if not isinstance(historical, list):
@@ -984,7 +1004,7 @@ class ContinualLearningStore:
 
         missing_historical_ids = sorted(expected_historical_ids - reported_historical_ids)
         unexpected_historical_ids = sorted(reported_historical_ids - expected_historical_ids)
-        if missing_historical_ids:
+        if missing_historical_ids and not champion_short_circuit:
             reasons.append(
                 "missing historical opponents: " + ", ".join(missing_historical_ids)
             )
@@ -998,16 +1018,20 @@ class ContinualLearningStore:
             reasons.append("competencies must be a list")
             competencies = []
         minimum_competencies = int(promotion.get("min_competency_cases", 1))
-        if len(competencies) < minimum_competencies:
+        if len(competencies) < minimum_competencies and not champion_short_circuit:
             reasons.append(
                 f"only {len(competencies)} competency cases; minimum is {minimum_competencies}"
             )
         pinned_competencies = self.permanent_competency_suite()
-        if pinned_competencies is None and minimum_competencies > 0:
+        if (
+            pinned_competencies is None
+            and minimum_competencies > 0
+            and not champion_short_circuit
+        ):
             reasons.append(
                 "no permanent competency suite is pinned; pin the trusted suite before evaluation"
             )
-        elif pinned_competencies is not None:
+        elif pinned_competencies is not None and not champion_short_circuit:
             try:
                 report_contract = _competency_contract_from_report(report)
             except ValidationError as exc:
