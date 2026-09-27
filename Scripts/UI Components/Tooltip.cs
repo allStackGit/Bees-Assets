@@ -65,6 +65,13 @@ public class Tooltip : MonoBehaviour
             return;
         }
 
+        // Let the focused tooltip button handle Space through Unity's submit event. Advancing
+        // here as well can consume two pages when both input paths run in the same frame.
+        if (selected == CloseButton || (selected != null && selected.transform.IsChildOf(transform)))
+        {
+            return;
+        }
+
         NextPage();
     }
 
