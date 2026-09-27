@@ -19,6 +19,9 @@ namespace Assets.Scripts.Levels
         private readonly List<Squad> _releaseSquads = new List<Squad>();
         private readonly List<CollisionAsteroid> _releaseAsteroids = new List<CollisionAsteroid>();
         private readonly List<AsteroidPiece> _releaseAsteroidPieces = new List<AsteroidPiece>();
+        private readonly List<ShipRemains> _resetDeadbodies = new List<ShipRemains>();
+        private readonly List<FogOfWarVision> _resetFogOfWarVisions = new List<FogOfWarVision>();
+        private readonly List<TargetingSquadMarker> _resetTargetingSquadMarkers = new List<TargetingSquadMarker>();
         private readonly List<MiningAsteroid> _releaseMiningAsteroids = new List<MiningAsteroid>();
 
         public bool CanShipsKeepMining()
@@ -227,6 +230,39 @@ namespace Assets.Scripts.Levels
                     case ConfigData.ObstacleTypes.AsteroidPiece:
                         ((AsteroidPiece)obstacle).Kill();
                         break;
+                }
+            }
+
+            _resetDeadbodies.Clear();
+            _resetDeadbodies.AddRange(Deadbodies);
+            for (int i = 0; i < _resetDeadbodies.Count; i++)
+            {
+                ShipRemains remains = _resetDeadbodies[i];
+                if (remains != null)
+                {
+                    remains.Kill();
+                }
+            }
+
+            _resetFogOfWarVisions.Clear();
+            _resetFogOfWarVisions.AddRange(FogOfWarVisions);
+            for (int i = 0; i < _resetFogOfWarVisions.Count; i++)
+            {
+                FogOfWarVision vision = _resetFogOfWarVisions[i];
+                if (vision != null)
+                {
+                    vision.Kill(0, true);
+                }
+            }
+
+            _resetTargetingSquadMarkers.Clear();
+            _resetTargetingSquadMarkers.AddRange(TargetingSquadMarkers);
+            for (int i = 0; i < _resetTargetingSquadMarkers.Count; i++)
+            {
+                TargetingSquadMarker marker = _resetTargetingSquadMarkers[i];
+                if (marker != null)
+                {
+                    marker.Kill();
                 }
             }
 
