@@ -24,3 +24,5 @@ None currently confirmed. The active audit continues; resolved findings have bee
 - No tests, builds, Unity, simulations, or other runtime validation were run, per the static-only audit scope.
 
 - REG-119 fixes POSIX owned-child cleanup returning before signal-status re-delivery when no process group remains. Verified statically; no tests or runtime checks were performed. This production fix resets the post-fix clean-pass count to **0 / 2**.
+
+- REG-120 moves remote SSH tunnel creation inside installed signal handling and its cleanup scope, preventing a stop during startup from orphaning the tunnel. Verified statically only; no tests or runtime checks were performed. This production fix resets the post-fix clean-pass count to **0 / 2**.
