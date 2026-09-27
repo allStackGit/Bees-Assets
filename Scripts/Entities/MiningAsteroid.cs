@@ -37,7 +37,11 @@ namespace Assets.Scripts.Entities
             if (_collidingThing.CompareTag("Ship"))
             {
                 _miningShip = _collidingThing.GetComponent<Ship>();
-                if (_miningShip.IsMiningShip && _miningShip.Squad.HasCommand && _miningShip.Squad.GetCommand().CommandType == ConfigData.CommandTypes.Mining)
+                if (_miningShip != null &&
+                    Level != null &&
+                    _miningShip.Level == Level &&
+                    _miningShip.IsMiningShip &&
+                    _miningShip.Squad.HasCommand && _miningShip.Squad.GetCommand().CommandType == ConfigData.CommandTypes.Mining)
                 {
                     _command = ((Mining)_miningShip.Squad.GetCommand());
 
