@@ -666,7 +666,7 @@ namespace Assets.Scripts.Levels
                     GameObject plutoCircle = Instantiate(Stage.Menus.PlutoCircle, Map.transform);
                     plutoCircle.SetActive(true);
                     List<DialogueLine> plutoLines = Stage.CutsceneManager.PlutoLines_BluerPastures.GetRange(5, 2);
-                    HashSet<ShipTypes> shipTypes = State.GetHumanShipTypes();
+                    HashSet<ShipTypes> shipTypes = State.GetUserShipTypes();
                     if (shipTypes.Contains(ConfigData.ShipTypes.Dreadnought)) plutoLines.Add(Stage.CutsceneManager.PlutoLines_BluerPastures[7]);
                     if (shipTypes.Contains(ConfigData.ShipTypes.Gunship)) plutoLines.Add(Stage.CutsceneManager.PlutoLines_BluerPastures[8]);
                     if (shipTypes.Contains(ConfigData.ShipTypes.Frigate)) plutoLines.Add(Stage.CutsceneManager.PlutoLines_BluerPastures[9]);
