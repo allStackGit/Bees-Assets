@@ -179,34 +179,38 @@ class RlModelDistributionManager {
         const offset = requiredInteger(params.Offset, 'Offset', 0, record.bundleSizeBytes - 1);
         const requestedLength = requiredInteger(params.Length, 'Length', 1, this.maxChunkBytes);
         const length = Math.min(requestedLength, record.bundleSizeBytes - offset);
-        this._reserveQuota(userId, length);
-
-        const handle = await fsp.open(record.bundlePath, 'r');
-        const buffer = Buffer.alloc(length);
-        let bytesRead;
+        const quotaReservation = this._reserveQuota(userId, length);
         try {
-            ({ bytesRead } = await handle.read(buffer, 0, length, offset));
-        } finally {
-            await handle.close();
+            const handle = await fsp.open(record.bundlePath, 'r');
+            const buffer = Buffer.alloc(length);
+            let bytesRead;
+            try {
+                ({ bytesRead } = await handle.read(buffer, 0, length, offset));
+            } finally {
+                await handle.close();
+            }
+            if (bytesRead !== length) {
+                this.pointerCache.delete(platform);
+                throw new RlModelDistributionError(
+                    503,
+                    'distribution-read-failed',
+                    'RL model bundle changed or became unreadable during download.',
+                );
+            }
+            const nextOffset = offset + bytesRead;
+            return {
+                Platform: platform,
+                DeploymentId: record.deploymentId,
+                BundleSha256: record.bundleSha256,
+                Offset: offset,
+                NextOffset: nextOffset,
+                Complete: nextOffset === record.bundleSizeBytes,
+                Data: buffer.toString('base64'),
+            };
+        } catch (error) {
+            this._releaseQuota(userId, quotaReservation, length);
+            throw error;
         }
-        if (bytesRead !== length) {
-            this.pointerCache.delete(platform);
-            throw new RlModelDistributionError(
-                503,
-                'distribution-read-failed',
-                'RL model bundle changed or became unreadable during download.',
-            );
-        }
-        const nextOffset = offset + bytesRead;
-        return {
-            Platform: platform,
-            DeploymentId: record.deploymentId,
-            BundleSha256: record.bundleSha256,
-            Offset: offset,
-            NextOffset: nextOffset,
-            Complete: nextOffset === record.bundleSizeBytes,
-            Data: buffer.toString('base64'),
-        };
     }
 
     _reserveQuota(userId, bytes) {
@@ -224,6 +228,13 @@ class RlModelDistributionManager {
         }
         quota.bytes += bytes;
         this.userQuotas.set(userId, quota);
+        return quota;
+    }
+
+    _releaseQuota(userId, reservation, bytes) {
+        if (this.userQuotas.get(userId) !== reservation) return;
+        reservation.bytes = Math.max(0, reservation.bytes - bytes);
+        if (reservation.bytes === 0) this.userQuotas.delete(userId);
     }
 
     _cleanupQuotas() {
