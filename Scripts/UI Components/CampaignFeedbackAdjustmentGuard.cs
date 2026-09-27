@@ -3,7 +3,6 @@ using Assets.Scripts.Levels;
 using System;
 using System.Collections.Generic;
 using System.Reflection;
-using System.Text.RegularExpressions;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -24,9 +23,6 @@ namespace Assets.Scripts.UIComponents
         private const string ShootingColorHex = "#FFB347";
         private static readonly Color FlightColor = new Color(0.36f, 0.78f, 1f, 1f);
         private static readonly Color ShootingColor = new Color(1f, 0.70f, 0.28f, 1f);
-        private static readonly Regex SingularShipsRange = new Regex(
-            @"ships([’']) range\b",
-            RegexOptions.CultureInvariant);
         private static readonly FieldInfo DialogueTimerField = typeof(Level).GetField(
             "_dialogueTimer",
             BindingFlags.Instance | BindingFlags.NonPublic);
@@ -133,23 +129,7 @@ namespace Assets.Scripts.UIComponents
                     MatchAndColorSettingsArrows();
                 }
 
-                // Tooltip owns text for a multipage sequence. Do not replace live page content
-                // from this polling guard; page changes already refresh the canonical text.
-                if (!activeTooltip.IsSequenceActive)
-                {
-                    string correctedText = activeTooltip.TooltipText.text;
-                    correctedText = SingularShipsRange.Replace(correctedText, "ships$1 ranges");
-
-                    if (settingsPage)
-                    {
-                        correctedText = ColorizePlutoTwoSettings(correctedText);
-                    }
-
-                    if (activeTooltip.TooltipText.text != correctedText)
-                    {
-                        activeTooltip.TooltipText.text = correctedText;
-                    }
-                }
+                // Tooltip page wording and emphasis are authored with the content. A polling guard must not rewrite its live TMP text.
             }
 
             if (squadNumberPage)
