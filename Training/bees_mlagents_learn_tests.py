@@ -86,6 +86,29 @@ class BeesOptionParsingTests(unittest.TestCase):
             ],
         )
 
+    def test_default_results_dir_is_inserted_before_unity_env_args(self):
+        trainer_args = launcher._ensure_results_dir(
+            [
+                "Training/rl_1v1_config.yaml",
+                "--env-args",
+                "--results-dir=unity-output",
+                "--mission",
+                "PlutoII",
+            ]
+        )
+
+        self.assertEqual(
+            trainer_args,
+            [
+                "Training/rl_1v1_config.yaml",
+                "--results-dir=.results",
+                "--env-args",
+                "--results-dir=unity-output",
+                "--mission",
+                "PlutoII",
+            ],
+        )
+
     def test_explicit_results_dir_is_preserved(self):
         separate_value = launcher._ensure_results_dir(
             ["Training/rl_1v1_config.yaml", "--results-dir", "custom-results"]
