@@ -525,4 +525,12 @@ Manual-only protection is acceptable only when the record explains why determini
 **Root cause:** quota windows were reset lazily only when the same user uploaded again; session expiry cleanup never removed inactive quota records.  
 **Permanent protection:** `cleanupExpired()` now periodically removes quota entries whose per-user rate window has elapsed, while leaving fresh quota windows and active upload sessions untouched. `rlTelemetryUploads.module.test.js` creates quota records for two users, advances beyond their rate window but not the upload idle timeout, and checks quota reclamation without session expiry.  
 **Verification:** statically reviewed the quota window reset and cleanup interval, and the focused regression test. The test was added but not run; no runtime validation was performed, per the static-only audit scope.  
-**Invariant/knowledge:** per-user rate-limit bookkeeping in a long-lived process must be reclaimed after its enforcement window expires.  
+**Invariant/knowledge:** per-user rate-limit bookkeeping in a long-lived process must be reclaimed after its enforcement window expires.
+
+### REG-059 — Expiry cleanup removed active demonstration uploads
+**Area:** `BeesServer~/rlDemonstrationUploads.js`, demonstration upload session ownership  
+**Symptom:** a slow chunk or completion operation could cross the idle timeout while another request ran global cleanup, causing the session and partial archive to be deleted before the operation finished.  
+**Root cause:** request handling awaited expiry cleanup before reserving the authenticated session operation, and cleanup used only `lastActivityAt` without considering queued or in-flight work.  
+**Permanent protection:** authenticated chunk/completion requests now reserve their session before the first asynchronous yield, and expiry cleanup skips sessions with active or queued operations. `rlDemonstrationUploads.module.test.js` holds a chunk operation open across the idle cutoff and asserts that cleanup retains the session and permits the chunk to finish.  
+**Verification:** statically traced request ownership, the per-session operation tail, completion-result cleanup, and the new focused regression. The test was added but not run; no runtime checks were performed, per the static-only audit scope.  
+**Invariant/knowledge:** idle expiry must not delete files owned by an active asynchronous operation; reserve session ownership before yielding to cleanup.  
