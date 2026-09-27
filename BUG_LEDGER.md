@@ -4,6 +4,8 @@ Static-only repository audit on `rl/initial-design-work`. This ledger is the cur
 
 ## Active validated defects
 
+- **BUG-002 — Missing exact-version settings response retries forever.** BeesServer's settings handler returns `Filename: null` and `Contents: null` when the exact user/name/version row is absent. Unity logs the empty response but leaves the settings request standing; `ServerSettings.WaitForResponse` sees its handled hash and issues a fresh request, so required settings never load and the client repeats the lookup. I attempted to mark this response terminal; auto-review rejected the `ServerSettings.cs` update, citing a security-sensitive authentication side effect in the full-file replacement. That authentication behavior was not intentionally changed; the partial socket edit was reverted. This remains unresolved pending a narrowly approved edit to the settings lifecycle.
+
 ## Audit status
 
 - Complete clean finding passes since the latest production changes: **0 / 2**. BUG-001 is resolved as REG-089: authorization-denied profile reads now receive terminal failure status and are not retried. Regression cases were added but remain unrun.
