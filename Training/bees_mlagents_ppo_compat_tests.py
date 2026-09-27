@@ -66,7 +66,7 @@ class InactiveContinuousActionMaskTests(unittest.TestCase):
         self.assertTrue(torch.all(activity[1, 2:10] == 1.0))
         self.assertTrue(torch.all(activity[1, 10:] == 0.0))
 
-    def test_masked_entropy_sums_only_active_continuous_dimensions(self):
+    def test_masked_entropy_averages_only_active_continuous_dimensions(self):
         from mlagents.torch_utils import torch
 
         action_spec = self._bees_action_spec()
@@ -102,7 +102,7 @@ class InactiveContinuousActionMaskTests(unittest.TestCase):
             masks,
             ContinuousDistribution.std,
         )
-        expected = (per_dimension_entropy * activity).sum(dim=1)
+        expected = (per_dimension_entropy * activity).sum(dim=1) / activity.sum(dim=1)
 
         self.assertAlmostEqual(
             float(entropy[0].item()),
