@@ -706,3 +706,11 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** the patch now sums entropy for active continuous dimensions and excludes only inactive aim dimensions. `InactiveContinuousActionMaskTests.test_masked_entropy_sums_only_active_continuous_dimensions` protects the scale.  
 **Verification:** compared the project patch with the pinned ML-Agents 1.1.0 action model's entropy aggregation and statically traced the active-dimension mask. The focused regression guard was added but not run; no tests or runtime checks were performed, per the static-only audit scope.  
 **Invariant/knowledge:** masking inactive action dimensions must preserve ML-Agents' entropy aggregation scale for all remaining dimensions.
+
+### REG-081 — Pluto IV could omit the terminal evacuation interval from its score
+**Area:** `Scripts/Levels/Level.Campaign.Pluto.cs`, Pluto IV evacuation objective accounting  
+**Symptom:** when the timer callback first ran after the 300.49-second evacuation deadline, the mission ended before refreshing `personnelEvacuated`. The last completed five-second interval could be omitted from `_questPoints` and the fleet reward tier.  
+**Root cause:** the terminal time/health check preceded the interval-count calculation, which ran only on nonterminal ticks.  
+**Permanent protection:** the timer now refreshes the clamped evacuation count before either terminal condition, then records that current count as the score. `CampaignResourceAccountingTests.PlutoEvacuationScoreIncludesTheTerminalTimerTick` guards this ordering.  
+**Verification:** statically traced the timer callback, deadline condition, `_questPoints` assignment, and ending reward tiers. The focused regression guard was added but not run; no tests, builds, Unity, simulations, or runtime checks were run, per the static-only audit scope.  
+**Invariant/knowledge:** terminal mission scoring must include all completed objective intervals observable on the terminal timer tick.
