@@ -835,3 +835,13 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** `RlLiveTelemetryTests.FailedTelemetryDraftPersistenceRetainsThePayloadForRetry` guards write-before-clear ordering, deployment-flush gating, and generation rollover queuing. The test was added but not run, per the static-only audit scope.  
 **Verification:** statically traced the draft write, deployment-change and segment-size boundaries, level-generation rollover, completion retry, and teardown retry paths. No tests, builds, Unity, simulations, or runtime checks were run.  
 **Invariant/knowledge:** retain the only in-memory telemetry copy until persistence succeeds; never record new policy data under a previous policy identity after a failed segment flush.
+
+
+### REG-096 — Transient telemetry reads were treated as corrupt payloads
+**Area:** `Scripts/Scenes/RlLiveTelemetryUploader.cs`, pending telemetry scanning  
+**Symptom:** any exception while reading a pending file caused it to be moved to the invalid-payload directory, including transient file access or sharing errors. A valid payload could then stop being retried and never reach the quarantine service.  
+**Root cause:** local file I/O and JSON/payload validation shared one catch block, so inability to read bytes was treated as proof that the bytes were invalid.  
+**Fix:** a local read exception now leaves the pending file in place and ends the current scan for a later retry. Size, JSON, and policy-contract failures still quarantine the payload after bytes were successfully read.  
+**Permanent protection:** `RlLiveTelemetryTests.TelemetryUploaderPreservesPendingFilesOnReadFailure` guards the retry path and keeps contract-invalid payload quarantine behavior. The test was added but not run, per the static-only audit scope.  
+**Verification:** statically traced pending-file enumeration, read failure handling, payload parsing, quarantine moves, and upload ordering. No tests, builds, Unity, simulations, or runtime checks were run.  
+**Invariant/knowledge:** a failed read is not evidence of corrupt content; preserve the source file and retry transient storage failures.
