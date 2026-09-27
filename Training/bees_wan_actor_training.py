@@ -998,10 +998,24 @@ class WanActorBroker:
                     live_count = len(self._active_actor_ids_locked())
                     required = min(self.options.min_actors, max(1, live_count))
 
+                if len(actors) >= required:
+                    # A participant lease may expire while the cohort is pending. The
+                    # reduced minimum makes these already-accepted current batches usable.
+                    self._cohort_pending_batches.clear()
+                    return tuple(selected)
+
                 try:
                     batch = self._trajectory_batches.get_nowait()
                 except queue.Empty:
-                    self._condition.wait(timeout=remaining)
+                    now = time.monotonic()
+                    lease_deadlines = [
+                        float(record.get("last_seen", record.get("registered_at", now)))
+                        + DEFAULT_ACTOR_LEASE_SECONDS
+                        for record in self._registrations.values()
+                    ]
+                    future_expiries = [value for value in lease_deadlines if value > now]
+                    wake_after = min(remaining, min(future_expiries) - now) if future_expiries else remaining
+                    self._condition.wait(timeout=max(0.001, wake_after))
                     continue
 
                 if not self._batch_is_current(batch):
