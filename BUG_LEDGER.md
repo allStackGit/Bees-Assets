@@ -33,7 +33,7 @@ None currently confirmed. The active audit continues; resolved findings have bee
 
 - REG-123 fixes launcher option parsing across the ML-Agents `--env-args` remainder delimiter; Unity-side tokens now pass through unchanged. Verified statically against the pinned parser declaration. No tests or runtime checks were run. This production fix resets the post-fix clean-pass count to **0 / 2**.
 
-- REG-124 prevents the Pluto II campaign polling guard from rewriting live multipage tooltip text owned by `Tooltip.ShowSequencePage`. Dialogue gating and page recognition remain active. Verified by static call-path review only; this ownership fix is not yet proof that the repeated-“s” symptom is fully resolved. No tests or runtime checks were run. The post-fix clean-pass count is **0 / 2**.
+- REG-029/124 now remove the Pluto II tooltip's per-frame text correction entirely and author the plural range wording in its source page. Added a focused static source guard for the text-ownership contract; it has not been executed. Static call-path review confirms the campaign guard no longer writes tooltip text and page navigation reloads the corrected source string. No tests or runtime checks were run. The post-fix clean-pass count is **0 / 2**.
 
 - REG-125 adds a SHA-256 prefix comparison to training-log offset recovery. Matching prefixes may resume; mismatched or unavailable prefixes fail closed without overwriting the server copy. Verified statically across client, server, and uploader. No tests or runtime checks were run. The post-fix clean-pass count is **0 / 2**.
 
