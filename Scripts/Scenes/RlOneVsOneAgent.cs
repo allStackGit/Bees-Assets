@@ -101,6 +101,7 @@ internal sealed class RlOneVsOneAgent : Agent
     private bool _hasStoredSquadControlState;
     private float _nextMiningActionTime;
     private float _nextHealingActionTime;
+    private Beehive _reservedHealingBeehive;
     private readonly Vector2[] _weaponAimDirections = new Vector2[MaxWeaponSlots];
     private readonly List<Ship> _bindCandidates = new List<Ship>();
     private readonly RlCombatPerception _perception = new RlCombatPerception();
@@ -423,7 +424,7 @@ internal sealed class RlOneVsOneAgent : Agent
         actionMask.SetActionEnabled(SpecialActionBranch, MiningAction,
             canControl && CanUseMiningAction(_ship));
         actionMask.SetActionEnabled(SpecialActionBranch, HealingAction,
-            canControl && CanUseHealingAction(_ship));
+            canControl && CanUseHealingAction(_ship) && HasTouchingBeehiveWithCapacity(_ship));
         actionMask.SetActionEnabled(SpecialActionBranch, WarpAction,
             canControl && CanUseWarpAction(_ship));
 
@@ -443,6 +444,10 @@ internal sealed class RlOneVsOneAgent : Agent
         SetCommunicationActions(_ship, continuous);
 
         var discrete = actions.DiscreteActions;
+        if (discrete[SpecialActionBranch] != HealingAction)
+        {
+            ReleaseHealingReservation();
+        }
         bool allowWeaponFire = SpecialActionAllowsWeaponFire(discrete[SpecialActionBranch]);
         for (int slot = 0; slot < MaxWeaponSlots; slot++)
         {
@@ -653,15 +658,37 @@ internal sealed class RlOneVsOneAgent : Agent
 
     private void TryApplyHealingAction()
     {
-        if (!CanUseHealingAction(_ship) || Time.time < _nextHealingActionTime ||
-            _ship.Health >= _ship.MaxHealth || _ship.Level == null || _ship.Level.State == null ||
-            _ship.Collider == null || _ship.FleetShip == null)
+        if (!CanUseHealingAction(_ship) || _ship.Health >= _ship.MaxHealth ||
+            _ship.Level == null || _ship.Level.State == null || _ship.Collider == null ||
+            _ship.FleetShip == null)
         {
+            ReleaseHealingReservation();
             return;
         }
 
-        Beehive beehive = FindTouchingBeehive();
+        if (_reservedHealingBeehive != null &&
+            (_reservedHealingBeehive.IsDead || _reservedHealingBeehive.HealCollider == null ||
+             !_reservedHealingBeehive.HealCollider.IsTouching(_ship.Collider)))
+        {
+            ReleaseHealingReservation();
+        }
+
+        Beehive beehive = _reservedHealingBeehive ?? FindTouchingBeeehive();
         if (beehive == null)
+        {
+            return;
+        }
+        if (!beehive.ShipsHealingHere.Contains(_ship))
+        {
+            // Match Heal.AssignAvailableHealingSlots: at most four ships may occupy one hive.
+            if (beehive.ShipsHealingHere.Count >= 4)
+            {
+                return;
+            }
+            beehive.ShipsHealingHere.Add(_ship);
+            _reservedHealingBeehive = beehive;
+        }
+        if (Time.time < _nextHealingActionTime)
         {
             return;
         }
@@ -682,6 +709,42 @@ internal sealed class RlOneVsOneAgent : Agent
             beehive.SpawnHealingCross();
         }
         RewardSuccessfulCapabilityOutcome(_ship.Tsv - oldTsv);
+        if (_ship.Health >= _ship.MaxHealth)
+        {
+            ReleaseHealingReservation();
+        }
+    }
+
+    private bool HasTouchingBeehiveWithCapacity(Ship ship)
+    {
+        if (ship == null || ship.Level == null || ship.Level.State == null || ship.Collider == null)
+        {
+            return false;
+        }
+
+        List<Ship> allies = ship.Level.State.GetShips(ship.Side);
+        for (int i = 0; i < allies.Count; i++)
+        {
+            if (!(allies[i] is Beehive beehive) || beehive.IsDead || beehive.HealCollider == null ||
+                !beehive.HealCollider.IsTouching(ship.Collider))
+            {
+                continue;
+            }
+            if (beehive.ShipsHealingHere.Contains(ship) || beehive.ShipsHealingHere.Count < 4)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void ReleaseHealingReservation()
+    {
+        if (_reservedHealingBeehive != null && _ship != null)
+        {
+            _reservedHealingBeehive.ShipsHealingHere.Remove(_ship);
+        }
+        _reservedHealingBeehive = null;
     }
 
     private Beehive FindTouchingBeehive()
@@ -691,7 +754,8 @@ internal sealed class RlOneVsOneAgent : Agent
         for (int i = 0; i < allies.Count; i++)
         {
             if (!(allies[i] is Beehive beehive) || beehive.IsDead || beehive.HealCollider == null ||
-                !beehive.HealCollider.IsTouching(_ship.Collider))
+                !beehive.HealCollider.IsTouching(_ship.Collider) ||
+                (!beehive.ShipsHealingHere.Contains(_ship) && beehive.ShipsHealingHere.Count >= 4))
             {
                 continue;
             }
@@ -965,6 +1029,7 @@ internal sealed class RlOneVsOneAgent : Agent
 
     private void ReleaseShip()
     {
+        ReleaseHealingReservation();
         if (_ship != null)
         {
             ClearCommunication(_ship);
