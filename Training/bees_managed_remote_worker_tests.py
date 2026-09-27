@@ -34,8 +34,54 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
             mock.patch.object(managed, "_available_cpu_threads", return_value=4),
             mock.patch.object(managed, "_available_memory_bytes", return_value=int(3.8 * gib)),
         ):
-            self.assertEqual(managed._memory_env_limit(), 2)
-            self.assertEqual(managed._default_envs(), 2)
+            self.assertEqual(managed._memory_env_limit(), 5)
+            self.assertEqual(managed._default_envs(), 5)
+
+    def test_eight_gib_worker_allows_fourteen_envs_with_one_gib_reserve(self):
+        gib = 1024 * 1024 * 1024
+        with mock.patch.object(
+            managed,
+            "_available_memory_bytes",
+            return_value=8 * gib,
+        ):
+            self.assertEqual(managed._memory_env_limit(), 14)
+
+    def test_runtime_updater_retries_transient_connection_reset_without_publishing_error(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            token = root / "bootstrap.token"
+            token.write_text("token", encoding="ascii")
+            args = Namespace(
+                runtime_archive=str(root / "runtime.zip"),
+                bootstrap_token_file=str(token),
+                bootstrap_port=7151,
+            )
+            updater = managed.RuntimeUpdater(args, root / "install")
+            payload = io.BytesIO()
+            with zipfile.ZipFile(payload, "w") as bundle:
+                bundle.writestr("bees-remote-runtime.zip", b"runtime")
+                bundle.writestr("training-worker.token", b"worker")
+                bundle.writestr("wan.token", b"wan")
+                bundle.writestr("bees-tailnet-bridge-windows.exe", b"bridge")
+                bundle.writestr("latest-training-release.json", b"{}")
+
+            response = mock.MagicMock()
+            response.__enter__.return_value.read.return_value = payload.getvalue()
+            response.__exit__.return_value = False
+            with (
+                mock.patch.object(
+                    managed.urllib.request,
+                    "urlopen",
+                    side_effect=[ConnectionResetError(10054, "reset"), response],
+                ) as urlopen,
+                mock.patch.object(updater._stop, "wait", return_value=False),
+            ):
+                result = updater._fetch_bootstrap()
+
+            self.assertEqual(urlopen.call_count, 2)
+            self.assertEqual(result[0], b"runtime")
+            self.assertEqual(result[1], b"worker")
+            self.assertEqual(updater.last_error, "")
 
     def test_default_envs_fall_back_to_cpu_when_memory_is_unknown(self):
         with (
