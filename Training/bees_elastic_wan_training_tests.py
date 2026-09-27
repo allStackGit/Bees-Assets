@@ -495,6 +495,10 @@ class ElasticBrokerTests(unittest.TestCase):
                 "behavior_specs": specs,
             }
         )
+        with self.assertRaisesRegex(ValueError, "claimed by another remote process"):
+            broker.claim_actor(
+                {**broker.release_identity, "actor_key": "machine-a", "actor_instance_id": "new-process", "env_count": 8}
+            )
         broker._claims["machine-a"]["last_seen"] -= broker.options.actor_lease_seconds + 1
         broker._registrations[actor_id]["last_seen"] -= broker.options.actor_lease_seconds + 1
         self.assertEqual(broker.active_actor_snapshot(), {})
