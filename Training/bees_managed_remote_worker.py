@@ -1168,7 +1168,12 @@ def _wait_for_runtime_alignment(
             else ""
         )
         verified_build, update_error = updater.verified()
-        if canonical_build and verified_build == canonical_build:
+        _sha, staged_root, _bridge, _python, _staged_build, _staged_error = updater.staged()
+        if (
+            canonical_build
+            and verified_build == canonical_build
+            and staged_root is None
+        ):
             return True, None
 
         updater.request_refresh()
