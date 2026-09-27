@@ -855,3 +855,13 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** no test was added or run, per the static-only audit scope. The structural invariant is that every successful process-wide patch installation is inside the same `try/finally` that restores it.  
 **Verification:** statically traced each launcher setup mutation and its corresponding restoration path, including failure during later initialization. No tests, builds, Unity, simulations, or runtime checks were run.  
 **Invariant/knowledge:** long-lived launcher processes must restore global vendor monkey patches even when initialization fails before training starts.
+
+
+### REG-098 — WAN broker startup could leak a bound listener
+**Area:** `Training/bees_wan_actor_training.py`, broker listener startup  
+**Symptom:** the broker bound and stored its loopback listener before starting the serving thread. If thread startup raised, environment-manager construction failed while the port remained bound, preventing an in-process retry. A closed output stream could also make the post-start status print fail construction after the listener was already serving.  
+**Root cause:** startup had no rollback between socket binding and successful thread startup, and logging after startup was allowed to fail the constructor.  
+**Fix:** close and clear the server on thread-start failure; treat an unavailable output stream as a logging failure rather than a broker startup failure.  
+**Permanent protection:** no test was added or run, per the static-only audit scope. The structural invariant is that failed thread startup closes the bound socket, and post-start logging cannot invalidate a healthy broker.  
+**Verification:** statically traced loopback server construction, thread startup, server state assignment, close behavior, and the post-start log call. No tests, builds, Unity, simulations, or runtime checks were run.  
+**Invariant/knowledge:** any resource acquired before a later startup step succeeds must be released on failure, and optional logging must not strand a live service in a failed constructor.
