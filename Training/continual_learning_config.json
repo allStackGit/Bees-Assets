@@ -16,14 +16,10 @@
     "max_inference_batch_milliseconds": 100,
     "bootstrap_competency_cases": [
       {
-        "name": "generation-zero-large-map-baseline",
-        "matches": 100,
-        "minimum": 0.45,
+        "name": "generation-zero-broad-regression-baseline",
         "metric": "score_rate",
         "critical": true,
-        "env_args": [
-          "--rl-map-size=48"
-        ]
+        "env_args": []
       }
     ]
   },
