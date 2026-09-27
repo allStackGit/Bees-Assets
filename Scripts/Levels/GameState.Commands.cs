@@ -648,7 +648,7 @@ namespace Assets.Scripts.Levels
         private static readonly HashSet<string> LobbyFields = new HashSet<string>
         {
             "v", "type", "match", "seed", "authority", "peers", "players",
-            "beeTypes", "humanTypes", "squads"
+            "beeTypes", "humanTypes", "level", "squads"
         };
         private static readonly HashSet<string> LobbyPeerFields = new HashSet<string>
         {
@@ -660,12 +660,23 @@ namespace Assets.Scripts.Levels
         };
         private static readonly HashSet<string> LobbySquadFields = new HashSet<string>
         {
-            "token", "owner", "id", "side", "name", "sx", "sy",
+            "role", "token", "owner", "id", "side", "name", "sx", "sy",
             "r", "g", "b", "a", "cease", "matching", "chase", "strategy", "ships"
         };
         private static readonly HashSet<string> LobbyShipFields = new HashSet<string>
         {
             "id", "type", "name", "ox", "oy"
+        };
+        private static readonly HashSet<string> LobbyLevelFields = new HashSet<string>
+        {
+            "id", "side", "name", "map", "obstacles", "asteroids", "fog", "mining",
+            "intro", "actionBox", "supply", "reinforceOption", "reinforceDelay",
+            "enemyType", "enemyCount", "report", "beeX", "beeY", "humanX", "humanY",
+            "obstacleList"
+        };
+        private static readonly HashSet<string> LobbyObstacleFields = new HashSet<string>
+        {
+            "px", "py", "sx", "sy"
         };
 
         public static bool TrySerializeCommand(
@@ -763,6 +774,7 @@ namespace Assets.Scripts.Levels
 
                 squads.Add(new JObject
                 {
+                    ["role"] = squad.Role,
                     ["token"] = squad.OwnershipToken,
                     ["owner"] = squad.OwnerPlayerId,
                     ["id"] = squad.TransientSquadId,
@@ -782,6 +794,48 @@ namespace Assets.Scripts.Levels
                 });
             }
 
+            JToken level = JValue.CreateNull();
+            if (snapshot.Level != null)
+            {
+                JArray obstacleList = new JArray();
+                for (int i = 0; i < snapshot.Level.ObstacleList.Count; i++)
+                {
+                    MatchLobbyObstacleSnapshot obstacle = snapshot.Level.ObstacleList[i];
+                    obstacleList.Add(new JObject
+                    {
+                        ["px"] = obstacle.PositionX,
+                        ["py"] = obstacle.PositionY,
+                        ["sx"] = obstacle.ScaleX,
+                        ["sy"] = obstacle.ScaleY
+                    });
+                }
+
+                level = new JObject
+                {
+                    ["id"] = snapshot.Level.Id,
+                    ["side"] = snapshot.Level.Side,
+                    ["name"] = snapshot.Level.Name,
+                    ["map"] = snapshot.Level.MapIndex,
+                    ["obstacles"] = snapshot.Level.Obstacles,
+                    ["asteroids"] = snapshot.Level.AsteroidOption,
+                    ["fog"] = snapshot.Level.FogOfWar,
+                    ["mining"] = snapshot.Level.Mining,
+                    ["intro"] = snapshot.Level.HasPreLevelIntro,
+                    ["actionBox"] = snapshot.Level.HasSquadActionBox,
+                    ["supply"] = snapshot.Level.SupplyCapacity,
+                    ["reinforceOption"] = snapshot.Level.EnemyReinforcementsOption,
+                    ["reinforceDelay"] = snapshot.Level.EnemyReinforcementDelay,
+                    ["enemyType"] = snapshot.Level.EnemyShipTypeOption,
+                    ["enemyCount"] = snapshot.Level.EnemySquadGenerationCount,
+                    ["report"] = snapshot.Level.EnemyReport,
+                    ["beeX"] = snapshot.Level.BeeStartingX,
+                    ["beeY"] = snapshot.Level.BeeStartingY,
+                    ["humanX"] = snapshot.Level.HumanStartingX,
+                    ["humanY"] = snapshot.Level.HumanStartingY,
+                    ["obstacleList"] = obstacleList
+                };
+            }
+
             JObject json = new JObject
             {
                 ["v"] = Version,
@@ -793,6 +847,7 @@ namespace Assets.Scripts.Levels
                 ["players"] = players,
                 ["beeTypes"] = beeTypes,
                 ["humanTypes"] = humanTypes,
+                ["level"] = level,
                 ["squads"] = squads
             };
 
@@ -848,6 +903,7 @@ namespace Assets.Scripts.Levels
                 players.Count > MatchSession.MaxLobbyPlayers ||
                 !(json["beeTypes"] is JArray beeTypes) ||
                 !(json["humanTypes"] is JArray humanTypes) ||
+                json["level"] == null ||
                 !(json["squads"] is JArray squads) ||
                 squads.Count > MatchSession.MaxLobbySquads)
             {
@@ -930,10 +986,106 @@ namespace Assets.Scripts.Levels
                 parsed.HumanRandomShipTypes.Add((int)value);
             }
 
+            JToken levelToken = json["level"];
+            if (levelToken.Type != JTokenType.Null)
+            {
+                if (!(levelToken is JObject levelJson) ||
+                    !HasExactFields(levelJson, LobbyLevelFields) ||
+                    !TryReadInt64(levelJson, "id", out long levelId) ||
+                    levelId < int.MinValue || levelId > int.MaxValue ||
+                    !TryReadInt64(levelJson, "side", out long levelSide) ||
+                    levelSide < int.MinValue || levelSide > int.MaxValue ||
+                    !TryReadString(levelJson, "name", out string levelName) ||
+                    string.IsNullOrEmpty(levelName) ||
+                    levelName.Length > MatchSession.MaxLobbyNameLength ||
+                    !TryReadInt64(levelJson, "map", out long mapIndex) ||
+                    mapIndex < int.MinValue || mapIndex > int.MaxValue ||
+                    !TryReadString(levelJson, "obstacles", out string obstacles) ||
+                    obstacles.Length > MatchSession.MaxLobbyNameLength ||
+                    !TryReadInt64(levelJson, "asteroids", out long asteroidOption) ||
+                    asteroidOption < int.MinValue || asteroidOption > int.MaxValue ||
+                    !TryReadInt64(levelJson, "fog", out long fog) ||
+                    fog < int.MinValue || fog > int.MaxValue ||
+                    !TryReadInt64(levelJson, "mining", out long mining) ||
+                    mining < int.MinValue || mining > int.MaxValue ||
+                    !TryReadBool(levelJson, "intro", out bool intro) ||
+                    !TryReadBool(levelJson, "actionBox", out bool actionBox) ||
+                    !TryReadInt64(levelJson, "supply", out long supply) ||
+                    supply < int.MinValue || supply > int.MaxValue ||
+                    !TryReadInt64(levelJson, "reinforceOption", out long reinforceOption) ||
+                    reinforceOption < int.MinValue || reinforceOption > int.MaxValue ||
+                    !TryReadInt64(levelJson, "reinforceDelay", out long reinforceDelay) ||
+                    reinforceDelay < int.MinValue || reinforceDelay > int.MaxValue ||
+                    !TryReadInt64(levelJson, "enemyType", out long enemyType) ||
+                    enemyType < int.MinValue || enemyType > int.MaxValue ||
+                    !TryReadInt64(levelJson, "enemyCount", out long enemyCount) ||
+                    enemyCount < int.MinValue || enemyCount > int.MaxValue ||
+                    !TryReadString(levelJson, "report", out string report) ||
+                    report.Length > MatchSession.MaxLobbyReportLength ||
+                    !TryReadFloat(levelJson, "beeX", out float beeX) ||
+                    !TryReadFloat(levelJson, "beeY", out float beeY) ||
+                    !TryReadFloat(levelJson, "humanX", out float humanX) ||
+                    !TryReadFloat(levelJson, "humanY", out float humanY) ||
+                    !(levelJson["obstacleList"] is JArray obstacleList) ||
+                    obstacleList.Count > MatchSession.MaxLobbyObstacles)
+                {
+                    return false;
+                }
+
+                MatchLobbyLevelSnapshot parsedLevel = new MatchLobbyLevelSnapshot
+                {
+                    Id = (int)levelId,
+                    Side = (int)levelSide,
+                    Name = levelName,
+                    MapIndex = (int)mapIndex,
+                    Obstacles = obstacles,
+                    AsteroidOption = (int)asteroidOption,
+                    FogOfWar = (int)fog,
+                    Mining = (int)mining,
+                    HasPreLevelIntro = intro,
+                    HasSquadActionBox = actionBox,
+                    SupplyCapacity = (int)supply,
+                    EnemyReinforcementsOption = (int)reinforceOption,
+                    EnemyReinforcementDelay = (int)reinforceDelay,
+                    EnemyShipTypeOption = (int)enemyType,
+                    EnemySquadGenerationCount = (int)enemyCount,
+                    EnemyReport = report,
+                    BeeStartingX = beeX,
+                    BeeStartingY = beeY,
+                    HumanStartingX = humanX,
+                    HumanStartingY = humanY
+                };
+
+                for (int i = 0; i < obstacleList.Count; i++)
+                {
+                    if (!(obstacleList[i] is JObject obstacleJson) ||
+                        !HasExactFields(obstacleJson, LobbyObstacleFields) ||
+                        !TryReadFloat(obstacleJson, "px", out float px) ||
+                        !TryReadFloat(obstacleJson, "py", out float py) ||
+                        !TryReadFloat(obstacleJson, "sx", out float sx) ||
+                        !TryReadFloat(obstacleJson, "sy", out float sy))
+                    {
+                        return false;
+                    }
+
+                    parsedLevel.ObstacleList.Add(new MatchLobbyObstacleSnapshot
+                    {
+                        PositionX = px,
+                        PositionY = py,
+                        ScaleX = sx,
+                        ScaleY = sy
+                    });
+                }
+
+                parsed.Level = parsedLevel;
+            }
+
             for (int i = 0; i < squads.Count; i++)
             {
                 if (!(squads[i] is JObject squadJson) ||
                     !HasExactFields(squadJson, LobbySquadFields) ||
+                    !TryReadInt64(squadJson, "role", out long role) ||
+                    role < int.MinValue || role > int.MaxValue ||
                     !TryReadString(squadJson, "token", out string token) ||
                     !TryReadInt64(squadJson, "owner", out long owner) ||
                     owner <= MatchSession.UnownedPlayerId ||
@@ -965,6 +1117,7 @@ namespace Assets.Scripts.Levels
 
                 MatchLobbySquadSnapshot squad = new MatchLobbySquadSnapshot
                 {
+                    Role = (int)role,
                     OwnershipToken = token,
                     OwnerPlayerId = (int)owner,
                     TransientSquadId = squadId,
