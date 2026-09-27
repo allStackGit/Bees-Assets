@@ -132,6 +132,8 @@ namespace Bees.Tests.EditMode
                 ? statuses.GetValue(0)
                 : null), Is.Zero);
             Assert.That(((IDictionary)RuntimeAssembly.GetField(_weapon, "ShipsWithinRange")).Contains(202L), Is.False);
+            Assert.That(RuntimeAssembly.GetField(_weapon, "HasCachedChanged"), Is.True,
+                "Removing a dead target must invalidate the weapon's cached targeting queue.");
             Assert.That(RuntimeAssembly.GetCount(RuntimeAssembly.GetField(_target, "WeaponsThatHaveUsWithinRange")), Is.Zero);
 
             InvokeDamage(1000);
