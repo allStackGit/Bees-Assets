@@ -924,3 +924,12 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** no test was added or run, per the static-only audit scope. The source invariant is that catalog state cannot authorize deletion or serving from a path the publisher would not create.
 **Verification:** statically compared the publisher's destination construction with persisted-record validation and pruning's deletion use. No tests, builds, Unity, simulations, or runtime checks were run.
 **Invariant/knowledge:** validate stored filesystem paths at load time before allowing maintenance code to delete them.
+
+### REG-105 — WAN actor admission could race cohort selection
+**Area:** `Training/bees_wan_actor_training.py`, synchronized trajectory cohorts
+**Symptom:** the learner removed a batch from the queue before marking its actor blocked. A concurrent upload from that actor could observe an empty queue, be accepted, and then be selected alongside the first batch in the same multi-actor cohort, overweighting that actor's experience.
+**Root cause:** queue removal and actor-block registration were separated by releasing the broker condition, while admission checked that condition independently.
+**Fix:** perform queue dequeue and cohort actor blocking while holding the broker condition; notify that condition after admitting a batch so cohort waiters wake promptly.
+**Permanent protection:** no test was added or run, per the static-only audit scope. The invariant is that a selected actor is blocked before another upload can pass admission.
+**Verification:** statically traced concurrent admission, queue removal, actor blocking, timeout retention, and generation invalidation. No tests, builds, Unity, simulations, or runtime checks were run.
+**Invariant/knowledge:** shared queue membership and per-actor admission state must change atomically under the same lock.
