@@ -68,13 +68,17 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             _shipEnter = collider.GetComponentInParent<Ship>();
             if (_shipEnter != null)
             {
+                if (Ship == null || Ship.Level == null || _shipEnter.Level != Ship.Level)
+                {
+                    return;
+                }
                 RecordShipSighting();
                 return;
             }
 
             _miningAsteroidEnter = collider.GetComponentInParent<MiningAsteroid>();
             if (_miningAsteroidEnter != null && Ship != null && Ship.IsHiveMindControlled && !Ship.IsDead &&
-                Ship.Level != null && !_miningAsteroidEnter.IsDead)
+                Ship.Level != null && _miningAsteroidEnter.Level == Ship.Level && !_miningAsteroidEnter.IsDead)
             {
                 Ship.Level.State.RecordHiveMindMiningAsteroidSighting(Ship, _miningAsteroidEnter);
             }
@@ -82,7 +86,9 @@ namespace Assets.Scripts.Entities.Ships.Weapons
 
         private void RecordShipSighting()
         {
-            if (!Ship.IsHiveMindControlled || Ship.IsDead || _shipEnter == null || _shipEnter.IsDead || _shipEnter.Side == Ship.Side)
+            if (!Ship.IsHiveMindControlled || Ship.IsDead || Ship.Level == null ||
+                _shipEnter == null || _shipEnter.Level != Ship.Level ||
+                _shipEnter.IsDead || _shipEnter.Side == Ship.Side)
             {
                 return;
             }
