@@ -69,6 +69,20 @@ class AutomaticPublicTrainerOptionTests(unittest.TestCase):
                 ]
             )
 
+    def test_watch_interval_must_be_finite(self):
+        for interval in ("nan", "inf", "-inf"):
+            with self.subTest(interval=interval):
+                with self.assertRaisesRegex(SystemExit, WATCH_SECONDS_FLAG):
+                    extract_automatic_public_options(
+                        [
+                            "trainer.yaml",
+                            QUARANTINE_FLAG,
+                            "D:/BeesRlTelemetry",
+                            WATCH_SECONDS_FLAG,
+                            interval,
+                        ]
+                    )
+
     def test_duplicate_automatic_option_fails_closed(self):
         with self.assertRaisesRegex(SystemExit, "may be specified only once"):
             extract_automatic_public_options(
