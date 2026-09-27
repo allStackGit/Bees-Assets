@@ -494,6 +494,7 @@ def default_heartbeat(
     prepared_build_id: str = "",
     preparation_error: str = "",
     last_error: str = "",
+    environment_id: str = "",
     metrics: Optional[Mapping[str, object]] = None,
     worker_capacity: Optional[Mapping[str, object]] = None,
 ) -> dict[str, object]:
@@ -510,6 +511,7 @@ def default_heartbeat(
         "prepared_build_id": str(prepared_build_id or ""),
         "preparation_error": str(preparation_error or ""),
         "last_error": last_error,
+        "environment_id": str(environment_id or ""),
         "metrics": dict(metrics or {}),
         "worker_capacity": dict(worker_capacity or {}),
     }
