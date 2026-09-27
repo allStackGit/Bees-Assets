@@ -170,6 +170,10 @@ def _string_trainer_arg(argv: Sequence[str], flag: str) -> Optional[str]:
 def training_topology(argv: Sequence[str], options: DistributedOptions) -> Tuple[int, int, Tuple[int, ...]]:
     total_envs = _integer_trainer_arg(argv, "--num-envs", DEFAULT_NUM_ENVS, minimum=1)
     base_port = _integer_trainer_arg(argv, "--base-port", DEFAULT_BASE_PORT, minimum=1)
+    if base_port + total_envs - 1 > 65535:
+        raise SystemExit(
+            f"--base-port={base_port} with --num-envs={total_envs} exceeds the valid TCP port range."
+        )
     if options.external_envs > total_envs:
         raise SystemExit(
             f"{EXTERNAL_ENVS_FLAG}={options.external_envs} exceeds --num-envs={total_envs}."
