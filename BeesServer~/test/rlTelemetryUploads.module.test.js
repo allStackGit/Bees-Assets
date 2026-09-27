@@ -242,11 +242,13 @@ test('idle cleanup preserves an upload while a chunk operation is in flight', as
     await chunkStarted;
     now += 101;
 
-    assert.equal(await manager.cleanupExpired(), 0);
-    assert.equal(manager.sessions.has(begin.UploadId), true);
-
+    const expiredCount = await manager.cleanupExpired();
+    const sessionRetained = manager.sessions.has(begin.UploadId);
     releaseChunk();
     const progress = await chunk;
+
+    assert.equal(expiredCount, 0);
+    assert.equal(sessionRetained, true);
     assert.equal(progress.NextOffset, bytes.length);
 });
 
