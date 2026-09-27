@@ -474,6 +474,20 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         self.assertIn("'logs',\n            runId", status)
         self.assertIn("listLogFiles(managedLearnerLogRoot, false)", status)
 
+    def test_running_remote_heartbeat_publishes_environment_identity_and_throughput(self):
+        source = (ROOT / "Training" / "bees_training_worker_agent.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn(
+            "environment_args_identity(managed.environment_args)",
+            source,
+        )
+        self.assertIn(
+            "throughput = read_throughput_metrics(",
+            source,
+        )
+        self.assertIn('snapshot["throughput"] = throughput', source)
+
     def test_status_preserves_remote_network_traffic_columns(self):
         source = read_operator("status.js")
         self.assertIn("network_sent_bytes_total", source)
