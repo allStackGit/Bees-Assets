@@ -873,8 +873,7 @@ def main() -> None:
             RLTrainer._maybe_save_model = original_maybe_save_model
         if original_torch_load is not None:
             torch_utils.torch.load = original_torch_load
-        if original_value_estimate_key is not None or original_value_estimate_key is None:
-            restore_value_estimate_key(original_value_estimate_key)
+        restore_value_estimate_key(original_value_estimate_key)
         if original_queue_steps is not None:
             SubprocessEnvManager._queue_steps = original_queue_steps
         if original_env_step is not None:
