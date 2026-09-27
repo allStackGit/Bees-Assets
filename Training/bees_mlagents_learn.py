@@ -21,6 +21,7 @@ from __future__ import annotations
 import _thread
 import copy
 import json
+import logging
 import os
 from pathlib import Path
 import signal
@@ -93,14 +94,53 @@ def _install_managed_live_log():
         return None
     sink = _LiveLogSink(Path(root).expanduser().resolve() / LIVE_LEARNER_LOG_NAME)
     originals = (sys.stdout, sys.stderr)
-    sys.stdout = _LiveLogTee(originals[0], sink)
-    sys.stderr = _LiveLogTee(originals[1], sink)
-    return originals
+    stdout_tee = _LiveLogTee(originals[0], sink)
+    stderr_tee = _LiveLogTee(originals[1], sink)
+    sys.stdout = stdout_tee
+    sys.stderr = stderr_tee
+
+    # Elastic-WAN wrappers import ML-Agents before this launcher runs, so some logging handlers
+    # may already be bound to the original stderr/stdout objects. Rebind only those console
+    # handlers; file handlers and other explicit destinations remain untouched.
+    rebound = []
+    seen_handlers = set()
+    loggers = [logging.getLogger()]
+    loggers.extend(
+        value
+        for value in logging.root.manager.loggerDict.values()
+        if isinstance(value, logging.Logger)
+    )
+    for logger in loggers:
+        for handler in logger.handlers:
+            identity = id(handler)
+            if identity in seen_handlers:
+                continue
+            seen_handlers.add(identity)
+            stream = getattr(handler, "stream", None)
+            replacement = None
+            if stream is originals[0]:
+                replacement = stdout_tee
+            elif stream is originals[1]:
+                replacement = stderr_tee
+            if replacement is None or not hasattr(handler, "setStream"):
+                continue
+            try:
+                handler.setStream(replacement)
+                rebound.append((handler, stream))
+            except (AttributeError, ValueError):
+                continue
+    return originals, rebound
 
 
-def _restore_managed_live_log(originals) -> None:
-    if originals is None:
+def _restore_managed_live_log(state) -> None:
+    if state is None:
         return
+    originals, rebound = state
+    for handler, stream in rebound:
+        try:
+            handler.setStream(stream)
+        except (AttributeError, ValueError):
+            pass
     sys.stdout, sys.stderr = originals
 
 
