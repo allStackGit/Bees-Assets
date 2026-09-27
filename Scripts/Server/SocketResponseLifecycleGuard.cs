@@ -9,6 +9,7 @@ namespace Assets.Scripts.Server
         private const float HandledResponseRetentionSeconds = 120f;
         private const float HandledResponsePruneIntervalSeconds = 1f;
         private const int MaxTrackedHandledResponses = 4096;
+        internal const int MaxTrackedStaleSquadRequests = 4096;
 
         private static SocketResponseLifecycleGuard _instance;
         private readonly Dictionary<long, float> _handledAt = new Dictionary<long, float>();
