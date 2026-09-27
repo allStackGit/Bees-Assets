@@ -627,8 +627,10 @@ namespace Assets.Scripts.Levels
             for (_moveSquads_i = 0; _moveSquads_i < _moveSquads_selectedSquads.Count; _moveSquads_i++)
             {
                 _moveSquads_localized = targetPosition - Level.GetPosition();
-                _moveSquads_selectedSquads[_moveSquads_i].FinalizeUserCommand();
-                _moveSquads_selectedSquads[_moveSquads_i].Move(_moveSquads_localized);
+                Level.State.TryPlayerMoveSquad(
+                    PlayerId,
+                    _moveSquads_selectedSquads[_moveSquads_i].ItemId,
+                    _moveSquads_localized);
             }
         }
 

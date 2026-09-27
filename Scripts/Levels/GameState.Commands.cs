@@ -20,6 +20,58 @@ namespace Assets.Scripts.Levels
             return UserCommands++;
         }
 
+        private Squad GetPlayerCommandSquad(int squadItemId)
+        {
+            for (int i = 0; i < Squads.Count; i++)
+            {
+                Squad squad = Squads[i];
+                if (squad != null && squad.ItemId == squadItemId)
+                {
+                    return squad;
+                }
+            }
+            return null;
+        }
+
+        public bool CanPlayerCommandSquad(int playerId, Squad squad)
+        {
+            return IsKnownInputPlayer(playerId) &&
+                squad != null &&
+                !squad.IsDead &&
+                ReferenceEquals(squad.Level, Level) &&
+                Squads.Contains(squad) &&
+                squad.CanAcceptInputFrom(playerId);
+        }
+
+        public bool TryPlayerMoveSquad(int playerId, int squadItemId, Vector2 destination)
+        {
+            Squad squad = GetPlayerCommandSquad(squadItemId);
+            if (!CanPlayerCommandSquad(playerId, squad) || squad.IsLockedOn)
+            {
+                return false;
+            }
+
+            squad.FinalizeUserCommand();
+            squad.Move(destination);
+            return true;
+        }
+
+        public bool TryPlayerTargetEnemy(int playerId, int squadItemId, int enemySquadItemId)
+        {
+            Squad squad = GetPlayerCommandSquad(squadItemId);
+            Squad enemySquad = GetPlayerCommandSquad(enemySquadItemId);
+            if (!CanPlayerCommandSquad(playerId, squad) ||
+                enemySquad == null ||
+                enemySquad.IsDead ||
+                enemySquad.Side == squad.Side)
+            {
+                return false;
+            }
+
+            squad.UserTargetEnemy(enemySquad);
+            return true;
+        }
+
         public bool AddCommand(Command command)
         {
             if (command.OutcomeId > 0 && OutcomeIdToPastCommandIndex.ContainsKey(command.OutcomeId))

@@ -344,6 +344,11 @@ namespace Assets.Scripts.Levels
             return playerId != UnownedPlayerId && playerId == PrimaryLocalPlayerId;
         }
 
+        public bool HasPlayer(int playerId)
+        {
+            return playerId > UnownedPlayerId && _players.Any(player => player.Id == playerId);
+        }
+
         public int GetPlayerSide(int playerId)
         {
             MatchPlayer player = _players.FirstOrDefault(candidate => candidate.Id == playerId);

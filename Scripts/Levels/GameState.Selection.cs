@@ -19,6 +19,21 @@ namespace Assets.Scripts.Levels
                 : matchSession.PrimaryLocalPlayerId;
         }
 
+        public bool IsKnownInputPlayer(int playerId)
+        {
+            if (playerId <= MatchSession.UnownedPlayerId)
+            {
+                return false;
+            }
+
+            MatchSession matchSession = Level != null && Level.Stage != null
+                ? Level.Stage.MatchSession
+                : null;
+            return matchSession == null
+                ? playerId == MatchSession.LegacyLocalPlayerId
+                : matchSession.HasPlayer(playerId);
+        }
+
         private bool IsPrimaryInputPlayer(int playerId)
         {
             return playerId == GetPrimaryInputPlayerId();
@@ -41,7 +56,8 @@ namespace Assets.Scripts.Levels
 
         public bool IsSquadSelectedByPlayer(Squad squad, int playerId)
         {
-            return squad != null && GetSelectionRegistry(playerId).Contains(squad);
+            return IsKnownInputPlayer(playerId) && squad != null &&
+                GetSelectionRegistry(playerId).Contains(squad);
         }
 
         public List<Squad> GetSelectedSquads()
@@ -51,6 +67,11 @@ namespace Assets.Scripts.Levels
 
         public List<Squad> GetSelectedSquadsForPlayer(int playerId)
         {
+            if (!IsKnownInputPlayer(playerId))
+            {
+                return new List<Squad>();
+            }
+
             return GetSelectionRegistry(playerId)
                 .Where(squad => squad != null && !squad.IsDead && squad.CanAcceptInputFrom(playerId))
                 .ToList();
@@ -63,7 +84,7 @@ namespace Assets.Scripts.Levels
 
         public void AddSelectedSquadForPlayer(int playerId, Squad squad)
         {
-            if (squad == null || !squad.CanBeSelectedByPlayer(playerId))
+            if (!IsKnownInputPlayer(playerId) || squad == null || !squad.CanBeSelectedByPlayer(playerId))
             {
                 return;
             }
@@ -102,6 +123,11 @@ namespace Assets.Scripts.Levels
 
         public void SelectSquadsForPlayer(int playerId, List<Squad> squads)
         {
+            if (!IsKnownInputPlayer(playerId))
+            {
+                return;
+            }
+
             ClearSelectedSquadsForPlayer(playerId);
             if (squads == null)
             {
@@ -120,6 +146,11 @@ namespace Assets.Scripts.Levels
 
         public void SelectSquadsByShipTypeForPlayer(int playerId, ConfigData.ShipTypes type)
         {
+            if (!IsKnownInputPlayer(playerId))
+            {
+                return;
+            }
+
             ClearSelectedSquadsForPlayer(playerId);
             MatchSession matchSession = Level != null && Level.Stage != null
                 ? Level.Stage.MatchSession
@@ -147,6 +178,11 @@ namespace Assets.Scripts.Levels
 
         public void ClearSelectedSquadsForPlayer(int playerId)
         {
+            if (!IsKnownInputPlayer(playerId))
+            {
+                return;
+            }
+
             List<Squad> selection = GetSelectionRegistry(playerId);
             while (selection.Count > 0)
             {
@@ -161,7 +197,7 @@ namespace Assets.Scripts.Levels
 
         public void SelectSquadForPlayer(int playerId, Squad squad)
         {
-            if (squad == null)
+            if (!IsKnownInputPlayer(playerId) || squad == null)
             {
                 return;
             }
@@ -176,6 +212,11 @@ namespace Assets.Scripts.Levels
 
         public void DeselectSquadForPlayer(int playerId, Squad squad)
         {
+            if (!IsKnownInputPlayer(playerId))
+            {
+                return;
+            }
+
             List<Squad> selection = GetSelectionRegistry(playerId);
             if (squad == null || !selection.Contains(squad))
             {

@@ -74,7 +74,10 @@ namespace Assets.Scripts.Entities.Ships
                 // Composition-aware dispatch also lets Barge-only squads use their dedicated
                 // Charge command instead of stopping in Aggressive's ranged positioning state.
                 Level.State.GetSelectedSquadsForPlayer(playerId)
-                    .ForEach(selectedSquad => selectedSquad.UserTargetEnemy(Squad));
+                    .ForEach(selectedSquad => Level.State.TryPlayerTargetEnemy(
+                        playerId,
+                        selectedSquad.ItemId,
+                        Squad.ItemId));
             }
             else if (isFriendlyToPlayer && mouseButton == LevelInputManager.LeftClick && !Squad.IsImmobile)
             {
