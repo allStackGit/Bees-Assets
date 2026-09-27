@@ -194,6 +194,7 @@ public class Tooltip : MonoBehaviour
         {
             TooltipObject.SetActive(false);
             TooltipText.text = text;
+            TooltipText.maxVisibleCharacters = int.MaxValue;
             CloseButton.SetActive(hasX);
             _sequenceFooter.SetActive(false);
             ApplyLayout();
@@ -214,6 +215,7 @@ public class Tooltip : MonoBehaviour
         }
 
         TooltipText.text = _sequencePages[_sequenceIndex];
+        TooltipText.maxVisibleCharacters = int.MaxValue;
         _sequenceFooter.SetActive(true);
         _previousButton.interactable = _sequenceIndex > 0;
         _previousLabel.text = "PREV";
