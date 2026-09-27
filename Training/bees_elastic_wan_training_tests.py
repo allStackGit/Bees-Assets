@@ -214,7 +214,6 @@ class ElasticBrokerTests(unittest.TestCase):
                     **broker.release_identity,
                     "actor_id": actor_id,
                     "actor_instance_id": f"manual-process-{actor_id}",
-
                     "env_count": 8,
                     "control_epoch": 1,
                     "behavior_specs": specs,
@@ -261,7 +260,6 @@ class ElasticBrokerTests(unittest.TestCase):
                     **broker.release_identity,
                     "actor_id": actor_id,
                     "actor_instance_id": f"manual-process-{actor_id}",
-
                     "env_count": 8,
                     "control_epoch": 1,
                     "behavior_specs": specs,
