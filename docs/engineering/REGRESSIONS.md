@@ -755,3 +755,13 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** `ElasticWanUnityArgumentTests` checks that WAN-looking tokens after the marker stay in the Unity arguments and that the equals form is rejected. The regression tests were not run, per the static-only audit scope.  
 **Verification:** traced elastic WAN option extraction and compared its boundary handling with `Training/bees_distributed_training.py`; reread the updated parser and regression cases. No tests, builds, Unity, simulations, or runtime checks were run.  
 **Invariant/knowledge:** launcher-specific arguments must never consume tokens owned by Unity after `--env-args`.
+
+
+### REG-087 — stale elastic WAN reset acknowledgments renewed actor leases
+**Area:** `Training/bees_elastic_wan_training.py`, elastic actor lease lifecycle  
+**Symptom:** a reset acknowledgment with an old control epoch could refresh the actor registration lease immediately before the shared broker validation rejected that stale epoch. This could retain a disconnected fixed-slot actor registration longer than its valid control state.  
+**Root cause:** the elastic override updated `last_seen` before delegating the control-epoch check to the base broker.  
+**Fix:** owner validation, control-epoch validation, and lease refresh now occur atomically under the broker condition lock. A stale acknowledgment is rejected without changing lease time.  
+**Permanent protection:** `ElasticBrokerTests.test_stale_reset_ack_does_not_refresh_actor_lease` checks that stale control state raises and leaves `last_seen` unchanged. The test was not run, per the static-only audit scope.  
+**Verification:** traced the elastic override and base acknowledgment contract, then reread the atomic check and regression case. No tests, builds, Unity, simulations, or runtime checks were run.  
+**Invariant/knowledge:** only an acknowledgment for the current control epoch may renew an actor registration lease.
