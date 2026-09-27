@@ -825,3 +825,13 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** `trainingControl.module.test.js` checks that both identity positions reject traversal components. The test was added but not run, per the static-only audit scope.  
 **Verification:** statically traced the authenticated log route into identity validation, path component assembly, parent creation, and file write operations. No tests, builds, or runtime checks were run.  
 **Invariant/knowledge:** validate every caller-controlled filesystem path component at the server boundary, including namespace identifiers even when clients validate them too.
+
+
+### REG-095 — Failed gameplay telemetry draft writes discarded observations
+**Area:** `Scripts/Scenes/RlLiveTelemetryRecorder.cs`, local telemetry draft persistence  
+**Symptom:** `FlushDraft` cleared the current payload before writing it. A disk or serialization exception therefore discarded that segment; during a deployment change, continuing after the failed flush could also attach new-policy observations to the old payload identity. Session-generation rollover could discard a failed finalization after removing the old session from the active map.  
+**Root cause:** the recorder detached the only in-memory payload before persistence succeeded and treated persistence failure as a log-only condition.  
+**Fix:** keep the current payload until atomic draft persistence and path registration succeed; stop recording into that session when a deployment or size boundary cannot flush; retain failed generation finalizations in a retry queue and retry them during later fixed updates and teardown.  
+**Permanent protection:** `RlLiveTelemetryTests.FailedTelemetryDraftPersistenceRetainsThePayloadForRetry` guards write-before-clear ordering, deployment-flush gating, and generation rollover queuing. The test was added but not run, per the static-only audit scope.  
+**Verification:** statically traced the draft write, deployment-change and segment-size boundaries, level-generation rollover, completion retry, and teardown retry paths. No tests, builds, Unity, simulations, or runtime checks were run.  
+**Invariant/knowledge:** retain the only in-memory telemetry copy until persistence succeeds; never record new policy data under a previous policy identity after a failed segment flush.
