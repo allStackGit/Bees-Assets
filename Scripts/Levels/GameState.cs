@@ -325,6 +325,65 @@ namespace Assets.Scripts.Levels
         Ended
     }
 
+    public sealed class MatchSetupRandom
+    {
+        private uint _state;
+
+        public MatchSetupRandom(int seed)
+        {
+            _state = seed == 0 ? 1u : unchecked((uint)seed);
+        }
+
+        private uint NextUInt()
+        {
+            uint value = _state;
+            value ^= value << 13;
+            value ^= value >> 17;
+            value ^= value << 5;
+            _state = value == 0 ? 0x6D2B79F5u : value;
+            return _state;
+        }
+
+        public int NextInt(int maxExclusive)
+        {
+            if (maxExclusive <= 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(maxExclusive));
+            }
+            return (int)(NextUInt() % (uint)maxExclusive);
+        }
+
+        public int Range(int minInclusive, int maxExclusive)
+        {
+            if (maxExclusive <= minInclusive)
+            {
+                throw new ArgumentOutOfRangeException(nameof(maxExclusive));
+            }
+            return minInclusive + NextInt(maxExclusive - minInclusive);
+        }
+
+        public float NextFloat(float maxExclusive)
+        {
+            if (maxExclusive < 0f || float.IsNaN(maxExclusive) || float.IsInfinity(maxExclusive))
+            {
+                throw new ArgumentOutOfRangeException(nameof(maxExclusive));
+            }
+
+            double unit = NextUInt() / ((double)uint.MaxValue + 1d);
+            return (float)(unit * maxExclusive);
+        }
+
+        public bool CoinToss()
+        {
+            return (NextUInt() & 1u) == 0u;
+        }
+
+        public int NextSign()
+        {
+            return CoinToss() ? 1 : -1;
+        }
+    }
+
     [Serializable]
     public sealed class MatchLobbyPeerSnapshot
     {
@@ -398,6 +457,7 @@ namespace Assets.Scripts.Levels
         public const int CurrentVersion = 1;
         public int Version = CurrentVersion;
         public string MatchId;
+        public int SetupSeed;
         public int AuthorityPeerId;
         public List<MatchLobbyPeerSnapshot> Peers = new List<MatchLobbyPeerSnapshot>();
         public List<MatchLobbyPlayerSnapshot> Players = new List<MatchLobbyPlayerSnapshot>();
@@ -439,18 +499,57 @@ namespace Assets.Scripts.Levels
 
         public IReadOnlyList<MatchPeer> Peers => _peers;
         public IReadOnlyList<MatchPlayer> Players => _players;
-        public Guid MatchId { get; private set; } = Guid.NewGuid();
+        public Guid MatchId { get; private set; }
+        public int SetupSeed { get; private set; }
         public int AuthorityPeerId { get; private set; }
         public int PrimaryLocalPlayerId { get; private set; } = UnownedPlayerId;
         public MatchSessionPhase Phase { get; private set; } = MatchSessionPhase.Lobby;
         public bool IsMultiplayer => _players.Count > 1;
         public bool IsConfiguring => Phase == MatchSessionPhase.Lobby;
 
+        public MatchSession()
+        {
+            MatchId = Guid.NewGuid();
+            SetupSeed = DeriveSetupSeed(MatchId);
+        }
+
         public static MatchSession CreateSolo(int side)
         {
             MatchSession session = new MatchSession();
             session.AddPlayer(LegacyLocalPlayerId, side, true);
             return session;
+        }
+
+        private static int DeriveSetupSeed(Guid matchId)
+        {
+            byte[] bytes = matchId.ToByteArray();
+            uint hash = 2166136261u;
+            for (int i = 0; i < bytes.Length; i++)
+            {
+                hash ^= bytes[i];
+                hash *= 16777619u;
+            }
+
+            int seed = (int)(hash & 0x7FFFFFFFu);
+            return seed == 0 ? 1 : seed;
+        }
+
+        public int GetLevelSetupSeed(int matchLevelId)
+        {
+            if (matchLevelId <= 0)
+            {
+                return 0;
+            }
+
+            uint value = unchecked((uint)SetupSeed) +
+                0x9E3779B9u * unchecked((uint)matchLevelId);
+            value ^= value >> 16;
+            value *= 0x7FEB352Du;
+            value ^= value >> 15;
+            value *= 0x846CA68Bu;
+            value ^= value >> 16;
+            int seed = (int)(value & 0x7FFFFFFFu);
+            return seed == 0 ? 1 : seed;
         }
 
         public static bool IsValidLobbySnapshot(MatchLobbySnapshot snapshot)
@@ -460,6 +559,7 @@ namespace Assets.Scripts.Levels
                 string.IsNullOrWhiteSpace(snapshot.MatchId) ||
                 !Guid.TryParseExact(snapshot.MatchId, "N", out Guid matchId) ||
                 matchId == Guid.Empty ||
+                snapshot.SetupSeed <= 0 ||
                 snapshot.AuthorityPeerId <= 0 ||
                 snapshot.Peers == null ||
                 snapshot.Peers.Count == 0 ||
@@ -596,6 +696,7 @@ namespace Assets.Scripts.Levels
             MatchLobbySnapshot candidate = new MatchLobbySnapshot
             {
                 MatchId = MatchId.ToString("N"),
+                SetupSeed = SetupSeed,
                 AuthorityPeerId = AuthorityPeerId
             };
 
@@ -721,7 +822,8 @@ namespace Assets.Scripts.Levels
             }
 
             MatchSession candidate = new MatchSession();
-            if (!candidate.TrySetMatchId(matchId))
+            if (!candidate.TrySetMatchId(matchId) ||
+                !candidate.TrySetSetupSeed(snapshot.SetupSeed))
             {
                 return false;
             }
@@ -836,6 +938,18 @@ namespace Assets.Scripts.Levels
             }
 
             MatchId = matchId;
+            SetupSeed = DeriveSetupSeed(matchId);
+            return true;
+        }
+
+        public bool TrySetSetupSeed(int setupSeed)
+        {
+            if (!IsConfiguring || setupSeed <= 0)
+            {
+                return false;
+            }
+
+            SetupSeed = setupSeed;
             return true;
         }
 

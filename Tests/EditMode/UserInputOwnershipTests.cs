@@ -1578,5 +1578,50 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains("StopMultiplayerLobbyTransport();", source);
             StringAssert.Contains("_multiplayerLobbyTransport?.Dispose();", source);
         }
+
+        [Test]
+        public void LobbySnapshotPreservesMatchSetupSeed()
+        {
+            Type sessionType = RuntimeAssembly.GetType("Assets.Scripts.Levels.MatchSession");
+            object host = Activator.CreateInstance(sessionType);
+            RuntimeAssembly.Invoke(host, "AddPlayer", 1, 1, true);
+            RuntimeAssembly.Invoke(host, "TrySetPeerTransportIdentity", 1, "steam:host");
+
+            PropertyInfo seedProperty = sessionType.GetProperty(
+                "SetupSeed",
+                BindingFlags.Instance | BindingFlags.Public);
+            int hostSeed = (int)seedProperty.GetValue(host);
+            Assert.That(hostSeed, Is.GreaterThan(0));
+
+            MethodInfo createSnapshot = sessionType.GetMethod(
+                "TryCreateLobbySnapshot",
+                BindingFlags.Instance | BindingFlags.Public);
+            object[] snapshotArgs = { null };
+            Assert.That((bool)createSnapshot.Invoke(host, snapshotArgs), Is.True);
+            Assert.That(RuntimeAssembly.GetField(snapshotArgs[0], "SetupSeed"), Is.EqualTo(hostSeed));
+        }
+
+        [Test]
+        public void MatchSetupRandomIsStablePerLevelAndSeparatedAcrossLevels()
+        {
+            Type sessionType = RuntimeAssembly.GetType("Assets.Scripts.Levels.MatchSession");
+            Type randomType = RuntimeAssembly.GetType("Assets.Scripts.Levels.MatchSetupRandom");
+            object session = Activator.CreateInstance(sessionType);
+
+            int levelOneSeed = (int)RuntimeAssembly.Invoke(session, "GetLevelSetupSeed", 1);
+            int levelTwoSeed = (int)RuntimeAssembly.Invoke(session, "GetLevelSetupSeed", 2);
+            Assert.That(levelOneSeed, Is.GreaterThan(0));
+            Assert.That(levelTwoSeed, Is.GreaterThan(0));
+            Assert.That(levelTwoSeed, Is.Not.EqualTo(levelOneSeed));
+
+            object first = Activator.CreateInstance(randomType, levelOneSeed);
+            object second = Activator.CreateInstance(randomType, levelOneSeed);
+            for (int i = 0; i < 16; i++)
+            {
+                Assert.That(
+                    RuntimeAssembly.Invoke(first, "NextInt", 100000),
+                    Is.EqualTo(RuntimeAssembly.Invoke(second, "NextInt", 100000)));
+            }
+        }
     }
 }

@@ -647,7 +647,7 @@ namespace Assets.Scripts.Levels
         };
         private static readonly HashSet<string> LobbyFields = new HashSet<string>
         {
-            "v", "type", "match", "authority", "peers", "players", "squads"
+            "v", "type", "match", "seed", "authority", "peers", "players", "squads"
         };
         private static readonly HashSet<string> LobbyPeerFields = new HashSet<string>
         {
@@ -783,6 +783,7 @@ namespace Assets.Scripts.Levels
                 ["v"] = Version,
                 ["type"] = LobbyPacketType,
                 ["match"] = snapshot.MatchId,
+                ["seed"] = snapshot.SetupSeed,
                 ["authority"] = snapshot.AuthorityPeerId,
                 ["peers"] = peers,
                 ["players"] = players,
@@ -827,6 +828,9 @@ namespace Assets.Scripts.Levels
                 !TryReadString(json, "type", out string packetType) ||
                 packetType != LobbyPacketType ||
                 !TryReadString(json, "match", out string matchId) ||
+                !TryReadInt64(json, "seed", out long setupSeed) ||
+                setupSeed <= 0 ||
+                setupSeed > int.MaxValue ||
                 !TryReadInt64(json, "authority", out long authorityPeerId) ||
                 authorityPeerId <= 0 ||
                 authorityPeerId > int.MaxValue ||
@@ -846,6 +850,7 @@ namespace Assets.Scripts.Levels
             {
                 Version = (int)version,
                 MatchId = matchId,
+                SetupSeed = (int)setupSeed,
                 AuthorityPeerId = (int)authorityPeerId
             };
 
