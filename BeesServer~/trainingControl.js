@@ -702,6 +702,7 @@ class TrainingControlStore {
         const rollingTargetId = pending.phase === 'rolling'
             ? this._rollingTargetId()
             : null;
+        const previousState = this._snapshotState();
         const kept = [];
         let changed = false;
         for (const spec of pending.required_trainers) {
@@ -789,13 +790,14 @@ class TrainingControlStore {
         pending.rolled_trainers = (pending.rolled_trainers || [])
             .filter(trainerId => keptIds.has(trainerId));
         this.state.revision++;
-        this._persist();
+        this._persistWithRollback(previousState);
         return true;
     }
 
     _pruneExpiredIncompatibleRemoteTrainers(pending) {
         if (!pending || !pending.incompatible) return false;
         const cutoff = this.now() - this.leaseSeconds * 1000;
+        const previousState = this._snapshotState();
         const kept = [];
         let changed = false;
         for (const spec of pending.required_trainers) {
@@ -834,7 +836,7 @@ class TrainingControlStore {
         pending.rolled_trainers = (pending.rolled_trainers || [])
             .filter(trainerId => keptIds.has(trainerId));
         this.state.revision++;
-        this._persist();
+        this._persistWithRollback(previousState);
         return true;
     }
 
@@ -890,6 +892,7 @@ class TrainingControlStore {
     _promotePendingRelease() {
         const pending = this.state.pending_release;
         if (!pending) return false;
+        const previousState = this._snapshotState();
         this.state.canonical_build_id = pending.build_id;
         this.state.run_id = pending.run_id;
         this.state.compatibility_key = pending.compatibility_key;
@@ -898,7 +901,7 @@ class TrainingControlStore {
         }
         this.state.pending_release = null;
         this.state.revision++;
-        this._persist();
+        this._persistWithRollback(previousState);
         return true;
     }
 
@@ -921,13 +924,14 @@ class TrainingControlStore {
             if (!this.state.training_enabled && !pending.incompatible) {
                 return this._promotePendingRelease();
             }
+            const previousState = this._snapshotState();
             pending.phase = pending.incompatible ? 'stopping' : 'rolling';
             for (const spec of pending.required_trainers) {
                 delete spec.failure_since_ms;
             }
             this.state.revision++;
             pending.phase_revision = this.state.revision;
-            this._persist();
+            this._persistWithRollback(previousState);
             return true;
         }
 
@@ -947,6 +951,7 @@ class TrainingControlStore {
             // build_id+applied_revision alone cannot identify a completed same-build config cutover.
             const rollingTargetId = this._rollingTargetId();
             if (rollingTargetId) {
+                const previousState = this._snapshotState();
                 const targetSpec = pending.required_trainers.find(
                     spec => spec.trainer_id === rollingTargetId);
                 if (targetSpec && this._trainerHealthyOnPending(targetSpec, pending)) {
@@ -964,7 +969,7 @@ class TrainingControlStore {
                     }
                     if (changed) {
                         this.state.revision++;
-                        this._persist();
+                        this._persistWithRollback(previousState);
                     }
                 }
             }
@@ -1171,6 +1176,7 @@ class TrainingControlStore {
                 .filter(trainer => trainer.trainer_id !== 'central-learner')
                 .map(trainer => trainer.platform),
         )].sort();
+        const previousState = this._snapshotState();
         this.state.pending_release = {
             build_id: buildId,
             run_id: runId,
@@ -1193,9 +1199,24 @@ class TrainingControlStore {
             ),
         };
         this.state.revision++;
-        this._persist();
+        this._persistWithRollback(previousState);
         this._advanceRollout();
         return this.desiredState();
+    }
+
+    _snapshotState() {
+        // Control state is JSON-backed and must roll back in-memory mutations when persistence
+        // fails; retaining the pre-mutation object reference is insufficient for nested changes.
+        return JSON.parse(JSON.stringify(this.state));
+    }
+
+    _persistWithRollback(previousState) {
+        try {
+            this._persist();
+        } catch (error) {
+            this.state = previousState;
+            throw error;
+        }
     }
 
     _persist() {
@@ -1322,6 +1343,7 @@ class TrainingControlStore {
             archive_size_bytes: fs.statSync(destination).size,
             entrypoint,
         };
+        const previousState = this._snapshotState();
         const catalog = this._catalogForRole(role);
         if (!catalog[platform] ||
             typeof catalog[platform] !== 'object' ||
@@ -1344,7 +1366,7 @@ class TrainingControlStore {
             this.state.revision++;
         }
         const prunedArtifactPaths = this._pruneArtifactCatalog();
-        this._persist();
+        this._persistWithRollback(previousState);
         this._deletePrunedArtifacts(prunedArtifactPaths);
         return publicBuildDescriptor(record);
     }
