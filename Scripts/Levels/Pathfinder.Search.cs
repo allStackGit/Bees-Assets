@@ -695,15 +695,8 @@ namespace Assets.Scripts.Levels
                     RequestIds[threadIndex] = requestId;
                     LifecycleIds[threadIndex] = lifecycleId;
                     UpdateMap(threadIndex, ship);
-                    try
-                    {
-                        StartNodes[threadIndex] = GridNodes[threadIndex][startX][startY];
-                        EndNodes[threadIndex] = GridNodes[threadIndex][endX][endY];
-                    }
-                    catch
-                    {
-                        throw;
-                    }
+                    StartNodes[threadIndex] = GridNodes[threadIndex][startX][startY];
+                    EndNodes[threadIndex] = GridNodes[threadIndex][endX][endY];
                     Ships[threadIndex] = ship;
                     BTFindPath(threadIndex);
                     startedTask = true;
