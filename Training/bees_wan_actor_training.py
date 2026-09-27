@@ -47,6 +47,7 @@ WAN_PROTOCOL_VERSION = 1
 DEFAULT_BROKER_PORT = 55051
 DEFAULT_MIN_ACTORS = 1
 DEFAULT_MAX_QUEUED_BATCHES = 32
+DEFAULT_ACTOR_LEASE_SECONDS = 120.0
 MAX_COMPRESSED_PAYLOAD_BYTES = 512 * 1024 * 1024
 MAX_DECOMPRESSED_PAYLOAD_BYTES = 1024 * 1024 * 1024
 MIN_AUTH_TOKEN_CHARS = 32
@@ -351,6 +352,22 @@ class WanActorBroker:
         self._server: Optional[http.server.ThreadingHTTPServer] = None
         self._server_thread: Optional[threading.Thread] = None
 
+    def _active_actor_ids_locked(self, now: Optional[float] = None) -> Tuple[int, ...]:
+        current = time.monotonic() if now is None else now
+        return tuple(
+            sorted(
+                actor_id
+                for actor_id, record in self._registrations.items()
+                if current - float(record.get("last_seen", record.get("registered_at", current)))
+                <= DEFAULT_ACTOR_LEASE_SECONDS
+            )
+        )
+
+    def _touch_actor_locked(self, actor_id: int, now: Optional[float] = None) -> None:
+        record = self._registrations.get(actor_id)
+        if record is not None:
+            record["last_seen"] = time.monotonic() if now is None else now
+
     def _accepted_batch_count_locked(self, actor_id: int, batch_id: Optional[str]) -> Optional[int]:
         if not batch_id:
             return None
@@ -497,7 +514,13 @@ class WanActorBroker:
                         policy_epoch = int(query.get("policy_epoch", ["-1"])[0])
                         control_epoch = int(query.get("control_epoch", ["-1"])[0])
                         wait_seconds = min(30.0, max(0.0, float(query.get("wait", ["0"])[0])))
-                        state = broker.wait_state(policy_epoch, control_epoch, wait_seconds)
+                        actor_id = query.get("actor_id")
+                        state = broker.wait_state(
+                            policy_epoch,
+                            control_epoch,
+                            wait_seconds,
+                            actor_id=int(actor_id[0]) if actor_id else None,
+                        )
                         self._json(state)
                         return
                     if parsed.path == "/policy":
@@ -648,13 +671,14 @@ class WanActorBroker:
                 "behavior_specs": dict(behavior_specs),
                 "signatures": signatures,
                 "registered_at": time.monotonic(),
+                "last_seen": time.monotonic(),
             }
             self._condition.notify_all()
 
     def wait_for_minimum_registrations(self, timeout_seconds: float) -> None:
         deadline = time.monotonic() + timeout_seconds
         with self._condition:
-            while len(self._registrations) < self.options.min_actors and not self._closed:
+            while len(self._active_actor_ids_locked()) < self.options.min_actors and not self._closed:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     raise TimeoutError(
@@ -674,7 +698,7 @@ class WanActorBroker:
 
     def registered_actor_ids(self) -> Tuple[int, ...]:
         with self._condition:
-            return tuple(sorted(self._registrations))
+            return self._active_actor_ids_locked()
 
     def publish_policy(self, behavior_name: str, policy: Any) -> int:
         wire = dict(_policy_wire_payload(policy))
@@ -752,9 +776,17 @@ class WanActorBroker:
         with self._condition:
             return dict(self._control_record)
 
-    def wait_state(self, policy_epoch: int, control_epoch: int, wait_seconds: float) -> Mapping[str, Any]:
+    def wait_state(
+        self,
+        policy_epoch: int,
+        control_epoch: int,
+        wait_seconds: float,
+        actor_id: Optional[int] = None,
+    ) -> Mapping[str, Any]:
         deadline = time.monotonic() + wait_seconds
         with self._condition:
+            if actor_id is not None:
+                self._touch_actor_locked(self._validate_actor_id(actor_id))
             while (
                 not self._closed
                 and policy_epoch == self._policy_epoch
@@ -765,12 +797,14 @@ class WanActorBroker:
                 if remaining <= 0:
                     break
                 self._condition.wait(remaining)
+            if actor_id is not None:
+                self._touch_actor_locked(self._validate_actor_id(actor_id))
             return {
                 "session_id": self.session_id,
                 "policy_epoch": self._policy_epoch,
                 "control_epoch": self._control_epoch,
                 "policy_versions": self._policy_versions_locked(),
-                "registered_actors": sorted(self._registrations),
+                "registered_actors": list(self._active_actor_ids_locked()),
             }
 
     def acknowledge_reset(self, payload: Mapping[str, Any]) -> None:
@@ -806,7 +840,7 @@ class WanActorBroker:
     def submit_trajectory_batch(self, payload: Mapping[str, Any]) -> int:
         actor_id = self._validate_actor_id(payload.get("actor_id"))
         if actor_id not in self.registered_actor_ids():
-            raise ValueError("actor must register behavior specs before uploading trajectories")
+            raise ValueError("actor must have a live registration before uploading trajectories")
         batch_id = payload.get("batch_id")
         if batch_id is not None and (
             not isinstance(batch_id, str) or not batch_id or len(batch_id) > 64
@@ -818,6 +852,9 @@ class WanActorBroker:
                     f"trajectory control epoch {payload.get('control_epoch')!r} != {self._control_epoch}"
                 )
             self._validate_policy_versions(payload.get("policy_versions"))
+            if actor_id not in self._active_actor_ids_locked():
+                raise ValueError("actor registration lease expired before trajectory upload")
+            self._touch_actor_locked(actor_id)
             duplicate_count = self._accepted_batch_count_locked(actor_id, batch_id)
             if duplicate_count is not None:
                 return duplicate_count
@@ -903,7 +940,8 @@ class WanActorBroker:
         """
         deadline = time.monotonic() + timeout_seconds
         with self._condition:
-            required = min(self.options.min_actors, len(self._registrations))
+            live_count = len(self._active_actor_ids_locked())
+            required = min(self.options.min_actors, max(1, live_count))
             generation = (
                 self._control_epoch,
                 tuple(sorted(self._policy_versions_locked().items())),
@@ -917,9 +955,6 @@ class WanActorBroker:
                 self._cohort_blocked_actors.clear()
             selected: List[Mapping[str, Any]] = list(self._cohort_pending_batches)
             actors = {int(batch["actor_id"]) for batch in selected}
-        if required <= 0:
-            raise RuntimeError("WAN actor cohort requested before any actor registered")
-
         while len(actors) < required:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
@@ -932,6 +967,8 @@ class WanActorBroker:
             with self._condition:
                 if self._closed:
                     raise RuntimeError("WAN actor broker closed while waiting for trajectory cohort")
+                live_count = len(self._active_actor_ids_locked())
+                required = min(self.options.min_actors, max(1, live_count))
                 current_generation = (
                     self._control_epoch,
                     tuple(sorted(self._policy_versions_locked().items())),
@@ -945,11 +982,8 @@ class WanActorBroker:
                     self._cohort_blocked_actors.clear()
                     generation = current_generation
                     self._cohort_pending_generation = generation
-                    required = min(self.options.min_actors, len(self._registrations))
-                    if required <= 0:
-                        raise RuntimeError(
-                            "WAN actor cohort requested before any actor registered"
-                        )
+                    live_count = len(self._active_actor_ids_locked())
+                    required = min(self.options.min_actors, max(1, live_count))
 
                 try:
                     batch = self._trajectory_batches.get_nowait()
