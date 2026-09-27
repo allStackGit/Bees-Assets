@@ -1592,6 +1592,9 @@ class TrainingControlStore {
         } else if (current !== offset) {
             const error = Object.assign(new Error('trainer log offset mismatch'), { statusCode: 409 });
             error.expectedOffset = current;
+            error.expectedSha256 = current > 0 || fs.existsSync(destination)
+                ? sha256File(destination)
+                : crypto.createHash('sha256').digest('hex');
             throw error;
         }
         if (data.length > 0) {
@@ -1728,6 +1731,9 @@ function createTrainingControlHandler(store, token, adminToken = null) {
                 message: error.message,
             };
             if (Number.isInteger(error.expectedOffset)) body.expected_offset = error.expectedOffset;
+            if (typeof error.expectedSha256 === 'string') {
+                body.expected_sha256 = error.expectedSha256;
+            }
             sendJson(response, statusCode, body);
         }
     };
