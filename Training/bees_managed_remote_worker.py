@@ -672,7 +672,7 @@ class RuntimeUpdater:
 
     def _fetch_bootstrap(self) -> tuple[bytes, bytes, bytes, bytes, bytes]:
         maximum_attempts = 4
-        last_error: Optional[BaseException] = None
+        last_error: Optional[Exception] = None
         for attempt in range(1, maximum_attempts + 1):
             request = urllib.request.Request(
                 f"http://127.0.0.1:{self.args.bootstrap_port}/bootstrap",
@@ -695,7 +695,7 @@ class RuntimeUpdater:
                         bundle.read(bridge_name),
                         bundle.read("latest-training-release.json"),
                     )
-            except BaseException as exc:
+            except Exception as exc:
                 if not _is_transient_transport_error(exc) or attempt >= maximum_attempts:
                     raise
                 last_error = exc
