@@ -165,7 +165,17 @@ function statusError(record) {
     const current = String(record.last_error || record.preparation_error || '').trim();
     if (current) return current;
 
-    const throughput = record.metrics && record.metrics.throughput;
+    const ageLabel = ageSeconds => {
+        if (ageSeconds < 60) return Math.round(ageSeconds) + 's';
+        if (ageSeconds < 3600) return (ageSeconds / 60).toFixed(1) + 'm';
+        return (ageSeconds / 3600).toFixed(1) + 'h';
+    };
+    const historical = [];
+    const metrics = record.metrics && typeof record.metrics === 'object'
+        ? record.metrics
+        : {};
+
+    const throughput = metrics.throughput;
     if (throughput && typeof throughput === 'object') {
         const count = Number(throughput.session_failures_total);
         const ageSeconds = Number(throughput.seconds_since_last_session_failure);
@@ -177,11 +187,31 @@ function statusError(record) {
             ageSeconds >= 0 &&
             failureType
         ) {
-            let age;
-            if (ageSeconds < 60) age = Math.round(ageSeconds) + 's';
-            else if (ageSeconds < 3600) age = (ageSeconds / 60).toFixed(1) + 'm';
-            else age = (ageSeconds / 3600).toFixed(1) + 'h';
-            return 'WAN session x' + count + ', ' + age + ' ago: ' + failureType;
+            historical.push({
+                ageSeconds,
+                text: 'WAN session x' + count + ', ' + ageLabel(ageSeconds) +
+                    ' ago: ' + failureType,
+            });
+        }
+    }
+
+    const control = metrics.control;
+    if (control && typeof control === 'object') {
+        const count = Number(control.failures_total);
+        const ageSeconds = Number(control.seconds_since_last_failure);
+        const failureType = String(control.last_failure_type || '').trim();
+        if (
+            Number.isInteger(count) &&
+            count > 0 &&
+            Number.isFinite(ageSeconds) &&
+            ageSeconds >= 0 &&
+            failureType
+        ) {
+            historical.push({
+                ageSeconds,
+                text: 'Control x' + count + ', ' + ageLabel(ageSeconds) +
+                    ' ago: ' + failureType,
+            });
         }
     }
 
@@ -192,13 +222,14 @@ function statusError(record) {
     ).trim();
     if (Number.isFinite(instabilityMs) && instabilityMs >= 0 && instabilityReason) {
         const ageSeconds = Math.max(0, (Date.now() - instabilityMs) / 1000);
-        let age;
-        if (ageSeconds < 60) age = Math.round(ageSeconds) + 's';
-        else if (ageSeconds < 3600) age = (ageSeconds / 60).toFixed(1) + 'm';
-        else age = (ageSeconds / 3600).toFixed(1) + 'h';
-        return 'Optimizer, ' + age + ' ago: ' + instabilityReason;
+        historical.push({
+            ageSeconds,
+            text: 'Optimizer, ' + ageLabel(ageSeconds) + ' ago: ' + instabilityReason,
+        });
     }
-    return '';
+
+    historical.sort((left, right) => left.ageSeconds - right.ageSeconds);
+    return historical.length ? historical[0].text : '';
 }
 
 function table(rows, columns) {
