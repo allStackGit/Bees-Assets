@@ -14,6 +14,7 @@ These are cross-cutting rules future changes must preserve. Keep this file conci
 - Delayed/background work may mutate runtime state only after proving it still belongs to the current request and current pooled-object lifecycle.
 - Older path requests must not overwrite newer destinations/results.
 - Cancellation/teardown must not strand worker-slot ownership or let completed stale work publish later.
+- Orderly WAN actor shutdown drains queued rollout uploads for a bounded period and joins the uploader before releasing its exact process-owned lease; crashes or broker outages recover through lease expiry.
 - Deterministic evidence must not rely on unordered collection iteration or cosmetic/global random-state side effects.
 
 ## Maps, prefabs, scenes, and assets
