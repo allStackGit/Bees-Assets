@@ -188,6 +188,38 @@ class ElasticActorHealthTests(unittest.TestCase):
         self.assertIn("BrokerUnavailable", details["last_broker_error"])
 
 
+    def test_startup_health_heartbeat_refreshes_phase_until_ready(self):
+        with mock.patch.object(actor_worker, "write_managed_health") as health:
+            heartbeat = actor_worker._StartupHealthHeartbeat(
+                actor_id=3,
+                env_count=2,
+                interval_seconds=60.0,
+            )
+            heartbeat.start()
+            heartbeat.set_phase("starting-unity")
+            heartbeat.stop()
+
+        self.assertGreaterEqual(health.call_count, 2)
+        first = health.call_args_list[0]
+        latest = health.call_args_list[-1]
+        self.assertEqual(first.args[0], "starting")
+        self.assertEqual(first.kwargs["details"]["phase"], "starting-session")
+        self.assertEqual(latest.args[0], "starting")
+        self.assertEqual(latest.kwargs["details"]["phase"], "starting-unity")
+        self.assertEqual(latest.kwargs["details"]["actor_id"], 3)
+        self.assertEqual(latest.kwargs["details"]["env_count"], 2)
+
+    def test_actor_marks_broker_wait_as_ready_before_session_polling(self):
+        source = Path(actor_worker.__file__).read_text(encoding="utf-8")
+        wait = source.index("raw_session = worker._wait_for_broker")
+        ready = source.rindex(
+            '"phase": "waiting-for-central"',
+            0,
+            wait,
+        )
+        self.assertLess(ready, wait)
+
+
 class ElasticWorkerIdentityTests(unittest.TestCase):
     def setUp(self):
         self.options = elastic.ElasticWanOptions(max_actors=12, auth_token_file="token")
