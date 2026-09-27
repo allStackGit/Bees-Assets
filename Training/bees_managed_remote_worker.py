@@ -176,30 +176,39 @@ def _available_cpu_threads() -> int:
     return max(1, int(os.cpu_count() or 1))
 
 
-def _available_memory_bytes() -> Optional[int]:
-    if os.name == "nt":
-        class MemoryStatusEx(ctypes.Structure):
-            _fields_ = [
-                ("dwLength", ctypes.c_ulong),
-                ("dwMemoryLoad", ctypes.c_ulong),
-                ("ullTotalPhys", ctypes.c_ulonglong),
-                ("ullAvailPhys", ctypes.c_ulonglong),
-                ("ullTotalPageFile", ctypes.c_ulonglong),
-                ("ullAvailPageFile", ctypes.c_ulonglong),
-                ("ullTotalVirtual", ctypes.c_ulonglong),
-                ("ullAvailVirtual", ctypes.c_ulonglong),
-                ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
-            ]
+class _MemoryStatusEx(ctypes.Structure):
+    _fields_ = [
+        ("dwLength", ctypes.c_ulong),
+        ("dwMemoryLoad", ctypes.c_ulong),
+        ("ullTotalPhys", ctypes.c_ulonglong),
+        ("ullAvailPhys", ctypes.c_ulonglong),
+        ("ullTotalPageFile", ctypes.c_ulonglong),
+        ("ullAvailPageFile", ctypes.c_ulonglong),
+        ("ullTotalVirtual", ctypes.c_ulonglong),
+        ("ullAvailVirtual", ctypes.c_ulonglong),
+        ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
+    ]
 
-        try:
-            status = MemoryStatusEx()
-            status.dwLength = ctypes.sizeof(status)
-            if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
-                available = int(status.ullAvailPhys)
-                if available > 0:
-                    return available
-        except (AttributeError, OSError, ValueError):
-            pass
+
+def _windows_memory_status() -> Optional[_MemoryStatusEx]:
+    if os.name != "nt":
+        return None
+    try:
+        status = _MemoryStatusEx()
+        status.dwLength = ctypes.sizeof(status)
+        if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
+            return status
+    except (AttributeError, OSError, ValueError):
+        pass
+    return None
+
+
+def _available_memory_bytes() -> Optional[int]:
+    status = _windows_memory_status()
+    if status is not None:
+        available = int(status.ullAvailPhys)
+        if available > 0:
+            return available
 
     meminfo = Path("/proc/meminfo")
     if meminfo.is_file():
@@ -223,12 +232,50 @@ def _available_memory_bytes() -> Optional[int]:
         return None
 
 
-def _memory_env_limit() -> int:
-    available = _available_memory_bytes()
-    if available is None:
+def _total_memory_bytes() -> Optional[int]:
+    status = _windows_memory_status()
+    if status is not None:
+        total = int(status.ullTotalPhys)
+        if total > 0:
+            return total
+
+    meminfo = Path("/proc/meminfo")
+    if meminfo.is_file():
+        try:
+            for line in meminfo.read_text(encoding="ascii").splitlines():
+                if line.startswith("MemTotal:"):
+                    parts = line.split()
+                    if len(parts) >= 2:
+                        total = int(parts[1]) * 1024
+                        if total > 0:
+                            return total
+        except (OSError, UnicodeError, ValueError):
+            pass
+
+    try:
+        pages = int(os.sysconf("SC_PHYS_PAGES"))
+        page_size = int(os.sysconf("SC_PAGE_SIZE"))
+        total = pages * page_size
+        return total if total > 0 else None
+    except (AttributeError, OSError, TypeError, ValueError):
+        return None
+
+
+def _memory_limit_for_bytes(memory_bytes: Optional[int]) -> int:
+    if memory_bytes is None:
         return MAX_ENVS_PER_ACTOR
-    usable = max(0, available - REMOTE_MEMORY_RESERVE_BYTES)
+    usable = max(0, memory_bytes - REMOTE_MEMORY_RESERVE_BYTES)
     return max(1, min(MAX_ENVS_PER_ACTOR, usable // REMOTE_MEMORY_PER_ENV_BYTES))
+
+
+def _memory_env_limit() -> int:
+    """Safe initial environment count based on memory that is free right now."""
+    return _memory_limit_for_bytes(_available_memory_bytes())
+
+
+def _memory_env_capacity_limit() -> int:
+    """Stable auto-tuning ceiling based on installed physical memory."""
+    return _memory_limit_for_bytes(_total_memory_bytes())
 
 
 def _default_envs() -> int:
@@ -1248,14 +1295,18 @@ def _worker_command(args: argparse.Namespace, root: Path, actor_key: str) -> lis
 def main(argv: Optional[Sequence[str]] = None) -> int:
     raw_argv = list(sys.argv[1:] if argv is None else argv)
     args = _parser().parse_args(raw_argv)
-    memory_cap = _memory_env_limit()
+    memory_start_cap = _memory_env_limit()
+    memory_capacity_cap = _memory_env_capacity_limit()
     if args.envs is None:
         args.auto_envs = True
         requested_max = MAX_ENVS_PER_ACTOR if args.max_envs is None else args.max_envs
         if not 1 <= args.min_envs <= requested_max <= MAX_ENVS_PER_ACTOR:
             print("error: automatic env bounds must satisfy 1 <= min <= max <= 64", file=sys.stderr)
             return 2
-        args.max_envs = min(requested_max, memory_cap)
+        # Free RAM is intentionally only a startup throttle. The advertised ceiling must
+        # reflect stable machine capacity so a transient low-memory moment cannot pin the
+        # server optimizer to one environment for the lifetime of this supervisor.
+        args.max_envs = min(requested_max, memory_capacity_cap)
         if args.min_envs > args.max_envs:
             print(
                 f"error: --min-envs={args.min_envs} exceeds the RAM-derived cap "
@@ -1267,7 +1318,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print(
             f"[Bees remote] --envs omitted; auto optimizer enabled at {args.envs} envs "
             f"(range={args.min_envs}-{args.max_envs} cpu_start={4 * _available_cpu_threads()} "
-            f"memory_cap={memory_cap} hard_cap={MAX_ENVS_PER_ACTOR})."
+            f"memory_start_cap={memory_start_cap} memory_capacity_cap={memory_capacity_cap} "
+            f"hard_cap={MAX_ENVS_PER_ACTOR})."
         )
     else:
         args.auto_envs = False
