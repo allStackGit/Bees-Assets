@@ -105,6 +105,92 @@ def _normalized_competency_contract(cases: Sequence[CompetencyCase]) -> Dict[str
     return {"schema_version": 1, "cases": normalized}
 
 
+def _refresh_bootstrap_competency_match_counts(
+    store: ContinualLearningStore,
+    existing: Mapping[str, Any],
+) -> Dict[str, Any]:
+    """Apply an explicit source-controlled match-count revision to an auto-pinned suite.
+
+    Only the match count may differ. Opponent identity, metric, threshold, criticality, and
+    environment args must still match the bootstrap template, so an independently curated
+    permanent suite is never silently rewritten.
+    """
+    promotion = store.config["promotion"]
+    templates = promotion.get("bootstrap_competency_cases")
+    cases = existing.get("cases") if isinstance(existing, Mapping) else None
+    if not isinstance(templates, list) or not isinstance(cases, list):
+        return dict(existing)
+
+    existing_by_name = {
+        str(case.get("name")): case
+        for case in cases
+        if isinstance(case, Mapping) and isinstance(case.get("name"), str)
+    }
+    template_names = [
+        str(template.get("name"))
+        for template in templates
+        if isinstance(template, Mapping) and isinstance(template.get("name"), str)
+    ]
+    if (
+        len(existing_by_name) != len(cases)
+        or len(template_names) != len(templates)
+        or set(existing_by_name) != set(template_names)
+    ):
+        return dict(existing)
+
+    revised_cases: List[Dict[str, Any]] = []
+    changed = False
+    for template in templates:
+        if not isinstance(template, Mapping) or "matches" not in template:
+            return dict(existing)
+        name = str(template["name"])
+        current = dict(existing_by_name[name])
+        desired_matches = template["matches"]
+        if (
+            not isinstance(desired_matches, int)
+            or isinstance(desired_matches, bool)
+            or desired_matches <= 0
+        ):
+            raise ReleaseError(
+                f"promotion.bootstrap_competency_cases[{name!r}].matches must be positive."
+            )
+
+        expected_minimum = float(
+            template.get("minimum", promotion["min_win_rate_vs_champion"])
+        )
+        expected_metric = template.get("metric", "score_rate")
+        expected_critical = template.get("critical", True)
+        expected_env_args = template.get("env_args", [])
+        if (
+            float(current.get("minimum", -1.0)) != expected_minimum
+            or current.get("metric") != expected_metric
+            or current.get("critical") != expected_critical
+            or current.get("env_args") != expected_env_args
+        ):
+            return dict(existing)
+
+        if current.get("matches") != desired_matches:
+            current["matches"] = desired_matches
+            changed = True
+        revised_cases.append(current)
+
+    if not changed:
+        return dict(existing)
+
+    store.pin_competency_suite(
+        {"schema_version": 1, "cases": revised_cases},
+        replace=True,
+    )
+    refreshed = store.permanent_competency_suite()
+    if refreshed is None:
+        raise ReleaseError("Revised permanent competency suite did not persist.")
+    print(
+        "[Bees continual release] revised auto-pinned competency match counts from "
+        "source-controlled bootstrap policy."
+    )
+    return refreshed
+
+
 def _bootstrap_competency_contract(
     store: ContinualLearningStore,
     baseline_model_id: str,
@@ -116,7 +202,7 @@ def _bootstrap_competency_contract(
 
     existing = store.permanent_competency_suite()
     if existing is not None:
-        return existing
+        return _refresh_bootstrap_competency_match_counts(store, existing)
 
     templates = promotion.get("bootstrap_competency_cases")
     if not isinstance(templates, list) or len(templates) < minimum_cases:
