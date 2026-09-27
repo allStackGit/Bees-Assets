@@ -465,7 +465,7 @@ internal sealed class RlOneVsOneTrainingRuntimeGuard : MonoBehaviour
             return;
         }
 
-        _stage.Camera.orthographicSize = RlOneVsOneTrainingBootstrap.CurrentCameraSize;
+        _stage.Camera.orthographicSize = RlOneVsOneArenaMapSizeState.GetMapSize(_stage.PrimaryLevel) / 2f;
         _stage.Camera.transform.position = new Vector3(0f, 0f, -10f);
         _cameraInitialized = true;
     }
