@@ -195,6 +195,8 @@ namespace Assets.Scripts.Entities.Ships
                 gameObject.name = Name;
             }
             ClearData();
+            MatchSession matchSession = Level.Stage.MatchSession;
+            MatchShipId = matchSession == null ? 0 : matchSession.AllocateMatchShipId();
             IsPlayerControlled = squad.IsPlayerControlled;
             IsUserControlled = squad.IsUserControlled;
             IsHiveMindControlled = Stage.IsTrainingNueralNetwork || !IsPlayerControlled;
@@ -233,6 +235,7 @@ namespace Assets.Scripts.Entities.Ships
 
         public virtual void ClearData()
         {
+            MatchShipId = 0;
             Rotation = OriginalRotation;
             Tsv = OriginalTsv;
             Transform.eulerAngles = new Vector3(0, 0, OriginalRotation);

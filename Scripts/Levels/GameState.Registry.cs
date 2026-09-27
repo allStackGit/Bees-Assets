@@ -44,6 +44,15 @@ namespace Assets.Scripts.Levels
                 ShipsBySide[sideIndex].Add(ship);
             }
             ShipsById.Add(ship.Id, ship);
+            if (ship.MatchShipId > 0)
+            {
+                if (ShipsByMatchId.ContainsKey(ship.MatchShipId))
+                {
+                    throw new System.InvalidOperationException(
+                        $"Duplicate match ship id #{ship.MatchShipId} in level #{MatchLevelId}.");
+                }
+                ShipsByMatchId.Add(ship.MatchShipId, ship);
+            }
             global::RlOneVsOneEpisodeDiagnostics.TrackShip(ship);
             if (ship.IsHiveMindControlled)
             {
@@ -180,6 +189,10 @@ namespace Assets.Scripts.Levels
             }
             MiningShips.Remove(ship);
             ShipsById.Remove(ship.Id);
+            if (ship.MatchShipId > 0)
+            {
+                ShipsByMatchId.Remove(ship.MatchShipId);
+            }
             if (!ShipsToRelease.Contains(ship))
             {
                 ShipsToRelease.Add(ship);

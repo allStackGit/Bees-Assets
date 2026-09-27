@@ -22,6 +22,7 @@ namespace Assets.Scripts.Levels
         };
         public List<Ship> ShipsToRelease = new List<Ship>();
         public Dictionary<long, Ship> ShipsById = new Dictionary<long, Ship>();
+        public Dictionary<long, Ship> ShipsByMatchId = new Dictionary<long, Ship>();
         public List<Squad> Squads = new List<Squad>();
         public List<Squad> SquadsToRelease = new List<Squad>();
         public Queue<Squad> SquadsAwaitingCommands = new Queue<Squad>();
@@ -204,6 +205,7 @@ namespace Assets.Scripts.Levels
                 ShipsBySide[side].Clear();
             }
             ShipsById.Clear();
+            ShipsByMatchId.Clear();
             Squads.Clear();
             ClearSquadsAwaitingHiveMindCommands();
             ClearQueuedPlayerCommands();
@@ -533,6 +535,7 @@ namespace Assets.Scripts.Levels
         private readonly List<MatchPeer> _peers = new List<MatchPeer>();
         private readonly List<MatchPlayer> _players = new List<MatchPlayer>();
         private long _nextMatchSquadId = 1;
+        private long _nextMatchShipId = 1;
         private readonly Dictionary<int, long> _nextPlayerCommandSequences = new Dictionary<int, long>();
         private readonly Dictionary<int, long> _lastAcceptedPlayerCommandSequences = new Dictionary<int, long>();
         private readonly Queue<(int MatchLevelId, PlayerCommandEnvelope Command)> _outgoingPlayerCommands =
@@ -1713,6 +1716,11 @@ namespace Assets.Scripts.Levels
         public long AllocateMatchSquadId()
         {
             return _nextMatchSquadId++;
+        }
+
+        public long AllocateMatchShipId()
+        {
+            return _nextMatchShipId++;
         }
 
         public int GetPlayerSide(int playerId)

@@ -11,6 +11,12 @@ namespace Assets.Scripts.Entities.Ships
 {
     public partial class Ship : Entity
     {
+        /// <summary>
+        /// Match-scoped runtime identity used by authoritative battle-state synchronization.
+        /// Zero means this ship is running without a MatchSession. This is distinct from
+        /// pooled runtime Id and persistent/transient FleetShip.Id.
+        /// </summary>
+        public long MatchShipId;
         public int Health, MaxHealth, OriginalHealth, OriginalTsv, Sight, Clearance, MaxRange, HalfMaxRange;
         public float SizeClass, ProjectileValue, Speed, SpecialFirePower, CurrentSpeed, LongestSide;
         public GameObject ShipExplosion, HealthBar, MiniMapIcon, ShipAnimation, MovementMarker;

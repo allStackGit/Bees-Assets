@@ -97,3 +97,5 @@ These are cross-cutting rules future changes must preserve. Keep this file conci
 
 - Canonical online Free Play level configuration is synchronized before battle and expressed in physical Bee/Human terms, not one machine's User/AI perspective. Stage remaps start positions per local perspective and forces `ChooseRandomLevel=false` so peers do not make a second independent level choice. Player, AI-initial, and AI-reinforcement squad roles are explicit; host-only persistent enemy squad IDs are resolved to transient compositions before wire serialization.
 - Malformed canonical lobby level options fail at packet/session validation before Stage setup: map index, environment option ranges, generated squad count, text lengths, obstacle count, finite coordinates, and positive obstacle scales are bounded.
+
+- `Ship.MatchShipId` is the match-scoped runtime identity for battle-state synchronization. It is independent of pooled `Ship.Id` and persistent/transient `FleetShip.Id`, is freshly allocated for each ship lifetime while a `MatchSession` exists, is indexed separately by `GameState`, and resets to zero on pooled cleanup.

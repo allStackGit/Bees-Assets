@@ -1905,5 +1905,54 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains("squad.OwnerPlayerId == UnownedPlayerId", source);
             StringAssert.Contains("string.IsNullOrEmpty(squad.OwnershipToken)", source);
         }
+
+        [Test]
+        public void MatchShipIdsAreUniqueWithinSession()
+        {
+            Type sessionType = RuntimeAssembly.GetType("Assets.Scripts.Levels.MatchSession");
+            object session = Activator.CreateInstance(sessionType);
+
+            Assert.That(RuntimeAssembly.Invoke(session, "AllocateMatchShipId"), Is.EqualTo(1L));
+            Assert.That(RuntimeAssembly.Invoke(session, "AllocateMatchShipId"), Is.EqualTo(2L));
+            Assert.That(RuntimeAssembly.Invoke(session, "AllocateMatchShipId"), Is.EqualTo(3L));
+        }
+
+        [Test]
+        public void MatchShipIdentityResetsAndAllocatesAfterPooledClear()
+        {
+            string path = Path.Combine(
+                Application.dataPath,
+                "Scripts",
+                "Entities",
+                "Ships",
+                "Ship.Lifecycle.cs");
+            string source = File.ReadAllText(path);
+
+            StringAssert.Contains("MatchShipId = 0;", source);
+            int clearIndex = source.IndexOf("ClearData();");
+            int allocateIndex = source.IndexOf(
+                "MatchShipId = matchSession == null ? 0 : matchSession.AllocateMatchShipId();");
+            Assert.That(clearIndex, Is.GreaterThanOrEqualTo(0));
+            Assert.That(allocateIndex, Is.GreaterThan(clearIndex));
+        }
+
+        [Test]
+        public void GameStateMaintainsSeparateMatchShipRegistry()
+        {
+            string statePath = Path.Combine(Application.dataPath, "Scripts", "Levels", "GameState.cs");
+            string registryPath = Path.Combine(
+                Application.dataPath,
+                "Scripts",
+                "Levels",
+                "GameState.Registry.cs");
+            string stateSource = File.ReadAllText(statePath);
+            string registrySource = File.ReadAllText(registryPath);
+
+            StringAssert.Contains("Dictionary<long, Ship> ShipsByMatchId", stateSource);
+            StringAssert.Contains("ShipsByMatchId.Clear();", stateSource);
+            StringAssert.Contains("ShipsByMatchId.Add(ship.MatchShipId, ship);", registrySource);
+            StringAssert.Contains("ShipsByMatchId.Remove(ship.MatchShipId);", registrySource);
+            StringAssert.Contains("Duplicate match ship id", registrySource);
+        }
     }
 }
