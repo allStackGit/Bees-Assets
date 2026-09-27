@@ -205,6 +205,22 @@ namespace Bees.Tests.EditMode
             Assert.That(source, Does.Contain("_pendingFinalization.Add(existing)"));
         }
 
+        [Test]
+        public void TelemetryUploaderPreservesPendingFilesOnReadFailure()
+        {
+            string source = System.IO.File.ReadAllText(System.IO.Path.Combine(
+                UnityEngine.Application.dataPath, "Scripts", "Scenes", "RlLiveTelemetryUploader.cs"));
+            int readStart = source.IndexOf("bytes = File.ReadAllBytes(path)", StringComparison.Ordinal);
+            int readEnd = source.IndexOf("if (bytes.Length", readStart, StringComparison.Ordinal);
+            Assert.That(readStart, Is.GreaterThanOrEqualTo(0));
+            Assert.That(readEnd, Is.GreaterThan(readStart));
+
+            string readFailurePath = source.Substring(readStart, readEnd - readStart);
+            Assert.That(readFailurePath, Does.Contain("yield break;"));
+            Assert.That(readFailurePath, Does.Not.Contain("QuarantineLocalInvalid"));
+            Assert.That(source, Does.Contain("QuarantineLocalInvalid(path, \"payload-contract\")"));
+        }
+
         private static T GetStatic<T>(Type type, string name)
         {
             FieldInfo field = type.GetField(name, StaticFlags);
