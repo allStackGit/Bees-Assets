@@ -18,11 +18,13 @@ public class DialogueManager : MonoBehaviour
     private const float ContinuePromptFontSize = 11f;
     private const string ProtectedSamuelOrdersLine = "What are your orders- oh";
 
+    // Compound ship types must come before names they contain; normalization uses string replacement.
     private static readonly string[] ShipTypeNames =
     {
-        "Barge", "Beacon", "Carrier", "Cruiser", "Dreadnought", "Drone", "Factory", "Fire Barge",
-        "Flagship", "Frigate", "Gunship", "Scout", "Striker", "Warp Gate", "Beehive", "Bumblebee",
-        "Carpenter Bee", "Honeybee", "Hornet", "Leafcutter", "Queen", "Wasp", "Yellow Jacket"
+        "Fire Barge", "Carpenter Bee", "Yellow Jacket", "Warp Gate",
+        "Barge", "Beacon", "Carrier", "Cruiser", "Dreadnought", "Drone", "Factory",
+        "Flagship", "Frigate", "Gunship", "Scout", "Striker", "Beehive", "Bumblebee",
+        "Honeybee", "Hornet", "Leafcutter", "Queen", "Wasp"
     };
 
     public CutsceneManager CutsceneManager;
