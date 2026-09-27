@@ -831,3 +831,32 @@ class CapacityDiagnosticTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ElasticWanUnityArgumentTests(unittest.TestCase):
+    def test_wan_options_after_env_args_are_preserved_for_unity(self):
+        argv = [
+            "config.yaml",
+            "--bees-wan-actors=2",
+            "--bees-wan-auth-token-file=token",
+            "--env-args",
+            "--bees-wan-min-actors=1",
+        ]
+
+        cleaned, options = elastic.extract_elastic_wan_options(argv)
+
+        self.assertEqual(cleaned, [
+            "config.yaml",
+            "--env-args",
+            "--bees-wan-min-actors=1",
+        ])
+        self.assertEqual(options.min_actors, elastic.DEFAULT_MIN_REMOTE_ACTORS)
+
+    def test_env_args_equals_form_is_rejected(self):
+        with self.assertRaisesRegex(SystemExit, "Use --env-args as a separate token"):
+            elastic.extract_elastic_wan_options([
+                "config.yaml",
+                "--bees-wan-actors=2",
+                "--bees-wan-auth-token-file=token",
+                "--env-args=--bees-wan-min-actors=1",
+            ])
