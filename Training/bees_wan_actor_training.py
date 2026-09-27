@@ -874,6 +874,7 @@ class WanActorBroker:
                 raise queue.Full
             self._trajectory_batches.put_nowait(item)
             self._remember_accepted_batch_locked(actor_id, batch_id, len(trajectories))
+            self._condition.notify()
         return len(trajectories)
 
     def _batch_is_current(self, batch: Mapping[str, Any]) -> bool:
@@ -897,8 +898,8 @@ class WanActorBroker:
         """Return current-policy batches from at least min_actors distinct actor machines.
 
         Actors already selected for a cohort receive HTTP backpressure until the learner consumes the
-        cohort. This prevents one low-latency machine from filling the entire central queue while the
-        configured minimum set of remote machines is still producing its first batch.
+        cohort. Queue removal and actor blocking share the broker condition with admission, so an
+        actor cannot enqueue a second batch in the gap between dequeue and cohort selection.
         """
         deadline = time.monotonic() + timeout_seconds
         with self._condition:
@@ -918,6 +919,7 @@ class WanActorBroker:
             actors = {int(batch["actor_id"]) for batch in selected}
         if required <= 0:
             raise RuntimeError("WAN actor cohort requested before any actor registered")
+
         while len(actors) < required:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
@@ -926,14 +928,10 @@ class WanActorBroker:
                 raise TimeoutError(
                     f"WAN actor cohort timed out with {len(actors)}/{required} distinct actors."
                 )
-            try:
-                batch = self._trajectory_batches.get(timeout=remaining)
-            except queue.Empty as exc:
-                raise TimeoutError(
-                    f"WAN actor cohort timed out with {len(actors)}/{required} distinct actors."
-                ) from exc
 
             with self._condition:
+                if self._closed:
+                    raise RuntimeError("WAN actor broker closed while waiting for trajectory cohort")
                 current_generation = (
                     self._control_epoch,
                     tuple(sorted(self._policy_versions_locked().items())),
@@ -948,24 +946,30 @@ class WanActorBroker:
                     generation = current_generation
                     self._cohort_pending_generation = generation
                     required = min(self.options.min_actors, len(self._registrations))
+                    if required <= 0:
+                        raise RuntimeError(
+                            "WAN actor cohort requested before any actor registered"
+                        )
+
+                try:
+                    batch = self._trajectory_batches.get_nowait()
+                except queue.Empty:
+                    self._condition.wait(timeout=remaining)
+                    continue
+
                 if not self._batch_is_current(batch):
                     continue
 
                 actor_id = int(batch["actor_id"])
-                # Do not discard a batch already in flight when an actor is selected.
-                # Admission normally limits each actor to one queued batch, but retaining a
-                # duplicate here protects trajectories accepted by a request racing that limit.
                 selected.append(batch)
                 self._cohort_pending_batches.append(batch)
-                if actor_id not in actors:
-                    actors.add(actor_id)
-                    self._cohort_blocked_actors.add(actor_id)
+                actors.add(actor_id)
+                self._cohort_blocked_actors.add(actor_id)
                 if len(actors) >= required:
                     self._cohort_pending_batches.clear()
                     return tuple(selected)
 
         return tuple(selected)
-
 
 class StaleActorStateError(RuntimeError):
     pass
