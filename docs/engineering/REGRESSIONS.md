@@ -242,3 +242,12 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** the patch now constructs the full line from the route outcome and assigns it with `Set`, making repeated application idempotent. `CampaignDialogueDocumentSyncTests` now protects against mutation-by-append.  
 **Verification:** regression coverage was added but not executed, per the static-only audit constraint.  
 **Invariant/knowledge:** presentation-time overrides can run repeatedly; shared dialogue lines must be reset to deterministic content on each application.
+
+
+### REG-026 — Campaign dialogue guard retained managers after scene unload
+**Area:** `Scripts/CampaignDialogueOverrides.cs`, persistent `CampaignDialogueOverrideGuard`  \
+**Symptom:** every campaign scene's `CutsceneManager` remained rooted by the guard's process-lifetime dictionary after its Unity scene unloaded, retaining managed wrappers and their referenced dialogue data across scene transitions.  \
+**Root cause:** `_appliedMarkers` tracked managers to detect rebuilt dialogue lists, but never removed keys whose Unity objects had been destroyed.  \
+**Permanent protection:** the guard now prunes destroyed managers every frame using Unity's destroyed-object null semantics before campaign-mode filtering, so cleanup also runs after leaving the campaign.  \
+**Verification:** source-level lifecycle trace confirmed scene managers are added per scene and the override guard is installed with `DontDestroyOnLoad`; fix was inspected after commit. No tests or runtime checks were run, per the static-only audit constraint.  \
+**Invariant/knowledge:** persistent Unity services that key collections by scene objects must prune destroyed wrappers even when the active mode changes.
