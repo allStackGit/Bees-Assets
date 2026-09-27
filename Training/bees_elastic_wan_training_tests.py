@@ -69,6 +69,20 @@ class ElasticWanOptionTests(unittest.TestCase):
             )
 
 
+class ElasticActorHealthTests(unittest.TestCase):
+    def test_broker_absence_is_healthy_wait_not_child_error(self):
+        exc = actor_worker.worker.BrokerUnavailable("central release phase")
+        with mock.patch.object(actor_worker, "write_managed_health") as health:
+            actor_worker._write_waiting_for_central_health(exc)
+
+        health.assert_called_once()
+        state = health.call_args.args[0]
+        details = health.call_args.kwargs["details"]
+        self.assertEqual(state, "ready")
+        self.assertEqual(details["phase"], "waiting-for-central")
+        self.assertIn("BrokerUnavailable", details["last_broker_error"])
+
+
 class ElasticWorkerIdentityTests(unittest.TestCase):
     def setUp(self):
         self.options = elastic.ElasticWanOptions(max_actors=12, auth_token_file="token")
