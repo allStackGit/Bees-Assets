@@ -402,6 +402,17 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         self.assertLess(spawn, active)
         self.assertIn("argv_transport: 'node-spawn-array-v1'", block)
 
+    def test_episode_status_sidecar_records_every_episode_with_bounded_storage(self):
+        source = (ROOT / "Scripts" / "Scenes" / "RlOneVsOneEpisodeCoordinator.cs").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("private const int EpisodeMetricsLogInterval = 1;", source)
+        self.assertIn("TrainingDiagnosticMaxBytes = 8L * 1024L * 1024L", source)
+        self.assertIn(
+            "_completedEpisodes % EpisodeMetricsLogInterval == 0",
+            source,
+        )
+
     def test_status_preserves_remote_network_traffic_columns(self):
         source = read_operator("status.js")
         self.assertIn("network_sent_bytes_total", source)
