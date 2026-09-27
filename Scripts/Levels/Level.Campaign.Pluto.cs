@@ -450,7 +450,7 @@ namespace Assets.Scripts.Levels
 
                         highlightTooltipObject = Instantiate(Stage.Menus.HighlightTooltipPrefab, Map.transform);
                         highlightTooltipObject.SetActive(true);
-                        highlightTooltipObject.transform.position = scoutSquad.GetPosition();
+                        highlightTooltipObject.transform.localPosition = scoutSquad.GetPosition();
                         highlightTooltipObject.transform.localScale = new Vector2(scoutSquad.GetWidth() + 2, scoutSquad.GetHeight() + 2);
                     }
 
@@ -473,7 +473,7 @@ namespace Assets.Scripts.Levels
                                     highlightTooltipObject = Instantiate(
                                         Stage.Menus.HighlightTooltipPrefab,
                                         Map.transform);
-                                    highlightTooltipObject.transform.position = scoutSquad.GetPosition();
+                                    highlightTooltipObject.transform.localPosition = scoutSquad.GetPosition();
                                     highlightTooltipObject.transform.localScale = new Vector2(
                                         scoutSquad.GetWidth() + 2,
                                         scoutSquad.GetHeight() + 2);
