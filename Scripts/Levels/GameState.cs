@@ -384,6 +384,49 @@ namespace Assets.Scripts.Levels
         }
     }
 
+    public enum MatchLobbySquadRole
+    {
+        Player = 1,
+        AiInitial = 2,
+        AiReinforcement = 3
+    }
+
+    [Serializable]
+    public sealed class MatchLobbyObstacleSnapshot
+    {
+        public float PositionX;
+        public float PositionY;
+        public float ScaleX;
+        public float ScaleY;
+    }
+
+    [Serializable]
+    public sealed class MatchLobbyLevelSnapshot
+    {
+        public int Id;
+        public int Side;
+        public string Name;
+        public int MapIndex;
+        public string Obstacles;
+        public int AsteroidOption;
+        public int FogOfWar;
+        public int Mining;
+        public bool HasPreLevelIntro;
+        public bool HasSquadActionBox;
+        public int SupplyCapacity;
+        public int EnemyReinforcementsOption;
+        public int EnemyReinforcementDelay;
+        public int EnemyShipTypeOption;
+        public int EnemySquadGenerationCount;
+        public string EnemyReport;
+        public float BeeStartingX;
+        public float BeeStartingY;
+        public float HumanStartingX;
+        public float HumanStartingY;
+        public List<MatchLobbyObstacleSnapshot> ObstacleList =
+            new List<MatchLobbyObstacleSnapshot>();
+    }
+
     [Serializable]
     public sealed class MatchLobbyPeerSnapshot
     {
@@ -434,6 +477,7 @@ namespace Assets.Scripts.Levels
     public sealed class MatchLobbySquadSnapshot
     {
         public string OwnershipToken;
+        public int Role = (int)MatchLobbySquadRole.Player;
         public int OwnerPlayerId;
         public long TransientSquadId;
         public int Side;
@@ -459,6 +503,7 @@ namespace Assets.Scripts.Levels
         public string MatchId;
         public int SetupSeed;
         public int AuthorityPeerId;
+        public MatchLobbyLevelSnapshot Level;
         public List<MatchLobbyPeerSnapshot> Peers = new List<MatchLobbyPeerSnapshot>();
         public List<MatchLobbyPlayerSnapshot> Players = new List<MatchLobbyPlayerSnapshot>();
         public List<int> BeeRandomShipTypes = new List<int>();
@@ -480,6 +525,8 @@ namespace Assets.Scripts.Levels
         public const int MaxLobbySquads = 64;
         public const int MaxLobbyShipsPerSquad = 32;
         public const int MaxLobbyNameLength = 128;
+        public const int MaxLobbyReportLength = 4096;
+        public const int MaxLobbyObstacles = 256;
         public const int MaxTransportIdentityLength = 256;
         private const int LegacyRemotePeerIdOffset = 1000000;
 
@@ -502,6 +549,9 @@ namespace Assets.Scripts.Levels
             new List<ConfigData.ShipTypes>();
         private readonly List<ConfigData.ShipTypes> _humanRandomShipTypes =
             new List<ConfigData.ShipTypes>();
+        private MatchLobbyLevelSnapshot _levelSnapshot;
+        private readonly List<SavedSquad> _aiInitialSquads = new List<SavedSquad>();
+        private readonly List<SavedSquad> _aiReinforcementSquads = new List<SavedSquad>();
 
         public IReadOnlyList<MatchPeer> Peers => _peers;
         public IReadOnlyList<MatchPlayer> Players => _players;
@@ -625,6 +675,11 @@ namespace Assets.Scripts.Levels
                 return false;
             }
 
+            if (snapshot.Level != null && !IsValidLobbyLevelSnapshot(snapshot.Level))
+            {
+                return false;
+            }
+
             if (snapshot.Squads == null || snapshot.Squads.Count > MaxLobbySquads)
             {
                 return false;
@@ -641,9 +696,8 @@ namespace Assets.Scripts.Levels
                     !Guid.TryParseExact(squad.OwnershipToken, "N", out Guid ownershipToken) ||
                     ownershipToken == Guid.Empty ||
                     !ownershipTokens.Add(ownershipToken) ||
-                    squad.OwnerPlayerId <= UnownedPlayerId ||
-                    !playerSides.TryGetValue(squad.OwnerPlayerId, out int ownerSide) ||
-                    ownerSide != squad.Side ||
+                    !Enum.IsDefined(typeof(MatchLobbySquadRole), squad.Role) ||
+                    !IsValidLobbySquadOwner(squad, playerSides) ||
                     squad.TransientSquadId >= 0 ||
                     !transientSquadIds.Add(squad.TransientSquadId) ||
                     string.IsNullOrEmpty(squad.Name) ||
@@ -683,6 +737,60 @@ namespace Assets.Scripts.Levels
                     {
                         return false;
                     }
+                }
+            }
+
+            return true;
+        }
+
+        private static bool IsValidLobbySquadOwner(
+            MatchLobbySquadSnapshot squad,
+            Dictionary<int, int> playerSides)
+        {
+            MatchLobbySquadRole role = (MatchLobbySquadRole)squad.Role;
+            if (role == MatchLobbySquadRole.Player)
+            {
+                return squad.OwnerPlayerId > UnownedPlayerId &&
+                       !string.IsNullOrWhiteSpace(squad.OwnershipToken) &&
+                       Guid.TryParseExact(squad.OwnershipToken, "N", out Guid token) &&
+                       token != Guid.Empty &&
+                       playerSides.TryGetValue(squad.OwnerPlayerId, out int ownerSide) &&
+                       ownerSide == squad.Side;
+            }
+
+            return squad.OwnerPlayerId == UnownedPlayerId &&
+                   string.IsNullOrEmpty(squad.OwnershipToken);
+        }
+
+        private static bool IsValidLobbyLevelSnapshot(MatchLobbyLevelSnapshot level)
+        {
+            if (level == null ||
+                string.IsNullOrEmpty(level.Name) ||
+                level.Name.Length > MaxLobbyNameLength ||
+                level.Obstacles == null ||
+                level.Obstacles.Length > MaxLobbyNameLength ||
+                level.EnemyReport == null ||
+                level.EnemyReport.Length > MaxLobbyReportLength ||
+                !IsFiniteLobbyFloat(level.BeeStartingX) ||
+                !IsFiniteLobbyFloat(level.BeeStartingY) ||
+                !IsFiniteLobbyFloat(level.HumanStartingX) ||
+                !IsFiniteLobbyFloat(level.HumanStartingY) ||
+                level.ObstacleList == null ||
+                level.ObstacleList.Count > MaxLobbyObstacles)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < level.ObstacleList.Count; i++)
+            {
+                MatchLobbyObstacleSnapshot obstacle = level.ObstacleList[i];
+                if (obstacle == null ||
+                    !IsFiniteLobbyFloat(obstacle.PositionX) ||
+                    !IsFiniteLobbyFloat(obstacle.PositionY) ||
+                    !IsFiniteLobbyFloat(obstacle.ScaleX) ||
+                    !IsFiniteLobbyFloat(obstacle.ScaleY))
+                {
+                    return false;
                 }
             }
 
@@ -743,7 +851,8 @@ namespace Assets.Scripts.Levels
             {
                 MatchId = MatchId.ToString("N"),
                 SetupSeed = SetupSeed,
-                AuthorityPeerId = AuthorityPeerId
+                AuthorityPeerId = AuthorityPeerId,
+                Level = CloneLobbyLevelSnapshot(_levelSnapshot)
             };
 
             HashSet<int> peerIds = new HashSet<int>();
@@ -800,57 +909,47 @@ namespace Assets.Scripts.Levels
             foreach (KeyValuePair<Guid, (int PlayerId, int Side, SavedSquad Squad)> assignment in
                 _squadOwnerAssignments.OrderBy(pair => pair.Key))
             {
-                SavedSquad source = assignment.Value.Squad;
-                if (source == null ||
-                    source.Side != assignment.Value.Side ||
-                    source.GetSquadShips() == null ||
-                    source.GetSquadShips().Count == 0)
+                if (!TryAppendLobbySquadSnapshot(
+                        candidate.Squads,
+                        assignment.Value.Squad,
+                        MatchLobbySquadRole.Player,
+                        assignment.Value.PlayerId,
+                        assignment.Key,
+                        ref nextTransientSquadId,
+                        ref nextTransientFleetId))
                 {
                     return false;
                 }
+            }
 
-                MatchLobbySquadSnapshot squadSnapshot = new MatchLobbySquadSnapshot
+            for (int i = 0; i < _aiInitialSquads.Count; i++)
+            {
+                if (!TryAppendLobbySquadSnapshot(
+                        candidate.Squads,
+                        _aiInitialSquads[i],
+                        MatchLobbySquadRole.AiInitial,
+                        UnownedPlayerId,
+                        Guid.Empty,
+                        ref nextTransientSquadId,
+                        ref nextTransientFleetId))
                 {
-                    OwnershipToken = assignment.Key.ToString("N"),
-                    OwnerPlayerId = assignment.Value.PlayerId,
-                    TransientSquadId = nextTransientSquadId--,
-                    Side = source.Side,
-                    Name = string.IsNullOrEmpty(source.Name) ? "Squad" : source.Name,
-                    StartingX = source.StartingPosition.x,
-                    StartingY = source.StartingPosition.y,
-                    ColorR = source.Color.r,
-                    ColorG = source.Color.g,
-                    ColorB = source.Color.b,
-                    ColorA = source.Color.a,
-                    CeaseFire = source.CeaseFire,
-                    IsMatchingSpeed = source.IsMatchingSpeed,
-                    IsSetToChase = source.IsSetToChase,
-                    ShootingStrategy = (int)source.ChosenShootingStrategy
-                };
-
-                List<SquadShip> sourceShips = source.GetSquadShips();
-                for (int shipIndex = 0; shipIndex < sourceShips.Count; shipIndex++)
-                {
-                    SquadShip sourceShip = sourceShips[shipIndex];
-                    FleetShip fleetShip = sourceShip?.GetFleetShip();
-                    if (sourceShip == null || fleetShip == null)
-                    {
-                        return false;
-                    }
-
-                    squadSnapshot.Ships.Add(new MatchLobbyShipSnapshot
-                    {
-                        TransientFleetId = nextTransientFleetId--,
-                        ShipType = (int)sourceShip.ShipType,
-                        Name = string.IsNullOrEmpty(fleetShip.Name)
-                            ? $"Ship-{shipIndex + 1}"
-                            : fleetShip.Name,
-                        OffsetX = sourceShip.Offset.x,
-                        OffsetY = sourceShip.Offset.y
-                    });
+                    return false;
                 }
+            }
 
-                candidate.Squads.Add(squadSnapshot);
+            for (int i = 0; i < _aiReinforcementSquads.Count; i++)
+            {
+                if (!TryAppendLobbySquadSnapshot(
+                        candidate.Squads,
+                        _aiReinforcementSquads[i],
+                        MatchLobbySquadRole.AiReinforcement,
+                        UnownedPlayerId,
+                        Guid.Empty,
+                        ref nextTransientSquadId,
+                        ref nextTransientFleetId))
+                {
+                    return false;
+                }
             }
 
             if (!IsValidLobbySnapshot(candidate))
@@ -960,10 +1059,14 @@ namespace Assets.Scripts.Levels
             for (int i = 0; i < snapshot.Squads.Count; i++)
             {
                 MatchLobbySquadSnapshot squadSnapshot = snapshot.Squads[i];
-                if (!Guid.TryParseExact(
-                        squadSnapshot.OwnershipToken,
-                        "N",
-                        out Guid ownershipToken))
+                MatchLobbySquadRole role = (MatchLobbySquadRole)squadSnapshot.Role;
+                Guid ownershipToken = Guid.Empty;
+                if (role == MatchLobbySquadRole.Player &&
+                    (!Guid.TryParseExact(
+                         squadSnapshot.OwnershipToken,
+                         "N",
+                         out ownershipToken) ||
+                     ownershipToken == Guid.Empty))
                 {
                     return false;
                 }
@@ -976,15 +1079,245 @@ namespace Assets.Scripts.Levels
                     return false;
                 }
 
-                if (!candidate.TryAssignSavedSquadOwner(
-                        squad,
-                        squadSnapshot.OwnerPlayerId))
+                if (role == MatchLobbySquadRole.Player)
                 {
-                    return false;
+                    if (!candidate.TryAssignSavedSquadOwner(
+                            squad,
+                            squadSnapshot.OwnerPlayerId))
+                    {
+                        return false;
+                    }
+                }
+                else if (role == MatchLobbySquadRole.AiInitial)
+                {
+                    candidate._aiInitialSquads.Add(squad);
+                }
+                else if (role == MatchLobbySquadRole.AiReinforcement)
+                {
+                    candidate._aiReinforcementSquads.Add(squad);
                 }
             }
 
+            candidate._levelSnapshot = CloneLobbyLevelSnapshot(snapshot.Level);
             session = candidate;
+            return true;
+        }
+
+        public bool TrySetLevelOptions(
+            LevelOptions source,
+            int hostUserSide,
+            int hostAiSide)
+        {
+            if (!IsConfiguring ||
+                source == null ||
+                hostUserSide == hostAiSide ||
+                (hostUserSide != ConfigData.Configuration.BeeSide &&
+                 hostUserSide != ConfigData.Configuration.HumanSide) ||
+                (hostAiSide != ConfigData.Configuration.BeeSide &&
+                 hostAiSide != ConfigData.Configuration.HumanSide))
+            {
+                return false;
+            }
+
+            MatchLobbyLevelSnapshot level = new MatchLobbyLevelSnapshot
+            {
+                Id = source.Id,
+                Side = source.Side,
+                Name = string.IsNullOrEmpty(source.Name) ? "Multiplayer Level" : source.Name,
+                MapIndex = source.MapIndex,
+                Obstacles = source.Obstacles ?? string.Empty,
+                AsteroidOption = source.AsteroidOption,
+                FogOfWar = source.FogOfWar,
+                Mining = source.Mining,
+                HasPreLevelIntro = source.HasPreLevelIntro,
+                HasSquadActionBox = source.HasSquadActionBox,
+                SupplyCapacity = source.SupplyCapacity,
+                EnemyReinforcementsOption = source.EnemyReinforcementsOption,
+                EnemyReinforcementDelay = source.EnemyReinforcementDelay,
+                EnemyShipTypeOption = source.EnemyShipTypeOption,
+                EnemySquadGenerationCount = source.EnemySquadGenerationCount,
+                EnemyReport = source.EnemyReport ?? string.Empty
+            };
+
+            Vector2 beeStart = hostUserSide == ConfigData.Configuration.BeeSide
+                ? source.UserStartingPosition
+                : source.AIStartingPosition;
+            Vector2 humanStart = hostUserSide == ConfigData.Configuration.HumanSide
+                ? source.UserStartingPosition
+                : source.AIStartingPosition;
+            level.BeeStartingX = beeStart.x;
+            level.BeeStartingY = beeStart.y;
+            level.HumanStartingX = humanStart.x;
+            level.HumanStartingY = humanStart.y;
+
+            if (source.ObstacleList != null)
+            {
+                for (int i = 0; i < source.ObstacleList.Count; i++)
+                {
+                    (Vector2 Position, Vector2 Scale) obstacle = source.ObstacleList[i];
+                    level.ObstacleList.Add(new MatchLobbyObstacleSnapshot
+                    {
+                        PositionX = obstacle.Position.x,
+                        PositionY = obstacle.Position.y,
+                        ScaleX = obstacle.Scale.x,
+                        ScaleY = obstacle.Scale.y
+                    });
+                }
+            }
+
+            if (!IsValidLobbyLevelSnapshot(level))
+            {
+                return false;
+            }
+
+            List<SavedSquad> aiInitial = new List<SavedSquad>();
+            if (source.EnemySquads != null)
+            {
+                aiInitial.AddRange(source.EnemySquads.Where(squad => squad != null));
+            }
+            if (source.EnemyExistingSquads != null)
+            {
+                for (int i = 0; i < source.EnemyExistingSquads.Count; i++)
+                {
+                    SavedSquad existing = ConfigData.CurrentShips?.GetSavedSquad(
+                        source.EnemyExistingSquads[i]);
+                    if (existing == null)
+                    {
+                        return false;
+                    }
+                    aiInitial.Add(existing);
+                }
+            }
+
+            List<SavedSquad> aiReinforcements = source.EnemyReinforcements == null
+                ? new List<SavedSquad>()
+                : source.EnemyReinforcements.Where(squad => squad != null).ToList();
+
+            if (aiInitial.Any(squad => squad.Side != hostAiSide) ||
+                aiReinforcements.Any(squad => squad.Side != hostAiSide))
+            {
+                return false;
+            }
+
+            _levelSnapshot = level;
+            _aiInitialSquads.Clear();
+            _aiInitialSquads.AddRange(aiInitial);
+            _aiReinforcementSquads.Clear();
+            _aiReinforcementSquads.AddRange(aiReinforcements);
+            return true;
+        }
+
+        public bool TryCreateCanonicalLevelOptions(
+            int localUserSide,
+            int localAiSide,
+            out LevelOptions levelOptions)
+        {
+            levelOptions = null;
+            if (!IsConfiguring ||
+                _levelSnapshot == null ||
+                localUserSide == localAiSide)
+            {
+                return false;
+            }
+
+            LevelOptions created = new LevelOptions(
+                _levelSnapshot.Id,
+                _levelSnapshot.Side,
+                _levelSnapshot.Name,
+                _levelSnapshot.MapIndex,
+                _levelSnapshot.Obstacles,
+                new List<(Vector2, Vector2)>(),
+                _levelSnapshot.AsteroidOption,
+                _levelSnapshot.FogOfWar,
+                _levelSnapshot.Mining,
+                _levelSnapshot.HasPreLevelIntro,
+                _levelSnapshot.HasSquadActionBox,
+                _levelSnapshot.SupplyCapacity,
+                _levelSnapshot.EnemyReinforcementsOption,
+                _levelSnapshot.EnemyReinforcementDelay,
+                _levelSnapshot.EnemyShipTypeOption,
+                _levelSnapshot.EnemySquadGenerationCount,
+                new List<SavedSquad>(),
+                new List<SavedSquad>(),
+                new List<int>(),
+                _levelSnapshot.EnemyReport,
+                new List<SavedSquad>(),
+                localUserSide == ConfigData.Configuration.BeeSide
+                    ? new Vector2(_levelSnapshot.BeeStartingX, _levelSnapshot.BeeStartingY)
+                    : new Vector2(_levelSnapshot.HumanStartingX, _levelSnapshot.HumanStartingY),
+                localAiSide == ConfigData.Configuration.BeeSide
+                    ? new Vector2(_levelSnapshot.BeeStartingX, _levelSnapshot.BeeStartingY)
+                    : new Vector2(_levelSnapshot.HumanStartingX, _levelSnapshot.HumanStartingY));
+
+            for (int i = 0; i < _levelSnapshot.ObstacleList.Count; i++)
+            {
+                MatchLobbyObstacleSnapshot obstacle = _levelSnapshot.ObstacleList[i];
+                created.ObstacleList.Add((
+                    new Vector2(obstacle.PositionX, obstacle.PositionY),
+                    new Vector2(obstacle.ScaleX, obstacle.ScaleY)));
+            }
+
+            if (!TryCreateLobbySnapshot(out MatchLobbySnapshot snapshot))
+            {
+                return false;
+            }
+
+            for (int i = 0; i < snapshot.Squads.Count; i++)
+            {
+                MatchLobbySquadSnapshot squadSnapshot = snapshot.Squads[i];
+                MatchLobbySquadRole role = (MatchLobbySquadRole)squadSnapshot.Role;
+                Guid ownershipToken = Guid.Empty;
+                if (role == MatchLobbySquadRole.Player &&
+                    !Guid.TryParseExact(
+                        squadSnapshot.OwnershipToken,
+                        "N",
+                        out ownershipToken))
+                {
+                    return false;
+                }
+
+                if (!TryCreateTransientSavedSquad(
+                        squadSnapshot,
+                        ownershipToken,
+                        out SavedSquad squad))
+                {
+                    return false;
+                }
+
+                if (role == MatchLobbySquadRole.Player)
+                {
+                    if (squad.Side == localUserSide)
+                    {
+                        created.ChosenSquads.Add(squad);
+                    }
+                    else if (squad.Side == localAiSide)
+                    {
+                        created.EnemySquads.Add(squad);
+                    }
+                    else
+                    {
+                        return false;
+                    }
+                }
+                else if (role == MatchLobbySquadRole.AiInitial)
+                {
+                    if (squad.Side != localAiSide)
+                    {
+                        return false;
+                    }
+                    created.EnemySquads.Add(squad);
+                }
+                else if (role == MatchLobbySquadRole.AiReinforcement)
+                {
+                    if (squad.Side != localAiSide)
+                    {
+                        return false;
+                    }
+                    created.EnemyReinforcements.Add(squad);
+                }
+            }
+
+            levelOptions = created;
             return true;
         }
 
@@ -1621,11 +1954,17 @@ namespace Assets.Scripts.Levels
             for (int i = 0; i < snapshot.Squads.Count; i++)
             {
                 MatchLobbySquadSnapshot squadSnapshot = snapshot.Squads[i];
-                if (!Guid.TryParseExact(
+                Guid ownershipToken = Guid.Empty;
+                if ((MatchLobbySquadRole)squadSnapshot.Role == MatchLobbySquadRole.Player &&
+                    !Guid.TryParseExact(
                         squadSnapshot.OwnershipToken,
                         "N",
-                        out Guid ownershipToken) ||
-                    !TryCreateTransientSavedSquad(
+                        out ownershipToken))
+                {
+                    return false;
+                }
+
+                if (!TryCreateTransientSavedSquad(
                         squadSnapshot,
                         ownershipToken,
                         out SavedSquad squad))
@@ -1646,7 +1985,7 @@ namespace Assets.Scripts.Levels
             out SavedSquad squad)
         {
             squad = null;
-            if (snapshot == null || ownershipToken == Guid.Empty)
+            if (snapshot == null)
             {
                 return false;
             }
@@ -1673,7 +2012,10 @@ namespace Assets.Scripts.Levels
                     0,
                     0));
             created.IsSetToChase = snapshot.IsSetToChase;
-            created.MatchOwnershipToken = ownershipToken;
+            if (ownershipToken != Guid.Empty)
+            {
+                created.MatchOwnershipToken = ownershipToken;
+            }
 
             for (int shipIndex = 0; shipIndex < snapshot.Ships.Count; shipIndex++)
             {
@@ -1698,6 +2040,116 @@ namespace Assets.Scripts.Levels
 
             squad = created;
             return true;
+        }
+
+        private static bool TryAppendLobbySquadSnapshot(
+            List<MatchLobbySquadSnapshot> destination,
+            SavedSquad source,
+            MatchLobbySquadRole role,
+            int ownerPlayerId,
+            Guid ownershipToken,
+            ref long nextTransientSquadId,
+            ref long nextTransientFleetId)
+        {
+            if (destination == null ||
+                source == null ||
+                source.GetSquadShips() == null ||
+                source.GetSquadShips().Count == 0)
+            {
+                return false;
+            }
+
+            MatchLobbySquadSnapshot snapshot = new MatchLobbySquadSnapshot
+            {
+                Role = (int)role,
+                OwnershipToken = ownershipToken == Guid.Empty
+                    ? string.Empty
+                    : ownershipToken.ToString("N"),
+                OwnerPlayerId = ownerPlayerId,
+                TransientSquadId = nextTransientSquadId--,
+                Side = source.Side,
+                Name = string.IsNullOrEmpty(source.Name) ? "Squad" : source.Name,
+                StartingX = source.StartingPosition.x,
+                StartingY = source.StartingPosition.y,
+                ColorR = source.Color.r,
+                ColorG = source.Color.g,
+                ColorB = source.Color.b,
+                ColorA = source.Color.a,
+                CeaseFire = source.CeaseFire,
+                IsMatchingSpeed = source.IsMatchingSpeed,
+                IsSetToChase = source.IsSetToChase,
+                ShootingStrategy = (int)source.ChosenShootingStrategy
+            };
+
+            List<SquadShip> ships = source.GetSquadShips();
+            for (int shipIndex = 0; shipIndex < ships.Count; shipIndex++)
+            {
+                SquadShip sourceShip = ships[shipIndex];
+                FleetShip fleetShip = sourceShip?.GetFleetShip();
+                if (sourceShip == null || fleetShip == null)
+                {
+                    return false;
+                }
+
+                snapshot.Ships.Add(new MatchLobbyShipSnapshot
+                {
+                    TransientFleetId = nextTransientFleetId--,
+                    ShipType = (int)sourceShip.ShipType,
+                    Name = string.IsNullOrEmpty(fleetShip.Name)
+                        ? $"Ship-{shipIndex + 1}"
+                        : fleetShip.Name,
+                    OffsetX = sourceShip.Offset.x,
+                    OffsetY = sourceShip.Offset.y
+                });
+            }
+
+            destination.Add(snapshot);
+            return true;
+        }
+
+        private static MatchLobbyLevelSnapshot CloneLobbyLevelSnapshot(
+            MatchLobbyLevelSnapshot source)
+        {
+            if (source == null)
+            {
+                return null;
+            }
+
+            MatchLobbyLevelSnapshot clone = new MatchLobbyLevelSnapshot
+            {
+                Id = source.Id,
+                Side = source.Side,
+                Name = source.Name,
+                MapIndex = source.MapIndex,
+                Obstacles = source.Obstacles,
+                AsteroidOption = source.AsteroidOption,
+                FogOfWar = source.FogOfWar,
+                Mining = source.Mining,
+                HasPreLevelIntro = source.HasPreLevelIntro,
+                HasSquadActionBox = source.HasSquadActionBox,
+                SupplyCapacity = source.SupplyCapacity,
+                EnemyReinforcementsOption = source.EnemyReinforcementsOption,
+                EnemyReinforcementDelay = source.EnemyReinforcementDelay,
+                EnemyShipTypeOption = source.EnemyShipTypeOption,
+                EnemySquadGenerationCount = source.EnemySquadGenerationCount,
+                EnemyReport = source.EnemyReport,
+                BeeStartingX = source.BeeStartingX,
+                BeeStartingY = source.BeeStartingY,
+                HumanStartingX = source.HumanStartingX,
+                HumanStartingY = source.HumanStartingY
+            };
+            for (int i = 0; i < source.ObstacleList.Count; i++)
+            {
+                MatchLobbyObstacleSnapshot obstacle = source.ObstacleList[i];
+                clone.ObstacleList.Add(new MatchLobbyObstacleSnapshot
+                {
+                    PositionX = obstacle.PositionX,
+                    PositionY = obstacle.PositionY,
+                    ScaleX = obstacle.ScaleX,
+                    ScaleY = obstacle.ScaleY
+                });
+            }
+            return clone;
         }
 
         public int ResolveSquadOwner(SavedSquad savedSquad, int side)
