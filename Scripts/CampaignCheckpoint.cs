@@ -47,6 +47,20 @@ namespace Assets.Scripts
             _pendingSave = true;
         }
 
+        private static bool HasOutstandingCheckpointWrite()
+        {
+            foreach (ServerRequest request in ConfigData.Socket.StandingRequests)
+            {
+                if (request is StoreUserDataRequest storeRequest &&
+                    storeRequest.Request != null &&
+                    storeRequest.Request.DataFile == DataFile)
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
         private static bool AreProfileMembersReady()
         {
             if (ConfigData.SocketManager == null ||
@@ -76,7 +90,10 @@ namespace Assets.Scripts
             // Keep the coalesced save pending while transport recovery is in progress. Serializing
             // a fresh seven-file checkpoint every rendered frame and attempting to send it through
             // a closed WebSocket turns a normal disconnect into a main-thread allocation/error loop.
-            if (!_pendingSave || !AreProfileMembersReady() || !ConfigData.Socket.IsOpen)
+            if (!_pendingSave ||
+                !AreProfileMembersReady() ||
+                !ConfigData.Socket.IsOpen ||
+                HasOutstandingCheckpointWrite())
             {
                 return;
             }
