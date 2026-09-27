@@ -649,3 +649,12 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** `RlOneVsOneAgent.GetCommunicationActions` exposes the current per-ship vector with a zero default; telemetry copies all four values for neural-controlled ships and leaves external human/Hive Mind channels neutral. `RlLiveTelemetryTests.LiveTelemetryPreservesNeuralCommunicationActions` guards the accessor and recording path.  
 **Verification:** traced action output through `SetCommunicationActions`, the per-ship communication store, and ally observation encoding, then reread the telemetry branch that copies the current vector. The focused regression guard was added but not run; no tests, builds, Unity, simulations, or runtime checks were run, per the static-only audit scope.  
 **Invariant/knowledge:** telemetry labeled as the action actually taken must preserve every continuous action channel emitted by the deployed policy.
+
+### REG-074 — Public demo staging did not preserve validated quarantine hashes
+**Area:** `Training/bees_continual_public_demo.py`, authenticated public demonstration handoff  
+**Symptom:** the importer verified the quarantined demo and manifest hashes, then copied those files into a temporary staging directory for native parsing without checking that the staged bytes still matched the authenticated hashes. A file change during the validate-to-copy window could cause bytes other than the validated upload to be imported while provenance reported the original quarantine hashes.  
+**Root cause:** the staging handoff trusted `shutil.copy2` to preserve the source contents and did not bind the staged inputs to the hashes returned by quarantine validation.  
+**Permanent protection:** the importer now hashes both staged files after copying and rejects either mismatch before calling the native demonstration importer. `PublicDemoQuarantineTests.test_staged_demo_tampering_after_validation_is_rejected` changes the staged demo after the copy and requires rejection before a batch is stored.  
+**Verification:** statically traced quarantine hash validation, copy, staged-hash checks, native import, and provenance creation. The focused regression guard was added but not run; no tests or runtime checks were performed, per the static-only audit scope.  
+**Invariant/knowledge:** every file passed to native parsing must be byte-identical to the authenticated quarantine payload whose hashes are recorded as provenance.
+
