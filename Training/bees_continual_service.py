@@ -513,6 +513,15 @@ def run_service(
     sleeper: Callable[[float], None] = time.sleep,
 ) -> int:
     state = load_state(options)
+    # Readiness means the supervised orchestration service initialized its durable run state.
+    # Keep it ready through train/release/publish phases; failures below publish "error".
+    write_managed_health(
+        "ready",
+        details={
+            "phase": str(state["phase"]),
+            "generation_index": int(state["generation_index"]),
+        },
+    )
 
     while True:
         try:
@@ -539,13 +548,6 @@ def run_service(
             phase = str(state["phase"])
 
             if phase == "train":
-                write_managed_health(
-                    "starting",
-                    details={
-                        "phase": "train",
-                        "generation_index": index,
-                    },
-                )
                 previously_started = bool(state["training_started"])
                 state["training_started"] = True
                 save_state(options, state)
