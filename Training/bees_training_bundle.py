@@ -20,7 +20,6 @@ MAX_STEP_SCAN_BYTES = 4 * 1024 * 1024
 MIN_TEXT_LOG_TAIL_BYTES = 128 * 1024
 MODEL_LAG_WARNING_STEPS = 5000
 TRAINER_LOG_STALE_SECONDS = 30.0
-STEP_RE = re.compile(r"\bStep\s*[:=]\s*([\d,]+)", re.IGNORECASE)
 LEARNER_SUMMARY_RE = re.compile(
     r"\bStep\s*[:=]\s*([\d,]+).*?"
     r"\bTime Elapsed\s*[:=]\s*\d+(?:\.\d+)?\s*s",
