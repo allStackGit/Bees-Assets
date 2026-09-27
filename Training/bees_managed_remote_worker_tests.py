@@ -80,6 +80,25 @@ class WorkerTrafficMetricsTests(unittest.TestCase):
 
             self.assertEqual(snapshot, {})
 
+    def test_malformed_persisted_network_totals_are_ignored(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            throughput = root / "worker-throughput.json"
+            traffic = root / worker_agent.NETWORK_TRAFFIC_STATE_FILE
+            traffic.write_text(
+                '{"run_id":"run-a","sent_bytes_total":-1,'
+                '"received_bytes_total":200}\n',
+                encoding="utf-8",
+            )
+
+            self.assertEqual(
+                worker_agent.read_persisted_network_traffic(
+                    throughput,
+                    expected_run_id="run-a",
+                ),
+                {},
+            )
+
     def test_live_session_network_metrics_win_over_persisted_fallback(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
