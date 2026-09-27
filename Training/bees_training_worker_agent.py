@@ -504,12 +504,34 @@ class BackgroundBuildPreparer:
             )
             self._thread.start()
 
-    def wait_for_build(self, descriptor: Mapping[str, Any]) -> None:
+    def wait_for_build(
+        self,
+        descriptor: Mapping[str, Any],
+        *,
+        progress_callback: Optional[Callable[[], bool]] = None,
+        poll_seconds: float = 1.0,
+    ) -> bool:
         build_id = str(descriptor.get("build_id", ""))
         with self._lock:
+            if self.prepared_build_id == build_id:
+                return True
             thread = self._thread if self._requested_build_id == build_id else None
-        if thread is not None:
+            if thread is None and self._thread is not None and self._thread.is_alive():
+                # A different build is still preparing. Let the supervisor heartbeat and
+                # reconcile desired state instead of falling through to a synchronous download.
+                return False
+        if thread is None:
+            return False
+        if progress_callback is None:
             thread.join()
+            return True
+
+        poll_seconds = max(0.05, float(poll_seconds))
+        while thread.is_alive():
+            thread.join(timeout=poll_seconds)
+            if thread.is_alive() and not progress_callback():
+                return False
+        return True
 
     def _prepare(self, descriptor: Mapping[str, Any]) -> None:
         build_id = str(descriptor.get("build_id", ""))
@@ -1470,6 +1492,52 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         except (ControlUnavailable, ControlRejected, OSError, ValueError):
             pass
 
+    def preparation_keepalive(expected_revision: int) -> bool:
+        nonlocal last_contact, lease_seconds
+        if shutdown_request_file is not None and shutdown_request_file.is_file():
+            return False
+
+        prepared_build_id, preparation_error = preparer.snapshot()
+        child_health_error = managed.health_error()
+        heartbeat = default_heartbeat(
+            trainer_id=args.trainer_id,
+            role=args.role,
+            platform=args.platform,
+            process_state=(
+                "error" if child_health_error
+                else managed.state(args.role, offline=False)
+            ),
+            applied_revision=applied_revision,
+            build=active_build,
+            prepared_build_id=prepared_build_id,
+            preparation_error=preparation_error,
+            last_error=last_error or preparation_error or child_health_error,
+            environment_id=(
+                environment_args_identity(managed.environment_args)
+                if managed.alive()
+                else ""
+            ),
+            metrics=current_metrics(
+                str(desired.get("run_id", "")) if desired else managed.run_id
+            ),
+            worker_capacity=worker_capacity(),
+        )
+        try:
+            received_state = client.heartbeat(heartbeat)
+        except ControlUnavailable as exc:
+            if last_contact <= 0 or time.monotonic() - last_contact > lease_seconds:
+                raise ControlUnavailable(
+                    "training-control lease expired while preparing a managed build"
+                ) from exc
+            return True
+
+        received_lease_seconds = float(received_state["lease_seconds"])
+        if not math.isfinite(received_lease_seconds) or received_lease_seconds <= 0:
+            raise ValueError("server lease_seconds must be a finite positive value")
+        last_contact = time.monotonic()
+        lease_seconds = received_lease_seconds
+        return int(received_state["revision"]) == expected_revision
+
     old_sigint = signal.signal(signal.SIGINT, request_stop)
     old_sigterm = signal.signal(signal.SIGTERM, request_stop)
     try:
@@ -1596,7 +1664,21 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 )
                 preparer.request(prepare_descriptor)
                 if preparing_launch_target:
-                    preparer.wait_for_build(prepare_descriptor)
+                    preparation_ready = preparer.wait_for_build(
+                        prepare_descriptor,
+                        progress_callback=lambda: preparation_keepalive(revision),
+                        poll_seconds=max(
+                            0.25,
+                            min(float(args.heartbeat_seconds), lease_seconds / 3.0),
+                        ),
+                    )
+                    prepared_build_id, _ = preparer.snapshot()
+                    if (
+                        not preparation_ready
+                        or prepared_build_id != str(prepare_descriptor.get("build_id", ""))
+                    ):
+                        time.sleep(min(1.0, max(0.25, float(args.heartbeat_seconds))))
+                        continue
                 if args.role == "dedicated":
                     desired_process_safe = dedicated_process_matches_desired(
                         managed,
