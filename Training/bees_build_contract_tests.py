@@ -544,6 +544,9 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         self.assertIn("def record_exit(self, code: Optional[int])", source)
         self.assertIn("restart_delay = self.restart_delay(command)", source)
         self.assertIn("command_changed = tuple(command) != self.command", source)
+        self.assertIn("normalized_environment_args != self.environment_args", source)
+        self.assertIn("state_file_identity != self.state_file", source)
+        self.assertIn("build_sha256 != self.build_sha256", source)
         self.assertIn("restart_delay = managed.record_exit(code)", source)
         self.assertIn("unless desired launch changes", source)
 
