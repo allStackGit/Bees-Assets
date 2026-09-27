@@ -2112,7 +2112,9 @@ class SocketConnection {
             } catch (e) {
                 console.log(request.params);
                 console.log("ERROR with matchup strategy request", e);
-                common.handleError(e);
+                common.handleError(e, "get-matchup-strategy");
+                this.server.pendingRequests.delete(request.params.Hash);
+                return;
             }
             if (strategy) {
                 // Respond with the strategy and remove the request from pending
@@ -2128,7 +2130,9 @@ class SocketConnection {
                 strategy = await this.game.getStrategy(request.params.Matchup, request.params.BannedStrats, request.params.OpponentId, request.params.Hash, request.timings);
             } catch (e) {
                 console.log("ERROR with strategy request");
-                common.handleError(e);
+                common.handleError(e, "get-strategy");
+                this.server.pendingRequests.delete(request.params.Hash);
+                return;
             }
             if (strategy) {
                 // Respond with the strategy and remove the request from pending
@@ -2142,7 +2146,14 @@ class SocketConnection {
                 // Store the commands
                 data = await this.game.storeState(request.params.Commands, request.params.ShootingCommands, request.params.TargetingCommands);
             } catch (e) {
-                common.handleError(e);
+                common.handleError(e, "store-commands");
+                request.respond({
+                    Type: request.params.Type,
+                    Hash: request.params.Hash,
+                    Status: 503
+                });
+                this.server.pendingRequests.delete(request.params.Hash);
+                return;
             }
             if (data) {
                 // Respond with success status and remove the request from pending
@@ -2214,7 +2225,14 @@ class SocketConnection {
                 // Store the user data
                 data = await this.user.storeData(request.params.DataFile, request.params.Contents);
             } catch (e) {
-                common.handleError(e);
+                common.handleError(e, "store-user-data");
+                request.respond({
+                    Type: request.params.Type,
+                    Hash: request.params.Hash,
+                    Status: 503
+                });
+                this.server.pendingRequests.delete(request.params.Hash);
+                return;
             }
             if (data) {
                 // Respond with success status and remove the request from pending
