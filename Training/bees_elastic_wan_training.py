@@ -745,6 +745,49 @@ class ElasticWanBroker(base.WanActorBroker):
         ):
             raise ValueError("actor slot is owned by another remote process")
 
+    def release_actor(self, payload: Mapping[str, Any]) -> None:
+        self._validate_release_identity(payload)
+        actor_id = self._validate_actor_id(payload.get("actor_id"))
+        actor_key = payload.get("actor_key")
+        actor_instance_id = payload.get("actor_instance_id")
+        if actor_key is not None and (
+            not isinstance(actor_key, str) or not actor_key or len(actor_key) > 128
+        ):
+            raise ValueError("actor_key must be a non-empty string up to 128 characters")
+        if (
+            not isinstance(actor_instance_id, str)
+            or not actor_instance_id
+            or len(actor_instance_id) > 128
+        ):
+            raise ValueError("actor_instance_id must identify the registered process")
+
+        with self._condition:
+            self._active_snapshot_locked()
+            record = self._registrations.get(actor_id)
+            claim = self._claims.get(actor_key) if actor_key is not None else None
+            if record is not None and (
+                record.get("actor_key") != actor_key
+                or record.get("actor_instance_id") != actor_instance_id
+            ):
+                raise ValueError("actor slot is owned by another remote process")
+            if claim is not None and (
+                int(claim["actor_id"]) != actor_id
+                or claim.get("actor_instance_id") != actor_instance_id
+            ):
+                raise ValueError("actor slot is claimed by another remote process")
+            if record is None and claim is None:
+                return
+
+            if record is not None:
+                self._registrations.pop(actor_id, None)
+                self._accepted_batch_ids.pop(actor_id, None)
+                self._topology_epoch += 1
+                snapshot = self._active_snapshot_locked()
+                self.diagnostics.topology_changed(len(snapshot), sum(snapshot.values()))
+            if claim is not None:
+                self._claims.pop(actor_key, None)
+            self._condition.notify_all()
+
     def acknowledge_reset(self, payload: Mapping[str, Any]) -> None:
         actor_id = self._validate_actor_id(payload.get("actor_id"))
         with self._condition:
