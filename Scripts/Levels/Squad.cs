@@ -18,6 +18,11 @@ namespace Assets.Scripts.Levels
         public ulong OpponentId;
         public long Id;
         public int ItemId;
+        /// <summary>
+        /// Match-local player owner. Zero means that no player currently owns this squad.
+        /// This is not a persistent squad id and must be reset on pooled reuse.
+        /// </summary>
+        public int OwnerPlayerId;
         public long Age;
         public ConfigData.SquadTypes SquadType;
 
@@ -366,6 +371,7 @@ namespace Assets.Scripts.Levels
             HasCommandQueue = false;
             IsSelected = false;
             IsLockedOn = false;
+            OwnerPlayerId = MatchSession.UnownedPlayerId;
             IsUserControlled = false;
             IsHiveMindControlled = false;
             _isInBounds = false;
@@ -403,6 +409,13 @@ namespace Assets.Scripts.Levels
             SetShootingStrategy(shootingStrategy);
             SetOpponent();
             SetSquadBox();
+
+            MatchSession matchSession = Level.Stage.MatchSession;
+            OwnerPlayerId = matchSession == null
+                ? (Side == ConfigData.Configuration.UserSide && Level.HasPlayer
+                    ? MatchSession.LegacyLocalPlayerId
+                    : MatchSession.UnownedPlayerId)
+                : matchSession.GetSolePlayerIdForSide(Side);
 
             IsUserControlled = Side == ConfigData.Configuration.UserSide && Level.HasPlayer;
             IsHiveMindControlled = !IsUserControlled;
@@ -686,7 +699,34 @@ namespace Assets.Scripts.Levels
             SquadTab.ShowTab();
         }
 
-        public bool CanBeSelected() => IsUserControlled && CanAcceptUserInput && !Level.State.SelectedSquads.Contains(this);
+        public bool IsOwnedByPlayer(int playerId)
+        {
+            return playerId != MatchSession.UnownedPlayerId && OwnerPlayerId == playerId;
+        }
+
+        public bool CanAcceptInputFrom(int playerId)
+        {
+            return IsUserControlled && CanAcceptUserInput && IsOwnedByPlayer(playerId);
+        }
+
+        public bool CanBeSelectedByPlayer(int playerId)
+        {
+            return CanAcceptInputFrom(playerId) && !Level.State.SelectedSquads.Contains(this);
+        }
+
+        public bool CanBeSelected()
+        {
+            MatchSession matchSession = Level.Stage.MatchSession;
+            int playerId = matchSession == null
+                ? MatchSession.LegacyLocalPlayerId
+                : matchSession.PrimaryLocalPlayerId;
+            return CanBeSelectedByPlayer(playerId);
+        }
+
+        internal void SetOwnerPlayerId(int playerId)
+        {
+            OwnerPlayerId = playerId;
+        }
 
         public void NameSquadShips()
         {

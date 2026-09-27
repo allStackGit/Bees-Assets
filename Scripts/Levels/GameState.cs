@@ -238,4 +238,124 @@ namespace Assets.Scripts.Levels
             _eliminationSnapshot[1] = false;
         }
     }
+
+    /// <summary>
+    /// Transient identity for one participant in a Free Play match. Player ids are match-local
+    /// and are deliberately separate from account, persistent fleet, and pooled runtime ids.
+    /// </summary>
+    public sealed class MatchPlayer
+    {
+        public int Id { get; }
+        public int Side { get; }
+        public bool IsLocal { get; }
+
+        public MatchPlayer(int id, int side, bool isLocal)
+        {
+            Id = id;
+            Side = side;
+            IsLocal = isLocal;
+        }
+    }
+
+    /// <summary>
+    /// Transient Free Play participant/ownership state. Campaign and Challenge do not create
+    /// this session; their existing single-player ownership path remains unchanged.
+    /// </summary>
+    public sealed class MatchSession
+    {
+        public const int UnownedPlayerId = 0;
+        public const int LegacyLocalPlayerId = 1;
+
+        private readonly List<MatchPlayer> _players = new List<MatchPlayer>();
+
+        public IReadOnlyList<MatchPlayer> Players => _players;
+        public int PrimaryLocalPlayerId { get; private set; } = UnownedPlayerId;
+        public bool IsMultiplayer => _players.Count > 1;
+
+        public static MatchSession CreateSolo(int side)
+        {
+            MatchSession session = new MatchSession();
+            session.AddPlayer(LegacyLocalPlayerId, side, true);
+            return session;
+        }
+
+        public bool AddPlayer(int playerId, int side, bool isLocal)
+        {
+            if (playerId <= UnownedPlayerId)
+            {
+                return false;
+            }
+            if (side != ConfigData.Configuration.BeeSide && side != ConfigData.Configuration.HumanSide)
+            {
+                return false;
+            }
+            if (_players.Any(player => player.Id == playerId))
+            {
+                return false;
+            }
+
+            _players.Add(new MatchPlayer(playerId, side, isLocal));
+            if (isLocal && PrimaryLocalPlayerId == UnownedPlayerId)
+            {
+                PrimaryLocalPlayerId = playerId;
+            }
+            return true;
+        }
+
+        public bool SetPrimaryLocalPlayer(int playerId)
+        {
+            MatchPlayer player = _players.FirstOrDefault(candidate => candidate.Id == playerId);
+            if (player == null || !player.IsLocal)
+            {
+                return false;
+            }
+
+            PrimaryLocalPlayerId = playerId;
+            return true;
+        }
+
+        public int GetSolePlayerIdForSide(int side)
+        {
+            int ownerId = UnownedPlayerId;
+            bool foundOwner = false;
+            for (int i = 0; i < _players.Count; i++)
+            {
+                MatchPlayer player = _players[i];
+                if (player.Side != side)
+                {
+                    continue;
+                }
+                if (foundOwner)
+                {
+                    return UnownedPlayerId;
+                }
+
+                ownerId = player.Id;
+                foundOwner = true;
+            }
+            return ownerId;
+        }
+
+        public bool IsPrimaryLocalPlayer(int playerId)
+        {
+            return playerId != UnownedPlayerId && playerId == PrimaryLocalPlayerId;
+        }
+
+        public bool TryAssignSquadOwner(Squad squad, int playerId)
+        {
+            if (squad == null)
+            {
+                return false;
+            }
+
+            MatchPlayer player = _players.FirstOrDefault(candidate => candidate.Id == playerId);
+            if (player == null || player.Side != squad.Side)
+            {
+                return false;
+            }
+
+            squad.SetOwnerPlayerId(playerId);
+            return true;
+        }
+    }
 }

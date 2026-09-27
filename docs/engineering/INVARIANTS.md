@@ -8,6 +8,8 @@ These are cross-cutting rules future changes must preserve. Keep this file conci
 - Pool reuse creates a new logical lifetime. `ClearData`/setup paths must reset all behaviorally relevant state, including timers, IDs, references, derived collections, async ownership, and flags.
 - Kill/teardown/release paths must be idempotent where duplicate callbacks are possible. Deferred releases must drain exactly once.
 - Static/global state used by tests or scenes must have an explicit ownership/reset strategy.
+- Multiplayer ownership is Free Play-only. Campaign and Challenge must not inherit or create a `MatchSession`.
+- `Squad.OwnerPlayerId` is match-local transient ownership, not persistent fleet identity or a network entity id, and must reset on every pooled squad lifetime.
 
 ## Async and ordering
 

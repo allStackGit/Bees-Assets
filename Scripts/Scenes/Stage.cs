@@ -31,6 +31,11 @@ public class Stage : Scene
     /// </summary>
     public bool DoesUserHaveController;
     /// <summary>
+    /// Transient player/ownership state for Free Play. Multiplayer is intentionally unavailable
+    /// to Campaign and Challenge, where this remains null.
+    /// </summary>
+    public MatchSession MatchSession;
+    /// <summary>
     /// Whether or not the game will be rendered and visual objects should be used
     /// </summary>
     public bool IsRendering;
@@ -386,6 +391,20 @@ public class Stage : Scene
     float _finalize_end;
     Vector2 _finalize_cameraWorldUnitsSize, _finalize_localizedPosition;
     Transform _finalize_colliderContainer;
+    private void SetupMatchSession()
+    {
+        if (ConfigData.CurrentGameMode != ConfigData.GameModes.FreePlay || !DoesUserHaveController)
+        {
+            MatchSession = null;
+            return;
+        }
+
+        if (MatchSession == null)
+        {
+            MatchSession = Assets.Scripts.Levels.MatchSession.CreateSolo(ConfigData.Configuration.UserSide);
+        }
+    }
+
     protected override void FinalizeSceneWithUserData()
     {
         //Debug.Log($"Finalize scene");
@@ -410,6 +429,8 @@ public class Stage : Scene
                 ConfigData.SwapSides();
             }
         }
+
+        SetupMatchSession();
 
         if (IsTrainingHiveMind || IsTrainingNueralNetwork)
         {

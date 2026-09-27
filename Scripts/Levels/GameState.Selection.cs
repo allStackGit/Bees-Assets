@@ -6,13 +6,27 @@ namespace Assets.Scripts.Levels
 {
     public partial class GameState
     {
+        private int GetPrimaryInputPlayerId()
+        {
+            MatchSession matchSession = Level != null && Level.Stage != null
+                ? Level.Stage.MatchSession
+                : null;
+            return matchSession == null
+                ? MatchSession.LegacyLocalPlayerId
+                : matchSession.PrimaryLocalPlayerId;
+        }
+
         public List<Squad> GetSelectedSquads()
         {
-            // This accessor is used by player input/action routing. A squad may remain in
-            // the raw selection registry while a cutscene temporarily revokes control;
-            // do not expose it as commandable until CanAcceptUserInput is restored.
+            return GetSelectedSquads(GetPrimaryInputPlayerId());
+        }
+
+        public List<Squad> GetSelectedSquads(int playerId)
+        {
+            // The raw selection registry remains shared during the foundation phase, but
+            // command routing must expose only squads owned by the requesting player.
             return SelectedSquads
-                .Where(squad => squad != null && !squad.IsDead && squad.CanAcceptUserInput)
+                .Where(squad => squad != null && !squad.IsDead && squad.CanAcceptInputFrom(playerId))
                 .ToList();
         }
 
