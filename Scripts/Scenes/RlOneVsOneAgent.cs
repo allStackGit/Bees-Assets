@@ -1089,6 +1089,13 @@ internal sealed class RlOneVsOneAgent : Agent
         }
     }
 
+    internal static Vector4 GetCommunicationActions(Ship ship)
+    {
+        return ship != null && ShipCommunications.TryGetValue(ship, out Vector4 actions)
+            ? actions
+            : Vector4.zero;
+    }
+
     internal static void AddCommunicationObservations(VectorSensor sensor, Ship ally)
     {
         if (ally != null && ShipCommunications.TryGetValue(ally, out Vector4 communication))
