@@ -309,6 +309,7 @@ def read_throughput_metrics(
     accepted_steps = value.get("accepted_steps_total")
     accepted_trajectories = value.get("accepted_trajectories_total")
     learner_consumed_steps = value.get("learner_consumed_steps_total")
+    learner_consumed_rate = value.get("learner_consumed_steps_per_sec")
     queue_depth = value.get("upload_queue_depth")
     network_sent = value.get("network_sent_bytes_total")
     network_received = value.get("network_received_bytes_total")
@@ -332,6 +333,15 @@ def read_throughput_metrics(
         or not isinstance(learner_consumed_steps, int)
         or isinstance(learner_consumed_steps, bool)
         or learner_consumed_steps < 0
+        or (
+            learner_consumed_rate is not None
+            and (
+                not isinstance(learner_consumed_rate, (int, float))
+                or isinstance(learner_consumed_rate, bool)
+                or not math.isfinite(float(learner_consumed_rate))
+                or float(learner_consumed_rate) < 0.0
+            )
+        )
         or not isinstance(queue_depth, int)
         or isinstance(queue_depth, bool)
         or queue_depth < 0
@@ -388,6 +398,8 @@ def read_throughput_metrics(
         "learner_consumed_steps_total": learner_consumed_steps,
         "upload_queue_depth": queue_depth,
     }
+    if learner_consumed_rate is not None:
+        result["learner_consumed_steps_per_sec"] = float(learner_consumed_rate)
     if failure_present:
         result.update(
             {
