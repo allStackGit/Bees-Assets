@@ -439,7 +439,8 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         self.assertIn("phase !== 'release' && phase !== 'publish'", helper)
         self.assertIn("serviceState.training_started", helper)
         self.assertIn("'checkpoint.pt'", helper)
-        self.assertIn("'BeesRL1v1.onnx'", helper)
+        self.assertIn("lifecycle.contract.behavior_name", helper)
+        self.assertIn("behaviorName + '.onnx'", helper)
         self.assertIn("serviceState.run_id", helper)
 
         stop = source[
