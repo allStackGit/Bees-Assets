@@ -1095,3 +1095,13 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** dynamic behavior identifiers must be sanitized before use as filesystem path components. No test was added or run under the user's static-analysis-only instruction.
 **Verification:** inspected ML-Agents `BehaviorParameters.BehaviorName` (raw get/set string, no path validation) and traced how the snapshot path is passed to model export. No tests, builds, Unity, simulations, or runtime checks were run.
 **Invariant/knowledge:** externally configured names are data, not safe filesystem components; generated artifacts must remain within their selected output directory.
+
+
+### REG-123 — Bees option extraction consumed Unity-side arguments
+**Area:** `Training/bees_mlagents_learn.py`, `_extract_bees_options`
+**Symptom:** a Bees-specific option token occurring after ML-Agents' `--env-args` delimiter was removed from the Unity argument list, along with its value when applicable.
+**Root cause:** the launcher scanned all tokens for its private flags even though ML-Agents defines `--env-args` as `argparse.REMAINDER`; all following tokens belong to the Unity executable.
+**Fix:** stop extracting Bees options at the delimiter and preserve `--env-args` and the remaining tokens verbatim for ML-Agents.
+**Permanent protection:** launcher-only options must be parsed exclusively before `--env-args`; preserve its tail byte-for-byte at the argument-list level. No test was added or run under the user's static-analysis-only instruction.
+**Verification:** compared `_extract_bees_options` with the pinned ML-Agents CLI definition, which declares `--env-args` using `nargs=argparse.REMAINDER`. No tests, builds, Unity, simulations, or runtime checks were run.
+**Invariant/knowledge:** once the remainder delimiter is reached, downstream argument meaning is owned by the environment, not the launcher.
