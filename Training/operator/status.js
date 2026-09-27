@@ -35,36 +35,14 @@ function listLogFiles(root, recursive, limit = Number.POSITIVE_INFINITY) {
     return found;
 }
 
-function getLocalLearnerStats(runId = '') {
-    const files = [];
-    const operatorLogRoot = path.join(paths.logsRoot, 'Training');
-    files.push(...listLogFiles(operatorLogRoot, false));
-
-    if (runId) {
-        const managedLearnerLogRoot = path.join(
-            paths.centralAgentInstallRoot,
-            'logs',
-            runId,
-        );
-        files.push(...listLogFiles(managedLearnerLogRoot, false));
-    }
-
-    let trainerResultsRoot = path.join(paths.trainingRoot, 'trainer-results');
-    if (runId) trainerResultsRoot = path.join(trainerResultsRoot, runId);
-    files.push(...listLogFiles(trainerResultsRoot, true));
-
-    const selected = files
-        .sort((a, b) => b.mtimeMs - a.mtimeMs)
-        .slice(0, 24)
-        .sort((a, b) => a.mtimeMs - b.mtimeMs || a.full.localeCompare(b.full));
-
+function parseLearnerLogFiles(files) {
     let elo = null;
     let step = null;
     let reward = null;
     let averageStepsPerSecond = null;
     let liveStepsPerSecond = null;
 
-    for (const file of selected) {
+    for (const file of files) {
         let firstStep = null;
         let firstElapsed = null;
         let previousStep = null;
@@ -123,6 +101,54 @@ function getLocalLearnerStats(runId = '') {
         AverageStepsPerSecond: averageStepsPerSecond,
         LiveStepsPerSecond: liveStepsPerSecond,
     };
+}
+
+function getLocalLearnerStats(runId = '') {
+    let authoritativeLiveLog = null;
+    if (runId) {
+        authoritativeLiveLog = path.join(
+            paths.centralAgentInstallRoot,
+            'logs',
+            runId,
+            'learner-live.log',
+        );
+        if (exists(authoritativeLiveLog)) {
+            const authoritative = parseLearnerLogFiles([
+                {
+                    full: authoritativeLiveLog,
+                    mtimeMs: fs.statSync(authoritativeLiveLog).mtimeMs,
+                },
+            ]);
+            if (authoritative.Step !== null) return authoritative;
+        }
+    }
+
+    const files = [];
+    const operatorLogRoot = path.join(paths.logsRoot, 'Training');
+    files.push(...listLogFiles(operatorLogRoot, false));
+
+    if (runId) {
+        const managedLearnerLogRoot = path.join(
+            paths.centralAgentInstallRoot,
+            'logs',
+            runId,
+        );
+        files.push(
+            ...listLogFiles(managedLearnerLogRoot, false)
+                .filter(file => path.resolve(file.full) !== path.resolve(authoritativeLiveLog)),
+        );
+    }
+
+    let trainerResultsRoot = path.join(paths.trainingRoot, 'trainer-results');
+    if (runId) trainerResultsRoot = path.join(trainerResultsRoot, runId);
+    files.push(...listLogFiles(trainerResultsRoot, true));
+
+    const selected = files
+        .sort((a, b) => b.mtimeMs - a.mtimeMs)
+        .slice(0, 24)
+        .sort((a, b) => a.mtimeMs - b.mtimeMs || a.full.localeCompare(b.full));
+
+    return parseLearnerLogFiles(selected);
 }
 
 function number(value, digits = 1, suffix = '') {
