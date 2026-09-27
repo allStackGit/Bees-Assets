@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using UnityEngine;
 
 namespace Assets.Scripts.Levels
@@ -41,6 +42,7 @@ namespace Assets.Scripts.Levels
         private bool _staticObstacleRebuildPending;
         private bool[] _staticRebuildBlockedSlots = new bool[ConfigData.MaxThreads];
         private readonly ConcurrentQueue<PathResult> _completedPaths = new ConcurrentQueue<PathResult>();
+        private readonly Task[] _pathWorkerTasks = new Task[ConfigData.MaxThreads];
         private readonly List<int> _obstaclePointIndexes = new List<int>();
         private readonly HashSet<int> _obstaclePointIndexSet = new HashSet<int>();
         private static readonly int[] NeighborX = { -1, -1, -1, 0, 0, 1, 1, 1 };
@@ -54,11 +56,32 @@ namespace Assets.Scripts.Levels
 
         public void Setup()
         {
+            WaitForPathWorkersBeforeSetup();
             Width = (int)Math.Ceiling((double)Level.MapWidth / Scale);
             Height = (int)Math.Ceiling((double)Level.MapHeight / Scale);
             HalfWidth = (int)Math.Ceiling((double)Level.HalfMapWidth / Scale);
             HalfHeight = (int)Math.Ceiling((double)Level.HalfMapHeight / Scale);
             InitializeMap();
+        }
+
+        private void WaitForPathWorkersBeforeSetup()
+        {
+            List<Task> workers = new List<Task>(_pathWorkerTasks.Length);
+            for (int i = 0; i < _pathWorkerTasks.Length; i++)
+            {
+                Task worker = _pathWorkerTasks[i];
+                if (worker != null)
+                {
+                    workers.Add(worker);
+                }
+            }
+
+            if (workers.Count > 0)
+            {
+                Task.WaitAll(workers.ToArray());
+                ApplyCompletedPathResults();
+                Array.Clear(_pathWorkerTasks, 0, _pathWorkerTasks.Length);
+            }
         }
 
         public Vector2Int ConvertToMapCoordinates(Vector2 coords)
