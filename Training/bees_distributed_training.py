@@ -349,7 +349,6 @@ class _LoopbackRpcCommunicatorMixin:
         try:
             self.server = grpc.server(
                 thread_pool=ThreadPoolExecutor(max_workers=10),
-                options=(("grpc.so_reuseport", 1),),
             )
             self.unity_to_external = UnityToExternalServicerImplementation()
             add_UnityToExternalProtoServicer_to_server(self.unity_to_external, self.server)
