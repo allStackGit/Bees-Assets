@@ -95,6 +95,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             ShipsWithinRange.Clear();
             _targetDistanceKeys.Clear();
             _enemyTargetBuffer.Clear();
+            _targetingCandidateBuffer.Clear();
             _disregardRangeBuffer.Clear();
             IsUsingCachedTargetingQueue = false;
             HasCachedChanged = false;
@@ -214,9 +215,17 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         }
 
         private readonly List<Ship> _enemyTargetBuffer = new List<Ship>();
+        private readonly List<Ship> _targetingCandidateBuffer = new List<Ship>();
+
         public List<Ship> GetEnemyShipsWithinRange()
         {
-            _enemyTargetBuffer.Clear();
+            FillEnemyShipsWithinRange(_enemyTargetBuffer);
+            return _enemyTargetBuffer;
+        }
+
+        private void FillEnemyShipsWithinRange(List<Ship> destination)
+        {
+            destination.Clear();
             if (Ship.Squad.HasEnemy && Ship.Squad.IsAttacking)
             {
                 Squad enemySquad = Ship.Squad.GetCommand().EnemySquad;
@@ -224,21 +233,19 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 {
                     if (candidate.Squad == enemySquad)
                     {
-                        _enemyTargetBuffer.Add(candidate);
+                        destination.Add(candidate);
                     }
                 }
-                if (_enemyTargetBuffer.Count > 0)
+                if (destination.Count > 0)
                 {
-                    return _enemyTargetBuffer;
+                    return;
                 }
             }
 
-            _enemyTargetBuffer.Clear();
             foreach (Ship candidate in ShipsWithinRange.Values)
             {
-                _enemyTargetBuffer.Add(candidate);
+                destination.Add(candidate);
             }
-            return _enemyTargetBuffer;
         }
 
         private readonly List<Ship> _disregardRangeBuffer = new List<Ship>();
@@ -258,7 +265,9 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             }
             else
             {
-                _queue = GetEnemyShipsWithinRange();
+                // Keep strategy cache ownership separate from callers of the public range query.
+                FillEnemyShipsWithinRange(_targetingCandidateBuffer);
+                _queue = _targetingCandidateBuffer;
             }
             IsUsingCachedTargetingQueue = false;
             return _queue;
