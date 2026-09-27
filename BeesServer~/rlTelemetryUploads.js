@@ -278,17 +278,61 @@ class RlTelemetryUploadManager {
         }
         const userId = requireString(context?.userId, 'authenticated user ID');
         const connectionId = requireString(String(context?.connectionId ?? ''), 'connection ID');
-        await this._ensureInitialized();
-        await this.cleanupExpired();
-        switch (params.Type) {
-            case 'rl-telemetry-begin':
-                return this._serializeBegin(() => this._beginUnlocked(params, userId, connectionId));
-            case 'rl-telemetry-chunk':
-                return this._withSession(params, userId, connectionId, session => this._chunkUnlocked(params, session));
-            case 'rl-telemetry-complete':
-                return this._withSession(params, userId, connectionId, session => this._completeUnlocked(session));
-            default:
-                throw new RlTelemetryUploadError(400, 'invalid-request', `Unsupported RL telemetry request type ${params.Type}.`);
+        const uploadId = typeof params.UploadId === 'string' ? params.UploadId.trim() : '';
+        const session = (
+            params.Type === 'rl-telemetry-chunk' ||
+            params.Type === 'rl-telemetry-complete'
+        ) ? this.sessions.get(uploadId) : null;
+        const requestTime = this.now();
+        const protectsSession = Boolean(
+            session &&
+            session.userId === userId &&
+            session.connectionId === connectionId &&
+            (
+                (session.inFlight || 0) > 0 ||
+                session.updatedAt >= requestTime - this.uploadIdleTimeoutMs
+            )
+        );
+        if (protectsSession) {
+            session.inFlight = (session.inFlight || 0) + 1;
+            session.updatedAt = requestTime;
+        }
+
+        try {
+            await this._ensureInitialized();
+            await this.cleanupExpired();
+            let result;
+            switch (params.Type) {
+                case 'rl-telemetry-begin':
+                    result = await this._serializeBegin(
+                        () => this._beginUnlocked(params, userId, connectionId));
+                    break;
+                case 'rl-telemetry-chunk':
+                    result = await this._withSession(
+                        params,
+                        userId,
+                        connectionId,
+                        current => this._chunkUnlocked(params, current));
+                    break;
+                case 'rl-telemetry-complete':
+                    result = await this._withSession(
+                        params,
+                        userId,
+                        connectionId,
+                        current => this._completeUnlocked(current));
+                    break;
+                default:
+                    throw new RlTelemetryUploadError(
+                        400,
+                        'invalid-request',
+                        `Unsupported RL telemetry request type ${params.Type}.`,
+                    );
+            }
+            return result;
+        } finally {
+            if (protectsSession) {
+                session.inFlight = Math.max(0, (session.inFlight || 0) - 1);
+            }
         }
     }
 
@@ -446,6 +490,7 @@ class RlTelemetryUploadManager {
             partialPath,
             nextOffset: 0,
             updatedAt: now,
+            inFlight: 0,
             tail: Promise.resolve(),
         };
         this.sessions.set(uploadId, session);
@@ -570,7 +615,8 @@ class RlTelemetryUploadManager {
 
     async cleanupExpired() {
         const cutoff = this.now() - this.uploadIdleTimeoutMs;
-        const expired = [...this.sessions.values()].filter(session => session.updatedAt < cutoff);
+        const expired = [...this.sessions.values()].filter(
+            session => !(session.inFlight > 0) && session.updatedAt < cutoff);
         await Promise.all(expired.map(async session => {
             this.sessions.delete(session.uploadId);
             if (this.logicalUploads.get(session.logicalKey) === session.uploadId) this.logicalUploads.delete(session.logicalKey);
