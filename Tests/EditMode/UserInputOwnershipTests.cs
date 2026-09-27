@@ -544,5 +544,48 @@ namespace Bees.Tests.EditMode
                 UnityEngine.Object.DestroyImmediate(stateObject);
             }
         }
+
+        [Test]
+        public void RuntimeShipsInheritPlayerAndHiveMindOwnershipFromSquadBeforeRegistration()
+        {
+            string lifecyclePath = Path.Combine(Application.dataPath, "Scripts", "Entities", "Ships", "Ship.Lifecycle.cs");
+            string source = File.ReadAllText(lifecyclePath);
+
+            int playerControlledIndex = source.IndexOf("IsPlayerControlled = squad.IsPlayerControlled;");
+            int userControlledIndex = source.IndexOf("IsUserControlled = squad.IsUserControlled;");
+            int hiveMindControlledIndex = source.IndexOf("IsHiveMindControlled = Stage.IsTrainingNueralNetwork || !IsPlayerControlled;");
+            int addShipIndex = source.IndexOf("Level.State.AddShip(this);");
+
+            Assert.That(playerControlledIndex, Is.GreaterThanOrEqualTo(0));
+            Assert.That(userControlledIndex, Is.GreaterThan(playerControlledIndex));
+            Assert.That(hiveMindControlledIndex, Is.GreaterThan(userControlledIndex));
+            Assert.That(addShipIndex, Is.GreaterThan(hiveMindControlledIndex),
+                "Ship ownership must be correct before GameState decides whether to register Hive Mind vision.");
+        }
+
+        [Test]
+        public void FreePlaySessionAndPrimarySideResolveBeforePoolCreatesShips()
+        {
+            string stagePath = Path.Combine(Application.dataPath, "Scripts", "Scenes", "Stage.cs");
+            string source = File.ReadAllText(stagePath);
+
+            int sessionIndex = source.IndexOf("SetupMatchSession();");
+            int poolIndex = source.IndexOf("Pool.Setup(this);");
+
+            Assert.That(sessionIndex, Is.GreaterThanOrEqualTo(0));
+            Assert.That(poolIndex, Is.GreaterThan(sessionIndex));
+            StringAssert.Contains("primaryLocalSide != ConfigData.Configuration.UserSide", source);
+        }
+
+        [Test]
+        public void ShipPlayerControlStateResetsAcrossPooledLifetimes()
+        {
+            string lifecyclePath = Path.Combine(Application.dataPath, "Scripts", "Entities", "Ships", "Ship.Lifecycle.cs");
+            string source = File.ReadAllText(lifecyclePath);
+
+            StringAssert.Contains("IsPlayerControlled = false;", source);
+            StringAssert.Contains("IsUserControlled = false;", source);
+            StringAssert.Contains("IsHiveMindControlled = false;", source);
+        }
     }
 }
