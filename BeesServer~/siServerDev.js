@@ -2236,7 +2236,14 @@ class SocketConnection {
                 // Get the user data
                 data = await this.user.getData(request.params.DataFile);
             } catch (e) {
-                common.handleError(e);
+                common.handleError(e, "get-user-data");
+                request.respond({
+                    Type: request.params.Type,
+                    Hash: request.params.Hash,
+                    Status: 503
+                });
+                this.server.pendingRequests.delete(request.params.Hash);
+                return;
             }
             if (data && data[0]) {
                 // Respond with the user data and remove the request from pending
@@ -2273,7 +2280,14 @@ class SocketConnection {
                 // Get the user settings
                 settings = await this.user.getSettings(request.params.DataFile, request.params.Version);
             } catch (e) {
-                common.handleError(e);
+                common.handleError(e, "get-settings");
+                request.respond({
+                    Type: request.params.Type,
+                    Hash: request.params.Hash,
+                    Status: 503
+                });
+                this.server.pendingRequests.delete(request.params.Hash);
+                return;
             }
             if (settings) {
                 // Respond with the user settings and remove the request from pending
