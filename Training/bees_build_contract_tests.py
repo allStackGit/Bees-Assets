@@ -519,6 +519,13 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         )
         self.assertIn('snapshot["throughput"] = throughput', source)
 
+    def test_offline_status_reports_persisted_server_supervisor_liveness(self):
+        source = read_operator("status.js")
+        self.assertIn("exists(paths.serverStatePath)", source)
+        self.assertIn("getStateReferencedLivePid(serverState)", source)
+        self.assertIn("Server supervisor state: pid=", source)
+        self.assertIn("pid_alive=", source)
+
     def test_status_preserves_remote_network_traffic_columns(self):
         source = read_operator("status.js")
         self.assertIn("network_sent_bytes_total", source)
