@@ -320,7 +320,12 @@ namespace Assets.Scripts.Entities.Ships
                 {
                     foreach (Weapon weapon in WeaponsThatHaveUsWithinRange)
                     {
-                        weapon.ShipsWithinRange.Remove(Id);
+                        if (weapon.ShipsWithinRange.Remove(Id))
+                {
+                    // The cached targeting queue can still contain this ship after removal.
+                    // Invalidate it so the weapon immediately considers its other in-range targets.
+                    weapon.HasCachedChanged = true;
+                }
                     }
                     WeaponsThatHaveUsWithinRange.Clear();
                 }
