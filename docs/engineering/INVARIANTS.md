@@ -76,3 +76,6 @@ These are cross-cutting rules future changes must preserve. Keep this file conci
 - Performance improvements must preserve gameplay, cleanup, synchronization/ownership, save/network compatibility, and intended default quality.
 - Prefer stable frame-time and bounded resource use over average-FPS-only wins.
 - Do not introduce unbounded caches, retained pooled state, race conditions, or hidden quality reductions to improve a benchmark.
+
+## Process supervision
+- A POSIX child guardian must preserve signal termination semantics even if its process group disappears before descendant cleanup begins.
