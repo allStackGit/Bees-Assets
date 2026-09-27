@@ -37,7 +37,7 @@ from bees_process_safety import popen_owned
 DEFAULT_RECONNECT_SECONDS = 5.0
 MAX_ENVS_PER_ACTOR = 64
 REMOTE_MEMORY_RESERVE_BYTES = 1 * 1024 * 1024 * 1024
-REMOTE_MEMORY_PER_ENV_BYTES = 1 * 1024 * 1024 * 1024
+REMOTE_MEMORY_PER_ENV_BYTES = 512 * 1024 * 1024
 REMOTE_PID_FILE = "remote-worker.pid"
 REMOTE_STOP_REQUEST_FILE = "remote-worker.stop"
 REMOTE_WORKER_AGENT_STOP_REQUEST_FILE = "worker-agent-stop.request"
@@ -609,6 +609,21 @@ def _prune_version_directories(
         shutil.rmtree(path, ignore_errors=True)
 
 
+def _is_transient_transport_error(exc: BaseException) -> bool:
+    if isinstance(exc, (ConnectionResetError, ConnectionAbortedError, TimeoutError)):
+        return True
+    if isinstance(exc, urllib.error.URLError):
+        reason = getattr(exc, "reason", None)
+        return isinstance(reason, BaseException) and _is_transient_transport_error(reason)
+    if isinstance(exc, OSError):
+        code = getattr(exc, "winerror", None)
+        if code in {10053, 10054, 10060, 10061, 10064}:
+            return True
+        if getattr(exc, "errno", None) in {32, 54, 60, 61, 104, 110, 111}:
+            return True
+    return False
+
+
 class RuntimeUpdater:
     def __init__(self, args: argparse.Namespace, install_root: Path) -> None:
         self.args = args
@@ -656,26 +671,45 @@ class RuntimeUpdater:
         return value
 
     def _fetch_bootstrap(self) -> tuple[bytes, bytes, bytes, bytes, bytes]:
-        request = urllib.request.Request(
-            f"http://127.0.0.1:{self.args.bootstrap_port}/bootstrap",
-            method="GET",
-            headers={"Authorization": "Bearer " + self._bootstrap_token()},
-        )
-        with urllib.request.urlopen(request, timeout=120.0) as response:
-            outer = response.read()
-        with zipfile.ZipFile(io.BytesIO(outer), "r") as bundle:
-            bridge_name = (
-                "bees-tailnet-bridge-windows.exe"
-                if os.name == "nt"
-                else "bees-tailnet-bridge-linux"
+        maximum_attempts = 4
+        last_error: Optional[BaseException] = None
+        for attempt in range(1, maximum_attempts + 1):
+            request = urllib.request.Request(
+                f"http://127.0.0.1:{self.args.bootstrap_port}/bootstrap",
+                method="GET",
+                headers={"Authorization": "Bearer " + self._bootstrap_token()},
             )
-            return (
-                bundle.read("bees-remote-runtime.zip"),
-                bundle.read("training-worker.token"),
-                bundle.read("wan.token"),
-                bundle.read(bridge_name),
-                bundle.read("latest-training-release.json"),
-            )
+            try:
+                with urllib.request.urlopen(request, timeout=120.0) as response:
+                    outer = response.read()
+                with zipfile.ZipFile(io.BytesIO(outer), "r") as bundle:
+                    bridge_name = (
+                        "bees-tailnet-bridge-windows.exe"
+                        if os.name == "nt"
+                        else "bees-tailnet-bridge-linux"
+                    )
+                    return (
+                        bundle.read("bees-remote-runtime.zip"),
+                        bundle.read("training-worker.token"),
+                        bundle.read("wan.token"),
+                        bundle.read(bridge_name),
+                        bundle.read("latest-training-release.json"),
+                    )
+            except BaseException as exc:
+                if not _is_transient_transport_error(exc) or attempt >= maximum_attempts:
+                    raise
+                last_error = exc
+                delay = 0.5 * attempt
+                print(
+                    "[Bees remote] bootstrap transport reset during learner cutover; "
+                    f"retrying attempt {attempt + 1}/{maximum_attempts} in {delay:.1f}s.",
+                    file=sys.stderr,
+                    flush=True,
+                )
+                if self._stop.wait(delay):
+                    raise RuntimeError("runtime updater stopped during bootstrap retry") from exc
+        assert last_error is not None
+        raise last_error
 
     def _prepare_python_for_requirements(
         self,
