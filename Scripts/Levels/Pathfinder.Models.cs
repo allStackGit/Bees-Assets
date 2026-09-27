@@ -340,12 +340,7 @@ namespace Assets.Scripts.Levels
 
             public override bool Equals(object obj)
             {
-                if (obj == null)
-                {
-                    return false;
-                }
-                Path p = obj as Path;
-                return p != null && Id == p.Id;
+                return obj is Path other && Equals(other);
             }
 
             public bool Equals(Path other)
