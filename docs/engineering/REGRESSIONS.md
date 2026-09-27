@@ -444,3 +444,11 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** response claiming now requires a matching standing request type, and the lifecycle guard suppresses mismatched types before any status-driven mutation. `SocketResponseOwnershipTests.WrongResponseTypeDoesNotClaimOrRetireTheStandingRequest` protects the live request, unclaimed hash, and subsequent valid claim. The test was added but not run, per the static-only audit constraint.  
 **Verification:** traced response parsing, hash claiming, status handling, and request removal statically; the focused regression case was inspected but not executed.  
 **Invariant/knowledge:** a response must match both the request hash and request type before it may claim deduplication state or change its owner's lifecycle.
+
+### REG-050 — Elastic WAN ABI check could race local spec pinning
+**Area:** `Training/bees_elastic_wan_slot_safety.py`, elastic WAN actor behavior-spec compatibility and broker registration  \
+**Symptom:** a remote actor could register with behavior specifications incompatible with Exeter's local environment during startup, despite the intended early-registration compatibility check.  
+**Root cause:** the local-spec compatibility scan released the broker condition before the parent setter pinned local signatures. A registration in that gap could become the first remote reference and then survive while the local signature was installed.  
+**Permanent protection:** compatibility scanning and local signature pinning now run in one broker-condition critical section. `SlotSafetyTests.test_local_behavior_compatibility_check_and_pin_share_condition_lock` protects the atomicity boundary; the existing early-registration mismatch test protects rejection. The regression tests were added but not run, per the static-only audit constraint.  
+**Verification:** the condition is created with Python's default reentrant lock, allowing the parent setter to re-enter it; both registration and reference pinning use that same condition. Source and regression assertion were reviewed statically. No tests or runtime checks were run.  
+**Invariant/knowledge:** actor ABI compatibility must be checked and the local ABI pinned atomically against concurrent broker registrations.
