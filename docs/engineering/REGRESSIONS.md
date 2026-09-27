@@ -367,3 +367,10 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** the centering guard now checks the configured user side, and the source regression assertion requires `UserSide`.  \
 **Verification:** compared both guards' mission-selection logic and inspected the updated source assertion statically. No tests or gameplay run were performed, per the static-only audit constraint.  \
 **Invariant/knowledge:** campaign presentation tied to the player's current mission must use the configured user side, not a hard-coded side.
+### REG-040 — Ship death left weapon targeting queues stale
+**Area:** `Scripts/Entities/Ships/Ship.Combat.cs`, `Scripts/Entities/Ships/Weapon.cs`, weapon range and target-selection caches  
+**Symptom:** after a target died, weapons could continue scanning a cached queue containing that dead target and fail to select other ships still in range until a later range-enter/exit event invalidated the queue.  
+**Root cause:** ship-death cleanup removed the victim from each weapon's `ShipsWithinRange` dictionary but did not set `HasCachedChanged`. `Weapon.MakeSortedTargetingList` reuses its cached queue while that flag is false; the queue can therefore retain a reference to the removed ship, and target validation rejects it without rebuilding the candidate list.  
+**Permanent protection:** death cleanup now invalidates each weapon's targeting queue when it actually removes the victim. `CombatLifecycleIntegrationTests.DamageThenLethalHitUpdatesStatsCommandsCachesAndRegistriesExactlyOnce` asserts that the reverse weapon cache is invalidated when the target dies.  
+**Verification:** the regression assertion was added and the source change was reviewed statically. Tests and runtime validation were not run per the code-analysis-only instruction.  
+**Invariant/knowledge:** any mutation of a weapon's range candidate set outside `RangeCollider` enter/exit callbacks must also invalidate `HasCachedChanged`.
