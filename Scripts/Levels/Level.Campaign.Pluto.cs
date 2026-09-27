@@ -690,7 +690,8 @@ namespace Assets.Scripts.Levels
                                 () => hasSeenFleetMessages,
                                 () =>
                                 {
-                                    float endTime = Time.time + 300.49f;
+                                    const float evacuationDuration = 300.49f;
+                                    float endTime = Time.time + evacuationDuration;
                                     float timeLeft = endTime - Time.time;
                                     TMP_Text clockText = Stage.Menus.Clock.transform.GetChild(0).GetComponent<TMP_Text>();
                                     TMP_Text counterText = Stage.Menus.Counter.transform.GetChild(0).GetComponent<TMP_Text>();
@@ -722,7 +723,11 @@ namespace Assets.Scripts.Levels
                                         }
                                         else
                                         {
-                                            if (Mathf.RoundToInt(timeLeft) % 5 == 0) personnelEvacuated++;
+                                            int elapsedEvacuationIntervals =
+                                                Mathf.FloorToInt((evacuationDuration - timeLeft) / 5f);
+                                            personnelEvacuated = Mathf.Max(
+                                                personnelEvacuated,
+                                                elapsedEvacuationIntervals);
                                             counterText.text = $"{personnelEvacuated}";
                                             clockText.text = $"{minutesLeft}:{secondsLeft:D2}";
                                         }
