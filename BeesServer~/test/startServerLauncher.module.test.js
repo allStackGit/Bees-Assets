@@ -138,8 +138,15 @@ test('server supervisor retries when a replacement process fails to spawn', () =
     assert.equal(timers.length, 1);
     assert.equal(timers[0].delay, 1000);
 
+    const first = children[0];
     timers.shift().callback();
     assert.equal(children.length, 2);
+
+    // Windows can report a late exit after the failed spawn error. It must not queue
+    // another replacement after the scheduled retry has already started a new child.
+    first.emit('exit', 1, null);
+    assert.equal(timers.length, 0);
+
     children[1].emit('error', new Error('second simulated spawn failure'));
     assert.equal(timers.length, 1);
     assert.equal(timers[0].delay, 2000);
