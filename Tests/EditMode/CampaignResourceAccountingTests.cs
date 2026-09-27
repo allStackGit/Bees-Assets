@@ -65,7 +65,7 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void PlutoEvacuationScoreIncludesTheTerminalTimerTick()
+        public void LegacyPlutoEvacuationScoreIncludesTheTerminalTimerTick()
         {
             string path = Path.Combine(Application.dataPath, "Scripts", "Levels", "Level.Campaign.Pluto.cs");
             string source = File.ReadAllText(path);
