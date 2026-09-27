@@ -428,14 +428,22 @@ function getNamedFileSetSha256(entries) {
     return sha256Text(JSON.stringify(manifest));
 }
 
-function requestJson(baseUrl, token, method, requestPath, payload = null, timeoutMs = null) {
+function requestJsonOnce(baseUrl, token, method, requestPath, payload, timeoutMs) {
     const url = new URL(requestPath, baseUrl.endsWith('/') ? baseUrl : baseUrl + '/');
-    const effectiveTimeoutMs = timeoutMs == null
-        ? (String(method).toUpperCase() === 'GET' ? 5000 : 30000)
-        : Number(timeoutMs);
     const transport = url.protocol === 'https:' ? https : http;
     const body = payload === null ? null : Buffer.from(JSON.stringify(payload) + '\n', 'utf8');
     return new Promise((resolve, reject) => {
+        let settled = false;
+        const finishResolve = value => {
+            if (settled) return;
+            settled = true;
+            resolve(value);
+        };
+        const finishReject = error => {
+            if (settled) return;
+            settled = true;
+            reject(error);
+        };
         const request = transport.request(url, {
             method,
             headers: {
@@ -449,33 +457,90 @@ function requestJson(baseUrl, token, method, requestPath, payload = null, timeou
         }, response => {
             const chunks = [];
             response.on('data', chunk => chunks.push(chunk));
+            response.on('aborted', () => {
+                const error = new Error(
+                    'training-control response was aborted for ' +
+                    String(method).toUpperCase() + ' ' + requestPath
+                );
+                error.code = 'ECONNRESET';
+                finishReject(error);
+            });
+            response.on('error', finishReject);
             response.on('end', () => {
                 const text = Buffer.concat(chunks).toString('utf8');
                 let value = {};
                 try {
                     if (text) value = JSON.parse(text);
                 } catch (_) {
-                    reject(new Error('Control server returned invalid JSON: ' + text));
+                    finishReject(new Error('Control server returned invalid JSON: ' + text));
                     return;
                 }
                 if (response.statusCode < 200 || response.statusCode >= 300) {
-                    reject(new Error('Control server HTTP ' + response.statusCode + ': ' + text));
+                    finishReject(new Error('Control server HTTP ' + response.statusCode + ': ' + text));
                     return;
                 }
-                resolve(value);
+                finishResolve(value);
             });
         });
         request.setTimeout(
-            effectiveTimeoutMs,
-            () => request.destroy(new Error(
-                'training-control ' + String(method).toUpperCase() +
-                ' request timed out after ' + effectiveTimeoutMs + ' ms'
-            )),
+            timeoutMs,
+            () => {
+                const error = new Error(
+                    'training-control ' + String(method).toUpperCase() +
+                    ' request timed out after ' + timeoutMs + ' ms'
+                );
+                error.code = 'ETIMEDOUT';
+                request.destroy(error);
+            },
         );
-        request.on('error', reject);
+        request.on('error', finishReject);
         if (body) request.write(body);
         request.end();
     });
+}
+
+function isTransientControlTransportError(error) {
+    const code = String(error && error.code || '').toUpperCase();
+    return code === 'ECONNRESET' ||
+        code === 'ECONNREFUSED' ||
+        code === 'EPIPE' ||
+        code === 'ETIMEDOUT' ||
+        code === 'EHOSTUNREACH' ||
+        code === 'ENETUNREACH';
+}
+
+async function requestJson(baseUrl, token, method, requestPath, payload = null, timeoutMs = null) {
+    const effectiveTimeoutMs = timeoutMs == null
+        ? (String(method).toUpperCase() === 'GET' ? 5000 : 30000)
+        : Number(timeoutMs);
+    const maximumAttempts = 4;
+    let lastError = null;
+    for (let attempt = 1; attempt <= maximumAttempts; attempt++) {
+        try {
+            return await requestJsonOnce(
+                baseUrl,
+                token,
+                method,
+                requestPath,
+                payload,
+                effectiveTimeoutMs,
+            );
+        } catch (error) {
+            lastError = error;
+            if (!isTransientControlTransportError(error) || attempt >= maximumAttempts) {
+                throw error;
+            }
+            const delayMs = 250 * attempt;
+            console.warn(
+                'Transient training-control transport failure (' +
+                String(error.code || error.message) + ') for ' +
+                String(method).toUpperCase() + ' ' + requestPath +
+                '; retrying attempt ' + (attempt + 1) + '/' + maximumAttempts + '.'
+            );
+            await sleep(delayMs);
+        }
+    }
+    throw lastError;
 }
 
 async function testControl(baseUrl, token) {
