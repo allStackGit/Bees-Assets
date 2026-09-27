@@ -27,7 +27,7 @@ namespace Assets.Scripts.Entities
             {
                 _collisionAsteroid = _collidingThing.GetComponent<CollisionAsteroid>() ??
                     _collidingThing.GetComponentInParent<CollisionAsteroid>();
-                if (_collisionAsteroid == null)
+                if (_collisionAsteroid == null || Level == null || _collisionAsteroid.Level != Level)
                 {
                     return;
                 }
@@ -69,7 +69,7 @@ namespace Assets.Scripts.Entities
                 // valid ship collision cannot turn into a null dereference at the border.
                 _collidingShip = _collidingThing.GetComponent<Ship>() ??
                     _collidingThing.GetComponentInParent<Ship>();
-                if (_collidingShip == null)
+                if (_collidingShip == null || Level == null || _collidingShip.Level != Level)
                 {
                     return;
                 }
