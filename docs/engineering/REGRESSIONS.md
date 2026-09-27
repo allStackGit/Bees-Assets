@@ -260,3 +260,12 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** `close()` now joins each started watcher/uploader thread before the session can be replaced and before final throughput metrics are written.  \
 **Verification:** source inspection confirmed both threads use `BrokerClient`, whose `urlopen` call has a finite configured timeout, and the reconnect loop creates the next session only after `close()` returns. No tests or runtime checks were run, per the static-only audit constraint.  \
 **Invariant/knowledge:** an actor must finish background ownership of broker requests and per-actor output before its process starts a replacement session.
+
+
+### REG-028 — Stale supervisor health probe could kill a replacement server
+**Area:** `BeesServer~/start-server.js`, managed supervisor health recovery  \
+**Symptom:** if a server child exited while its asynchronous health probe was pending, the restart timer could install a replacement before the old probe returned; an old failure could then count against and terminate the replacement.  \
+**Root cause:** the health callback applied its result to the mutable current `child` reference rather than to the child instance that the probe had checked.  \
+**Permanent protection:** the callback captures the probed child and discards its result if the supervisor is stopping, the current child changed, or the probed child exited while awaiting the response.  \
+**Verification:** source-level event ordering confirmed the restart can occur before the awaited health probe returns; the post-await identity guard prevents stale results from changing restart counters or signaling a replacement. No tests or runtime checks were run, per the static-only audit constraint.  \
+**Invariant/knowledge:** asynchronous health results must be scoped to the process instance they observed before mutating supervisor state.
