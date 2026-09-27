@@ -408,10 +408,10 @@ namespace Assets.Scripts.Levels
                 ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Gunship, 2, true),
             }, StartingPositions[ConfigData.Configuration.UserSide - 1], Vector2.zero, false);
 
-            Squad scoutSquad = State.GetSquadByNumber(ConfigData.Configuration.HumanSide, 1);
-            Squad scoutSquad2 = State.GetSquadByNumber(ConfigData.Configuration.HumanSide, 2);
-            Squad gunshipSquad = State.GetSquadByNumber(ConfigData.Configuration.HumanSide, 3);
-            Squad gunshipSquad2 = State.GetSquadByNumber(ConfigData.Configuration.HumanSide, 4);
+            Squad scoutSquad = State.GetSquadByNumber(ConfigData.Configuration.UserSide, 1);
+            Squad scoutSquad2 = State.GetSquadByNumber(ConfigData.Configuration.UserSide, 2);
+            Squad gunshipSquad = State.GetSquadByNumber(ConfigData.Configuration.UserSide, 3);
+            Squad gunshipSquad2 = State.GetSquadByNumber(ConfigData.Configuration.UserSide, 4);
             RectTransform rectTransform = null;
 
             State.SelectSquads(new List<Squad>());
