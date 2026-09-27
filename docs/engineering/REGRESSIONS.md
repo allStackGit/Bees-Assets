@@ -905,3 +905,13 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** no test was added or run, per the static-only audit scope. The source invariant is that expiring an incomplete session releases its unreceived reservation bytes while preserving charges for accepted bytes.  
 **Verification:** statically traced begin-time quota reservation, successful chunk offset advancement, completion, and idle cleanup. No tests, builds, Unity, simulations, or runtime checks were run.  
 **Invariant/knowledge:** reservations for declared transfer size must be reconciled with bytes actually accepted when an incomplete transfer is discarded.
+
+
+### REG-103 — Default trainer results directory could be passed to Unity
+**Area:** `Training/bees_mlagents_learn.py`, ML-Agents launcher argument handling  
+**Symptom:** when `--env-args` was present without a trainer `--results-dir`, the wrapper appended its default `.results` option after the Unity argument boundary. Unity received a trainer-only option and ML-Agents did not receive the intended results directory. A Unity-side `--results-dir` could also be mistaken for an explicit trainer setting.  
+**Root cause:** default-directory detection and insertion scanned/appended across the `--env-args` remainder instead of respecting the boundary.  
+**Fix:** inspect trainer options only before `--env-args`; insert the default before that marker while preserving the Unity remainder verbatim.  
+**Permanent protection:** added a focused source regression case that keeps a Unity `--results-dir` argument after the boundary while asserting the trainer default precedes it. The case was not run, per the static-only audit scope.  
+**Verification:** statically traced the launcher option rewrite, ML-Agents/Unity argument boundary, and resulting list order. No tests, builds, Unity, simulations, or runtime checks were run.  
+**Invariant/knowledge:** trainer options must remain before `--env-args`, and flags inside the Unity remainder must not satisfy trainer-option checks.
