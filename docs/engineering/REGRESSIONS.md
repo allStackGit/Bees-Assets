@@ -805,3 +805,13 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** `BackgroundBuildPreparerTests.test_wait_for_build_heartbeats_and_can_yield_for_new_state` guards the progress callback and early yield; `test_retry_clears_stale_prepared_marker` guards invalidated prepared-build state. The test was added but not run, per the static-only audit scope.  
 **Verification:** statically traced the worker's preparation request and blocking wait, artifact download timeout behavior, server lease expiry, and rollout pruning of stale trainers. No tests, builds, Unity, simulations, or runtime checks were run.  
 **Invariant/knowledge:** build preparation must not suspend trainer lease renewal; a worker that is alive and preparing a release must continue reporting control state and promptly reconcile newer desired revisions.
+
+
+### REG-093 — Concurrent request hash generation could return duplicate IDs
+**Area:** `Scripts/Utilities.cs`, `ServerRequest.Hash` identity  
+**Symptom:** two concurrent callers of `Unique53Hash()` could receive the same request hash even though the counter increment itself was atomic. Duplicate hashes cause the standing-request set and handled-response set to alias unrelated requests.  
+**Root cause:** the method stored each caller's counter and composed ID in shared static temporary fields, then returned the shared ID. A second thread could overwrite the fields between the first thread's increment and return.  
+**Fix:** the incremented counter is now held in a call-local variable, and the composed 53-bit ID is returned directly without shared mutable temporaries.  
+**Permanent protection:** `ServerRequestIdentityTests.UniqueRequestHashesUseCallLocalCounterValues` guards the call-local construction. The test was added but not run, per the static-only audit scope.  
+**Verification:** statically traced `ServerRequest.Hash` initialization through `Utilities.Hash()` and the interleaving window in `Unique53Hash()`. No tests, builds, Unity, simulations, or runtime checks were run.  
+**Invariant/knowledge:** atomic counters do not make an ID generator thread-safe if callers return a shared mutable temporary; each call must compose and return its own value.
