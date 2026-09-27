@@ -89,6 +89,7 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
         for command in (
             "build",
+            "runtime",
             "server",
             "start",
             "stop",
@@ -114,6 +115,7 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         source = NODE_OPERATOR.read_text(encoding="utf-8")
         for command in (
             "'build'",
+            "'runtime'",
             "'server'",
             "'start'",
             "'stop'",
@@ -123,6 +125,7 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         ):
             self.assertIn(command, source)
         self.assertIn("invokeBuild(options)", source)
+        self.assertIn("invokeRuntime(options)", source)
         self.assertIn("invokeStart(options)", source)
         self.assertIn("invokeStop(options)", source)
         self.assertIn("invokeBundle(options)", source)
@@ -239,6 +242,22 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
             "await reconcilePersistedTrainingAfterServerStart(config, admin)",
             server,
         )
+
+    def test_runtime_only_deployment_reuses_existing_unity_release(self):
+        source = read_operator("commands.js")
+        start = source.index("async function invokeRuntime")
+        end = source.index("async function invokeServer", start)
+        block = source[start:end]
+
+        self.assertIn("getTrainingCompatibilityFingerprint(python)", block)
+        self.assertIn("sourceKey !== releaseKey", block)
+        self.assertIn("newReleaseTrainingRuntime(", block)
+        self.assertIn("prepareCentralReleaseRuntime(", block)
+        self.assertIn("startCentralAgentIfNeeded(", block)
+        self.assertIn("prepareRemoteBootstrap(", block)
+        self.assertNotIn("invokeUnityBuild(", block)
+        self.assertNotIn("stageRelease(", block)
+        self.assertNotIn("publishRelease(", block)
 
     def test_recursive_cleanup_retries_transient_windows_handle_release(self):
         common = read_operator("common.js")
