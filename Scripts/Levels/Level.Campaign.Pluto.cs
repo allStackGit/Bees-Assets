@@ -21,13 +21,13 @@ namespace Assets.Scripts.Levels
             {
                 ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Scout, 1),
             }, StartingPositions[ConfigData.Configuration.UserSide - 1], Vector2.zero, false);
-            Scout firstScout = (Scout)State.GetHumanShips().First();
+            Scout firstScout = (Scout)State.GetShips(ConfigData.Configuration.UserSide).First(ship => ship.ShipType == ConfigData.ShipTypes.Scout);
 
             LevelConstructor.SpawnShipsAndSquads(new List<SavedSquad>()
             {
                 ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Honeybee, 1),
             }, StartingPositions[ConfigData.Configuration.AISide - 1], Vector2.zero, false);
-            Honeybee firstHoneybee = (Honeybee)State.GetBeeShips().First();
+            Honeybee firstHoneybee = (Honeybee)State.GetShips(ConfigData.Configuration.AISide).First(ship => ship.ShipType == ConfigData.ShipTypes.Honeybee);
 
             Gunship firstGunship = null;
             bool hasBeenUserControlled = false;
@@ -186,7 +186,7 @@ namespace Assets.Scripts.Levels
                             ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Gunship, 1),
                         }, StartingPositions[ConfigData.Configuration.UserSide - 1] - new Vector2(0, 100), Vector2.zero);
 
-                        firstGunship = (Gunship)State.GetHumanShips().First();
+                        firstGunship = (Gunship)State.GetShips(ConfigData.Configuration.UserSide).First(ship => ship.ShipType == ConfigData.ShipTypes.Gunship);
                         firstGunship.Squad.CanAcceptUserInput = false;
                         firstGunship.Squad.FinalizeUserCommand();
                         firstGunship.Squad.SetSquadCeaseFire(true);
