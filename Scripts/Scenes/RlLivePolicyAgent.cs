@@ -520,9 +520,9 @@ internal sealed class RlLivePolicyAgent : Agent
     {
         if (_reservedHealingBeehive != null && _ship != null)
         {
-            _reservedHealingBeeehive.ShipsHealingHere.Remove(_ship);
+            _reservedHealingBeehive.ShipsHealingHere.Remove(_ship);
         }
-        _reservedHealingBeeehive = null;
+        _reservedHealingBeehive = null;
     }
 
     private Beehive FindTouchingBeehive()
