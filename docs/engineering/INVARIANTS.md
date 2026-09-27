@@ -16,6 +16,7 @@ These are cross-cutting rules future changes must preserve. Keep this file conci
 - Squad selection and command dispatch are scoped by match player id. A non-primary player's selection must not enter the primary-local `SelectedSquads`/`IsSelected` UI state, and all player-scoped selections must be forgotten before pooled squad reuse.
 - External/session-scoped player commands must fail closed for unknown players, dead/foreign squads, or squads owned by another player, and must enter gameplay through the ownership-validating `GameState.TryPlayer*` command gateway rather than directly invoking trusted `Squad.User*` methods.
 - Multiplayer command envelopes use positive, monotonically increasing per-player sequences. Duplicate or older sequences are rejected before gameplay mutation; sequenced envelopes are invalid outside an active Free Play `MatchSession`.
+- Network/transport callbacks may enqueue copied command data only; they must not invoke Unity gameplay mutations directly. The per-Level received-command queue is bounded, cleared on Level reset/end, and drained with a per-frame budget on Unity's main thread.
 
 ## Async and ordering
 

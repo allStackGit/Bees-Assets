@@ -505,5 +505,44 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains("return TryPlayerFullRetreat(", source);
             StringAssert.Contains("return TryPlayerHealSquad(", source);
         }
+
+        [Test]
+        public void ReceivedPlayerCommandsAreCopiedBoundedAndDrainedOnMainThread()
+        {
+            string commandPath = Path.Combine(Application.dataPath, "Scripts", "Levels", "GameState.Commands.cs");
+            string stagePath = Path.Combine(Application.dataPath, "Scripts", "Scenes", "Stage.cs");
+            string statePath = Path.Combine(Application.dataPath, "Scripts", "Levels", "GameState.cs");
+            string commandSource = File.ReadAllText(commandPath);
+            string stageSource = File.ReadAllText(stagePath);
+            string stateSource = File.ReadAllText(statePath);
+
+            StringAssert.Contains("public const int MaxQueuedPlayerCommands = 1024;", commandSource);
+            StringAssert.Contains("new PlayerCommandEnvelope(", commandSource);
+            StringAssert.Contains("lock (_queuedPlayerCommandsLock)", commandSource);
+            StringAssert.Contains("ProcessQueuedPlayerCommands()", stageSource);
+            StringAssert.Contains("ClearQueuedPlayerCommands();", stateSource);
+        }
+
+        [Test]
+        public void ReceivedPlayerCommandQueueRejectsMalformedEnvelopeBeforeQueueing()
+        {
+            GameObject stateObject = new GameObject("Queued Command State");
+            try
+            {
+                Component state = stateObject.AddComponent(RuntimeAssembly.GetType("Assets.Scripts.Levels.GameState"));
+                Type commandType = RuntimeAssembly.GetType("Assets.Scripts.Levels.PlayerCommandEnvelope");
+                object command = Activator.CreateInstance(commandType);
+
+                RuntimeAssembly.SetField(command, "PlayerId", 0);
+                RuntimeAssembly.SetField(command, "Sequence", 1L);
+                RuntimeAssembly.SetField(command, "SquadCommandId", 1L);
+
+                Assert.That(RuntimeAssembly.Invoke(state, "QueueReceivedPlayerCommand", command), Is.EqualTo(false));
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(stateObject);
+            }
+        }
     }
 }
