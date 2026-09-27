@@ -75,6 +75,24 @@ internal sealed class RlPlayerDerivedTacticalGeometry
         return ParseCatalog(ReadFlagValue(args, CatalogFlag));
     }
 
+    internal static float GetMaximumConfiguredMapSize(string[] args, float fallbackMapSize)
+    {
+        EnsureParsed(args);
+        float maximumMapSize = fallbackMapSize;
+        if (_fixedGeometry != null)
+        {
+            maximumMapSize = Mathf.Max(maximumMapSize, _fixedGeometry.MapSize);
+        }
+        if (_catalog != null)
+        {
+            foreach (RlPlayerDerivedTacticalGeometry geometry in _catalog.Values)
+            {
+                maximumMapSize = Mathf.Max(maximumMapSize, geometry.MapSize);
+            }
+        }
+        return maximumMapSize;
+    }
+
     internal static RlPlayerDerivedTacticalGeometry ParseFixedForTests(string[] args)
     {
         string value = ReadFlagValue(args, FixedGeometryFlag);
