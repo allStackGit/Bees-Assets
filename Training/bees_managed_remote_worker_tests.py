@@ -63,6 +63,7 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
                 bundle.writestr("training-worker.token", b"worker")
                 bundle.writestr("wan.token", b"wan")
                 bundle.writestr("bees-tailnet-bridge-windows.exe", b"bridge")
+                bundle.writestr("bees-tailnet-bridge-linux", b"bridge")
                 bundle.writestr("latest-training-release.json", b"{}")
 
             response = mock.MagicMock()
