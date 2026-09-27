@@ -1097,6 +1097,14 @@ Manual-only protection is acceptable only when the record explains why determini
 **Invariant/knowledge:** externally configured names are data, not safe filesystem components; generated artifacts must remain within their selected output directory.
 
 
+### REG-127 — failed persistence left uncommitted rollout state live
+**Area:** `BeesServer~/trainingControl.js`, rollout transitions, trainer heartbeats, and artifact catalog updates
+**Symptom:** A state-file write failure could return an API error after mutating in-memory release phase, trainer barrier, or canonical state. Later heartbeats could then serve the uncommitted transition until process restart.
+**Root cause:** Several methods edited nested shared state and called `_persist()` without restoring the prior state when the atomic write failed.
+**Fix:** Added persistence rollback for staged state snapshots, and copy-on-write handling for frequently updated heartbeat/barrier state. Failed persistence restores the prior state; pruned artifact files are deleted only after catalog persistence succeeds.
+**Permanent protection:** Changes to persisted control state must either persist successfully or restore the prior in-memory state. Frequent heartbeat and rollout paths should avoid cloning the full artifact catalog when only barrier fields can change.
+**Verification:** Statically traced every `this._persist()` call and confirmed rollout prune/advance/promote, release staging, artifact publication, desired-state updates, and dedicated heartbeat persistence now restore prior state on write failure. Inspected atomic artifact ordering to confirm deletion follows successful persistence. No tests, builds, services, or runtime checks were run.
+
 ### REG-126 — rejected desired-state patches partially mutated training state
 **Area:** `BeesServer~/trainingControl.js`, `TrainingControlStore.setDesiredState`
 **Symptom:** An admin patch combining `training_enabled` with invalid or rollout-locked `environment_args` could return an error while leaving the in-memory training flag changed.
