@@ -90,3 +90,5 @@ These are cross-cutting rules future changes must preserve. Keep this file conci
 - Do not introduce unbounded caches, retained pooled state, race conditions, or hidden quality reductions to improve a benchmark.
 
 - SquadMaker lobby transport entry points are Free Play-only, must call the base `Scene.Update`, and must dispose their transport on scene teardown. Receiving a lobby session is not sufficient to start battle until canonical match/environment configuration is also staged.
+
+- Online Free Play setup randomness is match-scoped and deterministic per `MatchLevelId`. Map/environment option resolution, random obstacle geometry, initial mining asteroid layout, and random squad composition/IDs must use the match setup stream; solo Free Play, Campaign, Challenge, RL, and ordinary combat randomness retain their legacy RNG paths.

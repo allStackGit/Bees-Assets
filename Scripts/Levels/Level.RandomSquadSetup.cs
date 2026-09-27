@@ -172,6 +172,7 @@ namespace Assets.Scripts.Levels
         {
             _randomQueenCount = 0;
             bool noVisibleArmedTypes = HasNoVisibleArmedTypes(side);
+            bool deterministicMultiplayerSetup = UsesDeterministicMultiplayerSetupRandom;
 
             for (int option = 0; option < (ActivateLoadingShipsMidLevel ? 2 : 1); option++)
             {
@@ -182,20 +183,35 @@ namespace Assets.Scripts.Levels
                 {
                     // Preserve the legacy random draw order exactly. Human-side generation first
                     // consumes a Bee-type draw and then replaces it with the Human-type draw.
-                    ConfigData.ShipTypes type = Stage.BeeShipTypes[Random.Range(0, Stage.BeeShipTypes.Count)];
+                    ConfigData.ShipTypes type = Stage.BeeShipTypes[
+                        deterministicMultiplayerSetup
+                            ? SetupUnityRandomRange(0, Stage.BeeShipTypes.Count)
+                            : Random.Range(0, Stage.BeeShipTypes.Count)];
                     if (side == ConfigData.Configuration.HumanSide)
                     {
-                        type = Stage.HumanShipTypes[Random.Range(0, Stage.HumanShipTypes.Count)];
+                        type = Stage.HumanShipTypes[
+                            deterministicMultiplayerSetup
+                                ? SetupUnityRandomRange(0, Stage.HumanShipTypes.Count)
+                                : Random.Range(0, Stage.HumanShipTypes.Count)];
                     }
                     while (side == ConfigData.Configuration.BeeSide &&
                            type == ConfigData.ShipTypes.Queen &&
                            Stage.BeeShipTypes.Count > 1 &&
-                           (HasObstacles || _randomQueenCount == 2 || Utilities.RandomInt(4) != 3))
+                           (HasObstacles ||
+                            _randomQueenCount == 2 ||
+                            (deterministicMultiplayerSetup
+                                ? SetupUtilityRandomInt(4)
+                                : Utilities.RandomInt(4)) != 3))
                     {
-                        type = Stage.BeeShipTypes[Random.Range(0, Stage.BeeShipTypes.Count)];
+                        type = Stage.BeeShipTypes[
+                            deterministicMultiplayerSetup
+                                ? SetupUnityRandomRange(0, Stage.BeeShipTypes.Count)
+                                : Random.Range(0, Stage.BeeShipTypes.Count)];
                     }
 
-                    long squadId = Utilities.GetNegativeSavedSquadId();
+                    long squadId = deterministicMultiplayerSetup
+                        ? AllocateSetupSavedSquadId()
+                        : Utilities.GetNegativeSavedSquadId();
                     SavedSquad savedSquad = new SavedSquad(
                         squadId,
                         side,
@@ -205,8 +221,13 @@ namespace Assets.Scripts.Levels
                         false,
                         ConfigData.DefaultShootingStrategy,
                         ConfigData.UnsetColor,
-                        null);
-                    savedSquad.SetupRandomShips(type);
+                        deterministicMultiplayerSetup
+                            ? new SquadStatBlock("Multiplayer", 0, 0, 0, 0, 0, 0)
+                            : null);
+                    savedSquad.SetupRandomShips(
+                        type,
+                        deterministicMultiplayerSetup ? SetupUnityRandomRange : null,
+                        deterministicMultiplayerSetup ? AllocateSetupFleetShipId : null);
                     _randomSquadBuffer.Add(savedSquad);
 
                     if (type == ConfigData.ShipTypes.Queen)
@@ -248,21 +269,23 @@ namespace Assets.Scripts.Levels
             }
         }
 
-        private static bool HasNoVisibleArmedTypes(int side)
+        private bool HasNoVisibleArmedTypes(int side)
         {
-            if (side == ConfigData.Configuration.BeeSide)
+            IEnumerable<ConfigData.ShipTypes> visibleTypes;
+            if (UsesDeterministicMultiplayerSetupRandom)
             {
-                foreach (ConfigData.ShipTypes type in ConfigData.UserProgressData.VisibleBeeShipTypes)
-                {
-                    if (ConfigData.ArmedShipTypes.Contains(type))
-                    {
-                        return false;
-                    }
-                }
-                return true;
+                visibleTypes = side == ConfigData.Configuration.BeeSide
+                    ? Stage.BeeShipTypes
+                    : Stage.HumanShipTypes;
+            }
+            else
+            {
+                visibleTypes = side == ConfigData.Configuration.BeeSide
+                    ? ConfigData.UserProgressData.VisibleBeeShipTypes
+                    : ConfigData.UserProgressData.VisibleHumanShipTypes;
             }
 
-            foreach (ConfigData.ShipTypes type in ConfigData.UserProgressData.VisibleHumanShipTypes)
+            foreach (ConfigData.ShipTypes type in visibleTypes)
             {
                 if (ConfigData.ArmedShipTypes.Contains(type))
                 {

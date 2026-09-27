@@ -1623,5 +1623,52 @@ namespace Bees.Tests.EditMode
                     Is.EqualTo(RuntimeAssembly.Invoke(second, "NextInt", 100000)));
             }
         }
+
+        [Test]
+        public void OnlineRandomSquadSetupUsesMatchRngAndMatchOnlyIds()
+        {
+            string levelPath = Path.Combine(
+                Application.dataPath,
+                "Scripts",
+                "Levels",
+                "Level.RandomSquadSetup.cs");
+            string savedSquadPath = Path.Combine(
+                Application.dataPath,
+                "Scripts",
+                "Data",
+                "SavedSquad.cs");
+            string levelSource = File.ReadAllText(levelPath);
+            string savedSquadSource = File.ReadAllText(savedSquadPath);
+
+            StringAssert.Contains("UsesDeterministicMultiplayerSetupRandom", levelSource);
+            StringAssert.Contains("SetupUnityRandomRange", levelSource);
+            StringAssert.Contains("SetupUtilityRandomInt(4)", levelSource);
+            StringAssert.Contains("AllocateSetupSavedSquadId()", levelSource);
+            StringAssert.Contains("AllocateSetupFleetShipId", levelSource);
+            StringAssert.Contains("Func<int, int, int> randomRange = null", savedSquadSource);
+            StringAssert.Contains("Func<long> fleetIdFactory = null", savedSquadSource);
+        }
+
+        [Test]
+        public void LegacyRandomSquadSetupStillUsesOriginalRandomSourcesWhenNoOnlineMatch()
+        {
+            string levelPath = Path.Combine(
+                Application.dataPath,
+                "Scripts",
+                "Levels",
+                "Level.RandomSquadSetup.cs");
+            string savedSquadPath = Path.Combine(
+                Application.dataPath,
+                "Scripts",
+                "Data",
+                "SavedSquad.cs");
+            string levelSource = File.ReadAllText(levelPath);
+            string savedSquadSource = File.ReadAllText(savedSquadPath);
+
+            StringAssert.Contains("Random.Range(0, Stage.BeeShipTypes.Count)", levelSource);
+            StringAssert.Contains("Utilities.GetNegativeSavedSquadId()", levelSource);
+            StringAssert.Contains("UnityEngine.Random.Range(minInclusive, maxExclusive)", savedSquadSource);
+            StringAssert.Contains("Utilities.GetNegativeFleetshipId()", savedSquadSource);
+        }
     }
 }

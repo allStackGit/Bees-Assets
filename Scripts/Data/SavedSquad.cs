@@ -65,8 +65,18 @@ namespace Assets.Scripts.Data
             }
         }
 
-        public void SetupRandomShips(ConfigData.ShipTypes squadType)
+        public void SetupRandomShips(
+            ConfigData.ShipTypes squadType,
+            Func<int, int, int> randomRange = null,
+            Func<long> fleetIdFactory = null)
         {
+            int Range(int minInclusive, int maxExclusive)
+            {
+                return randomRange == null
+                    ? UnityEngine.Random.Range(minInclusive, maxExclusive)
+                    : randomRange(minInclusive, maxExclusive);
+            }
+
             int shipCount = 10;
             switch (squadType)
             {
@@ -85,24 +95,24 @@ namespace Assets.Scripts.Data
                 case ConfigData.ShipTypes.Factory:
                 case ConfigData.ShipTypes.Honeybee:
                 case ConfigData.ShipTypes.Scout:
-                    shipCount = UnityEngine.Random.Range(1, 4);
+                    shipCount = Range(1, 4);
                     break;
 
                 case ConfigData.ShipTypes.Wasp:
                 case ConfigData.ShipTypes.Frigate:
                 case ConfigData.ShipTypes.Gunship:
-                    shipCount = UnityEngine.Random.Range(2, 8);
+                    shipCount = Range(2, 8);
                     break;
 
                 case ConfigData.ShipTypes.Leafcutter:
                 case ConfigData.ShipTypes.Cruiser:
                 case ConfigData.ShipTypes.Dreadnought:
-                    shipCount = UnityEngine.Random.Range(1, 6);
+                    shipCount = Range(1, 6);
                     break;
 
                 case ConfigData.ShipTypes.Hornet:
                 case ConfigData.ShipTypes.YellowJacket:
-                    shipCount = UnityEngine.Random.Range(4, 10);
+                    shipCount = Range(4, 10);
                     break;
             }
 
@@ -126,9 +136,26 @@ namespace Assets.Scripts.Data
 
             for (int shipIndex = 0; shipIndex < shipCount; shipIndex++)
             {
-                long id = Utilities.GetNegativeFleetshipId();
+                long id = fleetIdFactory == null
+                    ? Utilities.GetNegativeFleetshipId()
+                    : fleetIdFactory();
+                string generatedName = fleetIdFactory == null
+                    ? ""
+                    : $"{Utilities.ConvertShipTypeToName[squadType]} M-{shipIndex + 1}";
 
-                FleetShip fleetShip = new FleetShip(id, squadType, false, false, 0, 0, 0, 0, 0, 0, 0);
+                FleetShip fleetShip = new FleetShip(
+                    id,
+                    squadType,
+                    false,
+                    false,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    generatedName);
                 AddShipToSquad(new SquadShip(fleetShip.Id, fleetShip.Type, offsets[shipIndex]));
 
             }
