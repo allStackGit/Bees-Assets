@@ -25,6 +25,7 @@ namespace Bees.Tests.EditMode
             string source = File.ReadAllText(path);
 
             StringAssert.Contains("squad != null && !squad.IsDead && squad.CanAcceptInputFrom(playerId)", source);
+            StringAssert.Contains("GetSelectedSquadsForPlayer(GetPrimaryInputPlayerId())", source);
         }
 
         [Test]
@@ -186,6 +187,88 @@ namespace Bees.Tests.EditMode
             RuntimeAssembly.Invoke(session, "TryAssignSavedSquadOwner", secondSquad, 2);
 
             Assert.That(RuntimeAssembly.Invoke(session, "ResolveSquadOwner", clonedSquad, 1), Is.EqualTo(0));
+        }
+
+        [Test]
+        public void NonPrimaryPlayerSelectionIsIsolatedFromPrimarySelection()
+        {
+            GameObject stageObject = new GameObject("Selection Ownership Stage");
+            GameObject levelObject = new GameObject("Selection Ownership Level");
+            GameObject stateObject = new GameObject("Selection Ownership State");
+            GameObject squadObject = new GameObject("Selection Ownership Squad");
+            try
+            {
+                Component stage = stageObject.AddComponent(RuntimeAssembly.GetType("Stage"));
+                Component level = levelObject.AddComponent(RuntimeAssembly.GetType("Assets.Scripts.Levels.Level"));
+                Component state = stateObject.AddComponent(RuntimeAssembly.GetType("Assets.Scripts.Levels.GameState"));
+                Component squad = squadObject.AddComponent(RuntimeAssembly.GetType("Assets.Scripts.Levels.Squad"));
+                Type sessionType = RuntimeAssembly.GetType("Assets.Scripts.Levels.MatchSession");
+                object session = Activator.CreateInstance(sessionType);
+
+                RuntimeAssembly.Invoke(session, "AddPlayer", 1, 1, true);
+                RuntimeAssembly.Invoke(session, "AddPlayer", 2, 1, false);
+                RuntimeAssembly.SetField(stage, "MatchSession", session);
+                RuntimeAssembly.SetField(level, "Stage", stage);
+                RuntimeAssembly.SetField(level, "State", state);
+                RuntimeAssembly.SetField(level, "HasPlayer", true);
+                RuntimeAssembly.SetField(state, "Level", level);
+                RuntimeAssembly.SetField(state, "Stage", stage);
+                RuntimeAssembly.SetField(squad, "Level", level);
+                RuntimeAssembly.SetField(squad, "Stage", stage);
+                RuntimeAssembly.SetField(squad, "Side", 1);
+                RuntimeAssembly.SetField(squad, "IsDead", false);
+                RuntimeAssembly.Invoke(squad, "SetOwnerPlayerId", 2);
+
+                RuntimeAssembly.Invoke(state, "AddSelectedSquadForPlayer", 2, squad);
+
+                Assert.That(RuntimeAssembly.GetCount(
+                    RuntimeAssembly.Invoke(state, "GetSelectedSquadsForPlayer", 2)), Is.EqualTo(1));
+                Assert.That(RuntimeAssembly.GetCount(
+                    RuntimeAssembly.Invoke(state, "GetSelectedSquadsForPlayer", 1)), Is.Zero);
+                Assert.That(RuntimeAssembly.GetCount(RuntimeAssembly.GetField(state, "SelectedSquads")), Is.Zero);
+                Assert.That(RuntimeAssembly.GetField(squad, "IsSelected"), Is.False,
+                    "Legacy IsSelected remains the primary-local visual selection state.");
+
+                RuntimeAssembly.Invoke(state, "ForgetSquadSelectionForRelease", squad);
+                Assert.That(RuntimeAssembly.GetCount(
+                    RuntimeAssembly.Invoke(state, "GetSelectedSquadsForPlayer", 2)), Is.Zero);
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(squadObject);
+                UnityEngine.Object.DestroyImmediate(stateObject);
+                UnityEngine.Object.DestroyImmediate(levelObject);
+                UnityEngine.Object.DestroyImmediate(stageObject);
+            }
+        }
+
+        [Test]
+        public void InputAndClickDispatchCarryIssuingPlayerIdentity()
+        {
+            string inputPath = Path.Combine(Application.dataPath, "Scripts", "Levels", "LevelInputManager.cs");
+            string selectorPath = Path.Combine(Application.dataPath, "Scripts", "Levels", "Selector.cs");
+            string interactionPath = Path.Combine(Application.dataPath, "Scripts", "Entities", "Ships", "Ship.Interaction.cs");
+            string inputSource = File.ReadAllText(inputPath);
+            string selectorSource = File.ReadAllText(selectorPath);
+            string interactionSource = File.ReadAllText(interactionPath);
+
+            StringAssert.Contains("GetSelectedSquadsForPlayer(PlayerId)", inputSource);
+            StringAssert.Contains("SelectSquadsForPlayer(PlayerId, squads)", selectorSource);
+            StringAssert.Contains("GetSelectedSquadsForPlayer(playerId)", interactionSource);
+            StringAssert.Contains("_lastEnemyRightClickPlayerId == playerId", interactionSource);
+            StringAssert.Contains("return;", interactionSource);
+        }
+
+        [Test]
+        public void SelectorStartupDoesNotDependOnLevelStateExisting()
+        {
+            string selectorPath = Path.Combine(Application.dataPath, "Scripts", "Levels", "Selector.cs");
+            string stagePath = Path.Combine(Application.dataPath, "Scripts", "Scenes", "Stage.cs");
+            string selectorSource = File.ReadAllText(selectorPath);
+            string stageSource = File.ReadAllText(stagePath);
+
+            StringAssert.DoesNotContain("Level.State.GetPrimaryInputPlayerId()", selectorSource);
+            StringAssert.Contains("Selector.Setup(PrimaryLevel, SelectionBox, primaryPlayerId)", stageSource);
         }
     }
 }
