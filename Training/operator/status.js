@@ -4,7 +4,10 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const {
+    exists,
+    getStateReferencedLivePid,
     paths,
+    readJson,
     readTail,
     requestJson,
     sleep,
@@ -217,6 +220,27 @@ async function getStatusFrameLines(config, adminToken) {
         status = await requestJson(config.controlUrl, adminToken, 'GET', '/v1/status');
     } catch (error) {
         lines.push('Server: OFFLINE/UNREACHABLE - ' + error.message);
+        if (exists(paths.serverStatePath)) {
+            try {
+                const serverState = readJson(paths.serverStatePath);
+                const persistedPid = Number(serverState.pid || 0);
+                const livePid = getStateReferencedLivePid(serverState);
+                lines.push(
+                    'Server supervisor state: pid=' +
+                    (persistedPid > 0 ? persistedPid : '-') +
+                    ' pid_alive=' + Boolean(livePid) +
+                    ' state=' + String(serverState.status || '-') +
+                    ' runtime=' + String(serverState.source_hash || '').slice(0, 12)
+                );
+            } catch (stateError) {
+                lines.push(
+                    'Server supervisor state: unreadable - ' +
+                    stateError.name + ': ' + stateError.message
+                );
+            }
+        } else {
+            lines.push('Server supervisor state: missing');
+        }
         return lines;
     }
 

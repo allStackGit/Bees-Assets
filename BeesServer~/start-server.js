@@ -129,28 +129,46 @@ function managedChildOwnerToken(ownerToken) {
         .digest('hex');
 }
 
-function runSupervisor(options) {
+function supervisorRestartDelayMs(attempt) {
+    const exponent = Math.max(0, Math.min(5, Number(attempt) || 0));
+    return Math.min(30000, RESTART_DELAY_MS * (2 ** exponent));
+}
+
+function runSupervisor(options, runtime = {}) {
     const serverPath = path.join(__dirname, 'server.js');
-    const env = serverEnvironment();
+    const env = serverEnvironment(runtime.env || process.env);
     const healthConfig = trainingControlProbeConfig(env);
+    const spawnProcess = runtime.spawn || spawn;
+    const setTimer = runtime.setTimeout || setTimeout;
+    const clearTimer = runtime.clearTimeout || clearTimeout;
+    const setRepeatingTimer = runtime.setInterval || setInterval;
+    const clearRepeatingTimer = runtime.clearInterval || clearInterval;
     let child = null;
     let stopping = false;
     let restartTimer = null;
     let healthTimer = null;
     let startedAt = 0;
     let consecutiveHealthFailures = 0;
+    let restartAttempts = 0;
+    let healthProbeRunning = false;
 
     const clearRestart = () => {
-        if (restartTimer) clearTimeout(restartTimer);
+        if (restartTimer) clearTimer(restartTimer);
         restartTimer = null;
     };
 
-    const scheduleRestart = () => {
+    const scheduleRestart = reason => {
         if (stopping || restartTimer) return;
-        restartTimer = setTimeout(() => {
+        const delayMs = supervisorRestartDelayMs(restartAttempts);
+        restartAttempts++;
+        console.error(
+            '[Bees server supervisor] scheduling restart in ' +
+            delayMs + 'ms' + (reason ? ' after ' + reason : '')
+        );
+        restartTimer = setTimer(() => {
             restartTimer = null;
             startChild();
-        }, RESTART_DELAY_MS);
+        }, delayMs);
     };
 
     const startChild = () => {
@@ -163,26 +181,56 @@ function runSupervisor(options) {
                 '--bees-managed-child-token=' + managedChildOwnerToken(options.managedOwnerToken)
             );
         }
-        child = spawn(process.execPath, [serverPath, ...childArgs], {
-            cwd: __dirname,
-            detached: false,
-            stdio: 'inherit',
-            env,
-        });
-        console.log(`[Bees server supervisor] started server PID ${child.pid}`);
 
-        child.on('error', error => {
-            console.error(`[Bees server supervisor] server launch failed: ${error.message}`);
-        });
-        child.on('exit', (code, signal) => {
-            const ended = child;
+        let launched;
+        try {
+            launched = spawnProcess(process.execPath, [serverPath, ...childArgs], {
+                cwd: __dirname,
+                detached: false,
+                stdio: 'inherit',
+                env,
+            });
+        } catch (error) {
             child = null;
-            if (stopping) return;
+            console.error(
+                '[Bees server supervisor] server spawn threw before launch: ' +
+                error.message
+            );
+            scheduleRestart('spawn exception');
+            return;
+        }
+
+        child = launched;
+        let launchFailed = false;
+        console.log(
+            '[Bees server supervisor] started server PID ' +
+            (launched && launched.pid ? launched.pid : 'pending')
+        );
+
+        launched.once('spawn', () => {
+            console.log(
+                '[Bees server supervisor] server process spawned PID ' +
+                (launched.pid || 'unknown')
+            );
+        });
+        launched.once('error', error => {
+            launchFailed = true;
+            if (child === launched) child = null;
+            console.error(
+                '[Bees server supervisor] server launch failed: ' + error.message
+            );
+            scheduleRestart('spawn failure');
+        });
+        launched.once('exit', (code, signal) => {
+            if (child === launched) child = null;
+            if (stopping || launchFailed) return;
             console.error(
                 '[Bees server supervisor] server exited unexpectedly ' +
-                `pid=${ended && ended.pid ? ended.pid : 'unknown'} code=${code ?? 'none'} signal=${signal || 'none'}; restarting`
+                'pid=' + (launched && launched.pid ? launched.pid : 'unknown') +
+                ' code=' + (code ?? 'none') +
+                ' signal=' + (signal || 'none') + '; restarting'
             );
-            scheduleRestart();
+            scheduleRestart('unexpected exit');
         });
     };
 
@@ -190,44 +238,73 @@ function runSupervisor(options) {
         if (stopping) return;
         stopping = true;
         clearRestart();
-        if (healthTimer) clearInterval(healthTimer);
+        if (healthTimer) clearRepeatingTimer(healthTimer);
         healthTimer = null;
         if (child && child.exitCode === null && child.signalCode === null) {
+            const stoppingChild = child;
             try {
-                child.kill(signal || 'SIGTERM');
+                stoppingChild.kill(signal || 'SIGTERM');
             } catch (_) {}
-            const forceTimer = setTimeout(() => {
-                if (child && child.exitCode === null && child.signalCode === null) {
-                    try { child.kill('SIGKILL'); } catch (_) {}
+            const forceTimer = setTimer(() => {
+                if (
+                    child === stoppingChild &&
+                    stoppingChild.exitCode === null &&
+                    stoppingChild.signalCode === null
+                ) {
+                    try { stoppingChild.kill('SIGKILL'); } catch (_) {}
                 }
             }, 5000);
-            forceTimer.unref();
+            if (forceTimer && typeof forceTimer.unref === 'function') forceTimer.unref();
         }
     };
 
-    process.on('SIGINT', () => stop('SIGINT'));
-    process.on('SIGTERM', () => stop('SIGTERM'));
+    if (runtime.registerSignals !== false) {
+        process.on('SIGINT', () => stop('SIGINT'));
+        process.on('SIGTERM', () => stop('SIGTERM'));
+    }
 
     startChild();
 
     if (healthConfig) {
-        healthTimer = setInterval(async () => {
-            if (stopping || !child || child.exitCode !== null || child.signalCode !== null) return;
+        healthTimer = setRepeatingTimer(async () => {
+            if (
+                stopping ||
+                healthProbeRunning ||
+                !child ||
+                child.exitCode !== null ||
+                child.signalCode !== null
+            ) return;
             if (Date.now() - startedAt < HEALTH_STARTUP_GRACE_MS) return;
-            const healthy = await probeTrainingControl(healthConfig);
+
+            healthProbeRunning = true;
+            let healthy = false;
+            try {
+                healthy = await probeTrainingControl(healthConfig);
+            } catch (error) {
+                console.error(
+                    '[Bees server supervisor] health probe threw unexpectedly: ' +
+                    error.message
+                );
+                healthy = false;
+            } finally {
+                healthProbeRunning = false;
+            }
+
             if (healthy) {
                 consecutiveHealthFailures = 0;
+                restartAttempts = 0;
                 return;
             }
             consecutiveHealthFailures++;
             console.error(
-                `[Bees server supervisor] training-control health probe failed ${consecutiveHealthFailures}/${HEALTH_FAILURE_LIMIT}`
+                '[Bees server supervisor] training-control health probe failed ' +
+                consecutiveHealthFailures + '/' + HEALTH_FAILURE_LIMIT
             );
             if (consecutiveHealthFailures >= HEALTH_FAILURE_LIMIT && child) {
                 consecutiveHealthFailures = 0;
                 const unhealthyChild = child;
                 try { unhealthyChild.kill('SIGTERM'); } catch (_) {}
-                const forceTimer = setTimeout(() => {
+                const forceTimer = setTimer(() => {
                     if (
                         child === unhealthyChild &&
                         unhealthyChild.exitCode === null &&
@@ -239,11 +316,13 @@ function runSupervisor(options) {
                         try { unhealthyChild.kill('SIGKILL'); } catch (_) {}
                     }
                 }, 5000);
-                forceTimer.unref();
+                if (forceTimer && typeof forceTimer.unref === 'function') forceTimer.unref();
             }
         }, HEALTH_INTERVAL_MS);
-        healthTimer.unref();
+        if (healthTimer && typeof healthTimer.unref === 'function') healthTimer.unref();
     }
+
+    return { stop };
 }
 
 function launchServer(options = parseLauncherOptions()) {
@@ -316,6 +395,7 @@ module.exports = {
     managedChildOwnerToken,
     trainingControlProbeConfig,
     probeTrainingControl,
+    supervisorRestartDelayMs,
     runSupervisor,
     launchServer,
 };

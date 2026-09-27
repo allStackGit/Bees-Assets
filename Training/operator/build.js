@@ -281,7 +281,16 @@ async function getActiveRunId(config, adminToken = '') {
         } catch (_) {}
     }
     if (exists(paths.runStatePath)) {
-        try { return String(readJson(paths.runStatePath).run_id || '').trim(); } catch (_) {}
+        try {
+            const runId = String(readJson(paths.runStatePath).run_id || '').trim();
+            if (runId) return runId;
+        } catch (_) {}
+    }
+    if (exists(paths.latestReleasePath)) {
+        try {
+            const runId = String(readJson(paths.latestReleasePath).run_id || '').trim();
+            if (runId) return runId;
+        } catch (_) {}
     }
     return '';
 }
