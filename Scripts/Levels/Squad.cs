@@ -19,6 +19,12 @@ namespace Assets.Scripts.Levels
         public long Id;
         public int ItemId;
         /// <summary>
+        /// Match-scoped squad identity used by player command/network boundaries. Zero means
+        /// this level has no MatchSession and legacy runtime ItemId is used instead.
+        /// </summary>
+        public long MatchSquadId;
+        public long CommandSquadId => MatchSquadId != 0 ? MatchSquadId : ItemId;
+        /// <summary>
         /// Match-local player owner. Zero means that no player currently owns this squad.
         /// This is not a persistent squad id and must be reset on pooled reuse.
         /// </summary>
@@ -378,6 +384,7 @@ namespace Assets.Scripts.Levels
             HasCommandQueue = false;
             IsSelected = false;
             IsLockedOn = false;
+            MatchSquadId = 0;
             OwnerPlayerId = MatchSession.UnownedPlayerId;
             IsPlayerControlled = false;
             IsUserControlled = false;
@@ -419,6 +426,7 @@ namespace Assets.Scripts.Levels
             SetSquadBox();
 
             MatchSession matchSession = Level.Stage.MatchSession;
+            MatchSquadId = matchSession == null ? 0 : matchSession.AllocateMatchSquadId();
             int ownerPlayerId = matchSession == null
                 ? (Side == ConfigData.Configuration.UserSide && Level.HasPlayer
                     ? MatchSession.LegacyLocalPlayerId

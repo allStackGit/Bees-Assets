@@ -268,6 +268,7 @@ namespace Assets.Scripts.Levels
         public const int LegacyLocalPlayerId = 1;
 
         private readonly List<MatchPlayer> _players = new List<MatchPlayer>();
+        private long _nextMatchSquadId = 1;
         private readonly List<(SavedSquad Squad, int PlayerId)> _squadOwnerAssignments =
             new List<(SavedSquad Squad, int PlayerId)>();
 
@@ -347,6 +348,11 @@ namespace Assets.Scripts.Levels
         public bool HasPlayer(int playerId)
         {
             return playerId > UnownedPlayerId && _players.Any(player => player.Id == playerId);
+        }
+
+        public long AllocateMatchSquadId()
+        {
+            return _nextMatchSquadId++;
         }
 
         public int GetPlayerSide(int playerId)

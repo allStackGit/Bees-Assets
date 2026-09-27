@@ -533,7 +533,7 @@ namespace Assets.Scripts.Levels
         private void SetSelectingGuard(Ship ship)
         {
             Level.State.GetSelectedSquadsForPlayer(PlayerId).ForEach(squad =>
-                Level.State.TryPlayerGuardSquad(PlayerId, squad.ItemId, ship.Squad.ItemId));
+                Level.State.TryPlayerGuardSquad(PlayerId, squad.CommandSquadId, ship.Squad.CommandSquadId));
             _selectingGuardTarget = false;
             Cursor.SetCursor(null, Vector2.zero, CursorMode.Auto);
         }
@@ -630,7 +630,7 @@ namespace Assets.Scripts.Levels
                 _moveSquads_localized = targetPosition - Level.GetPosition();
                 Level.State.TryPlayerMoveSquad(
                     PlayerId,
-                    _moveSquads_selectedSquads[_moveSquads_i].ItemId,
+                    _moveSquads_selectedSquads[_moveSquads_i].CommandSquadId,
                     _moveSquads_localized);
             }
         }
@@ -651,7 +651,7 @@ namespace Assets.Scripts.Levels
             {
                 if (squad.GetShips().Any(s => s.ShipType != ConfigData.ShipTypes.WarpGate))
                 {
-                    Level.State.TryPlayerFullRetreat(PlayerId, squad.ItemId, warpGate.Squad.ItemId);
+                    Level.State.TryPlayerFullRetreat(PlayerId, squad.CommandSquadId, warpGate.Squad.CommandSquadId);
                 }
             });
         }
@@ -663,9 +663,9 @@ namespace Assets.Scripts.Levels
                 return;
             }
 
-            int beehiveSquadItemId = beehives[0].Squad.ItemId;
+            long beehiveSquadCommandId = beehives[0].Squad.CommandSquadId;
             Level.State.GetSelectedSquadsForPlayer(PlayerId).ForEach(squad =>
-                Level.State.TryPlayerHealSquad(PlayerId, squad.ItemId, beehiveSquadItemId));
+                Level.State.TryPlayerHealSquad(PlayerId, squad.CommandSquadId, beehiveSquadCommandId));
         }
 
         private bool CheckForSelectingPatrolArea()
@@ -678,7 +678,7 @@ namespace Assets.Scripts.Levels
                     _checkForSelectingPatrolArea_endingPosition = _mousePosition - Level.GetPosition();
                     Level.State.TryPlayerPatrolSquad(
                         PlayerId,
-                        squad.ItemId,
+                        squad.CommandSquadId,
                         _checkForSelectingPatrolArea_startingPosition,
                         _checkForSelectingPatrolArea_endingPosition);
                 });

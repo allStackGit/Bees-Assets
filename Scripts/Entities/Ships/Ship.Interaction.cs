@@ -76,8 +76,8 @@ namespace Assets.Scripts.Entities.Ships
                 Level.State.GetSelectedSquadsForPlayer(playerId)
                     .ForEach(selectedSquad => Level.State.TryPlayerTargetEnemy(
                         playerId,
-                        selectedSquad.ItemId,
-                        Squad.ItemId));
+                        selectedSquad.CommandSquadId,
+                        Squad.CommandSquadId));
             }
             else if (isFriendlyToPlayer && mouseButton == LevelInputManager.LeftClick && !Squad.IsImmobile)
             {

@@ -20,12 +20,12 @@ namespace Assets.Scripts.Levels
             return UserCommands++;
         }
 
-        private Squad GetPlayerCommandSquad(int squadItemId)
+        private Squad GetPlayerCommandSquad(long squadCommandId)
         {
             for (int i = 0; i < Squads.Count; i++)
             {
                 Squad squad = Squads[i];
-                if (squad != null && squad.ItemId == squadItemId)
+                if (squad != null && squad.CommandSquadId == squadCommandId)
                 {
                     return squad;
                 }
@@ -43,9 +43,9 @@ namespace Assets.Scripts.Levels
                 squad.CanAcceptInputFrom(playerId);
         }
 
-        public bool TryPlayerMoveSquad(int playerId, int squadItemId, Vector2 destination)
+        public bool TryPlayerMoveSquad(int playerId, long squadCommandId, Vector2 destination)
         {
-            Squad squad = GetPlayerCommandSquad(squadItemId);
+            Squad squad = GetPlayerCommandSquad(squadCommandId);
             if (!CanPlayerCommandSquad(playerId, squad) || squad.IsLockedOn)
             {
                 return false;
@@ -56,10 +56,10 @@ namespace Assets.Scripts.Levels
             return true;
         }
 
-        public bool TryPlayerTargetEnemy(int playerId, int squadItemId, int enemySquadItemId)
+        public bool TryPlayerTargetEnemy(int playerId, long squadCommandId, long enemySquadCommandId)
         {
-            Squad squad = GetPlayerCommandSquad(squadItemId);
-            Squad enemySquad = GetPlayerCommandSquad(enemySquadItemId);
+            Squad squad = GetPlayerCommandSquad(squadCommandId);
+            Squad enemySquad = GetPlayerCommandSquad(enemySquadCommandId);
             if (!CanPlayerCommandSquad(playerId, squad) ||
                 enemySquad == null ||
                 enemySquad.IsDead ||
@@ -72,10 +72,10 @@ namespace Assets.Scripts.Levels
             return true;
         }
 
-        public bool TryPlayerGuardSquad(int playerId, int squadItemId, int friendlySquadItemId)
+        public bool TryPlayerGuardSquad(int playerId, long squadCommandId, long friendlySquadCommandId)
         {
-            Squad squad = GetPlayerCommandSquad(squadItemId);
-            Squad friendlySquad = GetPlayerCommandSquad(friendlySquadItemId);
+            Squad squad = GetPlayerCommandSquad(squadCommandId);
+            Squad friendlySquad = GetPlayerCommandSquad(friendlySquadCommandId);
             if (!CanPlayerCommandSquad(playerId, squad) ||
                 friendlySquad == null ||
                 friendlySquad.IsDead ||
@@ -89,9 +89,9 @@ namespace Assets.Scripts.Levels
             return true;
         }
 
-        public bool TryPlayerPatrolSquad(int playerId, int squadItemId, Vector2 topLeft, Vector2 bottomRight)
+        public bool TryPlayerPatrolSquad(int playerId, long squadCommandId, Vector2 topLeft, Vector2 bottomRight)
         {
-            Squad squad = GetPlayerCommandSquad(squadItemId);
+            Squad squad = GetPlayerCommandSquad(squadCommandId);
             if (!CanPlayerCommandSquad(playerId, squad))
             {
                 return false;
@@ -101,10 +101,10 @@ namespace Assets.Scripts.Levels
             return true;
         }
 
-        public bool TryPlayerFullRetreat(int playerId, int squadItemId, int warpGateSquadItemId)
+        public bool TryPlayerFullRetreat(int playerId, long squadCommandId, long warpGateSquadCommandId)
         {
-            Squad squad = GetPlayerCommandSquad(squadItemId);
-            Squad warpGateSquad = GetPlayerCommandSquad(warpGateSquadItemId);
+            Squad squad = GetPlayerCommandSquad(squadCommandId);
+            Squad warpGateSquad = GetPlayerCommandSquad(warpGateSquadCommandId);
             if (!CanPlayerCommandSquad(playerId, squad) ||
                 warpGateSquad == null ||
                 warpGateSquad.IsDead ||
@@ -125,10 +125,10 @@ namespace Assets.Scripts.Levels
             return false;
         }
 
-        public bool TryPlayerHealSquad(int playerId, int squadItemId, int beehiveSquadItemId)
+        public bool TryPlayerHealSquad(int playerId, long squadCommandId, long beehiveSquadCommandId)
         {
-            Squad squad = GetPlayerCommandSquad(squadItemId);
-            Squad beehiveSquad = GetPlayerCommandSquad(beehiveSquadItemId);
+            Squad squad = GetPlayerCommandSquad(squadCommandId);
+            Squad beehiveSquad = GetPlayerCommandSquad(beehiveSquadCommandId);
             if (!CanPlayerCommandSquad(playerId, squad) ||
                 beehiveSquad == null ||
                 beehiveSquad.IsDead ||
