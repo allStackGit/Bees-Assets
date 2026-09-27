@@ -278,3 +278,12 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** the replacement now requires a word boundary after “range”; once the text is plural, the singular pattern no longer matches.  \\
 **Verification:** the regex and its repeated per-frame application were reviewed statically for both apostrophe forms. No tests or runtime checks were run, per the static-only audit constraint.  \\
 **Invariant/knowledge:** per-frame UI text corrections must not match their own output.
+
+
+### REG-030 — Non-finite telemetry watcher interval stopped refreshes
+**Area:** `Training/bees_continual_auto_train.py`, automatic public telemetry watcher configuration  \
+**Symptom:** `NaN` or infinity could be accepted as the periodic watcher interval, causing its `Event.wait()` to fail or wait indefinitely while PPO training continued.  
+**Root cause:** parsing validated only that the interval was greater than zero; comparisons with `NaN` do not reject it, and positive infinity also passes.  
+**Permanent protection:** parsing now requires a finite positive interval. `AutomaticPublicTrainerOptionTests.test_watch_interval_must_be_finite` covers `nan`, `inf`, and `-inf`; the test was added but not run, per the static-only audit constraint.  
+**Verification:** parser validation and the watcher’s `Event.wait(options.watch_seconds)` use were traced statically. No tests or runtime checks were run.  
+**Invariant/knowledge:** every duration passed into a blocking wait must be finite and positive.  
