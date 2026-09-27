@@ -104,18 +104,19 @@ class DistributedOptionTests(unittest.TestCase):
     def test_remote_spec_round_trip_pins_worker_ids_run_and_unity_args(self):
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "remote.json"
-            written = distributed.write_remote_worker_spec(
-                path,
-                [
-                    "config.yaml",
-                    "--run-id=distributed-001",
-                    "--env-args",
-                    "--rl-map-size",
-                    "96",
-                    "--rl-health=0.5",
-                ],
-                base_port=5005,
-                worker_ids=(6, 7),
+            with patch.dict(os.environ, {distributed.TRAINING_BUILD_ID_ENV: "build-1"}):
+                    written = distributed.write_remote_worker_spec(
+                        path,
+                    [
+                        "config.yaml",
+                        "--run-id=distributed-001",
+                        "--env-args",
+                        "--rl-map-size",
+                        "96",
+                        "--rl-health=0.5",
+                    ],
+                    base_port=5005,
+                    worker_ids=(6, 7),
             )
             spec = distributed.load_remote_worker_spec(written)
 
@@ -141,12 +142,13 @@ class DistributedOptionTests(unittest.TestCase):
     def test_remote_spec_tampering_fails_closed(self):
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "remote.json"
-            distributed.write_remote_worker_spec(
-                path,
-                ["config.yaml", "--run-id=distributed-001"],
-                base_port=5005,
-                worker_ids=(1,),
-            )
+            with patch.dict(os.environ, {distributed.TRAINING_BUILD_ID_ENV: "build-1"}):
+                distributed.write_remote_worker_spec(
+                    path,
+                    ["config.yaml", "--run-id=distributed-001"],
+                    base_port=5005,
+                    worker_ids=(1,),
+                )
             value = json.loads(path.read_text(encoding="utf-8"))
             value["base_port"] = 6000
             path.write_text(json.dumps(value), encoding="utf-8")
