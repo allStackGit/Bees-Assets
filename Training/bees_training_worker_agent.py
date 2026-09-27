@@ -811,9 +811,11 @@ class ManagedProcess:
 
         normalized_environment_args = tuple(str(value) for value in environment_args)
         state_file_identity = str(state_file.expanduser().resolve())
+        # Control revisions also advance for rollout phases and other shared state changes.
+        # Restart backoff is tied to the launch identity, so a revision-only update must not
+        # turn an unchanged crash-looping command into an immediate retry.
         command_changed = tuple(command) != self.command or (
-            revision != self.revision
-            or build_sha256 != self.build_sha256
+            build_sha256 != self.build_sha256
             or build_id != self.build_id
             or str(run_id) != self.run_id
             or compatibility_key != self.compatibility_key
