@@ -18,7 +18,7 @@ using UnityEngine;
 [DefaultExecutionOrder(-5000)]
 internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
 {
-    private const int EpisodeMetricsLogInterval = 10;
+    private const int EpisodeMetricsLogInterval = 1;
     private const int SummaryIntervalEpisodes = 100;
     private const int FullEpisodeDiagnosticsInterval = 1000;
     private const long TrainingDiagnosticMaxBytes = 8L * 1024L * 1024L;
