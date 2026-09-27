@@ -647,6 +647,10 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         self.assertIn("session_failures_total", status)
         self.assertIn("seconds_since_last_session_failure", status)
         self.assertIn("last_session_failure_type", status)
+        self.assertIn("last_instability_ms", status)
+        self.assertIn("Optimizer, ", status)
+        self.assertIn("centralWithoutLocalEnvs", status)
+        self.assertIn("Number(config.numLocalEnvs) === 0", status)
         self.assertIn("Error: statusError(record)", status)
 
     def test_running_remote_heartbeat_publishes_environment_identity_and_throughput(self):
