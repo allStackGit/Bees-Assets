@@ -34,6 +34,39 @@ class EpisodeLogMetricsTests(unittest.TestCase):
 
 
 class ManagedProcessRestartTests(unittest.TestCase):
+    def test_same_launch_records_exit_observed_before_restart(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state_file = Path(directory) / "state.json"
+            manager = worker.ManagedProcess()
+            manager.process = mock.Mock()
+            manager.process.poll.return_value = 1
+            manager.process.returncode = 1
+            manager.command = ("python", "trainer.py")
+            manager.build_sha256 = "a" * 64
+            manager.build_id = "build-a"
+            manager.run_id = "run-a"
+            manager.compatibility_key = "b" * 64
+            manager.state_file = str(state_file.resolve())
+            manager.started_monotonic = worker.time.monotonic() - 1.0
+
+            with mock.patch.object(worker, "popen_owned") as popen:
+                with self.assertRaisesRegex(RuntimeError, "restart deferred"):
+                    manager.start(
+                        ("python", "trainer.py"),
+                        revision=5,
+                        build_sha256="a" * 64,
+                        build_id="build-a",
+                        run_id="run-a",
+                        compatibility_key="b" * 64,
+                        state_file=state_file,
+                        environment_args=(),
+                    )
+
+            self.assertEqual(manager.restart_failure_streak, 1)
+            self.assertEqual(manager.last_exit_code, 1)
+            self.assertFalse(popen.called)
+
+
     def test_changed_environment_args_bypass_same_command_backoff(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
