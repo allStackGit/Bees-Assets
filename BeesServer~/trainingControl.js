@@ -702,7 +702,10 @@ class TrainingControlStore {
         const rollingTargetId = pending.phase === 'rolling'
             ? this._rollingTargetId()
             : null;
-        const previousState = this._snapshotState();
+        let previousState = null;
+        const snapshotBeforeMutation = () => {
+            if (previousState === null) previousState = this._snapshotState();
+        };
         const kept = [];
         let changed = false;
         for (const spec of pending.required_trainers) {
@@ -742,9 +745,11 @@ class TrainingControlStore {
 
             if (releaseFailure) {
                 if (!Number.isFinite(spec.failure_since_ms)) {
+                    snapshotBeforeMutation();
                     spec.failure_since_ms = now;
                     changed = true;
                 } else if (now - spec.failure_since_ms >= failureGraceMs) {
+                    snapshotBeforeMutation();
                     if (!Array.isArray(pending.quarantined_trainers)) {
                         pending.quarantined_trainers = [];
                     }
@@ -756,6 +761,7 @@ class TrainingControlStore {
                     continue;
                 }
             } else if (Object.prototype.hasOwnProperty.call(spec, 'failure_since_ms')) {
+                snapshotBeforeMutation();
                 delete spec.failure_since_ms;
                 changed = true;
             }
@@ -785,6 +791,7 @@ class TrainingControlStore {
         }
 
         if (!changed) return false;
+        snapshotBeforeMutation();
         pending.required_trainers = kept;
         const keptIds = new Set(kept.map(spec => spec.trainer_id));
         pending.rolled_trainers = (pending.rolled_trainers || [])
@@ -797,7 +804,6 @@ class TrainingControlStore {
     _pruneExpiredIncompatibleRemoteTrainers(pending) {
         if (!pending || !pending.incompatible) return false;
         const cutoff = this.now() - this.leaseSeconds * 1000;
-        const previousState = this._snapshotState();
         const kept = [];
         let changed = false;
         for (const spec of pending.required_trainers) {
@@ -831,6 +837,7 @@ class TrainingControlStore {
             kept.push(spec);
         }
         if (!changed) return false;
+        const previousState = this._snapshotState();
         pending.required_trainers = kept;
         const keptIds = new Set(kept.map(spec => spec.trainer_id));
         pending.rolled_trainers = (pending.rolled_trainers || [])
@@ -951,10 +958,10 @@ class TrainingControlStore {
             // build_id+applied_revision alone cannot identify a completed same-build config cutover.
             const rollingTargetId = this._rollingTargetId();
             if (rollingTargetId) {
-                const previousState = this._snapshotState();
                 const targetSpec = pending.required_trainers.find(
                     spec => spec.trainer_id === rollingTargetId);
                 if (targetSpec && this._trainerHealthyOnPending(targetSpec, pending)) {
+                    const previousState = this._snapshotState();
                     let changed = false;
                     if (!pending.rolled_trainers.includes(rollingTargetId)) {
                         pending.rolled_trainers.push(rollingTargetId);
@@ -1512,8 +1519,18 @@ class TrainingControlStore {
             worker_capacity: normalizeCapacity(payload.worker_capacity),
             last_seen_ms: now,
         };
-        const previousState = this._snapshotState();
+        const previousState = this.state;
         const previousTrainerRecord = this.trainers.get(trainerId);
+        if (role === 'dedicated') {
+            this.state = {
+                ...previousState,
+                known_dedicated_trainers:
+                    previousState.known_dedicated_trainers.map(record => ({ ...record })),
+                pending_release: previousState.pending_release
+                    ? JSON.parse(JSON.stringify(previousState.pending_release))
+                    : null,
+            };
+        }
         let persistentHeartbeatStateChanged = false;
         if (role === 'dedicated') {
             persistentHeartbeatStateChanged = this._ensurePendingTrainer(record) ||
