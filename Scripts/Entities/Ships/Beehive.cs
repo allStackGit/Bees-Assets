@@ -34,7 +34,7 @@ namespace Assets.Scripts.Entities.Ships
                 if (_collidingShip != null &&
                     _collidingShip.Level == Level &&
                     ShipsHealingHere.Contains(_collidingShip) &&
-                    _collidingShip.Squad.GetCommand() is Heal healCommand)
+                    _collidingShip.Squad?.GetCommand() is Heal healCommand)
                 {
                     _command = healCommand;
                     _command.ShipReachedBeehive(_collidingShip);
