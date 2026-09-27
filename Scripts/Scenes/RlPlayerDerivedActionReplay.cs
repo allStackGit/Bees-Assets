@@ -259,8 +259,23 @@ internal static class RlPlayerDerivedActionReplay
             {
                 throw new ArgumentException($"{CatalogFlag} contains duplicate scenario {entry.scenarioId}.");
             }
+            string catalogRoot = Path.GetFullPath(catalogDirectory);
             string replayPath = Path.GetFullPath(
-                Path.Combine(catalogDirectory, entry.replayPath.Replace('/', Path.DirectorySeparatorChar)));
+                Path.Combine(catalogRoot, entry.replayPath.Replace('/', Path.DirectorySeparatorChar)));
+            string catalogRootPrefix = catalogRoot;
+            if (!catalogRootPrefix.EndsWith(Path.DirectorySeparatorChar.ToString(), StringComparison.Ordinal) &&
+                !catalogRootPrefix.EndsWith(Path.AltDirectorySeparatorChar.ToString(), StringComparison.Ordinal))
+            {
+                catalogRootPrefix += Path.DirectorySeparatorChar;
+            }
+            StringComparison pathComparison = Path.DirectorySeparatorChar == '\\'
+                ? StringComparison.OrdinalIgnoreCase
+                : StringComparison.Ordinal;
+            if (!replayPath.StartsWith(catalogRootPrefix, pathComparison))
+            {
+                throw new ArgumentException(
+                    $"{CatalogFlag} scenario {entry.scenarioId} replay path escapes its catalog directory.");
+            }
             result.Add(entry.scenarioId, ReadReplay(entry, replayPath));
         }
         return result;
