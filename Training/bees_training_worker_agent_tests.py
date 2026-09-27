@@ -107,6 +107,49 @@ class ManagedProcessHealthTests(unittest.TestCase):
             self.assertEqual(manager.state("dedicated"), "error")
 
 
+    def test_fresh_starting_health_remains_starting_after_process_grace(self):
+        manager = worker.ManagedProcess()
+        manager.process = mock.Mock()
+        manager.process.poll.return_value = None
+        manager.health_required = True
+        manager.started_monotonic = 1.0
+        health = {
+            "state": "starting",
+            "error": "",
+            "updated_unix_seconds": 1005.0,
+        }
+
+        with (
+            mock.patch.object(worker, "read_managed_health", return_value=health),
+            mock.patch.object(worker.time, "monotonic", return_value=100.0),
+            mock.patch.object(worker.time, "time", return_value=1005.0),
+        ):
+            self.assertEqual(manager.health_error(), "")
+            self.assertEqual(manager.state("dedicated"), "starting")
+
+    def test_stale_starting_health_fails_closed(self):
+        manager = worker.ManagedProcess()
+        manager.process = mock.Mock()
+        manager.process.poll.return_value = None
+        manager.health_required = True
+        health = {
+            "state": "starting",
+            "error": "",
+            "updated_unix_seconds": 1000.0,
+        }
+
+        with (
+            mock.patch.object(worker, "read_managed_health", return_value=health),
+            mock.patch.object(
+                worker.time,
+                "time",
+                return_value=1000.0 + worker.CHILD_HEALTH_STALE_SECONDS + 1.0,
+            ),
+        ):
+            self.assertIn("startup health has not refreshed", manager.health_error())
+            self.assertEqual(manager.state("dedicated"), "error")
+
+
 class ManagedProcessRestartTests(unittest.TestCase):
     def test_same_launch_records_exit_observed_before_restart(self):
         with tempfile.TemporaryDirectory() as directory:
