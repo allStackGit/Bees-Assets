@@ -834,6 +834,8 @@ internal sealed class RlOneVsOneAgent : Agent
             return;
         }
 
+        ReleaseHealingReservation();
+
         // Invalidate only this arena's randomized frame. Other arenas may be part-way through an
         // unrelated episode and must retain their coordinate assignment.
         RlPolicyCoordinateFrame.EndEpisode(level);
