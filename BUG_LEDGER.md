@@ -8,6 +8,7 @@ Static-only repository audit on `rl/initial-design-work`. This ledger is the cur
 
 ## Audit status
 
+- Malformed profile recovery now catches a failed write of fallback defaults, keeps profile readiness false, and reports controlled unavailability rather than letting the storage exception escape. Source review only; no tests or runtime validation were performed.
 - Complete clean finding passes since the latest production changes: **0 / 2**. BUG-001 is resolved as REG-089: authorization-denied profile reads now receive terminal failure status and are not retried. Regression cases were added but remain unrun.
 - REG-094 closes a training-log path traversal by rejecting `.` and `..` trainer/run path components; focused source regression cases were added but remain unrun.
 - REG-095 prevents transient gameplay telemetry draft persistence failures from discarding the active segment or mixing observations across deployment identities; a focused static source guard was added but remains unrun.
