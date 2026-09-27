@@ -108,6 +108,22 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void UranusOneProximitySensingIsAttachedToUserScouts()
+        {
+            string uranus1 = Read("Level.Campaign.Uranus1.cs");
+            int start = uranus1.IndexOf("public void Uranus1OnTheOffensive()");
+            int end = uranus1.IndexOf("public void SelectedCarrierTrigger()", start);
+            Assert.That(start, Is.GreaterThanOrEqualTo(0));
+            Assert.That(end, Is.GreaterThan(start));
+            string mission = uranus1.Substring(start, end - start);
+
+            StringAssert.Contains(
+                "State.GetShips(ConfigData.Configuration.UserSide).ForEach(ship =>",
+                mission);
+            StringAssert.DoesNotContain("State.GetHumanShips()", mission);
+        }
+
+        [Test]
         public void Uranus3HiveMindStartupDoesNotRequireCarrierTutorial()
         {
             string uranus3 = Read("Level.Campaign.Uranus3.cs");
