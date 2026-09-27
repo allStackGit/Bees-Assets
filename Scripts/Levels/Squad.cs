@@ -52,6 +52,13 @@ namespace Assets.Scripts.Levels
         public bool IsMinionSquad;
         public bool IsDead;
         public bool IsSelected;
+        /// <summary>
+        /// True when any match player owns this squad, regardless of whether that player is local.
+        /// </summary>
+        public bool IsPlayerControlled;
+        /// <summary>
+        /// Legacy primary-local perspective used by the current single-input UI and ship interaction.
+        /// </summary>
         public bool IsUserControlled;
         public bool IsHiveMindControlled;
         public bool IsCarrierSquad;
@@ -372,6 +379,7 @@ namespace Assets.Scripts.Levels
             IsSelected = false;
             IsLockedOn = false;
             OwnerPlayerId = MatchSession.UnownedPlayerId;
+            IsPlayerControlled = false;
             IsUserControlled = false;
             IsHiveMindControlled = false;
             _isInBounds = false;
@@ -411,17 +419,14 @@ namespace Assets.Scripts.Levels
             SetSquadBox();
 
             MatchSession matchSession = Level.Stage.MatchSession;
-            OwnerPlayerId = matchSession == null
+            int ownerPlayerId = matchSession == null
                 ? (Side == ConfigData.Configuration.UserSide && Level.HasPlayer
                     ? MatchSession.LegacyLocalPlayerId
                     : MatchSession.UnownedPlayerId)
-                : matchSession.GetSolePlayerIdForSide(Side);
+                : matchSession.ResolveSquadOwner(savedSquad, Side);
+            SetOwnerPlayerId(ownerPlayerId);
 
-            IsUserControlled = Side == ConfigData.Configuration.UserSide && Level.HasPlayer;
-            IsHiveMindControlled = !IsUserControlled;
-            CanAcceptUserInput = IsUserControlled;
-
-            if (Color != ConfigData.UnsetColor && IsUserControlled)
+            if (Color != ConfigData.UnsetColor && IsPlayerControlled)
             {
                 HasCustomColor = true;
                 SquadBoxColor = new Color(Color.r, Color.g, Color.b,
@@ -433,7 +438,7 @@ namespace Assets.Scripts.Levels
             }
 
             transform.parent = Level.Map.Transform;
-            if (IsUserControlled)
+            if (IsPlayerControlled)
             {
                 _checkChaseTimer.Reuse(1, CheckChase, true);
                 Level.AddTimer(_checkChaseTimer);
@@ -706,7 +711,7 @@ namespace Assets.Scripts.Levels
 
         public bool CanAcceptInputFrom(int playerId)
         {
-            return IsUserControlled && CanAcceptUserInput && IsOwnedByPlayer(playerId);
+            return CanAcceptUserInput && IsOwnedByPlayer(playerId);
         }
 
         public bool CanBeSelectedByPlayer(int playerId)
@@ -726,6 +731,18 @@ namespace Assets.Scripts.Levels
         internal void SetOwnerPlayerId(int playerId)
         {
             OwnerPlayerId = playerId;
+            IsPlayerControlled = playerId != MatchSession.UnownedPlayerId;
+
+            MatchSession matchSession = Level != null && Level.Stage != null
+                ? Level.Stage.MatchSession
+                : null;
+            IsUserControlled = matchSession == null
+                ? IsPlayerControlled && Level != null && Level.HasPlayer &&
+                    Side == ConfigData.Configuration.UserSide
+                : matchSession.IsPrimaryLocalPlayer(playerId);
+
+            IsHiveMindControlled = !IsPlayerControlled;
+            CanAcceptUserInput = IsPlayerControlled;
         }
 
         public void NameSquadShips()

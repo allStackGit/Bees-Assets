@@ -6,7 +6,7 @@ Concise, maintained orientation for coding work. This file is intentionally smal
 
 - `ConfigData` — global configuration, enums, selected mode/data handles, settings, user-data bootstrap, and lazy socket access. Changes have wide reach.
 - `Scene` / `Stage` — scene lifecycle, network/data-readiness pump, shared pools/prefabs/UI/input/audio/camera, and one or more Levels.
-- `MatchSession` / `MatchPlayer` — transient Free Play participant identity and squad ownership. The default Free Play path creates one local player; Campaign and Challenge intentionally have no match session.
+- `MatchSession` / `MatchPlayer` — transient Free Play participant identity and squad ownership. The default Free Play path creates one local player; Campaign and Challenge intentionally have no match session. Same-side multiplayer registers per-`SavedSquad` owner assignments before runtime squad creation.
 - `Level` — one battle arena: options, map/environment, timers, server game context, objectives, teardown, saving, and the owning `GameState`.
 - `GameState` — authoritative per-Level runtime registries, selections/visibility, commands/outcomes, dynamic state, score/counters, request ownership, and deferred releases.
 - `SavedSquad` / `FleetShip` / `SquadShip` — persistent fleet/squad identity and statistics. `DoesBelongToSavedSquad` and `IsLoadedIntoLevel` are derived runtime ownership flags rather than serialized truth.
@@ -23,7 +23,7 @@ Do not treat all IDs as interchangeable:
 
 - **account/user identity** — Steam/user profile identity used by Unity and BeesServer; the backend preserves Steam64-sized values exactly rather than through JavaScript `Number`;
 - **persistent fleet identity** — `FleetShip.Id`, `SavedSquad.Id`, and `SquadShip.FleetId`; negative IDs identify generated/transient fleet/squad records;
-- **match player identity** — `MatchPlayer.Id` and `Squad.OwnerPlayerId`; transient within one Free Play match, reset on pooled squad reuse, and distinct from account or network-entity identity;
+- **match player identity** — `MatchPlayer.Id` and `Squad.OwnerPlayerId`; transient within one Free Play match, reset on pooled squad reuse, and distinct from account or network-entity identity. `Squad.IsPlayerControlled` means any player owns the squad; legacy `IsUserControlled` remains the primary-local UI/input perspective during the multiplayer refactor.
 - **runtime pooled identity** — `Squad.ItemId`, runtime `Ship.Id`, command/weapon/object IDs from `GameState`/`Pool`; valid only for the current Level/object lifetime;
 - **request identity** — request `Hash`, owned by a standing request on Unity and connection-scoped on BeesServer;
 - **learning action identity** — temporary positive `OutcomeId`, owned until durable commit or explicit discard and distinct from database row IDs;

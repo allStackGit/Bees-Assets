@@ -28,7 +28,7 @@ namespace Assets.Scripts.Levels
                 for (int i = 0; i < squads.Count; i++)
                 {
                     Squad squad = squads[i];
-                    if ((HasPlayer && squad.Side != ConfigData.Configuration.AISide) || squad.IsImmobile || squad.HasCommandQueue)
+                    if (squad.IsPlayerControlled || squad.IsImmobile || squad.HasCommandQueue)
                     {
                         continue;
                     }

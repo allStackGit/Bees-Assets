@@ -94,7 +94,8 @@ namespace Assets.Scripts.Levels
 
         public void AddToSquadsAwaitingHiveMindCommands(Squad squad)
         {
-            if (squad == null || squad.IsDead || !_squadsAwaitingCommandSet.Add(squad))
+            if (squad == null || squad.IsDead || !squad.IsHiveMindControlled ||
+                !_squadsAwaitingCommandSet.Add(squad))
             {
                 return;
             }
@@ -103,15 +104,18 @@ namespace Assets.Scripts.Levels
 
         public bool TryDequeueSquadAwaitingHiveMindCommand(out Squad squad)
         {
-            if (SquadsAwaitingCommands.Count == 0)
+            while (SquadsAwaitingCommands.Count > 0)
             {
-                squad = null;
-                return false;
+                squad = SquadsAwaitingCommands.Dequeue();
+                _squadsAwaitingCommandSet.Remove(squad);
+                if (squad != null && !squad.IsDead && squad.IsHiveMindControlled)
+                {
+                    return true;
+                }
             }
 
-            squad = SquadsAwaitingCommands.Dequeue();
-            _squadsAwaitingCommandSet.Remove(squad);
-            return true;
+            squad = null;
+            return false;
         }
 
         public void ClearSquadsAwaitingHiveMindCommands()

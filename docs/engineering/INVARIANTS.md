@@ -10,6 +10,7 @@ These are cross-cutting rules future changes must preserve. Keep this file conci
 - Static/global state used by tests or scenes must have an explicit ownership/reset strategy.
 - Multiplayer ownership is Free Play-only. Campaign and Challenge must not inherit or create a `MatchSession`.
 - `Squad.OwnerPlayerId` is match-local transient ownership, not persistent fleet identity or a network entity id, and must reset on every pooled squad lifetime.
+- Hive Mind command scheduling must exclude every `Squad.IsPlayerControlled` squad, including remote or same-side co-op ownership; it must not infer human ownership only from `Configuration.UserSide`.
 
 ## Async and ordering
 

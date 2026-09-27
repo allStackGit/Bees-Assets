@@ -267,6 +267,8 @@ namespace Assets.Scripts.Levels
         public const int LegacyLocalPlayerId = 1;
 
         private readonly List<MatchPlayer> _players = new List<MatchPlayer>();
+        private readonly List<(SavedSquad Squad, int PlayerId)> _squadOwnerAssignments =
+            new List<(SavedSquad Squad, int PlayerId)>();
 
         public IReadOnlyList<MatchPlayer> Players => _players;
         public int PrimaryLocalPlayerId { get; private set; } = UnownedPlayerId;
@@ -339,6 +341,54 @@ namespace Assets.Scripts.Levels
         public bool IsPrimaryLocalPlayer(int playerId)
         {
             return playerId != UnownedPlayerId && playerId == PrimaryLocalPlayerId;
+        }
+
+        public bool TryAssignSavedSquadOwner(SavedSquad savedSquad, int playerId)
+        {
+            if (savedSquad == null)
+            {
+                return false;
+            }
+
+            MatchPlayer player = _players.FirstOrDefault(candidate => candidate.Id == playerId);
+            if (player == null || player.Side != savedSquad.Side)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < _squadOwnerAssignments.Count; i++)
+            {
+                if (ReferenceEquals(_squadOwnerAssignments[i].Squad, savedSquad))
+                {
+                    _squadOwnerAssignments[i] = (savedSquad, playerId);
+                    return true;
+                }
+            }
+
+            _squadOwnerAssignments.Add((savedSquad, playerId));
+            return true;
+        }
+
+        public int ResolveSquadOwner(SavedSquad savedSquad, int side)
+        {
+            if (savedSquad != null)
+            {
+                for (int i = 0; i < _squadOwnerAssignments.Count; i++)
+                {
+                    (SavedSquad Squad, int PlayerId) assignment = _squadOwnerAssignments[i];
+                    if (!ReferenceEquals(assignment.Squad, savedSquad))
+                    {
+                        continue;
+                    }
+
+                    MatchPlayer assignedPlayer = _players.FirstOrDefault(candidate => candidate.Id == assignment.PlayerId);
+                    return assignedPlayer != null && assignedPlayer.Side == side
+                        ? assignment.PlayerId
+                        : UnownedPlayerId;
+                }
+            }
+
+            return GetSolePlayerIdForSide(side);
         }
 
         public bool TryAssignSquadOwner(Squad squad, int playerId)
