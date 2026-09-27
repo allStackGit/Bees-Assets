@@ -253,7 +253,7 @@ namespace Assets.Scripts.Entities.Projectiles
             {
                 Ship ship = _collidingThing.GetComponent<Ship>();
                 // Concurrent Levels reuse side IDs, so collisions must stay within the owning Level.
-                if (ship != null && ship.Level == Level)
+                if (Level != null && ship != null && ship.Level == Level)
                 {
                     CollidingQueue.Enqueue(ship);
                 }
@@ -261,7 +261,7 @@ namespace Assets.Scripts.Entities.Projectiles
             else if (_collidingThing.CompareTag("Obstacle"))
             {
                 Obstacle obstacle = _collidingThing.GetComponent<Obstacle>();
-                if (obstacle != null && obstacle.Level == Level)
+                if (Level != null && obstacle != null && obstacle.Level == Level)
                 {
                     CollidingObstacleQueue.Enqueue(obstacle);
                 }
