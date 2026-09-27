@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import os
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -76,7 +77,7 @@ class ElasticActorThroughputTests(unittest.TestCase):
             actor_session.ElasticActorSession
         )
         session.actor_id = 0
-        session._throughput_lock = actor_session.worker.threading.Lock()
+        session._throughput_lock = threading.Lock()
         session._learner_consumed_steps_total = 0
         session._learner_consumed_steps_per_sec = None
         session._last_consumed_sample = (100.0, 1000)
