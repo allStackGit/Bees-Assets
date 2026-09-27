@@ -350,3 +350,12 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** the worker clears backoff when any launch-defining value changes, then applies the delay only to a repeat of the same launch. `ManagedProcessRestartTests.test_changed_environment_args_bypass_same_command_backoff` exercises the unchanged-command case; the source-contract regression also protects build identity and state-file comparisons. Tests were added but not run, per the static-only audit constraint.  
 **Verification:** desired launch values, stored child identity, restart delay, and process start ordering were reviewed statically. No tests or runtime checks were run.  
 **Invariant/knowledge:** restart backoff belongs to a complete launch identity, not merely the executable command line.  
+
+
+### REG-038 — Unrelated control revisions bypassed managed-worker crash backoff
+**Area:** `Training/bees_training_worker_agent.py`, managed child restart identity  
+**Symptom:** a crash-looping worker could restart immediately when a shared training-control revision advanced, even though its launch command and all launch-defining settings were unchanged.  
+**Root cause:** the restart-backoff identity treated the server's control revision as a launch change. Rollout phase transitions can advance that revision for workers that remain assigned to their existing launch.  
+**Permanent protection:** restart backoff now resets only when the command, build/run/compatibility identity, environment arguments, state-file path, worker count, or child lifecycle modes change. `ManagedProcessRestartTests.test_control_revision_does_not_bypass_same_launch_backoff` protects the revision-only case. The test was added but not run, per the static-only audit constraint.  
+**Verification:** shared server revision increments during rollout phases and the supervisor's restart identity were reviewed statically. No tests or runtime checks were run.  
+**Invariant/knowledge:** a control-plane revision alone is not evidence of a different launch and must not erase crash-loop backoff.
