@@ -344,6 +344,7 @@ namespace Assets.Scripts.Levels
         public IReadOnlyList<MatchPeer> Peers => _peers;
         public IReadOnlyList<MatchPlayer> Players => _players;
         public Guid MatchId { get; private set; } = Guid.NewGuid();
+        public int AuthorityPeerId { get; private set; }
         public int PrimaryLocalPlayerId { get; private set; } = UnownedPlayerId;
         public MatchSessionPhase Phase { get; private set; } = MatchSessionPhase.Lobby;
         public bool IsMultiplayer => _players.Count > 1;
@@ -379,6 +380,21 @@ namespace Assets.Scripts.Levels
             }
 
             _peers.Add(new MatchPeer(peerId, isLocal, transportIdentity));
+            if (isLocal && AuthorityPeerId == 0)
+            {
+                AuthorityPeerId = peerId;
+            }
+            return true;
+        }
+
+        public bool TrySetAuthorityPeer(int peerId)
+        {
+            if (!IsConfiguring || !_peers.Any(peer => peer.Id == peerId))
+            {
+                return false;
+            }
+
+            AuthorityPeerId = peerId;
             return true;
         }
 
@@ -472,6 +488,10 @@ namespace Assets.Scripts.Levels
                 RemovePlayer(playerIds[i]);
             }
             _peers.Remove(peer);
+            if (AuthorityPeerId == peerId)
+            {
+                AuthorityPeerId = 0;
+            }
             return true;
         }
 
@@ -590,9 +610,13 @@ namespace Assets.Scripts.Levels
             return peer == null ? string.Empty : peer.TransportIdentity;
         }
 
+        public bool IsLocalAuthority =>
+            _peers.Any(peer => peer.Id == AuthorityPeerId && peer.IsLocal);
+
         public bool TryBeginBattle()
         {
             if (!IsConfiguring || MatchId == Guid.Empty ||
+                AuthorityPeerId <= 0 || !_peers.Any(peer => peer.Id == AuthorityPeerId) ||
                 _players.Count == 0 || PrimaryLocalPlayerId == UnownedPlayerId)
             {
                 return false;
