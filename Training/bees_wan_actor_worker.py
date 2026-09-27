@@ -30,7 +30,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 
@@ -505,6 +505,7 @@ class ActorSession:
         graphics: bool,
         stop: threading.Event,
         upload_queue_size: int,
+        startup_health: Optional[Callable[[str], None]] = None,
     ) -> None:
         self.client = client
         self.session = session
@@ -544,6 +545,13 @@ class ActorSession:
         self._learner_consumed_steps_total = 0
         self._last_throughput_write = 0.0
         self._session_failure_telemetry = None
+        self._startup_health = startup_health
+
+    def _report_startup_phase(self, phase: str) -> None:
+        callback = self._startup_health
+        if callback is not None:
+            callback(str(phase))
+
 
     def _write_throughput_metrics(self, *, force: bool = False) -> None:
         path = self._throughput_metrics_path
@@ -678,6 +686,7 @@ class ActorSession:
                 f"WAN actor requires ML-Agents {wan.EXPECTED_MLAGENTS_VERSION}; "
                 f"installed={mlagents.trainers.__version__}."
             )
+        self._report_startup_phase("preparing-session")
         options = self._remote_run_options()
         run_logs_dir = self._run_logs_dir(options)
         set_torch_config(options.torch_settings)
@@ -697,6 +706,7 @@ class ActorSession:
         )
         self.manager = SubprocessEnvManager(factory, options, self.env_count)
 
+        self._report_startup_phase("waiting-initial-control")
         control = self._initial_control()
         self.control_epoch = int(control["epoch"])
         self._current_env_config = control.get("config")
@@ -705,6 +715,7 @@ class ActorSession:
             f"base_port={options.env_settings.base_port} logs={run_logs_dir}.",
             flush=True,
         )
+        self._report_startup_phase("starting-unity")
         try:
             self.manager.reset(config=self._current_env_config)
         except Exception:
@@ -737,6 +748,7 @@ class ActorSession:
             self.manager.set_agent_manager(behavior_id, manager)
             self.manager.set_policy(behavior_id, template)
 
+        self._report_startup_phase("registering-session")
         self.client.register(
             {
                 "session_id": self.session_id,
@@ -752,6 +764,7 @@ class ActorSession:
                 "control_epoch": self.control_epoch,
             }
         )
+        self._report_startup_phase("synchronizing-policy")
         self._synchronize_state(require_policy=True)
 
         self._uploader = threading.Thread(target=self._upload_loop, name="bees-wan-upload", daemon=True)
