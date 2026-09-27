@@ -92,6 +92,7 @@ namespace Bees.Tests.EditMode
             string matchups = ReadSource("Scripts", "Scenes", "RlOneVsOnePerArenaMatchups.cs");
             string mapSizes = ReadSource("Scripts", "Scenes", "RlOneVsOneArenaMapSizeState.cs");
             string scenarioSeed = ReadSource("Scripts", "Scenes", "RlOneVsOneScenarioSeed.cs");
+            string identity = ReadSource("Scripts", "Scenes", "RlEpisodeShipIdentity.cs");
             string evaluationChannel = ReadSource("Scripts", "Scenes", "RlOneVsOneEvaluationSideChannel.cs");
 
             Assert.That(evaluationChannel, Does.Contain("_ = Academy.Instance;"),
@@ -104,6 +105,10 @@ namespace Bees.Tests.EditMode
             Assert.That(matchups, Does.Contain("RlOneVsOneScenarioSeed.MatchupStreamSalt"));
             Assert.That(mapSizes, Does.Contain(
                 "RlOneVsOneScenarioSeed.Create(level, RlOneVsOneScenarioSeed.MapSizeStreamSalt)"));
+            Assert.That(identity, Does.Contain(
+                "RlOneVsOneScenarioSeed.Create(level, RlOneVsOneScenarioSeed.IdentityStreamSalt)"),
+                "Evaluation ship-identity permutations must use their deterministic private scenario stream.");
+            Assert.That(identity, Does.Not.Contain("Guid.NewGuid"));
             Assert.That(matchups, Does.Not.Contain("Guid.NewGuid"));
             Assert.That(mapSizes, Does.Not.Contain("Guid.NewGuid"));
         }
