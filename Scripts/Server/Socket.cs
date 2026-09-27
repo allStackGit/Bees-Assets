@@ -266,7 +266,7 @@ namespace Assets.Scripts.Server
             _f_message = message;
             _message_response = response;
 
-            if (TryClaimResponse(_message_response.Hash))
+            if (TryClaimResponse(_message_response.Hash, _message_response.RequestType))
             {
                 switch (_message_response.RequestType)
                 {
@@ -299,15 +299,22 @@ namespace Assets.Scripts.Server
                 }
             }
 
-            Debug.LogWarning($"Got a response for #{_message_response.Hash} Status: {_message_response.Status} which has already been handled");
-            _message_request = GetStandingRequest(_message_response.Hash);
-            if (_message_request != null)
+            if (HandledRequests.Contains(_message_response.Hash))
             {
-                StandingRequests.Remove(_message_request);
+                Debug.LogWarning($"Got a duplicate response for #{_message_response.Hash} Status: {_message_response.Status}");
+                return;
+            }
+
+            ServerRequest standingRequest = GetStandingRequest(_message_response.Hash);
+            if (standingRequest == null)
+            {
+                Debug.LogWarning($"There was no standing request for response #{_message_response.Hash}:{_message_response.RequestType}");
             }
             else
             {
-                Debug.LogWarning($"There was no standing request to remove for #{_message_response.Hash}");
+                Debug.LogWarning(
+                    $"Ignoring response #{_message_response.Hash}:{_message_response.RequestType}; " +
+                    $"the standing request expects {standingRequest.Type}.");
             }
         }
 
@@ -663,8 +670,14 @@ namespace Assets.Scripts.Server
             return StandingRequests.TryGetByHash(hash, out ServerRequest request) ? request : null;
         }
 
-        private bool TryClaimResponse(long hash)
+        private bool TryClaimResponse(long hash, ConfigData.RequestTypes expectedType)
         {
+            ServerRequest request = GetStandingRequest(hash);
+            if (request == null || request.Type != expectedType)
+            {
+                return false;
+            }
+
             return HandledRequests.Add(hash);
         }
 
