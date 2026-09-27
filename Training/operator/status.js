@@ -187,14 +187,16 @@ function statusError(record) {
 
     const optimizer = record.env_optimizer;
     const instabilityMs = Number(optimizer && optimizer.last_instability_ms);
-    const decision = String(optimizer && optimizer.decision || '').trim();
-    if (Number.isFinite(instabilityMs) && instabilityMs >= 0 && decision) {
+    const instabilityReason = String(
+        optimizer && (optimizer.last_instability_reason || optimizer.decision) || ''
+    ).trim();
+    if (Number.isFinite(instabilityMs) && instabilityMs >= 0 && instabilityReason) {
         const ageSeconds = Math.max(0, (Date.now() - instabilityMs) / 1000);
         let age;
         if (ageSeconds < 60) age = Math.round(ageSeconds) + 's';
         else if (ageSeconds < 3600) age = (ageSeconds / 60).toFixed(1) + 'm';
         else age = (ageSeconds / 3600).toFixed(1) + 'h';
-        return 'Optimizer, ' + age + ' ago: ' + decision;
+        return 'Optimizer, ' + age + ' ago: ' + instabilityReason;
     }
     return '';
 }
