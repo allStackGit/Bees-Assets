@@ -682,3 +682,11 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** the diagnostic now returns no rate when its latest progress sample is older than the measurement window. `CapacityDiagnosticTests.test_trainer_rate_expires_when_progress_samples_are_stale` protects this case.  
 **Verification:** statically traced trainer-step observation, sample pruning, rate calculation, and capacity reporting. The focused regression guard was added but not run; no tests or runtime checks were performed, per the static-only audit scope.  
 **Invariant/knowledge:** a reported training rate must be based on step progress observed inside its declared time window.
+
+### REG-078 — Managed log uploads appended a replacement file after an old cursor
+**Area:** `Training/bees_training_worker_agent.py`, run-scoped diagnostic log upload  
+**Symptom:** if a log path was replaced by a new file whose size already exceeded the uploader's previous cursor, the uploader treated the cursor as belonging to the replacement and appended only its suffix to the server's old file, losing the replacement's prefix.  
+**Root cause:** rotation recovery compared file size with the cursor but did not track the identity of the file associated with that cursor.  
+**Permanent protection:** the uploader records each path's device/inode identity and resets the server copy when that identity changes; the existing size-shrink recovery remains. `TrainingControlClientTests.test_training_log_uploader_resets_when_log_file_is_replaced` protects same-path replacement with a longer file.  
+**Verification:** statically traced local file identity and cursor handling, reset requests, and the server's offset/reset contract. The focused regression guard was added but not run; no tests or runtime checks were performed, per the static-only audit scope.  
+**Invariant/knowledge:** an upload cursor belongs to a specific log-file instance; a replacement file must start a new remote stream.
