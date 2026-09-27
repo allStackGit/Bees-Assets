@@ -3,6 +3,7 @@
 These are cross-cutting rules future changes must preserve. Keep this file concise; detailed implementation knowledge belongs in `docs/DEVELOPMENT_MEMORY.md` and `docs/engineering/SYSTEM_MAP.md`.
 
 ## State and lifecycle
+- Once a campaign level closes during a trigger or timer callback, stop processing the current frame's callback snapshot; explicit post-close dialogue continuations may consume their separately queued trigger themselves.
 
 - A `Level` owns its runtime `GameState`; mutable battle state must not leak between levels, scenes, or restarted games.
 - Pool reuse creates a new logical lifetime. `ClearData`/setup paths must reset all behaviorally relevant state, including timers, IDs, references, derived collections, async ownership, and flags.

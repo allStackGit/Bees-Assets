@@ -32,6 +32,10 @@ namespace Assets.Scripts.Levels
                 {
                     trigger.Action();
                     triggeredCount++;
+                    if (!IsLevelConnectedToServer)
+                    {
+                        break;
+                    }
                 }
             }
             for (int i = Triggers.Count - 1; i >= 0; i--)
@@ -138,6 +142,13 @@ namespace Assets.Scripts.Levels
                 if (timer.Update() && !timer.IsRecurring && !timer.IsCanceled)
                 {
                     CancelTimer(timer);
+                }
+
+                // CloseLevel disconnects a campaign during callbacks. Do not run later callbacks
+                // from this frame's timer snapshot against the completed level.
+                if (!IsLevelConnectedToServer)
+                {
+                    break;
                 }
             }
         }

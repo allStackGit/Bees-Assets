@@ -34,6 +34,33 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void CampaignProcessingStopsAfterLevelClosure()
+        {
+            string runtime = Read("Level.Runtime.cs");
+
+            int triggerStart = runtime.IndexOf("internal int EvaluateCampaignTriggers()");
+            int timerStart = runtime.IndexOf("public void UpdateTimers()");
+            int timerEnd = runtime.IndexOf("private ScaledTimer _saveAndEndHalfSecond", timerStart);
+            Assert.That(triggerStart, Is.GreaterThanOrEqualTo(0));
+            Assert.That(timerStart, Is.GreaterThan(triggerStart));
+            Assert.That(timerEnd, Is.GreaterThan(timerStart));
+
+            string triggerLoop = runtime.Substring(triggerStart, timerStart - triggerStart);
+            string timerLoop = runtime.Substring(timerStart, timerEnd - timerStart);
+            int triggerAction = triggerLoop.IndexOf("trigger.Action();");
+            int triggerCloseGuard = triggerLoop.IndexOf("if (!IsLevelConnectedToServer)", triggerAction);
+            int timerCallback = timerLoop.IndexOf("timer.Update()");
+            int timerCloseGuard = timerLoop.IndexOf("if (!IsLevelConnectedToServer)", timerCallback);
+
+            Assert.That(triggerAction, Is.GreaterThanOrEqualTo(0));
+            Assert.That(triggerCloseGuard, Is.GreaterThan(triggerAction));
+            Assert.That(timerCallback, Is.GreaterThanOrEqualTo(0));
+            Assert.That(timerCloseGuard, Is.GreaterThan(timerCallback));
+            StringAssert.Contains("break;", triggerLoop.Substring(triggerCloseGuard));
+            StringAssert.Contains("break;", timerLoop.Substring(timerCloseGuard));
+        }
+
+        [Test]
         public void LegacyCampaignTriggerFileIsOnlyACompatibilityStub()
         {
             string legacy = Read("LeveLTriggers.cs");

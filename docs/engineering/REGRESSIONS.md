@@ -1047,3 +1047,13 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** pending cohort readiness must be re-evaluated as actor leases change, even when no new trajectory arrives. No tests were run or added under the static-only audit instruction.
 **Verification:** statically traced pending batch collection, live actor lease calculations, condition waits, topology refresh, and pending-cohort release. No tests, builds, Unity, simulations, or runtime checks were run.
 **Invariant/knowledge:** topology changes can make already accepted rollout data sufficient; lease expiry must wake cohort selection rather than making the learner wait for unrelated actor traffic.
+
+
+### REG-118 — Closed campaign levels continued same-frame callbacks
+**Area:** `Scripts/Levels/Level.Runtime.cs`, campaign trigger evaluation and timer updates
+**Symptom:** when a trigger or timer called `CloseLevel()`, the current loop continued through its in-memory snapshot. A later true campaign trigger could start another objective/dialogue after mission completion; a later due timer could mutate the completed level or spawn reinforcements.
+**Root cause:** `CloseLevel()` disconnects the level and stops future normal updates, but the active trigger and timer loops did not recheck connection state after callbacks.
+**Fix:** both loops stop after a callback disconnects the level. The Uranus II ending continuation remains unaffected because its component consumes its named post-close trigger directly.
+**Permanent protection:** a source-level regression guard verifies that trigger and timer loops check connection state and break after callback execution. The cross-cutting lifecycle invariant is recorded in `docs/engineering/INVARIANTS.md`. The test was added but not run under the static-only audit instruction.
+**Verification:** traced `CloseLevel()` disconnection, the same-frame iteration behavior, Uranus I's discovery and terminal triggers, and Uranus II's separate continuation component. No tests, builds, Unity, simulations, or runtime checks were run.
+**Invariant/knowledge:** callbacks already captured in the current frame snapshot must respect lifecycle closure immediately, not only on the next frame.
