@@ -316,10 +316,11 @@ namespace Assets.Scripts.Entities.Ships
                 }
                 if (ShipType != ConfigData.ShipTypes.Beacon) LogKilledStats();
                 if (HasUserFogOfWarVision) FogOfWarVision.Kill(0, false);
-                RemoveFromIncomingWeaponRanges();
             }
             else if (Side == ConfigData.Configuration.UserSide) Level.State.PlayerShipsReturned++;
 
+            // Death and retreat both remove this ship from active targeting consideration.
+            RemoveFromIncomingWeaponRanges();
             Level.State.RemoveShip(this);
             Squad.RemoveShip(this);
             if (ShipType == ConfigData.ShipTypes.Carrier)
