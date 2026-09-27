@@ -70,6 +70,21 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void DraftRecoveryPreservesKnownTerminalResultsAndDefaultsUnknownResultsToTimeout()
+        {
+            Type recorder = RuntimeAssembly.GetType("RlLiveTelemetryRecorder");
+            MethodInfo resolve = recorder.GetMethod("ResolveRecoveredDraftResult", StaticFlags);
+            Assert.That(resolve, Is.Not.Null);
+
+            Assert.That((string)resolve.Invoke(null, new object[] { "bee_win" }), Is.EqualTo("bee_win"));
+            Assert.That((string)resolve.Invoke(null, new object[] { "human_win" }), Is.EqualTo("human_win"));
+            Assert.That((string)resolve.Invoke(null, new object[] { "draw" }), Is.EqualTo("draw"));
+            Assert.That((string)resolve.Invoke(null, new object[] { "timeout" }), Is.EqualTo("timeout"));
+            Assert.That((string)resolve.Invoke(null, new object[] { null }), Is.EqualTo("timeout"));
+            Assert.That((string)resolve.Invoke(null, new object[] { "invalid" }), Is.EqualTo("timeout"));
+        }
+
+        [Test]
         public void GameplayTelemetryPreservesHumanHiveMindAndNeuralProvenance()
         {
             Type router = RuntimeAssembly.GetType("RlProductionControllerRouter");
