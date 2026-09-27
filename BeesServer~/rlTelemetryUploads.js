@@ -295,7 +295,6 @@ class RlTelemetryUploadManager {
         );
         if (protectsSession) {
             session.inFlight = (session.inFlight || 0) + 1;
-            session.updatedAt = requestTime;
         }
 
         try {
