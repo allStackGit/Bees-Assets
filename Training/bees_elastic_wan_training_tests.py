@@ -18,6 +18,44 @@ import bees_elastic_wan_actor_session as actor_session
 import bees_elastic_wan_training as elastic
 
 
+class ElasticTrajectoryHorizonTests(unittest.TestCase):
+    def test_completed_old_topology_trajectory_uses_fixed_configured_horizon(self):
+        trajectory = SimpleNamespace(steps=[object() for _ in range(16)])
+        trainer_settings = SimpleNamespace(time_horizon=64)
+
+        # A topology increase may lower the live target below an already completed trajectory.
+        # Such a batch is still valid when it stays within the fixed ML-Agents time_horizon.
+        elastic.validate_trajectory_length(
+            trajectory,
+            trainer_settings,
+            "BeesRL1v1?team=0",
+        )
+
+    def test_trajectory_above_configured_horizon_is_rejected(self):
+        trajectory = SimpleNamespace(steps=[object() for _ in range(17)])
+        trainer_settings = SimpleNamespace(time_horizon=16)
+
+        with self.assertRaisesRegex(RuntimeError, "configured time_horizon 16"):
+            elastic.validate_trajectory_length(
+                trajectory,
+                trainer_settings,
+                "BeesRL1v1?team=0",
+            )
+
+    def test_hybrid_and_zero_local_learners_use_the_stable_horizon_guard(self):
+        training_dir = Path(__file__).parent
+        for filename in (
+            "bees_elastic_wan_training.py",
+            "bees_elastic_wan_zero_local.py",
+        ):
+            source = (training_dir / filename).read_text(encoding="utf-8")
+            self.assertIn("validate_trajectory_length", source)
+            self.assertNotIn(
+                "len(trajectory.steps) > manager._max_trajectory_length",
+                source,
+            )
+
+
 class ElasticActorClaimShutdownTests(unittest.TestCase):
     def test_shutdown_waits_for_claim_keeper_request_to_finish(self):
         session = actor_session.ElasticActorSession.__new__(
