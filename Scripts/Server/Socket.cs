@@ -421,10 +421,7 @@ namespace Assets.Scripts.Server
             }
             catch (Exception exception)
             {
-                if (IsCurrentNativeSocket(generation, socket))
-                {
-                    Error(exception.Message);
-                }
+                EnqueueNativeMainThread(generation, socket, () => Error(exception.Message));
             }
         }
 
