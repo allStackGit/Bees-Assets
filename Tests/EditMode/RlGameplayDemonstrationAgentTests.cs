@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Reflection;
 using NUnit.Framework;
 using UnityEngine;
@@ -30,6 +31,17 @@ namespace Bees.Tests.EditMode
             AssertVector(method, 180, 0f, -1f);
             AssertVector(method, 270, 1f, 0f);
             AssertVector(method, 360, 0f, 0f);
+        }
+
+        [Test]
+        public void DemonstrationsUseTheInferencePolicyCoordinateFrame()
+        {
+            string source = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "Scenes", "RlGameplayDemonstrationAgent.cs"));
+
+            Assert.That(source, Does.Contain("GetPolicyFrameQuarterTurns(_level, _side)"));
+            Assert.That(source, Does.Contain("WorldToPolicy("));
+            Assert.That(source, Does.Not.Contain("CollectPolicyObservations(_perception, _ship, _side, sensor, 0)"));
         }
 
         [Test]
