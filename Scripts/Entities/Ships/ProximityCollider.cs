@@ -93,7 +93,12 @@ namespace Assets.Scripts.Entities.Ships
 
         private bool IsEnemyShip(Ship nearbyShip)
         {
-            return nearbyShip != null && Ship != null && nearbyShip != Ship && nearbyShip.Side != Ship.Side;
+            return nearbyShip != null &&
+                   Ship != null &&
+                   Ship.Level != null &&
+                   nearbyShip.Level == Ship.Level &&
+                   nearbyShip != Ship &&
+                   nearbyShip.Side != Ship.Side;
         }
     }
 }
