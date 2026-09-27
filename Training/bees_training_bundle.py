@@ -444,6 +444,7 @@ def create_bundle(
     status_text: Optional[Path] = None,
     snapshot_json: Optional[Path] = None,
     benchmark_json: Optional[Path] = None,
+    runtime_state_json: Optional[Path] = None,
     output_root: Optional[Path] = None,
 ) -> Path:
     bees_root = bees_root.expanduser().resolve()
@@ -539,6 +540,7 @@ def create_bundle(
             ("status/status.txt", status_text),
             ("status/model-snapshot.json", snapshot_json),
             ("status/deterministic-benchmark.json", benchmark_json),
+            ("status/runtime-state.json", runtime_state_json),
             (
                 "config/bees.cluster.json",
                 assets_root / "Training" / "bees.cluster.json",
@@ -765,6 +767,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     parser.add_argument("--status-text")
     parser.add_argument("--snapshot-json")
     parser.add_argument("--benchmark-json")
+    parser.add_argument("--runtime-state-json")
     parser.add_argument("--output-root")
     return parser.parse_args(argv)
 
@@ -780,6 +783,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         status_text=Path(args.status_text) if args.status_text else None,
         snapshot_json=Path(args.snapshot_json) if args.snapshot_json else None,
         benchmark_json=Path(args.benchmark_json) if args.benchmark_json else None,
+        runtime_state_json=Path(args.runtime_state_json) if args.runtime_state_json else None,
         output_root=Path(args.output_root) if args.output_root else None,
     )
     print(f"Created diagnostic bundle: {archive}")
