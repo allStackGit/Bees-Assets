@@ -19,6 +19,11 @@ namespace Assets.Scripts.Entities
 
         public void ShipCollision(Ship ship)
         {
+            if (ship == null || Level == null || ship.Level != Level)
+            {
+                return;
+            }
+
             if (NearbyShips.Contains(ship) && Health > 0)
             {
                 TouchingShips.Add(ship);
@@ -58,6 +63,11 @@ namespace Assets.Scripts.Entities
 
         public void ObstacleCollision(Obstacle obstacle)
         {
+            if (obstacle == null || Level == null || obstacle.Level != Level)
+            {
+                return;
+            }
+
             if (NearbyObstacles.Contains(obstacle) && HasEnteredMap && Health > 0)
             {
                 LastHitAsteroid = (CollisionAsteroid)obstacle;
