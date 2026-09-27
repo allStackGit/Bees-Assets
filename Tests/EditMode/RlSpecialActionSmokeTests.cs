@@ -110,6 +110,9 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains(
                 "_collidingShip.Squad?.GetCommand() is Heal healCommand",
                 source);
+            StringAssert.Contains(
+                "ship.Squad?.GetCommand() is Heal healCommand",
+                source);
         }
 
         [Test]
