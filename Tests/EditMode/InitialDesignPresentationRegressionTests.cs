@@ -110,6 +110,15 @@ namespace Bees.Tests.EditMode
 
             Assert.That(guardSource, Does.Contain("CenterMissionStatus(_stage, _statusCorners, _canvasCorners);"));
             Assert.That(guardSource, Does.Contain("ConfigData.Configuration.UserSide,"));
+
+            int plutoTwoStart = missionSource.IndexOf("public void Pluto2Reinforcements()");
+            int plutoThreeStart = missionSource.IndexOf("public void Pluto3Pushback()", plutoTwoStart);
+            Assert.That(plutoTwoStart, Is.GreaterThanOrEqualTo(0));
+            Assert.That(plutoThreeStart, Is.GreaterThan(plutoTwoStart));
+            string plutoTwoBlock = missionSource.Substring(plutoTwoStart, plutoThreeStart - plutoTwoStart);
+            Assert.That(plutoTwoBlock, Does.Contain("State.GetSquadByNumber(ConfigData.Configuration.UserSide"));
+            Assert.That(plutoTwoBlock, Does.Not.Contain("State.GetSquadByNumber(ConfigData.Configuration.HumanSide"));
+
             Assert.That(guardSource, Does.Not.Contain("dialogueManager.enabled"));
             Assert.That(guardSource, Does.Not.Contain("HoldDialogueUntilTutorialEnds"));
             Assert.That(guardSource, Does.Not.Contain("RepairOverscaledTutorialHighlight"));
