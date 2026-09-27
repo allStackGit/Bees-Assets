@@ -609,10 +609,13 @@ class ActorSession:
             except Exception:
                 pass
             self.manager = None
-        if self._watcher is not None:
-            self._watcher.join(timeout=2.0)
-        if self._uploader is not None:
-            self._uploader.join(timeout=2.0)
+        # Do not let the reconnect loop start another session while these threads still own
+        # broker requests or can write this actor's throughput file. BrokerClient applies a
+        # finite request timeout, so joining here bounds shutdown by the in-flight request.
+        if self._watcher is not None and self._watcher.ident is not None:
+            self._watcher.join()
+        if self._uploader is not None and self._uploader.ident is not None:
+            self._uploader.join()
         self._write_throughput_metrics(force=True)
         self._onnx_temp.cleanup()
 
