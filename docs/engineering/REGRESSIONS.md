@@ -943,3 +943,12 @@ Manual-only protection is acceptable only when the record explains why determini
 **Verification:** statically inspected the old collision case `(1, 23) -> (4, 5)` versus `(12, 3) -> (4, 5)`, and confirmed both equality and hashing now use the coordinate tuple. No tests, builds, Unity, simulations, or runtime checks were run.  
 **Invariant/knowledge:** identifiers formed by concatenating variable-width numeric fields are ambiguous; value equality should compare the structured fields directly.
 
+### REG-107 — Manual weapon aim mixed world and map-local coordinates
+**Area:** `Scripts/Entities/Ships/Weapons/Turret.Aiming.cs`, `FullShipTurret.cs`, `BeamCannon.cs`, and `LaserBuilder.cs`  
+**Symptom:** manual aim direction could be wrong on a level whose map has a nonzero world offset, because screen-to-world mouse coordinates were compared with map-local weapon positions. Automatic aim points are map-local, but the targeting marker was positioned as if every target point were world-space.  
+**Root cause:** weapon aiming and projectile angle calculations use map-local coordinates, while the input manager returns a world-space point; the marker is parented to the map transform but received the point through its world-space `position` property.  
+**Fix:** convert mouse world coordinates to map-local coordinates with the map transform before aiming, and place the map-parented marker using `localPosition`. The conversion is shared by turret, fixed-ship turret, beam-cannon, and laser-builder manual aim paths.  
+**Permanent protection:** source invariant: weapon `TargetPoint` values remain map-local, and map-parented targeting markers consume those points locally. No tests were run or added under the static-only audit instruction.  
+**Verification:** statically traced screen-to-world input, map-local `Ship.GetPosition`/turret positions, angle calculation, projectile launch, marker parenting, and all manual aim overrides. No tests, builds, Unity, simulations, or runtime checks were run.  
+**Invariant/knowledge:** convert between world and map-local coordinates at input boundaries; never mix them in angle or transform calculations.
+
