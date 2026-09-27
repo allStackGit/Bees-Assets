@@ -15,7 +15,11 @@ namespace Bees.Tests.EditMode
             string path = Path.Combine(Application.dataPath, "Scripts", "Levels", "LevelInputManager.cs");
             string source = File.ReadAllText(path);
 
-            StringAssert.Contains("Where(s => !s.IsLockedOn && s.CanAcceptUserInput)", source);
+            StringAssert.Contains("Where(s => !s.IsLockedOn && s.CanAcceptInputFrom(PlayerId))", source);
+
+            string squadPath = Path.Combine(Application.dataPath, "Scripts", "Levels", "Squad.cs");
+            string squadSource = File.ReadAllText(squadPath);
+            StringAssert.Contains("return CanAcceptUserInput && IsOwnedByPlayer(playerId);", squadSource);
         }
 
         [Test]
