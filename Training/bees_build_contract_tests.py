@@ -259,6 +259,13 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         self.assertNotIn("stageRelease(", block)
         self.assertNotIn("publishRelease(", block)
 
+        central = read_operator("central.js")
+        identity_start = central.index("function commandIdentity")
+        identity_end = central.index("async function startCentralAgentIfNeeded", identity_start)
+        identity = central[identity_start:identity_end]
+        self.assertIn("--prepared-runtime-version--", identity)
+        self.assertIn("preparedRuntime.runtime_version", central)
+
     def test_recursive_cleanup_retries_transient_windows_handle_release(self):
         common = read_operator("common.js")
         start = common.index("function removeIfExists")
