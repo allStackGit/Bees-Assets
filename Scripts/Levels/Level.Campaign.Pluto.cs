@@ -690,8 +690,10 @@ namespace Assets.Scripts.Levels
                                 () => hasSeenFleetMessages,
                                 () =>
                                 {
-                                    const float evacuationDuration = 300.49f;
-                                    float endTime = Time.time + evacuationDuration;
+                                    const float evacuationDurationSeconds = 300.49f;
+                                    const float evacuationIntervalSeconds = 5f;
+                                    float evacuationStartTime = Time.time;
+                                    float endTime = evacuationStartTime + evacuationDurationSeconds;
                                     float timeLeft = endTime - Time.time;
                                     TMP_Text clockText = Stage.Menus.Clock.transform.GetChild(0).GetComponent<TMP_Text>();
                                     TMP_Text counterText = Stage.Menus.Counter.transform.GetChild(0).GetComponent<TMP_Text>();
@@ -723,11 +725,12 @@ namespace Assets.Scripts.Levels
                                         }
                                         else
                                         {
-                                            int elapsedEvacuationIntervals =
-                                                Mathf.FloorToInt((evacuationDuration - timeLeft) / 5f);
-                                            personnelEvacuated = Mathf.Max(
-                                                personnelEvacuated,
-                                                elapsedEvacuationIntervals);
+                                            personnelEvacuated = Mathf.Clamp(
+                                                Mathf.FloorToInt(
+                                                    (Time.time - evacuationStartTime) / evacuationIntervalSeconds),
+                                                0,
+                                                Mathf.FloorToInt(
+                                                    evacuationDurationSeconds / evacuationIntervalSeconds));
                                             counterText.text = $"{personnelEvacuated}";
                                             clockText.text = $"{minutesLeft}:{secondsLeft:D2}";
                                         }
