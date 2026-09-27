@@ -290,10 +290,9 @@ namespace Assets.Scripts.Entities.Ships
                 IsMoving = false;
                 return;
             }
-            if (!HasTargetCoordinates || DistanceToPoint(TargetCoordinates) > GetHeight())
-            {
-                Utilities.TimedRotationDifference(this, RlMovementDirection, RotationSpeed);
-            }
+            // RL owns heading directly; an old squad destination must not suppress a fresh
+            // policy turn near that stale target coordinate.
+            Utilities.TimedRotationDifference(this, RlMovementDirection, RotationSpeed);
             _tempAngle = (Rotation - 180) * Mathf.Deg2Rad;
             // Directional controllers must honor gameplay speed state just like the normal movement
             // path. This is required for Barge charge speed and any other temporary speed changes.
