@@ -633,12 +633,12 @@ class TrainingLogUploader:
                 size = log_path.stat().st_size
             except OSError:
                 continue
-            upload_limit = min(size, self.MAX_FILE_UPLOAD_BYTES)
+            terminal_offset = min(size, self.MAX_FILE_UPLOAD_BYTES)
             uploaded_position = min(
                 self._positions.get(log_path, 0),
                 self.MAX_FILE_UPLOAD_BYTES,
             )
-            if uploaded_position != upload_limit:
+            if uploaded_position != terminal_offset:
                 return True
         return False
 
