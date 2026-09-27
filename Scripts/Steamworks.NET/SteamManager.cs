@@ -250,6 +250,7 @@ public sealed class SteamMultiplayerTransport : IMultiplayerTransport
     private const int CommandChannel = 47;
     private const int MaxMessagesPerUpdate = 64;
     private const int ReceiveBatchSize = 16;
+    private const float CommandResendIntervalSeconds = 0.5f;
     private const int SendFlags =
         Constants.k_nSteamNetworkingSend_ReliableNoNagle |
         Constants.k_nSteamNetworkingSend_AutoRestartBrokenSession;
@@ -261,10 +262,18 @@ public sealed class SteamMultiplayerTransport : IMultiplayerTransport
     private readonly Dictionary<string, int> _peerIdsByTransportIdentity =
         new Dictionary<string, int>(StringComparer.Ordinal);
     private readonly IntPtr[] _receivePointers = new IntPtr[ReceiveBatchSize];
+    private readonly List<(int MatchLevelId, PlayerCommandEnvelope Command)> _outgoingCommandBuffer =
+        new List<(int MatchLevelId, PlayerCommandEnvelope Command)>();
+    private readonly Dictionary<(int PlayerId, long Sequence), float> _lastCommandSendTimes =
+        new Dictionary<(int PlayerId, long Sequence), float>();
+    private readonly List<(int PlayerId, long Sequence)> _acknowledgedSendKeys =
+        new List<(int PlayerId, long Sequence)>();
     private Callback<SteamNetworkingMessagesSessionRequest_t> _sessionRequest;
     private Callback<SteamNetworkingMessagesSessionFailed_t> _sessionFailed;
-    private PlayerCommandEnvelope _pendingOutgoingCommand;
-    private int _pendingOutgoingLevelId;
+    private bool _hasPendingAcknowledgement;
+    private int _pendingAcknowledgementTargetPeerId;
+    private int _pendingAcknowledgementPlayerId;
+    private long _pendingAcknowledgementSequence;
     private bool _sendFailureLogged;
     private bool _disposed;
     private bool _isAvailable;
@@ -292,6 +301,7 @@ public sealed class SteamMultiplayerTransport : IMultiplayerTransport
             return;
         }
 
+        SendOutgoingAcknowledgements();
         SendOutgoingCommands();
         ReceiveIncomingCommands();
     }
@@ -328,8 +338,13 @@ public sealed class SteamMultiplayerTransport : IMultiplayerTransport
 
         _remoteIdentitiesByPeerId.Clear();
         _peerIdsByTransportIdentity.Clear();
-        _pendingOutgoingCommand = null;
-        _pendingOutgoingLevelId = 0;
+        _outgoingCommandBuffer.Clear();
+        _lastCommandSendTimes.Clear();
+        _acknowledgedSendKeys.Clear();
+        _hasPendingAcknowledgement = false;
+        _pendingAcknowledgementTargetPeerId = 0;
+        _pendingAcknowledgementPlayerId = MatchSession.UnownedPlayerId;
+        _pendingAcknowledgementSequence = 0;
         _isAvailable = false;
     }
 
@@ -427,23 +442,36 @@ public sealed class SteamMultiplayerTransport : IMultiplayerTransport
             return;
         }
 
+        _session.CopyOutgoingPlayerCommands(
+            _outgoingCommandBuffer,
+            MatchSession.MaxOutgoingPlayerCommands);
+        float now = Time.realtimeSinceStartup;
         int sent = 0;
-        while (sent < MaxMessagesPerUpdate)
+        for (int i = 0; i < _outgoingCommandBuffer.Count && sent < MaxMessagesPerUpdate; i++)
         {
-            if (_pendingOutgoingCommand == null && !TryTakeNextOutgoingCommand())
+            (int MatchLevelId, PlayerCommandEnvelope Command) queued = _outgoingCommandBuffer[i];
+            PlayerCommandEnvelope command = queued.Command;
+            if (command == null)
             {
-                break;
+                continue;
+            }
+
+            (int PlayerId, long Sequence) key = (command.PlayerId, command.Sequence);
+            if (_lastCommandSendTimes.TryGetValue(key, out float lastSentAt) &&
+                now - lastSentAt < CommandResendIntervalSeconds)
+            {
+                continue;
             }
 
             if (!MultiplayerProtocol.TrySerializeCommand(
                     _session.MatchId,
-                    _pendingOutgoingLevelId,
-                    _pendingOutgoingCommand,
+                    queued.MatchLevelId,
+                    command,
                     out byte[] payload))
             {
-                Debug.LogError("Dropping an invalid locally-issued multiplayer command packet.");
-                _pendingOutgoingCommand = null;
-                _pendingOutgoingLevelId = 0;
+                Debug.LogError(
+                    $"Could not serialize multiplayer command {command.PlayerId}:{command.Sequence}.");
+                _lastCommandSendTimes[key] = now;
                 continue;
             }
 
@@ -459,17 +487,101 @@ public sealed class SteamMultiplayerTransport : IMultiplayerTransport
             }
 
             _sendFailureLogged = false;
-            _pendingOutgoingCommand = null;
-            _pendingOutgoingLevelId = 0;
+            _lastCommandSendTimes[key] = now;
             sent++;
         }
     }
 
-    private bool TryTakeNextOutgoingCommand()
+    private void SendOutgoingAcknowledgements()
     {
-        return _session.TryDequeueOutgoingPlayerCommand(
-            out _pendingOutgoingLevelId,
-            out _pendingOutgoingCommand);
+        if (!_session.IsLocalAuthority)
+        {
+            return;
+        }
+
+        int sent = 0;
+        while (sent < MaxMessagesPerUpdate)
+        {
+            if (!_hasPendingAcknowledgement)
+            {
+                if (!_session.TryDequeuePlayerCommandAcknowledgement(
+                        out _pendingAcknowledgementTargetPeerId,
+                        out _pendingAcknowledgementPlayerId,
+                        out _pendingAcknowledgementSequence))
+                {
+                    return;
+                }
+                _hasPendingAcknowledgement = true;
+            }
+
+            if (!_remoteIdentitiesByPeerId.TryGetValue(
+                    _pendingAcknowledgementTargetPeerId,
+                    out SteamNetworkingIdentity remoteIdentity))
+            {
+                Debug.LogError(
+                    $"Cannot acknowledge multiplayer command for unknown peer {_pendingAcknowledgementTargetPeerId}.");
+                ClearPendingAcknowledgement();
+                continue;
+            }
+
+            if (!MultiplayerProtocol.TrySerializeAcknowledgement(
+                    _session.MatchId,
+                    _pendingAcknowledgementPlayerId,
+                    _pendingAcknowledgementSequence,
+                    out byte[] payload))
+            {
+                Debug.LogError("Could not serialize multiplayer command acknowledgement.");
+                ClearPendingAcknowledgement();
+                continue;
+            }
+
+            EResult result = Send(remoteIdentity, payload);
+            if (result != EResult.k_EResultOK)
+            {
+                if (!_sendFailureLogged)
+                {
+                    Debug.LogWarning($"Could not send multiplayer command acknowledgement: {result}.");
+                    _sendFailureLogged = true;
+                }
+                return;
+            }
+
+            _sendFailureLogged = false;
+            ClearPendingAcknowledgement();
+            sent++;
+        }
+    }
+
+    private void ClearPendingAcknowledgement()
+    {
+        _hasPendingAcknowledgement = false;
+        _pendingAcknowledgementTargetPeerId = 0;
+        _pendingAcknowledgementPlayerId = MatchSession.UnownedPlayerId;
+        _pendingAcknowledgementSequence = 0;
+    }
+
+    private void ApplyAcknowledgement(int playerId, long sequence)
+    {
+        if (_session.IsLocalAuthority || !_session.IsLocalPlayer(playerId))
+        {
+            return;
+        }
+
+        _session.AcknowledgeOutgoingPlayerCommands(playerId, sequence);
+
+        _acknowledgedSendKeys.Clear();
+        foreach (KeyValuePair<(int PlayerId, long Sequence), float> sent in _lastCommandSendTimes)
+        {
+            if (sent.Key.PlayerId == playerId && sent.Key.Sequence <= sequence)
+            {
+                _acknowledgedSendKeys.Add(sent.Key);
+            }
+        }
+        for (int i = 0; i < _acknowledgedSendKeys.Count; i++)
+        {
+            _lastCommandSendTimes.Remove(_acknowledgedSendKeys[i]);
+        }
+        _acknowledgedSendKeys.Clear();
     }
 
     private static EResult Send(SteamNetworkingIdentity identity, byte[] payload)
@@ -536,6 +648,21 @@ public sealed class SteamMultiplayerTransport : IMultiplayerTransport
 
                     byte[] payload = new byte[message.m_cbSize];
                     Marshal.Copy(message.m_pData, payload, 0, message.m_cbSize);
+
+                    if (MultiplayerProtocol.TryDeserializeAcknowledgement(
+                            payload,
+                            _session.MatchId,
+                            out int acknowledgedPlayerId,
+                            out long acknowledgedSequence))
+                    {
+                        if (!_session.IsLocalAuthority &&
+                            sourcePeerId == _session.AuthorityPeerId)
+                        {
+                            ApplyAcknowledgement(acknowledgedPlayerId, acknowledgedSequence);
+                        }
+                        continue;
+                    }
+
                     _stage.TryRouteReceivedPlayerCommandPacket(sourcePeerId, payload);
                 }
                 finally
