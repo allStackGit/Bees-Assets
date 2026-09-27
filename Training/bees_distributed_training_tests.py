@@ -105,8 +105,8 @@ class DistributedOptionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "remote.json"
             with patch.dict(os.environ, {distributed.TRAINING_BUILD_ID_ENV: "build-1"}):
-                    written = distributed.write_remote_worker_spec(
-                        path,
+                written = distributed.write_remote_worker_spec(
+                    path,
                     [
                         "config.yaml",
                         "--run-id=distributed-001",
@@ -117,12 +117,13 @@ class DistributedOptionTests(unittest.TestCase):
                     ],
                     base_port=5005,
                     worker_ids=(6, 7),
-            )
+                )
             spec = distributed.load_remote_worker_spec(written)
 
             self.assertEqual(spec["worker_ids"], [6, 7])
             self.assertEqual(spec["base_port"], 5005)
             self.assertEqual(spec["run_id"], "distributed-001")
+            self.assertEqual(spec["build_id"], "build-1")
             self.assertEqual(
                 spec["unity_args"],
                 ["--rl-map-size", "96", "--rl-health=0.5"],
