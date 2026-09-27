@@ -1,4 +1,7 @@
+using System.Diagnostics;
 using System.IO;
+using Assets.Scripts;
+using Assets.Scripts.Server;
 using NUnit.Framework;
 using UnityEngine;
 
@@ -49,6 +52,35 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void BoundedRequestHistoryRetainsTheNewestRequests()
+        {
+            System.Diagnostics.Stopwatch previousStopwatch = ConfigData.Stopwatch;
+            ConfigData.Stopwatch = System.Diagnostics.Stopwatch.StartNew();
+            try
+            {
+                ServerRequestSet history = new ServerRequestSet();
+                TestRequest first = new TestRequest { StartTime = 10 };
+                TestRequest second = new TestRequest { StartTime = 20 };
+                TestRequest third = new TestRequest { StartTime = 30 };
+
+                Assert.That(history.AddBounded(first, 2), Is.True);
+                Assert.That(history.AddBounded(second, 2), Is.True);
+                Assert.That(history.AddBounded(third, 2), Is.True);
+
+                Assert.That(history.Count, Is.EqualTo(2));
+                Assert.That(history.Contains(first), Is.False);
+                Assert.That(history.Contains(second), Is.True);
+                Assert.That(history.Contains(third), Is.True);
+                Assert.That(history.AddBounded(third, 2), Is.False);
+                Assert.That(history.Count, Is.EqualTo(2));
+            }
+            finally
+            {
+                ConfigData.Stopwatch = previousStopwatch;
+            }
+        }
+
+        [Test]
         public void SocketHandledResponseDedupeHasBoundedLifetimeAndSize()
         {
             string source = File.ReadAllText(Path.Combine(
@@ -58,6 +90,12 @@ namespace Bees.Tests.EditMode
             Assert.That(source, Does.Contain("MaxTrackedHandledResponses"));
             Assert.That(source, Does.Contain("socket.HandledRequests.Remove(hash)"));
             Assert.That(source, Does.Contain("_handledAt.Remove(hash)"));
+        }
+        private sealed class TestRequest : ServerRequest
+        {
+            public TestRequest() : base(1)
+            {
+            }
         }
     }
 }
