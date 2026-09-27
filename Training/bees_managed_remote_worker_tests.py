@@ -239,6 +239,45 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
         updater.request_refresh.assert_called()
         self.assertGreaterEqual(selected.call_count, 2)
 
+    def test_runtime_alignment_does_not_treat_staged_but_unselected_runtime_as_active(self):
+        args = Namespace()
+        process = mock.Mock()
+        process.poll.side_effect = [None, None, 1]
+        updater = mock.Mock()
+        updater.verified.return_value = ("build-1", "")
+        updater.staged.return_value = (
+            "sha",
+            Path("/tmp/staged-runtime"),
+            None,
+            None,
+            "build-1",
+            "",
+        )
+        with (
+            mock.patch.object(
+                managed,
+                "_runtime_cutover_selected",
+                return_value=None,
+            ),
+            mock.patch.object(
+                managed,
+                "_control_status",
+                return_value={"desired": {"canonical_build_id": "build-1"}},
+            ),
+            mock.patch.object(managed.time, "sleep"),
+        ):
+            aligned, cutover = managed._wait_for_runtime_alignment(
+                args,
+                "trainer-1",
+                updater,
+                process,
+                [False],
+            )
+
+        self.assertFalse(aligned)
+        self.assertIsNone(cutover)
+        updater.request_refresh.assert_called()
+
     def test_runtime_alignment_selects_staged_canonical_runtime_before_worker_launch(self):
         args = Namespace()
         process = mock.Mock()

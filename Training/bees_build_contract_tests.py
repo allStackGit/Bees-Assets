@@ -415,7 +415,11 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         self.assertIn("arg === '--evaluate'", operator)
         self.assertIn("options.evaluate && command !== 'bundle'", operator)
 
-        self.assertIn("if (options.evaluate)", diagnostics)
+        snapshot = diagnostics.index("await requestCentralDiagnosticModelSnapshot(")
+        gate = diagnostics.index("if (options.evaluate)", snapshot)
+        benchmark = diagnostics.index("await invokeCentralDiagnosticBenchmark(", gate)
+        self.assertLess(snapshot, gate)
+        self.assertLess(gate, benchmark)
         self.assertIn(
             "Deterministic policy evaluation skipped; use bundle -Evaluate to include it.",
             diagnostics,
@@ -425,6 +429,17 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         self.assertIn("result.stdout_tail = boundedDiagnosticTail(stdout)", diagnostics)
         self.assertIn("result.stderr_tail = boundedDiagnosticTail(stderr)", diagnostics)
         self.assertNotIn("waitForExit(child, 180000)", diagnostics)
+
+    def test_remote_supervisor_requires_canonical_runtime_alignment_before_worker_launch(self):
+        source = (ROOT / "Training" / "bees_managed_remote_worker.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("def _wait_for_runtime_alignment(", source)
+        self.assertIn("verified_build == canonical_build", source)
+        alignment = source.index("runtime_aligned, runtime_cutover = _wait_for_runtime_alignment(")
+        launch = source.index("_start_logged_process(", alignment)
+        self.assertLess(alignment, launch)
+        self.assertIn("elif runtime_aligned and not stop[0]", source[alignment:launch + 100])
 
     def test_transient_control_unavailability_does_not_poison_worker_instability_heartbeat(self):
         source = (ROOT / "Training" / "bees_training_worker_agent.py").read_text(
@@ -458,6 +473,20 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         self.assertIn("learner-live.log", (ROOT / "Training" / "bees_mlagents_learn.py").read_text(encoding="utf-8"))
         self.assertIn("'logs',\n            runId", status)
         self.assertIn("listLogFiles(managedLearnerLogRoot, false)", status)
+
+    def test_running_remote_heartbeat_publishes_environment_identity_and_throughput(self):
+        source = (ROOT / "Training" / "bees_training_worker_agent.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn(
+            "environment_args_identity(managed.environment_args)",
+            source,
+        )
+        self.assertIn(
+            "throughput = read_throughput_metrics(",
+            source,
+        )
+        self.assertIn('snapshot["throughput"] = throughput', source)
 
     def test_status_preserves_remote_network_traffic_columns(self):
         source = read_operator("status.js")

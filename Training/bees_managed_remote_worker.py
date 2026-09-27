@@ -1191,7 +1191,12 @@ def _wait_for_runtime_alignment(
             else ""
         )
         verified_build, update_error = updater.verified()
-        if canonical_build and verified_build == canonical_build:
+        _sha, staged_root, _bridge, _python, _staged_build, _staged_error = updater.staged()
+        if (
+            canonical_build
+            and verified_build == canonical_build
+            and staged_root is None
+        ):
             return True, None
 
         updater.request_refresh()
@@ -1208,6 +1213,7 @@ def _wait_for_runtime_alignment(
             next_status = now + 5.0
         time.sleep(0.5)
     return False, None
+
 
 def _worker_command(args: argparse.Namespace, root: Path, actor_key: str) -> list[str]:
     trainer_id = f"remote-{socket.gethostname().lower()}-{actor_key[:8]}"
