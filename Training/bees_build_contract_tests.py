@@ -1437,6 +1437,38 @@ server.listen(0,'127.0.0.1',async()=>{
         self.assertIn("sha256Text('bees-managed-child:' + ownerToken)", reconcile)
         self.assertIn("'orphaned BeesServer child'", reconcile)
 
+    def test_build_repairs_stale_local_lifecycle_only_from_matching_active_contract(self):
+        build = read_operator("build.js")
+        start = build.index("async function invokeBuild")
+        block = build[start:]
+        recover = block.index("recoverTrainingRunLifecycle(python, activeRun, activeKey)")
+        self.assertIn("sourceKey === activeKey", block[:recover])
+        self.assertIn("releaseRun !== activeRun || releaseKey !== activeKey", block[:recover])
+        self.assertIn("interrupted/stale build", block[:recover])
+
+        runtime = read_operator("runtime.js")
+        recovery = runtime[
+            runtime.index("function recoverTrainingRunLifecycle"):
+            runtime.index("function ensureRunLifecycleMatchesRelease"),
+        ]
+        self.assertIn("'recover-active'", recovery)
+        self.assertIn("'--expected-compatibility-key'", recovery)
+
+    def test_build_does_not_commit_release_lifecycle_before_environment_validation(self):
+        build = read_operator("build.js")
+        start = build.index("async function invokeBuild")
+        block = build[start:]
+        validation = block.index("const validationKey = await assertRlEnvironmentArgsValid")
+        persist_after_validation = block.index("persistReleaseLifecycle();", validation)
+        stage = block.index("stageRelease(", persist_after_validation)
+        self.assertLess(validation, persist_after_validation)
+        self.assertLess(persist_after_validation, stage)
+        self.assertIn("const persistReleaseLifecycle = () =>", block)
+        self.assertIn(
+            "persistReleaseLifecycle();\n    return release;",
+            block,
+        )
+
     def test_forced_new_run_operation_is_resumable_until_terminal_archive(self):
         runtime = read_operator("runtime.js")
         plan = runtime[
