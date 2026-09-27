@@ -1018,6 +1018,30 @@ internal sealed class RlOneVsOneAgent : Agent
         return ship is YellowJacket || ship is Striker || ship is FireBarge || ship is Barge || ship is Scout;
     }
 
+    internal static int GetPolicyFrameQuarterTurns(Level level, int side)
+    {
+        if (level == null || ConfigData.Configuration == null)
+        {
+            return 0;
+        }
+
+        int teamId;
+        if (side == ConfigData.Configuration.BeeSide)
+        {
+            teamId = 0;
+        }
+        else if (side == ConfigData.Configuration.HumanSide)
+        {
+            teamId = 1;
+        }
+        else
+        {
+            return 0;
+        }
+
+        return RlPolicyCoordinateFrame.GetQuarterTurns(level, teamId);
+    }
+
     internal static void CollectPolicyObservations(
         RlCombatPerception perception,
         Ship ship,
