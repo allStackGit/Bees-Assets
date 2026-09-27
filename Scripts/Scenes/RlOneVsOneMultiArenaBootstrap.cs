@@ -51,6 +51,7 @@ internal sealed class RlOneVsOneMultiArenaBootstrap : MonoBehaviour
             return DefaultArenasPerEnvironment;
         }
 
+        int? requestedCount = null;
         for (int i = 0; i < args.Length; i++)
         {
             string argument = args[i];
@@ -81,16 +82,20 @@ internal sealed class RlOneVsOneMultiArenaBootstrap : MonoBehaviour
             {
                 continue;
             }
+            if (requestedCount.HasValue)
+            {
+                throw new ArgumentException($"{ArenasPerEnvironmentFlag} may be specified only once.");
+            }
 
             if (!int.TryParse(value, out int count) || count < 1 || count > MaximumArenasPerEnvironment)
             {
                 throw new ArgumentException(
                     $"{ArenasPerEnvironmentFlag} must be a whole number between 1 and {MaximumArenasPerEnvironment}.");
             }
-            return count;
+            requestedCount = count;
         }
 
-        return DefaultArenasPerEnvironment;
+        return requestedCount ?? DefaultArenasPerEnvironment;
     }
 
     private void Update()
