@@ -9,6 +9,7 @@ const path = require('node:path');
 const {
     TrainingControlStore,
     createTrainingControlHandler,
+    environmentArgsIdentity,
     environmentValidationKeyForRelease,
 } = require('../trainingControl');
 
@@ -92,6 +93,11 @@ function heartbeatDedicated(store, trainerId, buildId, buildSha256, options = {}
             ? store.state.revision
             : options.appliedRevision,
         last_error: options.lastError || '',
+        environment_id: environmentArgsIdentity(
+            options.environmentArgs === undefined
+                ? store.state.environment_args
+                : options.environmentArgs
+        ),
     });
 }
 
@@ -1666,12 +1672,26 @@ test('same-run environment rollout is central-first and never exposes mixed desi
         assert.deepEqual(remote.environment_args, oldArgs);
         assert.deepEqual(store.state.pending_release.rolled_trainers, []);
 
+        // A stale heartbeat that reports the new revision but still runs the old arguments
+        // must not acknowledge the central learner's rollout slot.
         heartbeatDedicated(
             store,
             'central-learner',
             'env-roll',
             sha,
             { appliedRevision: phaseRevision },
+        );
+        assert.deepEqual(store.state.pending_release.rolled_trainers, []);
+
+        heartbeatDedicated(
+            store,
+            'central-learner',
+            'env-roll',
+            sha,
+            {
+                appliedRevision: phaseRevision,
+                environmentArgs: newArgs,
+            },
         );
         assert.deepEqual(
             store.state.pending_release.rolled_trainers,
@@ -1697,7 +1717,10 @@ test('same-run environment rollout is central-first and never exposes mixed desi
             'remote-a',
             'env-roll',
             sha,
-            { appliedRevision: phaseRevision },
+            {
+                appliedRevision: phaseRevision,
+                environmentArgs: newArgs,
+            },
         );
         assert.equal(store.state.pending_release, null);
         assert.deepEqual(store.state.environment_args, newArgs);
