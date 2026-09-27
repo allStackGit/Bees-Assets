@@ -1326,12 +1326,20 @@ class TrainingControlStore {
         const destination = path.join(platformRoot, buildId + '-' + archiveSha256 + '.zip');
         if (!fs.existsSync(destination)) {
             const temporary = destination + '.tmp-' + process.pid + '-' + crypto.randomBytes(6).toString('hex');
-            fs.copyFileSync(source, temporary);
-            if (sha256File(temporary) !== archiveSha256) {
-                fs.unlinkSync(temporary);
-                throw new Error('canonical build copy failed SHA-256 verification');
+            try {
+                fs.copyFileSync(source, temporary);
+                if (sha256File(temporary) !== archiveSha256) {
+                    throw new Error('canonical build copy failed SHA-256 verification');
+                }
+                fs.renameSync(temporary, destination);
+            } catch (error) {
+                try {
+                    if (fs.existsSync(temporary)) fs.unlinkSync(temporary);
+                } catch (cleanupError) {
+                    error.temporaryCleanupError = cleanupError.message;
+                }
+                throw error;
             }
-            fs.renameSync(temporary, destination);
         }
         const storedStats = fs.lstatSync(destination);
         if (
@@ -1362,9 +1370,17 @@ class TrainingControlStore {
             if (previous.archive_sha256 !== record.archive_sha256 ||
                 previous.entrypoint !== record.entrypoint ||
                 previous.archive_size_bytes !== record.archive_size_bytes) {
-                throw Object.assign(
+                const error = Object.assign(
                     new Error('published role/platform/build identity is immutable; use a new build_id'),
                     { statusCode: 409 });
+                if (previous.archive_path !== destination) {
+                    try {
+                        fs.unlinkSync(destination);
+                    } catch (cleanupError) {
+                        error.artifactCleanupError = cleanupError.message;
+                    }
+                }
+                throw error;
             }
             return publicBuildDescriptor(previous);
         }
@@ -1373,7 +1389,20 @@ class TrainingControlStore {
             this.state.revision++;
         }
         const prunedArtifactPaths = this._pruneArtifactCatalog();
-        this._persistWithRollback(previousState);
+        try {
+            this._persistWithRollback(previousState);
+        } catch (error) {
+            // The new copy has no durable catalog owner when persistence fails. Remove it only
+            // when this call introduced an unreferenced build identity; retain existing artifacts.
+            if (!previous) {
+                try {
+                    fs.unlinkSync(destination);
+                } catch (cleanupError) {
+                    error.artifactCleanupError = cleanupError.message;
+                }
+            }
+            throw error;
+        }
         this._deletePrunedArtifacts(prunedArtifactPaths);
         return publicBuildDescriptor(record);
     }
