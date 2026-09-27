@@ -298,21 +298,54 @@ class RlDemonstrationUploadManager {
         }
         const userId = requireString(context?.userId, 'authenticated user ID');
         const connectionId = requireString(String(context?.connectionId ?? ''), 'connection ID');
-        await this._ensureInitialized();
-        await this.cleanupExpired();
-        switch (params.Type) {
-            case 'rl-demo-begin':
-                return this._serializeBegin(() => this._beginUnlocked(params, userId, connectionId));
-            case 'rl-demo-chunk':
-                return this.chunk(params, userId, connectionId);
-            case 'rl-demo-complete':
-                return this.complete(params, userId, connectionId);
-            default:
-                throw new RlDemonstrationUploadError(
-                    400,
-                    'invalid-request',
-                    `Unsupported RL demonstration request type ${params.Type}.`,
-                );
+        const uploadId = typeof params.UploadId === 'string' ? params.UploadId.trim() : '';
+        // Reserve authenticated activity before yielding so expiry cleanup cannot unlink the
+        // partial archive while this request waits in the per-session operation queue.
+        const session = (
+            params.Type === 'rl-demo-chunk' ||
+            params.Type === 'rl-demo-complete'
+        ) ? this.sessions.get(uploadId) : null;
+        const requestTime = this.now();
+        const protectsSession = Boolean(
+            session &&
+            session.userId === userId &&
+            session.connectionId === connectionId &&
+            (
+                (session.inFlight || 0) > 0 ||
+                requestTime - session.lastActivityAt < this.uploadIdleTimeoutMs
+            )
+        );
+        if (protectsSession) {
+            session.inFlight = (session.inFlight || 0) + 1;
+        }
+
+        try {
+            await this._ensureInitialized();
+            await this.cleanupExpired();
+            let result;
+            switch (params.Type) {
+                case 'rl-demo-begin':
+                    result = await this._serializeBegin(
+                        () => this._beginUnlocked(params, userId, connectionId));
+                    break;
+                case 'rl-demo-chunk':
+                    result = await this.chunk(params, userId, connectionId);
+                    break;
+                case 'rl-demo-complete':
+                    result = await this.complete(params, userId, connectionId);
+                    break;
+                default:
+                    throw new RlDemonstrationUploadError(
+                        400,
+                        'invalid-request',
+                        `Unsupported RL demonstration request type ${params.Type}.`,
+                    );
+            }
+            return result;
+        } finally {
+            if (protectsSession) {
+                session.inFlight = Math.max(0, (session.inFlight || 0) - 1);
+            }
         }
     }
 
@@ -583,6 +616,7 @@ class RlDemonstrationUploadManager {
             createdAt: now,
             receivedAt: new Date(now).toISOString(),
             lastActivityAt: now,
+            inFlight: 0,
             operationTail: Promise.resolve(),
         };
         this.sessions.set(uploadId, session);
@@ -819,7 +853,8 @@ class RlDemonstrationUploadManager {
         const now = this.now();
         const expired = [];
         for (const session of this.sessions.values()) {
-            if (now - session.lastActivityAt >= this.uploadIdleTimeoutMs) expired.push(session);
+            if (!(session.inFlight > 0) &&
+                now - session.lastActivityAt >= this.uploadIdleTimeoutMs) expired.push(session);
         }
         for (const session of expired) await this._discardSession(session);
         for (const [uploadId, completed] of this.completedResults.entries()) {
