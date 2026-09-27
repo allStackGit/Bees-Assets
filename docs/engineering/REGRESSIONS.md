@@ -714,3 +714,11 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** the timer now refreshes the clamped evacuation count before either terminal condition, then records that current count as the score. `CampaignResourceAccountingTests.LegacyPlutoEvacuationScoreIncludesTheTerminalTimerTick` guards this ordering.  
 **Verification:** statically traced the timer callback, deadline condition, `_questPoints` assignment, and ending reward tiers. The focused regression guard was added but not run; no tests, builds, Unity, simulations, or runtime checks were run, per the static-only audit scope.  
 **Invariant/knowledge:** terminal mission scoring must include all completed objective intervals observable on the terminal timer tick.
+
+### REG-082 — RL evaluation randomized ship identity codes outside the seeded scenario stream
+**Area:** `Scripts/Scenes/RlEpisodeShipIdentity.cs`, `Scripts/Scenes/RlOneVsOneScenarioSeed.cs`, deterministic RL evaluation  
+**Symptom:** repeated evaluation runs with the same ML-Agents seed could present different per-ship identity observations, adding uncontrolled observation variation to the measured policy result.  
+**Root cause:** the identity permutation RNG used a fresh GUID even though evaluation scenario randomness is derived from the seeded Unity root and the identity stream already has its own `IdentityStreamSalt`.  
+**Permanent protection:** ship identity permutations now use `RlOneVsOneScenarioSeed.Create(level, IdentityStreamSalt)`, keeping the identity stream isolated while making its sequence reproducible for a given evaluation seed and arena. `RlScenarioSeedTests.RuntimeScenarioSamplersUseMlAgentsRootAndStableArenaStreams` guards this source contract.  
+**Verification:** statically traced evaluation root-seed initialization, per-arena/per-stream derivation, and identity permutation creation. The focused regression guard was added but not run; no tests or runtime checks were performed, per the static-only audit scope.  
+**Invariant/knowledge:** every stochastic input to an authoritative seeded evaluation must derive from a private arena/stream seed rather than unseeded process randomness.
