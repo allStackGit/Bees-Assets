@@ -690,3 +690,11 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** the uploader records each path's device/inode identity and resets the server copy when that identity changes; the existing size-shrink recovery remains. `TrainingControlClientTests.test_training_log_uploader_resets_when_log_file_is_replaced` protects same-path replacement with a longer file.  
 **Verification:** statically traced local file identity and cursor handling, reset requests, and the server's offset/reset contract. The focused regression guard was added but not run; no tests or runtime checks were performed, per the static-only audit scope.  
 **Invariant/knowledge:** an upload cursor belongs to a specific log-file instance; a replacement file must start a new remote stream.
+
+### REG-079 — Batched RL recovery reissued an action for an unprocessed worker response
+**Area:** `Training/bees_mlagents_learn.py`, cross-worker Unity step recovery  
+**Symptom:** if one worker exited while another worker's step response had already been consumed, the recovery path queued work for every idle worker. The completed worker was marked idle even though its response had not yet updated `previous_step`, so the same observation could receive another action before the first response was processed, misaligning environment actions and PPO experience.  
+**Root cause:** the fast-step loop preserved completed responses but did not exclude those workers from the recovery call to `_queue_steps()`.  
+**Permanent protection:** recovery temporarily marks workers with consumed responses busy while it queues restarted workers, then restores their idle state for normal postprocessing. `BatchedEnvironmentManagerTests.test_worker_exit_does_not_discard_other_consumed_step_results` now asserts that recovery does not requeue a completed worker.  
+**Verification:** statically traced initial action dispatch, response dequeue/state updates, worker restart, recovery dispatch, and trajectory postprocessing. The focused regression guard was updated but not run; no tests or runtime checks were performed, per the static-only audit scope.  
+**Invariant/knowledge:** do not issue a second action from a worker's prior observation until its already-consumed response has been postprocessed.
