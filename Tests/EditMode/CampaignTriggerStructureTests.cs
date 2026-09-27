@@ -78,6 +78,13 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains("HashSet<ShipTypes> shipTypes = State.GetUserShipTypes();", mission);
             StringAssert.DoesNotContain("State.GetHumanShipTypes()", mission);
 
+            string legacy = Read("Level.Campaign.Pluto.cs");
+            int legacyMission = legacy.IndexOf("public void Pluto4BluerPastures()");
+            Assert.That(legacyMission, Is.GreaterThanOrEqualTo(0));
+            string legacyMissionBody = legacy.Substring(legacyMission);
+            StringAssert.Contains("HashSet<ShipTypes> shipTypes = State.GetUserShipTypes();", legacyMissionBody);
+            StringAssert.DoesNotContain("State.GetHumanShipTypes()", legacyMissionBody);
+
             string queries = Read("GameState.Queries.cs");
             int start = queries.IndexOf("public HashSet<ConfigData.ShipTypes> GetUserShipTypes()");
             int end = queries.IndexOf("public List<Ship> GetBeeShips()", start);
