@@ -32,3 +32,5 @@ None currently confirmed. The active audit continues; resolved findings have bee
 - REG-122 sanitizes externally configured Unity behavior names before using them in diagnostic model filenames, with a digest suffix to preserve distinct names. Verified statically against the pinned ML-Agents `BehaviorParameters` property and the snapshot export path; no tests or runtime checks were run. This production fix resets the post-fix clean-pass count to **0 / 2**.
 
 - REG-123 fixes launcher option parsing across the ML-Agents `--env-args` remainder delimiter; Unity-side tokens now pass through unchanged. Verified statically against the pinned parser declaration. No tests or runtime checks were run. This production fix resets the post-fix clean-pass count to **0 / 2**.
+
+- REG-124 prevents the Pluto II campaign polling guard from rewriting live multipage tooltip text owned by `Tooltip.ShowSequencePage`. Dialogue gating and page recognition remain active. Verified by static call-path review only; this ownership fix is not yet proof that the repeated-“s” symptom is fully resolved. No tests or runtime checks were run. The post-fix clean-pass count is **0 / 2**.
