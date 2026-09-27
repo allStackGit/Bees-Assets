@@ -66,6 +66,24 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void PolicyHeadingIsNotGatedByAStaleMovementTarget()
+        {
+            string path = Path.Combine(Application.dataPath, "Scripts", "Entities", "Ships", "Ship.Movement.cs");
+            string source = File.ReadAllText(path);
+            int start = source.IndexOf("private void RlDirectionalMovement()");
+            int end = source.IndexOf("public void SetMovementVelocity()", start);
+            Assert.That(start, Is.GreaterThanOrEqualTo(0));
+            Assert.That(end, Is.GreaterThan(start));
+            string method = source.Substring(start, end - start);
+
+            StringAssert.Contains(
+                "Utilities.TimedRotationDifference(this, RlMovementDirection, RotationSpeed);",
+                method);
+            StringAssert.DoesNotContain("HasTargetCoordinates", method);
+            StringAssert.DoesNotContain("DistanceToPoint(TargetCoordinates)", method);
+        }
+
+        [Test]
         public void ExplicitStopCancelsPendingPathRetry()
         {
             string path = Path.Combine(Application.dataPath, "Scripts", "Entities", "Ships", "Ship.Movement.cs");
