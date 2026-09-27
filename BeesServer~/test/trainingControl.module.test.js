@@ -2756,6 +2756,163 @@ test('a different release cannot replace an active pending rollout', () => {
     });
 });
 
+test('exact same-run compatible repair may supersede a stuck pending rollout', () => {
+    withTempDir(root => {
+        const store = new TrainingControlStore({
+            statePath: path.join(root, 'state.json'),
+            artifactRoot: path.join(root, 'artifacts'),
+        });
+        const oldSha = publishDedicatedBuild(store, root, 'supersede-old');
+        publishDedicatedBuild(store, root, 'supersede-stuck');
+        const repairSha = publishDedicatedBuild(store, root, 'supersede-repair');
+        const key = '4'.repeat(64);
+
+        store.stageRelease({
+            buildId: 'supersede-old',
+            runId: 'supersede-run',
+            compatibilityKey: key,
+            incompatible: false,
+        });
+        store.setDesiredState({ training_enabled: true });
+        for (const trainerId of ['remote-a', 'central-learner']) {
+            heartbeatDedicated(store, trainerId, 'supersede-old', oldSha);
+        }
+
+        store.stageRelease({
+            buildId: 'supersede-stuck',
+            runId: 'supersede-run',
+            compatibilityKey: key,
+            incompatible: false,
+        });
+        heartbeatDedicated(
+            store,
+            'remote-a',
+            'supersede-old',
+            oldSha,
+            { preparedBuildId: 'supersede-stuck' },
+        );
+        heartbeatDedicated(
+            store,
+            'central-learner',
+            'supersede-old',
+            oldSha,
+            {
+                preparedBuildId: 'supersede-stuck',
+                processState: 'starting',
+                lastError: 'release phase failed safely',
+            },
+        );
+        assert.equal(store.state.pending_release.phase, 'rolling');
+
+        const superseded = store.stageRelease({
+            buildId: 'supersede-repair',
+            runId: 'supersede-run',
+            compatibilityKey: key,
+            incompatible: false,
+            supersedeCompatibleBuildId: 'supersede-stuck',
+        });
+        assert.equal(superseded.pending_release.build_id, 'supersede-repair');
+        assert.equal(superseded.pending_release.phase, 'preparing');
+        assert.deepEqual(superseded.pending_release.rolled_trainers, []);
+        assert.equal(store.state.canonical_build_id, 'supersede-old');
+
+        heartbeatDedicated(
+            store,
+            'remote-a',
+            'supersede-old',
+            oldSha,
+            { preparedBuildId: 'supersede-repair' },
+        );
+        heartbeatDedicated(
+            store,
+            'central-learner',
+            'supersede-old',
+            oldSha,
+            { preparedBuildId: 'supersede-repair' },
+        );
+        assert.equal(store.state.pending_release.phase, 'rolling');
+
+        let revision = store.state.pending_release.phase_revision;
+        heartbeatDedicated(
+            store,
+            'remote-a',
+            'supersede-repair',
+            repairSha,
+            {
+                preparedBuildId: 'supersede-repair',
+                appliedRevision: revision,
+            },
+        );
+        revision = store.state.pending_release.phase_revision;
+        heartbeatDedicated(
+            store,
+            'central-learner',
+            'supersede-repair',
+            repairSha,
+            {
+                preparedBuildId: 'supersede-repair',
+                appliedRevision: revision,
+            },
+        );
+
+        assert.equal(store.state.pending_release, null);
+        assert.equal(store.state.canonical_build_id, 'supersede-repair');
+        assert.equal(store.state.run_id, 'supersede-run');
+        assert.equal(store.state.compatibility_key, key);
+    });
+});
+
+test('compatible supersession fails closed unless exact pending identity and semantics match', () => {
+    withTempDir(root => {
+        const store = new TrainingControlStore({
+            statePath: path.join(root, 'state.json'),
+            artifactRoot: path.join(root, 'artifacts'),
+        });
+        const oldSha = publishDedicatedBuild(store, root, 'supersede-guard-old');
+        publishDedicatedBuild(store, root, 'supersede-guard-first');
+        publishDedicatedBuild(store, root, 'supersede-guard-next');
+        const key = '6'.repeat(64);
+
+        store.stageRelease({
+            buildId: 'supersede-guard-old',
+            runId: 'supersede-guard-run',
+            compatibilityKey: key,
+            incompatible: false,
+        });
+        store.setDesiredState({ training_enabled: true });
+        heartbeatDedicated(store, 'central-learner', 'supersede-guard-old', oldSha);
+        store.stageRelease({
+            buildId: 'supersede-guard-first',
+            runId: 'supersede-guard-run',
+            compatibilityKey: key,
+            incompatible: false,
+        });
+
+        assert.throws(
+            () => store.stageRelease({
+                buildId: 'supersede-guard-next',
+                runId: 'supersede-guard-run',
+                compatibilityKey: key,
+                incompatible: false,
+                supersedeCompatibleBuildId: 'some-other-build',
+            }),
+            error => error.statusCode === 409 && /not a same-run/.test(error.message),
+        );
+        assert.throws(
+            () => store.stageRelease({
+                buildId: 'supersede-guard-next',
+                runId: 'different-run',
+                compatibilityKey: key,
+                incompatible: false,
+                supersedeCompatibleBuildId: 'supersede-guard-first',
+            }),
+            error => error.statusCode === 409 && /not a same-run/.test(error.message),
+        );
+        assert.equal(store.state.pending_release.build_id, 'supersede-guard-first');
+        assert.equal(store.state.canonical_build_id, 'supersede-guard-old');
+    });
+});
+
 test('preparing rollout barrier survives training-control server restart', () => {
     withTempDir(root => {
         const statePath = path.join(root, 'state.json');
