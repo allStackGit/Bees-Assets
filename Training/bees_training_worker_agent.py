@@ -1608,14 +1608,17 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         last_error="",
                     )
             except (ControlUnavailable, ControlRejected, OSError, ValueError, RuntimeError) as exc:
-                last_error = f"{type(exc).__name__}: {exc}"
+                error_text = f"{type(exc).__name__}: {exc}"
                 offline = last_contact <= 0 or time.monotonic() - last_contact > lease_seconds
+                transient_control_error = isinstance(exc, ControlUnavailable) and not offline
+                if not transient_control_error:
+                    last_error = error_text
                 try:
                     write_local_state(
                         state_file,
                         desired=desired,
                         online=bool(received_desired and not offline),
-                        last_error=last_error,
+                        last_error=error_text,
                     )
                 except OSError as state_exc:
                     print(
@@ -1645,7 +1648,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         print(
                             "[Bees control] reconciliation error while the running trainer "
                             "still exactly matches server intent; keeping it running and retrying: "
-                            + last_error,
+                            + error_text,
+                            file=sys.stderr,
+                        )
+                    elif transient_control_error and managed.alive():
+                        print(
+                            "[Bees control] transient control transport interruption within the "
+                            "active lease; keeping the matching trainer running and retrying: "
+                            + error_text,
                             file=sys.stderr,
                         )
                 elif args.role == "full-game" and offline and managed.alive():
