@@ -1097,6 +1097,14 @@ Manual-only protection is acceptable only when the record explains why determini
 **Invariant/knowledge:** externally configured names are data, not safe filesystem components; generated artifacts must remain within their selected output directory.
 
 
+### REG-125 — training log resume could join different file contents
+**Area:** `Training/bees_training_worker_agent.py`, `TrainingLogUploader.flush_once`; `Training/bees_training_control.py`; `BeesServer~/trainingControl.js`
+**Symptom:** After an uploader restart or same-run file replacement, a server offset could be resumed solely because it was within the local file size, silently joining a new local log to a stale remote prefix.
+**Root cause:** The conflict protocol returned only the server byte offset. The uploader assumed overlapping local and remote bytes matched; when the server offset exceeded local size it reset the remote copy, risking loss of server-only log data.
+**Fix:** Offset conflicts now include the server prefix SHA-256. The uploader compares the matching local prefix before resuming and fails closed on mismatch, preserving both copies. It no longer relies on offset alone for an ambiguous prefix.
+**Permanent protection:** Training log append may resume only after proving the local prefix equals the stored remote prefix. Ambiguous conflicts must not append mismatched data or reset the server copy.
+**Verification:** Static trace of the authenticated log POST, server offset-conflict response, client decoding, and uploader retry confirms the digest is computed from the stored remote file and compared with exactly the overlapping local prefix. Mismatches raise `ControlRejected` without a reset or append. No tests, builds, services, or runtime checks were run.
+
 ### REG-124 — Pluto II campaign guard rewrote live tooltip sequence text
 **Area:** `Scripts/UI Components/CampaignFeedbackAdjustmentGuard.cs`, `UpdatePlutoTwo`
 **Symptom:** A polling campaign guard could replace the text of Pluto II's active multipage tooltip after the tooltip controller had installed the current page.
