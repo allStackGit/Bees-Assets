@@ -111,8 +111,17 @@ class ElasticActorSession(worker.ActorSession):
             self._claim_keeper = None
 
     def close(self) -> None:
-        self._stop_claim_keeper()
-        super().close()
+        try:
+            super().close()
+        finally:
+            self._stop_claim_keeper()
+            release = getattr(self.client, "release", None)
+            if callable(release):
+                try:
+                    release(self.session_id)
+                except Exception:
+                    # Lease expiry remains the recovery path if the broker is unavailable.
+                    pass
 
     def _heartbeat(self) -> None:
         self.client.reset_ack(
