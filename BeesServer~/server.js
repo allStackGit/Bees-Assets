@@ -37,15 +37,25 @@ function loadLegacyRuntime(options = {}) {
         messageParse:
             '            let request = new SocketRequest(JSON.parse(message.utf8Data), this.connection, this.server, common.timer(), 0, 0, this.id);',
         userDataRead:
-            '                data = await this.user.getData(request.params.DataFile);\n' +
-            '            } catch (e) {\n' +
-            '                common.handleError(e);\n' +
+            '                common.handleError(e, "get-user-data");\n' +
+            '                request.respond({\n' +
+            '                    Type: request.params.Type,\n' +
+            '                    Hash: request.params.Hash,\n' +
+            '                    Status: 503\n' +
+            '                });\n' +
+            '                this.server.pendingRequests.delete(request.params.Hash);\n' +
+            '                return;\n' +
             '            }\n' +
             '            if (data && data[0]) {',
         settingsRead:
-            '                settings = await this.user.getSettings(request.params.DataFile, request.params.Version);\n' +
-            '            } catch (e) {\n' +
-            '                common.handleError(e);\n' +
+            '                common.handleError(e, "get-settings");\n' +
+            '                request.respond({\n' +
+            '                    Type: request.params.Type,\n' +
+            '                    Hash: request.params.Hash,\n' +
+            '                    Status: 503\n' +
+            '                });\n' +
+            '                this.server.pendingRequests.delete(request.params.Hash);\n' +
+            '                return;\n' +
             '            }\n' +
             '            if (settings) {',
         settingsUserIdCompare:
@@ -107,20 +117,8 @@ function loadLegacyRuntime(options = {}) {
         '                return;\n' +
         '            }\n' +
         '            let request = new SocketRequest(parsedMessage, this.connection, this.server, common.timer(), 0, 0, this.id);');
-    source = source.replace(markers.userDataRead,
-        '                data = await this.user.getData(request.params.DataFile);\n' +
-        '            } catch (e) {\n' +
-        '                common.handleError(e);\n' +
-        '                throw e;\n' +
-        '            }\n' +
-        '            if (data && data[0]) {');
-    source = source.replace(markers.settingsRead,
-        '                settings = await this.user.getSettings(request.params.DataFile, request.params.Version);\n' +
-        '            } catch (e) {\n' +
-        '                common.handleError(e);\n' +
-        '                throw e;\n' +
-        '            }\n' +
-        '            if (settings) {');
+    // Read failures already produce retryable 503 responses in siServerDev.js.
+    // Keep those handlers intact; replacing them here would collapse errors into missing rows.
     source = source.replace(markers.settingsUserIdCompare,
         '                settings = String(outcomes[0].userId) === String(this.userId) ? outcomes[0] : outcomes[1];');
     source = source.replace(markers.pendingRequestHas,
