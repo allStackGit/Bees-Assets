@@ -203,31 +203,29 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
             self.assertEqual(request.read_text(encoding="ascii"), "stop\n")
             process.wait.assert_called_once_with(timeout=7.0)
 
-    def test_unhealthy_python_waits_for_repair_cutover(self):
+    def test_runtime_alignment_waits_until_current_runtime_is_verified_for_canonical_build(self):
         args = Namespace()
         process = mock.Mock()
         process.poll.return_value = None
         updater = mock.Mock()
-        expected = Path("/tmp/repaired-runtime")
+        updater.verified.side_effect = [
+            ("", ""),
+            ("build-1", ""),
+        ]
         with (
             mock.patch.object(
                 managed,
-                "_python_remote_dependencies_ok",
-                return_value=False,
-            ),
-            mock.patch.object(
-                managed,
                 "_runtime_cutover_selected",
-                side_effect=[None, expected],
+                return_value=None,
             ) as selected,
             mock.patch.object(
                 managed,
-                "_remote_status_summary",
-                return_value="[status]",
+                "_control_status",
+                return_value={"desired": {"canonical_build_id": "build-1"}},
             ),
             mock.patch.object(managed.time, "sleep"),
         ):
-            result = managed._wait_for_dependency_repair_cutover(
+            aligned, cutover = managed._wait_for_runtime_alignment(
                 args,
                 "trainer-1",
                 updater,
@@ -235,25 +233,27 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
                 [False],
             )
 
-        self.assertEqual(result, expected)
-        self.assertEqual(selected.call_count, 2)
+        self.assertTrue(aligned)
+        self.assertIsNone(cutover)
+        updater.start.assert_called_once_with()
+        updater.request_refresh.assert_called()
+        self.assertGreaterEqual(selected.call_count, 2)
 
-    def test_healthy_python_does_not_wait_for_repair_cutover(self):
+    def test_runtime_alignment_selects_staged_canonical_runtime_before_worker_launch(self):
         args = Namespace()
         process = mock.Mock()
+        process.poll.return_value = None
         updater = mock.Mock()
+        expected = Path("/tmp/staged-runtime")
         with (
             mock.patch.object(
                 managed,
-                "_python_remote_dependencies_ok",
-                return_value=True,
-            ),
-            mock.patch.object(
-                managed,
                 "_runtime_cutover_selected",
-            ) as selected,
+                return_value=expected,
+            ),
+            mock.patch.object(managed, "_control_status") as status,
         ):
-            result = managed._wait_for_dependency_repair_cutover(
+            aligned, cutover = managed._wait_for_runtime_alignment(
                 args,
                 "trainer-1",
                 updater,
@@ -261,8 +261,18 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
                 [False],
             )
 
-        self.assertIsNone(result)
-        selected.assert_not_called()
+        self.assertTrue(aligned)
+        self.assertEqual(cutover, expected)
+        updater.start.assert_called_once_with()
+        status.assert_not_called()
+
+    def test_runtime_updater_stop_is_safe_before_thread_start(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            args = Namespace(runtime_archive=str(root / "missing.zip"))
+            updater = managed.RuntimeUpdater(args, root / "install")
+            updater.stop()
+            self.assertFalse(updater._started)
 
     def test_runtime_version_is_read_from_executing_root_not_mutable_archive(self):
         with tempfile.TemporaryDirectory() as temp:
