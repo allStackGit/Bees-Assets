@@ -623,9 +623,15 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
 
     def test_status_reads_authoritative_run_scoped_learner_live_log(self):
         status = read_operator("status.js")
+        learner = (ROOT / "Training" / "bees_mlagents_learn.py").read_text(encoding="utf-8")
         self.assertIn("paths.centralAgentInstallRoot", status)
-        self.assertIn("learner-live.log", (ROOT / "Training" / "bees_mlagents_learn.py").read_text(encoding="utf-8"))
-        self.assertIn("'logs',\n            runId", status)
+        self.assertIn("learner-live.log", learner)
+        self.assertIn("'learner-live.log'", status)
+        self.assertIn("const authoritative = parseLearnerLogFiles([", status)
+        self.assertIn("if (authoritative.Step !== null) return authoritative;", status)
+        authoritative = status.index("if (authoritative.Step !== null) return authoritative;")
+        fallback = status.index("const operatorLogRoot = path.join(paths.logsRoot, 'Training');")
+        self.assertLess(authoritative, fallback)
         self.assertIn("listLogFiles(managedLearnerLogRoot, false)", status)
 
     def test_running_remote_heartbeat_publishes_environment_identity_and_throughput(self):
