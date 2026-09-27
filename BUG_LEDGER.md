@@ -6,6 +6,8 @@ Static-only repository audit on `rl/initial-design-work`. This ledger is the cur
 
 - **BUG-002 — Missing exact-version settings response retries forever.** BeesServer's settings handler returns `Filename: null` and `Contents: null` when the exact user/name/version row is absent. Unity logs the empty response but leaves the settings request standing; `ServerSettings.WaitForResponse` sees its handled hash and issues a fresh request, so required settings never load and the client repeats the lookup. I attempted to mark this response terminal; auto-review rejected the `ServerSettings.cs` update, citing a security-sensitive authentication side effect in the full-file replacement. That authentication behavior was not intentionally changed; the partial socket edit was reverted. This remains unresolved pending a narrowly approved edit to the settings lifecycle.
 
+- REG-104 fixes persisted artifact catalog paths: stored paths must exactly match the role/platform/build/hash path emitted by the publisher, preventing malformed state from causing pruning to unlink an arbitrary path. Static source review only; no tests run.
+
 ## Audit status
 
 - ML-Agents launcher review found and fixed a `--results-dir` argument-boundary defect: the default is now inserted before `--env-args`, and Unity-side flags no longer count as trainer settings. A focused regression case and REG-103 documentation were added; neither was executed. Static source review only.
