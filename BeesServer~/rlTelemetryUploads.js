@@ -268,6 +268,7 @@ class RlTelemetryUploadManager {
         this.sessions = new Map();
         this.logicalUploads = new Map();
         this.userQuotas = new Map();
+        this.lastQuotaCleanupMs = Number.NEGATIVE_INFINITY;
         this.initialization = null;
         this.beginTail = Promise.resolve();
     }
@@ -615,7 +616,18 @@ class RlTelemetryUploadManager {
     }
 
     async cleanupExpired() {
-        const cutoff = this.now() - this.uploadIdleTimeoutMs;
+        const now = this.now();
+        const quotaCleanupInterval = Math.min(this.rateWindowMs, 60_000);
+        if (now - this.lastQuotaCleanupMs >= quotaCleanupInterval) {
+            this.lastQuotaCleanupMs = now;
+            for (const [userId, quota] of this.userQuotas) {
+                if (now - quota.windowStart >= this.rateWindowMs) {
+                    this.userQuotas.delete(userId);
+                }
+            }
+        }
+
+        const cutoff = now - this.uploadIdleTimeoutMs;
         const expired = [...this.sessions.values()].filter(
             session => !(session.inFlight > 0) && session.updatedAt < cutoff);
         await Promise.all(expired.map(async session => {
