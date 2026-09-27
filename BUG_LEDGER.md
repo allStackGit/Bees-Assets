@@ -47,3 +47,5 @@ None currently confirmed. The active audit continues; resolved findings have bee
 - REG-129 removes unreferenced canonical build copies when artifact state persistence fails or a build-ID immutability check rejects a new copy; temporary staging files are also cleaned on copy/rename errors. Added focused Node regression assertions; not run. Verified by static tracing of copy, catalog mutation, rollback, and cleanup. The post-fix clean-pass count is **0 / 2**.
 
 - REG-130 ensures a dedicated heartbeat rejected by trainer-registry persistence does not mutate environment-count optimizer state. Added a focused Node regression case, not run; reviewed statically. The post-fix clean-pass count is **0 / 2**.
+
+- REG-131 prevents a managed elastic actor from being stopped solely because Unity/policy startup exceeds the process-age grace while startup health is actively refreshed. Stale or missing startup health remains a failure. Added focused Python regression cases; not run. Static review only. The post-fix clean-pass count is **0 / 2**.
