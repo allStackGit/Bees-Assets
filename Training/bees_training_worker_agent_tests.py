@@ -69,5 +69,40 @@ class ManagedProcessRestartTests(unittest.TestCase):
             self.assertTrue(popen.called)
 
 
+    def test_control_revision_does_not_bypass_same_launch_backoff(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            state_file = root / "state.json"
+            manager = worker.ManagedProcess()
+            manager.command = ("python", "trainer.py")
+            manager.revision = 4
+            manager.build_sha256 = "a" * 64
+            manager.build_id = "build-a"
+            manager.run_id = "run-a"
+            manager.compatibility_key = "b" * 64
+            manager.environment_args = ("--rl-map-size=64",)
+            manager.worker_env_count = 2
+            manager.state_file = str(state_file.resolve())
+            manager.restart_failure_streak = 5
+            manager.restart_not_before_monotonic = worker.time.monotonic() + 120.0
+
+            with mock.patch.object(worker, "popen_owned") as popen:
+                with self.assertRaisesRegex(RuntimeError, "restart deferred"):
+                    manager.start(
+                        ("python", "trainer.py"),
+                        revision=5,
+                        build_sha256="a" * 64,
+                        build_id="build-a",
+                        run_id="run-a",
+                        compatibility_key="b" * 64,
+                        state_file=state_file,
+                        environment_args=("--rl-map-size=64",),
+                        worker_env_count=2,
+                    )
+
+            self.assertEqual(manager.restart_failure_streak, 5)
+            self.assertFalse(popen.called)
+
+
 if __name__ == "__main__":
     unittest.main()
