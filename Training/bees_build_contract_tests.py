@@ -402,6 +402,30 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         self.assertLess(spawn, active)
         self.assertIn("argv_transport: 'node-spawn-array-v1'", block)
 
+    def test_bundle_evaluation_is_opt_in_and_timeout_retains_evidence(self):
+        powershell = (ROOT / "bees.ps1").read_text(encoding="utf-8")
+        operator = (ROOT / "Training" / "bees_operator.js").read_text(encoding="utf-8")
+        diagnostics = read_operator("diagnostics.js")
+
+        self.assertIn("[switch]$Evaluate", powershell)
+        self.assertIn("if($Evaluate -and $Command -ne 'bundle')", powershell)
+        self.assertIn("if($Evaluate){$arguments+='--evaluate'}", powershell)
+
+        self.assertIn("evaluate: false", operator)
+        self.assertIn("arg === '--evaluate'", operator)
+        self.assertIn("options.evaluate && command !== 'bundle'", operator)
+
+        self.assertIn("if (options.evaluate)", diagnostics)
+        self.assertIn(
+            "Deterministic policy evaluation skipped; use bundle -Evaluate to include it.",
+            diagnostics,
+        )
+        self.assertIn("function diagnosticBenchmarkTimeoutMs(", diagnostics)
+        self.assertIn("DIAGNOSTIC_BENCHMARK_STARTUP_GRACE_MS = 120000", diagnostics)
+        self.assertIn("result.stdout_tail = boundedDiagnosticTail(stdout)", diagnostics)
+        self.assertIn("result.stderr_tail = boundedDiagnosticTail(stderr)", diagnostics)
+        self.assertNotIn("waitForExit(child, 180000)", diagnostics)
+
     def test_transient_control_unavailability_does_not_poison_worker_instability_heartbeat(self):
         source = (ROOT / "Training" / "bees_training_worker_agent.py").read_text(
             encoding="utf-8"
