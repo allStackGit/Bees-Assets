@@ -430,6 +430,15 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         self.assertIn("result.stderr_tail = boundedDiagnosticTail(stderr)", diagnostics)
         self.assertNotIn("waitForExit(child, 180000)", diagnostics)
 
+    def test_training_control_docs_match_opt_in_bundle_evaluation_contract(self):
+        documentation = (
+            ROOT / "BeesServer~" / "docs" / "TRAINING_CONTROL.md"
+        ).read_text(encoding="utf-8")
+        self.assertIn("Deterministic policy evaluation is opt-in", documentation)
+        self.assertIn("bees.ps1 bundle -Evaluate", documentation)
+        self.assertIn("timeout is derived from the match count", documentation)
+        self.assertNotIn("benchmark is capped at 180 seconds", documentation)
+
     def test_remote_supervisor_requires_canonical_runtime_alignment_before_worker_launch(self):
         source = (ROOT / "Training" / "bees_managed_remote_worker.py").read_text(
             encoding="utf-8"
