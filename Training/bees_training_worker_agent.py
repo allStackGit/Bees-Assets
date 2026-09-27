@@ -746,6 +746,29 @@ class ManagedProcess:
             return {"state": "ready", "error": ""}
         return read_managed_health(self.health_file, self.health_token)
 
+    def throughput_expected_pid(self) -> Optional[int]:
+        """Return the authenticated child PID that owns live throughput metrics.
+
+        On Windows, a virtual-environment launcher can remain as the Popen-owned process while
+        the real Python interpreter writes child health and throughput telemetry under a different
+        PID. Child health is token-authenticated for this managed launch, so prefer its PID when
+        available and fall back to the launcher PID otherwise.
+        """
+        process = self.process
+        if process is None:
+            return None
+        if self.health_required:
+            health = self.health()
+            health_pid = health.get("pid") if isinstance(health, Mapping) else None
+            if (
+                isinstance(health_pid, int)
+                and not isinstance(health_pid, bool)
+                and health_pid > 0
+            ):
+                return health_pid
+        pid = getattr(process, "pid", None)
+        return pid if isinstance(pid, int) and not isinstance(pid, bool) and pid > 0 else None
+
     def health_error(self) -> str:
         if not self.health_required or not self.alive():
             return ""
@@ -1350,7 +1373,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         if managed.alive() and process is not None:
             throughput = read_throughput_metrics(
                 managed.throughput_metrics_file,
-                expected_pid=process.pid,
+                expected_pid=managed.throughput_expected_pid(),
                 expected_env_count=managed.worker_env_count,
             )
             if throughput:
