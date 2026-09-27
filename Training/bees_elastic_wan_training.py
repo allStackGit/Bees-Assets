@@ -766,7 +766,20 @@ class ElasticWanBroker(base.WanActorBroker):
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     break
-                self._condition.wait(remaining)
+
+                # A connected actor can long-poll longer than its configured lease. Wake
+                # periodically and refresh its lease so low-lease actors are not removed
+                # while waiting for a policy, control, or topology change.
+                wait_interval = remaining
+                if actor_id is not None:
+                    wait_interval = min(wait_interval, self.options.actor_lease_seconds / 3.0)
+                self._condition.wait(wait_interval)
+
+                if actor_id is not None:
+                    record = self._registrations.get(actor_id)
+                    if record is not None:
+                        record["last_seen"] = time.monotonic()
+                    self._active_snapshot_locked()
 
             active = self._active_snapshot_locked()
             if actor_id is not None:
