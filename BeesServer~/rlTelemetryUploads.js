@@ -383,6 +383,13 @@ class RlTelemetryUploadManager {
         }
         quota.bytes += bytes;
         this.userQuotas.set(userId, quota);
+        return quota;
+    }
+
+    _releaseQuota(userId, reservation, bytes) {
+        if (this.userQuotas.get(userId) !== reservation) return;
+        reservation.bytes = Math.max(0, reservation.bytes - bytes);
+        if (reservation.bytes === 0) this.userQuotas.delete(userId);
     }
 
     _activeForUser(userId) {
@@ -472,10 +479,19 @@ class RlTelemetryUploadManager {
             throw new RlTelemetryUploadError(429, 'too-many-active-uploads', 'Too many active telemetry uploads.');
         }
         const now = this.now();
-        this._reserveQuota(userId, totalBytes, now);
+        const quotaReservation = this._reserveQuota(userId, totalBytes, now);
         const uploadId = `rl-telemetry-upload-${this.randomUUID()}`;
         const partialPath = path.join(this.partialDir, `${uploadId}.json.partial`);
-        await fsp.writeFile(partialPath, Buffer.alloc(0), { flag: 'wx' });
+        try {
+            await fsp.writeFile(partialPath, Buffer.alloc(0), { flag: 'wx' });
+        } catch (error) {
+            try {
+                await safeUnlink(partialPath);
+            } finally {
+                this._releaseQuota(userId, quotaReservation, totalBytes);
+            }
+            throw error;
+        }
         const session = {
             uploadId,
             batchId,
