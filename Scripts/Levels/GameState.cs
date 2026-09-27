@@ -773,11 +773,31 @@ namespace Assets.Scripts.Levels
 
         private static bool IsValidLobbyLevelSnapshot(MatchLobbyLevelSnapshot level)
         {
+            int locationCount = Enum.GetValues(typeof(ConfigData.Locations)).Length;
+            int shipTypeCount = Enum.GetValues(typeof(ConfigData.ShipTypes)).Length;
             if (level == null ||
+                (level.Side != ConfigData.Configuration.BeeSide &&
+                 level.Side != ConfigData.Configuration.HumanSide) ||
                 string.IsNullOrEmpty(level.Name) ||
                 level.Name.Length > MaxLobbyNameLength ||
+                level.MapIndex < -1 ||
+                level.MapIndex >= locationCount ||
                 level.Obstacles == null ||
                 level.Obstacles.Length > MaxLobbyNameLength ||
+                level.AsteroidOption < -1 ||
+                level.AsteroidOption > 3 ||
+                level.FogOfWar < -1 ||
+                level.FogOfWar > 1 ||
+                level.Mining < -1 ||
+                level.Mining > 1 ||
+                level.SupplyCapacity < -1 ||
+                level.EnemyReinforcementsOption < -1 ||
+                level.EnemyReinforcementsOption > 1 ||
+                level.EnemyReinforcementDelay < 0 ||
+                level.EnemyShipTypeOption < -1 ||
+                level.EnemyShipTypeOption > shipTypeCount ||
+                level.EnemySquadGenerationCount < 0 ||
+                level.EnemySquadGenerationCount > MaxLobbySquads ||
                 level.EnemyReport == null ||
                 level.EnemyReport.Length > MaxLobbyReportLength ||
                 !IsFiniteLobbyFloat(level.BeeStartingX) ||
@@ -797,7 +817,9 @@ namespace Assets.Scripts.Levels
                     !IsFiniteLobbyFloat(obstacle.PositionX) ||
                     !IsFiniteLobbyFloat(obstacle.PositionY) ||
                     !IsFiniteLobbyFloat(obstacle.ScaleX) ||
-                    !IsFiniteLobbyFloat(obstacle.ScaleY))
+                    !IsFiniteLobbyFloat(obstacle.ScaleY) ||
+                    obstacle.ScaleX <= 0f ||
+                    obstacle.ScaleY <= 0f)
                 {
                     return false;
                 }

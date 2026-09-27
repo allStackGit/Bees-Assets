@@ -1752,5 +1752,158 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains("ConfigData.BeeShipTypes = beeRandomShipTypes.ToHashSet();", source);
             StringAssert.Contains("ConfigData.HumanShipTypes = humanRandomShipTypes.ToHashSet();", source);
         }
+
+        [Test]
+        public void CanonicalLevelOptionsRemapPhysicalStartPositionsPerLocalPerspective()
+        {
+            Type sessionType = RuntimeAssembly.GetType("Assets.Scripts.Levels.MatchSession");
+            Type levelOptionsType = RuntimeAssembly.GetType("Assets.Scripts.Data.LevelOptions");
+            object session = Activator.CreateInstance(sessionType);
+            RuntimeAssembly.Invoke(session, "AddPlayer", 1, 1, true);
+            RuntimeAssembly.Invoke(session, "TrySetPeerTransportIdentity", 1, "steam:host");
+
+            object options = Activator.CreateInstance(levelOptionsType, 7, 2, "Multiplayer Level");
+            RuntimeAssembly.SetField(options, "MapIndex", 0);
+            RuntimeAssembly.SetField(options, "UserStartingPosition", new Vector2(10f, 20f));
+            RuntimeAssembly.SetField(options, "AIStartingPosition", new Vector2(-10f, -20f));
+
+            Assert.That(RuntimeAssembly.Invoke(
+                session,
+                "TrySetLevelOptions",
+                options,
+                1,
+                2), Is.EqualTo(true));
+
+            MethodInfo materialize = sessionType.GetMethod(
+                "TryCreateCanonicalLevelOptions",
+                BindingFlags.Instance | BindingFlags.Public);
+
+            object[] beeArgs = { 1, 2, null };
+            Assert.That((bool)materialize.Invoke(session, beeArgs), Is.True);
+            object beeView = beeArgs[2];
+            Assert.That(
+                RuntimeAssembly.GetField(beeView, "UserStartingPosition"),
+                Is.EqualTo(new Vector2(10f, 20f)));
+            Assert.That(
+                RuntimeAssembly.GetField(beeView, "AIStartingPosition"),
+                Is.EqualTo(new Vector2(-10f, -20f)));
+
+            object[] humanArgs = { 2, 1, null };
+            Assert.That((bool)materialize.Invoke(session, humanArgs), Is.True);
+            object humanView = humanArgs[2];
+            Assert.That(
+                RuntimeAssembly.GetField(humanView, "UserStartingPosition"),
+                Is.EqualTo(new Vector2(-10f, -20f)));
+            Assert.That(
+                RuntimeAssembly.GetField(humanView, "AIStartingPosition"),
+                Is.EqualTo(new Vector2(10f, 20f)));
+        }
+
+        [Test]
+        public void LobbyWireProtocolRoundTripsCanonicalLevelAndObstacleGeometry()
+        {
+            Type sessionType = RuntimeAssembly.GetType("Assets.Scripts.Levels.MatchSession");
+            Type levelOptionsType = RuntimeAssembly.GetType("Assets.Scripts.Data.LevelOptions");
+            Type protocolType = RuntimeAssembly.GetType("Assets.Scripts.Levels.MultiplayerProtocol");
+            object session = Activator.CreateInstance(sessionType);
+            RuntimeAssembly.Invoke(session, "AddPlayer", 1, 1, true);
+            RuntimeAssembly.Invoke(session, "TrySetPeerTransportIdentity", 1, "steam:host");
+
+            object options = Activator.CreateInstance(levelOptionsType, 9, 2, "Wire Level");
+            RuntimeAssembly.SetField(options, "MapIndex", 1);
+            RuntimeAssembly.SetField(options, "FogOfWar", 1);
+            RuntimeAssembly.SetField(options, "Mining", 0);
+            RuntimeAssembly.SetField(options, "AsteroidOption", 2);
+            RuntimeAssembly.AddToCollection(
+                RuntimeAssembly.GetField(options, "ObstacleList"),
+                (new Vector2(3f, 4f), new Vector2(20f, 30f)));
+
+            Assert.That(RuntimeAssembly.Invoke(
+                session,
+                "TrySetLevelOptions",
+                options,
+                1,
+                2), Is.EqualTo(true));
+
+            MethodInfo createSnapshot = sessionType.GetMethod(
+                "TryCreateLobbySnapshot",
+                BindingFlags.Instance | BindingFlags.Public);
+            object[] snapshotArgs = { null };
+            Assert.That((bool)createSnapshot.Invoke(session, snapshotArgs), Is.True);
+
+            MethodInfo serialize = protocolType.GetMethod(
+                "TrySerializeLobbySnapshot",
+                BindingFlags.Public | BindingFlags.Static);
+            object[] serializeArgs = { snapshotArgs[0], null };
+            Assert.That((bool)serialize.Invoke(null, serializeArgs), Is.True);
+
+            MethodInfo deserialize = protocolType.GetMethod(
+                "TryDeserializeLobbySnapshot",
+                BindingFlags.Public | BindingFlags.Static);
+            object[] deserializeArgs = { serializeArgs[1], null };
+            Assert.That((bool)deserialize.Invoke(null, deserializeArgs), Is.True);
+
+            object parsedLevel = RuntimeAssembly.GetField(deserializeArgs[1], "Level");
+            Assert.That(parsedLevel, Is.Not.Null);
+            Assert.That(RuntimeAssembly.GetField(parsedLevel, "MapIndex"), Is.EqualTo(1));
+            Assert.That(RuntimeAssembly.GetField(parsedLevel, "FogOfWar"), Is.EqualTo(1));
+            Assert.That(
+                RuntimeAssembly.GetCount(RuntimeAssembly.GetField(parsedLevel, "ObstacleList")),
+                Is.EqualTo(1));
+        }
+
+        [Test]
+        public void LobbyLevelValidationRejectsUnsafeMapAndObstacleValues()
+        {
+            string path = Path.Combine(Application.dataPath, "Scripts", "Levels", "GameState.cs");
+            string source = File.ReadAllText(path);
+
+            StringAssert.Contains("level.MapIndex < -1", source);
+            StringAssert.Contains("level.MapIndex >= locationCount", source);
+            StringAssert.Contains("level.EnemySquadGenerationCount > MaxLobbySquads", source);
+            StringAssert.Contains("obstacle.ScaleX <= 0f", source);
+            StringAssert.Contains("obstacle.ScaleY <= 0f", source);
+        }
+
+        [Test]
+        public void SquadMakerStagesCanonicalOnlineLevelBeforeSpaceScene()
+        {
+            string path = Path.Combine(Application.dataPath, "Scripts", "Scenes", "SquadMaker.cs");
+            string source = File.ReadAllText(path);
+
+            int stageIndex = source.IndexOf("TryStageMultiplayerLaunchConfiguration()");
+            int spaceIndex = source.LastIndexOf("_nextScene = \"Space\"");
+            Assert.That(stageIndex, Is.GreaterThanOrEqualTo(0));
+            Assert.That(spaceIndex, Is.GreaterThan(stageIndex));
+            StringAssert.Contains("session.TrySetLevelOptions(", source);
+            StringAssert.Contains("ConfigData.ChooseRandomLevel = false;", source);
+        }
+
+        [Test]
+        public void StageFailsClosedWhenCanonicalOnlineLevelIsMissing()
+        {
+            string path = Path.Combine(Application.dataPath, "Scripts", "Scenes", "Stage.cs");
+            string source = File.ReadAllText(path);
+
+            StringAssert.Contains("MatchSession.TryCreateCanonicalLevelOptions(", source);
+            StringAssert.Contains(
+                "Configured online Free Play match is missing canonical level data.",
+                source);
+            StringAssert.Contains(
+                "Configured online Free Play match could not enter battle phase.",
+                source);
+        }
+
+        [Test]
+        public void AiLobbyRolesDoNotRequirePlayerOwnershipTokens()
+        {
+            string path = Path.Combine(Application.dataPath, "Scripts", "Levels", "GameState.cs");
+            string source = File.ReadAllText(path);
+
+            StringAssert.Contains("MatchLobbySquadRole.AiInitial", source);
+            StringAssert.Contains("MatchLobbySquadRole.AiReinforcement", source);
+            StringAssert.Contains("squad.OwnerPlayerId == UnownedPlayerId", source);
+            StringAssert.Contains("string.IsNullOrEmpty(squad.OwnershipToken)", source);
+        }
     }
 }
