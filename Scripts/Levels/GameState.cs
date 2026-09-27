@@ -325,6 +325,53 @@ namespace Assets.Scripts.Levels
         Ended
     }
 
+    [Serializable]
+    public sealed class MatchLobbyPeerSnapshot
+    {
+        public int PeerId;
+        public string TransportIdentity;
+
+        public MatchLobbyPeerSnapshot()
+        {
+        }
+
+        public MatchLobbyPeerSnapshot(int peerId, string transportIdentity)
+        {
+            PeerId = peerId;
+            TransportIdentity = transportIdentity ?? string.Empty;
+        }
+    }
+
+    [Serializable]
+    public sealed class MatchLobbyPlayerSnapshot
+    {
+        public int PlayerId;
+        public int PeerId;
+        public int Side;
+
+        public MatchLobbyPlayerSnapshot()
+        {
+        }
+
+        public MatchLobbyPlayerSnapshot(int playerId, int peerId, int side)
+        {
+            PlayerId = playerId;
+            PeerId = peerId;
+            Side = side;
+        }
+    }
+
+    [Serializable]
+    public sealed class MatchLobbySnapshot
+    {
+        public const int CurrentVersion = 1;
+        public int Version = CurrentVersion;
+        public string MatchId;
+        public int AuthorityPeerId;
+        public List<MatchLobbyPeerSnapshot> Peers = new List<MatchLobbyPeerSnapshot>();
+        public List<MatchLobbyPlayerSnapshot> Players = new List<MatchLobbyPlayerSnapshot>();
+    }
+
     /// <summary>
     /// Transient Free Play participant/ownership state. Campaign and Challenge do not create
     /// this session; their existing single-player ownership path remains unchanged.
@@ -334,6 +381,8 @@ namespace Assets.Scripts.Levels
         public const int UnownedPlayerId = 0;
         public const int LegacyLocalPlayerId = 1;
         public const int LocalPeerId = 1;
+        public const int MaxLobbyPeers = 16;
+        public const int MaxLobbyPlayers = 32;
         private const int LegacyRemotePeerIdOffset = 1000000;
 
         private readonly List<MatchPeer> _peers = new List<MatchPeer>();
@@ -366,6 +415,174 @@ namespace Assets.Scripts.Levels
             MatchSession session = new MatchSession();
             session.AddPlayer(LegacyLocalPlayerId, side, true);
             return session;
+        }
+
+        public bool TryCreateLobbySnapshot(out MatchLobbySnapshot snapshot)
+        {
+            snapshot = null;
+            if (!IsConfiguring ||
+                MatchId == Guid.Empty ||
+                AuthorityPeerId <= 0 ||
+                _peers.Count == 0 ||
+                _peers.Count > MaxLobbyPeers ||
+                _players.Count == 0 ||
+                _players.Count > MaxLobbyPlayers ||
+                !_peers.Any(peer => peer.Id == AuthorityPeerId))
+            {
+                return false;
+            }
+
+            MatchLobbySnapshot candidate = new MatchLobbySnapshot
+            {
+                MatchId = MatchId.ToString("N"),
+                AuthorityPeerId = AuthorityPeerId
+            };
+
+            HashSet<int> peerIds = new HashSet<int>();
+            HashSet<string> transportIdentities = new HashSet<string>(StringComparer.Ordinal);
+            for (int i = 0; i < _peers.Count; i++)
+            {
+                MatchPeer peer = _peers[i];
+                if (peer == null ||
+                    peer.Id <= 0 ||
+                    string.IsNullOrWhiteSpace(peer.TransportIdentity) ||
+                    !peerIds.Add(peer.Id) ||
+                    !transportIdentities.Add(peer.TransportIdentity))
+                {
+                    return false;
+                }
+
+                candidate.Peers.Add(new MatchLobbyPeerSnapshot(
+                    peer.Id,
+                    peer.TransportIdentity));
+            }
+
+            HashSet<int> playerIds = new HashSet<int>();
+            for (int i = 0; i < _players.Count; i++)
+            {
+                MatchPlayer player = _players[i];
+                if (player == null ||
+                    player.Id <= UnownedPlayerId ||
+                    !playerIds.Add(player.Id) ||
+                    !peerIds.Contains(player.PeerId) ||
+                    (player.Side != ConfigData.Configuration.BeeSide &&
+                     player.Side != ConfigData.Configuration.HumanSide))
+                {
+                    return false;
+                }
+
+                candidate.Players.Add(new MatchLobbyPlayerSnapshot(
+                    player.Id,
+                    player.PeerId,
+                    player.Side));
+            }
+
+            snapshot = candidate;
+            return true;
+        }
+
+        public static bool TryCreateFromLobbySnapshot(
+            MatchLobbySnapshot snapshot,
+            string localTransportIdentity,
+            out MatchSession session)
+        {
+            session = null;
+            if (snapshot == null ||
+                snapshot.Version != MatchLobbySnapshot.CurrentVersion ||
+                string.IsNullOrWhiteSpace(snapshot.MatchId) ||
+                !Guid.TryParseExact(snapshot.MatchId, "N", out Guid matchId) ||
+                matchId == Guid.Empty ||
+                snapshot.AuthorityPeerId <= 0 ||
+                string.IsNullOrWhiteSpace(localTransportIdentity) ||
+                snapshot.Peers == null ||
+                snapshot.Peers.Count == 0 ||
+                snapshot.Peers.Count > MaxLobbyPeers ||
+                snapshot.Players == null ||
+                snapshot.Players.Count == 0 ||
+                snapshot.Players.Count > MaxLobbyPlayers)
+            {
+                return false;
+            }
+
+            MatchSession candidate = new MatchSession();
+            if (!candidate.TrySetMatchId(matchId))
+            {
+                return false;
+            }
+
+            HashSet<int> peerIds = new HashSet<int>();
+            HashSet<string> transportIdentities = new HashSet<string>(StringComparer.Ordinal);
+            int localPeerCount = 0;
+            for (int i = 0; i < snapshot.Peers.Count; i++)
+            {
+                MatchLobbyPeerSnapshot peer = snapshot.Peers[i];
+                if (peer == null ||
+                    peer.PeerId <= 0 ||
+                    string.IsNullOrWhiteSpace(peer.TransportIdentity) ||
+                    !peerIds.Add(peer.PeerId) ||
+                    !transportIdentities.Add(peer.TransportIdentity))
+                {
+                    return false;
+                }
+
+                bool isLocal = string.Equals(
+                    peer.TransportIdentity,
+                    localTransportIdentity,
+                    StringComparison.Ordinal);
+                if (isLocal)
+                {
+                    localPeerCount++;
+                }
+
+                if (!candidate.AddPeer(
+                        peer.PeerId,
+                        isLocal,
+                        peer.TransportIdentity))
+                {
+                    return false;
+                }
+            }
+
+            if (localPeerCount != 1 ||
+                !peerIds.Contains(snapshot.AuthorityPeerId) ||
+                !candidate.TrySetAuthorityPeer(snapshot.AuthorityPeerId))
+            {
+                return false;
+            }
+
+            HashSet<int> playerIds = new HashSet<int>();
+            int localPlayerCount = 0;
+            for (int i = 0; i < snapshot.Players.Count; i++)
+            {
+                MatchLobbyPlayerSnapshot player = snapshot.Players[i];
+                if (player == null ||
+                    player.PlayerId <= UnownedPlayerId ||
+                    !playerIds.Add(player.PlayerId) ||
+                    !peerIds.Contains(player.PeerId) ||
+                    (player.Side != ConfigData.Configuration.BeeSide &&
+                     player.Side != ConfigData.Configuration.HumanSide) ||
+                    !candidate.AddPlayerToPeer(
+                        player.PlayerId,
+                        player.Side,
+                        player.PeerId))
+                {
+                    return false;
+                }
+
+                if (candidate.IsLocalPlayer(player.PlayerId))
+                {
+                    localPlayerCount++;
+                }
+            }
+
+            if (localPlayerCount == 0 ||
+                candidate.PrimaryLocalPlayerId == UnownedPlayerId)
+            {
+                return false;
+            }
+
+            session = candidate;
+            return true;
         }
 
         public bool TrySetMatchId(Guid matchId)

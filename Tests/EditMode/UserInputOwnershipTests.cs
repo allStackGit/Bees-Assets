@@ -1072,5 +1072,92 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains("_pendingCommandKeys", source);
             StringAssert.Contains("if (!_pendingCommandKeys.Contains(sent.Key))", source);
         }
+
+        [Test]
+        public void LobbySnapshotReconstructsLocalPerspectiveFromTransportIdentity()
+        {
+            Type sessionType = RuntimeAssembly.GetType("Assets.Scripts.Levels.MatchSession");
+            object host = Activator.CreateInstance(sessionType);
+
+            RuntimeAssembly.Invoke(host, "AddPlayer", 1, 1, true);
+            RuntimeAssembly.Invoke(host, "TrySetPeerTransportIdentity", 1, "steam:host");
+            RuntimeAssembly.Invoke(host, "AddPeer", 10, false, "steam:client");
+            RuntimeAssembly.Invoke(host, "AddPlayerToPeer", 2, 2, 10);
+
+            MethodInfo createSnapshot = sessionType.GetMethod(
+                "TryCreateLobbySnapshot",
+                BindingFlags.Instance | BindingFlags.Public);
+            object[] snapshotArgs = { null };
+            Assert.That((bool)createSnapshot.Invoke(host, snapshotArgs), Is.True);
+            object snapshot = snapshotArgs[0];
+
+            MethodInfo createSession = sessionType.GetMethod(
+                "TryCreateFromLobbySnapshot",
+                BindingFlags.Static | BindingFlags.Public);
+            object[] clientArgs = { snapshot, "steam:client", null };
+            Assert.That((bool)createSession.Invoke(null, clientArgs), Is.True);
+            object client = clientArgs[2];
+
+            Assert.That(RuntimeAssembly.Invoke(client, "IsLocalPlayer", 2), Is.EqualTo(true));
+            Assert.That(RuntimeAssembly.Invoke(client, "IsLocalPlayer", 1), Is.EqualTo(false));
+
+            PropertyInfo authority = sessionType.GetProperty(
+                "AuthorityPeerId",
+                BindingFlags.Instance | BindingFlags.Public);
+            PropertyInfo localAuthority = sessionType.GetProperty(
+                "IsLocalAuthority",
+                BindingFlags.Instance | BindingFlags.Public);
+            PropertyInfo matchId = sessionType.GetProperty(
+                "MatchId",
+                BindingFlags.Instance | BindingFlags.Public);
+
+            Assert.That(authority.GetValue(client), Is.EqualTo(1));
+            Assert.That(localAuthority.GetValue(client), Is.EqualTo(false));
+            Assert.That(matchId.GetValue(client), Is.EqualTo(matchId.GetValue(host)));
+            Assert.That(RuntimeAssembly.Invoke(client, "TryBeginBattle"), Is.EqualTo(true));
+        }
+
+        [Test]
+        public void LobbySnapshotRejectsDuplicateTransportIdentity()
+        {
+            Type sessionType = RuntimeAssembly.GetType("Assets.Scripts.Levels.MatchSession");
+            object host = Activator.CreateInstance(sessionType);
+
+            RuntimeAssembly.Invoke(host, "AddPlayer", 1, 1, true);
+            RuntimeAssembly.Invoke(host, "TrySetPeerTransportIdentity", 1, "steam:duplicate");
+            RuntimeAssembly.Invoke(host, "AddPeer", 10, false, "steam:duplicate");
+            RuntimeAssembly.Invoke(host, "AddPlayerToPeer", 2, 2, 10);
+
+            MethodInfo createSnapshot = sessionType.GetMethod(
+                "TryCreateLobbySnapshot",
+                BindingFlags.Instance | BindingFlags.Public);
+            object[] snapshotArgs = { null };
+            Assert.That((bool)createSnapshot.Invoke(host, snapshotArgs), Is.False);
+            Assert.That(snapshotArgs[0], Is.Null);
+        }
+
+        [Test]
+        public void LobbySnapshotIsAvailableOnlyWhileSessionIsConfiguring()
+        {
+            Type sessionType = RuntimeAssembly.GetType("Assets.Scripts.Levels.MatchSession");
+            object host = Activator.CreateInstance(sessionType);
+
+            RuntimeAssembly.Invoke(host, "AddPlayer", 1, 1, true);
+            RuntimeAssembly.Invoke(host, "TrySetPeerTransportIdentity", 1, "steam:host");
+            RuntimeAssembly.Invoke(host, "AddPeer", 10, false, "steam:client");
+            RuntimeAssembly.Invoke(host, "AddPlayerToPeer", 2, 2, 10);
+
+            MethodInfo createSnapshot = sessionType.GetMethod(
+                "TryCreateLobbySnapshot",
+                BindingFlags.Instance | BindingFlags.Public);
+            object[] beforeBattle = { null };
+            Assert.That((bool)createSnapshot.Invoke(host, beforeBattle), Is.True);
+
+            Assert.That(RuntimeAssembly.Invoke(host, "TryBeginBattle"), Is.EqualTo(true));
+
+            object[] afterBattle = { null };
+            Assert.That((bool)createSnapshot.Invoke(host, afterBattle), Is.False);
+            Assert.That(afterBattle[0], Is.Null);
+        }
     }
 }
