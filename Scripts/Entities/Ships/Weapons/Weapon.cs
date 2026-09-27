@@ -359,7 +359,14 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         public bool IsShipWithinRange(Ship ship) => ShipsWithinRange.ContainsKey(ship.Id);
         public virtual bool IsPointWithinRange(Vector2 point) => DistanceToPoint(point) <= Range;
         public float DistanceToPoint(Vector2 point) => Vector2.Distance(GetPosition(), point);
-        public float DistanceTo(Entity entity) => DistanceToPoint(entity.Collider.ClosestPoint(GetPosition()));
+        public float DistanceTo(Entity entity)
+        {
+            // Collider2D.ClosestPoint consumes and returns world-space positions, while weapon
+            // targeting positions are in the Level map's local coordinate system.
+            Vector2 worldPosition = Ship.Level.Map.Transform.TransformPoint(GetPosition());
+            Vector2 closestWorldPoint = entity.Collider.ClosestPoint(worldPosition);
+            return Vector2.Distance(worldPosition, closestWorldPoint);
+        }
         public virtual Vector2 GetPosition() => Ship.GetPosition();
         public float AngleToPoint(Vector2 point) => Utilities.AngleBetweenPoints(GetPosition(), point);
         private Vector2 _direction;
