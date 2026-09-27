@@ -18,6 +18,7 @@ import os
 import queue
 import time
 import math
+import threading
 from dataclasses import dataclass
 from typing import Any, Deque, Dict, List, Mapping, Optional, Sequence, Tuple
 
@@ -271,6 +272,7 @@ class CapacityDiagnostics:
         self.local_envs = int(local_envs)
         self._trainer_samples: Deque[Tuple[float, int]] = collections.deque()
         self._remote_samples: Deque[Tuple[float, int]] = collections.deque()
+        self._remote_samples_lock = threading.Lock()
         self._last_report = 0.0
         self._remote_actors = 0
         self._remote_envs = 0
@@ -300,12 +302,14 @@ class CapacityDiagnostics:
 
     def remote_rate(self, now: Optional[float] = None) -> float:
         current = time.monotonic() if now is None else now
-        self._prune(self._remote_samples, current, REMOTE_RATE_WINDOW_SECONDS)
-        if not self._remote_samples:
-            return 0.0
-        oldest = self._remote_samples[0][0]
-        elapsed = max(1.0, current - oldest)
-        return sum(value for _, value in self._remote_samples) / elapsed
+        with self._remote_samples_lock:
+            self._prune(self._remote_samples, current, REMOTE_RATE_WINDOW_SECONDS)
+            if not self._remote_samples:
+                return 0.0
+            oldest = self._remote_samples[0][0]
+            elapsed = max(1.0, current - oldest)
+            total_steps = sum(value for _, value in self._remote_samples)
+            return total_steps / elapsed
 
     def observe_trainer_step(self, step: int) -> None:
         if not isinstance(step, int) or isinstance(step, bool) or step < 0:
@@ -321,8 +325,9 @@ class CapacityDiagnostics:
         if step_count <= 0:
             return
         now = time.monotonic()
-        self._remote_samples.append((now, int(step_count)))
-        self._prune(self._remote_samples, now, REMOTE_RATE_WINDOW_SECONDS)
+        with self._remote_samples_lock:
+            self._remote_samples.append((now, int(step_count)))
+            self._prune(self._remote_samples, now, REMOTE_RATE_WINDOW_SECONDS)
 
     def observe_backpressure(self, now: Optional[float] = None) -> None:
         current = time.monotonic() if now is None else float(now)
