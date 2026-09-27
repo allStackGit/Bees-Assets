@@ -344,17 +344,6 @@ class TrainingEnvOptimizer {
             return this.snapshot(record.trainer_id);
         }
 
-        if (capacity.current_envs !== state.desired_envs) {
-            state.metrics_missing_since_ms = null;
-            state.phase = 'awaiting-restart';
-            state.phase_started_ms = timestamp;
-            state.measurement_started_ms = null;
-            state.measurement_start_steps = null;
-            state.measurement_start_produced_steps = null;
-            state.source_steps = totalSteps;
-            return this.snapshot(record.trainer_id);
-        }
-
         const probingAwayFromBaseline =
             state.baseline_envs !== null &&
             state.desired_envs !== state.baseline_envs &&
@@ -373,7 +362,8 @@ class TrainingEnvOptimizer {
             !reportedError &&
             (
                 state.phase === 'awaiting-restart' ||
-                state.baseline_envs === null
+                state.baseline_envs === null ||
+                capacity.current_envs !== state.desired_envs
             );
         const currentProcessFailure =
             (processState &&
@@ -447,6 +437,19 @@ class TrainingEnvOptimizer {
                 totalSteps,
                 'stability hold complete; collecting fresh baseline',
             );
+            return this.snapshot(record.trainer_id);
+        }
+
+        if (capacity.current_envs !== state.desired_envs) {
+            state.metrics_missing_since_ms = null;
+            if (state.phase !== 'awaiting-restart') {
+                state.phase = 'awaiting-restart';
+                state.phase_started_ms = timestamp;
+                state.measurement_started_ms = null;
+                state.measurement_start_steps = null;
+                state.measurement_start_produced_steps = null;
+                state.source_steps = totalSteps;
+            }
             return this.snapshot(record.trainer_id);
         }
 
