@@ -31,6 +31,35 @@ class ElasticActorClaimShutdownTests(unittest.TestCase):
         keeper.join.assert_called_once_with()
         self.assertIsNone(session._claim_keeper)
 
+    def test_orderly_close_drains_session_then_stops_and_releases_lease(self):
+        session = actor_session.ElasticActorSession.__new__(
+            actor_session.ElasticActorSession
+        )
+        session.client = mock.Mock()
+        session.session_id = "session-1"
+        session._claim_keeper_stop = threading.Event()
+        events = []
+        keeper = mock.Mock()
+        keeper.join.side_effect = lambda: events.append("stop-renewal")
+        session._claim_keeper = keeper
+        session.client.release.side_effect = lambda session_id: events.append(
+            f"release-{session_id}"
+        )
+
+        def drain_session(_instance):
+            events.append("drain")
+
+        with mock.patch.object(
+            actor_session.worker.ActorSession,
+            "close",
+            autospec=True,
+            side_effect=drain_session,
+        ):
+            session.close()
+
+        self.assertEqual(events, ["drain", "stop-renewal", "release-session-1"])
+        session.client.release.assert_called_once_with("session-1")
+
 
 class FakeObservationSpec:
     shape = (4,)
