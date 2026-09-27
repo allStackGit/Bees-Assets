@@ -709,6 +709,32 @@ class ElasticBrokerTests(unittest.TestCase):
             )
 
 
+    def test_stale_reset_ack_does_not_refresh_actor_lease(self):
+        broker, specs = self._broker()
+        broker.register_actor(
+            {
+                **broker.release_identity,
+                "actor_id": 0,
+                "actor_instance_id": "manual-process-0",
+                "env_count": 8,
+                "control_epoch": broker.control_epoch,
+                "behavior_specs": specs,
+            }
+        )
+        last_seen = broker._registrations[0]["last_seen"]
+        stale_ack = {
+            **broker.release_identity,
+            "actor_id": 0,
+            "actor_instance_id": "manual-process-0",
+            "control_epoch": broker.control_epoch - 1,
+        }
+
+        with self.assertRaisesRegex(elastic.base.StaleActorStateError, "control epoch"):
+            broker.acknowledge_reset(stale_ack)
+
+        self.assertEqual(broker._registrations[0]["last_seen"], last_seen)
+
+
 class ActorFailureDiagnosticsTests(unittest.TestCase):
     def test_managed_stop_request_sets_actor_stop_event(self):
         with tempfile.TemporaryDirectory() as temp:
