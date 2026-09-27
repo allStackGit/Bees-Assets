@@ -32,6 +32,7 @@ from bees_process_safety import (
 )
 from bees_training_control import (
     ControlRejected,
+    TrainingLogOffsetMismatch,
     ControlUnavailable,
     ManagedBuildStore,
     TrainingControlClient,
@@ -554,6 +555,24 @@ class BackgroundBuildPreparer:
             return self.prepared_build_id, self.last_error
 
 
+def _sha256_prefix(path: Path, byte_count: int) -> Optional[str]:
+    if byte_count < 0:
+        return None
+    digest = hashlib.sha256()
+    remaining = byte_count
+    try:
+        with path.open("rb") as handle:
+            while remaining > 0:
+                chunk = handle.read(min(1024 * 1024, remaining))
+                if not chunk:
+                    return None
+                digest.update(chunk)
+                remaining -= len(chunk)
+    except OSError:
+        return None
+    return digest.hexdigest()
+
+
 class TrainingLogUploader:
     CHUNK_BYTES = 1024 * 1024
     MAX_FILE_UPLOAD_BYTES = 64 * 1024 * 1024
@@ -632,38 +651,35 @@ class TrainingLogUploader:
                 continue
             if not data:
                 continue
-            next_offset = client.upload_log_chunk(
-                trainer_id=trainer_id,
-                run_id=run_id,
-                relative_path=relative,
-                offset=position,
-                data=data,
-            )
-            if next_offset < 0:
-                expected_offset = -next_offset - 1
-                if expected_offset > size:
-                    # The supervisor may have restarted after this same run-scoped file was
-                    # truncated. Its in-memory offset is gone, but the server still has the old
-                    # longer copy; reset that copy before replaying the current local bytes.
-                    next_offset = client.upload_log_chunk(
-                        trainer_id=trainer_id,
-                        run_id=run_id,
-                        relative_path=relative,
-                        offset=0,
-                        data=b"",
-                        reset=True,
-                    )
-                    if next_offset < 0:
-                        self._positions[log_path] = -next_offset - 1
-                        continue
-                    self._positions[log_path] = next_offset
-                    position = next_offset
-                    # The bytes already read came from the old offset. Retry from the
-                    # reset offset on the next pass instead of counting that stale chunk.
+            try:
+                next_offset = client.upload_log_chunk(
+                    trainer_id=trainer_id,
+                    run_id=run_id,
+                    relative_path=relative,
+                    offset=position,
+                    data=data,
+                )
+            except TrainingLogOffsetMismatch as mismatch:
+                expected_offset = mismatch.expected_offset
+                if expected_offset == 0:
+                    self._positions[log_path] = 0
                     continue
-                else:
-                    self._positions[log_path] = expected_offset
-                    continue
+                local_prefix_sha256 = (
+                    _sha256_prefix(log_path, expected_offset)
+                    if expected_offset <= size
+                    else None
+                )
+                if (
+                    local_prefix_sha256 is None
+                    or not mismatch.expected_sha256
+                    or local_prefix_sha256 != mismatch.expected_sha256
+                ):
+                    raise ControlRejected(
+                        "remote training log prefix differs from the local file; "
+                        "refusing to append or overwrite either copy"
+                    ) from mismatch
+                self._positions[log_path] = expected_offset
+                continue
             self._positions[log_path] = next_offset
             budget -= len(data)
             uploaded += len(data)
