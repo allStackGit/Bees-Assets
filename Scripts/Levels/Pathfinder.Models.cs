@@ -350,12 +350,23 @@ namespace Assets.Scripts.Levels
 
             public bool Equals(Path other)
             {
-                return Id == other.Id;
+                return other != null &&
+                    StartX == other.StartX &&
+                    StartY == other.StartY &&
+                    EndX == other.EndX &&
+                    EndY == other.EndY;
             }
 
             public override int GetHashCode()
             {
-                return Id.GetHashCode();
+                unchecked
+                {
+                    int hash = StartX;
+                    hash = (hash * 397) ^ StartY;
+                    hash = (hash * 397) ^ EndX;
+                    hash = (hash * 397) ^ EndY;
+                    return hash;
+                }
             }
 
             public static bool operator ==(Path a, Path b)
