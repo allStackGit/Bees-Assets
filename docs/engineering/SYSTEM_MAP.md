@@ -13,7 +13,7 @@ Concise, maintained orientation for coding work. This file is intentionally smal
 - `Squad` / `Ship` / `Weapon` / `Command` — pooled runtime lifetimes constructed from persistent data. Their runtime IDs/item IDs are not persistent profile IDs. Runtime ships inherit `IsPlayerControlled`, primary-local `IsUserControlled`, and Hive Mind ownership from their owning squad before GameState registration.
 - `Pool` plus object `Setup`/`ClearData`/`Kill` paths — object reuse boundary. Reacquired objects must behave as new lifetimes.
 - `Pathfinder` plus `Ship` path request state — background path search and main-thread publication. Ship reference, path request identity, and pooled-lifecycle identity all matter.
-- `RangeCollider` / `MapObjectVisibilityTracker` — derived range/visibility ownership. One observer/contact exiting must not erase another live source.
+- `RangeCollider` / `MapObjectVisibilityTracker` — derived range/visibility ownership. Map-object visibility is tracked independently by physical side for multiplayer; the existing `PlayerVisibleMapObjects` set remains the primary-local compatibility view used by Campaign/UI. One observer/contact exiting must not erase another live source.
 - campaign mission catalog/intro/trigger/objective code — campaign identity and terminal behavior; serialized map/obstacle assets and persistence data are part of the same contract.
 - `Socket`, `StandingRequestSet`, `SocketResponseLifecycleGuard` and request/response DTOs — transport, resend/deduplication/reconnect, response-status policy and publication into the owning runtime objects.
 
