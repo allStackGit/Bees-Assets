@@ -682,7 +682,7 @@ class WanActorBroker:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     raise TimeoutError(
-                        f"WAN actor startup timed out with {len(self._registrations)}/"
+                        f"WAN actor startup timed out with {len(self._active_actor_ids_locked())}/"
                         f"{self.options.min_actors} required actors registered."
                     )
                 self._condition.wait(min(remaining, 1.0))
