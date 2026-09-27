@@ -430,6 +430,28 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         self.assertLess(spawn, active)
         self.assertIn("graceful_checkpoint_shutdown: true", block)
 
+    def test_post_checkpoint_release_has_bounded_replacement_path(self):
+        source = read_operator("central.js")
+        helper = source[
+            source.index("function durablePostCheckpointCentralPhase"):
+            source.index("async function stopCentralAgentGracefully")
+        ]
+        self.assertIn("phase !== 'release' && phase !== 'publish'", helper)
+        self.assertIn("serviceState.training_started", helper)
+        self.assertIn("'checkpoint.pt'", helper)
+        self.assertIn("'BeesRL1v1.onnx'", helper)
+        self.assertIn("serviceState.run_id", helper)
+
+        stop = source[
+            source.index("async function stopCentralAgentGracefully"):
+            source.index("function commandIdentity")
+        ]
+        self.assertIn("Math.min(timeoutSeconds, 10)", stop)
+        self.assertIn("initialPostCheckpointPhase.run_id === postCheckpointPhase.run_id", stop)
+        self.assertIn("initialPostCheckpointPhase.phase === postCheckpointPhase.phase", stop)
+        self.assertIn("stopManagedProcessTree(state", stop)
+        self.assertIn("Refusing forced termination", stop)
+
     def test_gateway_launch_intent_is_durable_before_process_creation(self):
         source = read_operator("tailnet.js")
         start = source.index("async function startTailnetGatewayIfNeeded")
