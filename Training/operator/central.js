@@ -291,7 +291,17 @@ function durablePostCheckpointCentralPhase() {
         return null;
     }
     const runId = String(lifecycle.run_id || '').trim();
-    if (!runId || !/^[A-Za-z0-9._-]+$/.test(runId)) return null;
+    const behaviorName = String(
+        (lifecycle.contract && lifecycle.contract.behavior_name) || ''
+    ).trim();
+    if (
+        !runId ||
+        !/^[A-Za-z0-9._-]+$/.test(runId) ||
+        !behaviorName ||
+        !/^[A-Za-z0-9._-]+$/.test(behaviorName)
+    ) {
+        return null;
+    }
 
     const serviceStatePath = path.join(
         paths.trainingRoot,
@@ -321,11 +331,18 @@ function durablePostCheckpointCentralPhase() {
         paths.trainingRoot,
         'trainer-results',
         runId,
-        'BeesRL1v1',
+        behaviorName,
     );
     if (
         !exists(path.join(behaviorRoot, 'checkpoint.pt')) ||
-        !exists(path.join(paths.trainingRoot, 'trainer-results', runId, 'BeesRL1v1.onnx'))
+        !exists(
+            path.join(
+                paths.trainingRoot,
+                'trainer-results',
+                runId,
+                behaviorName + '.onnx',
+            )
+        )
     ) {
         return null;
     }
