@@ -39,4 +39,3 @@ None currently confirmed. The active audit continues; resolved findings have bee
 
 - REG-126 makes desired-state patches transactional: all fields are validated before state mutation, and persistence failure restores the prior state object. Verified statically in the BeesServer control store. No tests or runtime checks were run. The post-fix clean-pass count is **0 / 2**.
 
-- REG-126 makes desired-state patches transactional: all fields are validated before state mutation, and persistence failure restores the prior state object. Verified statically in the BeesServer control store. No tests or runtime checks were run. The post-fix clean-pass count is **0 / 2**.
