@@ -180,6 +180,7 @@ namespace Assets.Scripts.Levels
             PastCommands.Clear();
             OutcomeIdToPastCommandIndex.Clear();
             SelectedSquads.Clear();
+            ResetPlayerSelectionState();
             PlayerVisibleMapObjects.Clear();
             Obstacles.Clear();
             FogOfWarVisions.Clear();

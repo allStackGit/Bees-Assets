@@ -716,7 +716,7 @@ namespace Assets.Scripts.Levels
 
         public bool CanBeSelectedByPlayer(int playerId)
         {
-            return CanAcceptInputFrom(playerId) && !Level.State.SelectedSquads.Contains(this);
+            return CanAcceptInputFrom(playerId) && !Level.State.IsSquadSelectedByPlayer(this, playerId);
         }
 
         public bool CanBeSelected()

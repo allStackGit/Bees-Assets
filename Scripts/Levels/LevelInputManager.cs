@@ -47,6 +47,7 @@ namespace Assets.Scripts.Levels
         public List<Timer> Timers = new List<Timer>();
         public List<Turret> TurretsFiringManually = new List<Turret>();
         public EventSystem EventSystem;
+        public int PlayerId;
         public bool IsShowingRanges;
         public bool IsFiringManually;
 
@@ -56,6 +57,11 @@ namespace Assets.Scripts.Levels
             Level = stage.PrimaryLevel;
             _mousePosition = Stage.Camera.ScreenToWorldPoint(Input.mousePosition);
             Selector = selector;
+            PlayerId = selector != null && selector.PlayerId != MatchSession.UnownedPlayerId
+                ? selector.PlayerId
+                : (Stage.MatchSession == null
+                    ? MatchSession.LegacyLocalPlayerId
+                    : Stage.MatchSession.PrimaryLocalPlayerId);
             EventSystem = Stage.EventSystem;
             LoadHotKeySettings();
         }
@@ -181,11 +187,28 @@ namespace Assets.Scripts.Levels
             });
         }
 
+        private int GetInputSide()
+        {
+            int side = Stage.MatchSession == null
+                ? ConfigData.Configuration.UserSide
+                : Stage.MatchSession.GetPlayerSide(PlayerId);
+            return side == ConfigData.Configuration.BeeSide || side == ConfigData.Configuration.HumanSide
+                ? side
+                : ConfigData.Configuration.UserSide;
+        }
+
+        private int GetOpposingSide()
+        {
+            return GetInputSide() == ConfigData.Configuration.BeeSide
+                ? ConfigData.Configuration.HumanSide
+                : ConfigData.Configuration.BeeSide;
+        }
+
         public void ShowRanges()
         {
             if (!IsShowingRanges)
             {
-                Level.State.GetSelectedSquads().ForEach(s =>
+                Level.State.GetSelectedSquadsForPlayer(PlayerId).ForEach(s =>
                 {
                     if (!s.IsShowingRanges) s.ShowSquadRanges();
                 });
@@ -193,7 +216,7 @@ namespace Assets.Scripts.Levels
             }
             else
             {
-                Level.State.GetSelectedSquads().ForEach(s =>
+                Level.State.GetSelectedSquadsForPlayer(PlayerId).ForEach(s =>
                 {
                     if (s.IsShowingRanges) s.HideSquadRanges();
                 });
@@ -208,7 +231,7 @@ namespace Assets.Scripts.Levels
                 // This list represents the current manual-fire session. Do not retain turrets
                 // from prior sessions or pooled/destroyed ships.
                 TurretsFiringManually.Clear();
-                Level.State.GetSelectedSquads().ForEach(squad =>
+                Level.State.GetSelectedSquadsForPlayer(PlayerId).ForEach(squad =>
                 {
                     squad.GetShips().ForEach(ship =>
                     {
@@ -244,13 +267,17 @@ namespace Assets.Scripts.Levels
         public void SelectSquadByNumber(int squadNumber)
         {
             if (squadNumber == 0) squadNumber = 10;
-            _selectSquad_friendlySquads = Level.State.OriginalSquadCounts[ConfigData.Configuration.UserSide - 1];
+            List<Squad> ownedSquads = Level.State.GetSquadsBySide(GetInputSide())
+                .Where(squad => !squad.IsDead && squad.IsOwnedByPlayer(PlayerId))
+                .OrderBy(squad => squad.SquadNumber)
+                .ToList();
+            _selectSquad_friendlySquads = ownedSquads.Count;
             if (_selectSquad_friendlySquads <= 0) return;
 
             squadNumber %= _selectSquad_friendlySquads;
             if (squadNumber == 0) squadNumber = _selectSquad_friendlySquads;
-            _selectSquad_squad = Level.State.GetSquadByNumber(ConfigData.Configuration.UserSide, squadNumber);
-            Level.State.SelectSquad(_selectSquad_squad);
+            _selectSquad_squad = ownedSquads[squadNumber - 1];
+            Level.State.SelectSquadForPlayer(PlayerId, _selectSquad_squad);
 
             if (_selectSquad_squad != null && _selectSquad_squad.IsSelected)
             {
@@ -395,7 +422,8 @@ namespace Assets.Scripts.Levels
             return Input.GetMouseButtonUp(RightClick);
         }
 
-        private bool HasSelectingGuardShipInput() => _selectingGuardTarget && Input.GetMouseButtonUp(RightClick) && _clickedShip != null && _clickedShip.IsUserControlled;
+        private bool HasSelectingGuardShipInput() => _selectingGuardTarget && Input.GetMouseButtonUp(RightClick) &&
+            _clickedShip != null && _clickedShip.Side == GetInputSide();
 
         private bool HasAttackingShipInput()
         {
@@ -403,7 +431,7 @@ namespace Assets.Scripts.Levels
             {
                 if (_clickedShip != null)
                 {
-                    if (!_clickedShip.IsUserControlled) return true;
+                    if (_clickedShip.Side != GetInputSide()) return true;
                 }
                 else if (CheckForAttackAISquad()) return true;
             }
@@ -428,8 +456,10 @@ namespace Assets.Scripts.Levels
             return false;
         }
 
-        private bool HasFullRetreatCommandInput() => Input.GetMouseButtonUp(RightClick) && _clickedShip != null && _clickedShip.IsWarpGate && ConfigData.Configuration.UserSide == ConfigData.Configuration.HumanSide;
-        private bool HasHealCommandInput() => Input.GetMouseButtonUp(RightClick) && _clickedShip != null && _clickedShip.IsBeehive && ConfigData.Configuration.UserSide == ConfigData.Configuration.BeeSide;
+        private bool HasFullRetreatCommandInput() => Input.GetMouseButtonUp(RightClick) && _clickedShip != null &&
+            _clickedShip.IsWarpGate && GetInputSide() == ConfigData.Configuration.HumanSide;
+        private bool HasHealCommandInput() => Input.GetMouseButtonUp(RightClick) && _clickedShip != null &&
+            _clickedShip.IsBeehive && GetInputSide() == ConfigData.Configuration.BeeSide;
         private bool HasEitherControlKey() => Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl);
 
         public bool HasPauseInput()
@@ -449,7 +479,7 @@ namespace Assets.Scripts.Levels
 
                 if (HasDragMoveSquadsInput()) MoveSquads(Stage.Camera.ScreenToWorldPoint(Input.mousePosition));
                 else if (HasSelectingGuardShipInput()) SetSelectingGuard(_clickedShip);
-                else if (HasAttackingShipInput()) _clickedShip.Clicked(RightClick);
+                else if (HasAttackingShipInput()) _clickedShip.Clicked(RightClick, false, PlayerId);
                 else if (HasFullRetreatCommandInput()) SetSquadsToFullRetreat((WarpGate)_clickedShip);
                 else if (HasHealCommandInput()) SetSquadsToHeal(_clickedShip.Squad.GetShips().Where(s => s.ShipType == ConfigData.ShipTypes.Beehive).Select(b => (Beehive)b).ToList());
                 else if (HasMiningCommandInput()) SetSquadsToMine(_clickedMiningAsteroid);
@@ -502,7 +532,7 @@ namespace Assets.Scripts.Levels
 
         private void SetSelectingGuard(Ship ship)
         {
-            Level.State.GetSelectedSquads().ForEach(squad => squad.UserGuard(ship.Squad));
+            Level.State.GetSelectedSquadsForPlayer(PlayerId).ForEach(squad => squad.UserGuard(ship.Squad));
             _selectingGuardTarget = false;
             Cursor.SetCursor(null, Vector2.zero, CursorMode.Auto);
         }
@@ -538,13 +568,14 @@ namespace Assets.Scripts.Levels
 
         private bool CheckForSelectingSquad()
         {
-            _checkForSelectingSquad_ships = Level.State.GetShips(ConfigData.Configuration.UserSide);
+            _checkForSelectingSquad_ships = Level.State.GetShips(GetInputSide());
             _checkForSelectingSquad_potentialSquad = null;
             _checkForSelectingSquad_levelPosition = _mousePosition - Level.GetPosition();
             for (_checkForSelectingSquad_i = 0; _checkForSelectingSquad_i < _checkForSelectingSquad_ships.Count; _checkForSelectingSquad_i++)
             {
                 _checkForSelectingSquad_currentShip = _checkForSelectingSquad_ships[_checkForSelectingSquad_i];
-                if (_checkForSelectingSquad_currentShip.DistanceToPoint(_checkForSelectingSquad_levelPosition) <= 5)
+                if (_checkForSelectingSquad_currentShip.Squad.CanAcceptInputFrom(PlayerId) &&
+                    _checkForSelectingSquad_currentShip.DistanceToPoint(_checkForSelectingSquad_levelPosition) <= 5)
                 {
                     _checkForSelectingSquad_potentialSquad = _checkForSelectingSquad_currentShip.Squad;
                     _clickedShip = _checkForSelectingSquad_currentShip;
@@ -553,9 +584,9 @@ namespace Assets.Scripts.Levels
 
             if (_checkForSelectingSquad_potentialSquad != null)
             {
-                if (HasEitherControlKey()) Level.State.AddSelectedSquad(_checkForSelectingSquad_potentialSquad);
-                else if (_leftMouseDoubleClicked) Level.State.SelectSquadsByShipType(_clickedShip.ShipType);
-                else Level.State.SelectSquad(_checkForSelectingSquad_potentialSquad);
+                if (HasEitherControlKey()) Level.State.AddSelectedSquadForPlayer(PlayerId, _checkForSelectingSquad_potentialSquad);
+                else if (_leftMouseDoubleClicked) Level.State.SelectSquadsByShipTypeForPlayer(PlayerId, _clickedShip.ShipType);
+                else Level.State.SelectSquadForPlayer(PlayerId, _checkForSelectingSquad_potentialSquad);
                 return true;
             }
             return false;
@@ -563,7 +594,7 @@ namespace Assets.Scripts.Levels
 
         private bool CheckForAttackAISquad()
         {
-            _checkForAttackAISquad_ships = Level.State.GetShips(ConfigData.Configuration.AISide);
+            _checkForAttackAISquad_ships = Level.State.GetShips(GetOpposingSide());
             _checkForAttackAISquad_potentialSquad = null;
             _checkForAttackAISquad_levelPosition = _mousePosition - Level.GetPosition();
             for (_checkForAttackAISquad_i = 0; _checkForAttackAISquad_i < _checkForAttackAISquad_ships.Count; _checkForAttackAISquad_i++)
@@ -577,7 +608,7 @@ namespace Assets.Scripts.Levels
             }
             if (_checkForAttackAISquad_potentialSquad != null)
             {
-                _checkForAttackAISquad_potentialSquad.GetShips().First().Clicked(RightClick);
+                _checkForAttackAISquad_potentialSquad.GetShips().First().Clicked(RightClick, false, PlayerId);
                 return true;
             }
             return false;
@@ -585,7 +616,9 @@ namespace Assets.Scripts.Levels
 
         private void MoveSquads(Vector2 targetPosition)
         {
-            _moveSquads_selectedSquads = Level.State.GetSelectedSquads().Where(s => !s.IsLockedOn && s.CanAcceptUserInput).ToList();
+            _moveSquads_selectedSquads = Level.State.GetSelectedSquadsForPlayer(PlayerId)
+                .Where(s => !s.IsLockedOn && s.CanAcceptInputFrom(PlayerId))
+                .ToList();
             if (_moveSquads_selectedSquads.Count > 0)
             {
                 _moveSquads_localized = targetPosition - Level.GetPosition();
@@ -601,12 +634,12 @@ namespace Assets.Scripts.Levels
 
         private void SetSquadsToMine(MiningAsteroid asteroid)
         {
-            Level.State.GetSelectedSquads().ForEach(squad => squad.UserMining(asteroid));
+            Level.State.GetSelectedSquadsForPlayer(PlayerId).ForEach(squad => squad.UserMining(asteroid));
         }
 
         private void SetSquadsToFullRetreat(WarpGate warpGate)
         {
-            Level.State.GetSelectedSquads().ForEach(squad =>
+            Level.State.GetSelectedSquadsForPlayer(PlayerId).ForEach(squad =>
             {
                 if (squad.GetShips().Any(s => s.ShipType != ConfigData.ShipTypes.WarpGate)) squad.UserFullRetreat(warpGate);
             });
@@ -614,14 +647,14 @@ namespace Assets.Scripts.Levels
 
         private void SetSquadsToHeal(List<Beehive> beehives)
         {
-            Level.State.GetSelectedSquads().ForEach(squad => squad.UserHeal(beehives));
+            Level.State.GetSelectedSquadsForPlayer(PlayerId).ForEach(squad => squad.UserHeal(beehives));
         }
 
         private bool CheckForSelectingPatrolArea()
         {
             if (_selectingPatrolArea)
             {
-                Level.State.GetSelectedSquads().ForEach(squad =>
+                Level.State.GetSelectedSquadsForPlayer(PlayerId).ForEach(squad =>
                 {
                     _checkForSelectingPatrolArea_startingPosition = _mouseDownPosition - Level.GetPosition();
                     _checkForSelectingPatrolArea_endingPosition = _mousePosition - Level.GetPosition();
@@ -686,8 +719,8 @@ namespace Assets.Scripts.Levels
         {
             if (_clickedShip != null)
             {
-                if (_leftMouseDoubleClicked) Level.State.SelectSquadsByShipType(_clickedShip.ShipType);
-                else _clickedShip.Clicked(LeftClick, HasEitherControlKey());
+                if (_leftMouseDoubleClicked) Level.State.SelectSquadsByShipTypeForPlayer(PlayerId, _clickedShip.ShipType);
+                else _clickedShip.Clicked(LeftClick, HasEitherControlKey(), PlayerId);
                 return true;
             }
 

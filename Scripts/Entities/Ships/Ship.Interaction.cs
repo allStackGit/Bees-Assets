@@ -7,6 +7,7 @@ namespace Assets.Scripts.Entities.Ships
     {
         private static int _lastEnemyRightClickFrame = -1;
         private static int _lastEnemyRightClickSquadItemId = int.MinValue;
+        private static int _lastEnemyRightClickPlayerId = MatchSession.UnownedPlayerId;
 
         protected virtual void OnTriggerEnter2D(Collider2D collider)
         {
@@ -26,9 +27,24 @@ namespace Assets.Scripts.Entities.Ships
             }
         }
 
-        public void Clicked(int mouseButton, bool isCtrlClick = false)
+        public void Clicked(int mouseButton, bool isCtrlClick = false,
+            int playerId = MatchSession.UnownedPlayerId)
         {
-            if (!IsUserControlled && mouseButton == LevelInputManager.RightClick)
+            if (playerId == MatchSession.UnownedPlayerId)
+            {
+                playerId = Level.State.GetPrimaryInputPlayerId();
+            }
+            int playerSide = Stage.MatchSession == null
+                ? ConfigData.Configuration.UserSide
+                : Stage.MatchSession.GetPlayerSide(playerId);
+            if (playerSide != ConfigData.Configuration.BeeSide &&
+                playerSide != ConfigData.Configuration.HumanSide)
+            {
+                playerSide = ConfigData.Configuration.UserSide;
+            }
+            bool isFriendlyToPlayer = Side == playerSide;
+
+            if (!isFriendlyToPlayer && mouseButton == LevelInputManager.RightClick)
             {
                 // LevelInputManager can resolve the same right-click twice in one frame: once
                 // through its proximity fallback and again through the normal clicked-ship path.
@@ -36,25 +52,28 @@ namespace Assets.Scripts.Entities.Ships
                 // dedupe by target squad rather than by Ship instance.
                 int targetSquadItemId = Squad != null ? Squad.ItemId : int.MinValue;
                 if (_lastEnemyRightClickFrame == Time.frameCount &&
-                    _lastEnemyRightClickSquadItemId == targetSquadItemId)
+                    _lastEnemyRightClickSquadItemId == targetSquadItemId &&
+                    _lastEnemyRightClickPlayerId == playerId)
                 {
                     return;
                 }
 
                 _lastEnemyRightClickFrame = Time.frameCount;
                 _lastEnemyRightClickSquadItemId = targetSquadItemId;
+                _lastEnemyRightClickPlayerId = playerId;
 
                 // Do not perform a whole-map connectivity build here. Right-click is a main-thread
                 // input path, and the previous reachability guard lazily flood-filled the complete
                 // pathfinder grid on its first use, which could itself present as a hard freeze.
                 // Composition-aware dispatch also lets Barge-only squads use their dedicated
                 // Charge command instead of stopping in Aggressive's ranged positioning state.
-                Level.State.GetSelectedSquads().ForEach(selectedSquad => selectedSquad.UserTargetEnemy(Squad));
+                Level.State.GetSelectedSquadsForPlayer(playerId)
+                    .ForEach(selectedSquad => selectedSquad.UserTargetEnemy(Squad));
             }
-            else if (IsUserControlled && mouseButton == LevelInputManager.LeftClick && !Squad.IsImmobile)
+            else if (isFriendlyToPlayer && mouseButton == LevelInputManager.LeftClick && !Squad.IsImmobile)
             {
-                if (isCtrlClick) Level.State.AddSelectedSquad(Squad);
-                else Level.State.SelectSquad(Squad);
+                if (isCtrlClick) Level.State.AddSelectedSquadForPlayer(playerId, Squad);
+                else Level.State.SelectSquadForPlayer(playerId, Squad);
             }
         }
     }

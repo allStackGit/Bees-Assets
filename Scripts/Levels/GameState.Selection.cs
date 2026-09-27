@@ -6,38 +6,75 @@ namespace Assets.Scripts.Levels
 {
     public partial class GameState
     {
-        private int GetPrimaryInputPlayerId()
+        private readonly Dictionary<int, List<Squad>> _selectedSquadsByNonPrimaryPlayer =
+            new Dictionary<int, List<Squad>>();
+
+        public int GetPrimaryInputPlayerId()
         {
             MatchSession matchSession = Level != null && Level.Stage != null
                 ? Level.Stage.MatchSession
                 : null;
-            return matchSession == null
+            return matchSession == null || matchSession.PrimaryLocalPlayerId == MatchSession.UnownedPlayerId
                 ? MatchSession.LegacyLocalPlayerId
                 : matchSession.PrimaryLocalPlayerId;
         }
 
-        public List<Squad> GetSelectedSquads()
+        private bool IsPrimaryInputPlayer(int playerId)
         {
-            return GetSelectedSquads(GetPrimaryInputPlayerId());
+            return playerId == GetPrimaryInputPlayerId();
         }
 
-        public List<Squad> GetSelectedSquads(int playerId)
+        private List<Squad> GetSelectionRegistry(int playerId)
         {
-            // The raw selection registry remains shared during the foundation phase, but
-            // command routing must expose only squads owned by the requesting player.
-            return SelectedSquads
+            if (IsPrimaryInputPlayer(playerId))
+            {
+                return SelectedSquads;
+            }
+
+            if (!_selectedSquadsByNonPrimaryPlayer.TryGetValue(playerId, out List<Squad> selectedSquads))
+            {
+                selectedSquads = new List<Squad>();
+                _selectedSquadsByNonPrimaryPlayer.Add(playerId, selectedSquads);
+            }
+            return selectedSquads;
+        }
+
+        public bool IsSquadSelectedByPlayer(Squad squad, int playerId)
+        {
+            return squad != null && GetSelectionRegistry(playerId).Contains(squad);
+        }
+
+        public List<Squad> GetSelectedSquads()
+        {
+            return GetSelectedSquadsForPlayer(GetPrimaryInputPlayerId());
+        }
+
+        public List<Squad> GetSelectedSquadsForPlayer(int playerId)
+        {
+            return GetSelectionRegistry(playerId)
                 .Where(squad => squad != null && !squad.IsDead && squad.CanAcceptInputFrom(playerId))
                 .ToList();
         }
 
         public void AddSelectedSquad(Squad squad)
         {
-            if (!squad.CanBeSelected())
+            AddSelectedSquadForPlayer(GetPrimaryInputPlayerId(), squad);
+        }
+
+        public void AddSelectedSquadForPlayer(int playerId, Squad squad)
+        {
+            if (squad == null || !squad.CanBeSelectedByPlayer(playerId))
             {
                 return;
             }
 
-            SelectedSquads.Add(squad);
+            List<Squad> selection = GetSelectionRegistry(playerId);
+            selection.Add(squad);
+            if (!IsPrimaryInputPlayer(playerId))
+            {
+                return;
+            }
+
             squad.IsSelected = true;
             squad.MoveSquadBox();
             if (Level.Stage.Menus.HasSquadActionBox)
@@ -60,40 +97,97 @@ namespace Assets.Scripts.Levels
 
         public void SelectSquads(List<Squad> squads)
         {
-            ClearSelectedSquads();
-            squads.ForEach(AddSelectedSquad);
+            SelectSquadsForPlayer(GetPrimaryInputPlayerId(), squads);
+        }
+
+        public void SelectSquadsForPlayer(int playerId, List<Squad> squads)
+        {
+            ClearSelectedSquadsForPlayer(playerId);
+            if (squads == null)
+            {
+                return;
+            }
+            for (int i = 0; i < squads.Count; i++)
+            {
+                AddSelectedSquadForPlayer(playerId, squads[i]);
+            }
         }
 
         public void SelectSquadsByShipType(ConfigData.ShipTypes type)
         {
-            ClearSelectedSquads();
-            foreach (Squad squad in GetSquadsBySide(ConfigData.Configuration.UserSide)
-                         .Where(squad => squad.GetShips().Any(ship => ship.ShipType == type)))
+            SelectSquadsByShipTypeForPlayer(GetPrimaryInputPlayerId(), type);
+        }
+
+        public void SelectSquadsByShipTypeForPlayer(int playerId, ConfigData.ShipTypes type)
+        {
+            ClearSelectedSquadsForPlayer(playerId);
+            MatchSession matchSession = Level != null && Level.Stage != null
+                ? Level.Stage.MatchSession
+                : null;
+            int side = matchSession == null
+                ? ConfigData.Configuration.UserSide
+                : matchSession.GetPlayerSide(playerId);
+            if (side != ConfigData.Configuration.BeeSide && side != ConfigData.Configuration.HumanSide)
             {
-                AddSelectedSquad(squad);
+                return;
+            }
+
+            foreach (Squad squad in GetSquadsBySide(side)
+                         .Where(squad => squad.IsOwnedByPlayer(playerId) &&
+                             squad.GetShips().Any(ship => ship.ShipType == type)))
+            {
+                AddSelectedSquadForPlayer(playerId, squad);
             }
         }
 
         public void ClearSelectedSquads()
         {
-            while (SelectedSquads.Count > 0)
+            ClearSelectedSquadsForPlayer(GetPrimaryInputPlayerId());
+        }
+
+        public void ClearSelectedSquadsForPlayer(int playerId)
+        {
+            List<Squad> selection = GetSelectionRegistry(playerId);
+            while (selection.Count > 0)
             {
-                DeselectSquad(SelectedSquads[0]);
+                DeselectSquadForPlayer(playerId, selection[0]);
             }
         }
 
         public void SelectSquad(Squad squad)
         {
+            SelectSquadForPlayer(GetPrimaryInputPlayerId(), squad);
+        }
+
+        public void SelectSquadForPlayer(int playerId, Squad squad)
+        {
             if (squad == null)
             {
                 return;
             }
-            ClearSelectedSquads();
-            AddSelectedSquad(squad);
+            ClearSelectedSquadsForPlayer(playerId);
+            AddSelectedSquadForPlayer(playerId, squad);
         }
 
         public void DeselectSquad(Squad squad)
         {
+            DeselectSquadForPlayer(GetPrimaryInputPlayerId(), squad);
+        }
+
+        public void DeselectSquadForPlayer(int playerId, Squad squad)
+        {
+            List<Squad> selection = GetSelectionRegistry(playerId);
+            if (squad == null || !selection.Contains(squad))
+            {
+                return;
+            }
+
+            selection.Remove(squad);
+            if (!IsPrimaryInputPlayer(playerId))
+            {
+                return;
+            }
+
             squad.DeactivateSquadBox();
             squad.IsSelected = false;
             squad.GetShips().ForEach(ship =>
@@ -107,7 +201,6 @@ namespace Assets.Scripts.Levels
             {
                 squad.SquadTab.HideSelected();
             }
-            SelectedSquads.Remove(squad);
 
             if (SelectedSquads.Count == 0)
             {
@@ -121,6 +214,27 @@ namespace Assets.Scripts.Levels
             {
                 Stage.Menus.ActionBox.SetupForSquad();
             }
+        }
+
+        public void ForgetSquadSelectionForRelease(Squad squad)
+        {
+            if (squad == null)
+            {
+                return;
+            }
+
+            SelectedSquads.Remove(squad);
+            foreach (List<Squad> selectedSquads in _selectedSquadsByNonPrimaryPlayer.Values)
+            {
+                selectedSquads.Remove(squad);
+            }
+            squad.IsSelected = false;
+            HasSelectedSquads = SelectedSquads.Count > 0;
+        }
+
+        private void ResetPlayerSelectionState()
+        {
+            _selectedSquadsByNonPrimaryPlayer.Clear();
         }
     }
 }

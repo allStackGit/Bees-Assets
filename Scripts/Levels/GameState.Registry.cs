@@ -77,6 +77,7 @@ namespace Assets.Scripts.Levels
 
         public void RemoveSquad(Squad squad)
         {
+            ForgetSquadSelectionForRelease(squad);
             if (!squad.IsMinionSquad)
             {
                 squad.SavedSquad.IsLoadedIntoLevel = false;

@@ -13,14 +13,22 @@ namespace Assets.Scripts.Levels
         private List<Ship> potentiallySelectedShips = new List<Ship>();
         private GameObject box;
         public Level Level;
-        public void Setup(Level level, GameObject box)
+        public int PlayerId;
+
+        public void Setup(Level level, GameObject box, int playerId = MatchSession.UnownedPlayerId)
         {
             Level = level;
             this.box = box;
+            PlayerId = playerId == MatchSession.UnownedPlayerId
+                ? Level.State.GetPrimaryInputPlayerId()
+                : playerId;
         }
         public void SelectShip(Ship ship)
         {
-            potentiallySelectedShips.Add(ship);
+            if (ship != null && ship.Squad != null && ship.Squad.CanAcceptInputFrom(PlayerId))
+            {
+                potentiallySelectedShips.Add(ship);
+            }
         }
         public void DeselectShip(Ship ship)
         {
@@ -82,7 +90,7 @@ namespace Assets.Scripts.Levels
                     //Debug.Log($"Selecting #{ship.Squad.SquadNumber} squad");
                 }
             });
-            Level.State.SelectSquads(squads);
+            Level.State.SelectSquadsForPlayer(PlayerId, squads);
             ClearSelectedShips();
         }
     }
