@@ -189,6 +189,22 @@ namespace Bees.Tests.EditMode
             Assert.That((bool)matches.Invoke(null, new[] { payload }), Is.False);
         }
 
+        [Test]
+        public void FailedTelemetryDraftPersistenceRetainsThePayloadForRetry()
+        {
+            string source = System.IO.File.ReadAllText(System.IO.Path.Combine(
+                UnityEngine.Application.dataPath, "Scripts", "Scenes", "RlLiveTelemetryRecorder.cs"));
+            int flushStart = source.IndexOf("private bool FlushDraft", StringComparison.Ordinal);
+            int write = source.IndexOf("WriteAtomic(path", flushStart, StringComparison.Ordinal);
+            int clear = source.IndexOf("session.Current = null;", write, StringComparison.Ordinal);
+
+            Assert.That(flushStart, Is.GreaterThanOrEqualTo(0));
+            Assert.That(write, Is.GreaterThan(flushStart));
+            Assert.That(clear, Is.GreaterThan(write));
+            Assert.That(source, Does.Contain("if (!FlushDraft(session))"));
+            Assert.That(source, Does.Contain("_pendingFinalization.Add(existing)"));
+        }
+
         private static T GetStatic<T>(Type type, string name)
         {
             FieldInfo field = type.GetField(name, StaticFlags);
