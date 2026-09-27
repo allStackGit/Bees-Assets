@@ -269,7 +269,9 @@ class RobustnessQualificationTests(unittest.TestCase):
                 log.write_text("first\nsecond\nthird\n", encoding="utf-8")
                 result.write_text(
                     '<test-run passed="1" failed="1">'
-                    '<test-case fullname="Bees.Tests.ExampleFailure" result="Failed" />'
+                    '<test-case fullname="Bees.Tests.ExampleFailure" result="Failed">'
+                    '<failure><message>expected true but was false</message></failure>'
+                    '</test-case>'
                     '</test-run>',
                     encoding="utf-8",
                 )
@@ -292,6 +294,7 @@ class RobustnessQualificationTests(unittest.TestCase):
             )
             self.assertIn("failed tests", output)
             self.assertIn("Bees.Tests.ExampleFailure", output)
+            self.assertIn("expected true but was false", output)
             self.assertIn("tail of", output)
             self.assertIn("third", output)
 
