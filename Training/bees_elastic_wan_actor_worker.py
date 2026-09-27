@@ -519,6 +519,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 if not isinstance(session_id, str) or not session_id:
                     raise RuntimeError("Elastic WAN session is missing session_id")
                 _validate_session_release_identity(raw_session, release_identity)
+                write_managed_health(
+                    "starting",
+                    details={
+                        "component": "elastic-wan-actor",
+                        "phase": "claiming-session",
+                        "env_count": int(args.envs),
+                    },
+                )
                 actor_id = client.claim(session_id)
                 print(f"[Bees WAN actor] learner assigned actor slot {actor_id}.")
                 session, worker_offset, _capacity_envs = _elastic_session(
