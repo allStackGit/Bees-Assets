@@ -309,8 +309,8 @@ namespace Assets.Scripts.Levels
         private long _nextMatchSquadId = 1;
         private readonly Dictionary<int, long> _nextPlayerCommandSequences = new Dictionary<int, long>();
         private readonly Dictionary<int, long> _lastAcceptedPlayerCommandSequences = new Dictionary<int, long>();
-        private readonly List<(SavedSquad Squad, int PlayerId)> _squadOwnerAssignments =
-            new List<(SavedSquad Squad, int PlayerId)>();
+        private readonly Dictionary<Guid, (int PlayerId, int Side)> _squadOwnerAssignments =
+            new Dictionary<Guid, (int PlayerId, int Side)>();
 
         public IReadOnlyList<MatchPlayer> Players => _players;
         public int PrimaryLocalPlayerId { get; private set; } = UnownedPlayerId;
@@ -362,7 +362,7 @@ namespace Assets.Scripts.Levels
             }
 
             _players.Remove(player);
-            _squadOwnerAssignments.RemoveAll(assignment => assignment.PlayerId == playerId);
+            RemoveSquadAssignmentsForPlayer(playerId, null);
             if (PrimaryLocalPlayerId == playerId)
             {
                 MatchPlayer replacement = _players.FirstOrDefault(candidate => candidate.IsLocal);
@@ -386,9 +386,7 @@ namespace Assets.Scripts.Levels
             }
 
             player.SetSide(side);
-            _squadOwnerAssignments.RemoveAll(assignment =>
-                assignment.PlayerId == playerId &&
-                (assignment.Squad == null || assignment.Squad.Side != side));
+            RemoveSquadAssignmentsForPlayer(playerId, side);
             return true;
         }
 
@@ -519,6 +517,23 @@ namespace Assets.Scripts.Levels
             return true;
         }
 
+        private void RemoveSquadAssignmentsForPlayer(int playerId, int? retainedSide)
+        {
+            List<Guid> tokensToRemove = new List<Guid>();
+            foreach (KeyValuePair<Guid, (int PlayerId, int Side)> assignment in _squadOwnerAssignments)
+            {
+                if (assignment.Value.PlayerId == playerId &&
+                    (!retainedSide.HasValue || assignment.Value.Side != retainedSide.Value))
+                {
+                    tokensToRemove.Add(assignment.Key);
+                }
+            }
+            for (int i = 0; i < tokensToRemove.Count; i++)
+            {
+                _squadOwnerAssignments.Remove(tokensToRemove[i]);
+            }
+        }
+
         public bool TryAssignSavedSquadOwner(SavedSquad savedSquad, int playerId)
         {
             if (!IsConfiguring || savedSquad == null)
@@ -532,69 +547,31 @@ namespace Assets.Scripts.Levels
                 return false;
             }
 
-            for (int i = 0; i < _squadOwnerAssignments.Count; i++)
+            Guid token = savedSquad.MatchOwnershipToken;
+            if (token == Guid.Empty || !_squadOwnerAssignments.ContainsKey(token))
             {
-                if (ReferenceEquals(_squadOwnerAssignments[i].Squad, savedSquad))
-                {
-                    _squadOwnerAssignments[i] = (savedSquad, playerId);
-                    return true;
-                }
+                token = Guid.NewGuid();
+                savedSquad.MatchOwnershipToken = token;
             }
 
-            _squadOwnerAssignments.Add((savedSquad, playerId));
+            _squadOwnerAssignments[token] = (playerId, savedSquad.Side);
             return true;
         }
 
         public int ResolveSquadOwner(SavedSquad savedSquad, int side)
         {
-            if (savedSquad != null)
+            if (savedSquad != null &&
+                savedSquad.MatchOwnershipToken != Guid.Empty &&
+                _squadOwnerAssignments.TryGetValue(
+                    savedSquad.MatchOwnershipToken,
+                    out (int PlayerId, int Side) assignment))
             {
-                for (int i = 0; i < _squadOwnerAssignments.Count; i++)
-                {
-                    (SavedSquad Squad, int PlayerId) assignment = _squadOwnerAssignments[i];
-                    if (!ReferenceEquals(assignment.Squad, savedSquad))
-                    {
-                        continue;
-                    }
-
-                    MatchPlayer assignedPlayer = _players.FirstOrDefault(candidate => candidate.Id == assignment.PlayerId);
-                    return assignedPlayer != null && assignedPlayer.Side == side
-                        ? assignment.PlayerId
-                        : UnownedPlayerId;
-                }
-
-                // LevelOptions can clone SavedSquad instances before spawning. Preserve the
-                // match assignment across that clone when the persistent/transient squad id is
-                // unambiguous on this side. If two different players own the same id, refuse to
-                // guess; a later network loadout layer will supply a dedicated match-squad id.
-                int fallbackPlayerId = UnownedPlayerId;
-                for (int i = 0; i < _squadOwnerAssignments.Count; i++)
-                {
-                    (SavedSquad Squad, int PlayerId) assignment = _squadOwnerAssignments[i];
-                    if (assignment.Squad == null ||
-                        assignment.Squad.Side != side ||
-                        assignment.Squad.Id != savedSquad.Id)
-                    {
-                        continue;
-                    }
-
-                    if (fallbackPlayerId == UnownedPlayerId)
-                    {
-                        fallbackPlayerId = assignment.PlayerId;
-                    }
-                    else if (fallbackPlayerId != assignment.PlayerId)
-                    {
-                        return UnownedPlayerId;
-                    }
-                }
-
-                if (fallbackPlayerId != UnownedPlayerId)
-                {
-                    MatchPlayer fallbackPlayer = _players.FirstOrDefault(candidate => candidate.Id == fallbackPlayerId);
-                    return fallbackPlayer != null && fallbackPlayer.Side == side
-                        ? fallbackPlayerId
-                        : UnownedPlayerId;
-                }
+                MatchPlayer assignedPlayer = _players.FirstOrDefault(candidate => candidate.Id == assignment.PlayerId);
+                return assignment.Side == side &&
+                       assignedPlayer != null &&
+                       assignedPlayer.Side == side
+                    ? assignment.PlayerId
+                    : UnownedPlayerId;
             }
 
             return GetSolePlayerIdForSide(side);

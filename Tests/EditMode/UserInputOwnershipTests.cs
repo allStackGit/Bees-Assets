@@ -166,12 +166,16 @@ namespace Bees.Tests.EditMode
             RuntimeAssembly.Invoke(session, "AddPlayer", 1, 1, true);
             RuntimeAssembly.Invoke(session, "AddPlayer", 2, 1, false);
             RuntimeAssembly.Invoke(session, "TryAssignSavedSquadOwner", sourceSquad, 2);
+            RuntimeAssembly.SetField(
+                clonedSquad,
+                "MatchOwnershipToken",
+                RuntimeAssembly.GetField(sourceSquad, "MatchOwnershipToken"));
 
             Assert.That(RuntimeAssembly.Invoke(session, "ResolveSquadOwner", clonedSquad, 1), Is.EqualTo(2));
         }
 
         [Test]
-        public void SavedSquadOwnershipDoesNotGuessAcrossIdCollision()
+        public void UnassignedSavedSquadDoesNotGuessOwnerFromPersistentIdCollision()
         {
             Type sessionType = RuntimeAssembly.GetType("Assets.Scripts.Levels.MatchSession");
             object session = Activator.CreateInstance(sessionType);

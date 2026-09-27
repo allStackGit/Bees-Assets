@@ -26,8 +26,10 @@ namespace Assets.Scripts.Data
         private List<SquadShip> _ships = new List<SquadShip>();
         private bool _hasChanged;
 
-        // Not saved to JSON
+        // Not saved to JSON. MatchOwnershipToken is transient lobby identity: MemberwiseClone
+        // deliberately carries it into LevelOptions clones, while the manual ToJson contract omits it.
         public bool IsLoadedIntoLevel;
+        public Guid MatchOwnershipToken;
 
         public bool HasMaxShips => GetSquadShips().Count == ConfigData.Configuration.MaxSquadSize;
         public bool IsEmptySquad => GetSquadShips().Count == 0 && Name == "" && !CeaseFire && !IsMatchingSpeed;
