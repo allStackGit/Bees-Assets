@@ -1,6 +1,6 @@
 param(
     [Parameter(Mandatory=$true,Position=0)]
-    [ValidateSet('build','server','start','stop','status','bundle','qualify')]
+    [ValidateSet('build','runtime','server','start','stop','status','bundle','qualify')]
     [string]$Command,
     [switch]$FullGame,
     [switch]$Force,
