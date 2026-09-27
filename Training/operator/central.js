@@ -324,12 +324,20 @@ async function stopCentralAgentGracefully(pid, timeoutSeconds = 150) {
     );
 }
 
-function commandIdentity(bootstrapPython, agent, supervisorArgs, learnerLaunchCommand) {
+function commandIdentity(
+    bootstrapPython,
+    agent,
+    supervisorArgs,
+    learnerLaunchCommand,
+    preparedRuntimeVersion,
+) {
     return sha256Text(
         path.resolve(bootstrapPython) + os.EOL +
         sha256File(agent) + os.EOL +
         sha256File(paths.workerTokenPath) + os.EOL +
         supervisorArgs.map(String).join(os.EOL) + os.EOL +
+        '--prepared-runtime-version--' + os.EOL +
+        String(preparedRuntimeVersion || '') + os.EOL +
         '--managed-learner-launch--' + os.EOL +
         learnerLaunchCommand.map(String).join(os.EOL)
     );
@@ -377,6 +385,7 @@ async function startCentralAgentIfNeeded(
         agent,
         supervisorArgs,
         fallback.launch_command,
+        preparedRuntime.runtime_version,
     );
 
     let existing = null;

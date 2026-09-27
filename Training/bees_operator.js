@@ -4,6 +4,7 @@
 const {
     invokeBuild,
     invokeQualify,
+    invokeRuntime,
     invokeServer,
     invokeStart,
     invokeStatus,
@@ -13,6 +14,7 @@ const { invokeBundle } = require('./operator/diagnostics');
 
 const COMMANDS = new Set([
     'build',
+    'runtime',
     'server',
     'start',
     'stop',
@@ -25,6 +27,7 @@ function usage() {
     return [
         'Usage:',
         '  node Training/bees_operator.js build [--full-game] [--force]',
+        '  node Training/bees_operator.js runtime',
         '  node Training/bees_operator.js server',
         '  node Training/bees_operator.js start [--new-run] [--env-arg VALUE ...]',
         '  node Training/bees_operator.js stop [--server]',
@@ -155,6 +158,7 @@ async function dispatch(parsed) {
     }
     const { command, options } = parsed;
     if (command === 'build') await invokeBuild(options);
+    else if (command === 'runtime') await invokeRuntime(options);
     else if (command === 'server') await invokeServer(options);
     else if (command === 'start') await invokeStart(options);
     else if (command === 'stop') await invokeStop(options);
