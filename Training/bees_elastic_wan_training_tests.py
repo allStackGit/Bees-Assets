@@ -763,6 +763,16 @@ class ActorFailureDiagnosticsTests(unittest.TestCase):
 
 
 class CapacityDiagnosticTests(unittest.TestCase):
+    def test_trainer_rate_expires_when_progress_samples_are_stale(self):
+        diagnostics = elastic.CapacityDiagnostics(local_envs=2)
+        diagnostics._trainer_samples.extend([(100.0, 0), (110.0, 100)])
+
+        rate = diagnostics.trainer_rate(
+            now=110.0 + elastic.TRAINING_RATE_WINDOW_SECONDS + 1.0
+        )
+
+        self.assertIsNone(rate)
+
     def test_backpressure_reports_total_and_recent_window(self):
         diagnostics = elastic.CapacityDiagnostics(local_envs=2)
         diagnostics.observe_backpressure(now=100.0)
