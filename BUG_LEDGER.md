@@ -11,6 +11,7 @@ Static-only repository audit on `rl/initial-design-work`. This ledger is the cur
 - REG-105 closes a WAN actor cohort race: dequeue and actor-block registration now happen under the same broker condition used for admission, preventing one actor from contributing a second accepted batch to the same multi-actor cohort. The source change was statically reviewed; no tests were run.
 - REG-106 fixes `Path.Equals` treating distinct path endpoints as equal when their decimal coordinates concatenate to the same legacy `Id` (for example `(1, 23) -> (4, 5)` versus `(12, 3) -> (4, 5)`). Equality and hashing now use the four endpoint coordinates, and typed null comparisons are safe. Static source analysis only; no tests run.
 - REG-107 fixes manual weapon aiming and target-marker placement that mixed screen/world positions with level-local coordinates. Mouse targets are converted through the map transform, and the marker is positioned locally under that map. Static source analysis only; no tests run.
+- REG-108 prevents elastic WAN capacity reporting from iterating the remote sample deque while concurrent broker requests mutate it. Sample append/prune and reporting snapshots now share a lock. Static source analysis only; no tests run.
 
 ## Audit status
 
