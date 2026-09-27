@@ -731,10 +731,10 @@ Manual-only protection is acceptable only when the record explains why determini
 **Verification:** statically traced evaluation root initialization, arena and stream seed derivation, frame creation and episode invalidation. Regression guards were updated but not run; no tests, builds, Unity, simulations, or runtime checks were run, per the static-only audit scope.  
 **Invariant/knowledge:** every stochastic input that changes seeded evaluation observations or action transforms must use a private deterministic arena stream.
 
-### REG-084 — PPO compatibility layout guard expected removed discrete branches
+### REG-084 — PPO compatibility layout guard expected obsolete action dimensions
 **Area:** `Training/bees_mlagents_ppo_compat_tests.py`, `Training/bees_mlagents_ppo_compat.py`, frozen RL action ABI  
-**Symptom:** the PPO compatibility layout assertion expected nine discrete branches, including three 65-action branches, although the compatibility mask, agent action definition, and frozen policy schema define six branches: five binary weapon-fire branches and one five-action special branch. Running the test would reject the current ABI before checking the compatibility behavior.  
-**Root cause:** the expected branch tuple was stale after the action contract was reduced to the six-branch ABI; it no longer matched either the production declaration or policy schema v20.  
-**Permanent protection:** the expected tuple now explicitly matches `(2, 2, 2, 2, 2, 5)`, preserving an independent assertion of the frozen branch shape.  
-**Verification:** compared the test assertion against `BEES_DISCRETE_BRANCHES`, `RlOneVsOneAgent.CreateDiscreteBranchSizes()`, and `RlPolicySchema`'s v20 contract. The corrected test was not run, per the static-only audit scope.  
-**Invariant/knowledge:** PPO compatibility guards must assert the frozen action layout, not obsolete branches or action slots.
+**Symptom:** the PPO layout guard expected 12 continuous actions and nine discrete branches, including three 65-action branches. The compatibility implementation, training agent, and frozen policy schema v20 define 16 continuous actions and six discrete branches: five binary weapon-fire branches and one five-action special branch. Running the test would reject the current ABI before checking the compatibility behavior.  
+**Root cause:** both expected dimensions were stale after the policy ABI added four communication actions and standardized the six-branch action layout; the assertion no longer matched production declarations or schema v20.  
+**Permanent protection:** the independent layout assertion now requires 16 continuous actions and `(2, 2, 2, 2, 2, 5)` discrete branch sizes.  
+**Verification:** compared the test against the compatibility module's action constants, `RlOneVsOneAgent.CreateDiscreteBranchSizes()`, and `RlPolicySchema`'s v20 contract. The corrected test was not run, per the static-only audit scope.  
+**Invariant/knowledge:** PPO compatibility guards must assert every dimension of the frozen action ABI, including continuous communication channels, and must not retain obsolete slots.
