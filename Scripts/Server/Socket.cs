@@ -520,6 +520,12 @@ namespace Assets.Scripts.Server
             for (_index = 0; _index < standingRequests.Count; _index++)
             {
                 _sr = standingRequests[_index];
+                if ((_sr.Type == ConfigData.RequestTypes.GetUserData ||
+                     _sr.Type == ConfigData.RequestTypes.GetSettings) &&
+                    _sr.Status == 403)
+                {
+                    continue;
+                }
                 if (_sr.HasExceededQueueTimeout(ConfigData.Stopwatch.ElapsedMilliseconds))
                 {
                     StandingRequests.Remove(_sr);
