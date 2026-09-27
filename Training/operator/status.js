@@ -166,26 +166,37 @@ function statusError(record) {
     if (current) return current;
 
     const throughput = record.metrics && record.metrics.throughput;
-    if (!throughput || typeof throughput !== 'object') return '';
-
-    const count = Number(throughput.session_failures_total);
-    const ageSeconds = Number(throughput.seconds_since_last_session_failure);
-    const failureType = String(throughput.last_session_failure_type || '').trim();
-    if (
-        !Number.isInteger(count) ||
-        count <= 0 ||
-        !Number.isFinite(ageSeconds) ||
-        ageSeconds < 0 ||
-        !failureType
-    ) {
-        return '';
+    if (throughput && typeof throughput === 'object') {
+        const count = Number(throughput.session_failures_total);
+        const ageSeconds = Number(throughput.seconds_since_last_session_failure);
+        const failureType = String(throughput.last_session_failure_type || '').trim();
+        if (
+            Number.isInteger(count) &&
+            count > 0 &&
+            Number.isFinite(ageSeconds) &&
+            ageSeconds >= 0 &&
+            failureType
+        ) {
+            let age;
+            if (ageSeconds < 60) age = Math.round(ageSeconds) + 's';
+            else if (ageSeconds < 3600) age = (ageSeconds / 60).toFixed(1) + 'm';
+            else age = (ageSeconds / 3600).toFixed(1) + 'h';
+            return 'WAN session x' + count + ', ' + age + ' ago: ' + failureType;
+        }
     }
 
-    let age;
-    if (ageSeconds < 60) age = Math.round(ageSeconds) + 's';
-    else if (ageSeconds < 3600) age = (ageSeconds / 60).toFixed(1) + 'm';
-    else age = (ageSeconds / 3600).toFixed(1) + 'h';
-    return 'WAN session x' + count + ', ' + age + ' ago: ' + failureType;
+    const optimizer = record.env_optimizer;
+    const instabilityMs = Number(optimizer && optimizer.last_instability_ms);
+    const decision = String(optimizer && optimizer.decision || '').trim();
+    if (Number.isFinite(instabilityMs) && instabilityMs >= 0 && decision) {
+        const ageSeconds = Math.max(0, (Date.now() - instabilityMs) / 1000);
+        let age;
+        if (ageSeconds < 60) age = Math.round(ageSeconds) + 's';
+        else if (ageSeconds < 3600) age = (ageSeconds / 60).toFixed(1) + 'm';
+        else age = (ageSeconds / 3600).toFixed(1) + 'h';
+        return 'Optimizer, ' + age + ' ago: ' + decision;
+    }
+    return '';
 }
 
 function table(rows, columns) {
@@ -363,7 +374,12 @@ async function getStatusFrameLines(config, adminToken) {
             const liveExpRate = throughput.learner_consumed_steps_per_sec != null
                 ? number(throughput.learner_consumed_steps_per_sec, 0)
                 : '-';
-            const episodes = Number(metrics.window_episodes || 0);
+            const centralWithoutLocalEnvs =
+                String(record.trainer_id || '') === 'central-learner' &&
+                Number(config.numLocalEnvs) === 0;
+            const episodes = centralWithoutLocalEnvs
+                ? 0
+                : Number(metrics.window_episodes || 0);
             return {
                 Trainer: String(record.trainer_id || '-'),
                 Role: String(record.role || '-'),
