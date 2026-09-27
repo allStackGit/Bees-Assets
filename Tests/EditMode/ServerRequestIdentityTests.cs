@@ -51,6 +51,19 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void UniqueRequestHashesUseCallLocalCounterValues()
+        {
+            string source = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "Utilities.cs"));
+
+            Assert.That(source, Does.Contain(
+                "uint counter = unchecked((uint)Interlocked.Increment(ref _counter));"));
+            Assert.That(source, Does.Contain("return (_clientId << 32) | counter;"));
+            Assert.That(source, Does.Not.Contain("private static uint _ctr;"));
+            Assert.That(source, Does.Not.Contain("private static long _id;"));
+        }
+
+        [Test]
         public void RequestTimeoutUsesItsOwnSecondsBoundary()
         {
             object request = RuntimeAssembly.CreateUninitialized("Assets.Scripts.Server.DataFileRequest");
