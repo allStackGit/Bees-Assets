@@ -892,7 +892,9 @@ namespace Assets.Scripts.Server
                 }
                 else
                 {
-                    Debug.LogError($"Null response when requesting settings from the server. {_settingsResponse_userData}");
+                    // The server uses an empty settings response for an authoritative missing-version result.
+                    _settingsResponse_standingRequest.Status = 404;
+                    _settingsResponse_standingRequest.Response = _settingsResponse_userData;
                 }
             }
             else
