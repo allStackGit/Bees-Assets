@@ -103,6 +103,16 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void BeehiveTriggerIgnoresRlHealingReservationsWithoutSquads()
+        {
+            string source = ReadSource("Scripts", "Entities", "Ships", "Beehive.cs");
+
+            StringAssert.Contains(
+                "_collidingShip.Squad?.GetCommand() is Heal healCommand",
+                source);
+        }
+
+        [Test]
         public void HealthBarFillCannotRenderPastItsAuthoredBounds()
         {
             string source = ReadSource("Scripts", "Entities", "Ships", "Ship.Visuals.cs");
