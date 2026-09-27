@@ -48,6 +48,7 @@ RUN_ID_PLACEHOLDER = "{run_id}"
 WORKER_ENVS_PLACEHOLDER = "{worker_envs}"
 MANAGED_STOP_FILE_ENV = "BEES_TRAINING_STOP_FILE"
 THROUGHPUT_METRICS_ENV = "BEES_TRAINING_THROUGHPUT_FILE"
+NETWORK_TRAFFIC_STATE_FILE = "worker-network-traffic.json"
 BUILD_ID_ENV = "BEES_TRAINING_BUILD_ID"
 COMPATIBILITY_KEY_ENV = "BEES_TRAINING_COMPATIBILITY_KEY"
 ENVIRONMENT_ID_ENV = "BEES_TRAINING_ENVIRONMENT_ID"
@@ -405,6 +406,63 @@ def read_throughput_metrics(
             }
         )
     return result
+
+
+def read_persisted_network_traffic(
+    throughput_metrics_path: Optional[Path],
+    *,
+    expected_run_id: str,
+) -> dict[str, object]:
+    if throughput_metrics_path is None or not expected_run_id:
+        return {}
+    path = throughput_metrics_path.with_name(NETWORK_TRAFFIC_STATE_FILE)
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return {}
+    if not isinstance(value, Mapping):
+        return {}
+    if str(value.get("run_id", "")) != str(expected_run_id):
+        return {}
+    sent = value.get("sent_bytes_total")
+    received = value.get("received_bytes_total")
+    if (
+        not isinstance(sent, int)
+        or isinstance(sent, bool)
+        or sent < 0
+        or not isinstance(received, int)
+        or isinstance(received, bool)
+        or received < 0
+    ):
+        return {}
+    return {
+        "network_sent_bytes_total": sent,
+        "network_received_bytes_total": received,
+    }
+
+
+def _add_persisted_network_traffic(
+    snapshot: dict[str, object],
+    throughput_metrics_path: Optional[Path],
+    *,
+    run_id: str,
+) -> None:
+    current = snapshot.get("throughput")
+    if (
+        isinstance(current, Mapping)
+        and current.get("network_sent_bytes_total") is not None
+        and current.get("network_received_bytes_total") is not None
+    ):
+        return
+    persisted = read_persisted_network_traffic(
+        throughput_metrics_path,
+        expected_run_id=run_id,
+    )
+    if not persisted:
+        return
+    merged = dict(current) if isinstance(current, Mapping) else {}
+    merged.update(persisted)
+    snapshot["throughput"] = merged
 
 
 def render_command(
@@ -1297,6 +1355,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             )
             if throughput:
                 snapshot["throughput"] = throughput
+        _add_persisted_network_traffic(
+            snapshot,
+            managed.throughput_metrics_file,
+            run_id=run_id,
+        )
         return snapshot
 
     def request_stop(_signum: int, _frame: object) -> None:
@@ -1316,6 +1379,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             build=active_build,
             prepared_build_id="",
             last_error=last_error,
+            metrics=current_metrics(managed.run_id),
             environment_id=(
                 environment_args_identity(managed.environment_args)
                 if managed.alive()
