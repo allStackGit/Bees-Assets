@@ -170,6 +170,62 @@ class ContinualServiceTests(unittest.TestCase):
             self.assertEqual(service.generation_target_steps(options, 0), 250_000)
             self.assertEqual(service.generation_target_steps(options, 3), 1_000_000)
 
+    def test_active_generation_target_extension_preserves_original_immutable_config(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            options = self._options(root, generation_steps=100)
+            original = service.write_generation_config(options, 1)
+            original_bytes = original.read_bytes()
+
+            extended = service.ServiceOptions(
+                **{**options.__dict__, "generation_steps": 200}
+            )
+            revised = service.write_generation_config(extended, 1)
+
+            self.assertNotEqual(revised, original)
+            self.assertEqual(original.read_bytes(), original_bytes)
+            self.assertIn("max_steps: 200", original.read_text(encoding="utf-8"))
+            self.assertIn("max_steps: 400", revised.read_text(encoding="utf-8"))
+            self.assertEqual(
+                revised.name,
+                "generation-00000001-target-400.yaml",
+            )
+            self.assertEqual(service.write_generation_config(extended, 1), revised)
+
+    def test_active_generation_target_extension_rejects_other_trainer_changes(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            options = self._options(root, generation_steps=100)
+            service.write_generation_config(options, 1)
+            options.trainer_config.write_text(
+                "behaviors:\n  BeesRL1v1:\n    trainer_type: sac\n    max_steps: 2000000000\n",
+                encoding="utf-8",
+            )
+            extended = service.ServiceOptions(
+                **{**options.__dict__, "generation_steps": 200}
+            )
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "Immutable generation trainer config conflict",
+            ):
+                service.write_generation_config(extended, 1)
+
+    def test_active_generation_target_cannot_be_reduced_in_place(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            options = self._options(root, generation_steps=200)
+            service.write_generation_config(options, 1)
+            reduced = service.ServiceOptions(
+                **{**options.__dict__, "generation_steps": 100}
+            )
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "Immutable generation trainer config conflict",
+            ):
+                service.write_generation_config(reduced, 1)
+
     def test_failed_first_start_does_not_force_resume_without_run_data(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             options = self._options(Path(temp_dir))
@@ -437,6 +493,46 @@ class ContinualServiceTests(unittest.TestCase):
             self.assertTrue(
                 any("bees_continual_auto_train.py" in item for item in calls[0])
             )
+
+    def test_failure_retry_honors_managed_shutdown_before_restarting(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            options = self._options(root)
+            options = service.ServiceOptions(
+                **{**options.__dict__, "once": False}
+            )
+
+            with (
+                mock.patch.object(
+                    service,
+                    "current_compatible_champion_id",
+                    return_value=None,
+                ),
+                mock.patch.object(
+                    service,
+                    "current_deployment_id",
+                    return_value="deploy-" + "a" * 24,
+                ),
+                mock.patch.object(
+                    service,
+                    "training_command",
+                    side_effect=ValueError("synthetic config conflict"),
+                ),
+                mock.patch.object(
+                    service,
+                    "_managed_stop_requested",
+                    side_effect=[False, True],
+                ),
+            ):
+                result = service.run_service(
+                    options,
+                    runner=lambda *_args, **_kwargs: mock.Mock(returncode=0),
+                    sleeper=lambda _seconds: self.fail(
+                        "shutdown should stop the retry loop before sleeping"
+                    ),
+                )
+
+            self.assertEqual(result, 130)
 
     def test_training_phase_reports_service_ready_while_optimizer_runs(self):
         with tempfile.TemporaryDirectory() as temp_dir:

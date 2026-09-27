@@ -166,25 +166,55 @@ def should_resume_training(
     return previously_started and training_checkpoint_exists(options)
 
 
-def write_generation_config(options: ServiceOptions, index: int) -> Path:
-    source = options.trainer_config.read_text(encoding="utf-8")
-    target_steps = generation_target_steps(options, index)
-    body = rewrite_max_steps(source, target_steps).encode("utf-8")
-    destination = _service_root(options) / "trainer-configs" / f"{generation_id(index)}.yaml"
-    if destination.exists():
-        if destination.read_bytes() != body:
-            raise ValueError(f"Immutable generation trainer config conflict: {destination}")
-        return destination
-    destination.parent.mkdir(parents=True, exist_ok=True)
+def _max_steps_from_config(text: str) -> int:
+    matches = re.findall(r"(?m)^(\s*)max_steps:\s*(\d+)\s*(?:#.*)?$", text)
+    if len(matches) != 1:
+        raise ValueError(
+            f"Expected exactly one integer max_steps entry in trainer config; found {len(matches)}."
+        )
+    return int(matches[0][1])
+
+
+def _write_immutable_generation_config(path: Path, body: bytes) -> Path:
+    if path.exists():
+        if path.read_bytes() != body:
+            raise ValueError(f"Immutable generation trainer config conflict: {path}")
+        return path
+    path.parent.mkdir(parents=True, exist_ok=True)
     try:
-        with destination.open("xb") as handle:
+        with path.open("xb") as handle:
             handle.write(body)
             handle.flush()
             os.fsync(handle.fileno())
     except FileExistsError:
-        if destination.read_bytes() != body:
-            raise ValueError(f"Immutable generation trainer config conflict: {destination}")
-    return destination
+        if path.read_bytes() != body:
+            raise ValueError(f"Immutable generation trainer config conflict: {path}")
+    return path
+
+
+def write_generation_config(options: ServiceOptions, index: int) -> Path:
+    source = options.trainer_config.read_text(encoding="utf-8")
+    target_steps = generation_target_steps(options, index)
+    body = rewrite_max_steps(source, target_steps).encode("utf-8")
+    config_root = _service_root(options) / "trainer-configs"
+    destination = config_root / f"{generation_id(index)}.yaml"
+    if not destination.exists() or destination.read_bytes() == body:
+        return _write_immutable_generation_config(destination, body)
+
+    # Generation configs are immutable audit records, but generation cadence is an operator
+    # setting that may intentionally be increased while a generation is already in progress.
+    # Permit that migration only when max_steps is the sole difference from the existing
+    # generation config. Preserve the original record and write a target-specific immutable
+    # revision instead of mutating history.
+    existing_text = destination.read_text(encoding="utf-8")
+    existing_target = _max_steps_from_config(existing_text)
+    if target_steps <= existing_target:
+        raise ValueError(f"Immutable generation trainer config conflict: {destination}")
+    if rewrite_max_steps(existing_text, target_steps).encode("utf-8") != body:
+        raise ValueError(f"Immutable generation trainer config conflict: {destination}")
+
+    revised = config_root / f"{generation_id(index)}-target-{target_steps}.yaml"
+    return _write_immutable_generation_config(revised, body)
 
 
 def _initial_state(options: ServiceOptions) -> Dict[str, object]:
@@ -513,6 +543,9 @@ def run_service(
 
     while True:
         try:
+            if _managed_stop_requested():
+                return 130
+
             # Ensure the current validated champion is server-visible immediately after supervisor
             # startup, even before the next training generation finishes. An old deployment pointer
             # may legitimately belong to a previous incompatible ABI; do not try to restage it under
@@ -637,6 +670,8 @@ def run_service(
                 f"[Bees continuous] phase failed safely: {message}",
                 file=sys.stderr,
             )
+            if _managed_stop_requested():
+                return 130
             if options.once:
                 return 2
             sleeper(options.retry_seconds)
