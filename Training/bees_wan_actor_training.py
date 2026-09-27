@@ -961,6 +961,13 @@ class WanActorBroker:
                 self._cohort_blocked_actors.clear()
             selected: List[Mapping[str, Any]] = list(self._cohort_pending_batches)
             actors = {int(batch["actor_id"]) for batch in selected}
+            already_ready = len(actors) >= required
+            if already_ready:
+                # This cohort timed out under a larger threshold but became sufficient after
+                # an actor lease expired. Consume its pending copy exactly once.
+                self._cohort_pending_batches.clear()
+        if already_ready:
+            return tuple(selected)
         while len(actors) < required:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
