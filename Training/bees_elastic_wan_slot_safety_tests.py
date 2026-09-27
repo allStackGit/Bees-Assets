@@ -237,6 +237,25 @@ class SlotSafetyTests(unittest.TestCase):
                 {"BeesRL1v1?team=0": FakeBehaviorSpec()}
             )
 
+    def test_local_behavior_compatibility_check_and_pin_share_condition_lock(self):
+        broker = self._unreferenced_broker()
+        local_specs = {"BeesRL1v1?team=0": FakeBehaviorSpec()}
+        parent_setter = elastic.ElasticWanBroker.set_reference_behavior_specs
+        lock_ownership = []
+
+        def observe_parent_setter(instance, behavior_specs):
+            lock_ownership.append(instance._condition._is_owned())
+            return parent_setter(instance, behavior_specs)
+
+        with mock.patch.object(
+            elastic.ElasticWanBroker,
+            "set_reference_behavior_specs",
+            observe_parent_setter,
+        ):
+            broker.set_reference_behavior_specs(local_specs)
+
+        self.assertEqual(lock_ownership, [True])
+
 
 if __name__ == "__main__":
     unittest.main()
