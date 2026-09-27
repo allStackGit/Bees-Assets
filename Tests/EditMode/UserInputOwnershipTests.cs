@@ -475,6 +475,7 @@ namespace Bees.Tests.EditMode
             Assert.That(RuntimeAssembly.Invoke(session, "AllocatePlayerCommandSequence", 1), Is.EqualTo(2L));
             Assert.That(RuntimeAssembly.Invoke(session, "TryAcceptPlayerCommandSequence", 1, 1L), Is.EqualTo(true));
             Assert.That(RuntimeAssembly.Invoke(session, "TryAcceptPlayerCommandSequence", 1, 1L), Is.EqualTo(false));
+            Assert.That(RuntimeAssembly.Invoke(session, "TryAcceptPlayerCommandSequence", 1, 3L), Is.EqualTo(false));
             Assert.That(RuntimeAssembly.Invoke(session, "TryAcceptPlayerCommandSequence", 1, 2L), Is.EqualTo(true));
         }
 
@@ -887,6 +888,133 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains("out int matchLevelId", source);
             StringAssert.Contains("level.State.MatchLevelId == matchLevelId", source);
             StringAssert.Contains("return level.State.QueueReceivedPlayerCommand(sourcePeerId, command);", source);
+        }
+
+        [Test]
+        public void ClientPendingCommandsRemainUntilCumulativeAuthorityAck()
+        {
+            Type sessionType = RuntimeAssembly.GetType("Assets.Scripts.Levels.MatchSession");
+            Type commandType = RuntimeAssembly.GetType("Assets.Scripts.Levels.PlayerCommandEnvelope");
+            Type kindType = RuntimeAssembly.GetType("Assets.Scripts.Levels.PlayerCommandKind");
+            object session = Activator.CreateInstance(sessionType);
+
+            RuntimeAssembly.Invoke(session, "AddPlayer", 1, 1, true);
+            RuntimeAssembly.Invoke(session, "AddPeer", 10, false, "host");
+            RuntimeAssembly.Invoke(session, "TrySetAuthorityPeer", 10);
+            RuntimeAssembly.Invoke(session, "TryBeginBattle");
+
+            for (long sequence = 1; sequence <= 2; sequence++)
+            {
+                object command = Activator.CreateInstance(commandType);
+                RuntimeAssembly.SetField(command, "PlayerId", 1);
+                RuntimeAssembly.SetField(command, "Sequence", sequence);
+                RuntimeAssembly.SetField(command, "Kind", Enum.Parse(kindType, "Move"));
+                RuntimeAssembly.SetField(command, "SquadCommandId", 20L + sequence);
+                Assert.That(RuntimeAssembly.Invoke(
+                    session,
+                    "QueueOutgoingPlayerCommand",
+                    1,
+                    command), Is.EqualTo(true));
+            }
+
+            object pending = RuntimeAssembly.GetField(session, "_outgoingPlayerCommands");
+            Assert.That(RuntimeAssembly.GetCount(pending), Is.EqualTo(2));
+
+            RuntimeAssembly.Invoke(session, "AcknowledgeOutgoingPlayerCommands", 1, 1L);
+            Assert.That(RuntimeAssembly.GetCount(pending), Is.EqualTo(1));
+
+            RuntimeAssembly.Invoke(session, "AcknowledgeOutgoingPlayerCommands", 1, 2L);
+            Assert.That(RuntimeAssembly.GetCount(pending), Is.Zero);
+        }
+
+        [Test]
+        public void DuplicateReceivedCommandIsReacknowledgedWithoutGameplayMutation()
+        {
+            GameObject stageObject = new GameObject("Duplicate Ack Stage");
+            GameObject stateObject = new GameObject("Duplicate Ack State");
+            try
+            {
+                Component stage = stageObject.AddComponent(RuntimeAssembly.GetType("Stage"));
+                Component state = stateObject.AddComponent(RuntimeAssembly.GetType("Assets.Scripts.Levels.GameState"));
+                Type sessionType = RuntimeAssembly.GetType("Assets.Scripts.Levels.MatchSession");
+                Type commandType = RuntimeAssembly.GetType("Assets.Scripts.Levels.PlayerCommandEnvelope");
+                Type kindType = RuntimeAssembly.GetType("Assets.Scripts.Levels.PlayerCommandKind");
+                object session = Activator.CreateInstance(sessionType);
+
+                RuntimeAssembly.Invoke(session, "AddPlayer", 1, 1, true);
+                RuntimeAssembly.Invoke(session, "AddPeer", 10, false, "client");
+                RuntimeAssembly.Invoke(session, "AddPlayerToPeer", 2, 2, 10);
+                RuntimeAssembly.Invoke(session, "TryBeginBattle");
+                Assert.That(RuntimeAssembly.Invoke(
+                    session,
+                    "TryAcceptPlayerCommandSequence",
+                    2,
+                    1L), Is.EqualTo(true));
+
+                RuntimeAssembly.SetField(stage, "MatchSession", session);
+                RuntimeAssembly.SetField(state, "Stage", stage);
+
+                object duplicate = Activator.CreateInstance(commandType);
+                RuntimeAssembly.SetField(duplicate, "PlayerId", 2);
+                RuntimeAssembly.SetField(duplicate, "Sequence", 1L);
+                RuntimeAssembly.SetField(duplicate, "Kind", Enum.Parse(kindType, "Move"));
+                RuntimeAssembly.SetField(duplicate, "SquadCommandId", 50L);
+
+                Assert.That(RuntimeAssembly.Invoke(
+                    state,
+                    "TryExecuteReceivedPlayerCommand",
+                    10,
+                    duplicate), Is.EqualTo(true));
+
+                object acknowledgements = RuntimeAssembly.GetField(
+                    session,
+                    "_outgoingCommandAcknowledgements");
+                Assert.That(RuntimeAssembly.GetCount(acknowledgements), Is.EqualTo(1));
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(stateObject);
+                UnityEngine.Object.DestroyImmediate(stageObject);
+            }
+        }
+
+        [Test]
+        public void MultiplayerAcknowledgementProtocolIsMatchBound()
+        {
+            Type protocolType = RuntimeAssembly.GetType("Assets.Scripts.Levels.MultiplayerProtocol");
+            MethodInfo serialize = protocolType.GetMethod(
+                "TrySerializeAcknowledgement",
+                BindingFlags.Public | BindingFlags.Static);
+            MethodInfo deserialize = protocolType.GetMethod(
+                "TryDeserializeAcknowledgement",
+                BindingFlags.Public | BindingFlags.Static);
+            Guid matchId = Guid.NewGuid();
+
+            object[] serializeArgs = { matchId, 2, 17L, null };
+            Assert.That((bool)serialize.Invoke(null, serializeArgs), Is.True);
+            byte[] payload = (byte[])serializeArgs[3];
+
+            object[] deserializeArgs = { payload, matchId, 0, 0L };
+            Assert.That((bool)deserialize.Invoke(null, deserializeArgs), Is.True);
+            Assert.That(deserializeArgs[2], Is.EqualTo(2));
+            Assert.That(deserializeArgs[3], Is.EqualTo(17L));
+
+            object[] wrongMatchArgs = { payload, Guid.NewGuid(), 0, 0L };
+            Assert.That((bool)deserialize.Invoke(null, wrongMatchArgs), Is.False);
+        }
+
+        [Test]
+        public void SteamTransportRetriesUnacknowledgedCommandsAndTrustsOnlyAuthorityAcks()
+        {
+            string steamPath = Path.Combine(Application.dataPath, "Scripts", "Steamworks.NET", "SteamManager.cs");
+            string source = File.ReadAllText(steamPath);
+
+            StringAssert.Contains("CommandResendIntervalSeconds = 0.5f", source);
+            StringAssert.Contains("CopyOutgoingPlayerCommands(", source);
+            StringAssert.Contains("_lastCommandSendTimes", source);
+            StringAssert.Contains("TrySerializeAcknowledgement(", source);
+            StringAssert.Contains("sourcePeerId == _session.AuthorityPeerId", source);
+            StringAssert.Contains("AcknowledgeOutgoingPlayerCommands(playerId, sequence)", source);
         }
     }
 }
