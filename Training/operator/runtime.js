@@ -289,6 +289,21 @@ function getTrainingCompatibilityFingerprint(python) {
     ]);
 }
 
+function recoverTrainingRunLifecycle(python, runId, compatibilityKey) {
+    const normalizedRun = String(runId || '').trim();
+    const normalizedKey = String(compatibilityKey || '').trim().toLowerCase();
+    if (!normalizedRun || !normalizedKey) {
+        throw new Error('Active run recovery requires run id and compatibility key.');
+    }
+    return invokePythonJson(python, [
+        paths.runLifecycleScript, 'recover-active',
+        '--assets-root', paths.assetsRoot,
+        '--state', paths.runStatePath,
+        '--run-id', normalizedRun,
+        '--expected-compatibility-key', normalizedKey,
+    ]);
+}
+
 function ensureRunLifecycleMatchesRelease(python, release) {
     const releaseRun = String(release.run_id || '').trim();
     const releaseKey = String(release.compatibility_key || '').trim().toLowerCase();
@@ -376,6 +391,7 @@ module.exports = {
     newTrainingRunPlan,
     pruneLearnerPythonRuntimes,
     pruneReleaseTrainingRuntimes,
+    recoverTrainingRunLifecycle,
     resolveReleaseTrainingRuntime,
     saveLatestRelease,
 };
