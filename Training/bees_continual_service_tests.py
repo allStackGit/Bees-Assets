@@ -438,6 +438,44 @@ class ContinualServiceTests(unittest.TestCase):
                 any("bees_continual_auto_train.py" in item for item in calls[0])
             )
 
+    def test_training_phase_reports_service_ready_while_optimizer_runs(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            options = self._options(root)
+            health_path = root / "managed-health.json"
+            observed = []
+
+            def runner(_command, **_kwargs):
+                observed.append(
+                    json.loads(health_path.read_text(encoding="utf-8"))
+                )
+                return mock.Mock(returncode=7)
+
+            with (
+                mock.patch.object(
+                    service,
+                    "current_compatible_champion_id",
+                    return_value=None,
+                ),
+                mock.patch.dict(
+                    os.environ,
+                    {
+                        process_safety.HEALTH_FILE_ENV: str(health_path),
+                        process_safety.HEALTH_TOKEN_ENV: "test-health-token",
+                    },
+                    clear=False,
+                ),
+            ):
+                result = service.run_service(
+                    options,
+                    runner=runner,
+                    sleeper=lambda _seconds: None,
+                )
+
+            self.assertEqual(result, 2)
+            self.assertEqual(observed[0]["state"], "ready")
+            self.assertEqual(observed[0]["details"]["phase"], "train")
+
     def test_resumed_release_phase_reports_ready_health_before_evaluation(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
