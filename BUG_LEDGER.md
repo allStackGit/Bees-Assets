@@ -4,7 +4,9 @@ Static-only repository audit on `rl/initial-design-work`. This ledger is the cur
 
 ## Active validated defects
 
-_None logged at this checkpoint. The repository audit remains in progress; this is not a claim that the codebase has no other defects._
+### BUG-001 — Expiry cleanup can remove an in-flight telemetry upload
+**Location:** `BeesServer~/rlTelemetryUploads.js`, `RlTelemetryUploadManager.handle()` and `cleanupExpired()`  
+**Description:** A concurrent request runs cleanup before its own chunk/complete operation is queued. Cleanup uses the last completed activity timestamp and does not account for a chunk or completion already in flight, so a slow filesystem operation that crosses the idle cutoff can have its session removed and partial file unlinked while it is still processing. The worker then loses a valid upload and subsequent chunks receive `unknown-upload`.
 
 ## Audit status
 
