@@ -43,6 +43,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                     !_shipEnter.IsDead &&
                     Weapon != null &&
                     Weapon.Ship != null &&
+                    _shipEnter.Level == Weapon.Ship.Level &&
                     _shipEnter.Side != Weapon.Ship.Side &&
                     !Weapon.ShipsWithinRange.ContainsKey(_shipEnter.Id))
                 {
@@ -60,7 +61,10 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             else
             {
                 MapObject mapObject = _colliderEnter.GetComponent<MapObject>();
-                if (mapObject != null)
+                if (mapObject != null &&
+                    Weapon != null &&
+                    Weapon.Ship != null &&
+                    mapObject.Level == Weapon.Ship.Level)
                 {
                     if (_visibleMapObjectContacts.TryGetValue(mapObject, out int contacts))
                     {
@@ -85,7 +89,11 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             {
                 _shipExit = _colliderExit.GetComponent<Ship>();
 
-                if (_shipExit != null && Weapon.ShipsWithinRange.Remove(_shipExit.Id))
+                if (_shipExit != null &&
+                    Weapon != null &&
+                    Weapon.Ship != null &&
+                    _shipExit.Level == Weapon.Ship.Level &&
+                    Weapon.ShipsWithinRange.Remove(_shipExit.Id))
                 {
                     Weapon.HasCachedChanged = true;
                     if (!_shipExit.IsDead)
@@ -97,7 +105,12 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             else if (_colliderExit.CompareTag("Projectile"))
             {
                 _projectileExit = _colliderExit.GetComponent<Projectile>();
-                if (_projectileExit.Weapon.Equals(Weapon)
+                if (_projectileExit != null &&
+                    Weapon != null &&
+                    Weapon.Ship != null &&
+                    _projectileExit.Level == Weapon.Ship.Level &&
+                    _projectileExit.Weapon != null &&
+                    _projectileExit.Weapon.Equals(Weapon)
                     && !Weapon.Ship.IsDead
                     && _projectileExit.Type != ConfigData.ProjectileTypes.RocketExplosion
                     && _projectileExit.Type != ConfigData.ProjectileTypes.FireTankExplosion)
@@ -108,7 +121,11 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             else
             {
                 MapObject mapObject = _colliderExit.GetComponent<MapObject>();
-                if (mapObject != null && _visibleMapObjectContacts.TryGetValue(mapObject, out int contacts))
+                if (mapObject != null &&
+                    Weapon != null &&
+                    Weapon.Ship != null &&
+                    mapObject.Level == Weapon.Ship.Level &&
+                    _visibleMapObjectContacts.TryGetValue(mapObject, out int contacts))
                 {
                     if (contacts > 1)
                     {
