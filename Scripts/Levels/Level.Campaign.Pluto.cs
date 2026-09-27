@@ -573,11 +573,18 @@ namespace Assets.Scripts.Levels
                                                 () => State.IsSideKilled(ConfigData.Configuration.UserSide) || State.IsSideKilled(ConfigData.Configuration.AISide),
                                                 () =>
                                                 {
-                                                    if (State.IsSideKilled(ConfigData.Configuration.AISide))
+                                                    bool userSideKilled = State.IsSideKilled(ConfigData.Configuration.UserSide);
+                                                    bool aiSideKilled = State.IsSideKilled(ConfigData.Configuration.AISide);
+                                                    WinningSide = CampaignObjectiveRules.ResolveEliminationWinner(
+                                                        userSideKilled,
+                                                        aiSideKilled,
+                                                        ConfigData.Configuration.UserSide,
+                                                        ConfigData.Configuration.AISide);
+                                                    CloseLevel();
+                                                    if (WinningSide == ConfigData.Configuration.UserSide)
                                                         Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.PlutoLines_Reinforcements.GetRange(5, 1), true);
                                                     else
                                                         Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.PlutoLines_Reinforcements.GetRange(6, 1), true);
-                                                    CloseLevel();
                                                 },
                                                 "Level 1 ending"));
                                         },
