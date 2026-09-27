@@ -488,13 +488,18 @@ class BackgroundBuildPreparer:
                 return
         except (OSError, ValueError) as exc:
             with self._lock:
+                if self.prepared_build_id == build_id:
+                    self.prepared_build_id = ""
                 self.last_error = f"{type(exc).__name__}: {exc}"
             return
 
         with self._lock:
+            if self.prepared_build_id == build_id:
+                self.prepared_build_id = ""
             if self._thread is not None and self._thread.is_alive():
                 return
             self._requested_build_id = build_id
+            self.last_error = ""
             payload = dict(descriptor)
             self._thread = threading.Thread(
                 target=self._prepare,
