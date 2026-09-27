@@ -9,7 +9,7 @@ internal static class RlLiveTelemetryContract
     internal static void ValidateOrThrow()
     {
         RlPolicySchema.ValidateOrThrow();
-        if (RlPolicySchema.Version != 19 ||
+        if (RlPolicySchema.Version != 20 ||
             RlPolicySchema.ExpectedObservationSize != 7614 ||
             RlPolicySchema.ExpectedContinuousActions != 16)
         {
