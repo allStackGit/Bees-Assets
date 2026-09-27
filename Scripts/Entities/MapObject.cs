@@ -54,7 +54,7 @@ public class MapObject : MonoBehaviour
         if (colliding.CompareTag("Projectile"))
         {
             Projectile projectile = colliding.GetComponent<Projectile>();
-            if (projectile == null || projectile.Level != Level)
+            if (projectile == null || Level == null || projectile.Level != Level)
             {
                 return;
             }
