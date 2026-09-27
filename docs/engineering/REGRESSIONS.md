@@ -775,3 +775,13 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** `SocketResponseOwnershipTests` now covers delayed command and matchup responses whose captured level is null and requires both handlers to return without throwing. The tests were not run, per the static-only audit scope.  \
 **Verification:** traced both response handlers through standing-request consumption and the existing liveness predicate, then reread the updated handler order and regression cases. No tests, builds, Unity, simulations, or runtime checks were run.  \
 **Invariant/knowledge:** asynchronous responses must establish captured runtime ownership before dereferencing a scene-owned level or squad.
+
+
+### REG-089 — Authorization-denied profile reads retried indefinitely
+**Area:** `Scripts/Server/SocketResponseLifecycleGuard.cs`, `Scripts/Server/Socket.cs`, `Scripts/Data/DataFile.cs`, `Scripts/Settings/ServerSettings.cs`  \
+**Symptom:** when BeesServer rejected a profile or settings read with status 403, Unity kept the request standing and resent the same identity-bound request indefinitely. The data and settings waiters had no terminal failure state, so startup remained unresolved while repeated denied requests accumulated.  \
+**Root cause:** the read-response guard treated every HTTP error as retryable, even though 403 is a terminal authorization denial. Its return occurred before normal response ownership could consume the request.  \
+**Fix:** a 403 now marks the standing read request with its terminal status. Resend skips it; DataFile and ServerSettings record the failure, retire the request, and leave data/settings unavailable rather than converting the denial to missing/default state.  \
+**Permanent protection:** `SocketResponseOwnershipTests.ForbiddenProfileReadResponsesAreTerminalWithoutPretendingDataIsMissing` checks both read request types receive terminal status. `SocketResponseLifecycleGuardTests.ForbiddenProfileReadsReachTheirWaitersAsTerminalFailures` protects propagation and resend suppression. The tests were not run, per the static-only audit scope.  \
+**Verification:** traced the server's claimed-user mismatch 403 response through Unity parsing, the read guard, resend loop, and both waitable consumers; reread the updated guard, consumers, and regression cases. No tests, builds, Unity, simulations, or runtime checks were run.  \
+**Invariant/knowledge:** an authorization failure must stop retries and remain distinct from a genuinely missing profile or settings record.
