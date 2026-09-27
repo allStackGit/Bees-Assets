@@ -106,6 +106,51 @@ namespace Bees.Tests.PlayMode
         }
 
         [UnityTest]
+        public IEnumerator ShipOverlappingMovingAsteroidCanFindClearanceEgressPath()
+        {
+            Vector2Int start = (Vector2Int)RuntimeAssembly.Invoke(
+                _pathfinder, "ConvertToMapCoordinates", Vector2.zero);
+            Vector2Int destination = (Vector2Int)RuntimeAssembly.Invoke(
+                _pathfinder, "ConvertToMapCoordinates", new Vector2(80f, 0f));
+            int width = (int)RuntimeAssembly.GetField(_pathfinder, "Width");
+            int startIndex = start.y * width + start.x;
+            int[] dynamicClearance = (int[])RuntimeAssembly.GetField(_pathfinder, "_dynamicClearance");
+            int[] staticSignedClearance = (int[])RuntimeAssembly.GetField(_pathfinder, "_staticSignedClearance");
+
+            RuntimeAssembly.Invoke(_pathfinder, "CanOccupyDestination", Vector2.zero, 1);
+            Assert.That(dynamicClearance[startIndex], Is.LessThan(1),
+                "The overlapping moving asteroid must make the ship's start cell fail dynamic clearance.");
+            Assert.That(staticSignedClearance[startIndex], Is.GreaterThanOrEqualTo(1),
+                "The start cell must remain safe in the static map so this exercises dynamic-only egress.");
+
+            RuntimeAssembly.Invoke(
+                _pathfinder,
+                "FindPath",
+                _ship,
+                start.x,
+                start.y,
+                destination.x,
+                destination.y,
+                1);
+
+            Stopwatch timeout = Stopwatch.StartNew();
+            while (!(bool)RuntimeAssembly.GetField(_ship, "PathfindingThreadComplete") &&
+                   timeout.Elapsed.TotalSeconds < 5.0)
+            {
+                RuntimeAssembly.Invoke(_pathfinder, "Update");
+                yield return null;
+            }
+
+            Assert.That(RuntimeAssembly.GetField(_ship, "PathfindingThreadComplete"), Is.True,
+                "The pathfinder worker should publish a result for the dynamic egress request.");
+            object path = RuntimeAssembly.GetField(_ship, "PathfindingValue");
+            Assert.That(path, Is.Not.Null,
+                "The ship should receive a route that clears the moving asteroid instead of stopping at the start.");
+            Assert.That(RuntimeAssembly.GetField(path, "EgressPointCount"), Is.GreaterThan(0),
+                "The path should identify its initial dynamic-clearance egress waypoints.");
+        }
+
+        [UnityTest]
         public IEnumerator MovingObstacleLayerTracksAsteroidAcrossFixedStepsAndRefreshesWithinBudget()
         {
             Assert.That(RuntimeAssembly.Invoke(_pathfinder, "CanOccupyDestination", Vector2.zero, 1), Is.False,
