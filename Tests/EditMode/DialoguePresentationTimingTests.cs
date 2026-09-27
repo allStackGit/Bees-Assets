@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Reflection;
 using NUnit.Framework;
 using UnityEngine;
 
@@ -30,6 +31,23 @@ namespace Bees.Tests.EditMode
             Assert.That(renderedFrame, Is.GreaterThanOrEqualTo(0));
             Assert.That(intercom, Is.GreaterThan(renderedFrame),
                 "The dialogue intercom cue must not play until after the presentation frame has rendered.");
+        }
+
+        [Test]
+        public void CompoundShipNamesAreNormalizedBeforeTheirComponents()
+        {
+            var line = new DialogueLine(
+                "Commander",
+                new Sprite[2],
+                "The Fire Barge returned beside the Barge.");
+
+            MethodInfo formatter = typeof(DialogueManager).GetMethod(
+                "FormatLineText",
+                BindingFlags.Static | BindingFlags.NonPublic);
+
+            Assert.That(formatter, Is.Not.Null);
+            string formatted = (string)formatter.Invoke(null, new object[] { line });
+            Assert.That(formatted, Is.EqualTo("The fire barge returned beside the barge."));
         }
 
         private static string ExtractMethodBody(string source, string signature)
