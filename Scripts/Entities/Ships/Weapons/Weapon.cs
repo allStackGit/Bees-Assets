@@ -310,7 +310,9 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 (strategy == ConfigData.ShootingStrategyTypes.Revenge ||
                  strategy == ConfigData.ShootingStrategyTypes.MostDangerous ||
                  strategy == ConfigData.ShootingStrategyTypes.LeastHealth ||
-                 strategy == ConfigData.ShootingStrategyTypes.MostHealth);
+                 strategy == ConfigData.ShootingStrategyTypes.MostHealth ||
+                 strategy == ConfigData.ShootingStrategyTypes.Closest ||
+                 strategy == ConfigData.ShootingStrategyTypes.Furthest);
             if (!IsUsingCachedTargetingQueue || refreshDynamicPriority)
             {
                 switch (strategy)
