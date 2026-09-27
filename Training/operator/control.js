@@ -41,6 +41,7 @@ async function stageRelease(
     release,
     environmentArgs,
     environmentValidationKey = '',
+    options = {},
 ) {
     const body = {
         build_id: String(release.build_id),
@@ -50,6 +51,9 @@ async function stageRelease(
     };
     if (environmentArgs !== undefined) body.environment_args = [...environmentArgs].map(String);
     if (environmentValidationKey) body.environment_validation_key = String(environmentValidationKey);
+    if (options.supersedeCompatibleBuildId) {
+        body.supersede_compatible_build_id = String(options.supersedeCompatibleBuildId);
+    }
     return requestJson(config.controlUrl, adminToken, 'POST', '/v1/admin/release', body);
 }
 
