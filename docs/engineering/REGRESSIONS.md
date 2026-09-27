@@ -517,4 +517,12 @@ Manual-only protection is acceptable only when the record explains why determini
 **Root cause:** request handling awaited global expiry cleanup before reserving its authenticated session operation, while cleanup considered only the last completed activity timestamp and ignored queued/in-flight session work.  
 **Permanent protection:** authenticated chunk/completion requests now reserve their session before the first asynchronous yield. Expiry cleanup skips sessions with active or queued operations; valid chunk activity continues to refresh the idle timestamp. `rlTelemetryUploads.module.test.js` holds a chunk operation open across the idle cutoff and checks that cleanup retains the session.  
 **Verification:** statically traced request ownership, the per-session promise tail, cleanup ordering, and completion cleanup; reviewed the focused regression test. The test was added but not run, and no runtime checks were performed, per the static-only audit scope.  
-**Invariant/knowledge:** idle expiry must not delete storage owned by an active asynchronous operation; reserve request ownership before yielding to cleanup.  
+**Invariant/knowledge:** idle expiry must not delete storage owned by an active asynchronous operation; reserve request ownership before yielding to cleanup.
+
+### REG-058 — Expired telemetry quota records accumulated in memory
+**Area:** `BeesServer~/rlTelemetryUploads.js`, telemetry upload rate limiting  
+**Symptom:** every authenticated uploader left a quota entry in the long-lived server map after the user's rate window expired, so historical identities accumulated for the server lifetime.  
+**Root cause:** quota windows were reset lazily only when the same user uploaded again; session expiry cleanup never removed inactive quota records.  
+**Permanent protection:** `cleanupExpired()` now periodically removes quota entries whose per-user rate window has elapsed, while leaving fresh quota windows and active upload sessions untouched. `rlTelemetryUploads.module.test.js` creates quota records for two users, advances beyond their rate window but not the upload idle timeout, and checks quota reclamation without session expiry.  
+**Verification:** statically reviewed the quota window reset and cleanup interval, and the focused regression test. The test was added but not run; no runtime validation was performed, per the static-only audit scope.  
+**Invariant/knowledge:** per-user rate-limit bookkeeping in a long-lived process must be reclaimed after its enforcement window expires.  
