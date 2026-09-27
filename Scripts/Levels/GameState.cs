@@ -271,15 +271,36 @@ namespace Assets.Scripts.Levels
     /// Transient identity for one participant in a Free Play match. Player ids are match-local
     /// and are deliberately separate from account, persistent fleet, and pooled runtime ids.
     /// </summary>
+    public sealed class MatchPeer
+    {
+        public int Id { get; }
+        public bool IsLocal { get; }
+        public string TransportIdentity { get; private set; }
+
+        public MatchPeer(int id, bool isLocal, string transportIdentity)
+        {
+            Id = id;
+            IsLocal = isLocal;
+            TransportIdentity = transportIdentity ?? string.Empty;
+        }
+
+        internal void SetTransportIdentity(string transportIdentity)
+        {
+            TransportIdentity = transportIdentity ?? string.Empty;
+        }
+    }
+
     public sealed class MatchPlayer
     {
         public int Id { get; }
+        public int PeerId { get; }
         public int Side { get; private set; }
         public bool IsLocal { get; }
 
-        public MatchPlayer(int id, int side, bool isLocal)
+        public MatchPlayer(int id, int peerId, int side, bool isLocal)
         {
             Id = id;
+            PeerId = peerId;
             Side = side;
             IsLocal = isLocal;
         }
@@ -305,7 +326,10 @@ namespace Assets.Scripts.Levels
     {
         public const int UnownedPlayerId = 0;
         public const int LegacyLocalPlayerId = 1;
+        public const int LocalPeerId = 1;
+        private const int LegacyRemotePeerIdOffset = 1000000;
 
+        private readonly List<MatchPeer> _peers = new List<MatchPeer>();
         private readonly List<MatchPlayer> _players = new List<MatchPlayer>();
         private long _nextMatchSquadId = 1;
         private readonly Dictionary<int, long> _nextPlayerCommandSequences = new Dictionary<int, long>();
@@ -313,6 +337,7 @@ namespace Assets.Scripts.Levels
         private readonly Dictionary<Guid, (int PlayerId, int Side)> _squadOwnerAssignments =
             new Dictionary<Guid, (int PlayerId, int Side)>();
 
+        public IReadOnlyList<MatchPeer> Peers => _peers;
         public IReadOnlyList<MatchPlayer> Players => _players;
         public int PrimaryLocalPlayerId { get; private set; } = UnownedPlayerId;
         public MatchSessionPhase Phase { get; private set; } = MatchSessionPhase.Lobby;
@@ -326,26 +351,111 @@ namespace Assets.Scripts.Levels
             return session;
         }
 
-        public bool AddPlayer(int playerId, int side, bool isLocal)
+        public bool AddPeer(int peerId, bool isLocal, string transportIdentity = null)
         {
-            if (!IsConfiguring || playerId <= UnownedPlayerId)
+            if (!IsConfiguring || peerId <= 0 || _peers.Any(peer => peer.Id == peerId))
             {
                 return false;
             }
-            if (side != ConfigData.Configuration.BeeSide && side != ConfigData.Configuration.HumanSide)
-            {
-                return false;
-            }
-            if (_players.Any(player => player.Id == playerId))
+            if (isLocal && _peers.Any(peer => peer.IsLocal))
             {
                 return false;
             }
 
-            _players.Add(new MatchPlayer(playerId, side, isLocal));
-            if (isLocal && PrimaryLocalPlayerId == UnownedPlayerId)
+            _peers.Add(new MatchPeer(peerId, isLocal, transportIdentity));
+            return true;
+        }
+
+        public bool TrySetPeerTransportIdentity(int peerId, string transportIdentity)
+        {
+            if (!IsConfiguring)
+            {
+                return false;
+            }
+
+            MatchPeer peer = _peers.FirstOrDefault(candidate => candidate.Id == peerId);
+            if (peer == null)
+            {
+                return false;
+            }
+
+            peer.SetTransportIdentity(transportIdentity);
+            return true;
+        }
+
+        public bool AddPlayer(int playerId, int side, bool isLocal)
+        {
+            int peerId;
+            if (isLocal)
+            {
+                MatchPeer localPeer = _peers.FirstOrDefault(peer => peer.IsLocal);
+                if (localPeer == null)
+                {
+                    if (!AddPeer(LocalPeerId, true))
+                    {
+                        return false;
+                    }
+                    localPeer = _peers.First(peer => peer.IsLocal);
+                }
+                peerId = localPeer.Id;
+            }
+            else
+            {
+                peerId = LegacyRemotePeerIdOffset + playerId;
+                if (!_peers.Any(peer => peer.Id == peerId) && !AddPeer(peerId, false))
+                {
+                    return false;
+                }
+            }
+
+            return AddPlayerToPeer(playerId, side, peerId);
+        }
+
+        public bool AddPlayerToPeer(int playerId, int side, int peerId)
+        {
+            if (!IsConfiguring || playerId <= UnownedPlayerId ||
+                (side != ConfigData.Configuration.BeeSide && side != ConfigData.Configuration.HumanSide) ||
+                _players.Any(player => player.Id == playerId))
+            {
+                return false;
+            }
+
+            MatchPeer peer = _peers.FirstOrDefault(candidate => candidate.Id == peerId);
+            if (peer == null)
+            {
+                return false;
+            }
+
+            _players.Add(new MatchPlayer(playerId, peerId, side, peer.IsLocal));
+            if (peer.IsLocal && PrimaryLocalPlayerId == UnownedPlayerId)
             {
                 PrimaryLocalPlayerId = playerId;
             }
+            return true;
+        }
+
+        public bool RemovePeer(int peerId)
+        {
+            if (!IsConfiguring)
+            {
+                return false;
+            }
+
+            MatchPeer peer = _peers.FirstOrDefault(candidate => candidate.Id == peerId);
+            if (peer == null)
+            {
+                return false;
+            }
+
+            List<int> playerIds = _players
+                .Where(player => player.PeerId == peerId)
+                .Select(player => player.Id)
+                .ToList();
+            for (int i = 0; i < playerIds.Count; i++)
+            {
+                RemovePlayer(playerIds[i]);
+            }
+            _peers.Remove(peer);
             return true;
         }
 
@@ -444,6 +554,24 @@ namespace Assets.Scripts.Levels
         {
             MatchPlayer player = _players.FirstOrDefault(candidate => candidate.Id == playerId);
             return player != null && player.IsLocal;
+        }
+
+        public int GetPlayerPeerId(int playerId)
+        {
+            MatchPlayer player = _players.FirstOrDefault(candidate => candidate.Id == playerId);
+            return player == null ? 0 : player.PeerId;
+        }
+
+        public bool DoesPeerOwnPlayer(int peerId, int playerId)
+        {
+            MatchPlayer player = _players.FirstOrDefault(candidate => candidate.Id == playerId);
+            return player != null && player.PeerId == peerId;
+        }
+
+        public string GetPeerTransportIdentity(int peerId)
+        {
+            MatchPeer peer = _peers.FirstOrDefault(candidate => candidate.Id == peerId);
+            return peer == null ? string.Empty : peer.TransportIdentity;
         }
 
         public bool TryBeginBattle()

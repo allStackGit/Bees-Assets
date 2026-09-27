@@ -15,7 +15,8 @@ namespace Assets.Scripts.Levels
         private readonly List<StoredCommand> _targetingCommands = new List<StoredCommand>();
         private readonly List<Squad> _targetedSquads = new List<Squad>();
         private readonly HashSet<Squad> _squadsAwaitingCommandSet = new HashSet<Squad>(ReferenceIdentityComparer<Squad>.Instance);
-        private readonly Queue<PlayerCommandEnvelope> _queuedPlayerCommands = new Queue<PlayerCommandEnvelope>();
+        private readonly Queue<(int SourcePeerId, PlayerCommandEnvelope Command)> _queuedPlayerCommands =
+            new Queue<(int SourcePeerId, PlayerCommandEnvelope Command)>();
         private readonly object _queuedPlayerCommandsLock = new object();
         public const int MaxQueuedPlayerCommands = 1024;
         public const int MaxPlayerCommandsPerFrame = 64;
@@ -25,9 +26,9 @@ namespace Assets.Scripts.Levels
             return UserCommands++;
         }
 
-        public bool QueueReceivedPlayerCommand(PlayerCommandEnvelope command)
+        public bool QueueReceivedPlayerCommand(int sourcePeerId, PlayerCommandEnvelope command)
         {
-            if (command == null || command.PlayerId <= MatchSession.UnownedPlayerId ||
+            if (sourcePeerId <= 0 || command == null || command.PlayerId <= MatchSession.UnownedPlayerId ||
                 command.Sequence <= 0 || command.SquadCommandId <= 0)
             {
                 return false;
@@ -49,7 +50,7 @@ namespace Assets.Scripts.Levels
                     return false;
                 }
 
-                _queuedPlayerCommands.Enqueue(queuedCopy);
+                _queuedPlayerCommands.Enqueue((sourcePeerId, queuedCopy));
                 return true;
             }
         }
@@ -73,17 +74,17 @@ namespace Assets.Scripts.Levels
             int processed = 0;
             while (processed < maxCommands)
             {
-                PlayerCommandEnvelope command;
+                (int SourcePeerId, PlayerCommandEnvelope Command) queuedCommand;
                 lock (_queuedPlayerCommandsLock)
                 {
                     if (_queuedPlayerCommands.Count == 0)
                     {
                         break;
                     }
-                    command = _queuedPlayerCommands.Dequeue();
+                    queuedCommand = _queuedPlayerCommands.Dequeue();
                 }
 
-                TryExecutePlayerCommand(command);
+                TryExecuteReceivedPlayerCommand(queuedCommand.SourcePeerId, queuedCommand.Command);
                 processed++;
             }
             return processed;
@@ -95,6 +96,18 @@ namespace Assets.Scripts.Levels
             {
                 _queuedPlayerCommands.Clear();
             }
+        }
+
+        public bool TryExecuteReceivedPlayerCommand(int sourcePeerId, PlayerCommandEnvelope command)
+        {
+            MatchSession matchSession = Stage != null ? Stage.MatchSession : null;
+            if (matchSession == null || command == null ||
+                !matchSession.DoesPeerOwnPlayer(sourcePeerId, command.PlayerId))
+            {
+                return false;
+            }
+
+            return TryExecutePlayerCommand(command);
         }
 
         public bool TryIssuePlayerCommand(
@@ -135,7 +148,7 @@ namespace Assets.Scripts.Levels
                 pointB));
         }
 
-        public bool TryExecutePlayerCommand(PlayerCommandEnvelope command)
+        private bool TryExecutePlayerCommand(PlayerCommandEnvelope command)
         {
             if (command == null || !IsKnownInputPlayer(command.PlayerId))
             {
