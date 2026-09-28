@@ -329,6 +329,28 @@ def _windows_kill_job() -> int:
     return _windows_job_handle
 
 
+def terminate_owned_processes() -> None:
+    """Terminate every process in this owner's Windows kill-on-close job.
+
+    The continual service runs one managed phase child at a time. Terminating the job after
+    that phase exits removes descendants that can outlive the root process while the owner
+    remains alive and keeps the job handle open.
+    """
+    if os.name != "nt" or _windows_job_handle is None:
+        return
+
+    from ctypes import wintypes
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.TerminateJobObject.restype = wintypes.BOOL
+    kernel32.TerminateJobObject.argtypes = (wintypes.HANDLE, wintypes.UINT)
+    if not kernel32.TerminateJobObject(
+        wintypes.HANDLE(_windows_job_handle),
+        1,
+    ):
+        raise ctypes.WinError(ctypes.get_last_error())
+
+
 def _resume_windows_primary_thread(process_id: int) -> None:
     """Resume a CREATE_SUSPENDED child only after it belongs to the kill-on-close job."""
     from ctypes import wintypes
