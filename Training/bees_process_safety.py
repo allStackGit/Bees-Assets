@@ -359,6 +359,67 @@ def close_windows_owned_child_job() -> None:
         raise ctypes.WinError(ctypes.get_last_error())
 
 
+def _resume_windows_primary_thread(process_id: int) -> None:
+    """Resume a CREATE_SUSPENDED child only after it belongs to the kill-on-close job."""
+    from ctypes import wintypes
+
+    class THREADENTRY32(ctypes.Structure):
+        _fields_ = [
+            ("dwSize", wintypes.DWORD),
+            ("cntUsage", wintypes.DWORD),
+            ("th32ThreadID", wintypes.DWORD),
+            ("th32OwnerProcessID", wintypes.DWORD),
+            ("tpBasePri", wintypes.LONG),
+            ("tpDeltaPri", wintypes.LONG),
+            ("dwFlags", wintypes.DWORD),
+        ]
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
+    kernel32.CreateToolhelp32Snapshot.argtypes = (wintypes.DWORD, wintypes.DWORD)
+    kernel32.Thread32First.restype = wintypes.BOOL
+    kernel32.Thread32First.argtypes = (wintypes.HANDLE, ctypes.POINTER(THREADENTRY32))
+    kernel32.Thread32Next.restype = wintypes.BOOL
+    kernel32.Thread32Next.argtypes = (wintypes.HANDLE, ctypes.POINTER(THREADENTRY32))
+    kernel32.OpenThread.restype = wintypes.HANDLE
+    kernel32.OpenThread.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+    kernel32.ResumeThread.restype = wintypes.DWORD
+    kernel32.ResumeThread.argtypes = (wintypes.HANDLE,)
+    kernel32.CloseHandle.restype = wintypes.BOOL
+    kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
+
+    # TH32CS_SNAPTHREAD = 0x00000004. A CREATE_SUSPENDED process cannot create
+    # additional threads or descendants before this snapshot, so its matching thread
+    # is the primary thread created by CreateProcess.
+    snapshot = kernel32.CreateToolhelp32Snapshot(0x00000004, 0)
+    invalid_handle = ctypes.c_void_p(-1).value
+    if not snapshot or getattr(snapshot, "value", snapshot) == invalid_handle:
+        raise ctypes.WinError(ctypes.get_last_error())
+
+    thread_handle = None
+    try:
+        entry = THREADENTRY32()
+        entry.dwSize = ctypes.sizeof(THREADENTRY32)
+        found = kernel32.Thread32First(snapshot, ctypes.byref(entry))
+        while found:
+            if entry.th32OwnerProcessID == process_id:
+                # THREAD_SUSPEND_RESUME = 0x0002.
+                thread_handle = kernel32.OpenThread(0x0002, False, entry.th32ThreadID)
+                if not thread_handle:
+                    raise ctypes.WinError(ctypes.get_last_error())
+                if kernel32.ResumeThread(thread_handle) == 0xFFFFFFFF:
+                    raise ctypes.WinError(ctypes.get_last_error())
+                return
+            found = kernel32.Thread32Next(snapshot, ctypes.byref(entry))
+        raise RuntimeError(
+            f"could not find the suspended primary thread for managed child {process_id}"
+        )
+    finally:
+        if thread_handle:
+            kernel32.CloseHandle(thread_handle)
+        kernel32.CloseHandle(snapshot)
+
+
 def _assign_windows_owned_child(process: subprocess.Popen) -> None:
     from ctypes import wintypes
 
@@ -386,9 +447,14 @@ def popen_owned(
 ) -> subprocess.Popen:
     """Launch a child that the OS tears down when this owning process disappears."""
     if _is_windows():
+        # CREATE_SUSPENDED closes the launch-to-job-assignment race: the process cannot run
+        # or create descendants until it is already owned by the kill-on-close Job Object.
+        create_suspended = 0x00000004
+        kwargs["creationflags"] = int(kwargs.get("creationflags", 0)) | create_suspended
         process = subprocess.Popen(list(command), **kwargs)
         try:
             _assign_windows_owned_child(process)
+            _resume_windows_primary_thread(process.pid)
         except Exception:
             try:
                 process.kill()
