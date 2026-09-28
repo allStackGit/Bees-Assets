@@ -122,7 +122,10 @@ class ContinualElasticWanServiceTests(unittest.TestCase):
             captured["index"] = index
             captured["resume"] = resume
             captured["force_fresh"] = force_fresh
-            return ["python", "base-train.py", "--force"] if force_fresh else ["python", "base-train.py"]
+            command = ["python", "base-train.py"]
+            if force_fresh:
+                command.append("--force")
+            return command
 
         def run_service(_options):
             captured["command"] = wan_service.service.training_command(
