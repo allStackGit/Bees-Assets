@@ -332,14 +332,59 @@ if($Envs -gt 0){
 }
 Remove-Item -LiteralPath $ShutdownRequestFile -Force -ErrorAction SilentlyContinue
 $argumentString=(@('-u') + $workerArgs | ForEach-Object { Quote-ProcessArgument ([string]$_) }) -join ' '
+$startupUtc=[DateTime]::UtcNow
 $process=Start-Process -FilePath $venvPython -ArgumentList $argumentString -WorkingDirectory $InstallRoot -WindowStyle Hidden -RedirectStandardOutput $SupervisorOutLog -RedirectStandardError $SupervisorErrLog -PassThru
 $process.Id | Set-Content -LiteralPath $SupervisorPidFile -NoNewline -Encoding ASCII
-Start-Sleep -Milliseconds 750
-if($process.HasExited){
-    Remove-Item -LiteralPath $SupervisorPidFile -Force -ErrorAction SilentlyContinue
-    throw "Remote worker exited during background startup with code $($process.ExitCode). Check $SupervisorOutLog and $SupervisorErrLog."
+
+function Get-FreshSupervisorTail([string]$Path,[DateTime]$SinceUtc){
+    if(-not(Test-Path -LiteralPath $Path)){return @()}
+    $item=Get-Item -LiteralPath $Path -ErrorAction SilentlyContinue
+    if($null -eq $item -or $item.LastWriteTimeUtc -lt $SinceUtc){return @()}
+    @(Get-Content -LiteralPath $Path -Tail 80 -ErrorAction SilentlyContinue)
 }
-Write-Host "[Bees remote] worker started in the background (PID $($process.Id))."
+
+$startupDeadline=[DateTime]::UtcNow.AddSeconds(10)
+$startupState='supervisor alive; waiting for first connectivity signal'
+while([DateTime]::UtcNow -lt $startupDeadline){
+    $process.Refresh()
+    if($process.HasExited){
+        Remove-Item -LiteralPath $SupervisorPidFile -Force -ErrorAction SilentlyContinue
+        $outTail=(Get-FreshSupervisorTail $SupervisorOutLog $startupUtc) -join [Environment]::NewLine
+        $errTail=(Get-FreshSupervisorTail $SupervisorErrLog $startupUtc) -join [Environment]::NewLine
+        if($outTail){Write-Host $outTail}
+        if($errTail){Write-Warning $errTail}
+        throw "Remote supervisor exited during background startup with code $($process.ExitCode). Check $SupervisorOutLog and $SupervisorErrLog."
+    }
+
+    $outText=(Get-FreshSupervisorTail $SupervisorOutLog $startupUtc) -join [Environment]::NewLine
+    $errText=(Get-FreshSupervisorTail $SupervisorErrLog $startupUtc) -join [Environment]::NewLine
+    $combined=$outText + [Environment]::NewLine + $errText
+
+    if($combined -match 'status: learner=connected'){
+        $startupState='learner connected and trainer registered'
+        break
+    }
+    if($combined -match 'waiting for matching Training runtime before rollout'){
+        $startupState='learner connected; waiting for matching Training runtime'
+        break
+    }
+    if($combined -match 'private transport ready'){
+        $startupState='private transport ready; trainer startup continuing in background'
+        break
+    }
+    if($combined -match 'private transport failed to reach learner control'){
+        $startupState='supervisor running, but learner private transport is not reachable yet'
+        break
+    }
+    Start-Sleep -Milliseconds 250
+}
+
+Write-Host "[Bees remote] supervisor started in the background (PID $($process.Id))."
+if($startupState -like '*not reachable*'){
+    Write-Warning "[Bees remote] startup state: $startupState"
+}else{
+    Write-Host "[Bees remote] startup state: $startupState"
+}
 Write-Host "[Bees remote] logs: $SupervisorOutLog and $SupervisorErrLog"
 Write-Host '[Bees remote] close this shell freely; use bees-remote-worker.cmd stop to stop the worker.'
 exit 0
