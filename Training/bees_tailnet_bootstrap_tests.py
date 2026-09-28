@@ -227,6 +227,7 @@ class TailnetBootstrapSourceTests(unittest.TestCase):
         self.assertIn("SetReadDeadline", source)
         self.assertIn("SetWriteDeadline", source)
         self.assertIn("bootstrap request attempt %d/3...", source)
+        self.assertIn("bootstrap request/download attempt %d/3 failed", source)
         self.assertIn("bootstrap response ready; downloading", source)
         self.assertIn("bootstrap download progress", source)
         self.assertIn("copyBootstrapWithProgress", source)
