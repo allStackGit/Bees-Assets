@@ -1335,3 +1335,13 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** Every dependency/runtime preparation command must remain cancellable as an owned process tree, and cutover must wait for confirmed staging completion. A focused stop-during-staging test was not added under the static-analysis-only request.  
 **Verification:** Statically traced dependency probes, venv creation/install/validation, updater stop/cutover ordering, and POSIX owner escalation. Stop now signals a running staging command and verifies its exit before cutover can proceed. No tests, builds, Unity, or runtime checks were performed.  
 **Invariant/knowledge:** Runtime staging subprocesses are subordinate to the updater lifecycle and must not outlive cancellation or cutover.
+
+
+### REG-153 — WAN actor accepted boolean-shaped session and epoch metadata
+**Area:** `Training/bees_elastic_wan_actor_worker.py`, `Training/bees_wan_actor_worker.py`, `Training/bees_elastic_wan_actor_session.py`, `Training/bees_wan_actor_training.py`; WAN actor/broker protocol
+**Symptom:** Malformed broker values such as `true` could pass integer checks or equality comparisons as epoch 1; coercive state parsing could also turn numeric strings or booleans into policy/control versions. A boolean worker base could shift an actor's global worker assignment.
+**Root cause:** In Python, `bool` is a subclass of `int`; several network-boundary checks also used `int(...)` or direct equality before validating the JSON type.
+**Fix:** Reject booleans for elastic capacity/offset fields, WAN topology counts, policy steps/versions, and control/policy/topology epochs. Preserve only validated integer epochs when admitting broker operations.
+**Permanent protection:** `Training/bees_elastic_wan_training_tests.py` covers boolean elastic session dimensions. `Training/bees_wan_actor_training_tests.py` covers boolean actor topology/control epochs, strict state epoch and policy-version parsing, and boolean Torch policy steps. These tests were added but not executed under the static-only request.
+**Verification:** Re-read the updated actor, broker, and regression-test source through GitHub. The malformed values now fail validation before changing worker offsets, registering actors, accepting trajectory batches, or applying a policy step. No tests, builds, Unity, or runtime checks were run.
+**Invariant/knowledge:** Treat JSON integers as integers only after explicitly rejecting booleans and coercive conversions at distributed protocol boundaries.
