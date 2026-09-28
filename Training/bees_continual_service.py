@@ -526,15 +526,29 @@ def _request_graceful_training_child_stop(process: subprocess.Popen) -> None:
         return
 
     stop_file = _managed_stop_file()
+    stop_requested = False
     if stop_file is not None:
-        stop_file.parent.mkdir(parents=True, exist_ok=True)
-        stop_file.write_text("stop\n", encoding="ascii")
-    elif os.name == "nt" and hasattr(signal, "CTRL_BREAK_EVENT"):
-        process.send_signal(signal.CTRL_BREAK_EVENT)
-    else:
-        # The child owns its process group, so interrupt the trainer and its environment
-        # workers through the same graceful signal path used by Ctrl+C.
-        os.killpg(process.pid, signal.SIGINT)
+        try:
+            stop_file.parent.mkdir(parents=True, exist_ok=True)
+            stop_file.write_text("stop\\n", encoding="ascii")
+            stop_requested = True
+        except OSError as exc:
+            print(
+                "[Bees continuous] could not write the managed stop file; "
+                f"falling back to a graceful interrupt: {exc}",
+                file=sys.stderr,
+                flush=True,
+            )
+    if not stop_requested:
+        try:
+            if os.name == "nt" and hasattr(signal, "CTRL_BREAK_EVENT"):
+                process.send_signal(signal.CTRL_BREAK_EVENT)
+            else:
+                # The child owns its process group, so interrupt the trainer and its
+                # environment workers through the same graceful path used by Ctrl+C.
+                os.killpg(process.pid, signal.SIGINT)
+        except ProcessLookupError:
+            pass
 
     print(
         "[Bees continuous] waiting for the trainer to finalize checkpoint/model output.",
