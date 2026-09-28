@@ -525,6 +525,14 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
             encoding="utf-8"
         )
 
+        self.assertTrue(windows.rstrip().endswith("exit 0"))
+        self.assertEqual(windows.count("function Test-SupervisorControlHealthy"), 1)
+        self.assertEqual(
+            windows.count(
+                "[Bees remote] close this shell freely; use bees-remote-worker.cmd stop to stop the worker."
+            ),
+            1,
+        )
         self.assertIn("function Test-SupervisorControlHealthy", windows)
         self.assertIn("function Get-LocalTrainerId", windows)
         self.assertIn("/v1/status", windows)
