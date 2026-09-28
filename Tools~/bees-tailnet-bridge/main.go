@@ -887,6 +887,46 @@ func runProbe(args []string) error {
 	return nil
 }
 
+func copyBootstrapWithProgress(dst io.Writer, src io.Reader, contentLength int64) (int64, error) {
+	buf := make([]byte, 1024*1024)
+	var total int64
+	lastReport := time.Now()
+	for {
+		n, readErr := src.Read(buf)
+		if n > 0 {
+			written, writeErr := dst.Write(buf[:n])
+			total += int64(written)
+			if writeErr != nil {
+				return total, writeErr
+			}
+			if written != n {
+				return total, io.ErrShortWrite
+			}
+			if time.Since(lastReport) >= 5*time.Second {
+				if contentLength > 0 {
+					fmt.Printf(
+						"[Bees tailnet] bootstrap download progress %.1f/%.1f MiB\n",
+						float64(total)/(1024*1024),
+						float64(contentLength)/(1024*1024),
+					)
+				} else {
+					fmt.Printf(
+						"[Bees tailnet] bootstrap download progress %.1f MiB\n",
+						float64(total)/(1024*1024),
+					)
+				}
+				lastReport = time.Now()
+			}
+		}
+		if errors.Is(readErr, io.EOF) {
+			return total, nil
+		}
+		if readErr != nil {
+			return total, readErr
+		}
+	}
+}
+
 func runFetch(args []string) error {
 	fs := flag.NewFlagSet("fetch", flag.ContinueOnError)
 	c := addCommon(fs)
@@ -955,6 +995,7 @@ func runFetch(args []string) error {
 		DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
 			return s.Dial(ctx, network, address)
 		},
+		ResponseHeaderTimeout: 20 * time.Second,
 	}
 	defer transport.CloseIdleConnections()
 	client := &http.Client{Transport: transport, Timeout: 5 * time.Minute}
@@ -962,6 +1003,7 @@ func runFetch(args []string) error {
 	var resp *http.Response
 	var requestErr error
 	for attempt := 1; attempt <= 3; attempt++ {
+		fmt.Printf("[Bees tailnet] bootstrap request attempt %d/3...\n", attempt)
 		req, reqErr := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+*target+"/bootstrap", nil)
 		if reqErr != nil {
 			return reqErr
@@ -988,6 +1030,14 @@ func runFetch(args []string) error {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		return fmt.Errorf("bootstrap server returned %s: %s", resp.Status, strings.TrimSpace(string(body)))
 	}
+	if resp.ContentLength > 0 {
+		fmt.Printf(
+			"[Bees tailnet] bootstrap response ready; downloading %.1f MiB...\n",
+			float64(resp.ContentLength)/(1024*1024),
+		)
+	} else {
+		fmt.Println("[Bees tailnet] bootstrap response ready; downloading...")
+	}
 
 	tempDir, err := os.MkdirTemp("", "bees-bootstrap-*")
 	if err != nil {
@@ -995,12 +1045,18 @@ func runFetch(args []string) error {
 	}
 	defer os.RemoveAll(tempDir)
 	archivePath := filepath.Join(tempDir, "bootstrap.zip")
+	var downloaded int64
 	if err := atomicWrite(archivePath, 0o600, func(dst io.Writer) error {
-		_, copyErr := io.Copy(dst, resp.Body)
+		var copyErr error
+		downloaded, copyErr = copyBootstrapWithProgress(dst, resp.Body, resp.ContentLength)
 		return copyErr
 	}); err != nil {
 		return err
 	}
+	fmt.Printf(
+		"[Bees tailnet] bootstrap download complete %.1f MiB.\n",
+		float64(downloaded)/(1024*1024),
+	)
 	return extractBootstrap(archivePath, *runtimeOut, *workerTokenOut, *wanTokenOut)
 }
 
