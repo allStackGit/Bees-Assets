@@ -1578,3 +1578,11 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** `finiteInteger` now requires `Number.isSafeInteger`, so optimizer counters and capacity values outside the exact integer range are ignored. `trainingEnvOptimizer.module.test.js` adds unsafe learner-consumed and producer-accepted counter cases.  
 **Verification:** source and focused regression coverage were read back and reviewed statically. The test was not run under the static-only audit instruction.  
 **Invariant/knowledge:** throughput totals must remain exact monotonic integers before they are used in rate calculations.
+
+### REG-185 — Invalid capacity retained a stale worker recommendation
+**Area:** `BeesServer~/trainingEnvOptimizer.js`, per-trainer automatic environment-count state  
+**Symptom:** after a trainer reported missing or invalid capacity, the optimizer returned no update but retained its prior recommendation; the control-state response could continue exposing that stale `worker_env_count`.  
+**Root cause:** the invalid-capacity path released the cluster probe lock but left the trainer's prior optimizer state in the map consumed by status snapshots.  
+**Permanent protection:** invalid capacity now clears that trainer's optimizer state as well as its probe ownership. `trainingEnvOptimizer.module.test.js` verifies that the prior recommendation and snapshot disappear after capacity becomes invalid.  
+**Verification:** source and focused regression coverage were read back and reviewed statically. The test was not run under the static-only audit instruction.  
+**Invariant/knowledge:** automatic environment-count recommendations are valid only while the trainer advertises a valid capacity contract.
