@@ -158,7 +158,10 @@ class WorkerTrafficMetricsTests(unittest.TestCase):
         )
 
         self.assertIn("const reconciliation = metrics.reconciliation;", status)
-        self.assertIn("'Reconcile, ' + ageLabel(seconds) + ': ' + phase", status)
+        self.assertIn(
+            "'Reconcile, ' + ageLabel(seconds + snapshotLagSeconds) + ': ' + phase",
+            status,
+        )
         self.assertIn('set_reconciliation_phase("ensuring canonical build")', worker)
         self.assertIn('set_reconciliation_phase("launching managed actor")', worker)
         self.assertIn("metrics=current_metrics(metrics_run_id())", worker)
