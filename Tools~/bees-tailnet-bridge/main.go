@@ -927,6 +927,25 @@ func copyBootstrapWithProgress(dst io.Writer, src io.Reader, contentLength int64
 	}
 }
 
+type idleTimeoutConn struct {
+	net.Conn
+	idle time.Duration
+}
+
+func (c *idleTimeoutConn) Read(p []byte) (int, error) {
+	if c.idle > 0 {
+		_ = c.Conn.SetReadDeadline(time.Now().Add(c.idle))
+	}
+	return c.Conn.Read(p)
+}
+
+func (c *idleTimeoutConn) Write(p []byte) (int, error) {
+	if c.idle > 0 {
+		_ = c.Conn.SetWriteDeadline(time.Now().Add(c.idle))
+	}
+	return c.Conn.Write(p)
+}
+
 func runFetch(args []string) error {
 	fs := flag.NewFlagSet("fetch", flag.ContinueOnError)
 	c := addCommon(fs)
@@ -993,7 +1012,13 @@ func runFetch(args []string) error {
 
 	transport := &http.Transport{
 		DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
-			return s.Dial(ctx, network, address)
+			dialCtx, dialCancel := context.WithTimeout(ctx, 15*time.Second)
+			defer dialCancel()
+			conn, dialErr := s.Dial(dialCtx, network, address)
+			if dialErr != nil {
+				return nil, dialErr
+			}
+			return &idleTimeoutConn{Conn: conn, idle: 30 * time.Second}, nil
 		},
 		ResponseHeaderTimeout: 20 * time.Second,
 	}
