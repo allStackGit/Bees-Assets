@@ -91,6 +91,30 @@ def _trajectory_step_count(trajectories: Sequence[Any]) -> int:
     return total
 
 
+def _validated_state_epoch(state: Mapping[str, Any], name: str) -> int:
+    value = state.get(name)
+    if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+        raise RuntimeError(f"WAN central state has an invalid {name}")
+    return value
+
+
+def _validated_policy_versions(value: Any) -> Dict[str, int]:
+    if not isinstance(value, Mapping):
+        raise RuntimeError("WAN central state has malformed policy_versions")
+    versions: Dict[str, int] = {}
+    for behavior, version in value.items():
+        if (
+            not isinstance(behavior, str)
+            or not behavior
+            or not isinstance(version, int)
+            or isinstance(version, bool)
+            or version <= 0
+        ):
+            raise RuntimeError("WAN central state has malformed policy_versions")
+        versions[behavior] = version
+    return versions
+
+
 class BrokerUnavailable(RuntimeError):
     pass
 
@@ -897,11 +921,8 @@ class ActorSession:
             0.0,
             actor_id=self.actor_id,
         )
-        new_control = int(state.get("control_epoch", -1))
-        remote_versions_raw = state.get("policy_versions")
-        if not isinstance(remote_versions_raw, Mapping):
-            raise RuntimeError("WAN central state has malformed policy_versions")
-        remote_versions = {str(key): int(value) for key, value in remote_versions_raw.items()}
+        new_control = _validated_state_epoch(state, "control_epoch")
+        remote_versions = _validated_policy_versions(state.get("policy_versions"))
         expected_behaviors = set(self.templates)
         if require_policy and set(remote_versions) != expected_behaviors:
             deadline = time.monotonic() + max(30.0, float(self.central_run_options.env_settings.timeout_wait))
@@ -918,10 +939,8 @@ class ActorSession:
                     0.0,
                     actor_id=self.actor_id,
                 )
-                remote_versions_raw = state.get("policy_versions")
-                if isinstance(remote_versions_raw, Mapping):
-                    remote_versions = {str(key): int(value) for key, value in remote_versions_raw.items()}
-                    new_control = int(state.get("control_epoch", -1))
+                remote_versions = _validated_policy_versions(state.get("policy_versions"))
+                new_control = _validated_state_epoch(state, "control_epoch")
             if set(remote_versions) != expected_behaviors:
                 raise TimeoutError(
                     "WAN actor timed out waiting for the complete central policy set; "
@@ -936,7 +955,7 @@ class ActorSession:
         control_changed = new_control != self.control_epoch
         policy_changed = remote_versions != self.policy_versions
         if not control_changed and not policy_changed:
-            self.policy_epoch = int(state.get("policy_epoch", self.policy_epoch))
+            self.policy_epoch = _validated_state_epoch(state, "policy_epoch")
             # A stale upload can finish after another thread already synchronized this state.
             # If the snapshot confirms the local epochs are current, release both wait signals
             # even though there is no additional policy/control work to apply.
@@ -988,7 +1007,7 @@ class ActorSession:
         if missing:
             raise RuntimeError(f"Central WAN policy set unexpectedly removed behaviors: {missing}")
         self.policy_versions = synchronized_versions
-        self.policy_epoch = int(state.get("policy_epoch", self.policy_epoch))
+        self.policy_epoch = _validated_state_epoch(state, "policy_epoch")
         self._state_changed.clear()
         self._stale.clear()
         print(
@@ -1007,8 +1026,8 @@ class ActorSession:
                     actor_id=self.actor_id,
                 )
                 if (
-                    int(state.get("policy_epoch", -1)) != self.policy_epoch
-                    or int(state.get("control_epoch", -1)) != self.control_epoch
+                    _validated_state_epoch(state, "policy_epoch") != self.policy_epoch
+                    or _validated_state_epoch(state, "control_epoch") != self.control_epoch
                 ):
                     self._state_changed.set()
                     while (
