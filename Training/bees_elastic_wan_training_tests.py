@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import os
+import queue
 import tempfile
 import threading
 import unittest
@@ -69,6 +70,82 @@ class ElasticWanOptionTests(unittest.TestCase):
                     "--bees-wan-envs-per-actor=32",
                 ]
             )
+
+
+class ElasticActorStaleResyncTests(unittest.TestCase):
+    def test_elastic_heartbeat_treats_stale_ack_as_resync(self):
+        session = actor_session.ElasticActorSession.__new__(
+            actor_session.ElasticActorSession
+        )
+        session.client = mock.Mock()
+        session.client.reset_ack.side_effect = actor_worker.worker.BrokerStaleActor(
+            "central epoch advanced"
+        )
+        session.session_id = "session"
+        session.actor_id = 2
+        session.control_epoch = 7
+        session._state_changed = threading.Event()
+
+        self.assertFalse(session._heartbeat())
+        self.assertTrue(session._state_changed.is_set())
+
+    def test_base_reset_ack_race_keeps_actor_paused_for_resync(self):
+        session = actor_worker.worker.ActorSession.__new__(
+            actor_worker.worker.ActorSession
+        )
+        session.client = mock.Mock()
+        session.client.state.return_value = {
+            "control_epoch": 2,
+            "policy_epoch": 1,
+            "policy_versions": {},
+        }
+        session.client.control.return_value = {
+            "epoch": 2,
+            "kind": "reset",
+            "config": {"difficulty": 2},
+        }
+        session.client.reset_ack.side_effect = actor_worker.worker.BrokerStaleActor(
+            "central epoch advanced again"
+        )
+        session.session_id = "session"
+        session.actor_id = 0
+        session.control_epoch = 1
+        session.policy_epoch = 1
+        session.policy_versions = {}
+        session.templates = {}
+        session.manager = mock.Mock()
+        session.worker_offset = 0
+        session.central_run_options = SimpleNamespace(
+            env_settings=SimpleNamespace(timeout_wait=1.0)
+        )
+        session.stop = threading.Event()
+        session._upload_queue = queue.Queue()
+        session._state_changed = threading.Event()
+        session._stale = threading.Event()
+
+        with (
+            mock.patch.object(
+                actor_worker.worker,
+                "_drain_inflight_without_training",
+            ),
+            mock.patch.object(actor_worker.worker, "_clear_partial_trajectories"),
+            mock.patch.object(actor_worker.worker, "_drain_queue"),
+        ):
+            session._synchronize_state()
+
+        self.assertTrue(session._state_changed.is_set())
+        self.assertTrue(session._stale.is_set())
+        self.assertEqual(session.control_epoch, 1)
+        session.manager.reset.assert_called_once_with(config={"difficulty": 2})
+
+    def test_outer_worker_does_not_record_broker_stale_actor_as_session_failure(self):
+        source = Path(actor_worker.__file__).read_text(encoding="utf-8")
+        stale_handler = source.index("except worker.BrokerStaleActor:")
+        generic_handler = source.index("except Exception as exc:", stale_handler)
+        telemetry = source.index("failure_telemetry.record(exc)", generic_handler)
+        self.assertLess(stale_handler, generic_handler)
+        self.assertLess(generic_handler, telemetry)
+        self.assertIn("central actor state advanced; resynchronizing", source)
 
 
 class ElasticActorThroughputTests(unittest.TestCase):
