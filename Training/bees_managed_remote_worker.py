@@ -513,6 +513,43 @@ def _python_executable_path(path: str | Path) -> Path:
     return Path(os.path.abspath(os.fspath(path)))
 
 
+def _activate_staged_runtime(
+    python_executable: str | Path,
+    script: Path,
+    raw_argv: Sequence[str],
+    *,
+    working_directory: Path,
+) -> Optional[subprocess.Popen]:
+    """Replace this supervisor with a staged runtime without reparsing spaced Windows paths."""
+    command = [
+        str(_python_executable_path(python_executable)),
+        str(script),
+        *[str(value) for value in raw_argv],
+    ]
+    if os.name != "nt":
+        os.execv(command[0], command)
+        raise RuntimeError("POSIX runtime exec unexpectedly returned")
+
+    # os.execv() on Windows has historically had path-quoting edge cases when the executable
+    # lives below a user/profile directory containing spaces. Spawn the replacement from an
+    # argv array instead, then let main() return so this old supervisor can finish cleanup.
+    creation_flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    replacement = subprocess.Popen(
+        command,
+        cwd=str(working_directory),
+        creationflags=creation_flags,
+        close_fds=True,
+    )
+    time.sleep(0.25)
+    code = replacement.poll()
+    if code is not None:
+        raise RuntimeError(
+            "staged Windows runtime exited during handoff "
+            f"(pid={replacement.pid} exit={code})"
+        )
+    return replacement
+
+
 def _python_remote_dependencies_ok(python_path: Path) -> bool:
     completed = subprocess.run(
         [
@@ -1572,10 +1609,19 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 if not next_script.is_file():
                     raise RuntimeError(f"staged runtime is missing {next_script}")
                 next_python = str(staged_python or _python_executable_path(sys.executable))
-                os.execv(
+                replacement = _activate_staged_runtime(
                     next_python,
-                    [next_python, str(next_script), *raw_argv],
+                    next_script,
+                    raw_argv,
+                    working_directory=install_root,
                 )
+                if replacement is not None:
+                    print(
+                        "[Bees remote] staged Windows runtime handoff started "
+                        f"(PID {replacement.pid}).",
+                        flush=True,
+                    )
+                    return 0
 
             if not stop[0]:
                 time.sleep(args.reconnect_seconds)
