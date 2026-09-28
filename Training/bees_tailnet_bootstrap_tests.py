@@ -194,6 +194,39 @@ class TailnetBootstrapSourceTests(unittest.TestCase):
             re.search(r"(?<!\\)\$\{BASH_SOURCE\[0\]\}", operator_node)
         )
 
+    def test_windows_wrapper_uses_per_invocation_bootstrap_directory(self):
+        operator_node = OPERATOR_NODE.read_text(encoding="utf-8")
+        self.assertIn(
+            'set "BEES_BOOTSTRAP_DIR=%TEMP%\\\\BeesTrainingBootstrap-%RANDOM%-%RANDOM%"',
+            operator_node,
+        )
+        self.assertIn(
+            "New-Item -ItemType Directory -Force -Path $env:BEES_BOOTSTRAP_DIR",
+            operator_node,
+        )
+        self.assertNotIn(
+            'if exist "%BEES_BOOTSTRAP_DIR%" rd /s /q "%BEES_BOOTSTRAP_DIR%"',
+            operator_node,
+        )
+
+    def test_windows_inner_bootstrap_serializes_concurrent_repairs(self):
+        windows = WINDOWS_TEMPLATE.read_text(encoding="utf-8")
+        self.assertIn("remote-bootstrap.lock", windows)
+        self.assertIn("[IO.FileShare]::None", windows)
+        self.assertIn("Another Bees remote bootstrap/repair is still active after 60 seconds.", windows)
+        self.assertIn(
+            "watchdog repair cancelled because autostart was disabled",
+            windows,
+        )
+
+    def test_tailnet_bootstrap_fetch_bounds_header_wait_and_reports_progress(self):
+        source = TAILNET_MAIN.read_text(encoding="utf-8")
+        self.assertIn("ResponseHeaderTimeout: 20 * time.Second", source)
+        self.assertIn("bootstrap request attempt %d/3...", source)
+        self.assertIn("bootstrap response ready; downloading", source)
+        self.assertIn("bootstrap download progress", source)
+        self.assertIn("copyBootstrapWithProgress", source)
+
     def test_remote_start_registers_reboot_persistence_and_stop_removes_it(self):
         windows = WINDOWS_TEMPLATE.read_text(encoding="utf-8")
         linux = LINUX_TEMPLATE.read_text(encoding="utf-8")
@@ -210,7 +243,9 @@ class TailnetBootstrapSourceTests(unittest.TestCase):
         self.assertIn("BEES_AUTOSTART_CHILD", windows)
         self.assertIn("Start-Sleep -Seconds 10", windows)
         self.assertIn("function Test-SupervisorAlive", windows)
-        self.assertIn("if(-not(Test-SupervisorAlive))", windows)
+        self.assertIn("function Test-TrainerFresh", windows)
+        self.assertIn("$healthy=(Test-SupervisorAlive) -and (Test-TrainerFresh)", windows)
+        self.assertIn("$unhealthyCycles -ge 3", windows)
         self.assertIn("$oldMonitor=Get-LiveAutostartMonitor", windows)
         self.assertIn("Stop-Process -Id $oldMonitor.Id -Force", windows)
 
