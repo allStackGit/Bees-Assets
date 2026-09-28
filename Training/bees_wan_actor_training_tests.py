@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import queue
 import tempfile
+import time
 import threading
 import unittest
 from unittest import mock
