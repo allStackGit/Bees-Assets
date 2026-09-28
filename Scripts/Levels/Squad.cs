@@ -446,7 +446,8 @@ namespace Assets.Scripts.Levels
             }
 
             transform.parent = Level.Map.Transform;
-            if (IsPlayerControlled)
+            if (IsPlayerControlled &&
+                (matchSession == null || matchSession.IsLocalAuthority))
             {
                 _checkChaseTimer.Reuse(1, CheckChase, true);
                 Level.AddTimer(_checkChaseTimer);
@@ -505,10 +506,27 @@ namespace Assets.Scripts.Levels
             MatchSquadId = authoritativeMatchSquadId;
             IsMinionSquad = isMinionSquad;
             SetOwnerPlayerId(ownerPlayerId);
+            EnterNetworkReplicaMode();
+            return true;
+        }
+
+        public bool EnterNetworkReplicaMode()
+        {
+            MatchSession matchSession = Level != null && Level.Stage != null
+                ? Level.Stage.MatchSession
+                : null;
+            if (matchSession == null ||
+                matchSession.IsLocalAuthority ||
+                matchSession.Phase != MatchSessionPhase.Battle)
+            {
+                return false;
+            }
+
             Level.CancelTimer(_checkChaseTimer);
             CancelScriptedCommandQueue();
             SetCommandNull();
-            enabled = false;
+            IsHiveMindControlled = false;
+            enabled = IsUserControlled;
             return true;
         }
 
@@ -804,7 +822,9 @@ namespace Assets.Scripts.Levels
                     Side == ConfigData.Configuration.UserSide
                 : matchSession.IsPrimaryLocalPlayer(playerId);
 
-            IsHiveMindControlled = !IsPlayerControlled;
+            IsHiveMindControlled = matchSession == null
+                ? !IsPlayerControlled
+                : matchSession.IsLocalAuthority && !IsPlayerControlled;
             CanAcceptUserInput = IsPlayerControlled;
         }
 

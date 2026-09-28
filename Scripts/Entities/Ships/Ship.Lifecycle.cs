@@ -243,7 +243,11 @@ namespace Assets.Scripts.Entities.Ships
             IsPlayerControlled = squad.IsPlayerControlled;
             IsUserControlled = squad.IsUserControlled;
             IsHiveMindControlled =
-                !isNetworkReplica && (Stage.IsTrainingNueralNetwork || !IsPlayerControlled);
+                !isNetworkReplica &&
+                (Stage.IsTrainingNueralNetwork ||
+                 (matchSession == null
+                    ? !IsPlayerControlled
+                    : matchSession.IsLocalAuthority && !IsPlayerControlled));
             IsSpawnedShip = FleetShip.Id < 0;
 
             if (!Level.Stage.IsTraining)
@@ -282,8 +286,21 @@ namespace Assets.Scripts.Entities.Ships
             }
         }
 
-        private void EnterNetworkReplicaMode()
+        public bool EnterNetworkReplicaMode()
         {
+            MatchSession matchSession = Level != null && Level.Stage != null
+                ? Level.Stage.MatchSession
+                : null;
+            if (matchSession == null ||
+                matchSession.IsLocalAuthority ||
+                matchSession.Phase != MatchSessionPhase.Battle)
+            {
+                return false;
+            }
+
+            IsNetworkReplica = true;
+            IsHiveMindControlled = false;
+            PrepareForNetworkReplica();
             CancelOwnedTimers();
             StopAllCoroutines();
             if (HasWeapons)
@@ -305,7 +322,13 @@ namespace Assets.Scripts.Entities.Ships
             {
                 Body.linearVelocity = Vector2.zero;
             }
-            enabled = false;
+            // Keep Unity trigger callbacks alive for local selection; FixedUpdate is inert below.
+            enabled = true;
+            return true;
+        }
+
+        protected virtual void PrepareForNetworkReplica()
+        {
         }
 
         public virtual void ClearData()
@@ -362,6 +385,11 @@ namespace Assets.Scripts.Entities.Ships
 
         protected void FixedUpdate()
         {
+            if (IsNetworkReplica)
+            {
+                return;
+            }
+
             if (Level.HasObstacles && PathfindingThreadComplete)
             {
                 PathfindingThreadComplete = false;

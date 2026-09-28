@@ -22,6 +22,14 @@ namespace Assets.Scripts.Levels
         public void SetupHivemind()
         {
             CancelTimer(_hivemindTimer);
+            CancelTimer(_initialCommandDelayTimer);
+            MatchSession matchSession = Stage != null ? Stage.MatchSession : null;
+            if (matchSession != null && !matchSession.IsLocalAuthority)
+            {
+                State.ClearSquadsAwaitingHiveMindCommands();
+                return;
+            }
+
             if (Stage.ActivateHiveMind)
             {
                 List<Squad> squads = State.GetAllSquads();
