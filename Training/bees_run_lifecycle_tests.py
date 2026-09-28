@@ -234,6 +234,11 @@ class RunLifecycleTests(unittest.TestCase):
             lifecycle.commit_plan(state, first)
             reward = assets / "Scripts" / "Scenes" / "RlOneVsOneReward.cs"
             reward.write_text("// explanatory comment\nreward-v1\n", encoding="utf-8")
+            weapon = assets / "Scripts" / "Entities" / "Ships" / "Weapons" / "Weapon.cs"
+            weapon.write_text(
+                "// gameplay explanation\n" + weapon.read_text(encoding="utf-8"),
+                encoding="utf-8",
+            )
             second = lifecycle.plan_run(assets, state)
             self.assertFalse(second["incompatible"])
             self.assertEqual(second["run_id"], first["run_id"])
