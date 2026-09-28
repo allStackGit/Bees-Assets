@@ -2459,7 +2459,7 @@ namespace Bees.Tests.EditMode
                 "GameState.Commands.cs");
             string source = File.ReadAllText(path);
 
-            StringAssert.Contains("public const int Version = 2;", source);
+            StringAssert.Contains("public const int Version = 3;", source);
             StringAssert.Contains("ParentCarrierMatchShipId", source);
             StringAssert.Contains("CarrierSquadType", source);
             StringAssert.Contains("Utilities.ConvertShipTypeToSide.TryGetValue(", source);
@@ -2487,6 +2487,192 @@ namespace Bees.Tests.EditMode
             StringAssert.DoesNotContain(
                 ".SetupCarrierSquad(",
                 source);
+        }
+
+        [Test]
+        public void InitialMultiplayerClientWorldEntersReplicaModeBeforeHiveMindStartup()
+        {
+            string levelPath = Path.Combine(
+                Application.dataPath,
+                "Scripts",
+                "Levels",
+                "Level.Reset.cs");
+            string commandPath = Path.Combine(
+                Application.dataPath,
+                "Scripts",
+                "Levels",
+                "GameState.Commands.cs");
+            string levelSource = File.ReadAllText(levelPath);
+            string commandSource = File.ReadAllText(commandPath);
+
+            int setupShips = levelSource.IndexOf("SetupShips();");
+            int replica = levelSource.IndexOf(
+                "State.EnterInitialNetworkReplicaMode()",
+                setupShips);
+            int hiveMind = levelSource.IndexOf("SetupHivemind();", setupShips);
+            Assert.That(replica, Is.GreaterThan(setupShips));
+            Assert.That(hiveMind, Is.GreaterThan(replica));
+
+            StringAssert.Contains("squad.EnterNetworkReplicaMode()", commandSource);
+            StringAssert.Contains("ship.EnterNetworkReplicaMode()", commandSource);
+        }
+
+        [Test]
+        public void NonAuthorityMultiplayerDoesNotStartHiveMindOrPlayerChaseTimers()
+        {
+            string squadPath = Path.Combine(
+                Application.dataPath,
+                "Scripts",
+                "Levels",
+                "Squad.cs");
+            string setupPath = Path.Combine(
+                Application.dataPath,
+                "Scripts",
+                "Levels",
+                "Level.Setup.cs");
+            string squadSource = File.ReadAllText(squadPath);
+            string setupSource = File.ReadAllText(setupPath);
+
+            StringAssert.Contains(
+                "matchSession.IsLocalAuthority && !IsPlayerControlled",
+                squadSource);
+            StringAssert.Contains(
+                "(matchSession == null || matchSession.IsLocalAuthority)",
+                squadSource);
+            StringAssert.Contains(
+                "if (matchSession != null && !matchSession.IsLocalAuthority)",
+                setupSource);
+            StringAssert.Contains(
+                "State.ClearSquadsAwaitingHiveMindCommands();",
+                setupSource);
+        }
+
+        [Test]
+        public void ReplicaShipsKeepSelectionCallbacksWhileGameplayUpdatesAreInert()
+        {
+            string shipPath = Path.Combine(
+                Application.dataPath,
+                "Scripts",
+                "Entities",
+                "Ships",
+                "Ship.Lifecycle.cs");
+            string queenPath = Path.Combine(
+                Application.dataPath,
+                "Scripts",
+                "Entities",
+                "Ships",
+                "Queen.cs");
+            string strikerPath = Path.Combine(
+                Application.dataPath,
+                "Scripts",
+                "Entities",
+                "Ships",
+                "Striker.cs");
+            string beaconPath = Path.Combine(
+                Application.dataPath,
+                "Scripts",
+                "Entities",
+                "Ships",
+                "Beacon.cs");
+            string shipSource = File.ReadAllText(shipPath);
+
+            StringAssert.Contains("public bool EnterNetworkReplicaMode()", shipSource);
+            StringAssert.Contains("if (IsNetworkReplica)", shipSource);
+            StringAssert.Contains("enabled = true;", shipSource);
+            StringAssert.Contains("PrepareForNetworkReplica();", shipSource);
+            StringAssert.Contains(
+                "Level.CancelTimer(_spawnMinionsTimer);",
+                File.ReadAllText(queenPath));
+            StringAssert.Contains(
+                "Level.CancelTimer(_checkCarrierReloadTimer);",
+                File.ReadAllText(strikerPath));
+            StringAssert.Contains(
+                "Level.CancelTimer(_beaconStatusTimer);",
+                File.ReadAllText(beaconPath));
+        }
+
+        [Test]
+        public void ReplicaShipTriggerOverridesPreserveSelectionButBlockGameplayEffects()
+        {
+            string[] guardedFiles =
+            {
+                "Striker.cs",
+                "YellowJacket.cs",
+                "Barge.cs",
+                "WarpGate.cs",
+                "Beehive.cs"
+            };
+
+            foreach (string fileName in guardedFiles)
+            {
+                string path = Path.Combine(
+                    Application.dataPath,
+                    "Scripts",
+                    "Entities",
+                    "Ships",
+                    fileName);
+                string source = File.ReadAllText(path);
+
+                StringAssert.Contains("if (IsNetworkReplica)", source);
+                StringAssert.Contains("base.OnTriggerEnter2D(collider);", source);
+            }
+
+            string bargeSource = File.ReadAllText(Path.Combine(
+                Application.dataPath,
+                "Scripts",
+                "Entities",
+                "Ships",
+                "Barge.cs"));
+            StringAssert.Contains(
+                "public IEnumerator ChargeForward(Ship target = null)",
+                bargeSource);
+            StringAssert.Contains("yield break;", bargeSource);
+        }
+
+        [Test]
+        public void PlayerShipSpecialCommandsCarryStrictMatchShipIdentity()
+        {
+            string commandPath = Path.Combine(
+                Application.dataPath,
+                "Scripts",
+                "Levels",
+                "GameState.Commands.cs");
+            string statePath = Path.Combine(
+                Application.dataPath,
+                "Scripts",
+                "Levels",
+                "GameState.cs");
+            string source = File.ReadAllText(commandPath);
+            string stateSource = File.ReadAllText(statePath);
+
+            StringAssert.Contains("public const int Version = 3;", source);
+            StringAssert.Contains("ScoutDropBeacon", source);
+            StringAssert.Contains("BargeCharge", source);
+            StringAssert.Contains("FireBargeDetonate", source);
+            StringAssert.Contains("public long MatchShipId;", source);
+            StringAssert.Contains("[\"ship\"] = command.MatchShipId", source);
+            StringAssert.Contains("requiresShip", source);
+            StringAssert.Contains("TryPlayerScoutDropBeacon(", source);
+            StringAssert.Contains("TryPlayerBargeCharge(", source);
+            StringAssert.Contains("TryPlayerFireBargeDetonate(", source);
+            StringAssert.Contains("source.MatchShipId", stateSource);
+        }
+
+        [Test]
+        public void FreePlaySessionSpecialButtonsUseAuthorityCommandsButLegacyModesStayDirect()
+        {
+            string path = Path.Combine(
+                Application.dataPath,
+                "Scripts",
+                "UI Components",
+                "SquadActionBox.cs");
+            string source = File.ReadAllText(path);
+
+            StringAssert.Contains("if (Level.Stage.MatchSession == null)", source);
+            StringAssert.Contains("PlayerCommandKind.ScoutDropBeacon", source);
+            StringAssert.Contains("PlayerCommandKind.BargeCharge", source);
+            StringAssert.Contains("PlayerCommandKind.FireBargeDetonate", source);
+            StringAssert.Contains("matchShipId: ship.MatchShipId", source);
         }
     }
 }
