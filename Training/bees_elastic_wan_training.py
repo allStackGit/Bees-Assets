@@ -489,6 +489,7 @@ class ElasticWanBroker(base.WanActorBroker):
         }
 
     def active_actor_snapshot(self) -> Dict[int, int]:
+        self.ensure_server_alive()
         with self._condition:
             return self._active_snapshot_locked()
 
@@ -657,6 +658,7 @@ class ElasticWanBroker(base.WanActorBroker):
             self._condition.notify_all()
 
     def wait_for_minimum_registrations(self, timeout_seconds: float) -> None:
+        self.ensure_server_alive()
         if self.options.min_actors <= 0:
             return
         deadline = time.monotonic() + timeout_seconds
@@ -675,6 +677,7 @@ class ElasticWanBroker(base.WanActorBroker):
         raise RuntimeError("WAN actor broker closed while waiting for registrations")
 
     def wait_state(self, policy_epoch: int, control_epoch: int, wait_seconds: float) -> Mapping[str, Any]:
+        self.ensure_server_alive()
         deadline = time.monotonic() + wait_seconds
         with self._condition:
             initial_topology = self._topology_epoch
