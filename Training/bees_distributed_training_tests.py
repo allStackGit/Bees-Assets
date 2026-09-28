@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import pickle
@@ -166,7 +167,7 @@ class DistributedOptionTests(unittest.TestCase):
                 unity_args=value["unity_args"],
                 build_id=value["build_id"],
             )
-            value["identity_sha256"] = __import__("hashlib").sha256(
+            value["identity_sha256"] = hashlib.sha256(
                 distributed._canonical_json(identity).encode("utf-8")
             ).hexdigest()
             path.write_text(json.dumps(value), encoding="utf-8")
