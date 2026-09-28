@@ -10,6 +10,9 @@ Static-only repository audit on `rl/initial-design-work`. This ledger is the cur
 
 ## Audit status
 
+- REG--Infinity makes the trainer-log route reject absent, malformed, or unsafe offsets before they can be interpreted as reset offset zero. Focused route coverage was added but not run. Static review only; post-fix clean-pass count remains **0 / 2**.
+
+
 - REG-180 prevents Bomb's target validator from throwing when shared ship-range queries pass a null candidate. A focused regression test was added but not run. Static review only; post-fix clean-pass count remains **0 / 2**.
 
 
