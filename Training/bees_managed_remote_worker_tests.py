@@ -542,7 +542,7 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
 
         self.assertIn("Get-FreshSupervisorTail", windows)
         self.assertIn("waiting for matching Training runtime before rollout", windows)
-        self.assertIn("private transport failed to reach learner control", windows)
+        self.assertIn("private tailnet forwarder failed to become ready", windows)
         self.assertIn("startup state:", windows)
         self.assertIn("supervisor started in the background", windows)
         self.assertNotIn(
