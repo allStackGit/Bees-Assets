@@ -860,10 +860,7 @@ class ElasticWanBroker(base.WanActorBroker):
         with self._condition:
             self._active_snapshot_locked()
             self._validate_dynamic_owner_locked(actor_id, payload)
-            control_epoch = self._validate_control_epoch(
-                payload.get("control_epoch"),
-                self._control_epoch,
-            )
+            self._validate_control_epoch(payload.get("control_epoch"), self._control_epoch)
             # Validate and renew under the same lock so a stale reset acknowledgement cannot
             # extend the lease after a control update races the request.
             self._registrations[actor_id]["last_seen"] = time.monotonic()
@@ -883,7 +880,7 @@ class ElasticWanBroker(base.WanActorBroker):
             ):
                 raise ValueError(
                     "trajectory batch_id must be a non-empty string up to 64 characters")
-            self._validate_control_epoch(
+            control_epoch = self._validate_control_epoch(
                 payload.get("control_epoch"),
                 self._control_epoch,
             )
@@ -936,7 +933,7 @@ class ElasticWanBroker(base.WanActorBroker):
                         "actor lease expired while validating trajectories; re-register before uploading"
                     )
                 self._validate_dynamic_owner_locked(actor_id, payload)
-                self._validate_control_epoch(payload.get("control_epoch"), self._control_epoch)
+                self._validate_control_epoch(control_epoch, self._control_epoch)
                 self._validate_policy_versions(payload.get("policy_versions"))
                 duplicate_count = self._accepted_batch_count_locked(actor_id, batch_id)
                 if duplicate_count is not None:
