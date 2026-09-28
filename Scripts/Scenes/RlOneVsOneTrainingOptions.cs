@@ -246,8 +246,16 @@ internal sealed class RlOneVsOneTrainingOptions
 
         if (MatchupMode == RlOneVsOneMatchupMode.Fixed)
         {
-            ValidateComposition(_beeShipTypes, BeeShipTypesFlag);
-            ValidateComposition(_humanShipTypes, HumanShipTypesFlag);
+            int? beeSide = null;
+            int? humanSide = null;
+            if (ConfigData.Configuration != null && ConfigData.Configuration.IsLoaded)
+            {
+                beeSide = ConfigData.Configuration.BeeSide;
+                humanSide = ConfigData.Configuration.HumanSide;
+            }
+
+            ValidateComposition(_beeShipTypes, BeeShipTypesFlag, beeSide);
+            ValidateComposition(_humanShipTypes, HumanShipTypesFlag, humanSide);
             return;
         }
 
@@ -303,12 +311,31 @@ internal sealed class RlOneVsOneTrainingOptions
         }
     }
 
-    private void ValidateComposition(List<ConfigData.ShipTypes> shipTypes, string flag)
+    private void ValidateComposition(
+        List<ConfigData.ShipTypes> shipTypes,
+        string flag,
+        int? expectedSide)
     {
         if (shipTypes.Count != 1 && shipTypes.Count != ShipsPerSide)
         {
             throw new ArgumentException(
                 $"{flag} must contain either one type (repeated for every ship) or exactly {ShipsPerSide} comma-separated types.");
+        }
+
+        if (!expectedSide.HasValue)
+        {
+            return;
+        }
+
+        for (int i = 0; i < shipTypes.Count; i++)
+        {
+            ConfigData.ShipTypes shipType = shipTypes[i];
+            if (!Utilities.ConvertShipTypeToSide.TryGetValue(shipType, out int actualSide) ||
+                actualSide != expectedSide.Value)
+            {
+                throw new ArgumentException(
+                    $"{flag} contains {shipType}, which does not belong to side {expectedSide.Value}.");
+            }
         }
     }
 
