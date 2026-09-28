@@ -790,6 +790,19 @@ class ElasticBrokerTests(unittest.TestCase):
             broker.acknowledge_reset(stale_ack)
 
         self.assertEqual(broker._registrations[0]["last_seen"], last_seen)
+        for stale_epoch in (broker.control_epoch - 1, True):
+            stale_batch = {
+                **broker.release_identity,
+                "actor_id": 0,
+                "actor_instance_id": "manual-process-0",
+                "control_epoch": stale_epoch,
+                "policy_versions": {},
+                "trajectories": [],
+            }
+            with self.subTest(control_epoch=stale_epoch):
+                with self.assertRaisesRegex(elastic.base.StaleActorStateError, "control epoch"):
+                    broker.submit_trajectory_batch(stale_batch)
+            self.assertEqual(broker._registrations[0]["last_seen"], last_seen)
 
 
 class ActorFailureDiagnosticsTests(unittest.TestCase):
