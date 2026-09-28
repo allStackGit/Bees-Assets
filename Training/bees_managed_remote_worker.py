@@ -870,15 +870,40 @@ class RuntimeUpdater:
         name = "bees-remote-worker.cmd" if os.name == "nt" else "bees-remote-worker.sh"
         return self.install_root / "Launcher" / name
 
+    def _external_launcher_state_path(self) -> Path:
+        return self.install_root / "Launcher" / "external-launcher.path"
+
     def _external_launcher_path(self) -> Optional[Path]:
-        value = (
+        managed_launcher = self._managed_launcher_path().resolve()
+        current_value = (
             str(getattr(self.args, "launcher_path", "") or "").strip()
             or os.environ.get("BEES_REMOTE_LAUNCHER_PATH", "").strip()
             or os.environ.get("BEES_SELF", "").strip()
         )
-        if not value:
-            return None
-        return Path(value).expanduser().resolve()
+        if current_value:
+            current = Path(current_value).expanduser().resolve()
+            if current != managed_launcher:
+                try:
+                    _atomic_bytes(
+                        self._external_launcher_state_path(),
+                        (str(current) + "\n").encode("utf-8"),
+                        0o600,
+                    )
+                except OSError:
+                    pass
+                return current
+
+        try:
+            persisted_value = self._external_launcher_state_path().read_text(
+                encoding="utf-8"
+            ).strip()
+        except OSError:
+            persisted_value = ""
+        if persisted_value:
+            persisted = Path(persisted_value).expanduser().resolve()
+            if persisted != managed_launcher and persisted.is_file():
+                return persisted
+        return None
 
     def _adopt_managed_launcher(self, launcher_path: Path) -> None:
         if bool(getattr(self.args, "no_autostart", False)):
