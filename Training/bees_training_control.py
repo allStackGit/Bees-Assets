@@ -39,6 +39,13 @@ class ControlRejected(RuntimeError):
     pass
 
 
+class TrainingLogOffsetMismatch(ControlRejected):
+    def __init__(self, expected_offset: int, expected_sha256: str = "") -> None:
+        super().__init__(f"training log offset mismatch; server expects {expected_offset}")
+        self.expected_offset = expected_offset
+        self.expected_sha256 = expected_sha256
+
+
 def load_token(path: str | os.PathLike[str]) -> str:
     value = Path(path).expanduser().read_text(encoding="utf-8").strip()
     if not value:
@@ -219,7 +226,11 @@ class TrainingControlClient:
                     and not isinstance(expected, bool)
                     and expected >= 0
                 ):
-                    return -expected - 1
+                    digest = value.get("expected_sha256")
+                    raise TrainingLogOffsetMismatch(
+                        expected,
+                        digest if isinstance(digest, str) else "",
+                    ) from exc
             if exc.code in (408, 425, 429) or exc.code >= 500:
                 raise ControlUnavailable(
                     f"training-control HTTP {exc.code}: {raw}"
