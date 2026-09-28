@@ -20,7 +20,11 @@ MAX_STEP_SCAN_BYTES = 4 * 1024 * 1024
 MIN_TEXT_LOG_TAIL_BYTES = 128 * 1024
 MODEL_LAG_WARNING_STEPS = 5000
 TRAINER_LOG_STALE_SECONDS = 30.0
-STEP_RE = re.compile(r"\bStep\s*[:=]\s*(\d+)", re.IGNORECASE)
+LEARNER_SUMMARY_RE = re.compile(
+    r"\bStep\s*[:=]\s*([\d,]+).*?"
+    r"\bTime Elapsed\s*[:=]\s*\d+(?:\.\d+)?\s*s",
+    re.IGNORECASE,
+)
 MODEL_STEP_RE = re.compile(r"-(\d+)(?:-[^.]+)?\.onnx$", re.IGNORECASE)
 
 
@@ -257,19 +261,20 @@ def _learner_step(
     learner_log_root: Optional[Path],
     results_root: Optional[Path] = None,
 ) -> Optional[int]:
+    latest: Optional[int] = None
+
     if status_text and status_text.is_file():
         text = _tail_text(status_text)
-        match = re.search(r"Learner logs:\s*Step=(\d+)", text, re.IGNORECASE)
+        match = re.search(r"Learner logs:\s*Step=([\d,]+)", text, re.IGNORECASE)
         if match:
-            return int(match.group(1))
+            latest = int(match.group(1).replace(",", ""))
 
-    latest: Optional[int] = None
     if learner_log_root and learner_log_root.is_dir():
         for path in learner_log_root.rglob("*"):
             if not path.is_file() or path.suffix.lower() not in TEXT_LOG_SUFFIXES:
                 continue
-            for match in STEP_RE.finditer(_tail_text(path)):
-                value = int(match.group(1))
+            for match in LEARNER_SUMMARY_RE.finditer(_tail_text(path)):
+                value = int(match.group(1).replace(",", ""))
                 latest = value if latest is None else max(latest, value)
 
     if results_root and results_root.is_dir():
@@ -642,14 +647,42 @@ def create_bundle(
 
         status_run = _run_from_status(status_json)
         same_live_run = not status_run or status_run == resolved_run
-        learner_step = _learner_step(
+        reported_learner_step = _learner_step(
             status_text if same_live_run else None,
             (bees_root / "Logs" / "Training") if same_live_run else None,
             results_root,
         )
         model_step = _model_step(model, snapshot_value if model_source == "live-snapshot" else None)
+        learner_step = reported_learner_step
+        if (
+            model_source == "live-snapshot"
+            and model_step is not None
+            and (learner_step is None or model_step > learner_step)
+        ):
+            stale_by = (
+                None if learner_step is None else model_step - learner_step
+            )
+            detail = (
+                "no learner step telemetry was available"
+                if stale_by is None
+                else f"reported learner step was {stale_by} steps behind"
+            )
+            warnings.append(
+                "live diagnostic snapshot is newer than learner-step telemetry; "
+                f"{detail} (snapshot={model_step}, reported={learner_step})"
+            )
+            diagnostics.append(
+                {
+                    "kind": "learner-step-stale",
+                    "reported_learner_step": learner_step,
+                    "snapshot_step": model_step,
+                    "lag_steps": stale_by,
+                }
+            )
+            learner_step = model_step
+
         model_lag_steps = (
-            max(0, learner_step - model_step)
+            learner_step - model_step
             if learner_step is not None and model_step is not None
             else None
         )
@@ -708,6 +741,7 @@ def create_bundle(
             "run_id": resolved_run,
             "log_percent": log_percent,
             "learner_step": learner_step,
+            "reported_learner_step": reported_learner_step,
             "model_step": model_step,
             "model_lag_steps": model_lag_steps,
             "model_snapshot": snapshot_value,

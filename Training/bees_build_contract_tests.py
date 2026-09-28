@@ -642,6 +642,19 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         self.assertIn("listLogFiles(managedLearnerLogRoot, false)", status)
         self.assertIn("'LiveExp/s'", status)
         self.assertIn("learner_consumed_steps_per_sec", status)
+        self.assertIn("'Envs', 'LiveExp/s', 'OptExp/s'", status)
+        self.assertIn("function statusError(record)", status)
+        self.assertIn("session_failures_total", status)
+        self.assertIn("seconds_since_last_session_failure", status)
+        self.assertIn("last_session_failure_type", status)
+        self.assertIn("metrics.control", status)
+        self.assertIn("Control x", status)
+        self.assertIn("last_instability_ms", status)
+        self.assertIn("last_instability_reason", status)
+        self.assertIn("Optimizer, ", status)
+        self.assertIn("centralWithoutLocalEnvs", status)
+        self.assertIn("Number(config.numLocalEnvs) === 0", status)
+        self.assertIn("Error: statusError(record)", status)
 
     def test_running_remote_heartbeat_publishes_environment_identity_and_throughput(self):
         source = (ROOT / "Training" / "bees_training_worker_agent.py").read_text(

@@ -84,6 +84,12 @@ def _prune_run_log_directories(root: Path, current_run_id: str) -> None:
         shutil.rmtree(path, ignore_errors=True)
 
 
+def heartbeat_retry_delay(received_desired: bool, heartbeat_seconds: float) -> float:
+    """Retry failed control heartbeats quickly without extending the safety lease."""
+    normal = max(0.1, float(heartbeat_seconds))
+    return normal if received_desired else min(1.0, normal)
+
+
 def heartbeat_last_error(
     last_error: str,
     preparation_error: str,
@@ -1363,6 +1369,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     active_build: Optional[Mapping[str, Any]] = builds.current()
     applied_revision = -1
     last_error = ""
+    control_failures_total = 0
+    last_control_failure_monotonic: Optional[float] = None
+    last_control_failure_type = ""
 
     def worker_capacity() -> dict[str, object]:
         if args.worker_envs is None:
@@ -1395,6 +1404,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             managed.throughput_metrics_file,
             run_id=run_id,
         )
+        if control_failures_total > 0 and last_control_failure_monotonic is not None:
+            snapshot["control"] = {
+                "failures_total": control_failures_total,
+                "seconds_since_last_failure": max(
+                    0.0,
+                    time.monotonic() - last_control_failure_monotonic,
+                ),
+                "last_failure_type": last_control_failure_type,
+            }
         return snapshot
 
     def request_stop(_signum: int, _frame: object) -> None:
@@ -1764,6 +1782,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     )
             except (ControlUnavailable, ControlRejected, OSError, ValueError, RuntimeError) as exc:
                 error_text = f"{type(exc).__name__}: {exc}"
+                if isinstance(exc, (ControlUnavailable, ControlRejected)):
+                    control_failures_total += 1
+                    last_control_failure_monotonic = time.monotonic()
+                    last_control_failure_type = type(exc).__name__
                 offline = last_contact <= 0 or time.monotonic() - last_contact > lease_seconds
                 transient_control_error = isinstance(exc, ControlUnavailable) and not offline
                 if not transient_control_error:
@@ -1820,7 +1842,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         file=sys.stderr,
                     )
 
-            deadline = time.monotonic() + args.heartbeat_seconds
+            deadline = time.monotonic() + heartbeat_retry_delay(
+                received_desired,
+                args.heartbeat_seconds,
+            )
             while not stop and time.monotonic() < deadline:
                 if shutdown_request_file is not None and shutdown_request_file.is_file():
                     stop = True

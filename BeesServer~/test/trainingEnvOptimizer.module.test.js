@@ -273,6 +273,7 @@ test('optimizer holds a recovered worker before probing again after a reported f
     assert.equal(state.desired_envs, 8);
     assert.equal(state.probing, false);
     assert.equal(state.stability_hold_until_ms, 10_000);
+    assert.match(state.last_instability_reason, /Unity communicator stopped/);
 
     state = update(optimizer, 'remote-a', 8, 500, 5_000, { max: 16 });
     assert.equal(state.phase, 'stability-hold');
@@ -314,6 +315,7 @@ test('recent internal WAN actor failure holds probes without extending the hold 
     assert.equal(state.phase, 'stability-hold');
     assert.equal(state.stability_hold_until_ms, 26_000);
     assert.match(state.decision, /WAN actor session failure/);
+    assert.equal(state.last_instability_reason, 'WAN actor session failure');
 
     state = update(
         optimizer,
@@ -344,6 +346,36 @@ test('recent internal WAN actor failure holds probes without extending the hold 
     );
     assert.equal(state.phase, 'warmup');
     assert.match(state.decision, /collecting fresh baseline/);
+});
+
+test('recent WAN failure aborts a probe with the correct reason', () => {
+    const optimizer = new TrainingEnvOptimizer({
+        warmupMs: 0,
+        measurementMs: 1000,
+        cooldownMs: 0,
+        instabilityHoldMs: 10_000,
+    });
+
+    update(optimizer, 'remote-a', 8, 0, 0, { max: 16 });
+    let state = update(optimizer, 'remote-a', 8, 1000, 1000, { max: 16 });
+    assert.equal(state.desired_envs, 9);
+
+    state = update(
+        optimizer,
+        'remote-a',
+        9,
+        0,
+        1010,
+        {
+            max: 16,
+            processState: 'running',
+            sessionFailures: 1,
+            failureAgeSeconds: 1,
+        },
+    );
+
+    assert.equal(state.desired_envs, 8);
+    assert.match(state.decision, /WAN actor session failed/);
 });
 
 test('fresh worker startup does not create an instability hold before a baseline exists', () => {
@@ -398,6 +430,30 @@ test('planned env-count transition does not create an instability hold', () => {
         0,
         1010,
         { max: 16, processState: 'starting' },
+    );
+    assert.equal(state.phase, 'awaiting-restart');
+    assert.equal(state.stability_hold_until_ms, 0);
+    assert.match(state.decision, /waiting for planned worker restart/);
+
+    state = update(
+        optimizer,
+        'remote-a',
+        9,
+        0,
+        1011,
+        { max: 16, processState: 'starting' },
+    );
+    assert.equal(state.phase, 'awaiting-restart');
+    assert.equal(state.stability_hold_until_ms, 0);
+    assert.equal(state.last_instability_ms, null);
+
+    state = update(
+        optimizer,
+        'remote-a',
+        9,
+        0,
+        1012,
+        { max: 16, processState: 'running' },
     );
     assert.equal(state.phase, 'warmup');
     assert.equal(state.stability_hold_until_ms, 0);

@@ -93,6 +93,36 @@ class ElasticActorThroughputTests(unittest.TestCase):
         session._write_throughput_metrics.assert_called_once_with()
 
 
+class ElasticActorFailureTelemetryTests(unittest.TestCase):
+    def test_session_failure_history_survives_actor_restart_within_same_run(self):
+        with tempfile.TemporaryDirectory() as temp:
+            state_path = Path(temp) / actor_worker.SESSION_FAILURE_STATE_FILE
+            telemetry = actor_worker._SessionFailureTelemetry(
+                state_path=state_path,
+                run_id="run-a",
+            )
+            with mock.patch.object(actor_worker.time, "time", return_value=100.0):
+                telemetry.record(RuntimeError("simulated failure"))
+
+            restarted = actor_worker._SessionFailureTelemetry(
+                state_path=state_path,
+                run_id="run-a",
+            )
+            with mock.patch.object(actor_worker.time, "time", return_value=106.0):
+                snapshot = restarted.snapshot()
+
+            self.assertEqual(snapshot["session_failures_total"], 1)
+            self.assertEqual(snapshot["seconds_since_last_session_failure"], 6.0)
+            self.assertEqual(snapshot["last_session_failure_type"], "RuntimeError")
+
+            next_run = actor_worker._SessionFailureTelemetry(
+                state_path=state_path,
+                run_id="run-b",
+            )
+            self.assertEqual(next_run.snapshot()["session_failures_total"], 0)
+            self.assertEqual(next_run.snapshot()["last_session_failure_type"], "")
+
+
 class ElasticActorHealthTests(unittest.TestCase):
     def test_broker_absence_is_healthy_wait_not_child_error(self):
         exc = actor_worker.worker.BrokerUnavailable("central release phase")

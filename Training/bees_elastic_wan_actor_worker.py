@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import secrets
 import signal
@@ -26,7 +27,7 @@ import bees_elastic_wan_actor_session as elastic_session
 import bees_elastic_wan_training as elastic
 import bees_wan_actor_training as wan
 import bees_wan_actor_worker as worker
-from bees_process_safety import write_managed_health
+from bees_process_safety import atomic_write_text, write_managed_health
 
 
 MANAGED_STOP_FILE_ENV = "BEES_TRAINING_STOP_FILE"
@@ -34,6 +35,7 @@ MANAGED_STOP_FILE_ENV = "BEES_TRAINING_STOP_FILE"
 
 MAX_RECONNECT_BACKOFF_SECONDS = 30.0
 HEALTHY_SESSION_RESET_SECONDS = 60.0
+SESSION_FAILURE_STATE_FILE = "worker-session-failures.json"
 
 
 class _ReconnectBackoff:
@@ -98,24 +100,94 @@ class _StartupHealthHeartbeat:
 
 
 class _SessionFailureTelemetry:
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        state_path: Optional[Path] = None,
+        run_id: str = "",
+    ) -> None:
         self._lock = threading.Lock()
+        self._state_path = state_path
+        self._run_id = str(run_id or "")
         self._count = 0
-        self._last_failure_monotonic: Optional[float] = None
+        self._last_failure_unix_seconds: Optional[float] = None
         self._last_failure_type = ""
+        loaded = self._load()
+        if self._state_path is not None and self._run_id and not loaded:
+            self._persist()
+
+    def _load(self) -> bool:
+        path = self._state_path
+        if path is None or not path.is_file():
+            return False
+        try:
+            value = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            return False
+        if not isinstance(value, Mapping):
+            return False
+        if value.get("schema_version") != 1 or str(value.get("run_id") or "") != self._run_id:
+            return False
+        count = value.get("session_failures_total")
+        last_failure = value.get("last_failure_unix_seconds")
+        failure_type = value.get("last_session_failure_type")
+        if (
+            not isinstance(count, int)
+            or isinstance(count, bool)
+            or count < 0
+            or (
+                last_failure is not None
+                and (
+                    not isinstance(last_failure, (int, float))
+                    or isinstance(last_failure, bool)
+                    or not math.isfinite(float(last_failure))
+                    or float(last_failure) < 0.0
+                )
+            )
+            or not isinstance(failure_type, str)
+        ):
+            return False
+        self._count = count
+        self._last_failure_unix_seconds = (
+            None if last_failure is None else float(last_failure)
+        )
+        self._last_failure_type = failure_type
+        return True
+
+    def _persist(self) -> None:
+        path = self._state_path
+        if path is None or not self._run_id:
+            return
+        payload = {
+            "schema_version": 1,
+            "run_id": self._run_id,
+            "session_failures_total": self._count,
+            "last_failure_unix_seconds": self._last_failure_unix_seconds,
+            "last_session_failure_type": self._last_failure_type,
+        }
+        try:
+            atomic_write_text(
+                path,
+                json.dumps(payload, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+        except OSError:
+            # Failure history is diagnostic. Never stop rollout work because persistence failed.
+            return
 
     def record(self, exc: BaseException) -> None:
         with self._lock:
             self._count += 1
-            self._last_failure_monotonic = time.monotonic()
+            self._last_failure_unix_seconds = time.time()
             self._last_failure_type = type(exc).__name__
+            self._persist()
 
     def snapshot(self) -> dict[str, Any]:
         with self._lock:
             age = (
                 None
-                if self._last_failure_monotonic is None
-                else max(0.0, time.monotonic() - self._last_failure_monotonic)
+                if self._last_failure_unix_seconds is None
+                else max(0.0, time.time() - self._last_failure_unix_seconds)
             )
             return {
                 "session_failures_total": self._count,
@@ -487,7 +559,19 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     old_sigint = signal.signal(signal.SIGINT, request_stop)
     old_sigterm = signal.signal(signal.SIGTERM, request_stop)
     try:
-        failure_telemetry = _SessionFailureTelemetry()
+        throughput_value = os.environ.get(worker.THROUGHPUT_METRICS_ENV, "").strip()
+        telemetry_run_id = os.environ.get(worker.TRAINING_RUN_ID_ENV, "").strip()
+        failure_state_path = (
+            Path(throughput_value).expanduser().resolve().with_name(
+                SESSION_FAILURE_STATE_FILE
+            )
+            if throughput_value and telemetry_run_id
+            else None
+        )
+        failure_telemetry = _SessionFailureTelemetry(
+            state_path=failure_state_path,
+            run_id=telemetry_run_id,
+        )
         reconnect_backoff = _ReconnectBackoff(args.reconnect_seconds)
         client = ElasticBrokerClient(
             args.broker_host,

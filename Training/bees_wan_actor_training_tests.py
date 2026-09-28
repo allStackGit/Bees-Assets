@@ -45,6 +45,40 @@ def fake_run_options():
     )
 
 
+class WanHttpResponseTests(unittest.TestCase):
+    @staticmethod
+    def _handler(write_side_effect):
+        return SimpleNamespace(
+            send_response=mock.Mock(),
+            send_header=mock.Mock(),
+            end_headers=mock.Mock(),
+            wfile=SimpleNamespace(write=mock.Mock(side_effect=write_side_effect)),
+        )
+
+    def test_peer_disconnect_during_response_write_is_ignored(self):
+        handler = self._handler(ConnectionAbortedError("peer disconnected"))
+
+        wan._send_http_response(
+            handler,
+            status=200,
+            content_type="application/json",
+            body=b"{}",
+        )
+
+        handler.wfile.write.assert_called_once_with(b"{}")
+
+    def test_unrelated_response_write_error_is_not_hidden(self):
+        handler = self._handler(OSError("unexpected write failure"))
+
+        with self.assertRaisesRegex(OSError, "unexpected write failure"):
+            wan._send_http_response(
+                handler,
+                status=200,
+                content_type="application/json",
+                body=b"{}",
+            )
+
+
 class WanOptionTests(unittest.TestCase):
     def test_actor_topology_is_deterministic_and_non_overlapping(self):
         options = wan.WanActorOptions(

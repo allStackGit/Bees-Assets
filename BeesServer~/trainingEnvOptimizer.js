@@ -124,6 +124,7 @@ class TrainingEnvOptimizer {
             retest_after_ms: 0,
             instability_hold_until_ms: 0,
             last_instability_ms: null,
+            last_instability_reason: '',
             last_update_ms: now,
             metrics_missing_since_ms: null,
         };
@@ -365,6 +366,18 @@ class TrainingEnvOptimizer {
         const reportedError = typeof record.last_error === 'string'
             ? record.last_error.trim()
             : '';
+
+        // Reaching the requested env count does not mean the restarted worker is ready yet.
+        // Keep a planned env-count transition in awaiting-restart while child health still
+        // reports "starting"; begin warmup only after the process reports "running".
+        if (
+            state.phase === 'awaiting-restart' &&
+            processState === 'starting' &&
+            !reportedError
+        ) {
+            state.last_decision = 'waiting for planned worker restart to become running';
+            return this.snapshot(record.trainer_id);
+        }
         const recentSessionFailure =
             sessionFailureAgeSeconds !== null &&
             sessionFailureAgeSeconds * 1000 < this.instabilityHoldMs;
@@ -392,6 +405,17 @@ class TrainingEnvOptimizer {
             const holdUntil = useSessionFailureTime
                 ? timestamp + Math.max(0, this.instabilityHoldMs - sessionFailureAgeMs)
                 : timestamp + this.instabilityHoldMs;
+            const instabilityReason = reportedError
+                ? 'worker-reported error: ' + reportedError
+                : recentSessionFailure
+                    ? 'WAN actor session failure'
+                    : 'worker process state ' + (processState || 'unknown');
+            if (
+                state.last_instability_ms === null ||
+                instabilityTime >= state.last_instability_ms
+            ) {
+                state.last_instability_reason = instabilityReason;
+            }
             state.last_instability_ms = Math.max(
                 state.last_instability_ms ?? Number.NEGATIVE_INFINITY,
                 instabilityTime,
@@ -407,7 +431,9 @@ class TrainingEnvOptimizer {
                     timestamp,
                     reportedError
                         ? 'probe worker reported an error'
-                        : 'probe process is not running',
+                        : recentSessionFailure
+                            ? 'probe WAN actor session failed'
+                            : 'probe process is not running',
                 );
                 return this.snapshot(record.trainer_id);
             }
@@ -568,6 +594,7 @@ class TrainingEnvOptimizer {
             probing: this.activeProbeTrainerId === trainerId,
             stability_hold_until_ms: state.instability_hold_until_ms,
             last_instability_ms: state.last_instability_ms,
+            last_instability_reason: state.last_instability_reason,
         };
     }
 

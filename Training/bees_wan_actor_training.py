@@ -51,6 +51,31 @@ MAX_DECOMPRESSED_PAYLOAD_BYTES = 1024 * 1024 * 1024
 MIN_AUTH_TOKEN_CHARS = 32
 
 
+def _send_http_response(
+    handler: Any,
+    *,
+    status: int,
+    content_type: str,
+    body: bytes,
+    headers: Optional[Mapping[str, str]] = None,
+) -> None:
+    """Send a broker response while treating peer disconnects as normal transport churn."""
+    try:
+        handler.send_response(status)
+        handler.send_header("Content-Type", content_type)
+        handler.send_header("Content-Length", str(len(body)))
+        for key, value in (headers or {}).items():
+            handler.send_header(key, value)
+        handler.end_headers()
+        if body:
+            handler.wfile.write(body)
+    except ConnectionError:
+        # Remote actors may reconnect or cancel long-poll requests while a response is being
+        # written. The request is already abandoned; do not turn normal peer disconnects into
+        # noisy ThreadingHTTPServer tracebacks or learner failures.
+        return
+
+
 @dataclass(frozen=True)
 class WanActorOptions:
     actor_count: int = 0
@@ -391,11 +416,12 @@ class WanActorBroker:
 
             def _error(self, status: int, code: str, message: str) -> None:
                 body = json.dumps({"error": code, "message": message}).encode("utf-8")
-                self.send_response(status)
-                self.send_header("Content-Type", "application/json")
-                self.send_header("Content-Length", str(len(body)))
-                self.end_headers()
-                self.wfile.write(body)
+                _send_http_response(
+                    self,
+                    status=status,
+                    content_type="application/json",
+                    body=body,
+                )
 
             def _binary(
                 self,
@@ -404,22 +430,22 @@ class WanActorBroker:
                 status: int = 200,
                 headers: Optional[Mapping[str, str]] = None,
             ) -> None:
-                self.send_response(status)
-                self.send_header("Content-Type", "application/octet-stream")
-                self.send_header("Content-Length", str(len(body)))
-                for key, value in (headers or {}).items():
-                    self.send_header(key, value)
-                self.end_headers()
-                if body:
-                    self.wfile.write(body)
+                _send_http_response(
+                    self,
+                    status=status,
+                    content_type="application/octet-stream",
+                    body=body,
+                    headers=headers,
+                )
 
             def _json(self, value: Mapping[str, Any], *, status: int = 200) -> None:
                 body = json.dumps(value, sort_keys=True).encode("utf-8")
-                self.send_response(status)
-                self.send_header("Content-Type", "application/json")
-                self.send_header("Content-Length", str(len(body)))
-                self.end_headers()
-                self.wfile.write(body)
+                _send_http_response(
+                    self,
+                    status=status,
+                    content_type="application/json",
+                    body=body,
+                )
 
             def _session_guard(self, query: Mapping[str, List[str]]) -> bool:
                 session = query.get("session", [""])[0]

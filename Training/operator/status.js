@@ -161,6 +161,77 @@ function number(value, digits = 1, suffix = '') {
     return Number(value).toFixed(digits) + suffix;
 }
 
+function statusError(record) {
+    const current = String(record.last_error || record.preparation_error || '').trim();
+    if (current) return current;
+
+    const ageLabel = ageSeconds => {
+        if (ageSeconds < 60) return Math.round(ageSeconds) + 's';
+        if (ageSeconds < 3600) return (ageSeconds / 60).toFixed(1) + 'm';
+        return (ageSeconds / 3600).toFixed(1) + 'h';
+    };
+    const historical = [];
+    const metrics = record.metrics && typeof record.metrics === 'object'
+        ? record.metrics
+        : {};
+
+    const throughput = metrics.throughput;
+    if (throughput && typeof throughput === 'object') {
+        const count = Number(throughput.session_failures_total);
+        const ageSeconds = Number(throughput.seconds_since_last_session_failure);
+        const failureType = String(throughput.last_session_failure_type || '').trim();
+        if (
+            Number.isInteger(count) &&
+            count > 0 &&
+            Number.isFinite(ageSeconds) &&
+            ageSeconds >= 0 &&
+            failureType
+        ) {
+            historical.push({
+                ageSeconds,
+                text: 'WAN session x' + count + ', ' + ageLabel(ageSeconds) +
+                    ' ago: ' + failureType,
+            });
+        }
+    }
+
+    const control = metrics.control;
+    if (control && typeof control === 'object') {
+        const count = Number(control.failures_total);
+        const ageSeconds = Number(control.seconds_since_last_failure);
+        const failureType = String(control.last_failure_type || '').trim();
+        if (
+            Number.isInteger(count) &&
+            count > 0 &&
+            Number.isFinite(ageSeconds) &&
+            ageSeconds >= 0 &&
+            failureType
+        ) {
+            historical.push({
+                ageSeconds,
+                text: 'Control x' + count + ', ' + ageLabel(ageSeconds) +
+                    ' ago: ' + failureType,
+            });
+        }
+    }
+
+    const optimizer = record.env_optimizer;
+    const instabilityMs = Number(optimizer && optimizer.last_instability_ms);
+    const instabilityReason = String(
+        optimizer && (optimizer.last_instability_reason || optimizer.decision) || ''
+    ).trim();
+    if (Number.isFinite(instabilityMs) && instabilityMs >= 0 && instabilityReason) {
+        const ageSeconds = Math.max(0, (Date.now() - instabilityMs) / 1000);
+        historical.push({
+            ageSeconds,
+            text: 'Optimizer, ' + ageLabel(ageSeconds) + ' ago: ' + instabilityReason,
+        });
+    }
+
+    historical.sort((left, right) => left.ageSeconds - right.ageSeconds);
+    return historical.length ? historical[0].text : '';
+}
+
 function table(rows, columns) {
     if (!rows.length) return [];
     const widths = {};
@@ -336,7 +407,12 @@ async function getStatusFrameLines(config, adminToken) {
             const liveExpRate = throughput.learner_consumed_steps_per_sec != null
                 ? number(throughput.learner_consumed_steps_per_sec, 0)
                 : '-';
-            const episodes = Number(metrics.window_episodes || 0);
+            const centralWithoutLocalEnvs =
+                String(record.trainer_id || '') === 'central-learner' &&
+                Number(config.numLocalEnvs) === 0;
+            const episodes = centralWithoutLocalEnvs
+                ? 0
+                : Number(metrics.window_episodes || 0);
             return {
                 Trainer: String(record.trainer_id || '-'),
                 Role: String(record.role || '-'),
@@ -371,13 +447,13 @@ async function getStatusFrameLines(config, adminToken) {
                 'H<5': episodes && metrics.human_aim_within_5_pct != null ? number(metrics.human_aim_within_5_pct, 1, '%') : '-',
                 BAligned: episodes && metrics.bee_turret_aligned_pct != null ? number(metrics.bee_turret_aligned_pct, 1, '%') : '-',
                 HAligned: episodes && metrics.human_turret_aligned_pct != null ? number(metrics.human_turret_aligned_pct, 1, '%') : '-',
-                Error: String(record.last_error || ''),
+                Error: statusError(record),
             };
         });
 
         if (rows.length) {
             lines.push(...table(rows, [
-                'Trainer', 'Role', 'Platform', 'State', 'Envs', 'OptExp/s',
+                'Trainer', 'Role', 'Platform', 'State', 'Envs', 'LiveExp/s', 'OptExp/s',
                 'SentGiB', 'RecvGiB', 'MiB/s', 'Opt', 'Build', 'Rev', 'Age',
                 'Timeout', 'BWin', 'HWin', 'Draw', 'Dur', 'BHit/Sh', 'HHit/Sh',
                 'BAim', 'HAim', 'B<5', 'H<5', 'BAligned', 'HAligned', 'Error',
@@ -443,5 +519,6 @@ module.exports = {
     getStatusFrameLines,
     rolloutBlockers,
     showStatus,
+    statusError,
     table,
 };

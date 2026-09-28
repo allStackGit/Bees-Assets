@@ -123,6 +123,13 @@ class WorkerLiveThroughputTests(unittest.TestCase):
             self.assertEqual(result["learner_consumed_steps_per_sec"], 96.25)
 
 
+class WorkerControlRetryTests(unittest.TestCase):
+    def test_failed_heartbeat_retries_quickly_without_extending_normal_cadence(self):
+        self.assertEqual(worker_agent.heartbeat_retry_delay(True, 5.0), 5.0)
+        self.assertEqual(worker_agent.heartbeat_retry_delay(False, 5.0), 1.0)
+        self.assertEqual(worker_agent.heartbeat_retry_delay(False, 0.5), 0.5)
+
+
 class WorkerTrafficMetricsTests(unittest.TestCase):
     def test_persisted_network_totals_fill_session_gap_for_same_run(self):
         with tempfile.TemporaryDirectory() as temp:
