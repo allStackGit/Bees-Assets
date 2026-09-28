@@ -8,6 +8,8 @@ None currently confirmed. The active audit continues; resolved findings have bee
 
 ## Audit status
 
+- REG-136 rejects symlinked or size-changed canonical artifacts at startup and before serving; SHA-256 remains verified by the worker. Existing tamper-on-reload coverage remains valid; a targeted symlink case is missing under the static-only constraint. This production change resets the post-fix clean-pass count to **0 / 2**.
+
 - REG-135 rejects unrepresentable and non-finite control-plane lease values before the supervisor converts or uses them. The regression invariant is documented in `docs/engineering/REGRESSIONS.md`; no test was added or run under the static-only request. This production fix resets the post-fix clean-pass count to **0 / 2**.
 
 - REG-118 closes callback processing immediately after campaign level teardown and adds a source-level regression guard. This production change resets the post-fix clean-pass count to **0 / 2**. The regression guard was not run.
