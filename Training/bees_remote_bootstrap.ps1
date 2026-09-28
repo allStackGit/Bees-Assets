@@ -191,15 +191,23 @@ try {
         $AutostartMonitor + '"' + [Environment]::NewLine
     [IO.File]::WriteAllText($AutostartFile,$line,(New-Object Text.UTF8Encoding($false)))
 
-    if($null -eq (Get-LiveAutostartMonitor)){
-        $monitorProcess=Start-Process -FilePath 'powershell.exe' -ArgumentList @(
-            '-NoLogo','-NoProfile','-ExecutionPolicy','Bypass','-WindowStyle','Hidden',
-            '-File',('"' + $AutostartMonitor + '"')
-        ) -WindowStyle Hidden -PassThru
-        Start-Sleep -Milliseconds 250
-        if($monitorProcess.HasExited){
-            Write-Warning '[Bees remote] Windows worker watchdog exited during startup; reboot persistence remains registered.'
-        }
+    # Re-registration can move persistence from the originally copied launcher to the
+    # install-root managed launcher. Replace the live monitor so it immediately adopts the
+    # newly written launcher/configuration instead of holding old values until next logon.
+    $oldMonitor=Get-LiveAutostartMonitor
+    if($null -ne $oldMonitor){
+        Stop-Process -Id $oldMonitor.Id -Force -ErrorAction SilentlyContinue
+        try {$oldMonitor.WaitForExit(5000)} catch {}
+        Remove-Item -LiteralPath $AutostartMonitorPidFile -Force -ErrorAction SilentlyContinue
+    }
+
+    $monitorProcess=Start-Process -FilePath 'powershell.exe' -ArgumentList @(
+        '-NoLogo','-NoProfile','-ExecutionPolicy','Bypass','-WindowStyle','Hidden',
+        '-File',('"' + $AutostartMonitor + '"')
+    ) -WindowStyle Hidden -PassThru
+    Start-Sleep -Milliseconds 250
+    if($monitorProcess.HasExited){
+        Write-Warning '[Bees remote] Windows worker watchdog exited during startup; reboot persistence remains registered.'
     }
 }
 
