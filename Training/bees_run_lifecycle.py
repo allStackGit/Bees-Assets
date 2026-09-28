@@ -95,6 +95,28 @@ def _semantic_csharp_sha256(path: Path) -> str:
     return _sha256_bytes("".join(output).strip().encode("utf-8"))
 
 
+
+def _semantic_csharp_tree_sha256(root: Path, assets_root: Path) -> str:
+    """Hash every C# implementation file under a gameplay source tree."""
+    if not root.is_dir():
+        raise ValueError(f"training compatibility source tree is missing: {root}")
+    sources = sorted(
+        root.rglob("*.cs"),
+        key=lambda path: path.relative_to(assets_root).as_posix(),
+    )
+    if not sources:
+        raise ValueError(f"training compatibility source tree is empty: {root}")
+
+    digest = hashlib.sha256()
+    for path in sources:
+        relative_path = path.relative_to(assets_root).as_posix()
+        digest.update(relative_path.encode("utf-8"))
+        digest.update(b"\\0")
+        digest.update(_semantic_csharp_sha256(path).encode("ascii"))
+        digest.update(b"\\n")
+    return digest.hexdigest()
+
+
 def _network_settings_block(text: str) -> str:
     lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
     start = None
@@ -166,6 +188,13 @@ def contract_payload(assets_root: Path) -> dict[str, Any]:
     payload["policy_schema_source_sha256"] = _semantic_csharp_sha256(policy_path)
     for name, path in semantic_sources.items():
         payload[name] = _semantic_csharp_sha256(path)
+    # RL episodes execute the shared gameplay entities for movement, weapon behavior,
+    # projectiles, damage, and ship-specific balance. Keep checkpoints incompatible when
+    # any of those mechanics change, even when RL adapter/reward code is untouched.
+    payload["gameplay_entities_source_sha256"] = _semantic_csharp_tree_sha256(
+        assets_root / "Scripts" / "Entities",
+        assets_root,
+    )
     return payload
 
 
