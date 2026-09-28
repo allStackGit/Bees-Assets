@@ -138,6 +138,17 @@ def worker_health_error_after_exception(
     return error_text
 
 
+def effective_metrics_run_id(
+    desired: Optional[Mapping[str, Any]],
+    managed_run_id: str,
+) -> str:
+    if isinstance(desired, Mapping):
+        desired_run_id = str(desired.get("run_id", "") or "").strip()
+        if desired_run_id:
+            return desired_run_id
+    return str(managed_run_id or "").strip()
+
+
 def environment_args_identity(environment_args: Sequence[str]) -> str:
     payload = json.dumps(
         [str(value) for value in environment_args],
@@ -1522,11 +1533,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         reconciliation_started_monotonic = time.monotonic() if normalized else None
 
     def metrics_run_id() -> str:
-        if isinstance(desired, Mapping):
-            desired_run_id = str(desired.get("run_id", "") or "").strip()
-            if desired_run_id:
-                return desired_run_id
-        return str(managed.run_id or "").strip()
+        return effective_metrics_run_id(desired, managed.run_id)
 
     def worker_capacity() -> dict[str, object]:
         if args.worker_envs is None:
