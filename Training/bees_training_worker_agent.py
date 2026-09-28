@@ -805,14 +805,13 @@ class ManagedProcess:
         state = str(health.get("state", ""))
         if state == "error":
             return str(health.get("error") or "managed child reported an internal failure")
-        if state == "starting":
-            updated = health.get("updated_unix_seconds")
-            if isinstance(updated, (int, float)) and not isinstance(updated, bool):
-                age = max(0.0, time.time() - float(updated))
-                if age < CHILD_HEALTH_STALE_SECONDS:
-                    return ""
+        updated = health.get("updated_unix_seconds")
+        if isinstance(updated, (int, float)) and not isinstance(updated, bool):
+            age = max(0.0, time.time() - float(updated))
+            if age >= CHILD_HEALTH_STALE_SECONDS:
+                phase = "startup" if state == "starting" else state or "unknown"
                 return (
-                    "managed child startup health has not refreshed for "
+                    f"managed child {phase} health has not refreshed for "
                     f"{age:.1f} seconds"
                 )
         return ""
@@ -1087,6 +1086,7 @@ def dedicated_process_matches_desired(
         and managed.compatibility_key == str(compatibility_key).strip().lower()
         and managed.environment_args == tuple(str(value) for value in environment_args)
         and managed.worker_env_count == worker_env_count
+        and not managed.health_error()
     )
 
 
