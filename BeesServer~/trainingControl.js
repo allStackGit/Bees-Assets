@@ -1948,7 +1948,7 @@ function startTrainingControl(options = {}) {
     const token = options.token || process.env.BEES_TRAINING_CONTROL_TOKEN;
     const adminToken = options.adminToken || process.env.BEES_TRAINING_CONTROL_ADMIN_TOKEN || null;
     if (!token) throw new Error('BEES_TRAINING_CONTROL_TOKEN is required for training control.');
-    const port = Number(options.port || process.env.BEES_TRAINING_CONTROL_PORT || DEFAULT_PORT);
+    const port = Number(options.port ?? process.env.BEES_TRAINING_CONTROL_PORT ?? DEFAULT_PORT);
     const host = options.host || process.env.BEES_TRAINING_CONTROL_HOST || DEFAULT_HOST;
     if (!Number.isInteger(port) || port <= 0 || port > 65535) {
         throw new Error('training-control port must be in 1-65535');
@@ -1957,7 +1957,7 @@ function startTrainingControl(options = {}) {
         statePath: options.statePath || process.env.BEES_TRAINING_CONTROL_STATE,
         artifactRoot: options.artifactRoot || process.env.BEES_TRAINING_ARTIFACT_ROOT,
         logRoot: options.logRoot || process.env.BEES_TRAINING_LOG_ROOT,
-        leaseSeconds: options.leaseSeconds || process.env.BEES_TRAINING_CONTROL_LEASE_SECONDS,
+        leaseSeconds: options.leaseSeconds ?? process.env.BEES_TRAINING_CONTROL_LEASE_SECONDS,
         environmentValidationSecret:
             options.environmentValidationSecret ||
             process.env.BEES_TRAINING_ENVIRONMENT_VALIDATION_SECRET,
