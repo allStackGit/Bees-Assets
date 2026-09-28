@@ -91,14 +91,40 @@ class ContinualServiceTests(unittest.TestCase):
         fake.poll.return_value = None
         fake.wait.return_value = 0
 
-        with mock.patch.object(service.os, "name", "nt"):
+        with (
+            mock.patch.object(service.os, "name", "nt"),
+            mock.patch.object(service, "terminate_owned_processes") as terminate_tree,
+        ):
             service._stop_interruptible_managed_child(fake)
 
         fake.terminate.assert_called_once_with()
         fake.kill.assert_not_called()
+        terminate_tree.assert_called_once_with()
         fake.wait.assert_called_once_with(
             timeout=service.MANAGED_INTERRUPTIBLE_STOP_SECONDS
         )
+
+    def test_windows_completed_owned_child_cleans_remaining_descendants(self):
+        options = self._options(Path("."))
+        fake = mock.Mock()
+        fake.pid = 9191
+        fake.poll.return_value = 0
+        fake.wait.return_value = 0
+
+        with (
+            mock.patch.object(service.os, "name", "nt"),
+            mock.patch.object(service.subprocess, "CREATE_NEW_PROCESS_GROUP", 512, create=True),
+            mock.patch.object(service, "_managed_stop_requested", return_value=False),
+            mock.patch.object(service, "popen_owned", return_value=fake),
+            mock.patch.object(service, "write_managed_health"),
+            mock.patch.object(service, "terminate_owned_processes") as terminate_tree,
+        ):
+            self.assertEqual(
+                service._run_managed_subprocess(["python", "release.py"], options),
+                0,
+            )
+
+        terminate_tree.assert_called_once_with()
 
     def test_interruptible_phase_escalates_if_graceful_termination_does_not_exit(self):
         fake = mock.Mock()
