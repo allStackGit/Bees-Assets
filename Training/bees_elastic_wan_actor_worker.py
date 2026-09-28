@@ -421,13 +421,28 @@ def _elastic_session(
     worker_base = session.get("remote_worker_base")
     stride = session.get("worker_stride")
     capacity_envs = session.get("capacity_envs")
-    if not isinstance(max_actors, int) or not 1 <= max_actors <= elastic.MAX_REMOTE_ACTORS:
+    if (
+        not isinstance(max_actors, int)
+        or isinstance(max_actors, bool)
+        or not 1 <= max_actors <= elastic.MAX_REMOTE_ACTORS
+    ):
         raise RuntimeError("Elastic WAN session has an invalid max_actors value")
-    if max_envs != elastic.MAX_ENVS_PER_ACTOR or stride != elastic.MAX_ENVS_PER_ACTOR:
+    if (
+        not isinstance(max_envs, int)
+        or isinstance(max_envs, bool)
+        or max_envs != elastic.MAX_ENVS_PER_ACTOR
+        or not isinstance(stride, int)
+        or isinstance(stride, bool)
+        or stride != elastic.MAX_ENVS_PER_ACTOR
+    ):
         raise RuntimeError("Elastic WAN worker-slot contract is incompatible with this actor helper")
-    if not isinstance(worker_base, int) or worker_base < 0:
+    if not isinstance(worker_base, int) or isinstance(worker_base, bool) or worker_base < 0:
         raise RuntimeError("Elastic WAN session has an invalid remote_worker_base")
-    if not isinstance(capacity_envs, int) or capacity_envs <= worker_base:
+    if (
+        not isinstance(capacity_envs, int)
+        or isinstance(capacity_envs, bool)
+        or capacity_envs <= worker_base
+    ):
         raise RuntimeError("Elastic WAN session has an invalid capacity_envs value")
     if not 0 <= actor_id < max_actors:
         raise RuntimeError(f"actor id {actor_id} is outside central slot count {max_actors}")
