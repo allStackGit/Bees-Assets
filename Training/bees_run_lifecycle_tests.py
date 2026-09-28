@@ -73,11 +73,11 @@ class RunLifecycleTests(unittest.TestCase):
             "RlPlayerDerivedTacticalGeometry.cs",
         ):
             (scenes / source_name).write_text(
-                f"// fixture for {source_name}\\n",
+                f"// fixture for {source_name}\n",
                 encoding="utf-8",
             )
         (scenes / "RlOneVsOneTrainingOptions.cs").write_text(
-            "public static class RlOneVsOneTrainingOptions { const int DefaultMapSize = 32; }\\n",
+            "public static class RlOneVsOneTrainingOptions { const int DefaultMapSize = 32; }\n",
             encoding="utf-8",
         )
         return assets
@@ -110,7 +110,7 @@ class RunLifecycleTests(unittest.TestCase):
 
             options = assets / "Scripts" / "Scenes" / "RlOneVsOneTrainingOptions.cs"
             options.write_text(
-                "public static class RlOneVsOneTrainingOptions { const int DefaultMapSize = 64; }\\n",
+                "public static class RlOneVsOneTrainingOptions { const int DefaultMapSize = 64; }\n",
                 encoding="utf-8",
             )
             changed = lifecycle.plan_run(assets, state)
