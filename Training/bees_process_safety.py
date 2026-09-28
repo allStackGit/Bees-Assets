@@ -10,6 +10,7 @@ import atexit
 import ctypes
 import errno
 import json
+import math
 import os
 from pathlib import Path
 import secrets
@@ -134,6 +135,12 @@ def read_managed_health(path: Optional[Path], token: str) -> Optional[dict[str, 
         or isinstance(updated, bool)
         or not isinstance(error, str)
     ):
+        return None
+    try:
+        updated_seconds = float(updated)
+    except (OverflowError, ValueError):
+        return None
+    if not math.isfinite(updated_seconds):
         return None
     return dict(value)
 
