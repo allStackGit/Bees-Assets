@@ -336,7 +336,7 @@ test('optimizer holds a recovered worker before probing again after a reported f
 test('brief stopped heartbeat during runtime cutover does not trigger stability hold', () => {
     const optimizer = new TrainingEnvOptimizer({
         warmupMs: 0,
-        measurementMs: 1000,
+        measurementMs: 1_000_000,
         cooldownMs: 0,
         instabilityHoldMs: 10_000,
     });
@@ -363,7 +363,7 @@ test('brief stopped heartbeat during runtime cutover does not trigger stability 
 test('active reconciliation keeps planned stopped worker out of stability hold', () => {
     const optimizer = new TrainingEnvOptimizer({
         warmupMs: 0,
-        measurementMs: 1000,
+        measurementMs: 1_000_000,
         cooldownMs: 0,
         instabilityHoldMs: 10_000,
     });
