@@ -327,17 +327,28 @@ have_libgtk3() {
     return 1
 }
 
+optional_root_cmd() {
+    if [[ "$(id -u)" -eq 0 ]]; then
+        "$@"
+    elif have sudo && sudo -n true >/dev/null 2>&1; then
+        sudo -n "$@"
+    else
+        return 1
+    fi
+}
+
 install_unity_native_prerequisites() {
     if have apt-get; then
-        sudo_cmd apt-get update && sudo_cmd apt-get install -y libgtk-3-0
+        optional_root_cmd apt-get update &&
+            optional_root_cmd apt-get install -y libgtk-3-0
     elif have dnf; then
-        sudo_cmd dnf install -y gtk3
+        optional_root_cmd dnf install -y gtk3
     elif have yum; then
-        sudo_cmd yum install -y gtk3
+        optional_root_cmd yum install -y gtk3
     elif have zypper; then
-        sudo_cmd zypper --non-interactive install gtk3
+        optional_root_cmd zypper --non-interactive install gtk3
     elif have pacman; then
-        sudo_cmd pacman -Sy --noconfirm gtk3
+        optional_root_cmd pacman -Sy --noconfirm gtk3
     else
         return 1
     fi
