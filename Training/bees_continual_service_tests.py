@@ -540,6 +540,47 @@ class ContinualServiceTests(unittest.TestCase):
                 any("bees_continual_auto_train.py" in item for item in calls[0])
             )
 
+    def test_generation_zero_release_waits_for_explicit_bootstrap(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            options = self._options(root)
+            state = service.load_state(options)
+            state["phase"] = "release"
+            state["training_started"] = True
+            service.save_state(options, state)
+            runner = mock.Mock()
+            health = []
+
+            with (
+                mock.patch.object(
+                    service,
+                    "current_compatible_champion_id",
+                    return_value=None,
+                ),
+                mock.patch.object(service, "current_deployment_id", return_value=None),
+                mock.patch.object(service, "write_managed_health") as write_health,
+                mock.patch.object(service, "publish_current_hot_bundle") as publish,
+            ):
+                result = service.run_service(
+                    options,
+                    runner=runner,
+                    sleeper=lambda _seconds: None,
+                )
+                health.extend(call.args for call in write_health.call_args_list)
+
+            self.assertEqual(result, 2)
+            runner.assert_not_called()
+            publish.assert_not_called()
+            self.assertTrue(
+                any(
+                    args[0] == "error" and "explicitly" in str(kwargs.get("error", ""))
+                    for args, kwargs in (
+                        (call.args, call.kwargs)
+                        for call in write_health.call_args_list
+                    )
+                )
+            )
+
     def test_resumed_release_phase_reports_ready_health_before_evaluation(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
