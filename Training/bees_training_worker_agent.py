@@ -573,7 +573,9 @@ class BackgroundBuildPreparer:
             with self._lock:
                 self.prepared_build_id = build_id
                 self.last_error = ""
-        except (ControlUnavailable, ControlRejected, OSError, ValueError, RuntimeError) as exc:
+        except Exception as exc:
+            # Preparation is advisory/background work. Never let an unexpected exception
+            # silently kill the preparer without surfacing a retryable error to the next heartbeat.
             with self._lock:
                 self.last_error = f"{type(exc).__name__}: {exc}"
 
@@ -681,6 +683,7 @@ class TrainingLogUploader:
         trainer_id: str,
         run_id: str,
         maximum_passes: int = 10000,
+        progress_callback: Optional[Callable[[], None]] = None,
     ) -> None:
         for _ in range(maximum_passes):
             self.flush_once(
@@ -688,6 +691,8 @@ class TrainingLogUploader:
                 trainer_id=trainer_id,
                 run_id=run_id,
             )
+            if progress_callback is not None:
+                progress_callback()
             if not self._has_pending_local_bytes(run_id):
                 return
         raise RuntimeError(
@@ -1621,6 +1626,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                             client,
                             trainer_id=args.trainer_id,
                             run_id=run_id,
+                            progress_callback=stopping_keepalive,
                         )
                     except (ControlUnavailable, ControlRejected, OSError, ValueError, RuntimeError):
                         pass
@@ -1637,6 +1643,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                             client,
                             trainer_id=args.trainer_id,
                             run_id=run_id,
+                            progress_callback=blocking_keepalive,
                         )
                     applied_revision = revision
                 elif mode == "inference" and args.role == "full-game":
