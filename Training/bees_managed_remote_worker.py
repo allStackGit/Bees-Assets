@@ -1719,21 +1719,53 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return 0
     finally:
         stop[0] = True
+        cleanup_errors = []
+
         if shutdown_watcher is not None and shutdown_watcher.is_alive():
-            shutdown_watcher.join(timeout=1.0)
+            try:
+                shutdown_watcher.join(timeout=1.0)
+            except Exception as exc:
+                cleanup_errors.append(("shutdown watcher", exc))
+
         if updater is not None:
-            updater.stop()
+            try:
+                updater.stop()
+            except Exception as exc:
+                cleanup_errors.append(("runtime updater", exc))
+
         try:
             shutdown_request_file.unlink()
         except OSError:
             pass
-        _clear_pid_file_if_owned(pid_file, os.getpid())
-        if old_sigint is not None:
-            signal.signal(signal.SIGINT, old_sigint)
-        if old_sigterm is not None:
-            signal.signal(signal.SIGTERM, old_sigterm)
+        except Exception as exc:
+            cleanup_errors.append(("shutdown request", exc))
+
+        try:
+            _clear_pid_file_if_owned(pid_file, os.getpid())
+        except Exception as exc:
+            cleanup_errors.append(("supervisor PID file", exc))
+
+        for signum, previous_handler in (
+            (signal.SIGINT, old_sigint),
+            (signal.SIGTERM, old_sigterm),
+        ):
+            if previous_handler is not None:
+                try:
+                    signal.signal(signum, previous_handler)
+                except Exception as exc:
+                    cleanup_errors.append((f"signal handler {signum}", exc))
+
         sys.stdout = original_stdout
         sys.stderr = original_stderr
+
+        if cleanup_errors:
+            details = "; ".join(
+                f"{label}: {error}" for label, error in cleanup_errors
+            )
+            message = f"remote supervisor cleanup encountered errors: {details}"
+            if sys.exc_info()[0] is None:
+                raise RuntimeError(message) from cleanup_errors[0][1]
+            print(message, file=original_stderr)
 
 
 if __name__ == "__main__":
