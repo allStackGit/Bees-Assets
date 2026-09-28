@@ -1620,3 +1620,11 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** health records more than five seconds ahead of the supervisor clock are rejected. The existing startup grace then reports missing health as an error if the child remains alive.
 **Verification:** implementation was read back and reviewed statically. No tests or runtime checks were run under the code-analysis-only instruction.
 **Invariant/knowledge:** managed-child health timestamps must be finite and plausibly current; future-dated reports must not extend startup indefinitely.
+
+### REG-191 — Live-policy warp bypassed the Warp Gate warmup
+**Area:** `Scripts/Scenes/RlLivePolicyAgent.cs`, RL special-action parity
+**Symptom:** training waited for the Warp Gate readiness animation before ending a ship, but live policy control ended the ship immediately on contact. Deployed policies could therefore use a capability with different timing and demonstration capture semantics from training.
+**Root cause:** the live policy handler skipped `ShipsWarpingHere`, the gate animation readiness check, and pending-warp lifecycle cleanup used by the training agent and regular retreat path.
+**Permanent protection:** live policy now registers a pending participant, waits for `IsReadyToWarp`, records the capability at completion, and cancels pending state when the ship binding is released. `RlPolicySchemaContractTests.LivePolicyWarpWaitsForGateReadinessLikeTraining` protects the readiness-before-capture/removal ordering.
+**Verification:** changed source and regression source were read back and reviewed statically. The test was not run under the code-analysis-only instruction.
+**Invariant/knowledge:** deployed RL actions must preserve the timing and completion conditions used during training and the corresponding gameplay mechanic.

@@ -173,6 +173,34 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void LivePolicyWarpWaitsForGateReadinessLikeTraining()
+        {
+            string live = Read("Scripts", "Scenes", "RlLivePolicyAgent.cs");
+            string training = Read("Scripts", "Scenes", "RlOneVsOneAgent.cs");
+
+            Assert.That(live, Does.Contain("warpGate.ShipsWarpingHere.Add(_pendingWarpShipId);"));
+            Assert.That(live, Does.Contain("if (_pendingWarpGate != null)"));
+            Assert.That(training, Does.Contain("if (!warpGate.ShipAnimationController.IsReadyToWarp)"));
+
+            int completion = live.IndexOf("private bool TryCompletePendingWarpAction()", StringComparison.Ordinal);
+            int readiness = live.IndexOf(
+                "if (!warpGate.ShipAnimationController.IsReadyToWarp)\n        {\n            return false;",
+                completion,
+                StringComparison.Ordinal);
+            int capture = live.IndexOf(
+                "RlGameplayDemonstrationCapabilityCapture.Record(ship, RlOneVsOneAgent.WarpAction);",
+                completion,
+                StringComparison.Ordinal);
+            int removal = live.IndexOf("ship.EndKill();", capture, StringComparison.Ordinal);
+
+            Assert.That(completion, Is.GreaterThanOrEqualTo(0));
+            Assert.That(readiness, Is.GreaterThan(completion));
+            Assert.That(capture, Is.GreaterThan(readiness),
+                "Live policy must record the capability only after the gate reports ready.");
+            Assert.That(removal, Is.GreaterThan(capture));
+        }
+
+        [Test]
         public void CoordinateFrameTransformsObservationsAndDirectionalActionsTogether()
         {
             string perception = Read("Scripts", "Scenes", "RlCombatPerception.cs");
