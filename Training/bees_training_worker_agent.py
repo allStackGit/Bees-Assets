@@ -513,7 +513,6 @@ class BackgroundBuildPreparer:
         self.client = client
         self._lock = threading.Lock()
         self._thread: Optional[threading.Thread] = None
-        self._requested_build_id = ""
         self._requested_identity: Optional[tuple[str, ...]] = None
         self._prepared_identity: Optional[tuple[str, ...]] = None
         self.prepared_build_id = ""
@@ -554,7 +553,6 @@ class BackgroundBuildPreparer:
         with self._lock:
             if self._thread is not None and self._thread.is_alive():
                 return
-            self._requested_build_id = build_id
             self._requested_identity = identity
             self.last_error = ""
             payload = dict(descriptor)
