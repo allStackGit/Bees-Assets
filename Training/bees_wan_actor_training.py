@@ -927,13 +927,12 @@ class WanActorBroker:
         }
         with self._condition:
             self._validate_control_epoch(payload.get("control_epoch"), self._control_epoch)
-            if (
-                self._registrations.get(actor_id) is not actor_registration
-                or actor_id not in self._active_actor_ids_locked()
-            ):
-                raise ValueError(
-                    "actor registration expired or was replaced while validating the batch"
+            if self._registrations.get(actor_id) is not actor_registration:
+                raise StaleActorStateError(
+                    "actor registration was replaced while validating the batch"
                 )
+            if actor_id not in self._active_actor_ids_locked():
+                raise ValueError("actor registration expired while validating the batch")
             self._validate_actor_token_locked(actor_id, payload.get("actor_token"))
             self._validate_policy_versions(payload.get("policy_versions"))
             if actor_id in self._cohort_blocked_actors:
