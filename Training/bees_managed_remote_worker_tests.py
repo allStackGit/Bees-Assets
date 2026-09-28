@@ -907,10 +907,12 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
         updater.start.assert_called_once_with()
         status.assert_not_called()
 
-    def test_runtime_alignment_recycles_live_tailnet_after_sustained_control_loss(self):
+    def test_runtime_alignment_preserves_tailnet_while_central_control_restarts(self):
         args = Namespace(transport_watchdog_seconds=30.0)
         process = mock.Mock()
-        process.poll.return_value = None
+        # Two iterations of central unavailability must not recycle a live forwarder. The
+        # function returns only once the forwarder itself exits.
+        process.poll.side_effect = [None, None, 1]
         updater = mock.Mock()
         updater.verified.return_value = ("", "")
         updater.staged.return_value = (
@@ -945,7 +947,53 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
 
         self.assertFalse(aligned)
         self.assertIsNone(cutover)
-        self.assertGreaterEqual(updater.request_refresh.call_count, 1)
+        self.assertEqual(process.poll.call_count, 3)
+        self.assertGreaterEqual(updater.request_refresh.call_count, 2)
+
+    def test_previous_stale_record_does_not_kill_fresh_worker_before_registration(self):
+        record = {"stale": True}
+
+        self.assertFalse(
+            managed.stale_trainer_requires_recycle(
+                record,
+                worker_started_monotonic=100.0,
+                now=129.9,
+            )
+        )
+        self.assertTrue(
+            managed.stale_trainer_requires_recycle(
+                record,
+                worker_started_monotonic=100.0,
+                now=130.0,
+            )
+        )
+        self.assertFalse(
+            managed.stale_trainer_requires_recycle(
+                {"stale": False},
+                worker_started_monotonic=100.0,
+                now=1000.0,
+            )
+        )
+
+    def test_central_service_unavailability_is_not_a_private_transport_recycle_signal(self):
+        source = Path(managed.__file__).read_text(encoding="utf-8")
+        self.assertNotIn(
+            "authenticated learner control has been unreachable for",
+            source,
+        )
+        self.assertNotIn(
+            "authenticated WAN broker has been unreachable for",
+            source,
+        )
+        self.assertNotIn("session_failure_watchdog = _SessionFailureWatchdog()", source)
+        self.assertIn(
+            "Do not tear down a healthy private network merely because the central",
+            source,
+        )
+        self.assertIn(
+            "trainer heartbeat remained STALE beyond the",
+            source,
+        )
 
     def test_bootstrap_identity_probe_uses_head_without_downloading_bundle(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -1259,6 +1307,17 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
         # the new baseline rather than treating the reset as another failure.
         self.assertFalse(watchdog.observe(0, 140.0))
         self.assertFalse(watchdog.observe(1, 150.0))
+
+    def test_control_failure_watchdog_resets_across_global_control_outage(self):
+        watchdog = managed._SessionFailureWatchdog(
+            threshold=3,
+            window_seconds=60.0,
+        )
+        self.assertFalse(watchdog.observe(10, 100.0))
+        self.assertFalse(watchdog.observe(11, 110.0))
+        watchdog.reset()
+        self.assertFalse(watchdog.observe(15, 200.0))
+        self.assertFalse(watchdog.observe(16, 210.0))
 
     def test_session_failure_watchdog_escalates_repeated_failures_and_expires_window(self):
         watchdog = managed._SessionFailureWatchdog(threshold=3, window_seconds=120.0)
