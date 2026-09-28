@@ -83,37 +83,39 @@ public class Tooltip : MonoBehaviour
         }
 
         Transform parent = transform.parent;
+        if (_dialogueManager != null &&
+            (!_dialogueManager.isActiveAndEnabled || _dialogueManager.transform.parent != parent))
+        {
+            // Scene UI can replace or deactivate the dialogue manager while this tooltip survives.
+            // Drop stale references so a newly active sibling can take over positioning.
+            _dialogueManager = null;
+        }
+
         if (_dialogueManager == null)
         {
             for (int i = 0; i < parent.childCount; i++)
             {
                 Transform sibling = parent.GetChild(i);
-                if (sibling == transform)
+                if (sibling == transform || !sibling.gameObject.activeInHierarchy)
                 {
                     continue;
                 }
 
-                _dialogueManager = sibling.GetComponent<DialogueManager>();
-                if (_dialogueManager != null)
+                DialogueManager candidate = sibling.GetComponent<DialogueManager>();
+                if (candidate != null && candidate.isActiveAndEnabled)
                 {
+                    _dialogueManager = candidate;
                     break;
                 }
             }
         }
 
-        if (_dialogueManager == null || !_dialogueManager.gameObject.activeInHierarchy)
+        if (_dialogueManager == null)
         {
             return;
         }
-
 
         Transform dialogueTransform = _dialogueManager.transform;
-        if (dialogueTransform.parent != parent)
-        {
-            _dialogueManager = null;
-            return;
-        }
-
         int dialogueIndex = dialogueTransform.GetSiblingIndex();
         if (transform.GetSiblingIndex() > dialogueIndex)
         {
