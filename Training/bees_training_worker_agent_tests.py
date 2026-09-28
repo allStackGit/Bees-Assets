@@ -59,6 +59,31 @@ class EpisodeLogMetricsTests(unittest.TestCase):
         self.assertEqual(snapshot["last_episode"], 2)
         self.assertEqual(snapshot["avg_duration_s"], 10.0)
 
+class TrainingLogUploaderTests(unittest.TestCase):
+    def test_chunk_budget_rotates_between_continuously_growing_logs(self):
+        with tempfile.TemporaryDirectory() as directory:
+            run_root = Path(directory) / "run-1"
+            run_root.mkdir()
+            (run_root / "a.log").write_bytes(b"abcdefgh")
+            (run_root / "b.log").write_bytes(b"12345678")
+            client = mock.Mock()
+            client.upload_log_chunk.side_effect = lambda **kwargs: (
+                kwargs["offset"] + len(kwargs["data"])
+            )
+            uploader = worker.TrainingLogUploader(Path(directory))
+            uploader.CHUNK_BYTES = 4
+
+            uploader.flush_once(client, trainer_id="trainer", run_id="run-1")
+            uploader.flush_once(client, trainer_id="trainer", run_id="run-1")
+
+        uploaded_paths = [
+            call.kwargs["relative_path"]
+            for call in client.upload_log_chunk.call_args_list
+            if call.kwargs["data"]
+        ]
+        self.assertEqual(uploaded_paths, ["a.log", "b.log"])
+
+
 class BackgroundBuildPreparerTests(unittest.TestCase):
     def test_retry_clears_stale_prepared_marker(self):
         preparer = worker.BackgroundBuildPreparer.__new__(worker.BackgroundBuildPreparer)
