@@ -148,6 +148,47 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void TooltipTracksReplacementDialogueManagerAfterCachedManagerIsDisabled()
+        {
+            GameObject overlay = new GameObject("UI Overlay");
+            GameObject originalDialogue = new GameObject("Original Dialogue");
+            originalDialogue.transform.SetParent(overlay.transform, false);
+            originalDialogue.AddComponent(RuntimeAssembly.GetType("DialogueManager"));
+
+            GameObject tooltipObject = new GameObject("Tooltip");
+            tooltipObject.transform.SetParent(overlay.transform, false);
+            Component tooltip = tooltipObject.AddComponent(RuntimeAssembly.GetType("Tooltip"));
+            RuntimeAssembly.SetField(tooltip, "TooltipObject", tooltipObject);
+
+            System.Reflection.MethodInfo keepBelowDialogue = tooltip.GetType().GetMethod(
+                "KeepBelowActiveDialogue",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+
+            GameObject replacementDialogue = null;
+            try
+            {
+                Assert.That(keepBelowDialogue, Is.Not.Null);
+                keepBelowDialogue.Invoke(tooltip, null);
+
+                originalDialogue.SetActive(false);
+                replacementDialogue = new GameObject("Replacement Dialogue");
+                replacementDialogue.transform.SetParent(overlay.transform, false);
+                replacementDialogue.AddComponent(RuntimeAssembly.GetType("DialogueManager"));
+                tooltipObject.transform.SetAsLastSibling();
+
+                keepBelowDialogue.Invoke(tooltip, null);
+
+                Assert.That(
+                    tooltipObject.transform.GetSiblingIndex(),
+                    Is.LessThan(replacementDialogue.transform.GetSiblingIndex()));
+            }
+            finally
+            {
+                Object.DestroyImmediate(overlay);
+            }
+        }
+
+        [Test]
         public void ActiveLevelDialogueStaysAboveTutorialWithoutReorderingOtherPopups()
         {
             GameObject overlay = new GameObject("UI Overlay");
