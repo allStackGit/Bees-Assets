@@ -405,6 +405,30 @@ class ManagedBuildStore:
     def _candidate_installs(self, identity: str) -> list[Path]:
         return [self.builds / identity] + sorted(self.builds.glob(identity + "-*"))
 
+    def _current_install(self) -> Optional[Path]:
+        current = self.current()
+        if current is None:
+            return None
+        raw_entrypoint = str(current.get("entrypoint", "")).strip()
+        if not raw_entrypoint:
+            return None
+        try:
+            relative = Path(raw_entrypoint).resolve().relative_to(self.builds.resolve())
+        except (OSError, ValueError):
+            return None
+        if len(relative.parts) < 2:
+            return None
+        install = self.builds / relative.parts[0]
+        if install.is_symlink() or not install.is_dir():
+            return None
+        try:
+            resolved = install.resolve()
+            if resolved.parent != self.builds.resolve():
+                return None
+        except OSError:
+            return None
+        return resolved
+
     def _cache_matches(self, install: Path, descriptor: Mapping[str, Any]) -> bool:
         if install.is_symlink() or not install.is_dir():
             return False
@@ -453,12 +477,16 @@ class ManagedBuildStore:
     ) -> tuple[Path, Mapping[str, Any]]:
         descriptor = self._validated_descriptor(descriptor)
         identity = self._identity(descriptor)
+        previous_current_install = self._current_install()
         for cached_install in self._candidate_installs(identity):
             if self._cache_matches(cached_install, descriptor):
                 cached_entrypoint = _safe_zip_member(cached_install, descriptor["entrypoint"])
                 if activate:
                     self._set_current(descriptor, cached_entrypoint)
-                self._prune({cached_install})
+                preserve = {cached_install}
+                if previous_current_install is not None:
+                    preserve.add(previous_current_install)
+                self._prune(preserve)
                 return cached_entrypoint, descriptor
 
         temp_parent = Path(tempfile.mkdtemp(prefix=".bees-build-", dir=str(self.builds)))
@@ -517,7 +545,10 @@ class ManagedBuildStore:
         entrypoint = _safe_zip_member(install, descriptor["entrypoint"])
         if activate:
             self._set_current(descriptor, entrypoint)
-        self._prune({install})
+        preserve = {install}
+        if previous_current_install is not None:
+            preserve.add(previous_current_install)
+        self._prune(preserve)
         return entrypoint, descriptor
 
     def _prune(self, preserve: set[Path]) -> None:
