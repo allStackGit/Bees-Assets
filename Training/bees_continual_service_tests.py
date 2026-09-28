@@ -60,7 +60,7 @@ class ContinualServiceTests(unittest.TestCase):
                     side_effect=[False, True],
                 ),
                 mock.patch.object(service, "popen_owned", return_value=fake),
-                mock.patch.object(service.os, "killpg") as killpg,
+                mock.patch.object(service.os, "killpg", create=True) as killpg,
                 mock.patch.object(service.time, "sleep"),
             ):
                 with self.assertRaises(KeyboardInterrupt):
@@ -100,7 +100,8 @@ class ContinualServiceTests(unittest.TestCase):
 
         with (
             mock.patch.object(service.os, "name", "posix"),
-            mock.patch.object(service.os, "killpg") as killpg,
+            mock.patch.object(service.os, "killpg", create=True) as killpg,
+            mock.patch.object(service.signal, "SIGKILL", 9, create=True),
         ):
             service._stop_interruptible_managed_child(fake)
 
