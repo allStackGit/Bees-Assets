@@ -19,8 +19,6 @@ namespace Assets.Scripts.UIComponents
         private const int PlutoTwoMissionId = 1;
         private const int PlutoThreeMissionId = 2;
         private const int PlutoFourMissionId = 3;
-        private const string FlightColorHex = "#5CC8FF";
-        private const string ShootingColorHex = "#FFB347";
         private static readonly Color FlightColor = new Color(0.36f, 0.78f, 1f, 1f);
         private static readonly Color ShootingColor = new Color(1f, 0.70f, 0.28f, 1f);
         private static readonly FieldInfo DialogueTimerField = typeof(Level).GetField(
@@ -286,28 +284,6 @@ namespace Assets.Scripts.UIComponents
             {
                 graphics[i].color = color;
             }
-        }
-
-        private static string ColorizePlutoTwoSettings(string text)
-        {
-            if (string.IsNullOrEmpty(text))
-            {
-                return text;
-            }
-
-            if (!text.Contains("<color=" + FlightColorHex + ">"))
-            {
-                text = text.Replace(
-                    "flight pattern",
-                    "<color=" + FlightColorHex + ">flight pattern</color>");
-            }
-            if (!text.Contains("<color=" + ShootingColorHex + ">"))
-            {
-                text = text.Replace(
-                    "shooting strategies",
-                    "<color=" + ShootingColorHex + ">shooting strategies</color>");
-            }
-            return text;
         }
 
         private void GatePlutoTwoDialogue()
