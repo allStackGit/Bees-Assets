@@ -32,6 +32,7 @@ from typing import Callable, Dict, Mapping, Optional, Sequence
 from bees_process_safety import (
     OWNED_CHILD_TERMINATION_GRACE_SECONDS,
     popen_owned,
+    terminate_owned_processes,
     write_managed_health,
 )
 
@@ -471,15 +472,33 @@ def _managed_stop_requested() -> bool:
 def _stop_interruptible_managed_child(process: subprocess.Popen) -> None:
     """Stop non-training phase work that cannot contain newer optimizer state."""
     if process.poll() is not None:
+        if os.name == "nt":
+            terminate_owned_processes()
         return
 
     if os.name == "nt":
-        process.terminate()
-    else:
         try:
-            os.killpg(process.pid, signal.SIGTERM)
-        except ProcessLookupError:
-            return
+            process.terminate()
+            try:
+                process.wait(timeout=MANAGED_INTERRUPTIBLE_STOP_SECONDS)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                try:
+                    process.wait(timeout=MANAGED_INTERRUPTIBLE_STOP_SECONDS)
+                except subprocess.TimeoutExpired as exc:
+                    raise RuntimeError(
+                        "interruptible continual-learning phase did not stop after termination"
+                    ) from exc
+        finally:
+            # Terminating the root Popen does not close the owner's Job Object. Clear any
+            # descendants too before this long-lived service retries the phase.
+            terminate_owned_processes()
+        return
+
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        return
 
     try:
         process.wait(timeout=MANAGED_INTERRUPTIBLE_STOP_SECONDS)
@@ -487,13 +506,10 @@ def _stop_interruptible_managed_child(process: subprocess.Popen) -> None:
     except subprocess.TimeoutExpired:
         pass
 
-    if os.name == "nt":
-        process.kill()
-    else:
-        try:
-            os.killpg(process.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            return
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        return
 
     try:
         process.wait(timeout=MANAGED_INTERRUPTIBLE_STOP_SECONDS)
@@ -544,6 +560,9 @@ def _run_managed_subprocess(
         time.sleep(MANAGED_CHILD_POLL_SECONDS)
 
     return_code = int(process.wait())
+    if os.name == "nt":
+        # Windows keeps descendants in the owner Job Object after the root Popen exits.
+        terminate_owned_processes()
     if stop_requested or _managed_stop_requested():
         raise KeyboardInterrupt
     return return_code
