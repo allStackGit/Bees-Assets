@@ -1218,3 +1218,12 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** A confirmed no-change synchronization must release pending stale/state-change signals; a late stale response for an already-discarded batch must not stop subsequent environment stepping. A deterministic regression case for the late-response ordering is missing and was not added under the static-analysis-only request.
 **Verification:** Statically traced the actor main loop, upload retry/error signaling, watcher synchronization handshake, and the no-change return path. No tests, builds, Unity, or training runs were performed.
 **Invariant/knowledge:** When asynchronous components report a stale state, resolve the signal against an authoritative current snapshot; if that snapshot already matches, clear the signal so the owner can resume.
+
+### REG-140 — Unhealthy rollback heartbeat released the shared capacity-probe lock
+**Area:** `BeesServer~/trainingEnvOptimizer.js`, `TrainingEnvOptimizer.update`
+**Symptom:** After a capacity probe failed and the optimizer requested a return to the measured baseline, a subsequent unhealthy heartbeat could release the cluster-wide probe lock while the worker still reported the unaccepted probe environment count.
+**Root cause:** The first abort changed `desired_envs` to the baseline. On a later unhealthy heartbeat, `probingAwayFromBaseline` became false because it compared desired count to baseline, even though `current_envs` had not returned. The generic instability path then released the probe lock.
+**Fix:** Detect a pending rollback from active probe ownership plus a current count different from the baseline. Continue the probe-abort path and retain the lock until the worker reports the baseline count.
+**Permanent protection:** While an optimizer owns a probe lock, do not release it during instability until the worker reports its measured baseline. Existing coverage checks a one-heartbeat failure and subsequent baseline return; a repeated unhealthy heartbeat during rollback case is missing and was not added under the static-analysis-only request.
+**Verification:** Statically traced the probe start, failed-probe abort, repeated unstable update, baseline reconciliation, and competing worker admission paths. No tests, builds, services, or runtime checks were run.
+**Invariant/knowledge:** The cluster-wide probe lock protects measurement fairness until rollback is actually observed, not merely requested.
