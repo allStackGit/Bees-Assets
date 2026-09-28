@@ -20,7 +20,6 @@ import sys
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence
 
-from bees_continual_bootstrap import bootstrap_champion
 from bees_continual_deployment import publish_current_champion
 from bees_continual_evaluate import (
     DEFAULT_MAX_ENVIRONMENT_STEPS_PER_MATCH,
@@ -57,35 +56,6 @@ def _compatible_candidates(
         for model in candidates
         if all(model.get(key) == value for key, value in expected.items())
     ]
-
-
-def _generation_zero_candidate(
-    store: ContinualLearningStore,
-    training_run_id: str,
-) -> Dict[str, Any]:
-    run_id = str(training_run_id).strip()
-    if not run_id:
-        raise ReleaseError(
-            "Automatic generation-zero bootstrap requires a non-empty training_run_id."
-        )
-    candidates = [
-        candidate
-        for candidate in _compatible_candidates(store, store.list_models(status="candidate"))
-        if candidate.get("training_run_id") == run_id
-    ]
-    if not candidates:
-        raise ReleaseError(
-            f"No compatible candidate from training run {run_id!r} is available for "
-            "generation-zero bootstrap."
-        )
-    return max(
-        candidates,
-        key=lambda candidate: (
-            int(candidate.get("training_step", -1)),
-            str(candidate.get("created_at", "")),
-            str(candidate.get("model_id", "")),
-        ),
-    )
 
 
 def _normalized_competency_contract(cases: Sequence[CompetencyCase]) -> Dict[str, Any]:
@@ -229,55 +199,18 @@ def run_release_cycle(
     store.initialize()
     champion_id = store.current_compatible_champion_id()
     if not champion_id:
-        if training_run_id is None or not str(training_run_id).strip():
-            raise ReleaseError(
-                "Automatic release found no champion for the current compatibility generation and "
-                "requires training_run_id to bootstrap generation zero."
-            )
-        all_candidates = store.list_models(status="candidate")
-        compatible_candidates = _compatible_candidates(store, all_candidates)
-        candidate = _generation_zero_candidate(store, str(training_run_id))
-        candidate_id = str(candidate["model_id"])
-        bootstrapped = bootstrap_champion(
-            store,
-            candidate_id,
-            reason=(
-                "Automatic generation-zero bootstrap after successful bounded training run "
-                f"{str(training_run_id).strip()}."
-            ),
+        run_detail = (
+            f" Training run {str(training_run_id).strip()!r} was supplied, but run identity "
+            "does not replace first-champion review."
+            if training_run_id is not None and str(training_run_id).strip()
+            else ""
         )
-        deployment = dict(publisher(store))
-        if deployment.get("model_id") != candidate_id:
-            raise ReleaseError(
-                "Generation-zero deployment publisher did not reconcile to the bootstrapped champion."
-            )
-        health = _require_healthy_release(
-            store,
-            expected_model_id=candidate_id,
-            expected_deployment_id=deployment.get("deployment_id"),
-            health_checker=health_checker,
+        raise ReleaseError(
+            "Automatic release cannot establish generation zero from an unevaluated training "
+            "checkpoint. Review a candidate and establish the first trusted champion explicitly "
+            "with bees_continual_bootstrap.py --candidate <model-id> --reason <audit-reason>."
+            + run_detail
         )
-        return {
-            "status": "bootstrapped",
-            "starting_champion_model_id": None,
-            "current_champion_model_id": candidate_id,
-            "initial_deployment_id": deployment.get("deployment_id"),
-            "initial_deployment_pointer_changed": bool(deployment.get("pointer_changed", False)),
-            "initial_release_health_status": health["status"],
-            "candidate_count": len(all_candidates),
-            "compatible_candidate_count": len(compatible_candidates),
-            "skipped_incompatible_candidate_count": len(all_candidates) - len(compatible_candidates),
-            "processed": [
-                {
-                    "candidate_model_id": candidate_id,
-                    "decision": "bootstrapped",
-                    "final_status": bootstrapped["status"],
-                    "deployment_id": deployment.get("deployment_id"),
-                    "deployment_pointer_changed": bool(deployment.get("pointer_changed", False)),
-                    "release_health_status": health["status"],
-                }
-            ],
-        }
 
     _validate_competency_source(
         store,
@@ -434,8 +367,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--training-run-id",
         help=(
-            "Current bounded training run id. Required only when automatic release must establish "
-            "generation zero for a fresh or newly incompatible compatibility generation."
+            "Legacy run provenance argument. It does not authorize automatic generation-zero "
+            "promotion; establish the first trusted champion explicitly after review."
         ),
     )
     parser.add_argument(
