@@ -186,6 +186,14 @@ class TailnetBootstrapSourceTests(unittest.TestCase):
         self.assertIn("BEES_REMOTE_LAUNCHER_PATH", operator_node)
         self.assertIn('set "BEES_REMOTE_LAUNCHER_PATH=%~f0"', operator_node)
 
+    def test_generated_linux_launcher_escapes_bash_source_from_javascript_interpolation(self):
+        operator_node = OPERATOR_NODE.read_text(encoding="utf-8")
+        bash_source = r"\${BASH_SOURCE[0]}"
+        self.assertEqual(operator_node.count(bash_source), 2)
+        self.assertIsNone(
+            re.search(r"(?<!\\)\$\{BASH_SOURCE\[0\]\}", operator_node)
+        )
+
     def test_remote_start_registers_reboot_persistence_and_stop_removes_it(self):
         windows = WINDOWS_TEMPLATE.read_text(encoding="utf-8")
         linux = LINUX_TEMPLATE.read_text(encoding="utf-8")
