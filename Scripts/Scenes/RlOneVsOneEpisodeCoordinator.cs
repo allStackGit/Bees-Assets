@@ -1330,15 +1330,49 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
             int incomingBytes = TrainingDiagnosticEncoding.GetByteCount(line);
             lock (TrainingDiagnosticLogLock)
             {
-                if (File.Exists(path))
+                if (File.Exists(path) &&
+                    new FileInfo(path).Length + incomingBytes > TrainingDiagnosticMaxBytes)
                 {
-                    long currentBytes = new FileInfo(path).Length;
-                    if (currentBytes + incomingBytes > TrainingDiagnosticMaxBytes)
+                    // Move the old generation aside before creating a fresh file. Truncating in place
+                    // can be missed by readers if the new log regrows past their old byte offset.
+                    string rotatedPath = path + ".rotated-" + Guid.NewGuid().ToString("N");
+                    File.Move(path, rotatedPath);
+                    try
                     {
-                        File.WriteAllText(path, string.Empty, TrainingDiagnosticEncoding);
+                        File.AppendAllText(path, line, TrainingDiagnosticEncoding);
+                    }
+                    catch
+                    {
+                        try
+                        {
+                            if (File.Exists(path))
+                            {
+                                File.Delete(path);
+                            }
+                            if (File.Exists(rotatedPath))
+                            {
+                                File.Move(rotatedPath, path);
+                            }
+                        }
+                        catch
+                        {
+                            // Preserve the original write failure; the rotated log remains on disk.
+                        }
+                        throw;
+                    }
+                    try
+                    {
+                        File.Delete(rotatedPath);
+                    }
+                    catch
+                    {
+                        // The rotated suffix is outside the uploader's *.log scan.
                     }
                 }
-                File.AppendAllText(path, line, TrainingDiagnosticEncoding);
+                else
+                {
+                    File.AppendAllText(path, line, TrainingDiagnosticEncoding);
+                }
             }
         }
         catch (Exception exception)
