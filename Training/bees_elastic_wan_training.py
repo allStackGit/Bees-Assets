@@ -902,6 +902,9 @@ class ElasticWanBroker(base.WanActorBroker):
             actor_worker_ids(self.options, actor_id, env_count, self.remote_worker_base)
         )
         allowed_behaviors = set(self.merged_behavior_specs())
+        from mlagents.trainers.behavior_id_utils import BehaviorIdentifiers
+
+        trainer_settings_by_behavior = self.run_options.behaviors
         step_count = 0
         for trajectory in trajectories:
             behavior_id = getattr(trajectory, "behavior_id", None)
@@ -909,6 +912,13 @@ class ElasticWanBroker(base.WanActorBroker):
             steps = getattr(trajectory, "steps", None)
             if behavior_id not in allowed_behaviors:
                 raise ValueError(f"trajectory uses unregistered behavior {behavior_id!r}")
+            identifiers = BehaviorIdentifiers.from_name_behavior_id(behavior_id)
+            trainer_settings = trainer_settings_by_behavior.get(identifiers.brain_name)
+            if trainer_settings is None:
+                raise ValueError(
+                    f"trajectory uses unconfigured behavior {behavior_id!r}"
+                )
+            validate_trajectory_length(trajectory, trainer_settings, behavior_id)
             if not isinstance(agent_id, str) or not agent_id.startswith("agent_"):
                 raise ValueError("trajectory has malformed global agent identity")
             prefix = agent_id[len("agent_") :].split("-", 1)[0]
