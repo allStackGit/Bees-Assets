@@ -10,6 +10,8 @@ Static-only repository audit on `rl/initial-design-work`. This ledger is the cur
 
 ## Audit status
 
+- REG-158 prevents an orderly stop from dropping already-collected base WAN actor trajectories before they enter the bounded upload drain. The actor now admits those batches only until the existing shutdown deadline. Regression coverage was added but not run. Static source review only; clean post-fix pass count remains **0 / 2**.
+
 - REG-157 fixes base WAN lease renewal on rejected trajectory uploads: invalid trajectory batches and per-actor backpressure no longer keep actors marked live; only queue-admitted batches refresh the lease. Regression coverage was added but not run. Static source review only; clean post-fix pass count remains **0 / 2**.
 
 - REG-087 was extended after elastic-path review found that rejected stale trajectory uploads also refreshed actor leases; elastic registration, reset acknowledgements, and uploads now use strict epoch checks before renewal. A focused stale/bool-epoch registration, acknowledgement, and upload cases were added but not run. The post-fix clean-pass count remains **0 / 2**.
