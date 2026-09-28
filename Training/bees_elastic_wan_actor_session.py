@@ -219,6 +219,8 @@ class ElasticActorSession(worker.ActorSession):
                     self.policy_epoch,
                     self.control_epoch,
                     worker.DEFAULT_STATE_WAIT_SECONDS,
+                    actor_id=self.actor_id,
+                    actor_token=self.actor_token,
                 )
                 remote_control_epoch = worker._validated_state_epoch(state, "control_epoch")
                 policy_epoch = worker._validated_state_epoch(state, "policy_epoch")
