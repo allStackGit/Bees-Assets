@@ -244,7 +244,11 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
             mock.patch.object(managed, "_available_memory_bytes", return_value=int(3.8 * gib)),
         ):
             self.assertEqual(managed._memory_env_limit(), 5)
-            self.assertEqual(managed._default_envs(), 5)
+            self.assertEqual(
+                managed._default_envs(),
+                4,
+                "automatic startup must honor both the memory safety bound and the conservative CPU start limit",
+            )
 
     def test_eight_gib_worker_allows_fourteen_envs_with_one_gib_reserve(self):
         gib = 1024 * 1024 * 1024
@@ -262,11 +266,6 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
                 managed,
                 "_available_memory_bytes",
                 return_value=int(1.4 * gib),
-            ),
-            mock.patch.object(
-                managed,
-                "_total_memory_bytes",
-                return_value=16 * gib,
             ),
             mock.patch.object(managed, "_available_cpu_threads", return_value=8),
         ):
@@ -578,6 +577,7 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
                 side_effect=OSError("no group"),
                 create=True,
             ),
+            mock.patch.object(managed.signal, "SIGKILL", 9, create=True),
             self.assertRaisesRegex(RuntimeError, "did not stop"),
         ):
             managed._terminate(process)
@@ -594,6 +594,7 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
         with (
             mock.patch.object(managed.os, "name", "posix"),
             mock.patch.object(managed.os, "killpg", create=True) as killpg,
+            mock.patch.object(managed.signal, "SIGKILL", 9, create=True),
         ):
             managed._terminate(process)
 
