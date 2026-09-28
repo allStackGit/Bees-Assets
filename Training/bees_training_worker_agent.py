@@ -589,6 +589,7 @@ class BackgroundBuildPreparer:
 class TrainingLogUploader:
     CHUNK_BYTES = 1024 * 1024
     MAX_FILE_UPLOAD_BYTES = 64 * 1024 * 1024
+    FINALIZE_KEEPALIVE_SECONDS = 5.0
 
     def __init__(self, root: Path) -> None:
         self.root = root
@@ -692,7 +693,7 @@ class TrainingLogUploader:
 
         if progress_callback is not None:
             def keepalive() -> None:
-                while not keepalive_stop.wait(5.0):
+                while not keepalive_stop.wait(self.FINALIZE_KEEPALIVE_SECONDS):
                     try:
                         progress_callback()
                     except Exception:
