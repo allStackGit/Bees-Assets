@@ -253,18 +253,51 @@ class WanOptionTests(unittest.TestCase):
         self.assertEqual(actor._trajectory_step_count(trajectories), 5)
 
     def test_actor_collects_trajectories_until_queue_empty(self):
+        class AgentManagerQueue(queue.Queue):
+            class Empty(Exception):
+                pass
+
+            def get_nowait(self):
+                try:
+                    return super().get_nowait()
+                except queue.Empty as exc:
+                    raise self.Empty("AgentManagerQueue is empty") from exc
+
         trajectory = FakeTrajectory("Behavior?team=0", "agent_0-1")
         session = object.__new__(actor.ActorSession)
+        trajectory_queue = AgentManagerQueue()
+        trajectory_queue.put(trajectory)
         session.manager = SimpleNamespace(
             agent_managers={
-                "Behavior?team=0": SimpleNamespace(
-                    trajectory_queue=queue.Queue()
-                )
+                "Behavior?team=0": SimpleNamespace(trajectory_queue=trajectory_queue)
             }
         )
-        session.manager.agent_managers["Behavior?team=0"].trajectory_queue.put(trajectory)
 
         self.assertEqual(session._collect_trajectories(), [trajectory])
+
+    def test_policy_sync_discards_completed_old_policy_trajectories(self):
+        class AgentManagerQueue(queue.Queue):
+            class Empty(Exception):
+                pass
+
+            def get_nowait(self):
+                try:
+                    return super().get_nowait()
+                except queue.Empty as exc:
+                    raise self.Empty("AgentManagerQueue is empty") from exc
+
+        trajectory_queue = AgentManagerQueue()
+        trajectory_queue.put(FakeTrajectory("Behavior?team=0", "agent_0-1"))
+        agent_manager = SimpleNamespace(
+            end_episode=mock.Mock(),
+            trajectory_queue=trajectory_queue,
+        )
+        manager = SimpleNamespace(agent_managers={"Behavior?team=0": agent_manager})
+
+        actor._clear_partial_trajectories(manager)
+
+        agent_manager.end_episode.assert_called_once_with()
+        self.assertTrue(trajectory_queue.empty())
 
     def test_actor_publishes_accepted_step_metrics_atomically(self):
         with tempfile.TemporaryDirectory() as temp:
