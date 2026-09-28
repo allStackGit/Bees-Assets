@@ -12,6 +12,9 @@ None currently confirmed. The active audit continues; resolved findings have bee
 
 ## Audit status
 
+- REG-147 makes incompatible remote runtime cutover require a fresh stopped-trainer record whose `applied_revision` reaches the pending phase revision, matching the server's rollout barrier. This production change resets the post-fix clean-pass count to **0 / 2**. Static source review only; no tests or runtime checks were run.
+
+
 - REG-146 treats any Unity worker exit before the full remote cohort completes as a failed distributed session, including a clean exit, then uses the common cleanup path to stop peers and the tunnel. This production change resets the post-fix clean-pass count to **0 / 2**. Static source review only; no tests or runtime checks were run.
 
 - REG-145 keeps the continual telemetry watcher alive across configuration-load or store-initialization failures by retrying setup on the next scan interval. This production change resets the post-fix clean-pass count to **0 / 2**. Static source review only; no tests or runtime checks were run.
