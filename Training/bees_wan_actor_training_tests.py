@@ -696,6 +696,36 @@ class WanActorSyntheticStepTests(unittest.TestCase):
 
 
 class WanActorBackpressureTests(unittest.TestCase):
+    def test_stop_after_collection_queues_completed_trajectory_for_bounded_drain(self):
+        session = actor.ActorSession.__new__(actor.ActorSession)
+        session.stop = threading.Event()
+        session._session_changed = threading.Event()
+        session._state_changed = threading.Event()
+        session._stale = threading.Event()
+        session._thread_error = queue.Queue()
+        session._upload_drain_deadline = None
+        session.session_id = "session-a"
+        session.actor_id = 0
+        session.control_epoch = 2
+        session.policy_versions = {"BeesRL1v1": 3}
+
+        upload_queue = queue.Queue(maxsize=1)
+        session._upload_queue = upload_queue
+        trajectory_queue = queue.Queue()
+        trajectory = FakeTrajectory("BeesRL1v1", "0-agent", count=1)
+        trajectory_queue.put(trajectory)
+        session.manager = SimpleNamespace(
+            get_steps=lambda: [],
+            process_steps=lambda _steps: session.stop.set(),
+            agent_managers={"BeesRL1v1": SimpleNamespace(trajectory_queue=trajectory_queue)},
+        )
+
+        session.run()
+
+        uploaded = upload_queue.get_nowait()
+        self.assertEqual(uploaded["trajectories"], [trajectory])
+        self.assertIsNotNone(session._upload_drain_deadline)
+
     def test_topology_update_during_backpressure_preserves_completed_batch(self):
         session = actor.ActorSession.__new__(actor.ActorSession)
         session.stop = threading.Event()
