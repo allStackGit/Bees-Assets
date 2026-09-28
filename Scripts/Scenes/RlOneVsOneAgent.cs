@@ -78,7 +78,9 @@ internal sealed class RlOneVsOneAgent : Agent
     private const int HealingPerSuccessfulAction = 50;
 
     private static readonly List<RlOneVsOneAgent> Instances = new List<RlOneVsOneAgent>();
-    private static readonly Dictionary<Ship, Vector4> ShipCommunications = new Dictionary<Ship, Vector4>();
+    // Ships are pooled Entities whose logical Id changes between lifecycles; keep cache keys by wrapper identity.
+    private static readonly Dictionary<Ship, Vector4> ShipCommunications =
+        new Dictionary<Ship, Vector4>(ReferenceIdentityComparer<Ship>.Instance);
     private static readonly Dictionary<Level, Dictionary<int, int>> AgentCounts =
         new Dictionary<Level, Dictionary<int, int>>();
     private static bool _invalidEnvironmentReported;
@@ -1034,13 +1036,16 @@ internal sealed class RlOneVsOneAgent : Agent
     private void ReleaseShip()
     {
         ReleaseHealingReservation();
-        if (_ship != null)
+        if (!object.ReferenceEquals(_ship, null))
         {
             ClearCommunication(_ship);
-            _ship.IsRlPolicyControlled = false;
-            for (int i = 0; i < _ship.Turrets.Count; i++)
+            if (_ship != null)
             {
-                _ship.Turrets[i].ClearRlControl();
+                _ship.IsRlPolicyControlled = false;
+                for (int i = 0; i < _ship.Turrets.Count; i++)
+                {
+                    _ship.Turrets[i].ClearRlControl();
+                }
             }
         }
         if (_hasStoredSquadControlState && _boundSquad != null)
@@ -1152,7 +1157,9 @@ internal sealed class RlOneVsOneAgent : Agent
 
     internal static void ClearCommunication(Ship ship)
     {
-        if (ship != null)
+        // Unity's overloaded null check reports destroyed objects as null. Reference identity still
+        // lets teardown remove the managed wrapper retained by this static cache.
+        if (!object.ReferenceEquals(ship, null))
         {
             ShipCommunications.Remove(ship);
         }
