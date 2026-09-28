@@ -8,6 +8,8 @@ None currently confirmed. The active audit continues; resolved findings have bee
 
 ## Audit status
 
+- REG-135 rejects unrepresentable and non-finite control-plane lease values before the supervisor converts or uses them. The regression invariant is documented in `docs/engineering/REGRESSIONS.md`; no test was added or run under the static-only request. This production fix resets the post-fix clean-pass count to **0 / 2**.
+
 - REG-118 closes callback processing immediately after campaign level teardown and adds a source-level regression guard. This production change resets the post-fix clean-pass count to **0 / 2**. The regression guard was not run.
 
 - ML-Agents launcher review found and fixed a `--results-dir` argument-boundary defect: the default is now inserted before `--env-args`, and Unity-side flags no longer count as trainer settings. A focused regression case and REG-103 documentation were added; neither was executed. Static source review only.
