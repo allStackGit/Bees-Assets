@@ -277,6 +277,7 @@ class BrokerClient:
         control_epoch: int,
         wait_seconds: float,
         actor_id: Optional[int] = None,
+        actor_token: Optional[str] = None,
     ) -> Mapping[str, Any]:
         query = {
             "session": session_id,
@@ -286,6 +287,7 @@ class BrokerClient:
         }
         if actor_id is not None:
             query["actor_id"] = actor_id
+            query["actor_token"] = actor_token or ""
         status, _headers, body = self._request("GET", "/state", query=query)
         if status != 200:
             raise RuntimeError(f"Unexpected WAN broker state status {status}")
@@ -341,8 +343,16 @@ class BrokerClient:
             raise RuntimeError("WAN broker control payload is malformed")
         return value
 
-    def register(self, payload: Mapping[str, Any]) -> None:
-        self._request("POST", "/register", payload=payload)
+    def register(self, payload: Mapping[str, Any]) -> str:
+        _status, _headers, body = self._request("POST", "/register", payload=payload)
+        try:
+            value = json.loads(body.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise RuntimeError("WAN broker registration response is malformed") from exc
+        actor_token = value.get("actor_token") if isinstance(value, Mapping) else None
+        if not isinstance(actor_token, str) or not actor_token:
+            raise RuntimeError("WAN broker registration response has no actor lease")
+        return actor_token
 
     def trajectories(self, payload: Mapping[str, Any]) -> None:
         self._request("POST", "/trajectories", payload=payload)
@@ -620,6 +630,7 @@ class ActorSession:
         self._last_throughput_write = 0.0
         self._session_failure_telemetry = None
         self._startup_health = startup_health
+        self.actor_token: Optional[str] = None
 
     def _report_startup_phase(self, phase: str) -> None:
         callback = self._startup_health
@@ -835,7 +846,7 @@ class ActorSession:
             self.manager.set_policy(behavior_id, template)
 
         self._report_startup_phase("registering-session")
-        self.client.register(
+        self.actor_token = self.client.register(
             {
                 "session_id": self.session_id,
                 "actor_id": self.actor_id,
@@ -929,6 +940,7 @@ class ActorSession:
             self.control_epoch,
             0.0,
             actor_id=self.actor_id,
+            actor_token=self.actor_token,
         )
         new_control = _validated_state_epoch(state, "control_epoch")
         remote_versions = _validated_policy_versions(state.get("policy_versions"))
@@ -947,6 +959,7 @@ class ActorSession:
                     self.control_epoch,
                     0.0,
                     actor_id=self.actor_id,
+                    actor_token=self.actor_token,
                 )
                 remote_versions = _validated_policy_versions(state.get("policy_versions"))
                 new_control = _validated_state_epoch(state, "control_epoch")
@@ -1036,6 +1049,7 @@ class ActorSession:
                     self.control_epoch,
                     DEFAULT_STATE_WAIT_SECONDS,
                     actor_id=self.actor_id,
+                    actor_token=self.actor_token,
                 )
                 if (
                     _validated_state_epoch(state, "policy_epoch") != self.policy_epoch
@@ -1149,6 +1163,7 @@ class ActorSession:
                         "batch_id": uuid.uuid4().hex,
                         "session_id": self.session_id,
                         "actor_id": self.actor_id,
+                        "actor_token": self.actor_token,
                         "control_epoch": self.control_epoch,
                         "policy_versions": dict(self.policy_versions),
                         "trajectories": trajectories[start : start + MAX_TRAJECTORIES_PER_UPLOAD],
