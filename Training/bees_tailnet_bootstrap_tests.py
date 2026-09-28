@@ -79,6 +79,22 @@ class TailnetBootstrapSourceTests(unittest.TestCase):
         self.assertIn("Remote Python dependency validation failed", windows)
         self.assertIn("remote Python dependency validation failed", linux)
         self.assertIn("_python_remote_dependencies_ok", managed)
+        self.assertIn("function Test-RemotePythonDependencies", windows)
+        self.assertIn("$ErrorActionPreference='SilentlyContinue'", windows)
+        self.assertIn(
+            "$dependenciesOk=Test-RemotePythonDependencies -PythonExe $venvPython",
+            windows,
+        )
+        self.assertIn(
+            "if(-not (Test-RemotePythonDependencies -PythonExe $venvPython))",
+            windows,
+        )
+        self.assertEqual(
+            windows.count(
+                '& $PythonExe -c "import pkg_resources, mlagents, torch, numpy" *> $null'
+            ),
+            1,
+        )
 
     def test_remote_launcher_describes_cpu_and_ram_environment_default(self):
         windows = WINDOWS_TEMPLATE.read_text(encoding="utf-8")
