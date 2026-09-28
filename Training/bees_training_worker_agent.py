@@ -32,6 +32,7 @@ from bees_process_safety import (
 )
 from bees_training_control import (
     ControlRejected,
+    TrainingLogOffsetMismatch,
     ControlUnavailable,
     ManagedBuildStore,
     TrainingControlClient,
@@ -63,6 +64,14 @@ MANAGED_RESTART_BACKOFF_SECONDS = (1.0, 2.0, 5.0, 10.0, 30.0, 60.0, 120.0)
 
 
 MAX_RETAINED_RUN_LOG_DIRS = 3
+RUN_ID_RE = re.compile(r"^[A-Za-z0-9._-]+$")
+
+
+def _validate_run_id(run_id: str) -> str:
+    value = str(run_id or "")
+    if value and (value in {".", ".."} or not RUN_ID_RE.fullmatch(value)):
+        raise ValueError(f"unsafe training run id: {value!r}")
+    return value
 
 
 def _prune_run_log_directories(root: Path, current_run_id: str) -> None:
@@ -164,12 +173,23 @@ EPISODE_LOG_PATTERN = re.compile(
 )
 
 
+def _log_file_identity(file_stat: os.stat_result) -> Optional[tuple[int, int]]:
+    identity = (int(file_stat.st_dev), int(file_stat.st_ino))
+    return None if identity[1] == 0 else identity
+
+
 def _episode_numeric_field(line: str, key: str) -> Optional[float]:
     match = re.search(
         rf"\b{re.escape(key)}=(-?[0-9]+(?:\.[0-9]+)?)(?:deg|%)?",
         line,
     )
-    return float(match.group(1)) if match else None
+    if not match:
+        return None
+    try:
+        value = float(match.group(1))
+    except (ValueError, OverflowError):
+        return None
+    return value if math.isfinite(value) else None
 
 
 class EpisodeLogMetrics:
@@ -178,30 +198,49 @@ class EpisodeLogMetrics:
         self.window = max(1, int(window))
         self._episodes = deque(maxlen=self.window)
         self._positions: dict[Path, int] = {}
+        self._file_identities: dict[Path, Optional[tuple[int, int]]] = {}
         self._pending: dict[Path, str] = {}
         self._run_id = ""
 
     def refresh(self, run_id: str = "") -> dict[str, object]:
-        run_id = str(run_id or "")
+        run_id = _validate_run_id(run_id)
         if run_id != self._run_id:
             self._run_id = run_id
             self._episodes.clear()
             self._positions.clear()
+            self._file_identities.clear()
             self._pending.clear()
         scan_root = self.root / run_id if run_id else self.root
         if scan_root.is_dir():
-            bounded_logs = sorted(scan_root.rglob("BeesEpisode-*.log"))
-            log_paths = bounded_logs or sorted(scan_root.rglob("Player-*.log"))
+            bounded_logs = sorted(
+                path for path in scan_root.rglob("BeesEpisode-*.log")
+                if not path.is_symlink()
+            )
+            log_paths = bounded_logs or sorted(
+                path for path in scan_root.rglob("Player-*.log")
+                if not path.is_symlink()
+            )
             for log_path in log_paths:
                 self._read_new(log_path)
         return self.snapshot()
 
     def _read_new(self, log_path: Path) -> None:
         try:
-            size = log_path.stat().st_size
+            file_stat = log_path.stat()
+            size = file_stat.st_size
         except OSError:
             return
+        identity = _log_file_identity(file_stat)
         position = self._positions.get(log_path)
+        previous_identity = self._file_identities.get(log_path)
+        identity_changed = (
+            previous_identity is not None
+            and identity is not None
+            and previous_identity != identity
+        )
+        if identity_changed:
+            position = 0
+            self._pending.pop(log_path, None)
         first_read = position is None
         if position is None:
             position = max(0, size - 4 * 1024 * 1024)
@@ -210,11 +249,28 @@ class EpisodeLogMetrics:
             self._pending.pop(log_path, None)
         try:
             with log_path.open("rb") as handle:
+                opened_identity = _log_file_identity(os.fstat(handle.fileno()))
+                if identity is not None and opened_identity != identity:
+                    # The path was replaced after stat but before open. Do not attribute
+                    # bytes from the new generation to the old generation's cursor.
+                    return
+                previous_byte = b""
+                if first_read and position > 0:
+                    handle.seek(position - 1)
+                    previous_byte = handle.read(1)
                 handle.seek(position)
-                data = handle.read()
+                raw_data = handle.read()
         except OSError:
             return
-        self._positions[log_path] = position + len(data)
+        data = raw_data
+        if first_read and position > 0 and previous_byte not in (b"\n", b"\r"):
+            separators = [
+                index for index in (data.find(b"\n"), data.find(b"\r"))
+                if index >= 0
+            ]
+            data = data[min(separators) + 1:] if separators else b""
+        self._positions[log_path] = position + len(raw_data)
+        self._file_identities[log_path] = identity
         if not data:
             return
         text = self._pending.get(log_path, "") + data.decode("utf-8", errors="replace")
@@ -224,51 +280,62 @@ class EpisodeLogMetrics:
             self._pending[log_path] = lines.pop()
         else:
             self._pending[log_path] = ""
-        if first_read and position > 0 and lines:
-            lines = lines[1:]
         for line in lines:
             match = EPISODE_LOG_PATTERN.search(line)
             if not match:
                 continue
             values = match.groups()
+            try:
+                duration = float(values[2])
+            except (ValueError, OverflowError):
+                # Ignore malformed complete lines instead of letting diagnostics terminate
+                # the training supervisor before its heartbeat error handler.
+                continue
+            if not math.isfinite(duration):
+                continue
+
             timeout = values[1] == "True"
-            bee_final = int(values[4])
-            human_final = int(values[6])
-            self._episodes.append({
-                "episode": int(values[0]),
-                "timeout": timeout,
-                "duration": float(values[2]),
-                "bee_win": (not timeout and bee_final > 0 and human_final == 0),
-                "human_win": (not timeout and human_final > 0 and bee_final == 0),
-                "bee_shots": int(values[8]),
-                "bee_hits": int(values[9]),
-                "human_shots": int(values[12]),
-                "human_hits": int(values[13]),
-                "bee_aim_samples": int(
-                    _episode_numeric_field(line, "bee_aim_samples") or 0
-                ),
-                "bee_aim_error_deg": _episode_numeric_field(
-                    line, "bee_aim_error"
-                ),
-                "bee_aim_within_5_pct": _episode_numeric_field(
-                    line, "bee_aim_within_5deg"
-                ),
-                "bee_turret_aligned_pct": _episode_numeric_field(
-                    line, "bee_turret_aligned"
-                ),
-                "human_aim_samples": int(
-                    _episode_numeric_field(line, "human_aim_samples") or 0
-                ),
-                "human_aim_error_deg": _episode_numeric_field(
-                    line, "human_aim_error"
-                ),
-                "human_aim_within_5_pct": _episode_numeric_field(
-                    line, "human_aim_within_5deg"
-                ),
-                "human_turret_aligned_pct": _episode_numeric_field(
-                    line, "human_turret_aligned"
-                ),
-            })
+            try:
+                bee_final = int(values[4])
+                human_final = int(values[6])
+                self._episodes.append({
+                    "episode": int(values[0]),
+                    "timeout": timeout,
+                    "duration": duration,
+                    "bee_win": (not timeout and bee_final > 0 and human_final == 0),
+                    "human_win": (not timeout and human_final > 0 and bee_final == 0),
+                    "bee_shots": int(values[8]),
+                    "bee_hits": int(values[9]),
+                    "human_shots": int(values[12]),
+                    "human_hits": int(values[13]),
+                    "bee_aim_samples": int(
+                        _episode_numeric_field(line, "bee_aim_samples") or 0
+                    ),
+                    "bee_aim_error_deg": _episode_numeric_field(
+                        line, "bee_aim_error"
+                    ),
+                    "bee_aim_within_5_pct": _episode_numeric_field(
+                        line, "bee_aim_within_5deg"
+                    ),
+                    "bee_turret_aligned_pct": _episode_numeric_field(
+                        line, "bee_turret_aligned"
+                    ),
+                    "human_aim_samples": int(
+                        _episode_numeric_field(line, "human_aim_samples") or 0
+                    ),
+                    "human_aim_error_deg": _episode_numeric_field(
+                        line, "human_aim_error"
+                    ),
+                    "human_aim_within_5_pct": _episode_numeric_field(
+                        line, "human_aim_within_5deg"
+                    ),
+                    "human_turret_aligned_pct": _episode_numeric_field(
+                        line, "human_turret_aligned"
+                    ),
+                })
+            except (ValueError, OverflowError):
+                # Oversized or malformed fields in a damaged log must not terminate the supervisor.
+                continue
 
     def snapshot(self) -> dict[str, object]:
         episodes = list(self._episodes)
@@ -643,6 +710,24 @@ class BackgroundBuildPreparer:
             return self.prepared_build_id, self.last_error
 
 
+def _sha256_prefix(path: Path, byte_count: int) -> Optional[str]:
+    if byte_count < 0:
+        return None
+    digest = hashlib.sha256()
+    remaining = byte_count
+    try:
+        with path.open("rb") as handle:
+            while remaining > 0:
+                chunk = handle.read(min(1024 * 1024, remaining))
+                if not chunk:
+                    return None
+                digest.update(chunk)
+                remaining -= len(chunk)
+    except OSError:
+        return None
+    return digest.hexdigest()
+
+
 class TrainingLogUploader:
     CHUNK_BYTES = 1024 * 1024
     MAX_FILE_UPLOAD_BYTES = 64 * 1024 * 1024
@@ -651,6 +736,8 @@ class TrainingLogUploader:
     def __init__(self, root: Path) -> None:
         self.root = root
         self._positions: dict[Path, int] = {}
+        self._file_identities: dict[Path, Optional[tuple[int, int]]] = {}
+        self._next_path: Optional[Path] = None
 
     def flush_once(
         self,
@@ -659,6 +746,7 @@ class TrainingLogUploader:
         trainer_id: str,
         run_id: str,
     ) -> int:
+        run_id = _validate_run_id(run_id)
         if not run_id:
             return 0
         run_root = self.root / run_id
@@ -666,18 +754,36 @@ class TrainingLogUploader:
             return 0
         budget = self.CHUNK_BYTES
         uploaded = 0
-        for log_path in sorted(run_root.rglob("*")):
+        log_paths = sorted(run_root.rglob("*"))
+        if not log_paths:
+            return 0
+        if self._next_path in log_paths:
+            start_index = log_paths.index(self._next_path)
+            log_paths = log_paths[start_index:] + log_paths[:start_index]
+        for path_index, log_path in enumerate(log_paths):
             if budget <= 0:
                 break
-            if not log_path.is_file() or log_path.suffix.lower() not in (".log", ".txt", ".json"):
+            if (
+                not log_path.is_file()
+                or log_path.is_symlink()
+                or log_path.suffix.lower() not in (".log", ".txt", ".json")
+            ):
                 continue
             relative = log_path.relative_to(run_root).as_posix()
             try:
-                size = log_path.stat().st_size
+                file_stat = log_path.stat()
+                size = file_stat.st_size
             except OSError:
                 continue
+            identity = _log_file_identity(file_stat)
+            previous_identity = self._file_identities.get(log_path)
+            identity_changed = (
+                previous_identity is not None
+                and identity is not None
+                and previous_identity != identity
+            )
             position = self._positions.get(log_path, 0)
-            if size < position:
+            if identity_changed or size < position:
                 next_offset = client.upload_log_chunk(
                     trainer_id=trainer_id,
                     run_id=run_id,
@@ -690,6 +796,7 @@ class TrainingLogUploader:
                     next_offset = -next_offset - 1
                 position = next_offset
                 self._positions[log_path] = position
+            self._file_identities[log_path] = identity
             if size <= position or position >= self.MAX_FILE_UPLOAD_BYTES:
                 continue
             amount = min(
@@ -699,40 +806,74 @@ class TrainingLogUploader:
             )
             try:
                 with log_path.open("rb") as handle:
+                    opened_identity = _log_file_identity(os.fstat(handle.fileno()))
+                    if identity is not None and opened_identity != identity:
+                        # A rotation between stat and open must not append bytes from the
+                        # replacement file at the previous generation's remote offset.
+                        continue
                     handle.seek(position)
                     data = handle.read(amount)
             except OSError:
                 continue
             if not data:
                 continue
-            next_offset = client.upload_log_chunk(
-                trainer_id=trainer_id,
-                run_id=run_id,
-                relative_path=relative,
-                offset=position,
-                data=data,
-            )
-            if next_offset < 0:
-                self._positions[log_path] = -next_offset - 1
+            try:
+                next_offset = client.upload_log_chunk(
+                    trainer_id=trainer_id,
+                    run_id=run_id,
+                    relative_path=relative,
+                    offset=position,
+                    data=data,
+                )
+            except TrainingLogOffsetMismatch as mismatch:
+                expected_offset = mismatch.expected_offset
+                if expected_offset == 0:
+                    self._positions[log_path] = 0
+                    continue
+                local_prefix_sha256 = (
+                    _sha256_prefix(log_path, expected_offset)
+                    if expected_offset <= size
+                    else None
+                )
+                if (
+                    local_prefix_sha256 is None
+                    or not mismatch.expected_sha256
+                    or local_prefix_sha256 != mismatch.expected_sha256
+                ):
+                    raise ControlRejected(
+                        "remote training log prefix differs from the local file; "
+                        "refusing to append or overwrite either copy"
+                    ) from mismatch
+                self._positions[log_path] = expected_offset
                 continue
             self._positions[log_path] = next_offset
             budget -= len(data)
             uploaded += len(data)
+            self._next_path = log_paths[(path_index + 1) % len(log_paths)]
         return uploaded
 
     def _has_pending_local_bytes(self, run_id: str) -> bool:
+        run_id = _validate_run_id(run_id)
         run_root = self.root / run_id
         if not run_root.is_dir():
             return False
         for log_path in sorted(run_root.rglob("*")):
-            if not log_path.is_file() or log_path.suffix.lower() not in (".log", ".txt", ".json"):
+            if (
+                not log_path.is_file()
+                or log_path.is_symlink()
+                or log_path.suffix.lower() not in (".log", ".txt", ".json")
+            ):
                 continue
             try:
                 size = log_path.stat().st_size
             except OSError:
                 continue
             terminal_offset = min(size, self.MAX_FILE_UPLOAD_BYTES)
-            if self._positions.get(log_path, 0) != terminal_offset:
+            uploaded_position = min(
+                self._positions.get(log_path, 0),
+                self.MAX_FILE_UPLOAD_BYTES,
+            )
+            if uploaded_position != terminal_offset:
                 return True
         return False
 
