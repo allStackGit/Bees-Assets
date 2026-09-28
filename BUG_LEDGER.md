@@ -12,6 +12,9 @@ None currently confirmed. The active audit continues; resolved findings have bee
 
 ## Audit status
 
+- REG-087 was extended after elastic-path review found that rejected stale trajectory uploads also refreshed actor leases; elastic registration, reset acknowledgements, and uploads now use strict epoch checks before renewal. A focused stale/bool-epoch upload case was added but not run. The post-fix clean-pass count remains **0 / 2**.
+
+
 - REG-153 hardens WAN actor and broker handling of boolean-shaped topology, policy, and epoch metadata; focused regression cases were added but not run. This production change leaves the post-fix clean-pass count at **0 / 2**. Static review only.
 
 
