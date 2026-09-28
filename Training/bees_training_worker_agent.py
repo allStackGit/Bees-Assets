@@ -121,6 +121,7 @@ class EpisodeLogMetrics:
         self.window = max(1, int(window))
         self._episodes = deque(maxlen=self.window)
         self._positions: dict[Path, int] = {}
+        self._file_identities: dict[Path, Optional[tuple[int, int]]] = {}
         self._pending: dict[Path, str] = {}
         self._run_id = ""
 
@@ -130,6 +131,7 @@ class EpisodeLogMetrics:
             self._run_id = run_id
             self._episodes.clear()
             self._positions.clear()
+            self._file_identities.clear()
             self._pending.clear()
         scan_root = self.root / run_id if run_id else self.root
         if scan_root.is_dir():
@@ -147,10 +149,26 @@ class EpisodeLogMetrics:
 
     def _read_new(self, log_path: Path) -> None:
         try:
-            size = log_path.stat().st_size
+            file_stat = log_path.stat()
+            size = file_stat.st_size
         except OSError:
             return
+        identity: Optional[tuple[int, int]] = (
+            int(file_stat.st_dev),
+            int(file_stat.st_ino),
+        )
+        if identity[1] == 0:
+            identity = None
         position = self._positions.get(log_path)
+        previous_identity = self._file_identities.get(log_path)
+        identity_changed = (
+            previous_identity is not None
+            and identity is not None
+            and previous_identity != identity
+        )
+        if identity_changed:
+            position = 0
+            self._pending.pop(log_path, None)
         first_read = position is None
         if position is None:
             position = max(0, size - 4 * 1024 * 1024)
@@ -175,6 +193,7 @@ class EpisodeLogMetrics:
             ]
             data = data[min(separators) + 1:] if separators else b""
         self._positions[log_path] = position + len(raw_data)
+        self._file_identities[log_path] = identity
         if not data:
             return
         text = self._pending.get(log_path, "") + data.decode("utf-8", errors="replace")
