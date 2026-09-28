@@ -175,6 +175,15 @@ function statusError(record) {
         ? record.metrics
         : {};
 
+    const reconciliation = metrics.reconciliation;
+    if (reconciliation && typeof reconciliation === 'object') {
+        const phase = String(reconciliation.phase || '').trim();
+        const seconds = Number(reconciliation.seconds_in_phase);
+        if (phase && Number.isFinite(seconds) && seconds >= 0) {
+            return 'Reconcile, ' + ageLabel(seconds) + ': ' + phase;
+        }
+    }
+
     const throughput = metrics.throughput;
     if (throughput && typeof throughput === 'object') {
         const count = Number(throughput.session_failures_total);
