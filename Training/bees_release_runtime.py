@@ -340,11 +340,11 @@ def _verify_installed(root: Path, manifest: Mapping[str, Any], runtime_version: 
         )
 
     manifest_path = root / MANIFEST_NAME
-    expected_manifest = _canonical_json(manifest) + b"\\n"
+    expected_manifest = _canonical_json(manifest) + b"\n"
     if manifest_path.read_bytes() != expected_manifest:
         raise ValueError(f"installed runtime manifest is invalid: {root}")
     marker = root / VERSION_NAME
-    expected_marker = (runtime_version + "\\n").encode("ascii")
+    expected_marker = (runtime_version + "\n").encode("ascii")
     if marker.read_bytes() != expected_marker:
         raise ValueError(f"installed runtime version marker is invalid: {root}")
 
