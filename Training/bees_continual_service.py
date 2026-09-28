@@ -537,36 +537,65 @@ def _run_managed_subprocess(
         kwargs["start_new_session"] = True
 
     process = popen_owned(list(command), **kwargs)
-    # The managed parent treats this child as healthy only after it publishes ready.
-    # Publish readiness once the service has successfully launched an owned phase process.
-    write_managed_health("ready", details={"component": "continual-service"})
-    stop_requested = False
-    while process.poll() is None:
-        if _managed_stop_requested() and not stop_requested:
-            stop_requested = True
-            if interruptible_on_stop:
+    try:
+        # The managed parent treats this child as healthy only after it publishes ready.
+        # Publish readiness once the service has successfully launched an owned phase process.
+        write_managed_health("ready", details={"component": "continual-service"})
+        stop_requested = False
+        while process.poll() is None:
+            if _managed_stop_requested() and not stop_requested:
+                stop_requested = True
+                if interruptible_on_stop:
+                    print(
+                        "[Bees continuous] managed shutdown requested during durable "
+                        "release/publish work; stopping the active phase.",
+                        flush=True,
+                    )
+                    _stop_interruptible_managed_child(process)
+                    break
                 print(
-                    "[Bees continuous] managed shutdown requested during durable "
-                    "release/publish work; stopping the active phase.",
+                    "[Bees continuous] managed shutdown requested during training; "
+                    "waiting for the trainer to finalize checkpoint/model output.",
                     flush=True,
                 )
-                _stop_interruptible_managed_child(process)
-                break
+            time.sleep(MANAGED_CHILD_POLL_SECONDS)
+
+        return_code = int(process.wait())
+        if os.name == "nt":
+            # Windows keeps descendants in the owner Job Object after the root exits.
+            terminate_owned_processes()
+        if stop_requested or _managed_stop_requested():
+            raise KeyboardInterrupt
+        return return_code
+    except Exception:
+        # run_service retries ordinary phase errors while keeping this owner process alive.
+        # Retire the child before propagating so a supervisor-side failure cannot leave an
+        # unsupervised trainer running alongside the retry generation.
+        try:
+            _stop_interruptible_managed_child(process)
+        except Exception as cleanup_error:
             print(
-                "[Bees continuous] managed shutdown requested during training; "
-                "waiting for the trainer to finalize checkpoint/model output.",
+                "[Bees continuous] managed child cleanup failed after supervision error: "
+                f"{type(cleanup_error).__name__}: {cleanup_error}",
+                file=sys.stderr,
                 flush=True,
             )
-        time.sleep(MANAGED_CHILD_POLL_SECONDS)
-
-    return_code = int(process.wait())
-    if os.name == "nt":
-        # Windows keeps descendants in the owner Job Object after the root Popen exits.
-        terminate_owned_processes()
-    if stop_requested or _managed_stop_requested():
-        raise KeyboardInterrupt
-    return return_code
-
+            try:
+                process.kill()
+                process.wait(timeout=5)
+            except Exception:
+                pass
+            if os.name == "nt":
+                try:
+                    terminate_owned_processes()
+                except Exception as job_error:
+                    print(
+                        "[Bees continuous] managed child job cleanup failed: "
+                        f"{type(job_error).__name__}: {job_error}",
+                        file=sys.stderr,
+                        flush=True,
+                    )
+        raise
 
 def _run(
     command: Sequence[str],
