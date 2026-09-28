@@ -611,14 +611,13 @@ function prepareRemoteBootstrap(config, python, release) {
     const windowsCmd = `@echo off
 setlocal EnableExtensions
 echo [Bees remote] launching Windows training worker...
-set "BEES_BOOTSTRAP_DIR=%TEMP%\\BeesTrainingBootstrap"
+set "BEES_BOOTSTRAP_DIR=%TEMP%\\BeesTrainingBootstrap-%RANDOM%-%RANDOM%"
 set "BEES_SELF=%~f0"
 set "BEES_REMOTE_LAUNCHER_PATH=%~f0"
 set "BEES_PAYLOAD_ZIP=%BEES_BOOTSTRAP_DIR%\\payload.zip"
-if exist "%BEES_BOOTSTRAP_DIR%" rd /s /q "%BEES_BOOTSTRAP_DIR%"
 mkdir "%BEES_BOOTSTRAP_DIR%" >nul 2>&1
 echo [Bees remote] extracting bundled bootstrap...
-powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -Command "$t=[IO.File]::ReadAllText($env:BEES_SELF);$m=[regex]::Match($t,'(?ms)^::BEES_PAYLOAD_BEGIN\\r?\\n(?<payload>.*?)\\r?\\n::BEES_PAYLOAD_END\\s*$');if(-not $m.Success){throw 'Embedded Bees payload block not found.'};$b=$m.Groups['payload'].Value -replace '\\s','';$bytes=[Convert]::FromBase64String($b);if($bytes.Length -lt 4 -or $bytes[0] -ne 0x50 -or $bytes[1] -ne 0x4B){throw 'Embedded Bees payload is not a valid ZIP archive.'};[IO.File]::WriteAllBytes($env:BEES_PAYLOAD_ZIP,$bytes);Expand-Archive -LiteralPath $env:BEES_PAYLOAD_ZIP -DestinationPath $env:BEES_BOOTSTRAP_DIR -Force"
+powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -Command "$null=New-Item -ItemType Directory -Force -Path $env:BEES_BOOTSTRAP_DIR;$t=[IO.File]::ReadAllText($env:BEES_SELF);$m=[regex]::Match($t,'(?ms)^::BEES_PAYLOAD_BEGIN\\r?\\n(?<payload>.*?)\\r?\\n::BEES_PAYLOAD_END\\s*$');if(-not $m.Success){throw 'Embedded Bees payload block not found.'};$b=$m.Groups['payload'].Value -replace '\\s','';$bytes=[Convert]::FromBase64String($b);if($bytes.Length -lt 4 -or $bytes[0] -ne 0x50 -or $bytes[1] -ne 0x4B){throw 'Embedded Bees payload is not a valid ZIP archive.'};[IO.File]::WriteAllBytes($env:BEES_PAYLOAD_ZIP,$bytes);Expand-Archive -LiteralPath $env:BEES_PAYLOAD_ZIP -DestinationPath $env:BEES_BOOTSTRAP_DIR -Force"
 if errorlevel 1 (
   echo [Bees remote] failed to extract the bundled bootstrap.
   exit /b 1
