@@ -37,6 +37,12 @@ class RunLifecycleTests(unittest.TestCase):
                 "action_schema_version": 8,
                 "reward_schema_version": 3,
                 "scenario_schema_version": 1,
+                "historical_league": {"training_ratio": 0.2},
+                "human_imitation": {
+                    "strength": 0.05,
+                    "steps": 500000,
+                    "batch_size": 512,
+                },
             }),
             encoding="utf-8",
         )
@@ -98,6 +104,32 @@ class RunLifecycleTests(unittest.TestCase):
             self.assertNotEqual(
                 changed["compatibility_key"],
                 first["compatibility_key"],
+            )
+
+    def test_continual_training_data_settings_change_creates_new_run(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            assets = self._assets(root)
+            state = root / "current.json"
+            config_path = assets / "Training" / "continual_learning_config.json"
+            first = lifecycle.plan_run(assets, state)
+            lifecycle.commit_plan(state, first)
+
+            config = json.loads(config_path.read_text(encoding="utf-8"))
+            config["historical_league"]["training_ratio"] = 0.3
+            config_path.write_text(json.dumps(config), encoding="utf-8")
+            changed_league = lifecycle.plan_run(assets, state)
+            self.assertTrue(changed_league["incompatible"])
+            self.assertNotEqual(changed_league["run_id"], first["run_id"])
+
+            lifecycle.commit_plan(state, changed_league)
+            config["human_imitation"]["strength"] = 0.1
+            config_path.write_text(json.dumps(config), encoding="utf-8")
+            changed_imitation = lifecycle.plan_run(assets, state)
+            self.assertTrue(changed_imitation["incompatible"])
+            self.assertNotEqual(
+                changed_imitation["run_id"],
+                changed_league["run_id"],
             )
 
     def test_training_option_implementation_change_creates_new_run(self):
