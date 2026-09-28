@@ -227,6 +227,107 @@ class TrainingControlStore {
         };
     }
 
+    _migrateSchema2Builds(builds) {
+        if (!builds || typeof builds !== 'object' || Array.isArray(builds)) {
+            throw new Error('training-control schema 2 build catalog is invalid');
+        }
+
+        const safeIdentity = /^[A-Za-z0-9._-]+$/;
+        const dedicatedBuilds = {};
+        const fullGameBuilds = {};
+        for (const [platform, versions] of Object.entries(builds)) {
+            if (!safeIdentity.test(platform) ||
+                !versions || typeof versions !== 'object' || Array.isArray(versions)) {
+                throw new Error(
+                    'training-control schema 2 build catalog is invalid for ' + platform);
+            }
+            dedicatedBuilds[platform] = {};
+            fullGameBuilds[platform] = {};
+            const legacyPlatformRoot = path.join(this.artifactRoot, platform);
+
+            for (const [buildId, record] of Object.entries(versions)) {
+                if (!safeIdentity.test(buildId) ||
+                    !record || typeof record !== 'object' || Array.isArray(record) ||
+                    record.platform !== platform ||
+                    record.build_id !== buildId ||
+                    typeof record.archive_sha256 !== 'string' ||
+                    !/^[0-9a-f]{64}$/.test(record.archive_sha256) ||
+                    !Number.isInteger(record.archive_size_bytes) ||
+                    record.archive_size_bytes <= 0 ||
+                    typeof record.archive_path !== 'string' || !record.archive_path ||
+                    typeof record.entrypoint !== 'string' || !record.entrypoint) {
+                    throw new Error(
+                        'training-control schema 2 build descriptor is invalid for ' +
+                        platform + '/' + buildId);
+                }
+
+                const source = path.resolve(record.archive_path);
+                if (path.dirname(source) !== legacyPlatformRoot) {
+                    throw new Error(
+                        'training-control schema 2 artifact path is invalid for ' +
+                        platform + '/' + buildId);
+                }
+                const sourceStats = fs.lstatSync(source);
+                if (sourceStats.isSymbolicLink() || !sourceStats.isFile() ||
+                    sourceStats.size !== record.archive_size_bytes ||
+                    sha256File(source) !== record.archive_sha256) {
+                    throw new Error(
+                        'training-control schema 2 artifact is invalid for ' +
+                        platform + '/' + buildId);
+                }
+
+                for (const [role, catalog] of [
+                    ['dedicated', dedicatedBuilds],
+                    ['full-game', fullGameBuilds],
+                ]) {
+                    const platformRoot = path.join(this.artifactRoot, role, platform);
+                    fs.mkdirSync(platformRoot, { recursive: true });
+                    const destination = path.join(
+                        platformRoot,
+                        buildId + '-' + record.archive_sha256 + '.zip',
+                    );
+                    if (!fs.existsSync(destination)) {
+                        const temporary = destination + '.tmp-' + process.pid + '-' +
+                            crypto.randomBytes(6).toString('hex');
+                        try {
+                            fs.copyFileSync(source, temporary);
+                            const copiedStats = fs.lstatSync(temporary);
+                            if (copiedStats.isSymbolicLink() || !copiedStats.isFile() ||
+                                copiedStats.size !== record.archive_size_bytes ||
+                                sha256File(temporary) !== record.archive_sha256) {
+                                throw new Error(
+                                    'training-control schema 2 artifact migration verification failed');
+                            }
+                            fs.renameSync(temporary, destination);
+                        } finally {
+                            try {
+                                if (fs.existsSync(temporary)) fs.unlinkSync(temporary);
+                            } catch (_) {
+                                // A failed migration remains fail-closed; a temporary orphan is harmless.
+                            }
+                        }
+                    } else {
+                        const destinationStats = fs.lstatSync(destination);
+                        if (destinationStats.isSymbolicLink() || !destinationStats.isFile() ||
+                            destinationStats.size !== record.archive_size_bytes ||
+                            sha256File(destination) !== record.archive_sha256) {
+                            throw new Error(
+                                'training-control schema 2 migrated artifact is invalid for ' +
+                                role + '/' + platform + '/' + buildId);
+                        }
+                    }
+
+                    catalog[platform][buildId] = {
+                        ...record,
+                        role,
+                        archive_path: destination,
+                    };
+                }
+            }
+        }
+        return { dedicatedBuilds, fullGameBuilds };
+    }
+
     _loadState() {
         if (!fs.existsSync(this.statePath)) return this._defaultState();
         let parsed = JSON.parse(fs.readFileSync(this.statePath, 'utf8'));
@@ -235,15 +336,13 @@ class TrainingControlStore {
         }
         let migrated = false;
         if (parsed.schema_version === 2) {
-            const fullGameBuilds = {};
-            for (const [platform, versions] of Object.entries(parsed.builds || {})) {
-                fullGameBuilds[platform] = {};
-                for (const [buildId, record] of Object.entries(versions || {})) {
-                    fullGameBuilds[platform][buildId] = { ...record, role: 'full-game' };
-                    versions[buildId] = { ...record, role: 'dedicated' };
-                }
-            }
-            parsed = { ...parsed, schema_version: 3, full_game_builds: fullGameBuilds };
+            const migratedBuilds = this._migrateSchema2Builds(parsed.builds);
+            parsed = {
+                ...parsed,
+                schema_version: 3,
+                builds: migratedBuilds.dedicatedBuilds,
+                full_game_builds: migratedBuilds.fullGameBuilds,
+            };
             migrated = true;
         }
         if (parsed.schema_version === 3) {
