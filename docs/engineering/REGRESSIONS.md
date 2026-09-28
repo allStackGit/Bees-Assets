@@ -1354,3 +1354,12 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** `Training/bees_elastic_wan_zero_local_tests.py` covers both hybrid and zero-local initializers, checking that broker-construction failure precedes local worker creation and that broker-start failure closes both broker and local manager. The source-order assertion was updated to follow the current initializer. Tests were added but not executed under the static-only request.
 **Verification:** Re-read the current initializer and regression-test source through GitHub. No tests, builds, Unity, or runtime checks were run.
 **Invariant/knowledge:** Validate failure-prone release/session metadata before starting subprocess workers; once startup has created owned resources, every subsequent failure path must close them before propagating the original error.
+
+### REG-155 — Interruptible POSIX phase stop waited too briefly for nested cleanup
+**Area:** `Training/bees_continual_service.py`, `Training/bees_process_safety.py`; managed continual phase shutdown
+**Symptom:** Stopping an interruptible release/build phase could terminate its POSIX owned-child guardian before the guardian's nested process-group shutdown grace elapsed, allowing a stubborn nested process to outlive the service phase.
+**Root cause:** The service waited five seconds before killing the guardian, while the guardian waited ten seconds before force-killing its own child process group.
+**Fix:** Name the guardian's termination grace interval and make the service's interruptible-stop wait longer than that interval, leaving time for the guardian to finish descendant cleanup.
+**Permanent protection:** `Training/bees_continual_service_tests.py` asserts that the interruptible-stop wait exceeds the owned-child tree grace interval. This regression test was added but not executed under the static-only request.
+**Verification:** Re-read the shutdown constants, guardian escalation, and service stop helper through GitHub. No tests, builds, Unity, or runtime checks were run.
+**Invariant/knowledge:** An owner must wait through the full descendant-cleanup grace of any subprocess guardian before force-killing that guardian.
