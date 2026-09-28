@@ -191,14 +191,12 @@ def historical_training_settings(
         raise SystemExit("historical_league configuration must be an object.")
 
     raw_ratio = settings.get("training_ratio", 0.0)
-    if isinstance(raw_ratio, bool):
-        raise SystemExit("historical_league.training_ratio must be in [0,1].")
-    try:
-        ratio = float(raw_ratio)
-    except (TypeError, ValueError) as exc:
-        raise SystemExit("historical_league.training_ratio must be in [0,1].") from exc
-    if not math.isfinite(ratio) or ratio < 0.0 or ratio > 1.0:
-        raise SystemExit("historical_league.training_ratio must be in [0,1].")
+    if (
+        type(raw_ratio) not in (int, float)
+        or not 0.0 <= raw_ratio <= 1.0
+    ):
+        raise SystemExit("historical_league.training_ratio must be a number in [0,1].")
+    ratio = float(raw_ratio)
 
     raw_provider = settings.get("training_onnx_provider")
     if raw_provider is None:
@@ -214,22 +212,11 @@ def historical_training_settings(
         "training_policy_cache_size",
         DEFAULT_HISTORICAL_POLICY_CACHE_SIZE,
     )
-    if isinstance(raw_cache_size, bool):
+    if type(raw_cache_size) is not int or raw_cache_size <= 0:
         raise SystemExit(
             "historical_league.training_policy_cache_size must be a positive integer."
         )
-    try:
-        cache_size = int(raw_cache_size)
-    except (TypeError, ValueError) as exc:
-        raise SystemExit(
-            "historical_league.training_policy_cache_size must be a positive integer."
-        ) from exc
-    if cache_size <= 0 or (
-        isinstance(raw_cache_size, float) and not raw_cache_size.is_integer()
-    ):
-        raise SystemExit(
-            "historical_league.training_policy_cache_size must be a positive integer."
-        )
+    cache_size = raw_cache_size
 
     seed_text = _trainer_arg(trainer_args, "--seed")
     try:
@@ -240,15 +227,9 @@ def historical_training_settings(
 
 
 def _positive_integer_setting(value: object, label: str) -> int:
-    if isinstance(value, bool):
+    if type(value) is not int or value <= 0:
         raise SystemExit(f"{label} must be a positive integer.")
-    try:
-        parsed = int(value)
-    except (TypeError, ValueError) as exc:
-        raise SystemExit(f"{label} must be a positive integer.") from exc
-    if parsed <= 0 or (isinstance(value, float) and not value.is_integer()):
-        raise SystemExit(f"{label} must be a positive integer.")
-    return parsed
+    return value
 
 
 def human_imitation_settings(config: Mapping[str, object]) -> Tuple[float, int, int]:
@@ -259,11 +240,11 @@ def human_imitation_settings(config: Mapping[str, object]) -> Tuple[float, int, 
         )
 
     raw_strength = settings.get("strength")
-    if isinstance(raw_strength, bool):
+    if type(raw_strength) not in (int, float):
         raise SystemExit("human_imitation.strength must be a finite positive number.")
     try:
         strength = float(raw_strength)
-    except (TypeError, ValueError) as exc:
+    except OverflowError as exc:
         raise SystemExit("human_imitation.strength must be a finite positive number.") from exc
     if not math.isfinite(strength) or strength <= 0.0:
         raise SystemExit("human_imitation.strength must be a finite positive number.")
