@@ -435,7 +435,12 @@ def _validate_session(session: Mapping[str, Any], actor_id: int) -> Tuple[str, i
     run_options = session.get("run_options")
     if not isinstance(session_id, str) or not session_id:
         raise RuntimeError("WAN broker session id is malformed")
-    if not isinstance(actor_count, int) or not isinstance(envs_per_actor, int):
+    if (
+        not isinstance(actor_count, int)
+        or isinstance(actor_count, bool)
+        or not isinstance(envs_per_actor, int)
+        or isinstance(envs_per_actor, bool)
+    ):
         raise RuntimeError("WAN broker actor topology is malformed")
     if not 0 <= actor_id < actor_count:
         raise RuntimeError(f"actor id {actor_id} is outside central actor count {actor_count}")
@@ -743,7 +748,11 @@ class ActorSession:
         while not self.stop.is_set() and time.monotonic() < deadline:
             record = self.client.control(self.session_id, self.control_epoch)
             if record is not None:
-                if record.get("kind") != "reset" or int(record.get("epoch", 0)) <= 0:
+                if (
+                    not isinstance(record, Mapping)
+                    or record.get("kind") != "reset"
+                    or _validated_state_epoch(record, "epoch") <= 0
+                ):
                     raise RuntimeError("WAN actor initial central control record must be a reset")
                 return record
             time.sleep(0.1)
