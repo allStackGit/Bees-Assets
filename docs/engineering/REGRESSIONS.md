@@ -1255,3 +1255,12 @@ Manual-only protection is acceptable only when the record explains why determini
 **Verification:** Statically traced both readers' stat/open/cursor flows and confirmed mismatched descriptors return without consuming bytes or advancing the cursor. No tests, builds, Unity, or runtime checks were performed.  
 **Invariant/knowledge:** A path-based metadata check does not establish the identity of a later opened handle; log cursor ownership must be bound to the actual descriptor.
 
+### REG-144 — Log offset responses accepted malformed integer-shaped values
+**Area:** `Training/bees_training_control.py`, `TrainingControlClient.upload_log_chunk`  
+**Symptom:** A malformed successful log response with `next_offset: true` could be accepted as byte offset 1, while a non-object HTTP 409 body could escape through an unexpected attribute error instead of a controlled protocol rejection.  
+**Root cause:** Python booleans are instances of `int`, and the conflict handler called `.get()` without first checking that decoded JSON was a mapping.  
+**Fix:** Reject boolean offsets and coerce non-mapping conflict bodies to an empty response before validating the expected offset.  
+**Permanent protection:** Treat protocol offsets as non-boolean integers and validate response container types before field access. A focused malformed-response test was not added under the static-only audit instruction.  
+**Verification:** Static comparison of the client checks against server offset response shapes confirms malformed values are rejected as `ControlRejected`; no tests or runtime checks were performed.  
+**Invariant/knowledge:** In Python, `bool` is an `int` subtype; protocol integer validation must explicitly reject booleans.
+
