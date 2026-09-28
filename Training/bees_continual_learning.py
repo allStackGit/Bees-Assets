@@ -161,15 +161,24 @@ def config_hash(path: Optional[os.PathLike[str] | str]) -> Optional[str]:
 
 
 def _finite_number(value: Any) -> bool:
-    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(float(value))
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return False
+    try:
+        return math.isfinite(float(value))
+    except (OverflowError, ValueError):
+        return False
 
 
 def _walk_finite_numbers(value: Any, *, path: str = "$") -> None:
     if isinstance(value, bool) or value is None or isinstance(value, str):
         return
     if isinstance(value, (int, float)):
-        if not math.isfinite(float(value)):
-            raise ValidationError(f"Non-finite numeric value at {path}.")
+        try:
+            finite = math.isfinite(float(value))
+        except (OverflowError, ValueError):
+            finite = False
+        if not finite:
+            raise ValidationError(f"Non-finite or out-of-range numeric value at {path}.")
         return
     if isinstance(value, list):
         for index, child in enumerate(value):
