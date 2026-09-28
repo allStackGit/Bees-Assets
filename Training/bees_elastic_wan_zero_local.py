@@ -15,6 +15,7 @@ pauses learning rather than terminating or advancing a stale optimizer.
 
 from __future__ import annotations
 
+import logging
 import queue
 import time
 from typing import Any, Dict, List, Optional
@@ -38,20 +39,40 @@ class ZeroLocalElasticWanEnvManagerMixin(elastic.ElasticWanEnvManagerMixin):
         EnvManager.__init__(self)
         if n_env < 0:
             raise RuntimeError("Elastic WAN local environment count may not be negative.")
-        self._bees_local_manager = (
-            local_manager_class(env_factory, run_options, n_env) if n_env > 0 else None
-        )
         self._bees_local_envs = n_env
         self._bees_wan_options = options
         self._bees_wan_timeout = max(1.0, float(run_options.env_settings.timeout_wait))
         self._bees_wan_initial_reset = False
-        self._bees_wan_broker = elastic.ElasticWanBroker(
+        # Validate the managed release contract before constructing SubprocessEnvManager,
+        # whose constructor starts Unity worker processes.
+        broker = elastic.ElasticWanBroker(
             options,
             run_options,
             base.load_auth_token(options.auth_token_file or ""),
             n_env,
         )
-        self._bees_wan_broker.start()
+        local_manager = None
+        try:
+            if n_env > 0:
+                local_manager = local_manager_class(env_factory, run_options, n_env)
+            broker.start()
+        except BaseException:
+            try:
+                broker.close()
+            except Exception:
+                logging.getLogger(elastic.__name__).exception(
+                    "Failed to close elastic WAN broker after initialization failed."
+                )
+            if local_manager is not None:
+                try:
+                    local_manager.close()
+                except Exception:
+                    logging.getLogger(elastic.__name__).exception(
+                        "Failed to close local Unity workers after elastic WAN initialization failed."
+                    )
+            raise
+        self._bees_local_manager = local_manager
+        self._bees_wan_broker = broker
         write_managed_health(
             "ready",
             details={
