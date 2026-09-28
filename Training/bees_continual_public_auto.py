@@ -58,15 +58,9 @@ DEFAULT_WATCH_SECONDS = 30.0
 
 
 def _positive_int(value: object, label: str) -> int:
-    if isinstance(value, bool):
+    if type(value) is not int or value <= 0:
         raise ValidationError(f"{label} must be a positive integer.")
-    try:
-        parsed = int(value)
-    except (TypeError, ValueError) as exc:
-        raise ValidationError(f"{label} must be a positive integer.") from exc
-    if parsed <= 0:
-        raise ValidationError(f"{label} must be a positive integer.")
-    return parsed
+    return value
 
 
 def _target_fraction(value: object) -> float:
