@@ -430,6 +430,19 @@ class BrokerInvariantTests(unittest.TestCase):
             "trajectories": [FakeTrajectory(self.behavior, agent_id)],
         }
 
+    def test_broker_restarts_http_server_only_after_a_started_server_dies(self):
+        never_started = wan.WanActorBroker(self.options, fake_run_options(), "x" * 32)
+        with mock.patch.object(never_started, "start") as start:
+            never_started.ensure_server_alive()
+        start.assert_not_called()
+
+        self.broker._server_started_once = True
+        self.broker._server = None
+        self.broker._server_thread = None
+        with mock.patch.object(self.broker, "start") as start:
+            self.broker.ensure_server_alive()
+        start.assert_called_once_with()
+
     def test_stale_policy_version_is_rejected(self):
         with self.assertRaisesRegex(wan.StaleActorStateError, "policy versions"):
             self.broker.submit_trajectory_batch(self._payload(0, "agent_0-7", version=0))
