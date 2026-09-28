@@ -96,10 +96,10 @@ function Install-RemoteAutostart {
         Write-Warning '[Bees remote] Windows Startup folder is unavailable; reboot autostart could not be registered.'
         return
     }
-    $args=@('start','-InstallRoot',('"' + $InstallRoot + '"'),'-TorchDevice',('"' + $TorchDevice + '"'))
-    if($Envs -gt 0){$args+=@('-Envs',[string]$Envs)}
+    $autostartArgs=@('start','-InstallRoot',('"' + $InstallRoot + '"'),'-TorchDevice',('"' + $TorchDevice + '"'))
+    if($Envs -gt 0){$autostartArgs+=@('-Envs',[string]$Envs)}
     $line='@echo off' + [Environment]::NewLine +
-        'call "' + $launcherPath + '" ' + ($args -join ' ') + [Environment]::NewLine
+        'call "' + $launcherPath + '" ' + ($autostartArgs -join ' ') + [Environment]::NewLine
     [IO.File]::WriteAllText($AutostartFile,$line,(New-Object Text.UTF8Encoding($false)))
 }
 
