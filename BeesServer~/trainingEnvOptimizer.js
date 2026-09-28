@@ -9,6 +9,7 @@ const DEFAULT_RETEST_MS = 5 * 60_000;
 const DEFAULT_INSTABILITY_HOLD_MS = 15 * 60_000;
 const DEFAULT_METRICS_TIMEOUT_MS = 3 * 60_000;
 const DEFAULT_MIN_IMPROVEMENT_RATIO = 0.03;
+const STOPPED_TRANSITION_GRACE_MS = 30_000;
 const DEFAULT_REGRESSION_RATIO = 0.05;
 
 function finiteInteger(value) {
@@ -151,6 +152,7 @@ class TrainingEnvOptimizer {
             consecutive_baseline_session_failures: 0,
             last_update_ms: now,
             metrics_missing_since_ms: null,
+            stopped_since_ms: null,
         };
     }
 
@@ -484,6 +486,34 @@ class TrainingEnvOptimizer {
             reportedError.startsWith('ControlUnavailable:');
         const optimizerError = controlTransportError ? '' : reportedError;
 
+        const reconciliation = record && record.metrics &&
+            typeof record.metrics === 'object' &&
+            !Array.isArray(record.metrics) &&
+            record.metrics.reconciliation &&
+            typeof record.metrics.reconciliation === 'object' &&
+            !Array.isArray(record.metrics.reconciliation)
+                ? record.metrics.reconciliation
+                : null;
+        const reconciliationActive = Boolean(
+            reconciliation && String(reconciliation.phase || '').trim()
+        );
+
+        if (processState === 'stopped' && !optimizerError) {
+            if (state.stopped_since_ms === null) state.stopped_since_ms = timestamp;
+        } else {
+            state.stopped_since_ms = null;
+        }
+        const stoppedTransitionGrace =
+            processState === 'stopped' &&
+            !optimizerError &&
+            (
+                reconciliationActive ||
+                (
+                    state.stopped_since_ms !== null &&
+                    timestamp - state.stopped_since_ms < STOPPED_TRANSITION_GRACE_MS
+                )
+            );
+
         // A recovered control-plane transport interruption is not evidence that the Unity
         // worker itself is unstable. Older worker runtimes could echo ControlUnavailable back
         // through last_error on their recovery heartbeat, which otherwise creates a 15-minute
@@ -533,10 +563,11 @@ class TrainingEnvOptimizer {
                 state.phase === 'awaiting-restart' ||
                 state.baseline_envs === null
             );
+        const expectedTransition = expectedStarting || stoppedTransitionGrace;
         const currentProcessFailure =
             (processState &&
                 processState !== 'running' &&
-                !expectedStarting) ||
+                !expectedTransition) ||
             Boolean(optimizerError);
         const workerUnstable = currentProcessFailure || recentSessionFailure;
         if (workerUnstable) {
