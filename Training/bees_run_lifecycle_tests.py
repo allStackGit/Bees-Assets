@@ -21,11 +21,11 @@ class RunLifecycleTests(unittest.TestCase):
         scenes.mkdir(parents=True)
         weapon_dir.mkdir(parents=True)
         (weapon_dir / "Weapon.cs").write_text(
-            "public class Weapon { public float Power = 1f; }\\n",
+            "public class Weapon { public float Power = 1f; }\n",
             encoding="utf-8",
         )
         (entities / "Ships" / "Ship.Movement.cs").write_text(
-            "public partial class Ship { public float Speed = 1f; }\\n",
+            "public partial class Ship { public float Speed = 1f; }\n",
             encoding="utf-8",
         )
         (training / "continual_learning_config.json").write_text(
@@ -91,7 +91,7 @@ class RunLifecycleTests(unittest.TestCase):
 
             weapon = assets / "Scripts" / "Entities" / "Ships" / "Weapons" / "Weapon.cs"
             weapon.write_text(
-                "public class Weapon { public float Power = 2f; }\\n",
+                "public class Weapon { public float Power = 2f; }\n",
                 encoding="utf-8",
             )
             changed_weapon = lifecycle.plan_run(assets, state)
@@ -101,7 +101,7 @@ class RunLifecycleTests(unittest.TestCase):
             lifecycle.commit_plan(state, changed_weapon)
             movement = assets / "Scripts" / "Entities" / "Ships" / "Ship.Movement.cs"
             movement.write_text(
-                "public partial class Ship { public float Speed = 2f; }\\n",
+                "public partial class Ship { public float Speed = 2f; }\n",
                 encoding="utf-8",
             )
             changed_movement = lifecycle.plan_run(assets, state)
