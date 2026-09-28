@@ -491,6 +491,29 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
             windows,
         )
 
+    def test_windows_launcher_rerun_repairs_live_but_unhealthy_supervisor(self):
+        root = Path(__file__).resolve().parents[1]
+        windows = (root / "Training" / "bees_remote_bootstrap.ps1").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("function Test-SupervisorControlHealthy", windows)
+        self.assertIn("/v1/status", windows)
+        self.assertIn("request.Timeout=3000", windows)
+        self.assertIn("for($attempt=1;$attempt -le 3;$attempt++)", windows)
+        self.assertIn("function Restart-UnhealthySupervisor", windows)
+        self.assertIn("unhealthy supervisor stopped cleanly; continuing bootstrap", windows)
+        self.assertIn("forcing the stale remote supervisor to terminate", windows)
+        self.assertIn("if(Test-SupervisorControlHealthy)", windows)
+        self.assertIn(
+            "worker is already running and authenticated learner control is healthy",
+            windows,
+        )
+        self.assertNotIn(
+            'worker is already running in the background (PID $($existingProcess.Id)).',
+            windows,
+        )
+
     def test_generated_remote_launchers_and_learner_gateway_share_gameplay_port(self):
         root = Path(__file__).resolve().parents[1]
         windows = (root / "Training" / "bees_remote_bootstrap.ps1").read_text(
