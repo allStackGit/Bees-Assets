@@ -472,6 +472,26 @@ class BrokerInvariantTests(unittest.TestCase):
         with self.assertRaisesRegex(wan.StaleActorStateError, "control epoch"):
             self.broker.submit_trajectory_batch(payload)
 
+    def test_rejected_trajectory_batches_do_not_renew_actor_lease(self):
+        original_last_seen = time.monotonic() - 5.0
+        self.broker._registrations[0]["last_seen"] = original_last_seen
+
+        malformed = self._payload(0, "agent_4-99")
+        with self.assertRaisesRegex(ValueError, "outside actor 0"):
+            self.broker.submit_trajectory_batch(malformed)
+        self.assertEqual(self.broker._registrations[0]["last_seen"], original_last_seen)
+
+        accepted = self._payload(0, "agent_3-99")
+        self.assertEqual(self.broker.submit_trajectory_batch(accepted), 1)
+        self.assertGreater(self.broker._registrations[0]["last_seen"], original_last_seen)
+
+        # A second queued batch from one actor receives backpressure and must not
+        # refresh the lease merely by being rejected.
+        self.broker._registrations[0]["last_seen"] = original_last_seen
+        with self.assertRaises(queue.Full):
+            self.broker.submit_trajectory_batch(self._payload(0, "agent_2-8"))
+        self.assertEqual(self.broker._registrations[0]["last_seen"], original_last_seen)
+
     def test_actor_cannot_claim_another_actors_worker_ids(self):
         with self.assertRaisesRegex(ValueError, "outside actor 0"):
             self.broker.submit_trajectory_batch(self._payload(0, "agent_4-99"))
