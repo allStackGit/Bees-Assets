@@ -4,11 +4,6 @@ Static-only repository audit on `rl/initial-design-work`. This ledger is the cur
 
 ## Active validated defects
 
-### BUG-001 — WAN learner initialization can leak local Unity workers
-**Location:** `Training/bees_elastic_wan_training.py`, `Training/bees_elastic_wan_zero_local.py`, `ElasticWanEnvManagerMixin._bees_elastic_initialize`
-**Description:** The wrapper constructs ML-Agents' `SubprocessEnvManager` before constructing `ElasticWanBroker`. The pinned ML-Agents worker manager starts each worker process in its constructor, while the broker constructor can then raise for missing or malformed managed release identity. Since the custom manager constructor never completes, its normal `close()` path is not guaranteed to run and those Unity worker processes may be orphaned. Broker startup failure after manager construction has the same ownership gap.
-
-
 ## Reported issues under investigation
 
 - **Pluto II SSSS tooltip corruption (user-reported, not yet independently reproduced):** During the first multipage tooltip, a later page can render repeated lowercase `s` characters over time; turning the page away and returning reproduces it. Current static trace shows `Tooltip.ShowSequencePage` assigns the authored page text and sets `maxVisibleCharacters` to `int.MaxValue`; `CampaignFeedbackAdjustmentGuard.UpdatePlutoTwo` reads tooltip text but does not rewrite it. This does not explain the observed output, so REG-124's related competing-writer fix is not treated as proof that this report is resolved. Runtime reproduction is unavailable under the static-only audit constraint.
@@ -17,6 +12,8 @@ Static-only repository audit on `rl/initial-design-work`. This ledger is the cur
 
 - REG-087 was extended after elastic-path review found that rejected stale trajectory uploads also refreshed actor leases; elastic registration, reset acknowledgements, and uploads now use strict epoch checks before renewal. A focused stale/bool-epoch registration, acknowledgement, and upload cases were added but not run. The post-fix clean-pass count remains **0 / 2**.
 
+
+- BUG-001 is resolved in both hybrid and zero-local initializer paths: broker validation now precedes local worker creation, and later startup failures close the broker and any created local manager. REG-154 records the fix and unrun regression coverage. The required post-fix clean-pass count remains **0 / 2**. Static review only.
 
 - REG-153 hardens WAN actor and broker handling of boolean-shaped topology, policy, and epoch metadata; focused regression cases were added but not run. This production change leaves the post-fix clean-pass count at **0 / 2**. Static review only.
 
