@@ -650,13 +650,20 @@ class WanActorBroker:
             raise ValueError(f"actor_id must be in [0,{self.options.actor_count - 1}]")
         return value
 
+    @staticmethod
+    def _validate_control_epoch(value: Any, expected: int) -> int:
+        if not isinstance(value, int) or isinstance(value, bool) or value < 0 or value != expected:
+            raise StaleActorStateError(
+                f"actor control epoch {value!r} != central epoch {expected}"
+            )
+        return value
+
     def register_actor(self, payload: Mapping[str, Any]) -> None:
         actor_id = self._validate_actor_id(payload.get("actor_id"))
-        control_epoch = payload.get("control_epoch")
-        if control_epoch != self.control_epoch:
-            raise StaleActorStateError(
-                f"actor control epoch {control_epoch!r} != central epoch {self.control_epoch}"
-            )
+        control_epoch = self._validate_control_epoch(
+            payload.get("control_epoch"),
+            self.control_epoch,
+        )
         behavior_specs = payload.get("behavior_specs")
         if not isinstance(behavior_specs, Mapping) or not behavior_specs:
             raise ValueError("actor registration requires non-empty behavior_specs")
@@ -665,10 +672,7 @@ class WanActorBroker:
         with self._condition:
             # Control can advance after the optimistic check above while this request waits
             # for the broker lock. Never publish a registration for an already-stale epoch.
-            if control_epoch != self._control_epoch:
-                raise StaleActorStateError(
-                    f"actor control epoch {control_epoch!r} != central epoch {self._control_epoch}"
-                )
+            self._validate_control_epoch(control_epoch, self._control_epoch)
             if self._registrations:
                 reference = next(iter(self._registrations.values()))["signatures"]
                 if signatures != reference:
@@ -815,8 +819,7 @@ class WanActorBroker:
 
     def acknowledge_reset(self, payload: Mapping[str, Any]) -> None:
         self._validate_actor_id(payload.get("actor_id"))
-        if payload.get("control_epoch") != self.control_epoch:
-            raise StaleActorStateError("reset acknowledgement is for a stale control epoch")
+        self._validate_control_epoch(payload.get("control_epoch"), self.control_epoch)
         # The current implementation does not block the learner on every actor acknowledgement.
         # Exact control epochs on trajectory uploads ensure stale actors cannot contribute until reset.
 
@@ -853,10 +856,10 @@ class WanActorBroker:
         ):
             raise ValueError("trajectory batch_id must be a non-empty string up to 64 characters")
         with self._condition:
-            if payload.get("control_epoch") != self._control_epoch:
-                raise StaleActorStateError(
-                    f"trajectory control epoch {payload.get('control_epoch')!r} != {self._control_epoch}"
-                )
+            control_epoch = self._validate_control_epoch(
+                payload.get("control_epoch"),
+                self._control_epoch,
+            )
             self._validate_policy_versions(payload.get("policy_versions"))
             if actor_id not in self._active_actor_ids_locked():
                 raise ValueError("actor registration lease expired before trajectory upload")
@@ -894,14 +897,11 @@ class WanActorBroker:
         item = {
             "actor_id": actor_id,
             "policy_versions": dict(payload["policy_versions"]),
-            "control_epoch": int(payload["control_epoch"]),
+            "control_epoch": control_epoch,
             "trajectories": trajectories,
         }
         with self._condition:
-            if payload.get("control_epoch") != self._control_epoch:
-                raise StaleActorStateError(
-                    "trajectory control epoch changed while validating the batch"
-                )
+            self._validate_control_epoch(payload.get("control_epoch"), self._control_epoch)
             if (
                 self._registrations.get(actor_id) is not actor_registration
                 or actor_id not in self._active_actor_ids_locked()
