@@ -50,7 +50,9 @@ namespace Assets.Scripts.Levels
             BattleStateSnapshot candidate = new BattleStateSnapshot
             {
                 MatchLevelId = MatchLevelId,
-                Sequence = _nextBattleStateSequence++
+                Sequence = _nextBattleStateSequence++,
+                GameOver = GameOver,
+                WinningSide = ResolveAuthoritativeWinningSideForSnapshot()
             };
 
             for (int i = 0; i < Squads.Count; i++)
@@ -169,6 +171,32 @@ namespace Assets.Scripts.Levels
             }
 
             return true;
+        }
+
+        private int ResolveAuthoritativeWinningSideForSnapshot()
+        {
+            if (!GameOver || Level == null)
+            {
+                return 0;
+            }
+
+            if (Level.WinningSide == ConfigData.Configuration.BeeSide ||
+                Level.WinningSide == ConfigData.Configuration.HumanSide)
+            {
+                return Level.WinningSide;
+            }
+
+            bool beeKilled = IsSideKilled(ConfigData.Configuration.BeeSide);
+            bool humanKilled = IsSideKilled(ConfigData.Configuration.HumanSide);
+            if (beeKilled && !humanKilled)
+            {
+                return ConfigData.Configuration.HumanSide;
+            }
+            if (humanKilled && !beeKilled)
+            {
+                return ConfigData.Configuration.BeeSide;
+            }
+            return 0;
         }
 
         public bool QueueReceivedBattleStateSnapshot(
@@ -295,6 +323,8 @@ namespace Assets.Scripts.Levels
                 }
             }
 
+            Level.WinningSide = snapshot.WinningSide;
+            GameOver = snapshot.GameOver;
             _lastAppliedBattleStateSequence = snapshot.Sequence;
             return true;
         }
@@ -730,7 +760,9 @@ namespace Assets.Scripts.Levels
             BattleStateSnapshot copy = new BattleStateSnapshot
             {
                 MatchLevelId = source.MatchLevelId,
-                Sequence = source.Sequence
+                Sequence = source.Sequence,
+                GameOver = source.GameOver,
+                WinningSide = source.WinningSide
             };
 
             for (int i = 0; i < source.Squads.Count; i++)
@@ -1498,6 +1530,8 @@ namespace Assets.Scripts.Levels
     {
         public int MatchLevelId;
         public long Sequence;
+        public bool GameOver;
+        public int WinningSide;
         public List<BattleSquadStateSnapshot> Squads = new List<BattleSquadStateSnapshot>();
         public List<BattleShipStateSnapshot> Ships = new List<BattleShipStateSnapshot>();
     }
@@ -1559,7 +1593,7 @@ namespace Assets.Scripts.Levels
 
     public static class MultiplayerProtocol
     {
-        public const int Version = 3;
+        public const int Version = 4;
         public const int MaxPacketBytes = 4096;
         public const int MaxLobbyPacketBytes = 65536;
         public const int MaxBattleStatePacketBytes = 262144;
@@ -1614,7 +1648,7 @@ namespace Assets.Scripts.Levels
         };
         private static readonly HashSet<string> BattleStateFields = new HashSet<string>
         {
-            "v", "match", "type", "level", "seq", "squads", "ships"
+            "v", "match", "type", "level", "seq", "gameOver", "winner", "squads", "ships"
         };
         private static readonly HashSet<string> BattleSquadStateFields = new HashSet<string>
         {
@@ -1699,6 +1733,8 @@ namespace Assets.Scripts.Levels
                 ["type"] = BattleStatePacketType,
                 ["level"] = snapshot.MatchLevelId,
                 ["seq"] = snapshot.Sequence,
+                ["gameOver"] = snapshot.GameOver,
+                ["winner"] = snapshot.WinningSide,
                 ["squads"] = squads,
                 ["ships"] = ships
             };
@@ -1750,6 +1786,10 @@ namespace Assets.Scripts.Levels
                 matchLevelId > int.MaxValue ||
                 !TryReadInt64(json, "seq", out long sequence) ||
                 sequence <= 0 ||
+                !TryReadBool(json, "gameOver", out bool gameOver) ||
+                !TryReadInt64(json, "winner", out long winningSide) ||
+                winningSide < int.MinValue ||
+                winningSide > int.MaxValue ||
                 !(json["squads"] is JArray squads) ||
                 squads.Count > MaxBattleStateSquads ||
                 !(json["ships"] is JArray ships) ||
@@ -1761,7 +1801,9 @@ namespace Assets.Scripts.Levels
             BattleStateSnapshot parsed = new BattleStateSnapshot
             {
                 MatchLevelId = (int)matchLevelId,
-                Sequence = sequence
+                Sequence = sequence,
+                GameOver = gameOver,
+                WinningSide = (int)winningSide
             };
 
             HashSet<long> matchSquadIds = new HashSet<long>();
@@ -1900,6 +1942,10 @@ namespace Assets.Scripts.Levels
             if (snapshot == null ||
                 snapshot.MatchLevelId <= 0 ||
                 snapshot.Sequence <= 0 ||
+                (snapshot.WinningSide != 0 &&
+                 snapshot.WinningSide != ConfigData.Configuration.BeeSide &&
+                 snapshot.WinningSide != ConfigData.Configuration.HumanSide) ||
+                (!snapshot.GameOver && snapshot.WinningSide != 0) ||
                 snapshot.Squads == null ||
                 snapshot.Squads.Count > MaxBattleStateSquads ||
                 snapshot.Ships == null ||

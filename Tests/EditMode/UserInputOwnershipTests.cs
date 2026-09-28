@@ -2459,7 +2459,7 @@ namespace Bees.Tests.EditMode
                 "GameState.Commands.cs");
             string source = File.ReadAllText(path);
 
-            StringAssert.Contains("public const int Version = 3;", source);
+            StringAssert.Contains("public const int Version = 4;", source);
             StringAssert.Contains("ParentCarrierMatchShipId", source);
             StringAssert.Contains("CarrierSquadType", source);
             StringAssert.Contains("Utilities.ConvertShipTypeToSide.TryGetValue(", source);
@@ -2645,7 +2645,7 @@ namespace Bees.Tests.EditMode
             string source = File.ReadAllText(commandPath);
             string stateSource = File.ReadAllText(statePath);
 
-            StringAssert.Contains("public const int Version = 3;", source);
+            StringAssert.Contains("public const int Version = 4;", source);
             StringAssert.Contains("ScoutDropBeacon", source);
             StringAssert.Contains("BargeCharge", source);
             StringAssert.Contains("FireBargeDetonate", source);
@@ -2673,6 +2673,27 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains("PlayerCommandKind.BargeCharge", source);
             StringAssert.Contains("PlayerCommandKind.FireBargeDetonate", source);
             StringAssert.Contains("matchShipId: ship.MatchShipId", source);
+        }
+
+        [Test]
+        public void BattleStateReplicatesAuthorityGameOverWithoutReplicatingLevelEnded()
+        {
+            string commandPath = Path.Combine(
+                Application.dataPath,
+                "Scripts",
+                "Levels",
+                "GameState.Commands.cs");
+            string source = File.ReadAllText(commandPath);
+
+            StringAssert.Contains("public const int Version = 4;", source);
+            StringAssert.Contains("public bool GameOver;", source);
+            StringAssert.Contains("public int WinningSide;", source);
+            StringAssert.Contains("ResolveAuthoritativeWinningSideForSnapshot()", source);
+            StringAssert.Contains("[\"gameOver\"] = snapshot.GameOver", source);
+            StringAssert.Contains("[\"winner\"] = snapshot.WinningSide", source);
+            StringAssert.Contains("Level.WinningSide = snapshot.WinningSide;", source);
+            StringAssert.Contains("GameOver = snapshot.GameOver;", source);
+            StringAssert.DoesNotContain("snapshot.LevelEnded", source);
         }
     }
 }
