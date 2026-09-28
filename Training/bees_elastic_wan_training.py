@@ -636,7 +636,7 @@ class ElasticWanBroker(base.WanActorBroker):
             }
             return actor_id
 
-    def register_actor(self, payload: Mapping[str, Any]) -> None:
+    def register_actor(self, payload: Mapping[str, Any]) -> str:
         self._validate_release_identity(payload)
         actor_id = self._validate_actor_id(payload.get("actor_id"))
         env_count = payload.get("env_count")
@@ -702,8 +702,10 @@ class ElasticWanBroker(base.WanActorBroker):
                 raise ValueError("actor behavior specifications differ from Exeter training environments")
             previous = self._registrations.get(actor_id)
             changed = previous is None or int(previous.get("env_count", -1)) != env_count
+            actor_token = secrets.token_urlsafe(32)
             self._registrations[actor_id] = {
                 "behavior_specs": dict(behavior_specs),
+                "actor_token": actor_token,
                 "signatures": signatures,
                 "env_count": env_count,
                 "actor_key": actor_key,
@@ -718,6 +720,7 @@ class ElasticWanBroker(base.WanActorBroker):
                 snapshot = self._active_snapshot_locked(now=now)
                 self.diagnostics.topology_changed(len(snapshot), sum(snapshot.values()))
             self._condition.notify_all()
+            return actor_token
 
     def wait_for_minimum_registrations(self, timeout_seconds: float) -> None:
         if self.options.min_actors <= 0:
@@ -743,15 +746,15 @@ class ElasticWanBroker(base.WanActorBroker):
         control_epoch: int,
         wait_seconds: float,
         actor_id: Optional[int] = None,
+        actor_token: Optional[str] = None,
     ) -> Mapping[str, Any]:
         deadline = time.monotonic() + wait_seconds
         with self._condition:
             if actor_id is not None:
                 actor_id = self._validate_actor_id(actor_id)
                 self._active_snapshot_locked()
-                record = self._registrations.get(actor_id)
-                if record is not None:
-                    record["last_seen"] = time.monotonic()
+                self._validate_actor_token_locked(actor_id, actor_token)
+                self._registrations[actor_id]["last_seen"] = time.monotonic()
 
             initial_topology = self._topology_epoch
             while (
@@ -774,17 +777,16 @@ class ElasticWanBroker(base.WanActorBroker):
                 self._condition.wait(wait_interval)
 
                 if actor_id is not None:
-                    record = self._registrations.get(actor_id)
-                    if record is not None:
-                        record["last_seen"] = time.monotonic()
                     self._active_snapshot_locked()
+                    self._validate_actor_token_locked(actor_id, actor_token)
+                    self._registrations[actor_id]["last_seen"] = time.monotonic()
 
             active = self._active_snapshot_locked()
             if actor_id is not None:
-                record = self._registrations.get(actor_id)
-                if record is not None:
-                    record["last_seen"] = time.monotonic()
-                    active[actor_id] = int(record["env_count"])
+                self._validate_actor_token_locked(actor_id, actor_token)
+                record = self._registrations[actor_id]
+                record["last_seen"] = time.monotonic()
+                active[actor_id] = int(record["env_count"])
             return {
                 "session_id": self.session_id,
                 "policy_epoch": self._policy_epoch,
@@ -806,6 +808,7 @@ class ElasticWanBroker(base.WanActorBroker):
         record = self._registrations.get(actor_id)
         if record is None:
             raise ValueError("actor is not registered")
+        self._validate_actor_token_locked(actor_id, payload.get("actor_token"))
         actor_key = record.get("actor_key")
         if (
             payload.get("actor_key") != actor_key
