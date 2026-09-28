@@ -641,10 +641,10 @@ class ElasticWanBroker(base.WanActorBroker):
         env_count = payload.get("env_count")
         if not isinstance(env_count, int) or isinstance(env_count, bool) or not 1 <= env_count <= MAX_ENVS_PER_ACTOR:
             raise ValueError(f"actor env_count must be in [1,{MAX_ENVS_PER_ACTOR}]")
-        if payload.get("control_epoch") != self.control_epoch:
-            raise base.StaleActorStateError(
-                f"actor control epoch {payload.get('control_epoch')!r} != central epoch {self.control_epoch}"
-            )
+        control_epoch = self._validate_control_epoch(
+            payload.get("control_epoch"),
+            self.control_epoch,
+        )
         behavior_specs = payload.get("behavior_specs")
         if not isinstance(behavior_specs, Mapping) or not behavior_specs:
             raise ValueError("actor registration requires non-empty behavior_specs")
@@ -669,10 +669,7 @@ class ElasticWanBroker(base.WanActorBroker):
         with self._condition:
             # Recheck after acquiring the lock: control can advance between the
             # optimistic check above and committing this registration.
-            if payload.get("control_epoch") != self._control_epoch:
-                raise base.StaleActorStateError(
-                    f"actor control epoch {payload.get('control_epoch')!r} != central epoch {self._control_epoch}"
-                )
+            self._validate_control_epoch(control_epoch, self._control_epoch)
             self._active_snapshot_locked(now=now)
             self._expire_claims_locked(now)
             previous = self._registrations.get(actor_id)
@@ -863,10 +860,10 @@ class ElasticWanBroker(base.WanActorBroker):
         with self._condition:
             self._active_snapshot_locked()
             self._validate_dynamic_owner_locked(actor_id, payload)
-            if payload.get("control_epoch") != self._control_epoch:
-                raise base.StaleActorStateError(
-                    f"actor control epoch {payload.get('control_epoch')!r} != central epoch {self._control_epoch}"
-                )
+            control_epoch = self._validate_control_epoch(
+                payload.get("control_epoch"),
+                self._control_epoch,
+            )
             # Validate and renew under the same lock so a stale reset acknowledgement cannot
             # extend the lease after a control update races the request.
             self._registrations[actor_id]["last_seen"] = time.monotonic()
@@ -886,10 +883,10 @@ class ElasticWanBroker(base.WanActorBroker):
             ):
                 raise ValueError(
                     "trajectory batch_id must be a non-empty string up to 64 characters")
-            if payload.get("control_epoch") != self._control_epoch:
-                raise base.StaleActorStateError(
-                    f"actor control epoch {payload.get('control_epoch')!r} != central epoch {self._control_epoch}"
-                )
+            self._validate_control_epoch(
+                payload.get("control_epoch"),
+                self._control_epoch,
+            )
             self._validate_policy_versions(payload.get("policy_versions"))
             duplicate_count = self._accepted_batch_count_locked(actor_id, batch_id)
             if duplicate_count is not None:
@@ -925,7 +922,7 @@ class ElasticWanBroker(base.WanActorBroker):
         item = {
             "actor_id": actor_id,
             "policy_versions": dict(payload["policy_versions"]),
-            "control_epoch": int(payload["control_epoch"]),
+            "control_epoch": control_epoch,
             "trajectories": trajectories,
             "step_count": step_count,
         }
@@ -939,10 +936,7 @@ class ElasticWanBroker(base.WanActorBroker):
                         "actor lease expired while validating trajectories; re-register before uploading"
                     )
                 self._validate_dynamic_owner_locked(actor_id, payload)
-                if payload.get("control_epoch") != self._control_epoch:
-                    raise base.StaleActorStateError(
-                        "trajectory control epoch changed while validating the batch"
-                    )
+                self._validate_control_epoch(payload.get("control_epoch"), self._control_epoch)
                 self._validate_policy_versions(payload.get("policy_versions"))
                 duplicate_count = self._accepted_batch_count_locked(actor_id, batch_id)
                 if duplicate_count is not None:
