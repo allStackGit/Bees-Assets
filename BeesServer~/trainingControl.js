@@ -1569,7 +1569,7 @@ class TrainingControlStore {
             preparation_error: typeof payload.preparation_error === 'string'
                 ? payload.preparation_error.slice(0, 2048)
                 : '',
-            applied_revision: Number.isInteger(payload.applied_revision) ? payload.applied_revision : -1,
+            applied_revision: Number.isSafeInteger(payload.applied_revision) ? payload.applied_revision : -1,
             last_error: typeof payload.last_error === 'string' ? payload.last_error.slice(0, 2048) : '',
             environment_id: (
                 typeof payload.environment_id === 'string' &&
