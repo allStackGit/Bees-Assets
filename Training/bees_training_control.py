@@ -232,30 +232,50 @@ class TrainingControlClient:
             method="GET",
             headers={"Authorization": "Bearer " + self.token},
         )
-        try:
-            with urllib.request.urlopen(request, timeout=max(self.timeout, 60.0)) as response:
-                with destination.open("wb") as output:
-                    next_progress = time.monotonic() + 2.0
-                    while True:
-                        chunk = response.read(1024 * 1024)
-                        if not chunk:
-                            break
-                        output.write(chunk)
-                        if (
-                            progress_callback is not None
-                            and time.monotonic() >= next_progress
-                        ):
-                            progress_callback()
-                            next_progress = time.monotonic() + 2.0
-                    output.flush()
-                    os.fsync(output.fileno())
-        except urllib.error.HTTPError as exc:
-            raw = exc.read().decode("utf-8", errors="replace")
-            raise ControlRejected(
-                f"training-control artifact download failed: HTTP {exc.code}: {raw}"
-            ) from exc
-        except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as exc:
-            raise ControlUnavailable(str(exc)) from exc
+        last_error: Optional[BaseException] = None
+        for attempt in range(1, 4):
+            try:
+                # Keep any individual blocked socket read comfortably inside the server lease.
+                # A transient private-transport stall should trigger a quick retry rather than
+                # consuming the entire lease while the worker cannot send reconciliation keepalives.
+                with urllib.request.urlopen(
+                    request,
+                    timeout=max(self.timeout, 20.0),
+                ) as response:
+                    with destination.open("wb") as output:
+                        next_progress = time.monotonic() + 2.0
+                        while True:
+                            chunk = response.read(256 * 1024)
+                            if not chunk:
+                                break
+                            output.write(chunk)
+                            if (
+                                progress_callback is not None
+                                and time.monotonic() >= next_progress
+                            ):
+                                progress_callback()
+                                next_progress = time.monotonic() + 2.0
+                        output.flush()
+                        os.fsync(output.fileno())
+                return
+            except urllib.error.HTTPError as exc:
+                raw = exc.read().decode("utf-8", errors="replace")
+                raise ControlRejected(
+                    f"training-control artifact download failed: HTTP {exc.code}: {raw}"
+                ) from exc
+            except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as exc:
+                last_error = exc
+                if attempt >= 3:
+                    break
+                if progress_callback is not None:
+                    try:
+                        progress_callback()
+                    except Exception:
+                        pass
+                time.sleep(0.5)
+        raise ControlUnavailable(
+            f"GET {artifact_url}: artifact download failed after 3 attempts: {last_error}"
+        ) from last_error
 
 
 def _safe_zip_member(root: Path, name: str) -> Path:
