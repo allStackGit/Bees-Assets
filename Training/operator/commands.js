@@ -487,6 +487,9 @@ async function invokeStart(options = {}) {
         desired = await setDesiredState(config, admin, { training_enabled: true });
     } else {
         const preEnvironmentStatus = await getStatus(config, admin);
+        const outgoingRunBeforeStart = String(
+            preEnvironmentStatus.desired && preEnvironmentStatus.desired.run_id || ''
+        ).trim();
         const pending = preEnvironmentStatus.desired &&
             preEnvironmentStatus.desired.pending_release;
         if (pending) {
@@ -494,29 +497,27 @@ async function invokeStart(options = {}) {
             const pendingRun = String(pending.run_id || '').trim();
             const pendingKey = String(pending.compatibility_key || '').trim().toLowerCase();
             if (
-                !pending.incompatible &&
                 pendingBuild === String(release.build_id || '').trim() &&
                 pendingRun === String(release.run_id || '').trim() &&
                 pendingKey === String(release.compatibility_key || '').trim().toLowerCase()
             ) {
                 console.log(
-                    'Finishing the existing compatible release rollout before applying environment arguments.'
+                    'Resuming the existing ' +
+                    (pending.incompatible ? 'incompatible' : 'compatible') +
+                    ' release rollout before applying environment arguments.'
                 );
                 await waitReleaseRollout(
                     config, admin, pendingBuild, pendingRun, pendingKey
                 );
             } else {
                 throw new Error(
-                    'Cannot change environment arguments while a different/incompatible release rollout is pending.'
+                    'Cannot change environment arguments while a different release rollout is pending.'
                 );
             }
         }
 
-        const sameRunRelease = release.incompatible
-            ? { ...release, incompatible: false }
-            : release;
         staged = await stageRelease(
-            config, admin, sameRunRelease, envArgs, environmentValidationKey
+            config, admin, release, envArgs, environmentValidationKey
         );
         desired = await setDesiredState(config, admin, { training_enabled: true });
         if (staged.pending_release) {
@@ -527,6 +528,15 @@ async function invokeStart(options = {}) {
                 String(release.run_id),
                 String(release.compatibility_key),
             );
+        }
+        const outgoingRun = String(release.previous_run_id || '').trim();
+        if (
+            release.incompatible &&
+            outgoingRun &&
+            outgoingRunBeforeStart === outgoingRun
+        ) {
+            await sleep(2000);
+            archiveTrainingRun(python, outgoingRun, 'incompatible-run-final');
         }
     }
 
