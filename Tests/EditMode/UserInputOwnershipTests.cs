@@ -2369,18 +2369,29 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void ReplicaLifecycleKeepsCarrierChildCreationFailClosed()
+        public void ReplicaLifecycleCarriesAndRestoresCarrierParentRelationships()
         {
-            string path = Path.Combine(
+            string commandPath = Path.Combine(
                 Application.dataPath,
                 "Scripts",
                 "Levels",
                 "GameState.Commands.cs");
-            string source = File.ReadAllText(path);
+            string carrierSquadPath = Path.Combine(
+                Application.dataPath,
+                "Scripts",
+                "Levels",
+                "CarrierSquad.cs");
+            string commandSource = File.ReadAllText(commandPath);
+            string carrierSquadSource = File.ReadAllText(carrierSquadPath);
 
-            StringAssert.Contains("if (state.IsCarrierSquad)", source);
-            StringAssert.Contains("if (state.IsCarrierShip ||", source);
-            StringAssert.Contains("Carrier squads require their live Carrier parent/type relationship", source);
+            StringAssert.Contains("ApplyReplicaCarrierRelationships(snapshot)", commandSource);
+            StringAssert.Contains("TryResolveReplicaCarrier(", commandSource);
+            StringAssert.Contains("GetCarrierSquadFromPool()", commandSource);
+            StringAssert.Contains("CarrierShipSetup(", commandSource);
+            StringAssert.Contains("SetReplicaCarrierRelationship(", carrierSquadSource);
+            StringAssert.DoesNotContain(
+                "carrierSquad.SetupCarrierSquad(",
+                commandSource);
         }
 
         [Test]
@@ -2432,8 +2443,8 @@ namespace Bees.Tests.EditMode
             string preflightSource = source.Substring(
                 preflightMethod,
                 reconcileMethod - preflightMethod);
-            StringAssert.Contains("else if (state.IsCarrierSquad)", preflightSource);
-            StringAssert.Contains("else if (state.IsCarrierShip)", preflightSource);
+            StringAssert.Contains("state.CarrierSquadType", preflightSource);
+            StringAssert.Contains("state.IsCarrierShip", preflightSource);
             StringAssert.DoesNotContain("ReplicaDespawn();", preflightSource);
             StringAssert.DoesNotContain("SetupReplica(", preflightSource);
         }
@@ -2455,6 +2466,27 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains("shipTypeSide != ship.Side", source);
             StringAssert.Contains("squad.ParentCarrierMatchShipId != ship.ParentCarrierMatchShipId", source);
             StringAssert.Contains("parent.ShipType != (int)ConfigData.ShipTypes.Carrier", source);
+        }
+
+        [Test]
+        public void CarrierReplicaCreationDoesNotInvokeNormalAutoSpawnPath()
+        {
+            string commandPath = Path.Combine(
+                Application.dataPath,
+                "Scripts",
+                "Levels",
+                "GameState.Commands.cs");
+            string source = File.ReadAllText(commandPath);
+
+            StringAssert.Contains(
+                "Stage.Pool.GetCarrierSquadFromPool()",
+                source);
+            StringAssert.Contains(
+                "SetReplicaCarrierRelationship(",
+                source);
+            StringAssert.DoesNotContain(
+                ".SetupCarrierSquad(",
+                source);
         }
     }
 }

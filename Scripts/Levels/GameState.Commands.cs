@@ -296,12 +296,17 @@ namespace Assets.Scripts.Levels
                         existingSquad.Side != state.Side ||
                         existingSquad.OwnerPlayerId != state.OwnerPlayerId ||
                         existingSquad.IsMinionSquad != state.IsMinionSquad ||
-                        existingSquad.IsCarrierSquad != state.IsCarrierSquad)
+                        existingSquad.IsCarrierSquad != state.IsCarrierSquad ||
+                        (state.IsCarrierSquad &&
+                         (!(existingSquad is CarrierSquad existingCarrierSquad) ||
+                          (int)existingCarrierSquad.CarrierSquadType != state.CarrierSquadType)))
                     {
                         return false;
                     }
                 }
-                else if (state.IsCarrierSquad)
+                else if (state.IsCarrierSquad &&
+                         state.CarrierSquadType != (int)ConfigData.ShipTypes.Drone &&
+                         state.CarrierSquadType != (int)ConfigData.ShipTypes.Striker)
                 {
                     return false;
                 }
@@ -328,12 +333,16 @@ namespace Assets.Scripts.Levels
                         existingShip.Squad == null ||
                         existingShip.Squad.MatchSquadId != state.MatchSquadId ||
                         existingShip.Side != state.Side ||
-                        (int)existingShip.ShipType != state.ShipType)
+                        (int)existingShip.ShipType != state.ShipType ||
+                        existingShip.IsCarrierShip != state.IsCarrierShip ||
+                        (state.IsCarrierShip && !(existingShip is CarrierShip)))
                     {
                         return false;
                     }
                 }
-                else if (state.IsCarrierShip)
+                else if (state.IsCarrierShip &&
+                         state.ShipType != (int)ConfigData.ShipTypes.Drone &&
+                         state.ShipType != (int)ConfigData.ShipTypes.Striker)
                 {
                     return false;
                 }
@@ -441,7 +450,7 @@ namespace Assets.Scripts.Levels
                 }
             }
 
-            return true;
+            return ApplyReplicaCarrierRelationships(snapshot);
         }
 
         private bool TryEnsureReplicaSquad(BattleSquadStateSnapshot state)
@@ -453,15 +462,10 @@ namespace Assets.Scripts.Levels
                        existing.Side == state.Side &&
                        existing.OwnerPlayerId == state.OwnerPlayerId &&
                        existing.IsMinionSquad == state.IsMinionSquad &&
-                       existing.IsCarrierSquad == state.IsCarrierSquad;
-            }
-
-            if (state.IsCarrierSquad)
-            {
-                // Carrier squads require their live Carrier parent/type relationship. Initial
-                // carrier squads should already exist from deterministic level setup; dynamic
-                // carrier-squad creation remains fail-closed until that relationship is on wire.
-                return false;
+                       existing.IsCarrierSquad == state.IsCarrierSquad &&
+                       (!state.IsCarrierSquad ||
+                        (existing is CarrierSquad carrierSquad &&
+                         (int)carrierSquad.CarrierSquadType == state.CarrierSquadType));
             }
 
             MatchSession matchSession = Stage != null ? Stage.MatchSession : null;
@@ -491,7 +495,9 @@ namespace Assets.Scripts.Levels
                     0,
                     0));
 
-            Squad squad = Stage.Pool.GetSquadFromPool();
+            Squad squad = state.IsCarrierSquad
+                ? Stage.Pool.GetCarrierSquadFromPool()
+                : Stage.Pool.GetSquadFromPool();
             if (squad == null ||
                 !squad.SetupReplica(
                     Level,
@@ -513,6 +519,18 @@ namespace Assets.Scripts.Levels
                 return false;
             }
 
+            if (state.IsCarrierSquad)
+            {
+                if (!(squad is CarrierSquad carrierSquad) ||
+                    !carrierSquad.SetReplicaCarrierRelationship(
+                        null,
+                        (ConfigData.ShipTypes)state.CarrierSquadType))
+                {
+                    squad.ReplicaDespawn();
+                    return false;
+                }
+            }
+
             Level.State.AddSquad(squad);
             return true;
         }
@@ -526,11 +544,14 @@ namespace Assets.Scripts.Levels
                        existing.Squad != null &&
                        existing.Squad.MatchSquadId == state.MatchSquadId &&
                        existing.Side == state.Side &&
-                       (int)existing.ShipType == state.ShipType;
+                       (int)existing.ShipType == state.ShipType &&
+                       existing.IsCarrierShip == state.IsCarrierShip &&
+                       (!state.IsCarrierShip || existing is CarrierShip);
             }
 
-            if (state.IsCarrierShip ||
-                !SquadsByMatchId.TryGetValue(state.MatchSquadId, out Squad squad) ||
+            if (!SquadsByMatchId.TryGetValue(
+                    state.MatchSquadId,
+                    out Squad squad) ||
                 squad == null ||
                 squad.IsDead)
             {
@@ -539,13 +560,14 @@ namespace Assets.Scripts.Levels
 
             ConfigData.ShipTypes shipType = (ConfigData.ShipTypes)state.ShipType;
             Ship ship = Level.LevelConstructor.InstantiateShip(shipType);
-            if (ship == null)
+            if (ship == null ||
+                (state.IsCarrierShip && !(ship is CarrierShip)))
             {
                 return false;
             }
 
             ship.IsMinionShip = state.IsMinionShip;
-            ship.IsCarrierShip = false;
+            ship.IsCarrierShip = state.IsCarrierShip;
             FleetShip fleetShip = new FleetShip(
                 -state.MatchShipId,
                 shipType,
@@ -573,8 +595,97 @@ namespace Assets.Scripts.Levels
             }
 
             ship.IsMinionShip = state.IsMinionShip;
+            ship.IsCarrierShip = state.IsCarrierShip;
+            if (state.IsCarrierShip)
+            {
+                ((CarrierShip)ship).CarrierShipSetup(
+                    fleetShip,
+                    shipType,
+                    null);
+            }
+
             squad.AddShip(ship);
             ship.SetColor();
+            return true;
+        }
+
+        private bool ApplyReplicaCarrierRelationships(BattleStateSnapshot snapshot)
+        {
+            for (int i = 0; i < snapshot.Squads.Count; i++)
+            {
+                BattleSquadStateSnapshot state = snapshot.Squads[i];
+                if (!state.IsCarrierSquad)
+                {
+                    continue;
+                }
+
+                if (!SquadsByMatchId.TryGetValue(
+                        state.MatchSquadId,
+                        out Squad rawSquad) ||
+                    !(rawSquad is CarrierSquad carrierSquad) ||
+                    !TryResolveReplicaCarrier(
+                        state.ParentCarrierMatchShipId,
+                        state.Side,
+                        out Carrier parentCarrier) ||
+                    !carrierSquad.SetReplicaCarrierRelationship(
+                        parentCarrier,
+                        (ConfigData.ShipTypes)state.CarrierSquadType))
+                {
+                    return false;
+                }
+            }
+
+            for (int i = 0; i < snapshot.Ships.Count; i++)
+            {
+                BattleShipStateSnapshot state = snapshot.Ships[i];
+                if (!state.IsCarrierShip)
+                {
+                    continue;
+                }
+
+                if (!ShipsByMatchId.TryGetValue(
+                        state.MatchShipId,
+                        out Ship rawShip) ||
+                    !(rawShip is CarrierShip carrierShip) ||
+                    !TryResolveReplicaCarrier(
+                        state.ParentCarrierMatchShipId,
+                        state.Side,
+                        out Carrier parentCarrier))
+                {
+                    return false;
+                }
+
+                carrierShip.CarrierShipSetup(
+                    carrierShip.FleetShip,
+                    carrierShip.ShipType,
+                    parentCarrier);
+            }
+
+            return true;
+        }
+
+        private bool TryResolveReplicaCarrier(
+            long parentCarrierMatchShipId,
+            int side,
+            out Carrier carrier)
+        {
+            carrier = null;
+            if (parentCarrierMatchShipId == 0)
+            {
+                return true;
+            }
+
+            if (!ShipsByMatchId.TryGetValue(
+                    parentCarrierMatchShipId,
+                    out Ship rawCarrier) ||
+                !(rawCarrier is Carrier resolvedCarrier) ||
+                resolvedCarrier.IsDead ||
+                resolvedCarrier.Side != side)
+            {
+                return false;
+            }
+
+            carrier = resolvedCarrier;
             return true;
         }
 

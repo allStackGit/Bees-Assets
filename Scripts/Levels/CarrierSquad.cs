@@ -27,6 +27,35 @@ namespace Assets.Scripts.Levels
             IsCarrierSquad = true;
             IsMinionSquad = true;
         }
+        public bool SetReplicaCarrierRelationship(
+            Carrier carrier,
+            ConfigData.ShipTypes squadType)
+        {
+            if (squadType != ConfigData.ShipTypes.Drone &&
+                squadType != ConfigData.ShipTypes.Striker)
+            {
+                return false;
+            }
+
+            MatchSession matchSession = Level != null && Level.Stage != null
+                ? Level.Stage.MatchSession
+                : null;
+            if (matchSession == null ||
+                matchSession.IsLocalAuthority ||
+                (carrier != null &&
+                 (carrier.IsDead || carrier.Side != Side)))
+            {
+                return false;
+            }
+
+            Carrier = carrier;
+            CarrierSquadType = squadType;
+            IsDroneSquad = squadType == ConfigData.ShipTypes.Drone;
+            IsCarrierSquad = true;
+            IsMinionSquad = true;
+            return true;
+        }
+
         public void SetupCarrierSquad(Carrier carrier, ConfigData.ShipTypes squadType)
         {
             Carrier = carrier;
