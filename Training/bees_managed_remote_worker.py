@@ -1724,7 +1724,6 @@ def _wait_for_runtime_alignment(
 
     updater.start()
     next_status = 0.0
-    transport_watchdog = _TransportWatchdog(args.transport_watchdog_seconds)
     while not stop[0] and tailnet.poll() is None:
         runtime_cutover = _runtime_cutover_selected(args, trainer_id, updater)
         if runtime_cutover is not None:
@@ -1732,20 +1731,11 @@ def _wait_for_runtime_alignment(
 
         status = _control_status(args)
         now = time.monotonic()
-        control_healthy = isinstance(status, Mapping)
-        if transport_watchdog.observe(control_healthy, now):
-            failure_since = transport_watchdog.failure_since
-            outage = now - (
-                failure_since if failure_since is not None else now
-            )
-            print(
-                "[Bees remote] authenticated learner control has been unreachable "
-                f"for {outage:.1f}s during runtime alignment; recycling private transport.",
-                file=sys.stderr,
-                flush=True,
-            )
-            return False, None
 
+        # Central service availability and private-network health are separate failure domains.
+        # A runtime/server cutover can make /v1/status temporarily unavailable while tsnet is
+        # completely healthy. Preserve the forwarder and wait for control to return; forward-multi
+        # supervises its own tsnet backend and exits if the private network itself fails.
         desired = status.get("desired") if isinstance(status, Mapping) else None
         canonical_build = (
             str(desired.get("canonical_build_id", "") or "")
