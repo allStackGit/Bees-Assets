@@ -351,6 +351,7 @@ $workerArgs=@(
     '--torch-device',$TorchDevice
 )
 if($Envs -gt 0){$workerArgs+=@('--envs',[string]$Envs)}
+if($NoAutostart){$workerArgs+='--no-autostart'}
 
 function Quote-ProcessArgument([string]$Value){
     if($Value -notmatch '[\s"]'){return $Value}
