@@ -1025,8 +1025,14 @@ func runFetch(args []string) error {
 	defer transport.CloseIdleConnections()
 	client := &http.Client{Transport: transport, Timeout: 5 * time.Minute}
 
-	var resp *http.Response
-	var requestErr error
+	tempDir, err := os.MkdirTemp("", "bees-bootstrap-*")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(tempDir)
+	archivePath := filepath.Join(tempDir, "bootstrap.zip")
+
+	var lastRequestErr error
 	for attempt := 1; attempt <= 3; attempt++ {
 		fmt.Printf("[Bees tailnet] bootstrap request attempt %d/3...\n", attempt)
 		req, reqErr := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+*target+"/bootstrap", nil)
@@ -1034,11 +1040,58 @@ func runFetch(args []string) error {
 			return reqErr
 		}
 		req.Header.Set("Authorization", "Bearer "+token)
-		resp, requestErr = client.Do(req)
+		resp, requestErr := client.Do(req)
 		if requestErr == nil {
-			break
+			if resp.StatusCode != http.StatusOK {
+				body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+				_ = resp.Body.Close()
+				return fmt.Errorf(
+					"bootstrap server returned %s: %s",
+					resp.Status,
+					strings.TrimSpace(string(body)),
+				)
+			}
+			if resp.ContentLength > 0 {
+				fmt.Printf(
+					"[Bees tailnet] bootstrap response ready; downloading %.1f MiB...\n",
+					float64(resp.ContentLength)/(1024*1024),
+				)
+			} else {
+				fmt.Println("[Bees tailnet] bootstrap response ready; downloading...")
+			}
+
+			var downloaded int64
+			transferErr := atomicWrite(archivePath, 0o600, func(dst io.Writer) error {
+				var copyErr error
+				downloaded, copyErr = copyBootstrapWithProgress(
+					dst,
+					resp.Body,
+					resp.ContentLength,
+				)
+				return copyErr
+			})
+			_ = resp.Body.Close()
+			if transferErr == nil {
+				fmt.Printf(
+					"[Bees tailnet] bootstrap download complete %.1f MiB.\n",
+					float64(downloaded)/(1024*1024),
+				)
+				return extractBootstrap(
+					archivePath,
+					*runtimeOut,
+					*workerTokenOut,
+					*wanTokenOut,
+				)
+			}
+			requestErr = transferErr
 		}
-		fmt.Printf("[Bees tailnet] bootstrap request attempt %d/3 failed: %v\n", attempt, requestErr)
+		lastRequestErr = requestErr
+		transport.CloseIdleConnections()
+		fmt.Printf(
+			"[Bees tailnet] bootstrap request/download attempt %d/3 failed: %v\n",
+			attempt,
+			requestErr,
+		)
 		if attempt < 3 {
 			select {
 			case <-ctx.Done():
@@ -1047,42 +1100,10 @@ func runFetch(args []string) error {
 			}
 		}
 	}
-	if requestErr != nil {
-		return fmt.Errorf("bootstrap request failed after retries: %w", requestErr)
+	if lastRequestErr == nil {
+		lastRequestErr = errors.New("bootstrap transfer failed without an error")
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return fmt.Errorf("bootstrap server returned %s: %s", resp.Status, strings.TrimSpace(string(body)))
-	}
-	if resp.ContentLength > 0 {
-		fmt.Printf(
-			"[Bees tailnet] bootstrap response ready; downloading %.1f MiB...\n",
-			float64(resp.ContentLength)/(1024*1024),
-		)
-	} else {
-		fmt.Println("[Bees tailnet] bootstrap response ready; downloading...")
-	}
-
-	tempDir, err := os.MkdirTemp("", "bees-bootstrap-*")
-	if err != nil {
-		return err
-	}
-	defer os.RemoveAll(tempDir)
-	archivePath := filepath.Join(tempDir, "bootstrap.zip")
-	var downloaded int64
-	if err := atomicWrite(archivePath, 0o600, func(dst io.Writer) error {
-		var copyErr error
-		downloaded, copyErr = copyBootstrapWithProgress(dst, resp.Body, resp.ContentLength)
-		return copyErr
-	}); err != nil {
-		return err
-	}
-	fmt.Printf(
-		"[Bees tailnet] bootstrap download complete %.1f MiB.\n",
-		float64(downloaded)/(1024*1024),
-	)
-	return extractBootstrap(archivePath, *runtimeOut, *workerTokenOut, *wanTokenOut)
+	return fmt.Errorf("bootstrap request/download failed after retries: %w", lastRequestErr)
 }
 
 func parseMapping(value string) (string, string, error) {
