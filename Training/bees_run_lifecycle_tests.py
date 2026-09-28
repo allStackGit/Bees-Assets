@@ -86,6 +86,41 @@ class RunLifecycleTests(unittest.TestCase):
             "public static class RlOneVsOneTrainingOptions { const int DefaultMapSize = 32; }\n",
             encoding="utf-8",
         )
+        config_data = assets / "Scripts" / "ConfigData.cs"
+        config_data.parent.mkdir(parents=True, exist_ok=True)
+        config_data.write_text(
+            "public static class ConfigData { public const int Version = 5; }\n",
+            encoding="utf-8",
+        )
+        source_fixtures = (
+            "ConfigData.Gameplay.cs",
+            "ConfigData.Runtime.cs",
+            "ConfigData.Types.cs",
+            "Settings/ShipStats.cs",
+            "Settings/ShipStatBlock.cs",
+            "Settings/Configuration.cs",
+            "Levels/Level.RandomSquadSetup.cs",
+            "Levels/LevelConstructor.cs",
+            "Levels/Level.Setup.cs",
+            "Levels/Level.Runtime.cs",
+            "Levels/Level.Environment.cs",
+            "Levels/Level.Reset.cs",
+            "Levels/Level.RlObservations.cs",
+            "Data/FleetShip.cs",
+            "Data/SavedSquad.cs",
+            "Data/SquadShip.cs",
+        )
+        for source_name in source_fixtures:
+            source_path = assets / "Scripts" / source_name
+            source_path.parent.mkdir(parents=True, exist_ok=True)
+            source_path.write_text(
+                f"// fixture for {source_name}\n",
+                encoding="utf-8",
+            )
+        (assets / "Scripts" / "Levels" / "Level.RandomSquadSetup.cs").write_text(
+            "public partial class Level { const int SpawnRadius = 1; }\n",
+            encoding="utf-8",
+        )
         return assets
 
     def test_contract_fingerprint_is_stable_and_tracks_semantic_changes(self):
@@ -131,6 +166,40 @@ class RunLifecycleTests(unittest.TestCase):
                 changed_imitation["run_id"],
                 changed_league["run_id"],
             )
+
+    def test_server_settings_version_change_creates_new_run(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            assets = self._assets(root)
+            state = root / "current.json"
+            first = lifecycle.plan_run(assets, state)
+            lifecycle.commit_plan(state, first)
+
+            config_data = assets / "Scripts" / "ConfigData.cs"
+            config_data.write_text(
+                "public static class ConfigData { public const int Version = 6; }\\n",
+                encoding="utf-8",
+            )
+            changed = lifecycle.plan_run(assets, state)
+            self.assertTrue(changed["incompatible"])
+            self.assertNotEqual(changed["run_id"], first["run_id"])
+
+    def test_randomized_level_setup_change_creates_new_run(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            assets = self._assets(root)
+            state = root / "current.json"
+            first = lifecycle.plan_run(assets, state)
+            lifecycle.commit_plan(state, first)
+
+            setup = assets / "Scripts" / "Levels" / "Level.RandomSquadSetup.cs"
+            setup.write_text(
+                "public partial class Level { const int SpawnRadius = 2; }\\n",
+                encoding="utf-8",
+            )
+            changed = lifecycle.plan_run(assets, state)
+            self.assertTrue(changed["incompatible"])
+            self.assertNotEqual(changed["run_id"], first["run_id"])
 
     def test_training_option_implementation_change_creates_new_run(self):
         with tempfile.TemporaryDirectory() as temp:
