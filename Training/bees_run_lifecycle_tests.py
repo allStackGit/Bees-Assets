@@ -61,6 +61,25 @@ class RunLifecycleTests(unittest.TestCase):
         )
         (scenes / "RlTeamExplorationGrid.cs").write_text("exploration-v1\n", encoding="utf-8")
         (scenes / "RlEpisodeShipIdentity.cs").write_text("identity-v1\n", encoding="utf-8")
+        for source_name in (
+            "RlOneVsOneTrainingBootstrap.cs",
+            "RlOneVsOneTrainingOptions.cs",
+            "RlOneVsOneMultiArenaBootstrap.cs",
+            "RlOneVsOnePerArenaMatchups.cs",
+            "RlOneVsOneMatchupSampler.cs",
+            "RlOneVsOneScenarioSeed.cs",
+            "RlPlayerDerivedActionReplay.cs",
+            "RlPlayerDerivedAdversarialPressure.cs",
+            "RlPlayerDerivedTacticalGeometry.cs",
+        ):
+            (scenes / source_name).write_text(
+                f"// fixture for {source_name}\\n",
+                encoding="utf-8",
+            )
+        (scenes / "RlOneVsOneTrainingOptions.cs").write_text(
+            "public static class RlOneVsOneTrainingOptions { const int DefaultMapSize = 32; }\\n",
+            encoding="utf-8",
+        )
         return assets
 
     def test_contract_fingerprint_is_stable_and_tracks_semantic_changes(self):
@@ -80,6 +99,23 @@ class RunLifecycleTests(unittest.TestCase):
                 changed["compatibility_key"],
                 first["compatibility_key"],
             )
+
+    def test_training_option_implementation_change_creates_new_run(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            assets = self._assets(root)
+            state = root / "current.json"
+            first = lifecycle.plan_run(assets, state)
+            lifecycle.commit_plan(state, first)
+
+            options = assets / "Scripts" / "Scenes" / "RlOneVsOneTrainingOptions.cs"
+            options.write_text(
+                "public static class RlOneVsOneTrainingOptions { const int DefaultMapSize = 64; }\\n",
+                encoding="utf-8",
+            )
+            changed = lifecycle.plan_run(assets, state)
+            self.assertTrue(changed["incompatible"])
+            self.assertNotEqual(changed["run_id"], first["run_id"])
 
     def test_shared_gameplay_mechanics_change_creates_new_run(self):
         with tempfile.TemporaryDirectory() as temp:
