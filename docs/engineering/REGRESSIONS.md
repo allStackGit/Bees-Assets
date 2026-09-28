@@ -1546,3 +1546,11 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** `BombReservationLifecycleTests.BombRejectsNullTargetsLikeOtherWeaponValidators` calls the override with null and requires a false result.  
 **Verification:** regression source was added and reviewed statically; it was not run under the static-only audit instruction.  
 **Invariant/knowledge:** weapon target validators must reject missing candidates before reading target state.
+
+### REG--Infinity — Missing log offset cannot trigger a zero-offset reset
+**Area:** `BeesServer~/trainingControl.js` trainer-log HTTP route  
+**Symptom:** a log-reset request without an `offset` parameter was interpreted as offset zero and could truncate an existing trainer log.  
+**Root cause:** `Number(null)` converts an absent URL parameter to zero, which is a valid reset offset for the store.  
+**Permanent protection:** `trainingControl.module.test.js` sends an authenticated reset without an offset and verifies HTTP 400 plus preservation of the existing file.  
+**Verification:** source and regression coverage were reviewed statically; the test was not run per the static-only audit instruction.  
+**Invariant/knowledge:** destructive log resets require an explicitly supplied, safe integer offset.
