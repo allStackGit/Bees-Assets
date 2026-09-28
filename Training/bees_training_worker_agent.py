@@ -127,6 +127,17 @@ def heartbeat_last_error(
     return str(last_error or preparation_error or managed_health_error or "")
 
 
+def worker_health_error_after_exception(
+    current_last_error: str,
+    exc: BaseException,
+    error_text: str,
+) -> str:
+    """Keep control transport loss out of the worker-process health channel."""
+    if isinstance(exc, ControlUnavailable):
+        return current_last_error
+    return error_text
+
+
 def environment_args_identity(environment_args: Sequence[str]) -> str:
     payload = json.dumps(
         [str(value) for value in environment_args],
@@ -1953,8 +1964,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 # in last_error. Echoing it as a worker-process error on the recovery heartbeat
                 # makes BeesServer hold env optimization for 15 minutes after a connection that
                 # has already healed.
-                if not isinstance(exc, ControlUnavailable):
-                    last_error = error_text
+                last_error = worker_health_error_after_exception(
+                    last_error,
+                    exc,
+                    error_text,
+                )
                 try:
                     write_local_state(
                         state_file,
