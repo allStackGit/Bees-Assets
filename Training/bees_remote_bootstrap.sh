@@ -319,6 +319,7 @@ WORKER_ARGS=(
     --gameplay-port "$GAMEPLAY_PORT"
     --install-root "$INSTALL_ROOT"
     --runtime-archive "$RUNTIME_ZIP"
+    --launcher-path "$BEES_REMOTE_LAUNCHER_PATH"
     --bootstrap-token-file "$BOOTSTRAP_TOKEN_FILE"
     --worker-token-file "$WORKER_TOKEN"
     --wan-token-file "$WAN_TOKEN"
