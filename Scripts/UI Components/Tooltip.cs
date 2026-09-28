@@ -535,7 +535,7 @@ public class Tooltip : MonoBehaviour
         readableWidth = Mathf.Min(readableWidth, MaxReadableWidth);
 
         float contentWidth = Mathf.Max(1f, readableWidth - HorizontalPadding * 2f);
-        Vector2 preferred = TooltipText.GetPreferredValues(message, contentWidth, 0f);
+        Vector2 preferred = MeasureTooltipText(message, contentWidth);
         float footer = _sequenceActive ? SequenceFooterHeight : 0f;
         float readableHeight = preferred.y + VerticalPadding * 2f + footer;
         float requestedHeightMultiplier = _sequenceActive
@@ -550,6 +550,23 @@ public class Tooltip : MonoBehaviour
         {
             textRect.offsetMin = new Vector2(HorizontalPadding, VerticalPadding + footer);
             textRect.offsetMax = new Vector2(-HorizontalPadding, -VerticalPadding);
+        }
+    }
+
+    private Vector2 MeasureTooltipText(string message, float width)
+    {
+        // TMP's string measurement can replace its internal parsing buffers. Keep layout
+        // measurements off the live tooltip component so page changes cannot alter its text state.
+        TMP_Text measurementText = Instantiate(TooltipText, TooltipText.transform.parent);
+        measurementText.gameObject.name = "Tooltip Layout Measurement";
+        measurementText.gameObject.SetActive(false);
+        try
+        {
+            return measurementText.GetPreferredValues(message, width, 0f);
+        }
+        finally
+        {
+            Destroy(measurementText.gameObject);
         }
     }
 
