@@ -1273,3 +1273,12 @@ Manual-only protection is acceptable only when the record explains why determini
 **Verification:** Static control-flow review confirms initialization errors are caught, logged, and retried on the next interval without escaping the watcher thread. No tests or runtime checks were performed.  
 **Invariant/knowledge:** Background telemetry ingestion is auxiliary and must recover from initialization failures without terminating the learner or permanently disabling future scans.
 
+### REG-146 — Remote rollout supervisor tolerated a partial clean worker exit
+**Area:** `Training/bees_remote_worker.py`, remote Unity worker cohort monitor  
+**Symptom:** If one Unity rollout process exited with code 0 while another assigned worker remained active, the supervisor kept running with fewer environments than the central session required.  
+**Root cause:** The monitor classified only nonzero exits as failures and checked for a clean completion only after all workers had exited.  
+**Fix:** Treat any partial cohort exit as a failed session; return success only when every assigned process has exited with code 0. The existing cleanup path then terminates remaining workers and the SSH tunnel.  
+**Permanent protection:** An assigned remote worker cohort remains all-or-nothing for the session lifetime. A focused test was not added under the static-only audit instruction.  
+**Verification:** Statically traced worker startup, process-exit classification, return paths, and the shared cleanup finalizer. No tests or runtime checks were performed.  
+**Invariant/knowledge:** A successful individual worker exit is not a successful distributed session while its assigned peers are still running.
+
