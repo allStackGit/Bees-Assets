@@ -721,9 +721,14 @@ def run_service(
                 if state.get("last_hot_deployment_id") is not None:
                     state["last_hot_deployment_id"] = None
                     save_state(options, state)
+                phase_message = (
+                    "training continues while generation zero awaits review."
+                    if state.get("phase") == "train"
+                    else "the completed generation awaits explicit review before release."
+                )
                 print(
                     "[Bees continuous] no compatible validated champion exists yet; "
-                    "training continues until an operator reviews and establishes generation zero."
+                    + phase_message
                 )
             elif published is None or published != state.get("last_hot_deployment_id"):
                 published = publish_current_hot_bundle(options, runner)
