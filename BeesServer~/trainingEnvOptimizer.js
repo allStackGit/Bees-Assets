@@ -9,7 +9,6 @@ const DEFAULT_RETEST_MS = 5 * 60_000;
 const DEFAULT_INSTABILITY_HOLD_MS = 15 * 60_000;
 const DEFAULT_METRICS_TIMEOUT_MS = 3 * 60_000;
 const DEFAULT_MIN_IMPROVEMENT_RATIO = 0.03;
-const STOPPED_TRANSITION_GRACE_MS = 30_000;
 const DEFAULT_REGRESSION_RATIO = 0.05;
 
 function finiteInteger(value) {
@@ -152,7 +151,6 @@ class TrainingEnvOptimizer {
             consecutive_baseline_session_failures: 0,
             last_update_ms: now,
             metrics_missing_since_ms: null,
-            stopped_since_ms: null,
         };
     }
 
@@ -498,21 +496,10 @@ class TrainingEnvOptimizer {
             reconciliation && String(reconciliation.phase || '').trim()
         );
 
-        if (processState === 'stopped' && !optimizerError) {
-            if (state.stopped_since_ms === null) state.stopped_since_ms = timestamp;
-        } else {
-            state.stopped_since_ms = null;
-        }
         const stoppedTransitionGrace =
             processState === 'stopped' &&
             !optimizerError &&
-            (
-                reconciliationActive ||
-                (
-                    state.stopped_since_ms !== null &&
-                    timestamp - state.stopped_since_ms < STOPPED_TRANSITION_GRACE_MS
-                )
-            );
+            reconciliationActive;
 
         // A recovered control-plane transport interruption is not evidence that the Unity
         // worker itself is unstable. Older worker runtimes could echo ControlUnavailable back
