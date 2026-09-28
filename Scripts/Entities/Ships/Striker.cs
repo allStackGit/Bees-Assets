@@ -90,6 +90,12 @@ namespace Assets.Scripts.Entities.Ships
 
         protected override void OnTriggerEnter2D(Collider2D collider)
         {
+            if (IsNetworkReplica)
+            {
+                base.OnTriggerEnter2D(collider);
+                return;
+            }
+
             _collidingThing = collider.gameObject;
             if (_collidingThing.CompareTag("Ship") && Collider.IsTouching(collider))
             {
@@ -108,6 +114,12 @@ namespace Assets.Scripts.Entities.Ships
 
         protected override void OnTriggerExit2D(Collider2D collider)
         {
+            if (IsNetworkReplica)
+            {
+                base.OnTriggerExit2D(collider);
+                return;
+            }
+
             _collidingThing = collider.gameObject;
             if (TouchingShip != null && _collidingThing.CompareTag("Ship"))
             {
@@ -125,6 +137,11 @@ namespace Assets.Scripts.Entities.Ships
 
         public void TryToDropBombs()
         {
+            if (IsNetworkReplica)
+            {
+                return;
+            }
+
             if (TouchingShip != null && TouchingShip.Side != Side && IsBombReady)
             {
                 // Scripted BombingRun resets this per run. The direct RL controller deliberately

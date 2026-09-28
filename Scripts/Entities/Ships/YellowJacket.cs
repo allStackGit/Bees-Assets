@@ -38,6 +38,12 @@ namespace Assets.Scripts.Entities.Ships
         }
         protected override void OnTriggerEnter2D(Collider2D collider) // projectile collision
         {
+            if (IsNetworkReplica)
+            {
+                base.OnTriggerEnter2D(collider);
+                return;
+            }
+
             _collidingThing = collider.gameObject;
             if (_collidingThing.name == ("Selection Box"))
             {
@@ -60,6 +66,12 @@ namespace Assets.Scripts.Entities.Ships
 
         protected override void OnTriggerExit2D(Collider2D collider)
         {
+            if (IsNetworkReplica)
+            {
+                base.OnTriggerExit2D(collider);
+                return;
+            }
+
             _collidingThing = collider.gameObject;
             if (TouchingShip != null && _collidingThing.CompareTag("Ship"))
             {
@@ -76,6 +88,11 @@ namespace Assets.Scripts.Entities.Ships
         }
         public void TryToDetonate()
         {
+            if (IsNetworkReplica)
+            {
+                return;
+            }
+
             if (TouchingShip != null && !TouchingShip.IsDead && TouchingShip.Side != Side)
             {
                 ContactedShip = TouchingShip;

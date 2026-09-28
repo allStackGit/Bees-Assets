@@ -177,6 +177,12 @@ namespace Assets.Scripts.Entities.Ships
 
         protected override void OnTriggerEnter2D(Collider2D collider)
         {
+            if (IsNetworkReplica)
+            {
+                base.OnTriggerEnter2D(collider);
+                return;
+            }
+
             _collidingThing = collider.gameObject;
             if (_collidingThing.name == "Selection Box")
             {
@@ -199,6 +205,11 @@ namespace Assets.Scripts.Entities.Ships
         private Ship _collidingShip;
         protected void OnTriggerStay2D(Collider2D collider)
         {
+            if (IsNetworkReplica)
+            {
+                return;
+            }
+
             _collidingThing = collider.gameObject;
             if (_collidingThing.CompareTag("Ship") && Collider.IsTouching(collider))
             {
@@ -212,6 +223,11 @@ namespace Assets.Scripts.Entities.Ships
 
         public void HitShip(Ship ship)
         {
+            if (IsNetworkReplica)
+            {
+                return;
+            }
+
             if (!ShipsHit.Contains(ship))
             {
                 ShipsHit.Add(ship);
@@ -260,6 +276,11 @@ namespace Assets.Scripts.Entities.Ships
 
         public IEnumerator ChargeForward(Ship target = null)
         {
+            if (IsNetworkReplica)
+            {
+                yield break;
+            }
+
             if (!TryReserveCharge())
             {
                 yield break;
