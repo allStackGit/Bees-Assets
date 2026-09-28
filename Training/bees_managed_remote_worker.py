@@ -383,10 +383,21 @@ def _terminate(process: Optional[subprocess.Popen]) -> None:
         except Exception:
             pass
         try:
-            process.wait(timeout=10)
+            process.wait(timeout=5)
             return
         except Exception:
             pass
+        try:
+            process.kill()
+        except Exception:
+            pass
+        try:
+            process.wait(timeout=5)
+            return
+        except Exception as exc:
+            raise RuntimeError(
+                f"remote supervisor child process tree {process.pid} did not stop"
+            ) from exc
     else:
         # Remote children are launched in their own session. Signal the whole session so a
         # tailnet/helper descendant or a Unity child cannot survive after its managed parent exits.
@@ -436,6 +447,13 @@ def _terminate(process: Optional[subprocess.Popen]) -> None:
         raise RuntimeError(
             f"remote supervisor child process {process.pid} did not stop"
         ) from exc
+
+
+def _worker_cleanup_grace_seconds(transport_watchdog_restart: bool) -> float:
+    # A control-path outage cannot reliably complete remote log/control finalization, so do not
+    # spend the normal 30-second graceful budget before rebuilding transport. Normal stops and
+    # release cutovers retain the longer window for orderly log preservation.
+    return 8.0 if transport_watchdog_restart else 30.0
 
 
 def _worker_agent_stop_request_path(args: argparse.Namespace) -> Path:
@@ -2057,6 +2075,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 worker_stopped = _request_graceful_worker_stop(
                     worker,
                     _worker_agent_stop_request_path(args),
+                    timeout=_worker_cleanup_grace_seconds(transport_watchdog_restart),
                 )
                 if not worker_stopped:
                     try:
