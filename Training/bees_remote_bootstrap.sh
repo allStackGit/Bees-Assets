@@ -81,6 +81,10 @@ fi
 have() { command -v "$1" >/dev/null 2>&1; }
 
 AUTOSTART_UNIT="$HOME/.config/systemd/user/bees-training-worker.service"
+AUTOSTART_MARKER="$INSTALL_ROOT/remote-autostart.enabled"
+AUTOSTART_MONITOR="$INSTALL_ROOT/Launcher/bees-remote-monitor.sh"
+AUTOSTART_MONITOR_LOG="$INSTALL_ROOT/Logs/remote-monitor.log"
+AUTOSTART_CHILD="${BEES_AUTOSTART_CHILD:-0}"
 
 systemd_quote() {
     local value="$1"
@@ -90,6 +94,7 @@ systemd_quote() {
 }
 
 remove_remote_autostart() {
+    rm -f "$AUTOSTART_MARKER"
     if have systemctl; then
         systemctl --user disable bees-training-worker.service >/dev/null 2>&1 || true
         systemctl --user stop bees-training-worker.service >/dev/null 2>&1 || true
@@ -101,6 +106,9 @@ remove_remote_autostart() {
 }
 
 install_remote_autostart() {
+    if [[ "$AUTOSTART_CHILD" == "1" ]]; then
+        return
+    fi
     if (( NO_AUTOSTART )); then
         remove_remote_autostart
         return
@@ -114,22 +122,41 @@ install_remote_autostart() {
         echo "warning: systemd user services are unavailable; reboot autostart could not be registered." >&2
         return
     fi
-    mkdir -p "$(dirname "$AUTOSTART_UNIT")"
-    local exec_line
-    exec_line="/bin/bash $(systemd_quote "$launcher") start --install-root $(systemd_quote "$INSTALL_ROOT") --torch-device $(systemd_quote "$TORCH_DEVICE")"
-    if [[ -n "$ENVS" ]]; then
-        exec_line+=" --envs $ENVS"
-    fi
+    mkdir -p "$(dirname "$AUTOSTART_UNIT")" "$(dirname "$AUTOSTART_MONITOR")" "$(dirname "$AUTOSTART_MONITOR_LOG")"
+    printf 'enabled\n' > "$AUTOSTART_MARKER"
+
+    local q_marker q_launcher q_install q_torch q_log
+    printf -v q_marker '%q' "$AUTOSTART_MARKER"
+    printf -v q_launcher '%q' "$launcher"
+    printf -v q_install '%q' "$INSTALL_ROOT"
+    printf -v q_torch '%q' "$TORCH_DEVICE"
+    printf -v q_log '%q' "$AUTOSTART_MONITOR_LOG"
+    cat > "$AUTOSTART_MONITOR" <<EOF
+#!/usr/bin/env bash
+set -u
+MARKER=$q_marker
+LAUNCHER=$q_launcher
+INSTALL_ROOT=$q_install
+TORCH_DEVICE=$q_torch
+MONITOR_LOG=$q_log
+while [[ -f "\$MARKER" ]]; do
+    BEES_AUTOSTART_CHILD=1 bash "\$LAUNCHER" start --install-root "\$INSTALL_ROOT" --torch-device "\$TORCH_DEVICE"${ENVS:+ --envs $ENVS} >>"\$MONITOR_LOG" 2>&1 || true
+    sleep 10
+done
+EOF
+    chmod 700 "$AUTOSTART_MONITOR"
+
     cat > "$AUTOSTART_UNIT" <<EOF
 [Unit]
-Description=Bees remote training worker
+Description=Bees remote training worker watchdog
 After=network-online.target
 Wants=network-online.target
 
 [Service]
-Type=oneshot
-ExecStart=$exec_line
-RemainAfterExit=yes
+Type=simple
+ExecStart=/bin/bash $(systemd_quote "$AUTOSTART_MONITOR")
+Restart=always
+RestartSec=5
 
 [Install]
 WantedBy=default.target
@@ -141,6 +168,9 @@ EOF
     systemctl --user enable bees-training-worker.service >/dev/null 2>&1 || {
         echo "warning: could not enable Bees user autostart service." >&2
         return
+    }
+    systemctl --user restart bees-training-worker.service >/dev/null 2>&1 || {
+        echo "warning: Bees user watchdog could not be started immediately." >&2
     }
 
     if have loginctl; then
