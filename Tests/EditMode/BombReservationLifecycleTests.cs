@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using Assets.Scripts.Entities.Ships.Weapons;
 using NUnit.Framework;
 using UnityEngine;
 
@@ -10,6 +11,21 @@ namespace Bees.Tests.EditMode
     public class BombReservationLifecycleTests
     {
         private static string Read(params string[] path) => File.ReadAllText(Path.Combine(Application.dataPath, Path.Combine(path)));
+
+        [Test]
+        public void BombRejectsNullTargetsLikeOtherWeaponValidators()
+        {
+            GameObject host = new GameObject("Bomb target validation test");
+            try
+            {
+                Bomb bomb = host.AddComponent<Bomb>();
+                Assert.That(bomb.IsShipValidTarget(null), Is.False);
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(host);
+            }
+        }
 
         [Test]
         public void BombOwnsReservationUntilDeliveryOrCancellation()
