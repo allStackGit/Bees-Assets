@@ -544,9 +544,9 @@ def _request_graceful_training_child_stop(process: subprocess.Popen) -> None:
             if os.name == "nt" and hasattr(signal, "CTRL_BREAK_EVENT"):
                 process.send_signal(signal.CTRL_BREAK_EVENT)
             else:
-                # The child owns its process group, so interrupt the trainer and its
-                # environment workers through the same graceful path used by Ctrl+C.
-                os.killpg(process.pid, signal.SIGINT)
+                # POSIX popen_owned returns a guardian process. Its SIGINT handler
+                # forwards the request to the trainer's isolated process group.
+                process.send_signal(signal.SIGINT)
         except ProcessLookupError:
             pass
         except OSError as exc:
