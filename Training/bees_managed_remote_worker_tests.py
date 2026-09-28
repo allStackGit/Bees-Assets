@@ -1039,6 +1039,39 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
                 updater.request_refresh()
             self.assertTrue(updater._refresh.is_set())
 
+    def test_control_failure_total_reads_inner_worker_control_metrics(self):
+        record = {
+            "metrics": {
+                "control": {
+                    "failures_total": 7,
+                    "seconds_since_last_failure": 0.5,
+                    "last_failure_type": "ControlUnavailable",
+                }
+            }
+        }
+        self.assertEqual(managed._control_failure_total(record), 7)
+        self.assertIsNone(managed._control_failure_total({"metrics": {}}))
+        self.assertIsNone(
+            managed._control_failure_total(
+                {"metrics": {"control": {"failures_total": True}}}
+            )
+        )
+
+    def test_repeated_inner_control_failures_trip_transport_recycle_watchdog(self):
+        watchdog = managed._SessionFailureWatchdog(
+            threshold=3,
+            window_seconds=60.0,
+        )
+        self.assertFalse(watchdog.observe(40, 100.0))
+        self.assertFalse(watchdog.observe(41, 110.0))
+        self.assertFalse(watchdog.observe(42, 120.0))
+        self.assertTrue(watchdog.observe(43, 130.0))
+
+        # A worker-agent restart resets its cumulative counter; the watchdog must adopt
+        # the new baseline rather than treating the reset as another failure.
+        self.assertFalse(watchdog.observe(0, 140.0))
+        self.assertFalse(watchdog.observe(1, 150.0))
+
     def test_session_failure_watchdog_escalates_repeated_failures_and_expires_window(self):
         watchdog = managed._SessionFailureWatchdog(threshold=3, window_seconds=120.0)
 
