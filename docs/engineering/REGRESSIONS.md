@@ -1455,3 +1455,10 @@ Manual-only protection is acceptable only when the record explains why determini
 **Fix:** Convert recursion and serialization failures into the existing `ValidationError` path and reject deeply nested numeric structures deterministically.
 **Permanent protection:** Malformed payload depth is handled as rejected data at parse, canonicalization, and validation boundaries rather than as an unhandled service failure.
 **Verification:** Static review traced incoming quarantine metadata/payload parsing, canonical archive serialization, curation JSON reads, and finite-number traversal. No tests, builds, Unity, simulations, or runtime checks were run. Post-fix clean-pass count remains **0 / 2**.
+
+### REG-168 — Reject coerced continual trainer policy values
+**Area:** `Training/bees_continual_train.py`, historical sampling and human imitation settings
+**Symptom:** Several config readers converted numeric strings and fractional values with `float()`/`int()`; fractional step/cache settings could be truncated, and very large imitation strengths could leak `OverflowError` before the trainer started.
+**Fix:** Require numeric types and ranges for historical training ratio and imitation strength, and exact positive integers for policy-cache size, imitation steps, and batch size. Handle strength conversion overflow as a configuration error.
+**Permanent protection:** Trainer policy settings are validated before worker launch or demonstration-config preparation without lossy coercion.
+**Verification:** Static review traced these values through historical opponent weighting, the policy cache, and human-imitation configuration preparation. The checked-in config has the required types. No tests, builds, Unity, simulations, or training runs were executed. Post-fix clean-pass count remains **0 / 2**.
