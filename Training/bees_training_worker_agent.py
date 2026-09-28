@@ -433,10 +433,16 @@ def read_persisted_network_traffic(
     throughput_metrics_path: Optional[Path],
     *,
     expected_run_id: str,
+    install_root: Optional[Path] = None,
 ) -> dict[str, object]:
-    if throughput_metrics_path is None or not expected_run_id:
+    if not expected_run_id:
         return {}
-    path = throughput_metrics_path.with_name(NETWORK_TRAFFIC_STATE_FILE)
+    if throughput_metrics_path is not None:
+        path = throughput_metrics_path.with_name(NETWORK_TRAFFIC_STATE_FILE)
+    elif install_root is not None:
+        path = Path(install_root).expanduser().resolve() / NETWORK_TRAFFIC_STATE_FILE
+    else:
+        return {}
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError):
@@ -467,6 +473,7 @@ def _add_persisted_network_traffic(
     throughput_metrics_path: Optional[Path],
     *,
     run_id: str,
+    install_root: Optional[Path] = None,
 ) -> None:
     current = snapshot.get("throughput")
     if (
@@ -478,6 +485,7 @@ def _add_persisted_network_traffic(
     persisted = read_persisted_network_traffic(
         throughput_metrics_path,
         expected_run_id=run_id,
+        install_root=install_root,
     )
     if not persisted:
         return
@@ -1494,6 +1502,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             snapshot,
             managed.throughput_metrics_file,
             run_id=run_id,
+            install_root=install_root,
         )
         if control_failures_total > 0 and last_control_failure_monotonic is not None:
             snapshot["control"] = {
