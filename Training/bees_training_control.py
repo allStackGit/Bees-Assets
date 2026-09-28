@@ -319,6 +319,33 @@ def _safe_zip_member(root: Path, name: str) -> Path:
     return destination
 
 
+def _build_tree_sha256(root: Path) -> Optional[str]:
+    if root.is_symlink() or not root.is_dir():
+        return None
+
+    digest = hashlib.sha256()
+    paths = sorted(root.rglob("*"), key=lambda path: path.relative_to(root).as_posix())
+    for path in paths:
+        relative = path.relative_to(root).as_posix()
+        if relative == ".bees-build.json":
+            continue
+        if path.is_symlink():
+            return None
+        if path.is_dir():
+            continue
+        if not path.is_file():
+            return None
+
+        digest.update(relative.encode("utf-8"))
+        digest.update(b"\\0")
+        digest.update(str(stat.S_IMODE(path.stat().st_mode)).encode("ascii"))
+        digest.update(b"\\0")
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+    return digest.hexdigest()
+
+
 class ManagedBuildStore:
     MAX_RETAINED_BUILDS = 4
 
@@ -366,30 +393,49 @@ class ManagedBuildStore:
     def prepare(self, client: TrainingControlClient, descriptor: Mapping[str, Any]) -> tuple[Path, Mapping[str, Any]]:
         return self._materialize(client, descriptor, activate=False)
 
-    def is_prepared(self, descriptor: Mapping[str, Any]) -> bool:
-        descriptor = self._validated_descriptor(descriptor)
-        identity = (
+    @staticmethod
+    def _identity(descriptor: Mapping[str, Any]) -> str:
+        return (
             descriptor["role"] + "-" +
             descriptor["platform"] + "-" +
             descriptor["build_id"] + "-" +
             descriptor["archive_sha256"][:16]
         )
-        install = self.builds / identity
+
+    def _candidate_installs(self, identity: str) -> list[Path]:
+        return [self.builds / identity] + sorted(self.builds.glob(identity + "-*"))
+
+    def _cache_matches(self, install: Path, descriptor: Mapping[str, Any]) -> bool:
+        if install.is_symlink() or not install.is_dir():
+            return False
         entrypoint = _safe_zip_member(install, descriptor["entrypoint"])
         manifest_path = install / ".bees-build.json"
         if not manifest_path.is_file() or not entrypoint.is_file():
             return False
         try:
             installed = json.loads(manifest_path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
+        except (OSError, json.JSONDecodeError):
             return False
         if not isinstance(installed, Mapping):
             return False
+        content_sha256 = installed.get("content_sha256")
+        if not isinstance(content_sha256, str) or len(content_sha256) != 64:
+            return False
         return (
-            installed.get("archive_sha256") == descriptor["archive_sha256"]
+            _build_tree_sha256(install) == content_sha256
+            and installed.get("archive_sha256") == descriptor["archive_sha256"]
             and installed.get("role") == descriptor["role"]
             and installed.get("build_id") == descriptor["build_id"]
             and installed.get("platform") == descriptor["platform"]
+            and installed.get("entrypoint") == descriptor["entrypoint"]
+        )
+
+    def is_prepared(self, descriptor: Mapping[str, Any]) -> bool:
+        descriptor = self._validated_descriptor(descriptor)
+        identity = self._identity(descriptor)
+        return any(
+            self._cache_matches(install, descriptor)
+            for install in self._candidate_installs(identity)
         )
 
     def _materialize(
@@ -400,33 +446,14 @@ class ManagedBuildStore:
         activate: bool,
     ) -> tuple[Path, Mapping[str, Any]]:
         descriptor = self._validated_descriptor(descriptor)
-        identity = (
-            descriptor["role"] + "-" +
-            descriptor["platform"] + "-" +
-            descriptor["build_id"] + "-" +
-            descriptor["archive_sha256"][:16]
-        )
-        install = self.builds / identity
-        entrypoint = _safe_zip_member(install, descriptor["entrypoint"])
-        manifest_path = install / ".bees-build.json"
-
-        if manifest_path.is_file() and entrypoint.is_file():
-            try:
-                installed = json.loads(manifest_path.read_text(encoding="utf-8"))
-            except json.JSONDecodeError:
-                installed = {}
-            if not isinstance(installed, Mapping):
-                installed = {}
-            if (
-                installed.get("archive_sha256") == descriptor["archive_sha256"]
-                and installed.get("role") == descriptor["role"]
-                and installed.get("build_id") == descriptor["build_id"]
-                and installed.get("platform") == descriptor["platform"]
-            ):
+        identity = self._identity(descriptor)
+        for cached_install in self._candidate_installs(identity):
+            if self._cache_matches(cached_install, descriptor):
+                cached_entrypoint = _safe_zip_member(cached_install, descriptor["entrypoint"])
                 if activate:
-                    self._set_current(descriptor, entrypoint)
-                self._prune({install})
-                return entrypoint, descriptor
+                    self._set_current(descriptor, cached_entrypoint)
+                self._prune({cached_install})
+                return cached_entrypoint, descriptor
 
         temp_parent = Path(tempfile.mkdtemp(prefix=".bees-build-", dir=str(self.builds)))
         archive = temp_parent / "artifact.zip"
@@ -462,12 +489,21 @@ class ManagedBuildStore:
                 )
             if os.name != "nt":
                 candidate.chmod(candidate.stat().st_mode | stat.S_IXUSR)
+            content_sha256 = _build_tree_sha256(extracted)
+            if content_sha256 is None:
+                raise ValueError("extracted build contains an unsafe filesystem entry")
+            install_manifest = dict(descriptor)
+            install_manifest["content_sha256"] = content_sha256
             (extracted / ".bees-build.json").write_text(
-                json.dumps(descriptor, indent=2, sort_keys=True) + "\n",
+                json.dumps(install_manifest, indent=2, sort_keys=True) + "\n",
                 encoding="utf-8",
             )
-            if install.exists():
-                shutil.rmtree(install)
+
+            # Keep repaired trees at distinct paths; a damaged tree may still be in use.
+            install = self.builds / f"{identity}-{content_sha256[:16]}"
+            if install.exists() or install.is_symlink():
+                nonce = temp_parent.name[len(".bees-build-"):]
+                install = self.builds / f"{identity}-{content_sha256[:16]}-{nonce}"
             os.replace(extracted, install)
         finally:
             shutil.rmtree(temp_parent, ignore_errors=True)
