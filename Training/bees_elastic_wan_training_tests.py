@@ -130,6 +130,7 @@ class ElasticActorStaleResyncTests(unittest.TestCase):
             ),
             mock.patch.object(actor_worker.worker, "_clear_partial_trajectories"),
             mock.patch.object(actor_worker.worker, "_drain_queue"),
+            mock.patch.object(actor_worker.worker, "_remap_manager_initial_steps"),
         ):
             session._synchronize_state()
 
