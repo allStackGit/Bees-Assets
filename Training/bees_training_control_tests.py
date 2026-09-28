@@ -384,6 +384,7 @@ class TrainingControlClientTests(unittest.TestCase):
                 agent.environment_args_identity(()),
             )
             self.assertEqual(environment["PYTHONUNBUFFERED"], "1")
+            self.assertEqual(environment["PYTHONDONTWRITEBYTECODE"], "1")
             self.assertTrue(
                 Path(environment["BEES_TRAINING_CHILD_HEALTH_FILE"]).as_posix().endswith(
                     "child-health.json"
