@@ -342,7 +342,7 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
                 bundle.writestr("latest-training-release.json", b"{}")
 
             response = mock.MagicMock()
-            response.__enter__.return_value.read.return_value = payload.getvalue()
+            response.__enter__.return_value.read.side_effect = [payload.getvalue(), b""]
             response.__enter__.return_value.headers.get.return_value = '"bundle-1"'
             response.__exit__.return_value = False
             with (
@@ -358,7 +358,7 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
             self.assertEqual(urlopen.call_count, 2)
             self.assertEqual(result[0], b"runtime")
             self.assertEqual(result[1], b"worker")
-            self.assertEqual(result[5], '"bundle-1"')
+            self.assertEqual(result[6], '"bundle-1"')
             self.assertEqual(updater.last_error, "")
 
     def test_default_envs_fall_back_to_cpu_when_memory_is_unknown(self):
@@ -845,6 +845,88 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
 
             full_fetch.assert_not_called()
 
+    def test_runtime_stage_updates_exact_copied_launcher_path(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            runtime_archive = root / "runtime.zip"
+            runtime_archive.write_bytes(b"same-runtime")
+            bridge = root / "bridge"
+            bridge.write_bytes(b"same-bridge")
+            launcher = root / "Copied Worker.cmd"
+            launcher.write_bytes(b"old launcher")
+            args = Namespace(
+                runtime_archive=str(runtime_archive),
+                launcher_path=str(launcher),
+                tailnet_bridge=str(bridge),
+                worker_token_file=str(root / "worker.token"),
+                wan_token_file=str(root / "wan.token"),
+                bootstrap_token_file=str(root / "bootstrap.token"),
+                bootstrap_port=7151,
+            )
+            updater = managed.RuntimeUpdater(args, root / "install")
+            release = b'{"build_id":"build-1"}'
+            with (
+                mock.patch.object(
+                    updater,
+                    "_fetch_bootstrap",
+                    return_value=(
+                        b"same-runtime",
+                        b"worker-token",
+                        b"wan-token",
+                        b"same-bridge",
+                        release,
+                        b"new launcher",
+                        '"bundle-launcher"',
+                    ),
+                ),
+                mock.patch.object(
+                    updater,
+                    "_fetch_bootstrap_identity",
+                    return_value='"bundle-launcher"',
+                ),
+                mock.patch.object(managed, "_runtime_version_from_zip", return_value=""),
+                mock.patch.object(
+                    managed,
+                    "_python_remote_dependencies_ok",
+                    return_value=True,
+                ),
+            ):
+                updater._stage_once()
+
+            self.assertEqual(launcher.read_bytes(), b"new launcher")
+            self.assertEqual(updater.bootstrap_identity, '"bundle-launcher"')
+
+    def test_runtime_refresh_requests_cannot_bypass_poll_interval(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            args = Namespace(
+                runtime_archive=str(root / "missing.zip"),
+                runtime_poll_seconds=20.0,
+            )
+            updater = managed.RuntimeUpdater(args, root / "install")
+            updater._last_attempt_monotonic = 100.0
+            with mock.patch.object(managed.time, "monotonic", return_value=105.0):
+                updater.request_refresh()
+            self.assertFalse(updater._refresh.is_set())
+
+            with mock.patch.object(managed.time, "monotonic", return_value=121.0):
+                updater.request_refresh()
+            self.assertTrue(updater._refresh.is_set())
+
+    def test_session_failure_watchdog_escalates_repeated_failures_and_expires_window(self):
+        watchdog = managed._SessionFailureWatchdog(threshold=3, window_seconds=120.0)
+
+        self.assertFalse(watchdog.observe(10, 100.0))
+        self.assertFalse(watchdog.observe(11, 110.0))
+        self.assertFalse(watchdog.observe(12, 150.0))
+        self.assertTrue(watchdog.observe(13, 180.0))
+
+        expired = managed._SessionFailureWatchdog(threshold=3, window_seconds=20.0)
+        self.assertFalse(expired.observe(20, 100.0))
+        self.assertFalse(expired.observe(21, 101.0))
+        self.assertFalse(expired.observe(22, 130.0))
+        self.assertFalse(expired.observe(23, 131.0))
+
     def test_transport_watchdog_requires_sustained_failure_and_resets_on_success(self):
         watchdog = managed._TransportWatchdog(30.0)
 
@@ -881,6 +963,29 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
 
             self.assertIn("IncompleteRead", updater.last_error)
             self.assertGreaterEqual(updater._stage_once.call_count, 1)
+
+    def test_runtime_updater_revives_dead_thread_without_stopping_supervisor(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            args = Namespace(
+                runtime_archive=str(root / "missing.zip"),
+                runtime_poll_seconds=60.0,
+            )
+            updater = managed.RuntimeUpdater(args, root / "install")
+            updater._started = True
+            updater._thread = mock.Mock()
+            updater._thread.is_alive.return_value = False
+            replacement = mock.Mock()
+            replacement.is_alive.return_value = True
+            with mock.patch.object(
+                managed.threading,
+                "Thread",
+                return_value=replacement,
+            ):
+                self.assertTrue(updater.revive())
+
+            replacement.start.assert_called_once_with()
+            self.assertIs(updater._thread, replacement)
 
     def test_runtime_updater_stop_is_safe_before_thread_start(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -1017,6 +1122,7 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
                         b"wan-token",
                         b"same-bridge",
                         release,
+                        b"",
                         '"bundle-bad"',
                     ),
                 ),
@@ -1064,6 +1170,7 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
                         b"wan-token",
                         b"same-bridge",
                         release,
+                        b"",
                         '"bundle-repair"',
                     ),
                 ),
