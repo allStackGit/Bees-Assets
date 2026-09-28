@@ -39,6 +39,7 @@ PARENT_MODEL_FLAG = "--continual-parent-model-id"
 SCAN_SECONDS_FLAG = "--continual-scan-seconds"
 HUMAN_DEMO_DIR_FLAG = "--continual-human-demo-dir"
 DEFAULT_SCAN_SECONDS = 2.0
+DEFAULT_RESULTS_DIR = ".results"
 DEFAULT_HISTORICAL_POLICY_CACHE_SIZE = 4
 HUMAN_DEMO_SNAPSHOT_SCHEMA_VERSION = 2
 CAPTURE_MANIFEST_FILE_NAME = "capture-manifest.json"
@@ -165,7 +166,7 @@ def infer_run_context(argv: Sequence[str]) -> Tuple[Path, str, Path]:
         raise SystemExit(
             "Continual candidate registration requires ML-Agents --run-id."
         )
-    results_dir = Path(_trainer_arg(argv, "--results-dir") or "results")
+    results_dir = Path(_trainer_arg(argv, "--results-dir") or DEFAULT_RESULTS_DIR)
     config_index = _training_config_index(argv)
     if config_index is None:
         raise SystemExit(
