@@ -1680,6 +1680,24 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 _sha, next_root, staged_bridge, staged_python, _staged_build_id, _error = updater.staged()
                 if next_root is None:
                     raise RuntimeError("staged runtime disappeared before activation")
+                active_runtime_root = Path(__file__).resolve().parent
+                if next_root != active_runtime_root:
+                    archive = (
+                        install_root
+                        / "Downloads"
+                        / f"bees-remote-runtime-{_sha}.zip"
+                    )
+                    if not archive.is_file() or _sha256_file(archive) != _sha:
+                        raise RuntimeError(
+                            "staged runtime archive is missing or changed before activation"
+                        )
+                    runtime_zip = archive.read_bytes()
+                    if not _runtime_root_matches_archive(runtime_zip, next_root):
+                        _safe_extract_runtime(runtime_zip, next_root)
+                        if not _runtime_root_matches_archive(runtime_zip, next_root):
+                            raise RuntimeError(
+                                "staged runtime contents could not be restored before activation"
+                            )
                 if staged_bridge is not None:
                     active_bridge = Path(args.tailnet_bridge).expanduser().resolve()
                     os.replace(staged_bridge, active_bridge)
