@@ -10,6 +10,9 @@ Static-only repository audit on `rl/initial-design-work`. This ledger is the cur
 
 ## Audit status
 
+- REG-180 prevents Bomb's target validator from throwing when shared ship-range queries pass a null candidate. A focused regression test was added but not run. Static review only; post-fix clean-pass count remains **0 / 2**.
+
+
 - REG-160 prevents the long-lived continual-service retry loop from leaving an unsupervised managed phase child running after a supervisor-side exception. The phase child is stopped before the exception is re-raised, with forced cleanup fallback. Static review only; no tests or runtime checks were run. Post-fix clean-pass count remains **0 / 2**.
 
 - REG-161 prevents model registry metadata from silently truncating boolean or fractional `training_step` values. Public callers now must supply an actual nonnegative integer before artifact hashing or persistence. Static review only; no tests or runtime checks were run. Post-fix clean-pass count remains **0 / 2**.
