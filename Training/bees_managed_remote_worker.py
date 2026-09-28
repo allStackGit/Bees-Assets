@@ -796,7 +796,7 @@ class RuntimeUpdater:
                     if self._staging_process is process:
                         self._staging_process = None
 
-    def self._python_remote_dependencies_ok(self, python_path: Path) -> bool:
+    def _python_remote_dependencies_ok(self, python_path: Path) -> bool:
         return self._run_staging_command(
             [
                 python_path,
