@@ -154,13 +154,18 @@ internal static class RlOneVsOneArenaMapSizeState
         }
 
         double range = (double)maximum - minimum;
-        int maximumStep = (int)Math.Floor(range / MapSizeStep);
+        int maximumStep = (int)Math.Ceiling(range / MapSizeStep);
         if (maximumStep <= 0)
         {
             return minimum;
         }
 
         int selectedStep = random.Next(maximumStep + 1);
+        if (selectedStep == maximumStep)
+        {
+            return maximum;
+        }
+
         float sampledSize = minimum + selectedStep * MapSizeStep;
         return Mathf.Min(sampledSize, maximum);
     }
