@@ -53,6 +53,8 @@ def _read_json_object(path: Path, label: str) -> Dict[str, Any]:
         raise ValidationError(f"{label} does not exist: {path}") from exc
     except json.JSONDecodeError as exc:
         raise ValidationError(f"{label} is invalid JSON: {path}: {exc}") from exc
+    except RecursionError as exc:
+        raise ValidationError(f"{label} is nested too deeply: {path}") from exc
     if not isinstance(raw, dict):
         raise ValidationError(f"{label} must contain a JSON object.")
     return raw
