@@ -1547,7 +1547,7 @@ Manual-only protection is acceptable only when the record explains why determini
 **Verification:** regression source was added and reviewed statically; it was not run under the static-only audit instruction.  
 **Invariant/knowledge:** weapon target validators must reject missing candidates before reading target state.
 
-### REG--Infinity — Missing log offset cannot trigger a zero-offset reset
+### REG-181 — Missing log offset cannot trigger a zero-offset reset
 **Area:** `BeesServer~/trainingControl.js` trainer-log HTTP route  
 **Symptom:** a log-reset request without an `offset` parameter was interpreted as offset zero and could truncate an existing trainer log.  
 **Root cause:** `Number(null)` converts an absent URL parameter to zero, which is a valid reset offset for the store.  
