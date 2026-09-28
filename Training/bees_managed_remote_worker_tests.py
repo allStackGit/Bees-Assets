@@ -1020,6 +1020,37 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
             replacement.start.assert_called_once_with()
             self.assertIs(updater._thread, replacement)
 
+    def test_unsafe_supervisor_replacement_closes_windows_owned_job_before_spawn(self):
+        replacement = mock.Mock()
+        replacement.pid = 9911
+        with (
+            mock.patch.object(managed.os, "name", "nt"),
+            mock.patch.object(managed, "close_windows_owned_child_job") as close_job,
+            mock.patch.object(managed.subprocess, "Popen", return_value=replacement) as popen,
+        ):
+            result = managed._spawn_clean_supervisor_replacement()
+
+        self.assertIs(result, replacement)
+        close_job.assert_called_once_with()
+        self.assertEqual(popen.call_args.args[0][0], managed.sys.executable)
+        self.assertEqual(
+            popen.call_args.kwargs["creationflags"],
+            getattr(managed.subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        self.assertNotIn("start_new_session", popen.call_args.kwargs)
+
+    def test_runtime_updater_stuck_stop_requires_clean_process_replacement(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            args = Namespace(runtime_archive=str(root / "missing.zip"))
+            updater = managed.RuntimeUpdater(args, root / "install")
+            updater._started = True
+            updater._thread = mock.Mock()
+            updater._thread.is_alive.return_value = True
+
+            with self.assertRaises(managed._SupervisorProcessRestartRequired):
+                updater.stop()
+
     def test_runtime_updater_stop_is_safe_before_thread_start(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
