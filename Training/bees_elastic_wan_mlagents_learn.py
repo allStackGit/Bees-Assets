@@ -33,9 +33,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return 0
     finally:
         sys.argv = original_argv
-        zero_local.restore_elastic_wan_env_manager(patch)
-        slot_safety.restore_slot_safety(original_broker)
-        policy_transport.restore_portable_policy_transport(original_policy_transport)
+        try:
+            zero_local.restore_elastic_wan_env_manager(patch)
+        finally:
+            try:
+                if original_broker is not None:
+                    slot_safety.restore_slot_safety(original_broker)
+            finally:
+                if original_policy_transport is not None:
+                    policy_transport.restore_portable_policy_transport(original_policy_transport)
 
 
 if __name__ == "__main__":
