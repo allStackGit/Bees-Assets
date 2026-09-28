@@ -626,6 +626,7 @@ internal sealed class RlPlayerDerivedActionReplayController : MonoBehaviour
     private float _nextHealingActionTime;
     private WarpGate _pendingWarpGate;
     private long _pendingWarpShipId;
+    private long _pendingWarpGateId;
 
     internal void Prepare(Level level, RlPlayerDerivedActionReplay.ReplayData replay)
     {
@@ -965,6 +966,7 @@ internal sealed class RlPlayerDerivedActionReplayController : MonoBehaviour
 
         _pendingWarpGate = warpGate;
         _pendingWarpShipId = _ship.Id;
+        _pendingWarpGateId = warpGate.Id;
         warpGate.ShipsWarpingHere.Add(_pendingWarpShipId);
 
         // Recorded actions follow the same gate warmup as live policy actions and normal retreat.
@@ -986,7 +988,8 @@ internal sealed class RlPlayerDerivedActionReplayController : MonoBehaviour
 
         WarpGate warpGate = _pendingWarpGate;
         if (_ship == null || _ship.IsDead || _ship.Id != _pendingWarpShipId ||
-            warpGate.IsDead || warpGate.WarpCollider == null || _ship.Collider == null ||
+            warpGate.Id != _pendingWarpGateId || warpGate.IsDead ||
+            warpGate.WarpCollider == null || _ship.Collider == null ||
             !warpGate.WarpCollider.IsTouching(_ship.Collider) ||
             warpGate.ShipAnimationController == null)
         {
@@ -1017,10 +1020,12 @@ internal sealed class RlPlayerDerivedActionReplayController : MonoBehaviour
     {
         WarpGate warpGate = _pendingWarpGate;
         long shipId = _pendingWarpShipId;
+        long warpGateId = _pendingWarpGateId;
         _pendingWarpGate = null;
         _pendingWarpShipId = 0;
+        _pendingWarpGateId = 0;
 
-        if (warpGate == null)
+        if (warpGate == null || warpGate.Id != warpGateId)
         {
             return;
         }
@@ -1114,7 +1119,9 @@ internal sealed class RlPlayerDerivedActionReplayController : MonoBehaviour
     private void ReleaseShip()
     {
         CancelPendingWarpAction();
-        if (_ship != null)
+        bool ownsBoundShip = !object.ReferenceEquals(_ship, null) &&
+                             _ship != null && _ship.Id == _boundShipId;
+        if (ownsBoundShip)
         {
             _ship.IsRlPolicyControlled = false;
             for (int i = 0; i < _ship.Turrets.Count; i++)
