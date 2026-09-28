@@ -61,6 +61,8 @@ class _StartupHealthHeartbeat:
         self._phase = "starting-session"
         self._state = "starting"
         self._error = ""
+        self._phase_started_unix_seconds = time.time()
+        self._last_progress_unix_seconds: Optional[float] = None
         self._lock = threading.Lock()
         self._stop = threading.Event()
         self._thread = threading.Thread(
@@ -75,11 +77,16 @@ class _StartupHealthHeartbeat:
             state = self._state
             error = self._error
             actor_id = self.actor_id
+            phase_started = self._phase_started_unix_seconds
+            last_progress = self._last_progress_unix_seconds
         details = {
             "component": "elastic-wan-actor",
             "phase": phase,
+            "phase_started_unix_seconds": phase_started,
             "env_count": self.env_count,
         }
+        if last_progress is not None:
+            details["progress_unix_seconds"] = last_progress
         if actor_id >= 0:
             details["actor_id"] = actor_id
         write_managed_health(state, error=error, details=details)
@@ -89,25 +96,47 @@ class _StartupHealthHeartbeat:
         self._thread.start()
 
     def set_phase(self, phase: str) -> None:
+        now = time.time()
+        phase = str(phase)
         with self._lock:
             self._state = "starting"
-            self._phase = str(phase)
+            if phase != self._phase:
+                self._phase_started_unix_seconds = now
+            self._phase = phase
             self._error = ""
+            self._last_progress_unix_seconds = None
         self._publish()
 
     def set_ready(self, phase: str, *, actor_id: Optional[int] = None) -> None:
+        now = time.time()
+        phase = str(phase)
         with self._lock:
             self._state = "ready"
-            self._phase = str(phase)
+            if phase != self._phase:
+                self._phase_started_unix_seconds = now
+            self._phase = phase
             self._error = ""
+            if phase == "running":
+                self._last_progress_unix_seconds = now
+            else:
+                self._last_progress_unix_seconds = None
             if actor_id is not None:
                 self.actor_id = int(actor_id)
+        self._publish()
+
+    def mark_progress(self) -> None:
+        with self._lock:
+            if self._state != "ready" or self._phase != "running":
+                return
+            self._last_progress_unix_seconds = time.time()
         self._publish()
 
     def set_error(self, exc: BaseException) -> None:
         with self._lock:
             self._state = "error"
             self._phase = "session-error"
+            self._phase_started_unix_seconds = time.time()
+            self._last_progress_unix_seconds = None
             self._error = f"{type(exc).__name__}: {exc}"
         self._publish()
 
@@ -643,6 +672,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     stop=stop,
                     upload_queue_size=args.upload_queue,
                     startup_health=startup_health.set_phase,
+                    runtime_progress=startup_health.mark_progress,
                 )
                 actor_session.worker_offset = worker_offset
                 actor_session.total_envs = int(raw_session["remote_worker_base"]) + args.envs
