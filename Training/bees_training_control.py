@@ -336,10 +336,10 @@ def _build_tree_sha256(root: Path) -> Optional[str]:
         if not path.is_file():
             return None
 
-        digest.update(relative.encode("utf-8"))
-        digest.update(b"\\0")
-        digest.update(str(stat.S_IMODE(path.stat().st_mode)).encode("ascii"))
-        digest.update(b"\\0")
+        relative_bytes = relative.encode("utf-8")
+        digest.update(len(relative_bytes).to_bytes(8, "big"))
+        digest.update(relative_bytes)
+        digest.update(stat.S_IMODE(path.stat().st_mode).to_bytes(4, "big"))
         with path.open("rb") as handle:
             for chunk in iter(lambda: handle.read(1024 * 1024), b""):
                 digest.update(chunk)
@@ -421,8 +421,12 @@ class ManagedBuildStore:
         content_sha256 = installed.get("content_sha256")
         if not isinstance(content_sha256, str) or len(content_sha256) != 64:
             return False
+        try:
+            actual_content_sha256 = _build_tree_sha256(install)
+        except OSError:
+            return False
         return (
-            _build_tree_sha256(install) == content_sha256
+            actual_content_sha256 == content_sha256
             and installed.get("archive_sha256") == descriptor["archive_sha256"]
             and installed.get("role") == descriptor["role"]
             and installed.get("build_id") == descriptor["build_id"]
