@@ -505,7 +505,7 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
         owned.assert_called_once()
         self.assertEqual(owned.call_args.args[0], ["python", "worker.py"])
         self.assertEqual(
-            owned.call_args.kwargs["start_new_session"],
+            owned.call_args.kwargs.get("start_new_session", False),
             managed.os.name != "nt",
         )
 
@@ -517,7 +517,12 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
 
         with (
             mock.patch.object(managed.os, "name", "posix"),
-            mock.patch.object(managed.os, "killpg", side_effect=OSError("no group")),
+            mock.patch.object(
+                managed.os,
+                "killpg",
+                side_effect=OSError("no group"),
+                create=True,
+            ),
             self.assertRaisesRegex(RuntimeError, "did not stop"),
         ):
             managed._terminate(process)
@@ -533,7 +538,7 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
 
         with (
             mock.patch.object(managed.os, "name", "posix"),
-            mock.patch.object(managed.os, "killpg") as killpg,
+            mock.patch.object(managed.os, "killpg", create=True) as killpg,
         ):
             managed._terminate(process)
 
