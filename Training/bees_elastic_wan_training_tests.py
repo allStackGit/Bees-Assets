@@ -146,15 +146,16 @@ class ElasticActorHealthTests(unittest.TestCase):
             )
             heartbeat.start()
             heartbeat.set_phase("starting-unity")
+            heartbeat.set_ready("running", actor_id=3)
             heartbeat.stop()
 
-        self.assertGreaterEqual(health.call_count, 2)
+        self.assertGreaterEqual(health.call_count, 3)
         first = health.call_args_list[0]
         latest = health.call_args_list[-1]
         self.assertEqual(first.args[0], "starting")
         self.assertEqual(first.kwargs["details"]["phase"], "starting-session")
-        self.assertEqual(latest.args[0], "starting")
-        self.assertEqual(latest.kwargs["details"]["phase"], "starting-unity")
+        self.assertEqual(latest.args[0], "ready")
+        self.assertEqual(latest.kwargs["details"]["phase"], "running")
         self.assertEqual(latest.kwargs["details"]["actor_id"], 3)
         self.assertEqual(latest.kwargs["details"]["env_count"], 2)
 
@@ -162,7 +163,7 @@ class ElasticActorHealthTests(unittest.TestCase):
         source = Path(actor_worker.__file__).read_text(encoding="utf-8")
         wait = source.index("raw_session = worker._wait_for_broker")
         ready = source.rindex(
-            '"phase": "waiting-for-central"',
+            'startup_health.set_ready("waiting-for-central")',
             0,
             wait,
         )
