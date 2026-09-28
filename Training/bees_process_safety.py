@@ -245,6 +245,22 @@ def _windows_kill_job() -> int:
     return _windows_job_handle
 
 
+def close_windows_owned_child_job() -> None:
+    """Close this process's kill-on-close job so all currently owned Windows children exit."""
+    global _windows_job_handle
+    current = _windows_job_handle
+    if not current:
+        return
+    from ctypes import wintypes
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.CloseHandle.restype = wintypes.BOOL
+    kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
+    _windows_job_handle = None
+    if not kernel32.CloseHandle(wintypes.HANDLE(current)):
+        raise ctypes.WinError(ctypes.get_last_error())
+
+
 def _assign_windows_owned_child(process: subprocess.Popen) -> None:
     from ctypes import wintypes
 
