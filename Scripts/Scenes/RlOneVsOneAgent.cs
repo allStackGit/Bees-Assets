@@ -107,6 +107,7 @@ internal sealed class RlOneVsOneAgent : Agent
     private Beehive _reservedHealingBeehive;
     private WarpGate _pendingWarpGate;
     private long _pendingWarpShipId;
+    private long _pendingWarpGateId;
     private readonly Vector2[] _weaponAimDirections = new Vector2[MaxWeaponSlots];
     private readonly List<Ship> _bindCandidates = new List<Ship>();
     private readonly RlCombatPerception _perception = new RlCombatPerception();
@@ -803,6 +804,7 @@ internal sealed class RlOneVsOneAgent : Agent
 
         _pendingWarpGate = warpGate;
         _pendingWarpShipId = _ship.Id;
+        _pendingWarpGateId = warpGate.Id;
         warpGate.ShipsWarpingHere.Add(_pendingWarpShipId);
 
         // The regular retreat flow starts this gate animation and waits for its readiness
@@ -826,7 +828,7 @@ internal sealed class RlOneVsOneAgent : Agent
 
         WarpGate warpGate = _pendingWarpGate;
         if (_ship == null || _ship.IsDead || _ship.Id != _pendingWarpShipId ||
-            warpGate.IsDead || warpGate.WarpCollider == null || _ship.Collider == null ||
+            warpGate.Id != _pendingWarpGateId || warpGate.IsDead || warpGate.WarpCollider == null || _ship.Collider == null ||
             !warpGate.WarpCollider.IsTouching(_ship.Collider) ||
             warpGate.ShipAnimationController == null)
         {
@@ -857,10 +859,12 @@ internal sealed class RlOneVsOneAgent : Agent
     {
         WarpGate warpGate = _pendingWarpGate;
         long shipId = _pendingWarpShipId;
+        long warpGateId = _pendingWarpGateId;
         _pendingWarpGate = null;
         _pendingWarpShipId = 0;
+        _pendingWarpGateId = 0;
 
-        if (warpGate == null)
+        if (warpGate == null || warpGate.Id != warpGateId)
         {
             return;
         }
