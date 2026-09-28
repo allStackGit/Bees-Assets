@@ -1420,3 +1420,10 @@ Manual-only protection is acceptable only when the record explains why determini
 **Fix:** Require an actual positive Python integer and reject booleans, floats, strings, and integer-like substitutes before using the limit.
 **Permanent protection:** Training pressure limits and evidence thresholds retain the exact configured integer value rather than accepting coercions.
 **Verification:** Static review traced the validator through selection-batch limits, suggestion caps, occurrence thresholds, contributor thresholds, and per-contributor configuration. CLI arguments already parse as integers. No tests, builds, Unity, simulations, or runtime checks were run. Post-fix clean-pass count remains **0 / 2**.
+
+### REG-163 — Reject coerced automatic public pressure fractions
+**Area:** `Training/bees_continual_public_auto.py`, `_target_fraction`
+**Symptom:** The public-learning API converted arbitrary inputs with `float(value)`, so numeric strings could silently become policy values instead of being rejected as malformed configuration. Extremely large integer inputs could also raise an uncaught conversion overflow.
+**Fix:** Accept only built-in integer or float values in the supported interval `(0, 0.5]`; reject strings, booleans, and other coercible objects before conversion.
+**Permanent protection:** Public training pressure configuration is validated by type and range before scenario weights are calculated.
+**Verification:** Static review traced the value from `process_public_learning_once` through per-orientation scenario fraction calculation and registration. CLI values are converted by argparse before reaching this validator. No tests, builds, Unity, simulations, or runtime checks were run. Post-fix clean-pass count remains **0 / 2**.
