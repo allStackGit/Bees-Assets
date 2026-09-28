@@ -1932,11 +1932,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     try:
         while not stop[0]:
             tailnet: Optional[subprocess.Popen] = None
+            tailnet_log_thread: Optional[threading.Thread] = None
             worker: Optional[subprocess.Popen] = None
             worker_log_thread: Optional[threading.Thread] = None
+            worker_started_monotonic = 0.0
             runtime_cutover: Optional[Path] = None
             try:
-                tailnet = popen_owned(_tailnet_forward_command(args))
+                tailnet, tailnet_log_thread = _start_logged_process(
+                    _tailnet_forward_command(args)
+                )
                 if not _wait_for_private_transport(
                     args,
                     tailnet,
@@ -1982,6 +1986,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                             _worker_command(args, root, actor_key),
                             environment=_worker_environment(args),
                         )
+                        worker_started_monotonic = time.monotonic()
 
                     next_status = 0.0
                     transport_watchdog = _TransportWatchdog(
@@ -2181,6 +2186,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     termination_errors.append(f"tailnet: {exc}")
                 if worker_log_thread is not None:
                     worker_log_thread.join(timeout=1.0)
+                if tailnet_log_thread is not None:
+                    tailnet_log_thread.join(timeout=1.0)
                 if termination_errors:
                     raise _SupervisorProcessRestartRequired(
                         "remote supervisor cleanup could not confirm child shutdown: " +
