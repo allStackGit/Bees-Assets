@@ -602,7 +602,7 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
             killpg.call_args_list,
             [
                 mock.call(7332, managed.signal.SIGTERM),
-                mock.call(7332, managed.signal.SIGKILL),
+                mock.call(7332, getattr(managed.signal, "SIGKILL", 9)),
             ],
         )
         process.terminate.assert_not_called()
