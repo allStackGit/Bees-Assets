@@ -1,8 +1,8 @@
 {
   "schema_version": 3,
-  "build_id": "2026-09-27-090718-514bbcedea67",
-  "source_commit": "514bbcedea67",
-  "created_utc": "2026-09-27T13:12:35.774Z",
+  "build_id": "2026-09-27-212819-a78ca71e7a5d",
+  "source_commit": "a78ca71e7a5d",
+  "created_utc": "2026-09-28T01:38:40.987Z",
   "run_id": "bees-v20-r3-s1-20260926T184018Z-4fc8512c",
   "previous_run_id": "bees-v20-r3-s1-20260926T184018Z-4fc8512c",
   "compatibility_key": "4fc8512cabe70e1612f62af6803298798ad03b489f6efafec257b8041c3602ca",
@@ -29,26 +29,26 @@
       "role": "dedicated",
       "platform": "WindowsPlayer",
       "folder": "B:\\Bees\\Builds\\2026-09-27 RL Windows",
-      "archive": "B:\\Bees\\Builds\\Packages\\2026-09-27-090718-514bbcedea67\\rl-windows.zip",
+      "archive": "B:\\Bees\\Builds\\Packages\\2026-09-27-212819-a78ca71e7a5d\\rl-windows.zip",
       "entrypoint": "Bees RL Training.exe"
     },
     {
       "role": "dedicated",
       "platform": "LinuxPlayer",
       "folder": "B:\\Bees\\Builds\\2026-09-27 RL Linux",
-      "archive": "B:\\Bees\\Builds\\Packages\\2026-09-27-090718-514bbcedea67\\rl-linux.zip",
+      "archive": "B:\\Bees\\Builds\\Packages\\2026-09-27-212819-a78ca71e7a5d\\rl-linux.zip",
       "entrypoint": "Bees RL Training.x86_64"
     }
   ],
   "training_runtime": {
-    "archive": "B:\\Bees\\Builds\\Packages\\2026-09-27-090718-514bbcedea67\\training-runtime-361f461b583b.zip",
-    "archive_sha256": "d125d2988c57296f65b30e60f0528d22eb4039ea15ba71c3d44709f5b3116339",
-    "archive_size_bytes": 335204,
-    "build_id": "2026-09-27-090718-514bbcedea67",
-    "runtime_version": "964e43931558ef0c3fc80d2928463dace98ac7541b5526a0e2dceed756ad3538",
+    "archive": "B:\\Bees\\Builds\\Packages\\2026-09-27-212819-a78ca71e7a5d\\training-runtime-e55d770d6cb6.zip",
+    "archive_sha256": "99d94f1b382a5ef7282d58f1464213cdb98efc17ead009199fded8bb8376591d",
+    "archive_size_bytes": 335413,
+    "build_id": "2026-09-27-212819-a78ca71e7a5d",
+    "runtime_version": "0621b3ba68f5aea51890fe40f27841059bc8ced6b9c99e2a96ea37a02c541787",
     "schema_version": 1,
-    "source_commit": "361f461b583b"
+    "source_commit": "e55d770d6cb6"
   },
-  "runtime_source_commit": "361f461b583b",
-  "runtime_updated_utc": "2026-09-28T00:56:10.036Z"
+  "runtime_source_commit": "e55d770d6cb6",
+  "runtime_updated_utc": "2026-09-28T01:49:43.595Z"
 }
