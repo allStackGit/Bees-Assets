@@ -160,13 +160,35 @@ if($existingPid -gt 0){
 }
 $PID | Set-Content -LiteralPath $MonitorPidFile -NoNewline -Encoding ASCII
 $env:BEES_AUTOSTART_CHILD='1'
+
+function Test-SupervisorAlive {
+    $pidFile=Join-Path $InstallRoot 'remote-worker.pid'
+    if(-not(Test-Path -LiteralPath $pidFile)){return $false}
+    $raw=(Get-Content -LiteralPath $pidFile -Raw -ErrorAction SilentlyContinue).Trim()
+    $workerPid=0
+    if(-not [int]::TryParse($raw,[ref]$workerPid) -or $workerPid -le 0){return $false}
+    try {
+        $record=Get-CimInstance Win32_Process -Filter "ProcessId = $workerPid" -ErrorAction Stop
+        $commandLine=[string]$record.CommandLine
+        return (
+            -not [string]::IsNullOrWhiteSpace($commandLine) -and
+            $commandLine.IndexOf('bees_managed_remote_worker.py',[StringComparison]::OrdinalIgnoreCase) -ge 0 -and
+            $commandLine.IndexOf($InstallRoot,[StringComparison]::OrdinalIgnoreCase) -ge 0
+        )
+    } catch {
+        return $false
+    }
+}
+
 try {
     while(Test-Path -LiteralPath $Marker){
-        $command='call "' + $Launcher.Replace('"','""') + '" start -InstallRoot "' +
-            $InstallRoot.Replace('"','""') + '" -TorchDevice "' +
-            $TorchDevice.Replace('"','""') + '"'
-        if($Envs -gt 0){$command+=' -Envs ' + [string]$Envs}
-        try {& $env:COMSPEC /d /c $command *> $null} catch {}
+        if(-not(Test-SupervisorAlive)){
+            $command='call "' + $Launcher.Replace('"','""') + '" start -InstallRoot "' +
+                $InstallRoot.Replace('"','""') + '" -TorchDevice "' +
+                $TorchDevice.Replace('"','""') + '"'
+            if($Envs -gt 0){$command+=' -Envs ' + [string]$Envs}
+            try {& $env:COMSPEC /d /c $command *> $null} catch {}
+        }
         Start-Sleep -Seconds 10
     }
 } finally {
