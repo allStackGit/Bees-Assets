@@ -8439,3 +8439,349 @@
 2026/09/27 21:39:39 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
 2026/09/27 21:39:40 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
 2026/09/27 21:39:40 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/27 22:47:33 [Bees tailnet] bootstrap snapshot write failed: write tcp 100.80.169.87:7151: operation timed out
+2026/09/27 23:02:57 [Bees tailnet] gateway supervisor started child pid=23716
+2026/09/27 23:02:58 [Bees tailnet] gateway online ip=100.80.169.87 control=7150 broker=55051 bootstrap=7151 gameplay=7146
+2026/09/27 23:24:22 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/27 23:24:23 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/27 23:24:25 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/27 23:24:25 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/27 23:24:26 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/27 23:24:26 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/27 23:24:27 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/27 23:24:28 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/27 23:24:28 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/27 23:24:29 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/27 23:24:29 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/27 23:25:49 [Bees tailnet] bootstrap snapshot write failed: write tcp 100.80.169.87:7151: connection reset by peer
+2026/09/27 23:40:43 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/27 23:40:44 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/27 23:40:44 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/27 23:40:45 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/27 23:40:45 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/27 23:40:46 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/27 23:40:46 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/27 23:40:47 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/27 23:40:47 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/27 23:40:48 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/27 23:40:48 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/27 23:40:49 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/27 23:40:50 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/27 23:40:50 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/27 23:40:51 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/27 23:40:52 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/27 23:40:52 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/27 23:40:53 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/27 23:40:53 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/27 23:40:54 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/27 23:40:54 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/27 23:40:55 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/27 23:40:55 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/27 23:40:56 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/27 23:40:56 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/27 23:40:57 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/27 23:42:31 [Bees tailnet] bootstrap snapshot write failed: write tcp 100.80.169.87:7151: connection reset by peer
+2026/09/28 03:30:25 [Bees tailnet] bootstrap snapshot write failed: write tcp 100.80.169.87:7151: operation timed out
+2026/09/28 03:34:44 [Bees tailnet] bootstrap snapshot write failed: write tcp 100.80.169.87:7151: endpoint is closed for send
+2026/09/28 03:34:44 [Bees tailnet] bootstrap snapshot write failed: write tcp 100.80.169.87:7151: endpoint is closed for send
+2026/09/28 03:34:44 [Bees tailnet] bootstrap snapshot write failed: write tcp 100.80.169.87:7151: endpoint is closed for send
+2026/09/28 03:34:44 [Bees tailnet] bootstrap snapshot write failed: write tcp 100.80.169.87:7151: endpoint is closed for send
+2026/09/28 03:34:44 [Bees tailnet] bootstrap snapshot write failed: write tcp 100.80.169.87:7151: endpoint is closed for send
+2026/09/28 03:34:44 [Bees tailnet] bootstrap snapshot write failed: write tcp 100.80.169.87:7151: endpoint is closed for send
+2026/09/28 03:34:44 [Bees tailnet] bootstrap snapshot write failed: write tcp 100.80.169.87:7151: endpoint is closed for send
+2026/09/28 03:34:44 [Bees tailnet] bootstrap snapshot write failed: write tcp 100.80.169.87:7151: endpoint is closed for send
+2026/09/28 03:34:44 [Bees tailnet] bootstrap snapshot write failed: write tcp 100.80.169.87:7151: endpoint is closed for send
+2026/09/28 03:44:37 [Bees tailnet] bootstrap snapshot write failed: write tcp 100.80.169.87:7151: connection reset by peer
+2026/09/28 03:44:37 [Bees tailnet] bootstrap snapshot write failed: write tcp 100.80.169.87:7151: endpoint is closed for send
+2026/09/28 04:52:47 [Bees tailnet] bootstrap snapshot write failed: write tcp 100.80.169.87:7151: endpoint is closed for send
+2026/09/28 04:52:47 [Bees tailnet] bootstrap snapshot write failed: write tcp 100.80.169.87:7151: endpoint is closed for send
+2026/09/28 04:52:47 [Bees tailnet] bootstrap snapshot write failed: write tcp 100.80.169.87:7151: endpoint is closed for send
+2026/09/28 04:52:49 [Bees tailnet] bootstrap snapshot write failed: write tcp 100.80.169.87:7151: endpoint is closed for send
+2026/09/28 04:52:49 [Bees tailnet] bootstrap snapshot write failed: write tcp 100.80.169.87:7151: endpoint is closed for send
+2026/09/28 04:52:49 [Bees tailnet] bootstrap snapshot write failed: write tcp 100.80.169.87:7151: endpoint is closed for send
+2026/09/28 04:52:49 [Bees tailnet] bootstrap snapshot write failed: write tcp 100.80.169.87:7151: endpoint is closed for send
+2026/09/28 04:52:49 [Bees tailnet] bootstrap snapshot write failed: write tcp 100.80.169.87:7151: endpoint is closed for send
+2026/09/28 05:03:06 [Bees tailnet] bootstrap snapshot write failed: write tcp 100.80.169.87:7151: connection reset by peer
+2026/09/28 05:03:06 [Bees tailnet] bootstrap snapshot write failed: write tcp 100.80.169.87:7151: endpoint is closed for send
+2026/09/28 05:27:17 [Bees tailnet] bootstrap snapshot write failed: write tcp 100.80.169.87:7151: operation timed out
+2026/09/28 06:13:38 [Bees tailnet] bootstrap snapshot write failed: write tcp 100.80.169.87:7151: connection reset by peer
+2026/09/28 06:13:38 [Bees tailnet] bootstrap snapshot write failed: write tcp 100.80.169.87:7151: endpoint is closed for send
+2026/09/28 06:13:38 [Bees tailnet] bootstrap snapshot write failed: write tcp 100.80.169.87:7151: endpoint is closed for send
+2026/09/28 06:13:38 [Bees tailnet] bootstrap snapshot write failed: write tcp 100.80.169.87:7151: endpoint is closed for send
+2026/09/28 06:13:39 [Bees tailnet] bootstrap snapshot write failed: write tcp 100.80.169.87:7151: endpoint is closed for send
+2026/09/28 06:13:41 [Bees tailnet] bootstrap snapshot write failed: write tcp 100.80.169.87:7151: endpoint is closed for send
+2026/09/28 06:13:41 [Bees tailnet] bootstrap snapshot write failed: write tcp 100.80.169.87:7151: endpoint is closed for send
+2026/09/28 06:13:41 [Bees tailnet] bootstrap snapshot write failed: write tcp 100.80.169.87:7151: endpoint is closed for send
+2026/09/28 06:13:41 [Bees tailnet] bootstrap snapshot write failed: write tcp 100.80.169.87:7151: endpoint is closed for send
+2026/09/28 06:13:41 [Bees tailnet] bootstrap snapshot write failed: write tcp 100.80.169.87:7151: endpoint is closed for send
+2026/09/28 06:13:41 [Bees tailnet] bootstrap snapshot write failed: write tcp 100.80.169.87:7151: endpoint is closed for send
+2026/09/28 06:13:41 [Bees tailnet] bootstrap snapshot write failed: write tcp 100.80.169.87:7151: endpoint is closed for send
+2026/09/28 06:13:41 [Bees tailnet] bootstrap snapshot write failed: write tcp 100.80.169.87:7151: endpoint is closed for send
+2026/09/28 06:13:41 [Bees tailnet] bootstrap snapshot write failed: write tcp 100.80.169.87:7151: endpoint is closed for send
+2026/09/28 06:13:41 [Bees tailnet] bootstrap snapshot write failed: write tcp 100.80.169.87:7151: endpoint is closed for send
+2026/09/28 06:13:41 [Bees tailnet] bootstrap snapshot write failed: write tcp 100.80.169.87:7151: endpoint is closed for send
+2026/09/28 06:13:41 [Bees tailnet] bootstrap snapshot write failed: write tcp 100.80.169.87:7151: endpoint is closed for send
+2026/09/28 06:13:41 [Bees tailnet] bootstrap snapshot write failed: write tcp 100.80.169.87:7151: endpoint is closed for send
+2026/09/28 06:13:41 [Bees tailnet] bootstrap snapshot write failed: write tcp 100.80.169.87:7151: endpoint is closed for send
+2026/09/28 06:13:41 [Bees tailnet] bootstrap snapshot write failed: write tcp 100.80.169.87:7151: endpoint is closed for send
+2026/09/28 06:13:41 [Bees tailnet] bootstrap snapshot write failed: write tcp 100.80.169.87:7151: endpoint is closed for send
+2026/09/28 06:13:41 [Bees tailnet] bootstrap snapshot write failed: write tcp 100.80.169.87:7151: endpoint is closed for send
+2026/09/28 06:13:41 [Bees tailnet] bootstrap snapshot write failed: write tcp 100.80.169.87:7151: endpoint is closed for send
+2026/09/28 06:13:41 [Bees tailnet] bootstrap snapshot write failed: write tcp 100.80.169.87:7151: endpoint is closed for send
+2026/09/28 06:13:41 [Bees tailnet] bootstrap snapshot write failed: write tcp 100.80.169.87:7151: endpoint is closed for send
+2026/09/28 06:13:41 [Bees tailnet] bootstrap snapshot write failed: write tcp 100.80.169.87:7151: endpoint is closed for send
+2026/09/28 06:13:41 [Bees tailnet] bootstrap snapshot write failed: write tcp 100.80.169.87:7151: endpoint is closed for send
+2026/09/28 06:13:54 [Bees tailnet] bootstrap snapshot write failed: write tcp 100.80.169.87:7151: endpoint is closed for send
+2026/09/28 06:13:54 [Bees tailnet] bootstrap snapshot write failed: write tcp 100.80.169.87:7151: endpoint is closed for send
+2026/09/28 06:13:54 [Bees tailnet] bootstrap snapshot write failed: write tcp 100.80.169.87:7151: endpoint is closed for send
+2026/09/28 06:13:54 [Bees tailnet] bootstrap snapshot write failed: write tcp 100.80.169.87:7151: endpoint is closed for send
+2026/09/28 06:13:54 [Bees tailnet] bootstrap snapshot write failed: write tcp 100.80.169.87:7151: endpoint is closed for send
+2026/09/28 06:23:37 [Bees tailnet] bootstrap snapshot write failed: write tcp 100.80.169.87:7151: endpoint is closed for send
+2026/09/28 06:23:37 [Bees tailnet] bootstrap snapshot write failed: write tcp 100.80.169.87:7151: endpoint is closed for send
+2026/09/28 06:23:37 [Bees tailnet] bootstrap snapshot write failed: write tcp 100.80.169.87:7151: endpoint is closed for send
+2026/09/28 06:36:26 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 06:36:27 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 06:36:27 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 06:36:28 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 06:36:28 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 06:36:29 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 06:36:29 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 06:36:29 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 06:36:30 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 06:36:30 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 06:36:30 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 06:36:31 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 06:36:31 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 06:36:32 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 06:36:32 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 06:36:32 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 06:36:33 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 06:36:33 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 06:36:34 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 06:36:34 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 06:36:34 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 06:36:35 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 06:36:35 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 06:36:36 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 06:37:01 [Bees tailnet] gateway supervisor started child pid=11604
+2026/09/28 06:37:03 [Bees tailnet] gateway online ip=100.80.169.87 control=7150 broker=55051 bootstrap=7151 gameplay=7146
+2026/09/28 08:32:05 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 08:32:10 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 08:32:15 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 08:32:20 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 08:58:18 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 08:58:18 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 08:58:19 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 08:58:20 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 08:58:20 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 08:58:21 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 08:58:21 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 08:58:22 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 08:58:22 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 08:58:23 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 08:58:24 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 08:58:24 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 08:58:25 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 08:58:25 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 08:58:27 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 08:58:27 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 08:58:28 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 08:58:28 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 09:05:06 [Bees tailnet] gateway supervisor started child pid=39748
+2026/09/28 09:05:09 [Bees tailnet] gateway online ip=100.80.169.87 control=7150 broker=55051 bootstrap=7151 gameplay=7146
+2026/09/28 11:20:07 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 11:20:08 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 11:20:09 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 11:20:10 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 11:20:10 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 11:20:11 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 11:20:11 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 11:20:12 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 11:20:13 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 11:20:13 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 11:20:14 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 11:20:15 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 11:20:15 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 11:20:15 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 11:20:16 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 11:20:16 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 11:20:18 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 11:20:18 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 11:30:05 [Bees tailnet] bootstrap snapshot write failed: write tcp 100.80.169.87:7151: connection reset by peer
+2026/09/28 12:42:59 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 12:42:59 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 12:42:59 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 12:43:00 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 12:43:00 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 12:43:00 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 12:43:01 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 12:43:01 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 12:43:01 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 12:43:01 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 12:43:02 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 12:43:02 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 12:43:02 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 12:43:02 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 12:43:02 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 12:43:03 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 12:43:03 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 12:43:03 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 12:43:03 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 12:43:03 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 12:43:04 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 12:43:04 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 12:43:04 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 12:43:04 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 12:43:05 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 12:43:05 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 12:43:05 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 12:43:05 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 12:43:06 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 12:43:07 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 12:43:07 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 12:43:07 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 12:43:07 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 12:43:08 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 12:43:08 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 12:43:08 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 12:43:08 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 12:43:08 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 12:43:08 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 12:43:09 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 12:43:09 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 12:43:09 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 12:43:09 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 12:43:10 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 12:43:10 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 12:43:10 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 12:43:10 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 12:43:11 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 12:43:11 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 12:43:11 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 12:43:12 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 12:43:12 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 12:43:12 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 12:43:12 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 12:43:13 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 12:43:13 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 12:43:13 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 12:43:13 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 12:43:45 [Bees tailnet] bootstrap snapshot write failed: write tcp 100.80.169.87:7151: connection reset by peer
+2026/09/28 13:08:43 [Bees tailnet] bootstrap snapshot write failed: write tcp 100.80.169.87:7151: connection reset by peer
+2026/09/28 13:09:10 [Bees tailnet] bootstrap snapshot write failed: write tcp 100.80.169.87:7151: connection reset by peer
+2026/09/28 13:29:08 [Bees tailnet] control target unavailable: dial tcp 127.0.0.1:7150: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 13:29:30 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 13:29:30 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 13:29:30 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 13:29:31 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 13:29:31 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 13:29:31 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 13:29:31 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 13:29:31 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 13:29:32 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 13:29:32 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 13:29:32 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 13:29:32 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 13:29:33 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 13:29:33 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 13:29:33 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 13:29:34 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 13:29:34 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 13:29:34 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 13:29:34 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 13:29:35 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 13:29:35 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 13:29:35 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 13:29:35 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 13:29:36 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 13:29:36 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 13:29:36 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 13:29:36 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 13:29:37 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 13:29:37 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 13:29:37 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 13:29:37 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 13:29:37 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 13:29:38 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 13:29:38 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 13:29:38 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 13:29:39 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 13:29:39 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 13:29:39 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 13:29:40 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 13:29:42 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 13:29:44 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 13:29:44 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 13:29:46 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 13:29:49 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 13:29:51 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 13:30:09 [Bees tailnet] gateway supervisor started child pid=37200
+2026/09/28 13:30:10 [Bees tailnet] gateway online ip=100.80.169.87 control=7150 broker=55051 bootstrap=7151 gameplay=7146
+2026/09/28 13:33:31 [Bees tailnet] control target unavailable: dial tcp 127.0.0.1:7150: connectex: A connection attempt failed because the connected party did not properly respond after a period of time, or established connection failed because connected host has failed to respond.
+2026/09/28 13:59:52 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 13:59:53 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 13:59:53 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 13:59:53 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 13:59:53 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 13:59:54 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 13:59:54 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 13:59:54 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 13:59:54 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 13:59:54 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 13:59:55 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 13:59:55 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 13:59:55 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 13:59:55 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 13:59:56 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 13:59:56 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 13:59:56 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 13:59:56 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 13:59:57 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 13:59:57 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 13:59:57 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 13:59:57 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 13:59:58 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 13:59:58 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 13:59:58 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 13:59:59 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 13:59:59 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 13:59:59 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 13:59:59 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 13:59:59 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 14:00:00 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 14:00:00 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 14:00:00 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 14:00:00 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 14:00:01 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 14:00:01 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 14:00:01 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 14:00:01 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 14:29:19 [Bees tailnet] gameplay target unavailable: dial tcp 127.0.0.1:7146: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 14:29:19 [Bees tailnet] gameplay target unavailable: dial tcp 127.0.0.1:7146: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 14:29:19 [Bees tailnet] gameplay target unavailable: dial tcp 127.0.0.1:7146: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 14:29:19 [Bees tailnet] control target unavailable: dial tcp 127.0.0.1:7150: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 14:29:44 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 14:29:44 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 14:29:45 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 14:29:45 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 14:29:46 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 14:29:46 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 14:29:47 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 14:29:48 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 14:29:48 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 14:29:49 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 14:29:50 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 14:29:50 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 14:29:51 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 14:29:51 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 14:29:52 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 14:29:53 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 14:29:53 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 14:29:54 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 14:29:55 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 14:29:56 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 14:29:58 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 14:30:00 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 14:30:01 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 14:30:05 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/28 14:30:06 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
