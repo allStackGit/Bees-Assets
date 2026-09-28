@@ -36,6 +36,8 @@ internal sealed class RlLivePolicyAgent : Agent
     private long _boundRuntimeShipId;
     private float _nextMiningActionTime;
     private float _nextHealingActionTime;
+    private WarpGate _pendingWarpGate;
+    private long _pendingWarpShipId;
     private readonly Vector2[] _weaponAimDirections = new Vector2[RlOneVsOneAgent.MaxWeaponSlots];
     private readonly List<Ship> _bindCandidates = new List<Ship>();
     private readonly RlCombatPerception _perception = new RlCombatPerception();
@@ -211,6 +213,14 @@ internal sealed class RlLivePolicyAgent : Agent
             return;
         }
 
+        if (_pendingWarpGate != null)
+        {
+            if (TryCompletePendingWarpAction() || _pendingWarpGate != null)
+            {
+                return;
+            }
+        }
+
         _decisionCounter++;
         if (_decisionCounter >= RlOneVsOneTrainingOptions.DefaultDecisionPeriod)
         {
@@ -259,6 +269,10 @@ internal sealed class RlLivePolicyAgent : Agent
     public override void OnActionReceived(ActionBuffers actions)
     {
         if (!TryBindShip())
+        {
+            return;
+        }
+        if (_pendingWarpGate != null)
         {
             return;
         }
@@ -458,17 +472,82 @@ internal sealed class RlLivePolicyAgent : Agent
         }
 
         WarpGate warpGate = FindTouchingWarpGate();
+        if (warpGate == null || warpGate.ShipAnimationController == null ||
+            warpGate.ShipAnimationController.Animator == null)
+        {
+            return;
+        }
+
+        _pendingWarpGate = warpGate;
+        _pendingWarpShipId = _ship.Id;
+        warpGate.ShipsWarpingHere.Add(_pendingWarpShipId);
+
+        // Match the ordinary retreat flow: the ship remains a gate participant until the
+        // Warp Gate animation publishes readiness.
+        if (!warpGate.ShipAnimationController.IsReadyToWarp &&
+            !warpGate.ShipAnimationController.Animator.enabled)
+        {
+            warpGate.ShipAnimationController.Activate();
+        }
+
+        TryCompletePendingWarpAction();
+    }
+
+    private bool TryCompletePendingWarpAction()
+    {
+        if (_pendingWarpGate == null)
+        {
+            return false;
+        }
+
+        WarpGate warpGate = _pendingWarpGate;
+        if (_ship == null || _ship.IsDead || _ship.Id != _pendingWarpShipId ||
+            warpGate.IsDead || warpGate.WarpCollider == null || _ship.Collider == null ||
+            !warpGate.WarpCollider.IsTouching(_ship.Collider) ||
+            warpGate.ShipAnimationController == null)
+        {
+            CancelPendingWarpAction();
+            return false;
+        }
+
+        if (!warpGate.ShipAnimationController.IsReadyToWarp)
+        {
+            return false;
+        }
+
+        Ship ship = _ship;
+        RlGameplayDemonstrationCapabilityCapture.Record(ship, RlOneVsOneAgent.WarpAction);
+        if (warpGate.IsUserControlled && warpGate.EnteringWarpGateSound != null)
+        {
+            warpGate.EnteringWarpGateSound.Play();
+        }
+
+        CancelPendingWarpAction();
+        ship.EndKill();
+        return true;
+    }
+
+    private void CancelPendingWarpAction()
+    {
+        WarpGate warpGate = _pendingWarpGate;
+        long shipId = _pendingWarpShipId;
+        _pendingWarpGate = null;
+        _pendingWarpShipId = 0;
+
         if (warpGate == null)
         {
             return;
         }
 
-        RlGameplayDemonstrationCapabilityCapture.Record(_ship, RlOneVsOneAgent.WarpAction);
-        if (warpGate.IsUserControlled && warpGate.EnteringWarpGateSound != null)
+        warpGate.ShipsWarpingHere.Remove(shipId);
+        if (!warpGate.IsDead && warpGate.ShipsWarpingHere.Count == 0 &&
+            warpGate.ShipAnimationController != null)
         {
-            warpGate.EnteringWarpGateSound.Play();
+            warpGate.ShipAnimationController.Deactivate();
+            warpGate.ShipAnimationController.UseSecondaryLoop = false;
+            warpGate.ShipAnimationController.IsReadyToWarp = false;
+            warpGate.ShipAnimationController.SpriteIndex = 0;
         }
-        _ship.EndKill();
     }
 
     private WarpGate FindTouchingWarpGate()
@@ -597,6 +676,7 @@ internal sealed class RlLivePolicyAgent : Agent
 
     private void ReleaseShip()
     {
+        CancelPendingWarpAction();
         if (_ship != null)
         {
             RlOneVsOneAgent.ClearCommunication(_ship);
