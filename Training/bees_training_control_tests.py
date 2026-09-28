@@ -22,8 +22,17 @@ class FakeClient:
     def __init__(self, archive: Path):
         self.archive = archive
 
-    def download_artifact(self, _url: str, destination: Path) -> None:
-        destination.write_bytes(self.archive.read_bytes())
+    def download_artifact(
+        self,
+        _url: str,
+        destination: Path,
+        *,
+        max_bytes: int,
+    ) -> None:
+        payload = self.archive.read_bytes()
+        if len(payload) > max_bytes:
+            raise ValueError("fake artifact exceeds the requested size limit")
+        destination.write_bytes(payload)
 
 
 class TrainingControlClientTests(unittest.TestCase):
@@ -941,6 +950,43 @@ class TrainingControlClientTests(unittest.TestCase):
             self.assertEqual(installed["archive_sha256"], descriptor["archive_sha256"])
             current = json.loads((root / "managed" / "current.json").read_text(encoding="utf-8"))
             self.assertEqual(current["build_id"], "build-123")
+
+    def test_managed_build_rejects_modified_cache_without_replacing_active_tree(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            archive = root / "build.zip"
+            with zipfile.ZipFile(archive, "w") as bundle:
+                bundle.writestr("Bees.x86_64", b"binary")
+                bundle.writestr("Bees_Data/data.bin", b"data")
+
+            descriptor = {
+                "role": "dedicated",
+                "platform": "LinuxPlayer",
+                "build_id": "build-integrity",
+                "archive_sha256": control.file_sha256(archive),
+                "archive_size_bytes": archive.stat().st_size,
+                "entrypoint": "Bees.x86_64",
+                "artifact_url": "/v1/artifact/LinuxPlayer",
+            }
+            store = control.ManagedBuildStore(root / "managed")
+            active_entrypoint, _ = store.ensure(FakeClient(archive), descriptor)
+            active_install = active_entrypoint.parent
+            cached_data = active_install / "Bees_Data" / "data.bin"
+            cached_data.write_bytes(b"modified")
+
+            self.assertFalse(store.is_prepared(descriptor))
+            prepared_entrypoint, _ = store.prepare(FakeClient(archive), descriptor)
+
+            self.assertNotEqual(prepared_entrypoint.parent, active_install)
+            self.assertEqual(cached_data.read_bytes(), b"modified")
+            self.assertEqual(
+                (prepared_entrypoint.parent / "Bees_Data" / "data.bin").read_bytes(),
+                b"data",
+            )
+            current = json.loads(
+                (root / "managed" / "current.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(Path(current["entrypoint"]), active_entrypoint)
 
     def test_managed_build_prepare_does_not_activate_until_ensure(self):
         with tempfile.TemporaryDirectory() as temp:
