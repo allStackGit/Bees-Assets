@@ -327,6 +327,77 @@ test('optimizer holds a recovered worker before probing again after a reported f
     assert.equal(state.probing, true);
 });
 
+test('control transport recovery does not create optimizer instability', () => {
+    const optimizer = new TrainingEnvOptimizer({
+        warmupMs: 0,
+        measurementMs: 1000,
+        cooldownMs: 0,
+        instabilityHoldMs: 10_000,
+    });
+
+    let state = update(
+        optimizer,
+        'remote-a',
+        8,
+        100,
+        1000,
+        {
+            max: 16,
+            lastError: 'ControlUnavailable: POST /v1/heartbeat: timed out',
+        },
+    );
+    assert.notEqual(state.phase, 'stability-hold');
+    assert.equal(state.stability_hold_until_ms, 0);
+
+    state = update(
+        optimizer,
+        'remote-a',
+        8,
+        100,
+        2000,
+        {
+            max: 16,
+            processState: 'stopped',
+            lastError: 'ControlUnavailable: POST /v1/heartbeat: timed out',
+        },
+    );
+    assert.equal(state.phase, 'stability-hold');
+    assert.match(state.last_instability_reason, /worker process state stopped/);
+});
+
+test('healthy worker clears legacy stability hold caused only by ControlUnavailable', () => {
+    const optimizer = new TrainingEnvOptimizer({
+        warmupMs: 0,
+        measurementMs: 1000,
+        cooldownMs: 0,
+        instabilityHoldMs: 10_000,
+    });
+
+    update(optimizer, 'remote-a', 8, 0, 0, { max: 16 });
+    const internal = optimizer.states.get('remote-a');
+    internal.phase = 'stability-hold';
+    internal.instability_hold_until_ms = 20_000;
+    internal.last_instability_reason =
+        'worker-reported error: ControlUnavailable: POST /v1/heartbeat: timed out';
+    internal.last_instability_ms = 1_000;
+
+    const state = update(
+        optimizer,
+        'remote-a',
+        8,
+        100,
+        5_000,
+        {
+            max: 16,
+            lastError: 'ControlUnavailable: POST /v1/heartbeat: timed out',
+        },
+    );
+
+    assert.equal(state.phase, 'warmup');
+    assert.equal(state.stability_hold_until_ms, 5_000);
+    assert.match(state.decision, /collecting fresh baseline/);
+});
+
 test('recent internal WAN actor failure holds probes without extending the hold each heartbeat', () => {
     const optimizer = new TrainingEnvOptimizer({
         warmupMs: 0,
