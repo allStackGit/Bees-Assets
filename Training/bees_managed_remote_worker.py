@@ -1233,6 +1233,19 @@ class RuntimeUpdater:
                         f"{external_launcher}",
                         flush=True,
                     )
+                else:
+                    print(
+                        "[Bees remote] copied launcher already current: "
+                        f"{external_launcher}",
+                        flush=True,
+                    )
+            else:
+                print(
+                    "[Bees remote] copied launcher path is unavailable; "
+                    "the managed launcher is current but the original copy cannot be refreshed.",
+                    file=sys.stderr,
+                    flush=True,
+                )
 
             if managed_launcher_changed:
                 self._adopt_managed_launcher(managed_launcher)
