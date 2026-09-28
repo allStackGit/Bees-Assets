@@ -17,8 +17,6 @@ internal static class RlOneVsOneArenaMapSizeState
     private const float BorderThickness = 24f;
     private const float BorderHalfThickness = BorderThickness / 2f;
     private const float BorderOverhang = BorderThickness * 2f;
-    private const int MapSizeStep = 4;
-
     private static readonly Dictionary<Level, float> EpisodeMapSizes = new Dictionary<Level, float>();
     private static readonly Dictionary<Level, System.Random> MapSizeRandoms =
         new Dictionary<Level, System.Random>();
@@ -154,11 +152,11 @@ internal static class RlOneVsOneArenaMapSizeState
         }
 
         double range = (double)maximum - minimum;
-        double maximumStepCount = Math.Ceiling(range / MapSizeStep);
-        // Random.Next takes an exclusive Int32 upper bound. Converting an out-of-range
-        // double to int can wrap, and maximumStep + 1 overflows at Int32.MaxValue.
-        // Reject unsupported ranges instead of silently sampling the minimum or failing later.
-        if (maximumStepCount >= int.MaxValue)
+        double maximumStepCount = Math.Ceiling(
+            range / RlOneVsOneTrainingOptions.MapSizeSamplingStep);
+        // Random.Next takes an exclusive Int32 upper bound. Reject ranges whose candidate
+        // count exceeds the limit enforced by command-line preflight.
+        if (maximumStepCount > RlOneVsOneTrainingOptions.MaximumMapSizeSamplingStepCount)
         {
             throw new ArgumentOutOfRangeException(
                 nameof(maximum),
@@ -178,7 +176,7 @@ internal static class RlOneVsOneArenaMapSizeState
             return maximum;
         }
 
-        float sampledSize = minimum + selectedStep * MapSizeStep;
+        float sampledSize = minimum + selectedStep * RlOneVsOneTrainingOptions.MapSizeSamplingStep;
         return Mathf.Min(sampledSize, maximum);
     }
 
