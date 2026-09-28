@@ -396,8 +396,10 @@ def _terminate(process: Optional[subprocess.Popen]) -> None:
         process.terminate()
     except Exception:
         pass
+    # The POSIX owned-child guardian gets 10 seconds to stop its process tree before
+    # escalating; wait beyond that window before killing the guardian itself.
     try:
-        process.wait(timeout=10)
+        process.wait(timeout=15)
         return
     except Exception:
         pass
