@@ -59,6 +59,36 @@ namespace Assets.Scripts
         public static int SquadMakerSide;
 
         public const bool UseWebSocketSharp = true;
+        private const string ManagedTrainingGameplayHostEnvironment = "BEES_TRAINING_GAMEPLAY_HOST";
+        private const string ManagedTrainingGameplayPortEnvironment = "BEES_TRAINING_GAMEPLAY_PORT";
+
+        private static bool TryGetManagedTrainingGameplayServer(out string hostname, out int port)
+        {
+            hostname = System.Environment.GetEnvironmentVariable(
+                ManagedTrainingGameplayHostEnvironment);
+            string portText = System.Environment.GetEnvironmentVariable(
+                ManagedTrainingGameplayPortEnvironment);
+
+            bool hasHostname = !string.IsNullOrWhiteSpace(hostname);
+            bool hasPort = !string.IsNullOrWhiteSpace(portText);
+            if (!hasHostname && !hasPort)
+            {
+                port = 0;
+                return false;
+            }
+
+            if (!hasHostname ||
+                !int.TryParse(portText, out port) ||
+                port < 1 ||
+                port > 65535)
+            {
+                throw new System.InvalidOperationException(
+                    "Managed training gameplay server override is incomplete or invalid.");
+            }
+
+            return true;
+        }
+
         private static Socket _socket;
         public static Socket Socket
         {
@@ -71,6 +101,18 @@ namespace Assets.Scripts
                     // does not require Steam authentication and shares the normal development port.
                     _socket = new Socket(TestPort, TestServerHostname, UseWebSocketSharp);
 #else
+#if !UNITY_WEBGL
+                    if (TryGetManagedTrainingGameplayServer(
+                        out string trainingHostname,
+                        out int trainingPort))
+                    {
+                        _socket = new Socket(
+                            trainingPort,
+                            trainingHostname,
+                            UseWebSocketSharp);
+                    }
+                    else
+#endif
                     if (Test)
                     {
                         _socket = new Socket(TestPort, TestServerHostname, UseWebSocketSharp);
