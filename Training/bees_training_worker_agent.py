@@ -621,6 +621,7 @@ class TrainingLogUploader:
         self.root = root
         self._positions: dict[Path, int] = {}
         self._file_identities: dict[Path, Optional[tuple[int, int]]] = {}
+        self._next_path: Optional[Path] = None
 
     def flush_once(
         self,
@@ -637,7 +638,13 @@ class TrainingLogUploader:
             return 0
         budget = self.CHUNK_BYTES
         uploaded = 0
-        for log_path in sorted(run_root.rglob("*")):
+        log_paths = sorted(run_root.rglob("*"))
+        if not log_paths:
+            return 0
+        if self._next_path in log_paths:
+            start_index = log_paths.index(self._next_path)
+            log_paths = log_paths[start_index:] + log_paths[:start_index]
+        for path_index, log_path in enumerate(log_paths):
             if budget <= 0:
                 break
             if (
@@ -726,6 +733,7 @@ class TrainingLogUploader:
             self._positions[log_path] = next_offset
             budget -= len(data)
             uploaded += len(data)
+            self._next_path = log_paths[(path_index + 1) % len(log_paths)]
         return uploaded
 
     def _has_pending_local_bytes(self, run_id: str) -> bool:
