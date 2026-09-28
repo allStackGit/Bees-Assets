@@ -185,6 +185,11 @@ function statusError(record) {
     }
 
     const throughput = metrics.throughput;
+    const staleActorResync = Boolean(
+        throughput &&
+        typeof throughput === 'object' &&
+        String(throughput.last_session_failure_type || '').trim() === 'BrokerStaleActor'
+    );
     if (throughput && typeof throughput === 'object') {
         const count = Number(throughput.session_failures_total);
         const ageSeconds = Number(throughput.seconds_since_last_session_failure);
@@ -194,7 +199,8 @@ function statusError(record) {
             count > 0 &&
             Number.isFinite(ageSeconds) &&
             ageSeconds >= 0 &&
-            failureType
+            failureType &&
+            failureType !== 'BrokerStaleActor'
         ) {
             historical.push({
                 ageSeconds,
@@ -229,7 +235,12 @@ function statusError(record) {
     const instabilityReason = String(
         optimizer && (optimizer.last_instability_reason || optimizer.decision) || ''
     ).trim();
-    if (Number.isFinite(instabilityMs) && instabilityMs >= 0 && instabilityReason) {
+    if (
+        Number.isFinite(instabilityMs) &&
+        instabilityMs >= 0 &&
+        instabilityReason &&
+        !(staleActorResync && instabilityReason === 'WAN actor session failure')
+    ) {
         const ageSeconds = Math.max(0, (Date.now() - instabilityMs) / 1000);
         historical.push({
             ageSeconds,
