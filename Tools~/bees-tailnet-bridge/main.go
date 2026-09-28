@@ -372,7 +372,7 @@ func validateTailnetBackendStatus(backendState string, ips []netip.Addr, expecte
 	)
 }
 
-func checkGatewayTailnetBackend(ctx context.Context, s *tsnet.Server, expectedIP string) error {
+func checkTailnetBackend(ctx context.Context, s *tsnet.Server, expectedIP string) error {
 	client, err := s.LocalClient()
 	if err != nil {
 		return fmt.Errorf("open tsnet local client: %w", err)
@@ -540,7 +540,7 @@ func serveGatewaySession(
 				case <-sessionCtx.Done():
 					return
 				case <-ticker.C:
-					if err := checkGatewayTailnetBackend(sessionCtx, s, ip4); err != nil {
+					if err := checkTailnetBackend(sessionCtx, s, ip4); err != nil {
 						consecutiveBackendFailures++
 						log.Printf(
 							"[Bees tailnet] gateway backend health check failed (%d/3): %v",
@@ -1031,9 +1031,40 @@ func runForwardMulti(args []string) error {
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
-	if _, err := up(ctx, s); err != nil {
+	ip4, err := up(ctx, s)
+	if err != nil {
 		return err
 	}
+
+	go func() {
+		ticker := time.NewTicker(2 * time.Second)
+		defer ticker.Stop()
+		consecutiveFailures := 0
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if err := checkTailnetBackend(ctx, s, ip4); err != nil {
+					consecutiveFailures++
+					log.Printf(
+						"[Bees tailnet] forward backend health check failed (%d/3): %v",
+						consecutiveFailures,
+						err,
+					)
+					if consecutiveFailures >= 3 {
+						log.Printf(
+							"[Bees tailnet] forward backend remained unhealthy; restarting transport",
+						)
+						cancel()
+						return
+					}
+					continue
+				}
+				consecutiveFailures = 0
+			}
+		}
+	}()
 
 	listeners := make([]net.Listener, 0, len(mappings))
 	for _, mapping := range mappings {
