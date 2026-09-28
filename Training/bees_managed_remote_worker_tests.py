@@ -956,21 +956,21 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
         self.assertFalse(
             managed.stale_trainer_requires_recycle(
                 record,
-                worker_started_monotonic=100.0,
+                grace_started_monotonic=100.0,
                 now=129.9,
             )
         )
         self.assertTrue(
             managed.stale_trainer_requires_recycle(
                 record,
-                worker_started_monotonic=100.0,
+                grace_started_monotonic=100.0,
                 now=130.0,
             )
         )
         self.assertFalse(
             managed.stale_trainer_requires_recycle(
                 {"stale": False},
-                worker_started_monotonic=100.0,
+                grace_started_monotonic=100.0,
                 now=1000.0,
             )
         )
@@ -992,6 +992,10 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
         )
         self.assertIn(
             "trainer heartbeat remained STALE beyond the",
+            source,
+        )
+        self.assertIn(
+            "stale_recycle_grace_started_monotonic = now",
             source,
         )
 
