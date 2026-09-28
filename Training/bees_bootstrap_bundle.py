@@ -26,6 +26,8 @@ ENTRY_SPECS = (
     ("latest-training-release.json", "release", 0o600),
     ("bees-tailnet-bridge-windows.exe", "windows_bridge", 0o700),
     ("bees-tailnet-bridge-linux", "linux_bridge", 0o700),
+    ("bees-remote-worker.cmd", "windows_launcher", 0o700),
+    ("bees-remote-worker.sh", "linux_launcher", 0o700),
 )
 RUNTIME_VERSION_NAME = "bees-runtime-version.txt"
 
@@ -120,6 +122,8 @@ def create_bundle(
     release: Path,
     windows_bridge: Path,
     linux_bridge: Path,
+    windows_launcher: Path,
+    linux_launcher: Path,
 ) -> dict[str, Any]:
     inputs = {
         "runtime": _read_required_file(runtime, "training runtime archive"),
@@ -128,6 +132,8 @@ def create_bundle(
         "release": _read_required_file(release, "release metadata"),
         "windows_bridge": _read_required_file(windows_bridge, "Windows tailnet bridge"),
         "linux_bridge": _read_required_file(linux_bridge, "Linux tailnet bridge"),
+        "windows_launcher": _read_required_file(windows_launcher, "Windows remote launcher"),
+        "linux_launcher": _read_required_file(linux_launcher, "Linux remote launcher"),
     }
 
     for key in ("worker_token", "wan_token"):
@@ -189,6 +195,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--release", required=True)
     parser.add_argument("--windows-bridge", required=True)
     parser.add_argument("--linux-bridge", required=True)
+    parser.add_argument("--windows-launcher", required=True)
+    parser.add_argument("--linux-launcher", required=True)
     return parser
 
 
@@ -203,6 +211,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             release=Path(args.release),
             windows_bridge=Path(args.windows_bridge),
             linux_bridge=Path(args.linux_bridge),
+            windows_launcher=Path(args.windows_launcher),
+            linux_launcher=Path(args.linux_launcher),
         )
     except (OSError, ValueError, zipfile.BadZipFile) as exc:
         print(f"bootstrap bundle error: {exc}", file=sys.stderr)
