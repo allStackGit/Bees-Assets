@@ -57,6 +57,12 @@ namespace Assets.Scripts.Entities.Ships
         }
         protected override void OnTriggerEnter2D(Collider2D collider)
         {
+            if (IsNetworkReplica)
+            {
+                base.OnTriggerEnter2D(collider);
+                return;
+            }
+
             _collidingThing = collider.gameObject;
             
             if (_collidingThing.CompareTag("Ship") && WarpCollider.IsTouching(collider))
