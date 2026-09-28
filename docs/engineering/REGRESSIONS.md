@@ -1245,3 +1245,13 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** Final target validation must enforce enemy-side ownership independently of upstream candidate filtering. A focused friendly-candidate regression case was not added under the static-analysis-only request.
 **Verification:** Statically traced the range collider's enemy-only insertion, target-list construction, `DetermineTargetShip`, and Turret's firing predicate into the shared validator. No tests, builds, Unity, or runtime checks were performed.
 **Invariant/knowledge:** Candidate selection and actual weapon firing both enforce enemy ownership; downstream firing must not depend on the source of its candidate list.
+
+### REG-143 — Log readers attributed a replacement file to the prior generation
+**Area:** `Training/bees_training_worker_agent.py`, `EpisodeLogMetrics._read_new`, `TrainingLogUploader.flush_once`  
+**Symptom:** If log rotation replaced a path after its metadata was read but before the file was opened, metrics could consume the replacement from the previous generation's offset, and the uploader could append replacement bytes at the old remote offset.  
+**Root cause:** Both readers compared the path identity from `stat()` with cached state but trusted that identity after opening the path; the file descriptor could refer to a different generation.  
+**Fix:** Both readers compare the opened file descriptor's `fstat()` identity with the previously observed path identity and skip that read when rotation occurred between `stat()` and `open()`.  
+**Permanent protection:** Before using a cached cursor for append-only log reads, compare the opened descriptor identity with the path identity that selected the cursor. A focused deterministic race test was not added under the static-only audit instruction.  
+**Verification:** Statically traced both readers' stat/open/cursor flows and confirmed mismatched descriptors return without consuming bytes or advancing the cursor. No tests, builds, Unity, or runtime checks were performed.  
+**Invariant/knowledge:** A path-based metadata check does not establish the identity of a later opened handle; log cursor ownership must be bound to the actual descriptor.
+
