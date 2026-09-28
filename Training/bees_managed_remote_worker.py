@@ -35,6 +35,9 @@ from bees_process_safety import popen_owned
 
 
 DEFAULT_RECONNECT_SECONDS = 5.0
+DEFAULT_GAMEPLAY_PORT = 7146
+TRAINING_GAMEPLAY_HOST_ENV = "BEES_TRAINING_GAMEPLAY_HOST"
+TRAINING_GAMEPLAY_PORT_ENV = "BEES_TRAINING_GAMEPLAY_PORT"
 MAX_ENVS_PER_ACTOR = 64
 REMOTE_MEMORY_RESERVE_BYTES = 1 * 1024 * 1024 * 1024
 REMOTE_MEMORY_PER_ENV_BYTES = 512 * 1024 * 1024
@@ -127,9 +130,14 @@ def _forward_process_output(process: subprocess.Popen) -> None:
             pass
 
 
-def _start_logged_process(command: Sequence[str]) -> tuple[subprocess.Popen, threading.Thread]:
+def _start_logged_process(
+    command: Sequence[str],
+    *,
+    environment: Optional[Mapping[str, str]] = None,
+) -> tuple[subprocess.Popen, threading.Thread]:
     process = popen_owned(
         list(command),
+        env=None if environment is None else dict(environment),
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
@@ -321,7 +329,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--gameplay-port",
         type=int,
-        default=None,
+        default=DEFAULT_GAMEPLAY_PORT,
         help=argparse.SUPPRESS,
     )
     parser.add_argument("--control-port", type=int, default=7150)
@@ -466,7 +474,16 @@ def _tailnet_forward_command(args: argparse.Namespace) -> list[str]:
         f"127.0.0.1:{args.broker_port}={args.tailnet_target}:{args.broker_port}",
         "--map",
         f"127.0.0.1:{args.bootstrap_port}={args.tailnet_target}:{args.bootstrap_port}",
+        "--map",
+        f"127.0.0.1:{args.gameplay_port}={args.tailnet_target}:{args.gameplay_port}",
     ]
+
+
+def _worker_environment(args: argparse.Namespace) -> dict[str, str]:
+    environment = os.environ.copy()
+    environment[TRAINING_GAMEPLAY_HOST_ENV] = "127.0.0.1"
+    environment[TRAINING_GAMEPLAY_PORT_ENV] = str(args.gameplay_port)
+    return environment
 
 
 def _sha256_file(path: Path) -> str:
@@ -1063,7 +1080,7 @@ def _wait_for_private_transport(
         raise ValueError("required_successes must be positive")
 
     if not _wait_for_ports(
-        (args.control_port, args.broker_port, args.bootstrap_port),
+        (args.control_port, args.broker_port, args.bootstrap_port, args.gameplay_port),
         process,
         stop,
         timeout=min(timeout, 20.0),
@@ -1332,11 +1349,17 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         not 1 <= args.control_port <= 65535
         or not 1 <= args.bootstrap_port <= 65535
         or not 1 <= args.broker_port <= 65535
+        or not 1 <= args.gameplay_port <= 65535
     ):
-        print("error: control/bootstrap/broker ports must be in 1-65535", file=sys.stderr)
+        print("error: control/bootstrap/broker/gameplay ports must be in 1-65535", file=sys.stderr)
         return 2
-    if len({args.control_port, args.bootstrap_port, args.broker_port}) != 3:
-        print("error: control/bootstrap/broker ports must be distinct", file=sys.stderr)
+    if len({
+        args.control_port,
+        args.bootstrap_port,
+        args.broker_port,
+        args.gameplay_port,
+    }) != 4:
+        print("error: control/bootstrap/broker/gameplay ports must be distinct", file=sys.stderr)
         return 2
     if args.reconnect_seconds <= 0 or args.runtime_poll_seconds <= 0:
         print("error: reconnect/runtime-poll seconds must be positive", file=sys.stderr)
@@ -1442,7 +1465,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         )
                     elif runtime_aligned and not stop[0] and tailnet.poll() is None:
                         worker, worker_log_thread = _start_logged_process(
-                            _worker_command(args, root, actor_key)
+                            _worker_command(args, root, actor_key),
+                            environment=_worker_environment(args),
                         )
 
                     next_status = 0.0
