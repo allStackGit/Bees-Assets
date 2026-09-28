@@ -829,23 +829,17 @@ internal sealed class RlOneVsOneAgent : Agent
 
     private void HandleEpisodeEnded(Level level, RlOneVsOneEpisodeCoordinator.EpisodeResult result)
     {
-        if (level != _level)
-        {
-            return;
-        }
-
-        ReleaseHealingReservation();
-
-        // Invalidate only this arena's randomized frame. Other arenas may be part-way through an
-        // unrelated episode and must retain their coordinate assignment.
-        RlPolicyCoordinateFrame.EndEpisode(level);
-
-        if (result.EpisodeNumber <= _lastRewardedEpisode)
+        if (level != _level || result.EpisodeNumber <= _lastRewardedEpisode)
         {
             return;
         }
 
         _lastRewardedEpisode = result.EpisodeNumber;
+        ReleaseHealingReservation();
+
+        // Invalidate only this arena's randomized frame. Other arenas may be part-way through an
+        // unrelated episode and must retain their coordinate assignment. Ignore duplicate/stale
+        // episode-end events before touching the current episode's frame or ship reservations.
         int assignedTeam = _side == ConfigData.Configuration.BeeSide ? result.BeeTeamId : result.HumanTeamId;
         bool isAssignedParticipant = _teamId == assignedTeam && _hasParticipatedThisEpisode;
         if (isAssignedParticipant)
