@@ -64,13 +64,9 @@ def _positive_int(value: object, label: str) -> int:
 
 
 def _target_fraction(value: object) -> float:
-    try:
-        parsed = float(value)
-    except (TypeError, ValueError) as exc:
-        raise ValidationError("automatic public target fraction must be a finite number in (0,0.5].") from exc
-    if not 0.0 < parsed <= 0.5:
-        raise ValidationError("automatic public target fraction must be in (0,0.5].")
-    return parsed
+    if type(value) not in (int, float) or not 0.0 < value <= 0.5:
+        raise ValidationError("automatic public target fraction must be a number in (0,0.5].")
+    return float(value)
 
 
 def incoming_metadata_paths(quarantine_root: str | os.PathLike[str]) -> Tuple[Path, ...]:
