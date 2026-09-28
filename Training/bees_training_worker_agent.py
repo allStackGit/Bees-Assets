@@ -573,7 +573,6 @@ class BackgroundBuildPreparer:
         progress_callback: Optional[Callable[[], bool]] = None,
         poll_seconds: float = 1.0,
     ) -> bool:
-        build_id = str(descriptor.get("build_id", ""))
         identity = self._identity(descriptor)
         with self._lock:
             if self._prepared_identity == identity:
