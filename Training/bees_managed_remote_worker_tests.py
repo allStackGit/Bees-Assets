@@ -626,7 +626,7 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
             process.wait.assert_called_once_with(timeout=7.0)
 
     def test_runtime_alignment_waits_until_current_runtime_is_verified_for_canonical_build(self):
-        args = Namespace()
+        args = Namespace(transport_watchdog_seconds=30.0)
         process = mock.Mock()
         process.poll.return_value = None
         updater = mock.Mock()
@@ -670,7 +670,7 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
         self.assertGreaterEqual(selected.call_count, 2)
 
     def test_runtime_alignment_does_not_treat_staged_but_unselected_runtime_as_active(self):
-        args = Namespace()
+        args = Namespace(transport_watchdog_seconds=30.0)
         process = mock.Mock()
         process.poll.side_effect = [None, None, 1]
         updater = mock.Mock()
@@ -709,7 +709,7 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
         updater.request_refresh.assert_called()
 
     def test_runtime_alignment_selects_staged_canonical_runtime_before_worker_launch(self):
-        args = Namespace()
+        args = Namespace(transport_watchdog_seconds=30.0)
         process = mock.Mock()
         process.poll.return_value = None
         updater = mock.Mock()
@@ -734,6 +734,46 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
         self.assertEqual(cutover, expected)
         updater.start.assert_called_once_with()
         status.assert_not_called()
+
+    def test_runtime_alignment_recycles_live_tailnet_after_sustained_control_loss(self):
+        args = Namespace(transport_watchdog_seconds=30.0)
+        process = mock.Mock()
+        process.poll.return_value = None
+        updater = mock.Mock()
+        updater.verified.return_value = ("", "")
+        updater.staged.return_value = (
+            "",
+            None,
+            None,
+            None,
+            "",
+            "",
+        )
+        with (
+            mock.patch.object(
+                managed,
+                "_runtime_cutover_selected",
+                return_value=None,
+            ),
+            mock.patch.object(managed, "_control_status", return_value=None),
+            mock.patch.object(
+                managed.time,
+                "monotonic",
+                side_effect=[100.0, 130.0],
+            ),
+            mock.patch.object(managed.time, "sleep"),
+        ):
+            aligned, cutover = managed._wait_for_runtime_alignment(
+                args,
+                "trainer-1",
+                updater,
+                process,
+                [False],
+            )
+
+        self.assertFalse(aligned)
+        self.assertIsNone(cutover)
+        self.assertGreaterEqual(updater.request_refresh.call_count, 1)
 
     def test_bootstrap_identity_probe_uses_head_without_downloading_bundle(self):
         with tempfile.TemporaryDirectory() as temp:
