@@ -9,6 +9,7 @@ import json
 import os
 import re
 import tempfile
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping, Optional, Sequence
@@ -255,7 +256,10 @@ def _run_id(payload: Mapping[str, Any], key: str, now: datetime) -> str:
     reward = int(payload["reward_schema_version"])
     scenario = int(payload["scenario_schema_version"])
     stamp = now.strftime("%Y%m%dT%H%M%SZ")
-    return f"bees-v{abi}-r{reward}-s{scenario}-{stamp}-{key[:8]}"
+    # A forced-new plan can be created more than once in one second with an unchanged
+    # contract. Keep those runs separate so checkpoint/log directories cannot be reused.
+    nonce = uuid.uuid4().hex[:8]
+    return f"bees-v{abi}-r{reward}-s{scenario}-{stamp}-{key[:8]}-{nonce}"
 
 
 def _load_state(path: Path) -> Optional[dict[str, Any]]:
