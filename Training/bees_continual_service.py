@@ -528,7 +528,7 @@ def _request_graceful_training_child_stop(process: subprocess.Popen) -> None:
     stop_file = _managed_stop_file()
     if stop_file is not None:
         stop_file.parent.mkdir(parents=True, exist_ok=True)
-        stop_file.write_text("stop\\n", encoding="ascii")
+        stop_file.write_text("stop\n", encoding="ascii")
     elif os.name == "nt" and hasattr(signal, "CTRL_BREAK_EVENT"):
         process.send_signal(signal.CTRL_BREAK_EVENT)
     else:
