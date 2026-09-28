@@ -1282,3 +1282,12 @@ Manual-only protection is acceptable only when the record explains why determini
 **Verification:** Statically traced worker startup, process-exit classification, return paths, and the shared cleanup finalizer. No tests or runtime checks were performed.  
 **Invariant/knowledge:** A successful individual worker exit is not a successful distributed session while its assigned peers are still running.
 
+### REG-147 — Remote runtime cutover trusted stale stop status
+**Area:** `Training/bees_managed_remote_worker.py`, `_runtime_cutover_selected`; incompatible release stopping barrier  
+**Symptom:** A remote supervisor could activate a staged runtime based on an old `stopped` trainer record before the server had observed this trainer stop at the current incompatible-release phase revision.  
+**Root cause:** The local cutover check matched only trainer ID and `process_state`, while the server promotion barrier also requires a fresh lease and `applied_revision >= phase_revision`.  
+**Fix:** Require `stale is false`, a non-boolean integer applied revision, and an applied revision at least as new as the pending release's phase revision before cutover.  
+**Permanent protection:** Remote runtime cutover must honor the same fresh per-trainer stop acknowledgement required by the server barrier. A focused regression test was not added under the static-only audit instruction.  
+**Verification:** Statically compared `_runtime_cutover_selected` with `TrainingControlStore._trainerStoppedForPending` and confirmed stale or pre-phase records no longer authorize cutover. No tests or runtime checks were performed.  
+**Invariant/knowledge:** Incompatible release cutover requires a fresh stop acknowledgement for the active barrier revision; process state alone is insufficient.
+
