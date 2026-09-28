@@ -584,7 +584,9 @@ _STEP_PATTERNS = (
 
 
 def infer_training_step(path: Path) -> Optional[int]:
-    candidates = [path.stem] + [part for part in reversed(path.parts[:-1])]
+    # Step-bearing export names and their immediate step directory are authoritative.
+    # Ancestor directories can contain numeric run IDs or unrelated date/version numbers.
+    candidates = [path.stem, path.parent.name]
     for candidate in candidates:
         for pattern in _STEP_PATTERNS:
             matches = list(pattern.finditer(candidate))
