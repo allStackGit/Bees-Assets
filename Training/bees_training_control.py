@@ -247,6 +247,11 @@ class TrainingControlClient:
             or next_offset < 0
         ):
             raise ControlRejected("training log upload returned invalid next_offset")
+        expected_next_offset = len(data) if reset else int(offset) + len(data)
+        if next_offset != expected_next_offset:
+            raise ControlRejected(
+                "training log upload returned an unexpected next_offset"
+            )
         return next_offset
 
 
