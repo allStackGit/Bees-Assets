@@ -575,7 +575,7 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         self.assertLess(alignment, launch)
         self.assertIn("elif runtime_aligned and not stop[0]", source[alignment:launch + 100])
 
-    def test_transient_control_unavailability_does_not_poison_worker_instability_heartbeat(self):
+    def test_control_unavailability_stays_out_of_worker_instability_heartbeat(self):
         source = (ROOT / "Training" / "bees_training_worker_agent.py").read_text(
             encoding="utf-8"
         )
@@ -583,8 +583,15 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
             "transient_control_error = isinstance(exc, ControlUnavailable) and not offline",
             source,
         )
-        self.assertIn("if not transient_control_error:", source)
-        self.assertIn("last_error = error_text", source)
+        self.assertIn(
+            "last_error = worker_health_error_after_exception(",
+            source,
+        )
+        self.assertIn(
+            "if isinstance(exc, ControlUnavailable):",
+            source,
+        )
+        self.assertIn("return current_last_error", source)
         self.assertIn(
             "elif transient_control_error and managed.alive():",
             source,
@@ -595,6 +602,10 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         )
         self.assertIn(
             "active lease; keeping the matching trainer running and retrying: ",
+            source,
+        )
+        self.assertNotIn(
+            "if not transient_control_error:\n                    last_error = error_text",
             source,
         )
 
