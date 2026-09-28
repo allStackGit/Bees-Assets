@@ -1595,3 +1595,12 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** campaign HUD indexing now runs only when `!Stage.IsTraining`. `TrainingHudIsolationInvariantTests` checks that the bootstrap removes UI entries and the reset guard excludes training.
 **Verification:** changed source and focused regression source were read back and reviewed statically. The test was not run under the code-analysis-only instruction.
 **Invariant/knowledge:** code that indexes player UI hierarchies must not run in headless/training mode after the training bootstrap removes those hierarchies.
+
+
+### REG-187 — Training map reuse retained a prior obstacle layout
+**Area:** `Scripts/Levels/Level.Reset.cs`, `Scripts/Levels/Level.Environment.cs`, stage-owned static obstacle and map pools
+**Symptom:** a later randomized Hive Mind episode could inherit static obstacles from the prior episode when a pooled map was reused, including when the new episode selected no obstacles.
+**Root cause:** timeout reset returned the map to its pool without releasing its pooled layout obstacles/background; the map's children remained attached and became active again when the same map was checked out.
+**Permanent protection:** reset now releases pooled layout obstacles and the background, clears their map references, then returns the map. `TrainingObstacleMapReuseInvariantTests` checks cleanup ordering and both pool releases.
+**Verification:** changed source and focused regression source were read back and reviewed statically. The test was not run under the code-analysis-only instruction.
+**Invariant/knowledge:** before returning a reusable map, detach pooled generated layout objects so episode state cannot leak through map children.
