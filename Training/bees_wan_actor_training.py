@@ -673,7 +673,6 @@ class WanActorBroker:
             raise StaleActorStateError(
                 f"actor {actor_id} registration was replaced; reconnect with the current lease"
             )
-        self._touch_actor_locked(actor_id)
         return registration
 
     def register_actor(self, payload: Mapping[str, Any]) -> str:
@@ -821,6 +820,7 @@ class WanActorBroker:
             if actor_id is not None:
                 actor_id = self._validate_actor_id(actor_id)
                 self._validate_actor_token_locked(actor_id, actor_token)
+                self._touch_actor_locked(actor_id)
             while (
                 not self._closed
                 and policy_epoch == self._policy_epoch
@@ -833,6 +833,7 @@ class WanActorBroker:
                 self._condition.wait(remaining)
             if actor_id is not None:
                 self._validate_actor_token_locked(actor_id, actor_token)
+                self._touch_actor_locked(actor_id)
             return {
                 "session_id": self.session_id,
                 "policy_epoch": self._policy_epoch,
