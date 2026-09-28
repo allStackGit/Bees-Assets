@@ -1597,10 +1597,10 @@ Manual-only protection is acceptable only when the record explains why determini
 **Invariant/knowledge:** code that indexes player UI hierarchies must not run in headless/training mode after the training bootstrap removes those hierarchies.
 
 
-### REG-187 — Training map reuse retained a prior obstacle layout
+### REG-187 — Direct reset did not own generated obstacle cleanup
 **Area:** `Scripts/Levels/Level.Reset.cs`, `Scripts/Levels/Level.Environment.cs`, stage-owned static obstacle and map pools
-**Symptom:** a later randomized Hive Mind episode could inherit static obstacles from the prior episode when a pooled map was reused, including when the new episode selected no obstacles.
-**Root cause:** timeout reset returned the map to its pool without releasing its pooled layout obstacles/background; the map's children remained attached and became active again when the same map was checked out.
-**Permanent protection:** reset now releases pooled layout obstacles and the background, clears their map references, then returns the map. `TrainingObstacleMapReuseInvariantTests` checks cleanup ordering and both pool releases.
+**Symptom:** a direct `ResetLevel -> SetupLevel -> ResetGameData` path could return a pooled map while generated layout obstacles remained attached, allowing them to reactivate on map reuse if that direct reset followed a layout-producing episode.
+**Root cause:** generated obstacle teardown lived in `SaveAndEnd`, while `ResetGameData` returned the map without independently releasing its pooled layout children.
+**Permanent protection:** reset now releases pooled layout obstacles and their background, clears the map references, then returns the map. `TrainingObstacleMapReuseInvariantTests` checks cleanup ordering and both pool releases.
 **Verification:** changed source and focused regression source were read back and reviewed statically. The test was not run under the code-analysis-only instruction.
-**Invariant/knowledge:** before returning a reusable map, detach pooled generated layout objects so episode state cannot leak through map children.
+**Invariant/knowledge:** map retirement must release pooled generated layout objects at the reset boundary rather than depend on a separate end-of-episode callback.
