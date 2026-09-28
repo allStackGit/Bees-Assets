@@ -61,6 +61,15 @@ test('capacity and learner-consumed-step metrics reject malformed values', () =>
         { auto: true, current_envs: 8, min_envs: 2, max_envs: 32 },
     );
     assert.equal(learnerConsumedSteps({ throughput: { learner_consumed_steps_total: -1 } }), null);
+    const unsafeSteps = Number.MAX_SAFE_INTEGER + 1;
+    assert.equal(
+        learnerConsumedSteps({ throughput: { learner_consumed_steps_total: unsafeSteps } }),
+        null,
+    );
+    assert.equal(
+        producerAcceptedSteps({ throughput: { accepted_steps_total: unsafeSteps } }),
+        null,
+    );
     assert.equal(
         learnerConsumedSteps({
             throughput: {
