@@ -189,7 +189,7 @@ B:\Bees\Remote\bees-remote-worker.sh
 
 Each launcher is self-extracting and contains its platform bootstrap plus embedded tailnet helper. The learner publishes one complete `bees-bootstrap-bundle.zip` for private bootstrap delivery; it is not copied manually to remote machines. A standalone `bees-remote-runtime.zip` mirror is retained only for migration from pre-bundle gateways and is not part of the steady-state gateway interface.
 
-The private training transport uses the embedded Tailscale userspace library. No separate Tailscale installation, VPN driver, SSH server/client, Windows training account, SSH key, password, SCP step, or additional router port forwarding is required for control, WAN rollouts, or bootstrap. Remote Unity players still use the normal public Bees gameplay/settings endpoint, just like other game clients.
+The private training transport uses the embedded Tailscale userspace library. No separate Tailscale installation, VPN driver, SSH server/client, Windows training account, SSH key, password, SCP step, or additional router port forwarding is required for control, WAN rollouts, bootstrap, or the managed training Unity player's gameplay/settings connection. Ordinary game clients continue using the normal public Bees gameplay/settings endpoint.
 
 On first use, the learner and each remote worker print a Tailscale authorization URL. Their identities are persisted. The generated launcher contains the learner's private tailnet address and bootstrap credential.
 
@@ -198,6 +198,7 @@ The learner gateway exposes only these private tailnet services:
 - control, normally 7150
 - WAN rollout broker, normally 55051
 - bootstrap service, normally 7151
+- managed training gameplay/settings server, normally 7146
 
 The gateway process itself is reconciled idempotently. Re-running `start`, performing a live-cluster `build`, or atomically replacing the complete bootstrap bundle does not restart a healthy gateway. Both `start` and live-cluster `build` nevertheless run the reconciler every time, so a crashed/missing gateway is recreated even when no helper/configuration version changed. A healthy gateway is restarted only when process-level configuration changes, such as its executable/helper identity, hostname, ports, bootstrap-bundle path, or bootstrap credential identity. This keeps existing remote tailnet sessions alive across ordinary build/start operations while still making those operations self-healing. When the persisted gateway process is already live, `start` also reuses that authenticated tsnet identity instead of starting a second one-shot `auth` process against the same state directory.
 
