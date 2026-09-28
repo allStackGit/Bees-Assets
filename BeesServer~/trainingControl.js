@@ -283,7 +283,11 @@ class TrainingControlStore {
         if (typeof parsed.training_enabled !== 'boolean') {
             throw new Error('training-control state training_enabled is invalid');
         }
-        parsed.environment_args = normalizeEnvironmentArgs(parsed.environment_args || []);
+        parsed.environment_args = normalizeEnvironmentArgs(
+            Object.prototype.hasOwnProperty.call(parsed, 'environment_args')
+                ? parsed.environment_args
+                : [],
+        );
         if (typeof parsed.run_id !== 'string' ||
             (parsed.run_id && !/^[A-Za-z0-9._-]+$/.test(parsed.run_id))) {
             throw new Error('training-control state run_id is invalid');
