@@ -63,11 +63,31 @@ namespace Assets.Scripts.Levels
             if (parts.Length != 3 ||
                 !int.TryParse(parts[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out int squadItemId) ||
                 !Enum.TryParse(parts[1], out ConfigData.CommandTypes commandType) ||
+                !IsReplayableUserCommand(commandType) ||
                 !int.TryParse(parts[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out int enemySquadItemId))
             {
                 throw new FormatException($"Invalid {SimulationReplayKinds.UserCommand} replay payload: {replayEvent.Payload}");
             }
             return new ReplayUserCommand(squadItemId, commandType, enemySquadItemId);
+        }
+
+        private static bool IsReplayableUserCommand(ConfigData.CommandTypes commandType)
+        {
+            // Keep replay parsing aligned with Squad.MakeUserCommand. Enum.TryParse also accepts
+            // numeric strings and enum values that are not executable user commands.
+            switch (commandType)
+            {
+                case ConfigData.CommandTypes.Aggressive:
+                case ConfigData.CommandTypes.BombingRun:
+                case ConfigData.CommandTypes.Guard:
+                case ConfigData.CommandTypes.Patrol:
+                case ConfigData.CommandTypes.Mining:
+                case ConfigData.CommandTypes.FullRetreat:
+                case ConfigData.CommandTypes.Heal:
+                    return true;
+                default:
+                    return false;
+            }
         }
 
         public static ReplayUserMove ParseUserMove(SimulationReplayEvent replayEvent)
