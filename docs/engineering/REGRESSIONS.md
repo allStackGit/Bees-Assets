@@ -1317,3 +1317,12 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** A live trainer ID retains its role for the duration of its lease; role changes must not replace another live registry record. A focused heartbeat collision test was not added under the static-analysis-only request.  
 **Verification:** Statically traced heartbeat validation before registry mutation, the shared trainer map, and rollout barrier lookup by dedicated role. Conflicting heartbeats now return before changing the map or persistent trainer state. No tests, builds, Unity, or runtime checks were performed.  
 **Invariant/knowledge:** Trainer IDs are global registry keys and cannot identify two roles concurrently.
+
+### REG-151 — Malformed persisted environment arguments became the default scenario
+**Area:** `BeesServer~/trainingControl.js`, `TrainingControlStore._loadState`, persisted training-control state  
+**Symptom:** A present but falsy invalid `environment_args` value was silently loaded as an empty list, allowing training to continue under a different scenario than the stored state represented.  
+**Root cause:** The loader used a truthiness fallback before validating the persisted field.  
+**Fix:** Default to an empty list only when the field is absent; validate every present value as an array of strings.  
+**Permanent protection:** Persisted scenario arguments are fail-closed: absence may use the legacy default, while explicit malformed values must stop state loading. A focused malformed-state test was not added under the static-analysis-only request.  
+**Verification:** Statically traced schema migration, the absent-field fallback, and `normalizeEnvironmentArgs`; malformed present values now reach its rejection path instead of becoming `[]`. No tests, builds, Unity, or runtime checks were performed.  
+**Invariant/knowledge:** Persistence defaults apply to missing fields, not malformed values that happen to be falsy.
