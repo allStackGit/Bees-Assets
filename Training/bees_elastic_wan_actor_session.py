@@ -22,14 +22,21 @@ class ElasticActorSession(worker.ActorSession):
         self.topology_epoch = -1
         self._last_consumed_sample = None
 
-    def _heartbeat(self) -> None:
-        self.client.reset_ack(
-            {
-                "session_id": self.session_id,
-                "actor_id": self.actor_id,
-                "control_epoch": self.control_epoch,
-            }
-        )
+    def _heartbeat(self) -> bool:
+        try:
+            self.client.reset_ack(
+                {
+                    "session_id": self.session_id,
+                    "actor_id": self.actor_id,
+                    "control_epoch": self.control_epoch,
+                }
+            )
+            return True
+        except worker.BrokerStaleActor:
+            # Central advanced while this acknowledgement was in flight. This is a normal
+            # freshness race; keep rollout paused and let the main session synchronize again.
+            self._state_changed.set()
+            return False
 
     def _apply_central_throughput(self, state: Mapping[str, Any]) -> None:
         consumed = state.get("consumed_steps_by_actor")
@@ -108,7 +115,8 @@ class ElasticActorSession(worker.ActorSession):
         )
         self._apply_live_rollout_horizons(state)
         self._apply_central_throughput(state)
-        self._heartbeat()
+        if not self._heartbeat():
+            return
         self._state_changed.clear()
 
     def _watch_loop(self) -> None:
@@ -142,6 +150,9 @@ class ElasticActorSession(worker.ActorSession):
             except worker.BrokerSessionChanged:
                 self._session_changed.set()
                 return
+            except worker.BrokerStaleActor:
+                self._state_changed.set()
+                time.sleep(0.05)
             except worker.BrokerUnavailable:
                 time.sleep(1.0)
             except BaseException as exc:
