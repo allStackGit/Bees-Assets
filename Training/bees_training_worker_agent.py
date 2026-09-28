@@ -230,41 +230,41 @@ class EpisodeLogMetrics:
                 human_final = int(values[6])
                 self._episodes.append({
                     "episode": int(values[0]),
-                "timeout": timeout,
-                "duration": duration,
-                "bee_win": (not timeout and bee_final > 0 and human_final == 0),
-                "human_win": (not timeout and human_final > 0 and bee_final == 0),
-                "bee_shots": int(values[8]),
-                "bee_hits": int(values[9]),
-                "human_shots": int(values[12]),
-                "human_hits": int(values[13]),
-                "bee_aim_samples": int(
-                    _episode_numeric_field(line, "bee_aim_samples") or 0
-                ),
-                "bee_aim_error_deg": _episode_numeric_field(
-                    line, "bee_aim_error"
-                ),
-                "bee_aim_within_5_pct": _episode_numeric_field(
-                    line, "bee_aim_within_5deg"
-                ),
-                "bee_turret_aligned_pct": _episode_numeric_field(
-                    line, "bee_turret_aligned"
-                ),
-                "human_aim_samples": int(
-                    _episode_numeric_field(line, "human_aim_samples") or 0
-                ),
-                "human_aim_error_deg": _episode_numeric_field(
-                    line, "human_aim_error"
-                ),
-                "human_aim_within_5_pct": _episode_numeric_field(
-                    line, "human_aim_within_5deg"
-                ),
-                "human_turret_aligned_pct": _episode_numeric_field(
-                    line, "human_turret_aligned"
-                ),
+                    "timeout": timeout,
+                    "duration": duration,
+                    "bee_win": (not timeout and bee_final > 0 and human_final == 0),
+                    "human_win": (not timeout and human_final > 0 and bee_final == 0),
+                    "bee_shots": int(values[8]),
+                    "bee_hits": int(values[9]),
+                    "human_shots": int(values[12]),
+                    "human_hits": int(values[13]),
+                    "bee_aim_samples": int(
+                        _episode_numeric_field(line, "bee_aim_samples") or 0
+                    ),
+                    "bee_aim_error_deg": _episode_numeric_field(
+                        line, "bee_aim_error"
+                    ),
+                    "bee_aim_within_5_pct": _episode_numeric_field(
+                        line, "bee_aim_within_5deg"
+                    ),
+                    "bee_turret_aligned_pct": _episode_numeric_field(
+                        line, "bee_turret_aligned"
+                    ),
+                    "human_aim_samples": int(
+                        _episode_numeric_field(line, "human_aim_samples") or 0
+                    ),
+                    "human_aim_error_deg": _episode_numeric_field(
+                        line, "human_aim_error"
+                    ),
+                    "human_aim_within_5_pct": _episode_numeric_field(
+                        line, "human_aim_within_5deg"
+                    ),
+                    "human_turret_aligned_pct": _episode_numeric_field(
+                        line, "human_turret_aligned"
+                    ),
                 })
             except (ValueError, OverflowError):
-                # Oversized integer fields in a damaged log must not terminate the supervisor.
+                # Oversized or malformed fields in a damaged log must not terminate the supervisor.
                 continue
 
     def snapshot(self) -> dict[str, object]:
