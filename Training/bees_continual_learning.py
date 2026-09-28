@@ -653,8 +653,8 @@ class ContinualLearningStore:
             raise ValidationError(f"Model artifact is empty: {source}")
         if not training_run_id.strip():
             raise ValidationError("training_run_id is required.")
-        if int(training_step) < 0:
-            raise ValidationError("training_step must be >= 0.")
+        if not isinstance(training_step, int) or isinstance(training_step, bool) or training_step < 0:
+            raise ValidationError("training_step must be a nonnegative integer.")
         if not game_build_version.strip():
             raise ValidationError("game_build_version is required.")
         if status not in MODEL_STATUSES:
