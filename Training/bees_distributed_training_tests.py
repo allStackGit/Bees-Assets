@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import pickle
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -12,6 +13,10 @@ from pathlib import Path
 import bees_distributed_training as distributed
 import bees_remote_worker as remote
 import bees_continual_distributed_train as continual_distributed
+
+
+def _fake_local_environment(worker_id, side_channels):
+    return worker_id, side_channels
 
 
 class DistributedOptionTests(unittest.TestCase):
@@ -157,6 +162,26 @@ class DistributedOptionTests(unittest.TestCase):
 
             with self.assertRaisesRegex(ValueError, "identity hash"):
                 distributed.load_remote_worker_spec(path)
+
+
+class ExternalWorkerFactoryTests(unittest.TestCase):
+    def test_worker_factory_is_picklable_for_spawned_ml_agents_workers(self):
+        factory = distributed._DistributedEnvironmentFactory(
+            _fake_local_environment,
+            (2, 3),
+            env_path="bees.exe",
+            seed=17,
+            num_areas=1,
+            no_graphics=True,
+            no_graphics_monitor=False,
+            base_port=5005,
+            env_args=["--rl-map-size=96"],
+            timeout_wait=60,
+        )
+
+        restored = pickle.loads(pickle.dumps(factory))
+        self.assertEqual(restored(1, "local-channel"), (1, "local-channel"))
+        self.assertEqual(restored.external_worker_ids, frozenset({2, 3}))
 
 
 class ExternalWorkerServerTests(unittest.TestCase):
