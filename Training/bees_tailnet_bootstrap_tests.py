@@ -198,6 +198,8 @@ class TailnetBootstrapSourceTests(unittest.TestCase):
         self.assertIn("remote-autostart.enabled", windows)
         self.assertIn("BEES_AUTOSTART_CHILD", windows)
         self.assertIn("Start-Sleep -Seconds 10", windows)
+        self.assertIn("$oldMonitor=Get-LiveAutostartMonitor", windows)
+        self.assertIn("Stop-Process -Id $oldMonitor.Id -Force", windows)
 
         self.assertIn("install_remote_autostart", linux)
         self.assertIn("remove_remote_autostart", linux)
