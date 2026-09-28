@@ -188,6 +188,14 @@ def contract_payload(assets_root: Path) -> dict[str, Any]:
             raise ValueError(f"continual learning config is missing {field}")
         payload[field] = continual[field]
 
+    # These settings alter the experience distribution and learner loss used when resuming
+    # continual training. Bind them to run identity instead of relying on manual schema bumps.
+    for field in ("historical_league", "human_imitation"):
+        settings = continual.get(field, {})
+        if not isinstance(settings, Mapping):
+            raise ValueError(f"continual learning config {field} must be an object")
+        payload[field] = dict(settings)
+
     trainer_text = trainer_path.read_text(encoding="utf-8")
     payload["network_settings"] = _network_settings_block(trainer_text)
     # Reward semantics are intentionally part of compatibility even if a future editor forgets to
