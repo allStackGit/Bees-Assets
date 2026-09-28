@@ -6,6 +6,8 @@ namespace Assets.Scripts.Entities.Ships.Weapons
     {
         public bool ShouldFireAtFrontOfShip, IsAlignedWithTargetPoint;
         public bool IsFiringManually, HasTargetingMarker;
+        public bool HasExplicitManualFireTarget;
+        public Vector2 ManualFireTargetPoint;
         public bool ReadyToFire;
         public int TargetingPasses, PassesPerFire;
         public float TargetingRate;
@@ -86,12 +88,27 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             base.CancelTimer();
         }
 
+        public void SetManualFire(
+            bool enabled,
+            Vector2 targetPoint,
+            bool useExplicitTarget)
+        {
+            IsFiringManually = enabled;
+            HasExplicitManualFireTarget = enabled && useExplicitTarget;
+            ManualFireTargetPoint = HasExplicitManualFireTarget
+                ? targetPoint
+                : Vector2.zero;
+        }
+
         public override void ClearData()
         {
             base.ClearData();
             ClearRlControl();
             ResetRotation();
             TargetingPasses = 0;
+            IsFiringManually = false;
+            HasExplicitManualFireTarget = false;
+            ManualFireTargetPoint = Vector2.zero;
             IsAlignedWithTargetPoint = false;
             ReadyToFire = false;
             TargetPoint = Vector2.zero;

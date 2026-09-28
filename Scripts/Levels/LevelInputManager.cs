@@ -46,6 +46,12 @@ namespace Assets.Scripts.Levels
         public const int LeftClick = 0;
         public List<Timer> Timers = new List<Timer>();
         public List<Turret> TurretsFiringManually = new List<Turret>();
+        private readonly List<long> _multiplayerManualFireSquadIds = new List<long>();
+        private const float MultiplayerManualFireUpdateInterval = 0.1f;
+        private const float MultiplayerManualFireTargetDistance = 0.5f;
+        private float _nextMultiplayerManualFireUpdateTime;
+        private Vector2 _lastMultiplayerManualFireTarget;
+        private bool _isMultiplayerManualFireSession;
         public EventSystem EventSystem;
         public int PlayerId;
         public bool IsShowingRanges;
@@ -228,39 +234,129 @@ namespace Assets.Scripts.Levels
         {
             if (!IsFiringManually)
             {
-                // This list represents the current manual-fire session. Do not retain turrets
-                // from prior sessions or pooled/destroyed ships.
-                TurretsFiringManually.Clear();
-                Level.State.GetSelectedSquadsForPlayer(PlayerId).ForEach(squad =>
+                if (Stage.MatchSession != null && Stage.MatchSession.IsMultiplayer)
                 {
-                    squad.GetShips().ForEach(ship =>
-                    {
-                        ship.Turrets.ForEach(turret =>
-                        {
-                            turret.IsFiringManually = true;
-                            TurretsFiringManually.Add(turret);
-                        });
-                        if (ship.ShipType == ConfigData.ShipTypes.Flagship)
-                        {
-                            ship.StopMoving("Flagship is manually firing");
-                        }
-                    });
-                });
+                    BeginMultiplayerManualFire();
+                }
+                else
+                {
+                    BeginLegacyManualFire();
+                }
+
                 IsFiringManually = true;
                 Cursor.SetCursor(Stage.ManualFireCursor, Stage.CursorSpot, CursorMode.Auto);
             }
             else
             {
-                TurretsFiringManually.ForEach(turret =>
+                if (_isMultiplayerManualFireSession)
                 {
-                    if (turret != null)
-                    {
-                        turret.IsFiringManually = false;
-                    }
-                });
-                TurretsFiringManually.Clear();
+                    EndMultiplayerManualFire();
+                }
+                else
+                {
+                    EndLegacyManualFire();
+                }
+
                 IsFiringManually = false;
                 Cursor.SetCursor(null, Vector2.zero, CursorMode.Auto);
+            }
+        }
+
+        private void BeginLegacyManualFire()
+        {
+            TurretsFiringManually.Clear();
+            Level.State.GetSelectedSquadsForPlayer(PlayerId).ForEach(squad =>
+            {
+                squad.GetShips().ForEach(ship =>
+                {
+                    ship.Turrets.ForEach(turret =>
+                    {
+                        turret.IsFiringManually = true;
+                        TurretsFiringManually.Add(turret);
+                    });
+                    if (ship.ShipType == ConfigData.ShipTypes.Flagship)
+                    {
+                        ship.StopMoving("Flagship is manually firing");
+                    }
+                });
+            });
+            _isMultiplayerManualFireSession = false;
+        }
+
+        private void EndLegacyManualFire()
+        {
+            TurretsFiringManually.ForEach(turret =>
+            {
+                if (turret != null)
+                {
+                    turret.IsFiringManually = false;
+                }
+            });
+            TurretsFiringManually.Clear();
+        }
+
+        private void BeginMultiplayerManualFire()
+        {
+            _multiplayerManualFireSquadIds.Clear();
+            List<Squad> selected = Level.State.GetSelectedSquadsForPlayer(PlayerId);
+            for (int i = 0; i < selected.Count; i++)
+            {
+                Squad squad = selected[i];
+                if (squad != null &&
+                    !squad.IsDead &&
+                    squad.CommandSquadId > 0 &&
+                    !_multiplayerManualFireSquadIds.Contains(squad.CommandSquadId))
+                {
+                    _multiplayerManualFireSquadIds.Add(squad.CommandSquadId);
+                }
+            }
+
+            _lastMultiplayerManualFireTarget = _mousePosition;
+            _nextMultiplayerManualFireUpdateTime =
+                Time.realtimeSinceStartup + MultiplayerManualFireUpdateInterval;
+            _isMultiplayerManualFireSession = true;
+            SendMultiplayerManualFire(enabled: true, _mousePosition);
+        }
+
+        private void EndMultiplayerManualFire()
+        {
+            SendMultiplayerManualFire(enabled: false, _mousePosition);
+            _multiplayerManualFireSquadIds.Clear();
+            _isMultiplayerManualFireSession = false;
+        }
+
+        private void UpdateMultiplayerManualFireTarget()
+        {
+            if (!IsFiringManually ||
+                !_isMultiplayerManualFireSession ||
+                Time.realtimeSinceStartup < _nextMultiplayerManualFireUpdateTime)
+            {
+                return;
+            }
+
+            Vector2 delta = _mousePosition - _lastMultiplayerManualFireTarget;
+            if (delta.sqrMagnitude <
+                MultiplayerManualFireTargetDistance * MultiplayerManualFireTargetDistance)
+            {
+                return;
+            }
+
+            SendMultiplayerManualFire(enabled: true, _mousePosition);
+            _lastMultiplayerManualFireTarget = _mousePosition;
+            _nextMultiplayerManualFireUpdateTime =
+                Time.realtimeSinceStartup + MultiplayerManualFireUpdateInterval;
+        }
+
+        private void SendMultiplayerManualFire(bool enabled, Vector2 targetPoint)
+        {
+            for (int i = 0; i < _multiplayerManualFireSquadIds.Count; i++)
+            {
+                Level.State.TryIssuePlayerCommand(
+                    PlayerId,
+                    PlayerCommandKind.SetManualFire,
+                    _multiplayerManualFireSquadIds[i],
+                    pointA: targetPoint,
+                    value: enabled ? 1 : 0);
             }
         }
 
@@ -290,6 +386,7 @@ namespace Assets.Scripts.Levels
         public void Update()
         {
             CheckInputs();
+            UpdateMultiplayerManualFireTarget();
             CheckActions();
             ResetInputs();
             for (_update_i = Timers.Count - 1; _update_i >= 0; _update_i--)

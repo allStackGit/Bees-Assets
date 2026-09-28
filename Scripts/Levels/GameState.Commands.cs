@@ -1239,6 +1239,12 @@ namespace Assets.Scripts.Levels
                         command.PlayerId,
                         command.SquadCommandId,
                         command.MatchMiningAsteroidId);
+                case PlayerCommandKind.SetManualFire:
+                    return TryPlayerSetManualFire(
+                        command.PlayerId,
+                        command.SquadCommandId,
+                        command.Value != 0,
+                        command.PointA);
                 default:
                     return false;
             }
@@ -1433,6 +1439,52 @@ namespace Assets.Scripts.Levels
 
             fireBarge.Detonate();
             return true;
+        }
+
+        public bool TryPlayerSetManualFire(
+            int playerId,
+            long squadCommandId,
+            bool enabled,
+            Vector2 targetPoint)
+        {
+            Squad squad = GetPlayerCommandSquad(squadCommandId);
+            if (!CanPlayerCommandSquad(playerId, squad))
+            {
+                return false;
+            }
+
+            bool hasTurret = false;
+            List<Ship> ships = squad.GetShips();
+            for (int shipIndex = 0; shipIndex < ships.Count; shipIndex++)
+            {
+                Ship ship = ships[shipIndex];
+                if (ship == null || ship.IsDead)
+                {
+                    continue;
+                }
+
+                for (int turretIndex = 0; turretIndex < ship.Turrets.Count; turretIndex++)
+                {
+                    Turret turret = ship.Turrets[turretIndex];
+                    if (turret == null)
+                    {
+                        continue;
+                    }
+
+                    turret.SetManualFire(
+                        enabled,
+                        targetPoint,
+                        useExplicitTarget: true);
+                    hasTurret = true;
+                }
+
+                if (enabled && ship.ShipType == ConfigData.ShipTypes.Flagship)
+                {
+                    ship.StopMoving("Flagship is manually firing");
+                }
+            }
+
+            return hasTurret;
         }
 
         public bool TryPlayerMineSquad(
@@ -1855,7 +1907,8 @@ namespace Assets.Scripts.Levels
         SetMatchSpeed,
         SetShootingStrategy,
         SetLockOn,
-        Mine
+        Mine,
+        SetManualFire
     }
 
     /// <summary>
@@ -3169,7 +3222,8 @@ namespace Assets.Scripts.Levels
                 command.Kind == PlayerCommandKind.SetChase ||
                 command.Kind == PlayerCommandKind.SetCeaseFire ||
                 command.Kind == PlayerCommandKind.SetMatchSpeed ||
-                command.Kind == PlayerCommandKind.SetLockOn;
+                command.Kind == PlayerCommandKind.SetLockOn ||
+                command.Kind == PlayerCommandKind.SetManualFire;
             if (booleanValue && command.Value != 0 && command.Value != 1)
             {
                 return false;
