@@ -6,7 +6,7 @@ Static-only repository audit on `rl/initial-design-work`. This ledger is the cur
 
 ## Reported issues under investigation
 
-- **Pluto II SSSS tooltip corruption (user-reported, not yet independently reproduced):** During the first multipage tooltip, a later page can render repeated lowercase `s` characters over time; turning the page away and returning reproduces it. Current static trace shows `Tooltip.ShowSequencePage` assigns the authored page text and sets `maxVisibleCharacters` to `int.MaxValue`; `CampaignFeedbackAdjustmentGuard.UpdatePlutoTwo` reads tooltip text but does not rewrite it. This does not explain the observed output, so REG-124's related competing-writer fix is not treated as proof that this report is resolved. Runtime reproduction is unavailable under the static-only audit constraint.
+- **Pluto II SSSS tooltip corruption (user-reported, not yet independently reproduced):** During the first multipage tooltip, a later page can render repeated lowercase `s` characters over time; turning the page away and returning reproduces it. The active tooltip path assigns each authored page and sets `maxVisibleCharacters` to `int.MaxValue`; the campaign guard only reads that text. The tracked Tooltip prefab's Message object has only its standard TextMeshProUGUI presentation components, with no attached reveal script. Static review has not found another tracked tooltip-text writer or a cause for the visible `s` output. REG-124's competing-writer fix is related but does not prove this report resolved. Runtime reproduction is unavailable under the static-only audit constraint.
 
 ## Audit status
 
