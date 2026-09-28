@@ -6,6 +6,10 @@ Static-only repository audit on `rl/initial-design-work`. This ledger is the cur
 
 None currently confirmed. The active audit continues; resolved findings have been removed from this work queue.
 
+## Reported issues under investigation
+
+- **Pluto II SSSS tooltip corruption (user-reported, not yet independently reproduced):** During the first multipage tooltip, a later page can render repeated lowercase `s` characters over time; turning the page away and returning reproduces it. Current static trace shows `Tooltip.ShowSequencePage` assigns the authored page text and sets `maxVisibleCharacters` to `int.MaxValue`; `CampaignFeedbackAdjustmentGuard.UpdatePlutoTwo` reads tooltip text but does not rewrite it. This does not explain the observed output, so REG-124's related competing-writer fix is not treated as proof that this report is resolved. Runtime reproduction is unavailable under the static-only audit constraint.
+
 ## Audit status
 
 - REG-142 adds an enemy-side guard at the shared weapon target validator, preserving the enemy-only rule even if a caller supplies a friendly candidate or range-cache ownership regresses. This production change resets the post-fix clean-pass count to **0 / 2**. Static source review only; no tests or runtime checks were run.
