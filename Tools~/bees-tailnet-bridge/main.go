@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -203,7 +204,18 @@ func bootstrapContentETag(reader io.Reader) (string, error) {
 	return fmt.Sprintf("\"sha256-%x\"", hash.Sum(nil)), nil
 }
 
-func bootstrapRegularFileMetadata(path string) (int64, string, error) {
+type bootstrapMetadataCache struct {
+	mu      sync.Mutex
+	info    os.FileInfo
+	size    int64
+	modTime time.Time
+	etag    string
+}
+
+func (c *bootstrapMetadataCache) metadata(path string) (int64, string, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	source, err := os.Open(path)
 	if err != nil {
 		return 0, "", err
@@ -216,11 +228,24 @@ func bootstrapRegularFileMetadata(path string) (int64, string, error) {
 	if !info.Mode().IsRegular() {
 		return 0, "", fmt.Errorf("bootstrap source is not a regular file: %s", path)
 	}
+
+	if c.info != nil &&
+		os.SameFile(c.info, info) &&
+		c.size == info.Size() &&
+		c.modTime.Equal(info.ModTime()) &&
+		c.etag != "" {
+		return c.size, c.etag, nil
+	}
+
 	etag, err := bootstrapContentETag(source)
 	if err != nil {
 		return 0, "", err
 	}
-	return info.Size(), etag, nil
+	c.info = info
+	c.size = info.Size()
+	c.modTime = info.ModTime()
+	c.etag = etag
+	return c.size, c.etag, nil
 }
 
 func snapshotRegularFile(path string) (*os.File, int64, string, func(), error) {
@@ -274,6 +299,7 @@ func snapshotRegularFile(path string) (*os.File, int64, string, func(), error) {
 }
 
 func bootstrapHandler(token, bundlePath string) http.Handler {
+	metadataCache := &bootstrapMetadataCache{}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if (r.Method != http.MethodGet && r.Method != http.MethodHead) || r.URL.Path != "/bootstrap" {
 			http.NotFound(w, r)
@@ -286,7 +312,7 @@ func bootstrapHandler(token, bundlePath string) http.Handler {
 		}
 
 		if r.Method == http.MethodHead {
-			size, etag, err := bootstrapRegularFileMetadata(bundlePath)
+			size, etag, err := metadataCache.metadata(bundlePath)
 			if err != nil {
 				http.Error(w, "bootstrap payload is not ready", http.StatusServiceUnavailable)
 				return
