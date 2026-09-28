@@ -607,6 +607,70 @@ def _safe_extract_runtime(runtime_zip: bytes, destination: Path) -> None:
             shutil.rmtree(temporary, ignore_errors=True)
 
 
+def _runtime_root_matches_archive(runtime_zip: bytes, runtime_root: Path) -> bool:
+    """Verify a cached extracted runtime against every member of its source archive."""
+    if not runtime_root.is_dir() or runtime_root.is_symlink():
+        return False
+
+    expected_files = set()
+    expected_directories = set()
+    try:
+        with zipfile.ZipFile(io.BytesIO(runtime_zip), "r") as bundle:
+            for member in bundle.infolist():
+                normalized = member.filename.replace("\\\\", "/")
+                if (
+                    not normalized
+                    or normalized.startswith("/")
+                    or normalized.startswith("../")
+                    or "/../" in normalized
+                ):
+                    return False
+                target = runtime_root / normalized
+                try:
+                    target.resolve().relative_to(runtime_root.resolve())
+                except (OSError, ValueError):
+                    return False
+                relative = Path(normalized)
+                if member.is_dir():
+                    expected_directories.add(relative.as_posix().rstrip("/"))
+                    continue
+                expected_files.add(relative.as_posix())
+                expected_directories.update(
+                    parent.as_posix()
+                    for parent in relative.parents
+                    if parent != Path(".")
+                )
+                if target.is_symlink() or not target.is_file():
+                    return False
+                digest = hashlib.sha256()
+                with bundle.open(member, "r") as source, target.open("rb") as actual:
+                    while True:
+                        expected = source.read(1024 * 1024)
+                        if not expected:
+                            break
+                        digest.update(expected)
+                    if digest.digest() != hashlib.sha256(actual.read()).digest():
+                        return False
+
+        actual_files = set()
+        actual_directories = set()
+        for current, directories, files in os.walk(runtime_root, followlinks=False):
+            current_path = Path(current)
+            for name in directories:
+                child = current_path / name
+                if child.is_symlink():
+                    return False
+                actual_directories.add(child.relative_to(runtime_root).as_posix())
+            for name in files:
+                child = current_path / name
+                if child.is_symlink() or not child.is_file():
+                    return False
+                actual_files.add(child.relative_to(runtime_root).as_posix())
+        return actual_files == expected_files and actual_directories == expected_directories
+    except (OSError, ValueError, zipfile.BadZipFile):
+        return False
+
+
 def _direct_version_root(root: Path, path: Path) -> Optional[Path]:
     # Do not resolve interpreter symlinks here. Linux venv/bin/python commonly points at
     # a base interpreter outside the venv; resolving it would make an active managed venv
@@ -1038,7 +1102,7 @@ class RuntimeUpdater:
                 return
 
         destination = self.versions_root / runtime_sha
-        if runtime_changed and not (destination / "bees_managed_remote_worker.py").is_file():
+        if runtime_changed and not _runtime_root_matches_archive(runtime_zip, destination):
             _safe_extract_runtime(runtime_zip, destination)
         runtime_root = destination if runtime_changed else Path(__file__).resolve().parent
         staged_python = self._prepare_python_for_requirements(runtime_root)
