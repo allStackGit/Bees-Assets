@@ -147,6 +147,33 @@ class DistributedOptionTests(unittest.TestCase):
             )
             self.assertEqual(len(spec["identity_sha256"]), 64)
 
+    def test_remote_spec_rejects_recomputed_managed_port_override(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "remote.json"
+            with patch.dict(os.environ, {distributed.TRAINING_BUILD_ID_ENV: "build-1"}):
+                distributed.write_remote_worker_spec(
+                    path,
+                    ["config.yaml", "--run-id=distributed-001"],
+                    base_port=5005,
+                    worker_ids=(1,),
+                )
+            value = json.loads(path.read_text(encoding="utf-8"))
+            value["unity_args"] = ["--mlagents-port=6100"]
+            identity = distributed._remote_spec_identity(
+                base_port=value["base_port"],
+                worker_ids=value["worker_ids"],
+                run_id=value["run_id"],
+                unity_args=value["unity_args"],
+                build_id=value["build_id"],
+            )
+            value["identity_sha256"] = __import__("hashlib").sha256(
+                distributed._canonical_json(identity).encode("utf-8")
+            ).hexdigest()
+            path.write_text(json.dumps(value), encoding="utf-8")
+
+            with self.assertRaisesRegex(ValueError, "managed --mlagents-port"):
+                distributed.load_remote_worker_spec(path)
+
     def test_controlled_environment_args_cannot_override_pinned_spec(self):
         pinned = ("--rl-map-size", "96", "--rl-health=0.5")
         with patch.dict(os.environ, {remote.CONTROL_ENV_ARGS_VARIABLE: json.dumps(list(pinned))}):
