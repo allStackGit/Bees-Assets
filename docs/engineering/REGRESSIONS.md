@@ -1462,3 +1462,10 @@ Manual-only protection is acceptable only when the record explains why determini
 **Fix:** Require numeric types and ranges for historical training ratio and imitation strength, and exact positive integers for policy-cache size, imitation steps, and batch size. Handle strength conversion overflow as a configuration error.
 **Permanent protection:** Trainer policy settings are validated before worker launch or demonstration-config preparation without lossy coercion.
 **Verification:** Static review traced these values through historical opponent weighting, the policy cache, and human-imitation configuration preparation. The checked-in config has the required types. No tests, builds, Unity, simulations, or training runs were executed. Post-fix clean-pass count remains **0 / 2**.
+
+### REG-169 — Infer continual model steps only from export-local names
+**Area:** `Training/bees_continual_train.py`, `infer_training_step`
+**Symptom:** Step inference scanned every ancestor path component. An unversioned ONNX export could inherit a number from its run ID, date folder, or unrelated parent directory and be registered with a false training step.
+**Fix:** Infer from the ONNX filename or its immediate parent directory only, which supports step-stamped exports and the explicit `step_250000/Behavior.onnx` layout without treating run ancestors as checkpoint metadata.
+**Permanent protection:** Model lineage step metadata must come from the artifact name or its checkpoint directory, never from arbitrary storage ancestry.
+**Verification:** Static review checked the existing source-level cases for a step-stamped filename, a step directory, and an unversioned latest model; the new candidate set preserves those outcomes while excluding higher ancestors. No tests or training runs were executed. Post-fix clean-pass count remains **0 / 2**.
