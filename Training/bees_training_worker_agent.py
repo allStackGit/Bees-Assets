@@ -225,10 +225,11 @@ class EpisodeLogMetrics:
                 continue
 
             timeout = values[1] == "True"
-            bee_final = int(values[4])
-            human_final = int(values[6])
-            self._episodes.append({
-                "episode": int(values[0]),
+            try:
+                bee_final = int(values[4])
+                human_final = int(values[6])
+                self._episodes.append({
+                    "episode": int(values[0]),
                 "timeout": timeout,
                 "duration": duration,
                 "bee_win": (not timeout and bee_final > 0 and human_final == 0),
@@ -261,7 +262,10 @@ class EpisodeLogMetrics:
                 "human_turret_aligned_pct": _episode_numeric_field(
                     line, "human_turret_aligned"
                 ),
-            })
+                })
+            except (ValueError, OverflowError):
+                # Oversized integer fields in a damaged log must not terminate the supervisor.
+                continue
 
     def snapshot(self) -> dict[str, object]:
         episodes = list(self._episodes)
