@@ -493,9 +493,9 @@ internal sealed class RlOneVsOneEpisodeMatchupSelector
         }
         catch (OverflowException exc)
         {
-            throw new ArgumentOutOfRangeException(
-                nameof(options),
+            throw new ArgumentException(
                 "Sampled multi-ship matchup space exceeds the supported priority-sampling size.",
+                nameof(options),
                 exc);
         }
         if (prioritizedMatchupPairs > MaximumPrioritizedMatchupPairs)
