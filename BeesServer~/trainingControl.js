@@ -11,6 +11,7 @@ const CONTROL_SCHEMA_VERSION = 5;
 const DEFAULT_PORT = 7150;
 const DEFAULT_HOST = '127.0.0.1';
 const DEFAULT_LEASE_SECONDS = 60;
+const MAX_TRAINER_LOG_FILE_BYTES = 64 * 1024 * 1024;
 const VALID_ROLES = new Set(['dedicated', 'full-game']);
 
 function sha256File(filePath) {
@@ -41,16 +42,21 @@ function readJsonBody(request, limitBytes = 1024 * 1024) {
     return new Promise((resolve, reject) => {
         const chunks = [];
         let total = 0;
+        let oversized = false;
         request.on('data', chunk => {
+            if (oversized) return;
             total += chunk.length;
             if (total > limitBytes) {
+                oversized = true;
+                chunks.length = 0;
                 reject(Object.assign(new Error('request body exceeds limit'), { statusCode: 413 }));
-                request.destroy();
+                request.pause();
                 return;
             }
             chunks.push(chunk);
         });
         request.on('end', () => {
+            if (oversized) return;
             if (total === 0) {
                 resolve({});
                 return;
@@ -61,7 +67,9 @@ function readJsonBody(request, limitBytes = 1024 * 1024) {
                 reject(Object.assign(new Error('request body is invalid JSON'), { statusCode: 400 }));
             }
         });
-        request.on('error', reject);
+        request.on('error', error => {
+            if (!oversized) reject(error);
+        });
     });
 }
 
@@ -69,17 +77,26 @@ function readRawBody(request, limitBytes = 1024 * 1024) {
     return new Promise((resolve, reject) => {
         const chunks = [];
         let total = 0;
+        let oversized = false;
         request.on('data', chunk => {
+            if (oversized) return;
             total += chunk.length;
             if (total > limitBytes) {
+                oversized = true;
+                chunks.length = 0;
                 reject(Object.assign(new Error('request body exceeds limit'), { statusCode: 413 }));
-                request.destroy();
+                request.pause();
                 return;
             }
             chunks.push(chunk);
         });
-        request.on('end', () => resolve(Buffer.concat(chunks)));
-        request.on('error', reject);
+        request.on('end', () => {
+            if (oversized) return;
+            resolve(Buffer.concat(chunks));
+        });
+        request.on('error', error => {
+            if (!oversized) reject(error);
+        });
     });
 }
 
@@ -1547,7 +1564,11 @@ class TrainingControlStore {
         runId = requireString(runId, 'run_id', 128);
         relativePath = requireString(relativePath, 'path', 1024).replace(/\\/g, '/');
         if (!/^[A-Za-z0-9._-]+$/.test(trainerId) ||
+            trainerId === '.' ||
+            trainerId === '..' ||
             !/^[A-Za-z0-9._-]+$/.test(runId) ||
+            runId === '.' ||
+            runId === '..' ||
             relativePath.startsWith('/') ||
             relativePath.split('/').some(part => !part || part === '.' || part === '..')) {
             throw Object.assign(new Error('trainer log identity/path is unsafe'), { statusCode: 400 });
@@ -1558,14 +1579,41 @@ class TrainingControlStore {
         if (!Buffer.isBuffer(data) || data.length > 1024 * 1024) {
             throw Object.assign(new Error('log chunk must be at most 1 MiB'), { statusCode: 413 });
         }
-        const root = path.join(this.logRoot, runId, trainerId);
-        const destination = path.resolve(root, relativePath);
-        const resolvedRoot = path.resolve(root) + path.sep;
-        if (!destination.startsWith(resolvedRoot)) {
-            throw Object.assign(new Error('trainer log path escapes its run root'), { statusCode: 400 });
+        fs.mkdirSync(this.logRoot, { recursive: true });
+        let parent = this.logRoot;
+        const pathParts = [runId, trainerId, ...relativePath.split('/')];
+        for (const part of pathParts.slice(0, -1)) {
+            parent = path.join(parent, part);
+            try {
+                const stats = fs.lstatSync(parent);
+                if (stats.isSymbolicLink() || !stats.isDirectory()) {
+                    throw Object.assign(
+                        new Error('trainer log path traverses a non-directory or symlink'),
+                        { statusCode: 400 });
+                }
+            } catch (error) {
+                if (error.code !== 'ENOENT') throw error;
+                fs.mkdirSync(parent);
+            }
         }
-        fs.mkdirSync(path.dirname(destination), { recursive: true });
-        let current = fs.existsSync(destination) ? fs.statSync(destination).size : 0;
+        const destination = path.join(parent, pathParts[pathParts.length - 1]);
+        let current = 0;
+        try {
+            const stats = fs.lstatSync(destination);
+            if (stats.isSymbolicLink() || !stats.isFile()) {
+                throw Object.assign(
+                    new Error('trainer log destination must be a regular file'),
+                    { statusCode: 400 });
+            }
+            current = stats.size;
+        } catch (error) {
+            if (error.code !== 'ENOENT') throw error;
+        }
+        if (!reset && current > MAX_TRAINER_LOG_FILE_BYTES) {
+            throw Object.assign(
+                new Error('trainer log file exceeds the 64 MiB limit'),
+                { statusCode: 413 });
+        }
         if (reset) {
             if (offset !== 0) {
                 const error = Object.assign(
@@ -1579,7 +1627,15 @@ class TrainingControlStore {
         } else if (current !== offset) {
             const error = Object.assign(new Error('trainer log offset mismatch'), { statusCode: 409 });
             error.expectedOffset = current;
+            error.expectedSha256 = current > 0 || fs.existsSync(destination)
+                ? sha256File(destination)
+                : crypto.createHash('sha256').digest('hex');
             throw error;
+        }
+        if (current + data.length > MAX_TRAINER_LOG_FILE_BYTES) {
+            throw Object.assign(
+                new Error('trainer log file exceeds the 64 MiB limit'),
+                { statusCode: 413 });
         }
         if (data.length > 0) {
             fs.appendFileSync(destination, data, { mode: 0o600 });
@@ -1727,6 +1783,20 @@ function createTrainingControlHandler(store, token, adminToken = null) {
                 message: error.message,
             };
             if (Number.isInteger(error.expectedOffset)) body.expected_offset = error.expectedOffset;
+            if (typeof error.expectedSha256 === 'string') {
+                body.expected_sha256 = error.expectedSha256;
+            }
+            if (statusCode === 413) {
+                const serialized = JSON.stringify(body) + '\n';
+                response.writeHead(statusCode, {
+                    'Content-Type': 'application/json; charset=utf-8',
+                    'Content-Length': Buffer.byteLength(serialized),
+                    'Cache-Control': 'no-store',
+                    'Connection': 'close',
+                });
+                response.end(serialized, () => request.destroy());
+                return;
+            }
             sendJson(response, statusCode, body);
         }
     };
