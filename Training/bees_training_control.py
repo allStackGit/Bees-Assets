@@ -408,9 +408,8 @@ class ManagedBuildStore:
     def _cache_matches(self, install: Path, descriptor: Mapping[str, Any]) -> bool:
         if install.is_symlink() or not install.is_dir():
             return False
-        entrypoint = _safe_zip_member(install, descriptor["entrypoint"])
         manifest_path = install / ".bees-build.json"
-        if not manifest_path.is_file() or not entrypoint.is_file():
+        if manifest_path.is_symlink() or not manifest_path.is_file():
             return False
         try:
             installed = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -425,8 +424,11 @@ class ManagedBuildStore:
             actual_content_sha256 = _build_tree_sha256(install)
         except OSError:
             return False
+        if actual_content_sha256 != content_sha256:
+            return False
+        entrypoint = _safe_zip_member(install, descriptor["entrypoint"])
         return (
-            actual_content_sha256 == content_sha256
+            entrypoint.is_file()
             and installed.get("archive_sha256") == descriptor["archive_sha256"]
             and installed.get("role") == descriptor["role"]
             and installed.get("build_id") == descriptor["build_id"]
