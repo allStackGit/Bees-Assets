@@ -75,14 +75,51 @@ foreach($path in @($InstallRoot,$RuntimeRoot,$SecretsRoot,$DownloadsRoot,$Tailne
 
 $StartupRoot=[Environment]::GetFolderPath('Startup')
 $AutostartFile=if($StartupRoot){Join-Path $StartupRoot 'BeesTrainingRemoteWorker.cmd'}else{''}
+$AutostartMarker=Join-Path $InstallRoot 'remote-autostart.enabled'
+$AutostartMonitor=Join-Path $InstallRoot 'Launcher\bees-remote-monitor.ps1'
+$AutostartMonitorPidFile=Join-Path $InstallRoot 'remote-monitor.pid'
+$AutostartChild=([string]$env:BEES_AUTOSTART_CHILD -eq '1')
+
+function Get-LiveAutostartMonitor {
+    if(-not(Test-Path -LiteralPath $AutostartMonitorPidFile)){return $null}
+    $value=(Get-Content -LiteralPath $AutostartMonitorPidFile -Raw -ErrorAction SilentlyContinue).Trim()
+    $monitorPid=0
+    if(-not [int]::TryParse($value,[ref]$monitorPid) -or $monitorPid -le 0){return $null}
+    try {
+        $record=Get-CimInstance Win32_Process -Filter "ProcessId = $monitorPid" -ErrorAction Stop
+        $commandLine=[string]$record.CommandLine
+        if(
+            [string]::IsNullOrWhiteSpace($commandLine) -or
+            $commandLine.IndexOf('bees-remote-monitor.ps1',[StringComparison]::OrdinalIgnoreCase) -lt 0 -or
+            $commandLine.IndexOf($InstallRoot,[StringComparison]::OrdinalIgnoreCase) -lt 0
+        ){
+            return $null
+        }
+        Get-Process -Id $monitorPid -ErrorAction SilentlyContinue
+    } catch {
+        return $null
+    }
+}
 
 function Remove-RemoteAutostart {
+    Remove-Item -LiteralPath $AutostartMarker -Force -ErrorAction SilentlyContinue
+    $monitor=Get-LiveAutostartMonitor
+    if($null -ne $monitor){
+        Stop-Process -Id $monitor.Id -Force -ErrorAction SilentlyContinue
+        try {$monitor.WaitForExit(5000)} catch {}
+    }
+    Remove-Item -LiteralPath $AutostartMonitorPidFile -Force -ErrorAction SilentlyContinue
     if($AutostartFile){
         Remove-Item -LiteralPath $AutostartFile -Force -ErrorAction SilentlyContinue
     }
 }
 
+function Escape-PowerShellSingleQuoted([string]$Value){
+    $Value.Replace("'","''")
+}
+
 function Install-RemoteAutostart {
+    if($AutostartChild){return}
     if($NoAutostart){
         Remove-RemoteAutostart
         return
@@ -96,11 +133,74 @@ function Install-RemoteAutostart {
         Write-Warning '[Bees remote] Windows Startup folder is unavailable; reboot autostart could not be registered.'
         return
     }
-    $autostartArgs=@('start','-InstallRoot',('"' + $InstallRoot + '"'),'-TorchDevice',('"' + $TorchDevice + '"'))
-    if($Envs -gt 0){$autostartArgs+=@('-Envs',[string]$Envs)}
+
+    $null=New-Item -ItemType Directory -Force -Path (Split-Path -Parent $AutostartMonitor)
+    'enabled' | Set-Content -LiteralPath $AutostartMarker -NoNewline -Encoding ASCII
+    $monitorBody=@'
+$ErrorActionPreference='Continue'
+$Marker='__MARKER__'
+$Launcher='__LAUNCHER__'
+$InstallRoot='__INSTALL_ROOT__'
+$TorchDevice='__TORCH_DEVICE__'
+$MonitorPidFile='__PID_FILE__'
+$Envs=__ENVS__
+
+$existingPid=0
+if(Test-Path -LiteralPath $MonitorPidFile){
+    $raw=(Get-Content -LiteralPath $MonitorPidFile -Raw -ErrorAction SilentlyContinue).Trim()
+    [void][int]::TryParse($raw,[ref]$existingPid)
+}
+if($existingPid -gt 0){
+    try {
+        $record=Get-CimInstance Win32_Process -Filter "ProcessId = $existingPid" -ErrorAction Stop
+        if(([string]$record.CommandLine).IndexOf('bees-remote-monitor.ps1',[StringComparison]::OrdinalIgnoreCase) -ge 0){
+            exit 0
+        }
+    } catch {}
+}
+$PID | Set-Content -LiteralPath $MonitorPidFile -NoNewline -Encoding ASCII
+$env:BEES_AUTOSTART_CHILD='1'
+try {
+    while(Test-Path -LiteralPath $Marker){
+        $command='call "' + $Launcher.Replace('"','""') + '" start -InstallRoot "' +
+            $InstallRoot.Replace('"','""') + '" -TorchDevice "' +
+            $TorchDevice.Replace('"','""') + '"'
+        if($Envs -gt 0){$command+=' -Envs ' + [string]$Envs}
+        try {& $env:COMSPEC /d /c $command *> $null} catch {}
+        Start-Sleep -Seconds 10
+    }
+} finally {
+    try {
+        $recorded=(Get-Content -LiteralPath $MonitorPidFile -Raw -ErrorAction SilentlyContinue).Trim()
+        if($recorded -eq [string]$PID){
+            Remove-Item -LiteralPath $MonitorPidFile -Force -ErrorAction SilentlyContinue
+        }
+    } catch {}
+}
+'@
+    $monitorBody=$monitorBody.Replace('__MARKER__',(Escape-PowerShellSingleQuoted $AutostartMarker))
+    $monitorBody=$monitorBody.Replace('__LAUNCHER__',(Escape-PowerShellSingleQuoted $launcherPath))
+    $monitorBody=$monitorBody.Replace('__INSTALL_ROOT__',(Escape-PowerShellSingleQuoted $InstallRoot))
+    $monitorBody=$monitorBody.Replace('__TORCH_DEVICE__',(Escape-PowerShellSingleQuoted $TorchDevice))
+    $monitorBody=$monitorBody.Replace('__PID_FILE__',(Escape-PowerShellSingleQuoted $AutostartMonitorPidFile))
+    $monitorBody=$monitorBody.Replace('__ENVS__',[string]$Envs)
+    [IO.File]::WriteAllText($AutostartMonitor,$monitorBody,(New-Object Text.UTF8Encoding($false)))
+
     $line='@echo off' + [Environment]::NewLine +
-        'call "' + $launcherPath + '" ' + ($autostartArgs -join ' ') + [Environment]::NewLine
+        'start "" powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' +
+        $AutostartMonitor + '"' + [Environment]::NewLine
     [IO.File]::WriteAllText($AutostartFile,$line,(New-Object Text.UTF8Encoding($false)))
+
+    if($null -eq (Get-LiveAutostartMonitor)){
+        $monitorProcess=Start-Process -FilePath 'powershell.exe' -ArgumentList @(
+            '-NoLogo','-NoProfile','-ExecutionPolicy','Bypass','-WindowStyle','Hidden',
+            '-File',('"' + $AutostartMonitor + '"')
+        ) -WindowStyle Hidden -PassThru
+        Start-Sleep -Milliseconds 250
+        if($monitorProcess.HasExited){
+            Write-Warning '[Bees remote] Windows worker watchdog exited during startup; reboot persistence remains registered.'
+        }
+    }
 }
 
 function Get-RecordedSupervisorPid {
