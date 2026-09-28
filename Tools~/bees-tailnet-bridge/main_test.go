@@ -72,7 +72,7 @@ func TestBootstrapHandlerHeadReturnsIdentityWithoutBundleBody(t *testing.T) {
 	}
 }
 
-func TestBootstrapMetadataCacheDetectsAtomicSameSizeReplacement(t *testing.T) {
+func TestBootstrapMetadataCacheDetectsSameSizeFileIdentityReplacement(t *testing.T) {
 	root := t.TempDir()
 	bundlePath := filepath.Join(root, "bootstrap.zip")
 	if err := os.WriteFile(bundlePath, []byte("first-bundle"), 0o600); err != nil {
@@ -95,6 +95,9 @@ func TestBootstrapMetadataCacheDetectsAtomicSameSizeReplacement(t *testing.T) {
 	if err := os.WriteFile(replacement, []byte("other-bundle"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.Remove(bundlePath); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.Rename(replacement, bundlePath); err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +109,7 @@ func TestBootstrapMetadataCacheDetectsAtomicSameSizeReplacement(t *testing.T) {
 		t.Fatalf("test requires same-size replacement: %d != %d", size2, size1)
 	}
 	if etag2 == etag1 {
-		t.Fatalf("atomic same-size replacement kept stale ETag %q", etag2)
+		t.Fatalf("same-size file identity replacement kept stale ETag %q", etag2)
 	}
 }
 
