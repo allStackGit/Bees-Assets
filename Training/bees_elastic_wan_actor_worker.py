@@ -125,11 +125,13 @@ class _StartupHealthHeartbeat:
         self._publish()
 
     def mark_progress(self) -> None:
+        # The rollout loop can advance many times per second. Record progress in memory and
+        # let the existing health heartbeat publish it at the bounded interval instead of
+        # performing an atomic filesystem write on every environment step.
         with self._lock:
             if self._state != "ready" or self._phase != "running":
                 return
             self._last_progress_unix_seconds = time.time()
-        self._publish()
 
     def set_error(self, exc: BaseException) -> None:
         with self._lock:
