@@ -723,7 +723,7 @@ def run_service(
                     save_state(options, state)
                 print(
                     "[Bees continuous] no compatible validated champion exists yet; "
-                    "starting training before generation-zero bootstrap/publish."
+                    "training continues until an operator reviews and establishes generation zero."
                 )
             elif published is None or published != state.get("last_hot_deployment_id"):
                 published = publish_current_hot_bundle(options, runner)
@@ -732,6 +732,25 @@ def run_service(
 
             index = int(state["generation_index"])
             phase = str(state["phase"])
+
+            if phase == "release" and compatible_champion is None:
+                message = (
+                    "No compatible champion exists. Review the candidate and establish the first "
+                    "trusted champion explicitly with bees_continual_bootstrap.py."
+                )
+                if options.once:
+                    raise RuntimeError(message)
+                write_managed_health(
+                    "ready",
+                    details={
+                        "phase": "awaiting-generation-zero-review",
+                        "generation_index": index,
+                    },
+                )
+                print(f"[Bees continuous] {message}; waiting before release.")
+                sleeper(options.retry_seconds)
+                state = load_state(options)
+                continue
 
             if phase == "train":
                 write_managed_health(
