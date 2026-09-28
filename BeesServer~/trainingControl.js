@@ -1821,7 +1821,7 @@ function createTrainingControlHandler(store, token, adminToken = null) {
             if (request.method === 'POST' && url.pathname === '/v1/log') {
                 const data = await readRawBody(request);
                 const rawOffset = url.searchParams.get('offset');
-                if (rawOffset === null || !/^\\d+$/.test(rawOffset)) {
+                if (rawOffset === null || !/^\d+$/.test(rawOffset)) {
                     throw Object.assign(
                         new Error('log offset must be an explicit non-negative integer'),
                         { statusCode: 400 });
