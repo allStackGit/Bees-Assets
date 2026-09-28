@@ -20,8 +20,16 @@ class FakeClient:
     def __init__(self, archive: Path):
         self.archive = archive
 
-    def download_artifact(self, _url: str, destination: Path) -> None:
+    def download_artifact(
+        self,
+        _url: str,
+        destination: Path,
+        *,
+        progress_callback=None,
+    ) -> None:
         destination.write_bytes(self.archive.read_bytes())
+        if progress_callback is not None:
+            progress_callback()
 
 
 class TrainingControlClientTests(unittest.TestCase):
@@ -238,14 +246,22 @@ class TrainingControlClientTests(unittest.TestCase):
                         "token": "health-token",
                         "state": "ready",
                         "error": "",
-                        "updated_unix_seconds": 1.0,
+                        "updated_unix_seconds": 1000.0,
                         "pid": 123,
                     }
                 ),
                 encoding="utf-8",
             )
-            self.assertEqual(managed.state("dedicated"), "running")
-            self.assertEqual(managed.health_error(), "")
+            with mock.patch.object(agent.time, "time", return_value=1001.0):
+                self.assertEqual(managed.state("dedicated"), "running")
+                self.assertEqual(managed.health_error(), "")
+
+            with mock.patch.object(
+                agent.time,
+                "time",
+                return_value=1000.0 + agent.CHILD_HEALTH_STALE_SECONDS + 1.0,
+            ):
+                self.assertIn("ready health has not refreshed", managed.health_error())
 
             health_path.write_text(
                 json.dumps(
@@ -254,14 +270,15 @@ class TrainingControlClientTests(unittest.TestCase):
                         "token": "health-token",
                         "state": "error",
                         "error": "trainer failed to initialize",
-                        "updated_unix_seconds": 2.0,
+                        "updated_unix_seconds": 1002.0,
                         "pid": 123,
                     }
                 ),
                 encoding="utf-8",
             )
-            self.assertEqual(managed.state("dedicated"), "starting")
-            self.assertEqual(managed.health_error(), "trainer failed to initialize")
+            with mock.patch.object(agent.time, "time", return_value=1003.0):
+                self.assertEqual(managed.state("dedicated"), "starting")
+                self.assertEqual(managed.health_error(), "trainer failed to initialize")
 
     def test_managed_process_uses_separate_posix_process_group_and_stops_tree(self):
         fake = mock.Mock()
@@ -1080,10 +1097,31 @@ class TrainingControlClientTests(unittest.TestCase):
                     )
                 )
 
+        managed.health_error = mock.Mock(return_value="stale child health")
+        self.assertFalse(
+            agent.dedicated_process_matches_desired(managed, **base)
+        )
+        managed.health_error = mock.Mock(return_value="")
+
         process.poll.return_value = 0
         self.assertFalse(
             agent.dedicated_process_matches_desired(managed, **base)
         )
+
+    def test_windows_worker_agent_self_restart_preserves_spaced_python_path(self):
+        completed = mock.Mock(returncode=17)
+        with (
+            mock.patch.object(agent, "_is_windows", return_value=True),
+            mock.patch.object(agent.subprocess, "run", return_value=completed) as run,
+            mock.patch.object(agent.os, "execv") as execv,
+        ):
+            result = agent._restart_worker_agent(["--install-root", r"C:\Users\Seagrams Crown\BeesTraining"])
+
+        self.assertEqual(result, 17)
+        execv.assert_not_called()
+        command = run.call_args.args[0]
+        self.assertEqual(command[0], agent.sys.executable)
+        self.assertIn(r"C:\Users\Seagrams Crown\BeesTraining", command)
 
     def test_full_game_local_state_defaults_offline_to_inference(self):
         with tempfile.TemporaryDirectory() as temp:
