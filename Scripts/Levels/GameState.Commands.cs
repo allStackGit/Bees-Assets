@@ -828,7 +828,8 @@ namespace Assets.Scripts.Levels
                 command.SquadCommandId,
                 command.TargetSquadCommandId,
                 command.PointA,
-                command.PointB);
+                command.PointB,
+                command.MatchShipId);
 
             lock (_queuedPlayerCommandsLock)
             {
@@ -925,7 +926,8 @@ namespace Assets.Scripts.Levels
             long squadCommandId,
             long targetSquadCommandId = 0,
             Vector2 pointA = default,
-            Vector2 pointB = default)
+            Vector2 pointB = default,
+            long matchShipId = 0)
         {
             MatchSession matchSession = Stage != null ? Stage.MatchSession : null;
             long sequence = 0;
@@ -954,7 +956,8 @@ namespace Assets.Scripts.Levels
                 squadCommandId,
                 targetSquadCommandId,
                 pointA,
-                pointB);
+                pointB,
+                matchShipId);
 
             if (matchSession != null && !matchSession.IsLocalAuthority)
             {
@@ -1017,9 +1020,115 @@ namespace Assets.Scripts.Levels
                         command.PlayerId,
                         command.SquadCommandId,
                         command.TargetSquadCommandId);
+                case PlayerCommandKind.ScoutDropBeacon:
+                    return TryPlayerScoutDropBeacon(
+                        command.PlayerId,
+                        command.SquadCommandId,
+                        command.MatchShipId);
+                case PlayerCommandKind.BargeCharge:
+                    return TryPlayerBargeCharge(
+                        command.PlayerId,
+                        command.SquadCommandId,
+                        command.MatchShipId);
+                case PlayerCommandKind.FireBargeDetonate:
+                    return TryPlayerFireBargeDetonate(
+                        command.PlayerId,
+                        command.SquadCommandId,
+                        command.MatchShipId);
                 default:
                     return false;
             }
+        }
+
+        private Ship GetPlayerCommandShip(long matchShipId)
+        {
+            return matchShipId > 0 &&
+                   ShipsByMatchId.TryGetValue(matchShipId, out Ship ship)
+                ? ship
+                : null;
+        }
+
+        private bool CanPlayerCommandShip(
+            int playerId,
+            long squadCommandId,
+            long matchShipId,
+            out Ship ship)
+        {
+            ship = GetPlayerCommandShip(matchShipId);
+            return ship != null &&
+                   !ship.IsDead &&
+                   ship.Squad != null &&
+                   ship.Squad.CommandSquadId == squadCommandId &&
+                   CanPlayerCommandSquad(playerId, ship.Squad);
+        }
+
+        public bool TryPlayerScoutDropBeacon(
+            int playerId,
+            long squadCommandId,
+            long matchShipId)
+        {
+            if (!CanPlayerCommandShip(
+                    playerId,
+                    squadCommandId,
+                    matchShipId,
+                    out Ship ship) ||
+                !(ship is Scout scout) ||
+                !scout.IsBeaconReady)
+            {
+                return false;
+            }
+
+            scout.DropBeacon();
+            return true;
+        }
+
+        public bool TryPlayerBargeCharge(
+            int playerId,
+            long squadCommandId,
+            long matchShipId)
+        {
+            if (!CanPlayerCommandShip(
+                    playerId,
+                    squadCommandId,
+                    matchShipId,
+                    out Ship ship) ||
+                !(ship is Barge barge))
+            {
+                return false;
+            }
+
+            if (barge.CannotChangeMovementOrders)
+            {
+                barge.WaitingForNewCharge = true;
+                return true;
+            }
+
+            if (!barge.IsRlChargeReady)
+            {
+                return false;
+            }
+
+            barge.StartCoroutine(barge.ChargeForward());
+            return true;
+        }
+
+        public bool TryPlayerFireBargeDetonate(
+            int playerId,
+            long squadCommandId,
+            long matchShipId)
+        {
+            if (!CanPlayerCommandShip(
+                    playerId,
+                    squadCommandId,
+                    matchShipId,
+                    out Ship ship) ||
+                !(ship is FireBarge fireBarge))
+            {
+                return false;
+            }
+
+            fireBarge.Detonate();
+            return true;
         }
 
         private Squad GetPlayerCommandSquad(long squadCommandId)
@@ -1400,7 +1509,10 @@ namespace Assets.Scripts.Levels
         Guard,
         Patrol,
         FullRetreat,
-        Heal
+        Heal,
+        ScoutDropBeacon,
+        BargeCharge,
+        FireBargeDetonate
     }
 
     /// <summary>
@@ -1415,6 +1527,7 @@ namespace Assets.Scripts.Levels
         public PlayerCommandKind Kind;
         public long SquadCommandId;
         public long TargetSquadCommandId;
+        public long MatchShipId;
         public Vector2 PointA;
         public Vector2 PointB;
 
@@ -1429,13 +1542,15 @@ namespace Assets.Scripts.Levels
             long squadCommandId,
             long targetSquadCommandId = 0,
             Vector2 pointA = default,
-            Vector2 pointB = default)
+            Vector2 pointB = default,
+            long matchShipId = 0)
         {
             PlayerId = playerId;
             Sequence = sequence;
             Kind = kind;
             SquadCommandId = squadCommandId;
             TargetSquadCommandId = targetSquadCommandId;
+            MatchShipId = matchShipId;
             PointA = pointA;
             PointB = pointB;
         }
@@ -1444,7 +1559,7 @@ namespace Assets.Scripts.Levels
 
     public static class MultiplayerProtocol
     {
-        public const int Version = 2;
+        public const int Version = 3;
         public const int MaxPacketBytes = 4096;
         public const int MaxLobbyPacketBytes = 65536;
         public const int MaxBattleStatePacketBytes = 262144;
@@ -1458,7 +1573,7 @@ namespace Assets.Scripts.Levels
         private static readonly HashSet<string> CommandFields = new HashSet<string>
         {
             "v", "match", "type", "level", "player", "seq", "kind", "squad", "target",
-            "ax", "ay", "bx", "by"
+            "ship", "ax", "ay", "bx", "by"
         };
         private static readonly HashSet<string> AcknowledgementFields = new HashSet<string>
         {
@@ -1936,6 +2051,7 @@ namespace Assets.Scripts.Levels
                 ["kind"] = (int)command.Kind,
                 ["squad"] = command.SquadCommandId,
                 ["target"] = command.TargetSquadCommandId,
+                ["ship"] = command.MatchShipId,
                 ["ax"] = command.PointA.x,
                 ["ay"] = command.PointA.y,
                 ["bx"] = command.PointB.x,
@@ -2551,6 +2667,7 @@ namespace Assets.Scripts.Levels
                 !Enum.IsDefined(typeof(PlayerCommandKind), (int)kindValue) ||
                 !TryReadInt64(json, "squad", out long squadCommandId) || squadCommandId <= 0 ||
                 !TryReadInt64(json, "target", out long targetSquadCommandId) || targetSquadCommandId < 0 ||
+                !TryReadInt64(json, "ship", out long matchShipId) || matchShipId < 0 ||
                 !TryReadFloat(json, "ax", out float ax) ||
                 !TryReadFloat(json, "ay", out float ay) ||
                 !TryReadFloat(json, "bx", out float bx) ||
@@ -2566,7 +2683,8 @@ namespace Assets.Scripts.Levels
                 squadCommandId,
                 targetSquadCommandId,
                 new Vector2(ax, ay),
-                new Vector2(bx, by));
+                new Vector2(bx, by),
+                matchShipId);
 
             if (!IsValidCommand(parsed))
             {
@@ -2585,6 +2703,7 @@ namespace Assets.Scripts.Levels
                 command.Sequence <= 0 ||
                 command.SquadCommandId <= 0 ||
                 command.TargetSquadCommandId < 0 ||
+                command.MatchShipId < 0 ||
                 !Enum.IsDefined(typeof(PlayerCommandKind), command.Kind) ||
                 !IsFinite(command.PointA) ||
                 !IsFinite(command.PointB))
@@ -2598,6 +2717,15 @@ namespace Assets.Scripts.Levels
                 command.Kind == PlayerCommandKind.FullRetreat ||
                 command.Kind == PlayerCommandKind.Heal;
             if (requiresTarget != (command.TargetSquadCommandId > 0))
+            {
+                return false;
+            }
+
+            bool requiresShip =
+                command.Kind == PlayerCommandKind.ScoutDropBeacon ||
+                command.Kind == PlayerCommandKind.BargeCharge ||
+                command.Kind == PlayerCommandKind.FireBargeDetonate;
+            if (requiresShip != (command.MatchShipId > 0))
             {
                 return false;
             }
