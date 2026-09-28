@@ -1341,6 +1341,39 @@ def _control_status(args: argparse.Namespace) -> Optional[Mapping[str, object]]:
         return None
 
 
+def _broker_session_available(args: argparse.Namespace) -> bool:
+    try:
+        token = Path(args.wan_token_file).expanduser().read_text(encoding="ascii").strip()
+        if not token:
+            return False
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{args.broker_port}/session",
+            headers={"Authorization": "Bearer " + token},
+        )
+        with urllib.request.urlopen(request, timeout=2.0) as response:
+            # The session payload is binary and owned by the WAN protocol. For transport
+            # supervision we only need an authenticated successful response.
+            response.read(1)
+            return int(getattr(response, "status", 200)) == 200
+    except (
+        OSError,
+        ValueError,
+        urllib.error.URLError,
+        urllib.error.HTTPError,
+        http.client.HTTPException,
+    ):
+        return False
+
+
+def _training_desired(status: object) -> bool:
+    if not isinstance(status, Mapping):
+        return False
+    desired = status.get("desired")
+    if not isinstance(desired, Mapping):
+        return False
+    return bool(desired.get("training_enabled", False))
+
+
 class _TransportWatchdog:
     def __init__(self, timeout_seconds: float) -> None:
         if timeout_seconds <= 0:
@@ -1837,6 +1870,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     transport_watchdog = _TransportWatchdog(
                         args.transport_watchdog_seconds
                     )
+                    broker_watchdog = _TransportWatchdog(
+                        max(60.0, args.transport_watchdog_seconds * 2.0)
+                    )
                     session_failure_watchdog = _SessionFailureWatchdog()
                     transport_watchdog_restart = False
                     while (
@@ -1866,6 +1902,27 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                                 )
                                 transport_watchdog_restart = True
                                 break
+                            if _training_desired(status):
+                                broker_healthy = _broker_session_available(args)
+                                if broker_watchdog.observe(broker_healthy, now):
+                                    failure_since = broker_watchdog.failure_since
+                                    outage = now - (
+                                        failure_since
+                                        if failure_since is not None
+                                        else now
+                                    )
+                                    print(
+                                        "[Bees remote] authenticated WAN broker has been "
+                                        f"unreachable for {outage:.1f}s while learner control "
+                                        "remains healthy; recycling private transport.",
+                                        file=sys.stderr,
+                                        flush=True,
+                                    )
+                                    transport_watchdog_restart = True
+                                    break
+                            else:
+                                broker_watchdog.observe(True, now)
+
                             record = _trainer_record(status, trainer_id)
                             if isinstance(record, Mapping) and bool(record.get("stale", False)):
                                 print(
