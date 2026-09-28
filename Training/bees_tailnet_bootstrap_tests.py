@@ -198,6 +198,8 @@ class TailnetBootstrapSourceTests(unittest.TestCase):
         self.assertIn("remote-autostart.enabled", windows)
         self.assertIn("BEES_AUTOSTART_CHILD", windows)
         self.assertIn("Start-Sleep -Seconds 10", windows)
+        self.assertIn("function Test-SupervisorAlive", windows)
+        self.assertIn("if(-not(Test-SupervisorAlive))", windows)
         self.assertIn("$oldMonitor=Get-LiveAutostartMonitor", windows)
         self.assertIn("Stop-Process -Id $oldMonitor.Id -Force", windows)
 
@@ -209,6 +211,8 @@ class TailnetBootstrapSourceTests(unittest.TestCase):
         self.assertIn("BEES_AUTOSTART_CHILD", linux)
         self.assertIn("Type=simple", linux)
         self.assertIn("Restart=always", linux)
+        self.assertIn("supervisor_alive()", linux)
+        self.assertIn("if ! supervisor_alive; then", linux)
         self.assertIn("systemctl --user restart", linux)
         self.assertNotIn("Type=oneshot", linux)
         self.assertIn("loginctl enable-linger", linux)
