@@ -325,6 +325,7 @@ def _parser() -> argparse.ArgumentParser:
         default="",
         help="Absolute path to the copied one-file launcher so it can self-update.",
     )
+    parser.add_argument("--no-autostart", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--bootstrap-token-file", required=True)
     parser.add_argument("--worker-token-file", required=True)
     parser.add_argument("--wan-token-file", required=True)
@@ -860,6 +861,62 @@ class RuntimeUpdater:
             raise ValueError("bootstrap token is empty")
         return value
 
+    def _managed_launcher_path(self) -> Path:
+        name = "bees-remote-worker.cmd" if os.name == "nt" else "bees-remote-worker.sh"
+        return self.install_root / "Launcher" / name
+
+    def _external_launcher_path(self) -> Optional[Path]:
+        value = (
+            str(getattr(self.args, "launcher_path", "") or "").strip()
+            or os.environ.get("BEES_REMOTE_LAUNCHER_PATH", "").strip()
+            or os.environ.get("BEES_SELF", "").strip()
+        )
+        if not value:
+            return None
+        return Path(value).expanduser().resolve()
+
+    def _adopt_managed_launcher(self, launcher_path: Path) -> None:
+        if bool(getattr(self.args, "no_autostart", False)):
+            return
+        if os.name == "nt":
+            command = [
+                os.environ.get("COMSPEC", "cmd.exe"),
+                "/d",
+                "/c",
+                "call",
+                str(launcher_path),
+                "start",
+                "-InstallRoot",
+                str(self.install_root),
+                "-TorchDevice",
+                str(self.args.torch_device),
+            ]
+            if not bool(getattr(self.args, "auto_envs", False)):
+                command.extend(["-Envs", str(self.args.envs)])
+        else:
+            command = [
+                "bash",
+                str(launcher_path),
+                "start",
+                "--install-root",
+                str(self.install_root),
+                "--torch-device",
+                str(self.args.torch_device),
+            ]
+            if not bool(getattr(self.args, "auto_envs", False)):
+                command.extend(["--envs", str(self.args.envs)])
+        completed = subprocess.run(
+            command,
+            cwd=str(self.install_root),
+            check=False,
+            timeout=30.0,
+        )
+        if completed.returncode != 0:
+            raise RuntimeError(
+                "managed launcher could not register reboot persistence "
+                f"(exit {completed.returncode})"
+            )
+
     def _fetch_bootstrap_identity(self) -> str:
         request = urllib.request.Request(
             f"http://127.0.0.1:{self.args.bootstrap_port}/bootstrap",
@@ -1108,20 +1165,41 @@ class RuntimeUpdater:
         current_bridge_sha = _sha256_file(bridge_path) if bridge_path.is_file() else ""
 
         launcher_changed = False
-        launcher_path_text = str(getattr(self.args, "launcher_path", "") or "").strip()
-        if launcher_bytes and launcher_path_text:
-            launcher_path = Path(launcher_path_text).expanduser().resolve()
+        if launcher_bytes:
             launcher_sha = hashlib.sha256(launcher_bytes).hexdigest()
-            current_launcher_sha = (
-                _sha256_file(launcher_path) if launcher_path.is_file() else ""
+            managed_launcher = self._managed_launcher_path()
+            managed_launcher_changed = (
+                not managed_launcher.is_file()
+                or _sha256_file(managed_launcher) != launcher_sha
             )
-            launcher_changed = launcher_sha != current_launcher_sha
-            if launcher_changed:
-                _atomic_bytes(launcher_path, launcher_bytes, 0o700)
+            if managed_launcher_changed:
+                _atomic_bytes(managed_launcher, launcher_bytes, 0o700)
+                launcher_changed = True
                 print(
-                    f"[Bees remote] updated copied launcher in place: {launcher_path}",
+                    f"[Bees remote] updated managed launcher: {managed_launcher}",
                     flush=True,
                 )
+
+            external_launcher = self._external_launcher_path()
+            if (
+                external_launcher is not None
+                and external_launcher != managed_launcher
+            ):
+                external_changed = (
+                    not external_launcher.is_file()
+                    or _sha256_file(external_launcher) != launcher_sha
+                )
+                if external_changed:
+                    _atomic_bytes(external_launcher, launcher_bytes, 0o700)
+                    launcher_changed = True
+                    print(
+                        "[Bees remote] updated copied launcher in place: "
+                        f"{external_launcher}",
+                        flush=True,
+                    )
+
+            if managed_launcher_changed:
+                self._adopt_managed_launcher(managed_launcher)
 
         _atomic_bytes(Path(self.args.worker_token_file).expanduser().resolve(), worker_token)
         _atomic_bytes(Path(self.args.wan_token_file).expanduser().resolve(), wan_token)
