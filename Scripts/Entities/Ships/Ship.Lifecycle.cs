@@ -187,7 +187,7 @@ namespace Assets.Scripts.Entities.Ships
             SetupCore(level, fleetShip, squad, offsetFromCenter, 0, false);
         }
 
-        public void SetupReplica(
+        public bool SetupReplica(
             Level level,
             FleetShip fleetShip,
             Squad squad,
@@ -202,8 +202,7 @@ namespace Assets.Scripts.Entities.Ships
                 matchSession.Phase != MatchSessionPhase.Battle ||
                 !matchSession.ReserveReplicaMatchShipId(authoritativeMatchShipId))
             {
-                throw new InvalidOperationException(
-                    "Replica ship setup requires an active non-authoritative match and a valid authority ship id.");
+                return false;
             }
 
             SetupCore(
@@ -213,6 +212,7 @@ namespace Assets.Scripts.Entities.Ships
                 offsetFromCenter,
                 authoritativeMatchShipId,
                 true);
+            return true;
         }
 
         private void SetupCore(

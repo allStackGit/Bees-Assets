@@ -2333,5 +2333,76 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains("squad.Side != ship.Side", source);
             StringAssert.Contains("ship.IsDead", source);
         }
+
+        [Test]
+        public void ReplicaLifecycleCreatesMissingNormalSquadsAndShipsFromAuthorityMetadata()
+        {
+            string commandPath = Path.Combine(
+                Application.dataPath,
+                "Scripts",
+                "Levels",
+                "GameState.Commands.cs");
+            string squadPath = Path.Combine(
+                Application.dataPath,
+                "Scripts",
+                "Levels",
+                "Squad.cs");
+            string shipPath = Path.Combine(
+                Application.dataPath,
+                "Scripts",
+                "Entities",
+                "Ships",
+                "Ship.Lifecycle.cs");
+            string commandSource = File.ReadAllText(commandPath);
+            string squadSource = File.ReadAllText(squadPath);
+            string shipSource = File.ReadAllText(shipPath);
+
+            StringAssert.Contains("TryReconcileReplicaLifecycle(snapshot)", commandSource);
+            StringAssert.Contains("TryEnsureReplicaSquad(", commandSource);
+            StringAssert.Contains("TryEnsureReplicaShip(", commandSource);
+            StringAssert.Contains("new SquadStatBlock(", commandSource);
+            StringAssert.Contains("new FleetShip(", commandSource);
+            StringAssert.Contains("squad.SetupReplica(", commandSource);
+            StringAssert.Contains("ship.SetupReplica(", commandSource);
+            StringAssert.Contains("public bool SetupReplica(", squadSource);
+            StringAssert.Contains("public bool SetupReplica(", shipSource);
+        }
+
+        [Test]
+        public void ReplicaLifecycleKeepsCarrierChildCreationFailClosed()
+        {
+            string path = Path.Combine(
+                Application.dataPath,
+                "Scripts",
+                "Levels",
+                "GameState.Commands.cs");
+            string source = File.ReadAllText(path);
+
+            StringAssert.Contains("if (state.IsCarrierSquad)", source);
+            StringAssert.Contains("if (state.IsCarrierShip ||", source);
+            StringAssert.Contains("Carrier squads require their live Carrier parent/type relationship", source);
+        }
+
+        [Test]
+        public void ReplicaSquadSetupCancelsAutonomousCommandAndChaseActivity()
+        {
+            string path = Path.Combine(
+                Application.dataPath,
+                "Scripts",
+                "Levels",
+                "Squad.cs");
+            string source = File.ReadAllText(path);
+            int start = source.IndexOf("public bool SetupReplica(");
+            int end = source.IndexOf("public void SetSquadCeaseFire(", start);
+            Assert.That(start, Is.GreaterThanOrEqualTo(0));
+            Assert.That(end, Is.GreaterThan(start));
+            string replicaSetup = source.Substring(start, end - start);
+
+            StringAssert.Contains("ReserveReplicaMatchSquadId", replicaSetup);
+            StringAssert.Contains("Level.CancelTimer(_checkChaseTimer);", replicaSetup);
+            StringAssert.Contains("CancelScriptedCommandQueue();", replicaSetup);
+            StringAssert.Contains("SetCommandNull();", replicaSetup);
+            StringAssert.Contains("enabled = false;", replicaSetup);
+        }
     }
 }

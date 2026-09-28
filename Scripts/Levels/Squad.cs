@@ -457,6 +457,61 @@ namespace Assets.Scripts.Levels
             }
         }
 
+        public bool SetupReplica(
+            Level level,
+            SavedSquad savedSquad,
+            ConfigData.ShootingStrategyTypes shootingStrategy,
+            bool ceaseFire,
+            bool isMatchingSpeed,
+            bool shouldChase,
+            bool isImmobile,
+            long id,
+            int side,
+            int squadNumber,
+            string name,
+            Color color,
+            long authoritativeMatchSquadId,
+            int ownerPlayerId,
+            bool isMinionSquad)
+        {
+            MatchSession matchSession = level != null && level.Stage != null
+                ? level.Stage.MatchSession
+                : null;
+            if (matchSession == null ||
+                matchSession.IsLocalAuthority ||
+                matchSession.Phase != MatchSessionPhase.Battle ||
+                ownerPlayerId < MatchSession.UnownedPlayerId ||
+                (ownerPlayerId != MatchSession.UnownedPlayerId &&
+                 matchSession.GetPlayerSide(ownerPlayerId) != side) ||
+                !matchSession.ReserveReplicaMatchSquadId(authoritativeMatchSquadId))
+            {
+                return false;
+            }
+
+            Setup(
+                level,
+                savedSquad,
+                shootingStrategy,
+                ceaseFire,
+                isMatchingSpeed,
+                shouldChase,
+                isImmobile,
+                id,
+                side,
+                squadNumber,
+                name,
+                color);
+
+            MatchSquadId = authoritativeMatchSquadId;
+            IsMinionSquad = isMinionSquad;
+            SetOwnerPlayerId(ownerPlayerId);
+            Level.CancelTimer(_checkChaseTimer);
+            CancelScriptedCommandQueue();
+            SetCommandNull();
+            enabled = false;
+            return true;
+        }
+
         public void SetSquadCeaseFire(bool ceasefire)
         {
             CeaseFire = ceasefire;

@@ -1,3 +1,4 @@
+using Assets.Scripts.Data;
 using System;
 using System.Collections.Generic;
 using System.Text;
@@ -194,35 +195,13 @@ namespace Assets.Scripts.Levels
                 return false;
             }
 
-            HashSet<long> authoritativeShipIds = new HashSet<long>();
-            for (int i = 0; i < snapshot.Ships.Count; i++)
+            if (!TryReconcileReplicaLifecycle(snapshot))
             {
-                authoritativeShipIds.Add(snapshot.Ships[i].MatchShipId);
+                return false;
             }
 
-            List<Ship> shipsToDespawn = null;
-            foreach (KeyValuePair<long, Ship> localShip in ShipsByMatchId)
-            {
-                if (!authoritativeShipIds.Contains(localShip.Key))
-                {
-                    shipsToDespawn ??= new List<Ship>();
-                    shipsToDespawn.Add(localShip.Value);
-                }
-            }
-
-            if (shipsToDespawn != null)
-            {
-                for (int i = 0; i < shipsToDespawn.Count; i++)
-                {
-                    Ship ship = shipsToDespawn[i];
-                    if (ship != null && !ship.IsDead)
-                    {
-                        ship.ReplicaDespawn();
-                    }
-                }
-            }
-
-            if (snapshot.Ships.Count != ShipsByMatchId.Count)
+            if (snapshot.Squads.Count != SquadsByMatchId.Count ||
+                snapshot.Ships.Count != ShipsByMatchId.Count)
             {
                 return false;
             }
@@ -270,6 +249,223 @@ namespace Assets.Scripts.Levels
             }
 
             _lastAppliedBattleStateSequence = snapshot.Sequence;
+            return true;
+        }
+
+        private bool TryReconcileReplicaLifecycle(BattleStateSnapshot snapshot)
+        {
+            HashSet<long> authoritativeShipIds = new HashSet<long>();
+            for (int i = 0; i < snapshot.Ships.Count; i++)
+            {
+                authoritativeShipIds.Add(snapshot.Ships[i].MatchShipId);
+            }
+
+            List<Ship> shipsToDespawn = null;
+            foreach (KeyValuePair<long, Ship> localShip in ShipsByMatchId)
+            {
+                if (!authoritativeShipIds.Contains(localShip.Key))
+                {
+                    shipsToDespawn ??= new List<Ship>();
+                    shipsToDespawn.Add(localShip.Value);
+                }
+            }
+
+            if (shipsToDespawn != null)
+            {
+                for (int i = 0; i < shipsToDespawn.Count; i++)
+                {
+                    Ship ship = shipsToDespawn[i];
+                    if (ship != null && !ship.IsDead)
+                    {
+                        ship.ReplicaDespawn();
+                    }
+                }
+            }
+
+            HashSet<long> authoritativeSquadIds = new HashSet<long>();
+            for (int i = 0; i < snapshot.Squads.Count; i++)
+            {
+                authoritativeSquadIds.Add(snapshot.Squads[i].MatchSquadId);
+            }
+
+            List<Squad> squadsToDespawn = null;
+            foreach (KeyValuePair<long, Squad> localSquad in SquadsByMatchId)
+            {
+                if (!authoritativeSquadIds.Contains(localSquad.Key))
+                {
+                    if (localSquad.Value != null &&
+                        localSquad.Value.GetShips().Count > 0)
+                    {
+                        return false;
+                    }
+
+                    squadsToDespawn ??= new List<Squad>();
+                    squadsToDespawn.Add(localSquad.Value);
+                }
+            }
+
+            if (squadsToDespawn != null)
+            {
+                for (int i = 0; i < squadsToDespawn.Count; i++)
+                {
+                    Squad squad = squadsToDespawn[i];
+                    if (squad != null && !squad.IsDead)
+                    {
+                        squad.ReplicaDespawn();
+                    }
+                }
+            }
+
+            for (int i = 0; i < snapshot.Squads.Count; i++)
+            {
+                if (!TryEnsureReplicaSquad(snapshot.Squads[i]))
+                {
+                    return false;
+                }
+            }
+
+            for (int i = 0; i < snapshot.Ships.Count; i++)
+            {
+                if (!TryEnsureReplicaShip(snapshot.Ships[i]))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private bool TryEnsureReplicaSquad(BattleSquadStateSnapshot state)
+        {
+            if (SquadsByMatchId.TryGetValue(state.MatchSquadId, out Squad existing))
+            {
+                return existing != null &&
+                       !existing.IsDead &&
+                       existing.Side == state.Side &&
+                       existing.OwnerPlayerId == state.OwnerPlayerId &&
+                       existing.IsMinionSquad == state.IsMinionSquad &&
+                       existing.IsCarrierSquad == state.IsCarrierSquad;
+            }
+
+            if (state.IsCarrierSquad)
+            {
+                // Carrier squads require their live Carrier parent/type relationship. Initial
+                // carrier squads should already exist from deterministic level setup; dynamic
+                // carrier-squad creation remains fail-closed until that relationship is on wire.
+                return false;
+            }
+
+            MatchSession matchSession = Stage != null ? Stage.MatchSession : null;
+            if (matchSession == null ||
+                matchSession.IsLocalAuthority ||
+                (state.OwnerPlayerId != MatchSession.UnownedPlayerId &&
+                 matchSession.GetPlayerSide(state.OwnerPlayerId) != state.Side))
+            {
+                return false;
+            }
+
+            SavedSquad savedSquad = new SavedSquad(
+                -state.MatchSquadId,
+                state.Side,
+                state.Name,
+                Vector2.zero,
+                state.CeaseFire,
+                state.IsMatchingSpeed,
+                (ConfigData.ShootingStrategyTypes)state.ShootingStrategy,
+                new Color(state.ColorR, state.ColorG, state.ColorB, state.ColorA),
+                new SquadStatBlock(
+                    "Multiplayer Replica",
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0));
+
+            Squad squad = Stage.Pool.GetSquadFromPool();
+            if (squad == null ||
+                !squad.SetupReplica(
+                    Level,
+                    savedSquad,
+                    (ConfigData.ShootingStrategyTypes)state.ShootingStrategy,
+                    state.CeaseFire,
+                    state.IsMatchingSpeed,
+                    state.ShouldChase,
+                    state.IsImmobile,
+                    -state.MatchSquadId,
+                    state.Side,
+                    state.SquadNumber,
+                    state.Name,
+                    new Color(state.ColorR, state.ColorG, state.ColorB, state.ColorA),
+                    state.MatchSquadId,
+                    state.OwnerPlayerId,
+                    state.IsMinionSquad))
+            {
+                return false;
+            }
+
+            Level.State.AddSquad(squad);
+            return true;
+        }
+
+        private bool TryEnsureReplicaShip(BattleShipStateSnapshot state)
+        {
+            if (ShipsByMatchId.TryGetValue(state.MatchShipId, out Ship existing))
+            {
+                return existing != null &&
+                       !existing.IsDead &&
+                       existing.Squad != null &&
+                       existing.Squad.MatchSquadId == state.MatchSquadId &&
+                       existing.Side == state.Side &&
+                       (int)existing.ShipType == state.ShipType;
+            }
+
+            if (state.IsCarrierShip ||
+                !SquadsByMatchId.TryGetValue(state.MatchSquadId, out Squad squad) ||
+                squad == null ||
+                squad.IsDead)
+            {
+                return false;
+            }
+
+            ConfigData.ShipTypes shipType = (ConfigData.ShipTypes)state.ShipType;
+            Ship ship = Level.LevelConstructor.InstantiateShip(shipType);
+            if (ship == null)
+            {
+                return false;
+            }
+
+            ship.IsMinionShip = state.IsMinionShip;
+            ship.IsCarrierShip = false;
+            FleetShip fleetShip = new FleetShip(
+                -state.MatchShipId,
+                shipType,
+                false,
+                false,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                $"Multiplayer Replica {state.MatchShipId}");
+
+            if (!ship.SetupReplica(
+                    Level,
+                    fleetShip,
+                    squad,
+                    new Vector2(state.OffsetX, state.OffsetY),
+                    state.MatchShipId))
+            {
+                ship.Deactivate();
+                Stage.Pool.ReturnShipToPool(ship);
+                return false;
+            }
+
+            ship.IsMinionShip = state.IsMinionShip;
+            squad.AddShip(ship);
+            ship.SetColor();
             return true;
         }
 
