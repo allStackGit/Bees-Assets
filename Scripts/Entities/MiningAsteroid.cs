@@ -10,6 +10,7 @@ namespace Assets.Scripts.Entities
 {
     public class MiningAsteroid : Obstacle
     {
+        public long MatchMiningAsteroidId;
         public List<Squad> SquadsMining = new List<Squad>();
         public override void Setup(Level level)
         {
@@ -19,6 +20,7 @@ namespace Assets.Scripts.Entities
         public void Setup(Level level, bool useDeterministicSetupRandom)
         {
             base.Setup(level);
+            MatchMiningAsteroidId = Level.State.AllocateMatchMiningAsteroidId();
             transform.parent = Level.Map.Transform;
             transform.localPosition = useDeterministicSetupRandom
                 ? Level.SetupRandomCoordinate(
@@ -31,11 +33,12 @@ namespace Assets.Scripts.Entities
                     Level.MiningAsteroidSpawnDistance,
                     Vector2.zero);
             Level.State.AddObstacle(this);
-            Level.State.MiningAsteroids.Add(this);
+            Level.State.AddMiningAsteroid(this);
         }
         public override void ClearData()
         {
             base.ClearData();
+            MatchMiningAsteroidId = 0;
             SquadsMining.Clear();
         }
         protected void OnTriggerEnter2D(Collider2D collider)
@@ -95,7 +98,7 @@ namespace Assets.Scripts.Entities
                 }
                 Level.State.ForgetHiveMindMiningAsteroid(this);
                 Level.State.RemoveObstacle(this);
-                Level.State.MiningAsteroids.Remove(this);
+                Level.State.RemoveMiningAsteroid(this);
                 Level.State.MiningAsteroidsToRelease.Add(this);
                 gameObject.SetActive(false);
             }

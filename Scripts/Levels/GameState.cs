@@ -24,6 +24,9 @@ namespace Assets.Scripts.Levels
         public Dictionary<long, Ship> ShipsById = new Dictionary<long, Ship>();
         public Dictionary<long, Ship> ShipsByMatchId = new Dictionary<long, Ship>();
         public Dictionary<long, Squad> SquadsByMatchId = new Dictionary<long, Squad>();
+        public Dictionary<long, MiningAsteroid> MiningAsteroidsByMatchId =
+            new Dictionary<long, MiningAsteroid>();
+        private long _nextMatchMiningAsteroidId = 1;
         public List<Squad> Squads = new List<Squad>();
         public List<Squad> SquadsToRelease = new List<Squad>();
         public Queue<Squad> SquadsAwaitingCommands = new Queue<Squad>();
@@ -208,6 +211,8 @@ namespace Assets.Scripts.Levels
             ShipsById.Clear();
             ShipsByMatchId.Clear();
             SquadsByMatchId.Clear();
+            MiningAsteroidsByMatchId.Clear();
+            _nextMatchMiningAsteroidId = 1;
             Squads.Clear();
             ClearSquadsAwaitingHiveMindCommands();
             ClearQueuedPlayerCommands();

@@ -2721,5 +2721,43 @@ namespace Bees.Tests.EditMode
             StringAssert.DoesNotContain("squad.MatchSpeed(", source);
             StringAssert.DoesNotContain("squad.SetShootingStrategy(", source);
         }
+
+        [Test]
+        public void MiningAsteroidsUseDedicatedMatchScopedRegistry()
+        {
+            string statePath = Path.Combine(
+                Application.dataPath,
+                "Scripts",
+                "Levels",
+                "GameState.cs");
+            string registryPath = Path.Combine(
+                Application.dataPath,
+                "Scripts",
+                "Levels",
+                "GameState.Registry.cs");
+            string asteroidPath = Path.Combine(
+                Application.dataPath,
+                "Scripts",
+                "Entities",
+                "MiningAsteroid.cs");
+            string stateSource = File.ReadAllText(statePath);
+            string registrySource = File.ReadAllText(registryPath);
+            string asteroidSource = File.ReadAllText(asteroidPath);
+
+            StringAssert.Contains(
+                "Dictionary<long, MiningAsteroid> MiningAsteroidsByMatchId",
+                stateSource);
+            StringAssert.Contains("_nextMatchMiningAsteroidId = 1;", stateSource);
+            StringAssert.Contains("AllocateMatchMiningAsteroidId()", registrySource);
+            StringAssert.Contains("Duplicate match mining asteroid id", registrySource);
+            StringAssert.Contains("MiningAsteroidsByMatchId.Remove", registrySource);
+            StringAssert.Contains("public long MatchMiningAsteroidId;", asteroidSource);
+            StringAssert.Contains(
+                "Level.State.AddMiningAsteroid(this);",
+                asteroidSource);
+            StringAssert.Contains(
+                "Level.State.RemoveMiningAsteroid(this);",
+                asteroidSource);
+        }
     }
 }

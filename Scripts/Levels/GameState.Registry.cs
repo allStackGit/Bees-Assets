@@ -143,6 +143,42 @@ namespace Assets.Scripts.Levels
             Projectiles.Remove(projectile);
         }
 
+        public long AllocateMatchMiningAsteroidId()
+        {
+            return _nextMatchMiningAsteroidId++;
+        }
+
+        public void AddMiningAsteroid(MiningAsteroid asteroid)
+        {
+            if (asteroid == null || asteroid.MatchMiningAsteroidId <= 0)
+            {
+                throw new System.InvalidOperationException(
+                    "Mining asteroid requires a positive match-scoped identity before registration.");
+            }
+            if (MiningAsteroidsByMatchId.ContainsKey(asteroid.MatchMiningAsteroidId))
+            {
+                throw new System.InvalidOperationException(
+                    $"Duplicate match mining asteroid id #{asteroid.MatchMiningAsteroidId} in level #{MatchLevelId}.");
+            }
+
+            MiningAsteroids.Add(asteroid);
+            MiningAsteroidsByMatchId.Add(asteroid.MatchMiningAsteroidId, asteroid);
+        }
+
+        public void RemoveMiningAsteroid(MiningAsteroid asteroid)
+        {
+            if (asteroid == null)
+            {
+                return;
+            }
+
+            MiningAsteroids.Remove(asteroid);
+            if (asteroid.MatchMiningAsteroidId > 0)
+            {
+                MiningAsteroidsByMatchId.Remove(asteroid.MatchMiningAsteroidId);
+            }
+        }
+
         public void AddObstacle(Obstacle obstacle)
         {
             Obstacles.Add(obstacle);
