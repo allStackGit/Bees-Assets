@@ -171,6 +171,12 @@ function statusError(record) {
         return (ageSeconds / 3600).toFixed(1) + 'h';
     };
     const historical = [];
+    const recordAgeSeconds = Number(record.age_seconds);
+    const snapshotLagSeconds = (
+        Number.isFinite(recordAgeSeconds) && recordAgeSeconds >= 0
+            ? recordAgeSeconds
+            : 0
+    );
     const metrics = record.metrics && typeof record.metrics === 'object'
         ? record.metrics
         : {};
@@ -180,7 +186,7 @@ function statusError(record) {
         const phase = String(reconciliation.phase || '').trim();
         const seconds = Number(reconciliation.seconds_in_phase);
         if (phase && Number.isFinite(seconds) && seconds >= 0) {
-            return 'Reconcile, ' + ageLabel(seconds) + ': ' + phase;
+            return 'Reconcile, ' + ageLabel(seconds + snapshotLagSeconds) + ': ' + phase;
         }
     }
 
@@ -205,10 +211,11 @@ function statusError(record) {
             failureType &&
             failureType !== 'BrokerStaleActor'
         ) {
+            const effectiveAgeSeconds = ageSeconds + snapshotLagSeconds;
             historical.push({
-                ageSeconds,
+                ageSeconds: effectiveAgeSeconds,
                 text: 'WAN failures ' + count + ' total, last ' +
-                    ageLabel(ageSeconds) + ' ago: ' + failureType +
+                    ageLabel(effectiveAgeSeconds) + ' ago: ' + failureType +
                     (failureMessage ? ': ' + failureMessage : ''),
             });
         }
@@ -226,9 +233,10 @@ function statusError(record) {
             ageSeconds >= 0 &&
             failureType
         ) {
+            const effectiveAgeSeconds = ageSeconds + snapshotLagSeconds;
             historical.push({
-                ageSeconds,
-                text: 'Control x' + count + ', ' + ageLabel(ageSeconds) +
+                ageSeconds: effectiveAgeSeconds,
+                text: 'Control x' + count + ', ' + ageLabel(effectiveAgeSeconds) +
                     ' ago: ' + failureType,
             });
         }
