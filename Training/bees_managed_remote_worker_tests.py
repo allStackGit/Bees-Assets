@@ -132,6 +132,22 @@ class WorkerControlRetryTests(unittest.TestCase):
 
 
 class WorkerTrafficMetricsTests(unittest.TestCase):
+    def test_reconciliation_metrics_use_desired_run_before_child_launch(self):
+        self.assertEqual(
+            worker_agent.effective_metrics_run_id(
+                {"run_id": "run-current"},
+                "",
+            ),
+            "run-current",
+        )
+        self.assertEqual(
+            worker_agent.effective_metrics_run_id(
+                {"run_id": ""},
+                "run-managed",
+            ),
+            "run-managed",
+        )
+
     def test_persisted_network_totals_fill_session_gap_for_same_run(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
