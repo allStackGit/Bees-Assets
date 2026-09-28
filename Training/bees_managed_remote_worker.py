@@ -1351,9 +1351,10 @@ def _broker_session_available(args: argparse.Namespace) -> bool:
             headers={"Authorization": "Bearer " + token},
         )
         with urllib.request.urlopen(request, timeout=2.0) as response:
-            # The session payload is binary and owned by the WAN protocol. For transport
-            # supervision we only need an authenticated successful response.
-            response.read(1)
+            # The session payload is binary and owned by the WAN protocol. Consume the small
+            # response fully so the broker does not see an intentional early-close/broken pipe;
+            # transport supervision only cares that the authenticated request completed.
+            response.read()
             return int(getattr(response, "status", 200)) == 200
     except (
         OSError,
