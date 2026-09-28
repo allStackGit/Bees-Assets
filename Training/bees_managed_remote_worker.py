@@ -1938,5 +1938,22 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         sys.stderr = original_stderr
 
 
+def _run_with_crash_recovery() -> int:
+    while True:
+        try:
+            return main()
+        except KeyboardInterrupt:
+            return 130
+        except Exception as exc:
+            print(
+                "[Bees remote] supervisor encountered an unexpected runtime failure: "
+                f"{type(exc).__name__}: {exc}; restarting in "
+                f"{DEFAULT_RECONNECT_SECONDS:.1f}s.",
+                file=sys.stderr,
+                flush=True,
+            )
+            time.sleep(DEFAULT_RECONNECT_SECONDS)
+
+
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(_run_with_crash_recovery())
