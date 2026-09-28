@@ -370,6 +370,10 @@ class TrainingEnvOptimizer {
                 processState !== 'running' &&
                 !expectedStarting) ||
             Boolean(reportedError);
+        const probeRollbackPending =
+            this.activeProbeTrainerId === state.trainer_id &&
+            state.baseline_envs !== null &&
+            capacity.current_envs !== state.baseline_envs;
         const workerUnstable = currentProcessFailure || recentSessionFailure;
         if (workerUnstable) {
             const useSessionFailureTime = recentSessionFailure && !currentProcessFailure;
@@ -390,7 +394,7 @@ class TrainingEnvOptimizer {
                 state.instability_hold_until_ms,
                 holdUntil,
             );
-            if (probingAwayFromBaseline) {
+            if (probingAwayFromBaseline || probeRollbackPending) {
                 this._abortProbe(
                     state,
                     capacity,
