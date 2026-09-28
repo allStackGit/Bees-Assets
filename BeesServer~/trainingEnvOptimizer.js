@@ -431,7 +431,9 @@ class TrainingEnvOptimizer {
                     timestamp,
                     reportedError
                         ? 'probe worker reported an error'
-                        : 'probe process is not running',
+                        : recentSessionFailure
+                            ? 'probe WAN actor session failed'
+                            : 'probe process is not running',
                 );
                 return this.snapshot(record.trainer_id);
             }
