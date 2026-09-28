@@ -589,7 +589,7 @@ class ActorFailureDiagnosticsTests(unittest.TestCase):
         telemetry = actor_worker._SessionFailureTelemetry()
         with mock.patch.object(
             actor_worker.time,
-            "monotonic",
+            "time",
             side_effect=[100.0, 107.5],
         ):
             telemetry.record(IndexError("bad action batch"))
