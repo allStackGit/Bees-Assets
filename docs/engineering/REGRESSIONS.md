@@ -1200,3 +1200,12 @@ Manual-only protection is acceptable only when the record explains why determini
 **Fix:** enforce the same 64 MiB per-file limit as the worker uploader; clients may reset an oversized legacy file at offset zero, but appends beyond the cap are rejected with HTTP 413.
 **Test classification:** existing verified-offset append/reset coverage remains valid; a boundary/overflow case is missing and was not added under the static code-analysis-only request.
 **Verification:** statically traced the server's 1 MiB chunk bound, accumulated-size check, offset/reset branches, and the worker's 64 MiB upload limit. No tests or runtime checks were run.
+
+### REG-138 — Oversized request bodies lost their 413 response
+**Area:** `BeesServer~/trainingControl.js`, JSON and raw HTTP request body readers
+**Symptom:** A request exceeding the body limit could have its socket destroyed before the handler's HTTP 413 response was delivered, leaving clients with a connection reset instead of the documented size error.
+**Root cause:** Both readers called `request.destroy()` immediately after detecting overflow; the async route catch then attempted to write an error response on the same connection.
+**Fix:** On first overflow, readers stop retaining chunks, mark the request rejected, and pause input. The handler sends a 413 with `Connection: close`, then destroys the request after the response ends. Other errors keep the existing response path.
+**Permanent protection:** Both readers must remain bounded, reject once, and avoid destroying the socket before the oversized-body response is sent. An over-limit HTTP regression should assert status 413 and connection closure for both JSON and raw-body routes; it was not added under the static code-analysis-only request.
+**Verification:** Statically traced the overflow event, promise rejection, handler catch, response headers/body, and post-response request destruction for both readers. No tests, builds, services, or runtime checks were run.
+**Invariant/knowledge:** HTTP request rejection should preserve the intended client-visible status when the connection can still carry an error response; close the connection only after that response is ended.
