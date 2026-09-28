@@ -1381,3 +1381,12 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** `Training/bees_wan_actor_training_tests.py` covers malformed upload rejection, per-actor queue backpressure, and successful admission lease renewal. The test was added but not executed under the static-only audit scope.
 **Verification:** Static review confirmed rejected validation and backpressure paths return before the lease touch, while successful queue insertion renews the lease under the broker condition. No tests, builds, Unity, or runtime checks were run.
 **Invariant/knowledge:** Actor liveness reflects a valid admitted trajectory or a separate valid heartbeat; rejected upload attempts do not extend a lease.
+
+### REG-158 — Preserve collected WAN actor trajectories during orderly stop
+**Area:** `Training/bees_wan_actor_worker.py`; base WAN actor shutdown
+**Symptom:** If stop arrived after ML-Agents completed and collected trajectories but before the actor queued them for upload, the `while not stop` guard abandoned those already-complete batches. The uploader's bounded drain then could not see them.
+**Root cause:** Stop was checked as a condition for beginning each upload-queue admission, even though shutdown subsequently performs a bounded queue drain.
+**Fix:** On orderly stop, continue queueing already-collected batches under the existing finite drain deadline. Policy/state synchronization is skipped during stop; broker epoch validation remains authoritative and rejects stale batches.
+**Permanent protection:** `Training/bees_wan_actor_training_tests.py` covers stop arriving after trajectory collection and verifies that the completed batch enters the queue with a drain deadline. The test was added but not executed under the static-only scope.
+**Verification:** Static review confirmed stop-triggered queueing uses the same `ACTOR_SHUTDOWN_UPLOAD_DRAIN_SECONDS` budget and preserves session-change/stale-actor exits. No tests, builds, Unity, or runtime checks were run.
+**Invariant/knowledge:** Graceful shutdown should preserve completed trajectories already collected by the actor, while bounding time spent waiting for upload queue capacity.
