@@ -94,6 +94,41 @@ def _deployment_manifest(store: ContinualLearningStore, deployment_id: str) -> M
         ) from exc
     if not isinstance(value, dict):
         raise ValidationError(f"Deployment manifest for {deployment_id} must be an object.")
+    if value.get("schema_version") != 1:
+        raise ValidationError(f"Deployment manifest for {deployment_id} has an unsupported schema.")
+    identity = value.get("identity")
+    identity_sha256 = value.get("identity_sha256")
+    if (
+        not isinstance(identity, dict)
+        or not isinstance(identity_sha256, str)
+        or not _SHA256.fullmatch(identity_sha256)
+        or sha256_bytes(canonical_json(identity).encode("utf-8")) != identity_sha256
+        or deployment_id != f"deploy-{identity_sha256[:24]}"
+    ):
+        raise ValidationError(f"Deployment manifest identity is invalid for {deployment_id}.")
+    if value.get("model_file") != "model.onnx":
+        raise ValidationError(f"Deployment manifest model path is invalid for {deployment_id}.")
+    model_path = path.parent / "model.onnx"
+    try:
+        resolved_package = path.parent.resolve()
+        resolved_model = model_path.resolve(strict=True)
+        model_stat = resolved_model.stat()
+    except OSError as exc:
+        raise ValidationError(f"Deployment model file is missing for {deployment_id}.") from exc
+    if resolved_model.parent != resolved_package or not resolved_model.is_file():
+        raise ValidationError(f"Deployment model file escapes its package for {deployment_id}.")
+    expected_model_hash = identity.get("model_sha256")
+    expected_model_size = identity.get("model_size_bytes")
+    if (
+        not isinstance(expected_model_hash, str)
+        or not _SHA256.fullmatch(expected_model_hash)
+        or not isinstance(expected_model_size, int)
+        or isinstance(expected_model_size, bool)
+        or expected_model_size <= 0
+        or model_stat.st_size != expected_model_size
+        or sha256_file(resolved_model) != expected_model_hash
+    ):
+        raise ValidationError(f"Deployment model bytes do not match its identity for {deployment_id}.")
     return value
 
 
