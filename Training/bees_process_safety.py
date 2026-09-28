@@ -24,6 +24,7 @@ from typing import Any, Mapping, MutableMapping, Optional, Sequence
 HEALTH_FILE_ENV = "BEES_TRAINING_CHILD_HEALTH_FILE"
 HEALTH_TOKEN_ENV = "BEES_TRAINING_CHILD_HEALTH_TOKEN"
 VALID_HEALTH_STATES = frozenset(("starting", "ready", "error"))
+OWNED_CHILD_TERMINATION_GRACE_SECONDS = 10.0
 MANAGED_HEALTH_FUTURE_CLOCK_SKEW_SECONDS = 5.0
 ATOMIC_REPLACE_RETRY_DELAYS = (0.01, 0.025, 0.05, 0.1, 0.2, 0.4)
 
@@ -159,6 +160,37 @@ def _owned_child_main(argv: Sequence[str]) -> int:
     if not command:
         raise SystemExit("owned-child invocation requires a command")
 
+    child: Optional[subprocess.Popen] = None
+    termination_started: Optional[float] = None
+    child_group_kill_sent = False
+    interrupt_requested = False
+
+    def signal_child_group(signal_number: int) -> None:
+        if child is None:
+            return
+        try:
+            os.killpg(child.pid, signal_number)
+        except ProcessLookupError:
+            pass
+
+    def owner_terminated(_signum, _frame) -> None:
+        nonlocal termination_started
+        if termination_started is None:
+            termination_started = time.monotonic()
+            signal_child_group(signal.SIGTERM)
+
+    def owner_interrupted(_signum, _frame) -> None:
+        nonlocal interrupt_requested
+        if child is None:
+            interrupt_requested = True
+            return
+        signal_child_group(signal.SIGINT)
+
+    # Keep this process as the owner guardian instead of execing the learner. The learner runs in
+    # its own process group so its ML-Agents environment workers can be stopped as one unit.
+    signal.signal(signal.SIGTERM, owner_terminated)
+    signal.signal(signal.SIGINT, owner_interrupted)
+
     libc = ctypes.CDLL(None, use_errno=True)
     pr_set_pdeathsig = 1
     if libc.prctl(pr_set_pdeathsig, int(signal.SIGTERM), 0, 0, 0) != 0:
@@ -167,8 +199,64 @@ def _owned_child_main(argv: Sequence[str]) -> int:
     # Close the race where the owner dies between spawn and PR_SET_PDEATHSIG.
     if os.getppid() != parent_pid:
         return 74
-    os.execvpe(command[0], command, os.environ)
-    return 127
+
+    child = subprocess.Popen(
+        command,
+        close_fds=False,
+        start_new_session=True,
+    )
+    if termination_started is not None:
+        signal_child_group(signal.SIGTERM)
+    if interrupt_requested:
+        signal_child_group(signal.SIGINT)
+
+    while True:
+        try:
+            return_code = child.wait(timeout=0.25)
+            break
+        except subprocess.TimeoutExpired:
+            if (
+                termination_started is not None
+                and not child_group_kill_sent
+                and time.monotonic() - termination_started >= OWNED_CHILD_TERMINATION_GRACE_SECONDS
+            ):
+                signal_child_group(signal.SIGKILL)
+                child_group_kill_sent = True
+
+    # A learner may exit while one of its environment workers remains alive. Retire any such
+    # descendants before reporting that the owned launch has finished.
+    try:
+        os.killpg(child.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        # No descendants remain, but still preserve the learner's signal exit below.
+        pass
+
+    deadline = time.monotonic() + 0.25
+    while time.monotonic() < deadline:
+        try:
+            os.killpg(child.pid, 0)
+        except ProcessLookupError:
+            break
+        except PermissionError:
+            pass
+        time.sleep(0.025)
+    else:
+        try:
+            os.killpg(child.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+
+    if return_code < 0:
+        child_signal = -return_code
+        try:
+            if child_signal not in (signal.SIGKILL, signal.SIGSTOP):
+                signal.signal(child_signal, signal.SIG_DFL)
+            os.kill(os.getpid(), child_signal)
+        except OSError:
+            # Preserve the usual shell status if the signal cannot be redelivered.
+            return min(255, 128 + child_signal)
+
+    return return_code
 
 
 def _windows_kill_job() -> int:
