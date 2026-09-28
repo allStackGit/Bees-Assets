@@ -20,6 +20,8 @@ Static-only repository audit on `rl/initial-design-work`. This ledger is the cur
 
 - REG-164 prevents numeric strings and fractional values from silently changing the per-contributor cap used by telemetry curation. The curation boundary now requires an exact positive integer before selection validation. Static review only; no tests or runtime checks were run. Post-fix clean-pass count remains **0 / 2**.
 
+- REG-165 rejects arbitrarily large JSON integers through a controlled validation error instead of leaking `OverflowError` from float conversion during telemetry or evaluation validation. Static review only; no tests or runtime checks were run. Post-fix clean-pass count remains **0 / 2**.
+
 - REG-159 aligns `RL_DESIGN.md` with executable ABI v20 and the current trainer YAML: 7,614 observations, 16 continuous actions, five weapon-fire branches plus one special branch, five weapon slots, and a 128x3 network. Static read-back found no stale ABI v6 dimensions or target branches. No tests run.
 
 - REG-158 prevents an orderly stop from dropping already-collected base WAN actor trajectories before they enter the bounded upload drain. The actor now admits those batches only until the existing shutdown deadline. Regression coverage was added but not run. Static source review only; clean post-fix pass count remains **0 / 2**.
