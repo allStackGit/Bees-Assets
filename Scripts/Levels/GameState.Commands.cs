@@ -380,11 +380,13 @@ namespace Assets.Scripts.Levels
                 return false;
             }
 
+            HashSet<long> authorityIds = new HashSet<long>();
             for (int i = 0; i < snapshot.MiningAsteroids.Count; i++)
             {
                 BattleMiningAsteroidStateSnapshot state = snapshot.MiningAsteroids[i];
                 if (state == null ||
                     state.MatchMiningAsteroidId <= 0 ||
+                    !authorityIds.Add(state.MatchMiningAsteroidId) ||
                     state.Health <= 0 ||
                     !MiningAsteroidsByMatchId.TryGetValue(
                         state.MatchMiningAsteroidId,

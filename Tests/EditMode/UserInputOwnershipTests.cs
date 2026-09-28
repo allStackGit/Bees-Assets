@@ -2459,7 +2459,7 @@ namespace Bees.Tests.EditMode
                 "GameState.Commands.cs");
             string source = File.ReadAllText(path);
 
-            StringAssert.Contains("public const int Version = 5;", source);
+            StringAssert.Contains("public const int Version = 6;", source);
             StringAssert.Contains("ParentCarrierMatchShipId", source);
             StringAssert.Contains("CarrierSquadType", source);
             StringAssert.Contains("Utilities.ConvertShipTypeToSide.TryGetValue(", source);
@@ -2645,7 +2645,7 @@ namespace Bees.Tests.EditMode
             string source = File.ReadAllText(commandPath);
             string stateSource = File.ReadAllText(statePath);
 
-            StringAssert.Contains("public const int Version = 5;", source);
+            StringAssert.Contains("public const int Version = 6;", source);
             StringAssert.Contains("ScoutDropBeacon", source);
             StringAssert.Contains("BargeCharge", source);
             StringAssert.Contains("FireBargeDetonate", source);
@@ -2685,7 +2685,7 @@ namespace Bees.Tests.EditMode
                 "GameState.Commands.cs");
             string source = File.ReadAllText(commandPath);
 
-            StringAssert.Contains("public const int Version = 5;", source);
+            StringAssert.Contains("public const int Version = 6;", source);
             StringAssert.Contains("public bool GameOver;", source);
             StringAssert.Contains("public int WinningSide;", source);
             StringAssert.Contains("ResolveAuthoritativeWinningSideForSnapshot()", source);
@@ -2758,6 +2758,86 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains(
                 "Level.State.RemoveMiningAsteroid(this);",
                 asteroidSource);
+        }
+
+        [Test]
+        public void MiningInputUsesSequencedAuthorityCommandWithMatchAsteroidIdentity()
+        {
+            string commandPath = Path.Combine(
+                Application.dataPath,
+                "Scripts",
+                "Levels",
+                "GameState.Commands.cs");
+            string inputPath = Path.Combine(
+                Application.dataPath,
+                "Scripts",
+                "Levels",
+                "LevelInputManager.cs");
+            string commandSource = File.ReadAllText(commandPath);
+            string inputSource = File.ReadAllText(inputPath);
+
+            StringAssert.Contains("public const int Version = 6;", commandSource);
+            StringAssert.Contains("PlayerCommandKind.Mine", commandSource);
+            StringAssert.Contains("public long MatchMiningAsteroidId;", commandSource);
+            StringAssert.Contains("[\"asteroid\"] = command.MatchMiningAsteroidId", commandSource);
+            StringAssert.Contains("TryPlayerMineSquad(", commandSource);
+            StringAssert.Contains("MiningAsteroidsByMatchId.TryGetValue(", commandSource);
+            StringAssert.Contains("PlayerCommandKind.Mine", inputSource);
+            StringAssert.Contains(
+                "matchMiningAsteroidId: asteroid.MatchMiningAsteroidId",
+                inputSource);
+            StringAssert.DoesNotContain(
+                "squad.UserMining(asteroid)",
+                inputSource);
+        }
+
+        [Test]
+        public void BattleStateReplicatesLiveMiningAsteroidHealthAndAuthorityAbsence()
+        {
+            string commandPath = Path.Combine(
+                Application.dataPath,
+                "Scripts",
+                "Levels",
+                "GameState.Commands.cs");
+            string asteroidPath = Path.Combine(
+                Application.dataPath,
+                "Scripts",
+                "Entities",
+                "MiningAsteroid.cs");
+            string commandSource = File.ReadAllText(commandPath);
+            string asteroidSource = File.ReadAllText(asteroidPath);
+
+            StringAssert.Contains(
+                "public sealed class BattleMiningAsteroidStateSnapshot",
+                commandSource);
+            StringAssert.Contains(
+                "public List<BattleMiningAsteroidStateSnapshot> MiningAsteroids",
+                commandSource);
+            StringAssert.Contains(
+                "MaxBattleStateMiningAsteroids = 256",
+                commandSource);
+            StringAssert.Contains(
+                "[\"miningAsteroids\"] = miningAsteroids",
+                commandSource);
+            StringAssert.Contains(
+                "CanApplyAuthoritativeMiningAsteroidState(snapshot)",
+                commandSource);
+            StringAssert.Contains(
+                "TryApplyAuthoritativeMiningAsteroidState(snapshot)",
+                commandSource);
+            StringAssert.Contains(
+                "!authorityIds.Add(state.MatchMiningAsteroidId)",
+                commandSource);
+            StringAssert.Contains(
+                "!MiningAsteroidsByMatchId.TryGetValue(",
+                commandSource);
+            StringAssert.Contains(
+                "!asteroid.ReplicaDespawn()",
+                commandSource);
+            StringAssert.Contains(
+                "public bool ReplicaDespawn()",
+                asteroidSource);
+            StringAssert.Contains("Kill(true);", asteroidSource);
         }
     }
 }
