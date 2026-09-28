@@ -8,6 +8,8 @@ None currently confirmed. The active audit continues; resolved findings have bee
 
 ## Audit status
 
+- REG-138 fixes oversized JSON and raw request handling: readers stop buffering and pause input at the limit; the handler returns HTTP 413 with `Connection: close` and destroys the request only after ending the response. This production change resets the post-fix clean-pass count to **0 / 2**. Static source review only; no tests or runtime checks were run.
+
 - REG-137 caps server-side trainer logs at the same 64 MiB per-file limit as the uploader while preserving offset/reset semantics. Existing append/reset coverage remains valid; boundary protection is documented because tests were excluded by the static-only request. This production change resets the post-fix clean-pass count to **0 / 2**.
 
 - REG-136 rejects symlinked or size-changed canonical artifacts at startup, opens downloads without following links where supported, validates the open file identity, and streams from that same handle. Worker-side SHA-256 verification remains. Existing tamper-on-reload coverage remains valid; a targeted symlink case is missing under the static-only constraint. This production change resets the post-fix clean-pass count to **0 / 2**.
