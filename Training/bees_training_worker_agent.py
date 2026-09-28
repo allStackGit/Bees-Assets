@@ -1446,6 +1446,33 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         except (ControlUnavailable, ControlRejected, OSError, ValueError):
             pass
 
+    def blocking_keepalive() -> None:
+        nonlocal last_contact
+        if args.role != "dedicated":
+            return
+        heartbeat = default_heartbeat(
+            trainer_id=args.trainer_id,
+            role=args.role,
+            platform=args.platform,
+            process_state=managed.state(args.role, offline=False),
+            applied_revision=applied_revision,
+            build=active_build,
+            prepared_build_id="",
+            last_error=last_error,
+            metrics=current_metrics(managed.run_id),
+            environment_id=(
+                environment_args_identity(managed.environment_args)
+                if managed.alive()
+                else ""
+            ),
+            worker_capacity=worker_capacity(),
+        )
+        try:
+            client.heartbeat(heartbeat)
+            last_contact = time.monotonic()
+        except (ControlUnavailable, ControlRejected, OSError, ValueError):
+            pass
+
     old_sigint = signal.signal(signal.SIGINT, request_stop)
     old_sigterm = signal.signal(signal.SIGTERM, request_stop)
     try:
@@ -1607,7 +1634,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     # active player session merely to install a newer build or command-line config.
                     # If the game is already gone, prepare the canonical next launch immediately.
                     if descriptor and not managed.alive():
-                        entrypoint, active_build = builds.ensure(client, descriptor)
+                        entrypoint, active_build = builds.ensure(
+                            client,
+                            descriptor,
+                            progress_callback=blocking_keepalive,
+                        )
                         desired_sha = str(active_build["archive_sha256"])
                         runtime_command_template = _runtime_launch_template(
                             args.runtime_cutover_pointer,
@@ -1683,7 +1714,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                             last_error="canonical build/config pending next game launch",
                         )
                     else:
-                        entrypoint, active_build = builds.ensure(client, descriptor)
+                        entrypoint, active_build = builds.ensure(
+                            client,
+                            descriptor,
+                            progress_callback=blocking_keepalive,
+                        )
                         desired_sha = str(active_build["archive_sha256"])
                         runtime_command_template = _runtime_launch_template(
                             args.runtime_cutover_pointer,
