@@ -77,6 +77,13 @@ class RunContextTests(unittest.TestCase):
         self.assertEqual(run_dir, Path("F:/results") / "run-42")
         self.assertEqual(config, Path("Training/rl_1v1_config.yaml"))
 
+    def test_defaults_to_trainer_wrappers_results_directory(self):
+        run_dir, run_id, _ = wrapper.infer_run_context(
+            ["Training/rl_1v1_config.yaml", "--run-id", "run-43"]
+        )
+        self.assertEqual(run_id, "run-43")
+        self.assertEqual(run_dir, Path(".results") / "run-43")
+
     def test_run_id_is_required_for_candidate_identity(self):
         with self.assertRaises(SystemExit):
             wrapper.infer_run_context(["Training/rl_1v1_config.yaml"])
