@@ -4,6 +4,11 @@ Static-only repository audit on `rl/initial-design-work`. This ledger is the cur
 
 ## Active validated defects
 
+### BUG-002 — Windows interruptible stops leave nested phase processes running
+**Location:** `Training/bees_continual_service.py::_stop_interruptible_managed_child`, `Training/bees_process_safety.py::popen_owned`
+**Description:** On Windows, `popen_owned` places the phase process and its descendants in the service owner's kill-on-close Job Object. The interruptible-stop helper terminates and waits for only the root `Popen` process. The service owner keeps the Job Object open while it retries, so nested release/build processes can remain alive after the phase is reported stopped. A platform-specific operation must terminate the phase's entire owned process tree without disrupting unrelated work.
+
+
 ## Reported issues under investigation
 
 - **Pluto II SSSS tooltip corruption (user-reported, not yet independently reproduced):** During the first multipage tooltip, a later page can render repeated lowercase `s` characters over time; turning the page away and returning reproduces it. The active tooltip path assigns each authored page and sets `maxVisibleCharacters` to `int.MaxValue`; the campaign guard only reads that text. The tracked Tooltip prefab's Message object has only its standard TextMeshProUGUI presentation components, with no attached reveal script. Static review has not found another tracked tooltip-text writer or a cause for the visible `s` output. REG-124's competing-writer fix is related but does not prove this report resolved. Runtime reproduction is unavailable under the static-only audit constraint.
@@ -12,6 +17,8 @@ Static-only repository audit on `rl/initial-design-work`. This ledger is the cur
 
 - REG-087 was extended after elastic-path review found that rejected stale trajectory uploads also refreshed actor leases; elastic registration, reset acknowledgements, and uploads now use strict epoch checks before renewal. A focused stale/bool-epoch registration, acknowledgement, and upload cases were added but not run. The post-fix clean-pass count remains **0 / 2**.
 
+
+- REG-155 fixes the POSIX managed-phase timeout mismatch by waiting longer than the owned-child guardian's descendant-cleanup grace. The focused timing regression was added but not run. Post-fix clean-pass count remains **0 / 2**. Static review only.
 
 - BUG-001 is resolved in both hybrid and zero-local initializer paths: broker validation now precedes local worker creation, and later startup failures close the broker and any created local manager. REG-154 records the fix and unrun regression coverage. The required post-fix clean-pass count remains **0 / 2**. Static review only.
 
