@@ -39,6 +39,35 @@ func TestBootstrapHandlerServesExactPublishedBundle(t *testing.T) {
 	}
 }
 
+func TestBootstrapHandlerHeadReturnsIdentityWithoutBundleBody(t *testing.T) {
+	root := t.TempDir()
+	bundlePath := filepath.Join(root, "bootstrap.zip")
+	expected := []byte("complete-atomic-bootstrap-bundle")
+	if err := os.WriteFile(bundlePath, expected, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	handler := bootstrapHandler("secret", bundlePath)
+	request := httptest.NewRequest(http.MethodHead, "/bootstrap", nil)
+	request.Header.Set("Authorization", "Bearer secret")
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", response.Code, response.Body.String())
+	}
+	if response.Body.Len() != 0 {
+		t.Fatalf("HEAD bootstrap response unexpectedly returned %d body bytes", response.Body.Len())
+	}
+	if got := response.Header().Get("ETag"); got == "" {
+		t.Fatal("HEAD bootstrap response is missing ETag")
+	}
+	if got := response.Header().Get("Content-Length"); got != "32" {
+		t.Fatalf("unexpected content length %q", got)
+	}
+}
+
 func TestBootstrapHandlerRequiresBearerToken(t *testing.T) {
 	root := t.TempDir()
 	bundlePath := filepath.Join(root, "bootstrap.zip")
@@ -91,7 +120,7 @@ func TestWriteGatewayHealthCreatesAndRefreshesHeartbeat(t *testing.T) {
 	}
 
 	time.Sleep(10 * time.Millisecond)
-	if err := writeGatewayHealth(healthPath, "100.64.0.1", 7150, 55051, 7151); err != nil {
+	if err := writeGatewayHealth(healthPath, "100.64.0.1", 7150, 55051, 7151, 7146); err != nil {
 		t.Fatal(err)
 	}
 	second, err := os.Stat(healthPath)
