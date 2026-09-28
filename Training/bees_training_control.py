@@ -129,13 +129,16 @@ class TrainingControlClient:
         if (
             not isinstance(lease_seconds, (int, float))
             or isinstance(lease_seconds, bool)
-            or (
-                isinstance(lease_seconds, float)
-                and not math.isfinite(lease_seconds)
-            )
-            or lease_seconds <= 0
         ):
             raise ControlRejected("training-control lease_seconds is invalid")
+        try:
+            normalized_lease_seconds = float(lease_seconds)
+        except (OverflowError, ValueError) as exc:
+            raise ControlRejected("training-control lease_seconds is invalid") from exc
+        if not math.isfinite(normalized_lease_seconds) or normalized_lease_seconds <= 0:
+            raise ControlRejected("training-control lease_seconds is invalid")
+        value = dict(value)
+        value["lease_seconds"] = normalized_lease_seconds
         if not isinstance(environment_args, list) or any(
             not isinstance(item, str) for item in environment_args
         ):
