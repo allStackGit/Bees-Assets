@@ -211,7 +211,15 @@ def unity_environment_args(argv: Sequence[str]) -> Tuple[str, ...]:
             )
     if marker_index is None:
         return ()
-    return tuple(str(value) for value in argv[marker_index + 1 :])
+    unity_args = tuple(str(value) for value in argv[marker_index + 1 :])
+    if any(
+        argument == "--mlagents-port" or argument.startswith("--mlagents-port=")
+        for argument in unity_args
+    ):
+        raise SystemExit(
+            "--env-args must not override ML-Agents' managed --mlagents-port."
+        )
+    return unity_args
 
 
 def _canonical_json(value: Mapping[str, object]) -> str:
