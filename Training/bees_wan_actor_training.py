@@ -399,8 +399,19 @@ class WanActorBroker:
             return self._control_epoch
 
     def start(self) -> None:
-        if self._server is not None:
+        if (
+            self._server is not None
+            and self._server_thread is not None
+            and self._server_thread.is_alive()
+        ):
             return
+        if self._server is not None:
+            try:
+                self._server.server_close()
+            except OSError:
+                pass
+            self._server = None
+        self._server_thread = None
         broker = self
 
         class Handler(http.server.BaseHTTPRequestHandler):
@@ -573,6 +584,22 @@ class WanActorBroker:
             "remote machines must use the managed authenticated private forward."
         )
 
+    def ensure_server_alive(self) -> None:
+        if self._closed:
+            raise RuntimeError("WAN actor broker is closed")
+        if (
+            self._server is not None
+            and self._server_thread is not None
+            and self._server_thread.is_alive()
+        ):
+            return
+        print(
+            "[Bees WAN] broker server thread stopped unexpectedly; restarting loopback broker.",
+            file=sys.stderr,
+            flush=True,
+        )
+        self.start()
+
     def close(self) -> None:
         with self._condition:
             self._closed = True
@@ -615,6 +642,7 @@ class WanActorBroker:
             self._condition.notify_all()
 
     def wait_for_minimum_registrations(self, timeout_seconds: float) -> None:
+        self.ensure_server_alive()
         deadline = time.monotonic() + timeout_seconds
         with self._condition:
             while len(self._registrations) < self.options.min_actors and not self._closed:
@@ -640,6 +668,7 @@ class WanActorBroker:
             return tuple(sorted(self._registrations))
 
     def publish_policy(self, behavior_name: str, policy: Any) -> int:
+        self.ensure_server_alive()
         wire = dict(_policy_wire_payload(policy))
         identity = _policy_identity_digest(wire)
         encoded = encode_payload(wire)
@@ -710,6 +739,7 @@ class WanActorBroker:
             return dict(self._control_record)
 
     def wait_state(self, policy_epoch: int, control_epoch: int, wait_seconds: float) -> Mapping[str, Any]:
+        self.ensure_server_alive()
         deadline = time.monotonic() + wait_seconds
         with self._condition:
             while (
@@ -812,6 +842,7 @@ class WanActorBroker:
             ) from exc
 
     def next_trajectory_cohort(self, timeout_seconds: float) -> Tuple[Mapping[str, Any], ...]:
+        self.ensure_server_alive()
         """Return current-policy batches from at least min_actors distinct actor machines.
 
         Actors already selected for a cohort receive HTTP backpressure until the learner consumes the
