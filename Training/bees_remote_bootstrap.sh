@@ -139,6 +139,8 @@ LAUNCHER=$q_launcher
 INSTALL_ROOT=$q_install
 TORCH_DEVICE=$q_torch
 MONITOR_LOG=$q_log
+CONTROL_PORT=$CONTROL_PORT
+ENVS=$ENVS
 
 supervisor_alive() {
     local pid_file="\$INSTALL_ROOT/remote-worker.pid"
@@ -154,9 +156,60 @@ supervisor_alive() {
     [[ "\$command_line" == *"bees_managed_remote_worker.py"* && "\$command_line" == *"\$INSTALL_ROOT"* ]]
 }
 
+control_probe_once() {
+    local python="\$INSTALL_ROOT/.venv/bin/python"
+    local token_file="\$INSTALL_ROOT/Secrets/training-worker.token"
+    [[ -x "\$python" && -s "\$token_file" ]] || return 1
+    "\$python" - "\$CONTROL_PORT" "\$token_file" <<'PY'
+import sys
+import urllib.request
+
+port, token_file = sys.argv[1], sys.argv[2]
+try:
+    token = open(token_file, "r", encoding="utf-8").read().strip()
+    request = urllib.request.Request(
+        f"http://127.0.0.1:{port}/v1/status",
+        headers={"Authorization": "Bearer " + token},
+    )
+    with urllib.request.urlopen(request, timeout=3.0) as response:
+        response.read(1)
+        raise SystemExit(0 if int(getattr(response, "status", 200)) == 200 else 1)
+except Exception:
+    raise SystemExit(1)
+PY
+}
+
+control_healthy() {
+    local attempt=0
+    for attempt in 1 2 3; do
+        control_probe_once && return 0
+        (( attempt < 3 )) && sleep 0.5
+    done
+    return 1
+}
+
+launch_worker() {
+    if [[ -n "\$ENVS" ]]; then
+        BEES_AUTOSTART_CHILD=1 bash "\$LAUNCHER" start --install-root "\$INSTALL_ROOT" --torch-device "\$TORCH_DEVICE" --envs "\$ENVS" >>"\$MONITOR_LOG" 2>&1 || true
+    else
+        BEES_AUTOSTART_CHILD=1 bash "\$LAUNCHER" start --install-root "\$INSTALL_ROOT" --torch-device "\$TORCH_DEVICE" >>"\$MONITOR_LOG" 2>&1 || true
+    fi
+}
+
+CONTROL_FAILURES=0
 while [[ -f "\$MARKER" ]]; do
     if ! supervisor_alive; then
-        BEES_AUTOSTART_CHILD=1 bash "\$LAUNCHER" start --install-root "\$INSTALL_ROOT" --torch-device "\$TORCH_DEVICE"${ENVS:+ --envs $ENVS} >>"\$MONITOR_LOG" 2>&1 || true
+        CONTROL_FAILURES=0
+        launch_worker
+    elif control_healthy; then
+        CONTROL_FAILURES=0
+    else
+        CONTROL_FAILURES=\$((CONTROL_FAILURES + 1))
+        if (( CONTROL_FAILURES >= 3 )); then
+            printf '[Bees remote] watchdog observed repeated authenticated control failures; invoking launcher repair.\n' >>"\$MONITOR_LOG"
+            launch_worker
+            CONTROL_FAILURES=0
+        fi
     fi
     sleep 10
 done
@@ -238,6 +291,71 @@ pid_is_supervisor() {
     [[ "$command_line" == *"bees_managed_remote_worker.py"* && "$command_line" == *"$INSTALL_ROOT"* ]]
 }
 
+supervisor_control_probe_once() {
+    local python="$INSTALL_ROOT/.venv/bin/python"
+    local token_file="$INSTALL_ROOT/Secrets/training-worker.token"
+    [[ -x "$python" && -s "$token_file" ]] || return 1
+    "$python" - "$CONTROL_PORT" "$token_file" <<'PY'
+import sys
+import urllib.request
+
+port, token_file = sys.argv[1], sys.argv[2]
+try:
+    token = open(token_file, "r", encoding="utf-8").read().strip()
+    request = urllib.request.Request(
+        f"http://127.0.0.1:{port}/v1/status",
+        headers={"Authorization": "Bearer " + token},
+    )
+    with urllib.request.urlopen(request, timeout=3.0) as response:
+        response.read(1)
+        raise SystemExit(0 if int(getattr(response, "status", 200)) == 200 else 1)
+except Exception:
+    raise SystemExit(1)
+PY
+}
+
+supervisor_control_healthy() {
+    local attempt=0
+    for attempt in 1 2 3; do
+        supervisor_control_probe_once && return 0
+        (( attempt < 3 )) && sleep 0.5
+    done
+    return 1
+}
+
+restart_unhealthy_supervisor() {
+    local pid="$1"
+    if [[ "$AUTOSTART_CHILD" != "1" ]] && have systemctl; then
+        # Prevent the user-systemd watchdog from racing this deliberate repair.
+        systemctl --user stop bees-training-worker.service >/dev/null 2>&1 || true
+    fi
+
+    echo "warning: [Bees remote] supervisor PID $pid is alive but authenticated learner control is not healthy; recycling it before bootstrap." >&2
+    printf 'stop' > "$SHUTDOWN_REQUEST_FILE"
+    local attempts=0
+    while kill -0 "$pid" 2>/dev/null && (( attempts < 80 )); do
+        sleep 0.25
+        attempts=$((attempts + 1))
+    done
+    if ! kill -0 "$pid" 2>/dev/null; then
+        rm -f "$SUPERVISOR_PID_FILE" "$SHUTDOWN_REQUEST_FILE"
+        echo "[Bees remote] unhealthy supervisor stopped cleanly; continuing bootstrap."
+        return 0
+    fi
+
+    echo "warning: [Bees remote] unhealthy supervisor did not stop cleanly within 20 seconds; forcing the stale remote supervisor to terminate." >&2
+    kill -KILL "$pid" 2>/dev/null || true
+    attempts=0
+    while kill -0 "$pid" 2>/dev/null && (( attempts < 40 )); do
+        sleep 0.25
+        attempts=$((attempts + 1))
+    done
+    if kill -0 "$pid" 2>/dev/null; then
+        echo "error: could not terminate unhealthy remote supervisor PID $pid." >&2
+        return 1
+    fi
+    rm -f "$SUPERVISOR_PID_FILE" "$SHUTDOWN_REQUEST_FILE"
+}
 if [[ "$COMMAND" == "stop" ]]; then
     remove_remote_autostart
     PID="$(recorded_pid || true)"
@@ -265,10 +383,13 @@ fi
 
 PID="$(recorded_pid || true)"
 if [[ -n "$PID" ]] && pid_is_supervisor "$PID"; then
-    install_remote_autostart
-    echo "[Bees remote] worker is already running in the background (PID $PID)."
-    echo "[Bees remote] use 'bash bees-remote-worker.sh stop' to stop it."
-    exit 0
+    if supervisor_control_healthy; then
+        install_remote_autostart
+        echo "[Bees remote] worker is already running and authenticated learner control is healthy (PID $PID)."
+        echo "[Bees remote] use 'bash bees-remote-worker.sh stop' to stop it."
+        exit 0
+    fi
+    restart_unhealthy_supervisor "$PID"
 fi
 rm -f "$SUPERVISOR_PID_FILE" "$SHUTDOWN_REQUEST_FILE"
 
