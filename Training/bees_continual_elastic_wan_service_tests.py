@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from unittest import mock
 
 import bees_continual_elastic_wan_service as service
+import bees_continual_wan_service as wan_service
 
 
 class ContinualElasticWanServiceTests(unittest.TestCase):
@@ -100,6 +101,69 @@ class ContinualElasticWanServiceTests(unittest.TestCase):
             {"index": 0, "resume": False, "force_fresh": True},
         )
 
+
+    def test_wan_wrapper_forwards_fresh_retry_and_uses_pinned_runtime_root(self):
+        actor_options = SimpleNamespace(
+            enabled=True,
+            actor_count=1,
+            envs_per_actor=2,
+            min_actors=1,
+            broker_port=55051,
+            auth_token_file="wan.token",
+            max_queued_batches=32,
+        )
+        options = SimpleNamespace(
+            assets_root=service.Path("B:/Bees/Assets"),
+            runtime_training_root=service.Path("B:/Bees/Runtime/Releases/build/Training"),
+        )
+        captured = {}
+
+        def base_training_command(_options, index, *, resume, force_fresh=False):
+            captured["index"] = index
+            captured["resume"] = resume
+            captured["force_fresh"] = force_fresh
+            return ["python", "base-train.py", "--force"] if force_fresh else ["python", "base-train.py"]
+
+        def run_service(_options):
+            captured["command"] = wan_service.service.training_command(
+                options,
+                0,
+                resume=False,
+                force_fresh=True,
+            )
+            return 0
+
+        with (
+            mock.patch.object(
+                wan_service.wan,
+                "extract_wan_actor_options",
+                return_value=([], actor_options),
+            ),
+            mock.patch.object(wan_service.wan, "load_auth_token", return_value="token"),
+            mock.patch.object(wan_service.service, "parse_options", return_value=options),
+            mock.patch.object(
+                wan_service.service,
+                "training_command",
+                side_effect=base_training_command,
+            ),
+            mock.patch.object(
+                wan_service.service,
+                "run_service",
+                side_effect=run_service,
+            ),
+        ):
+            self.assertEqual(wan_service.main([]), 0)
+
+        self.assertEqual(
+            {key: captured[key] for key in ("index", "resume", "force_fresh")},
+            {"index": 0, "resume": False, "force_fresh": True},
+        )
+        self.assertEqual(
+            captured["command"][1],
+            str(options.runtime_training_root / "bees_continual_wan_auto_train.py"),
+        )
+        self.assertIn("--force", captured["command"])
+        self.assertIn("--bees-wan-actors=1", captured["command"])
 
     def test_exact_central_operator_option_shape_parses_without_argparse_exit(self):
         with tempfile.TemporaryDirectory() as temp_dir:
