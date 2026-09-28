@@ -305,13 +305,16 @@ async function startTailnetGatewayIfNeeded(config) {
     const controlPort = Number(config.controlPort);
     const brokerPort = Number(config.brokerPort);
     const bootstrapPort = Number(config.tailnetBootstrapPort || 7151);
-    for (const port of [controlPort, brokerPort, bootstrapPort]) {
+    const gameplayPort = GAMEPLAY_SERVER_PORT;
+    for (const port of [controlPort, brokerPort, bootstrapPort, gameplayPort]) {
         if (!Number.isInteger(port) || port < 1 || port > 65535) {
             throw new Error('Tailnet gateway ports must be in 1-65535.');
         }
     }
-    if (new Set([controlPort, brokerPort, bootstrapPort]).size !== 3) {
-        throw new Error('controlPort, brokerPort, and tailnetBootstrapPort must be distinct.');
+    if (new Set([controlPort, brokerPort, bootstrapPort, gameplayPort]).size !== 4) {
+        throw new Error(
+            'controlPort, brokerPort, tailnetBootstrapPort, and gameplay port must be distinct.'
+        );
     }
     for (const required of [paths.bootstrapBundlePath, paths.bootstrapTokenPath]) {
         if (!exists(required)) throw new Error('Tailnet gateway input is missing: ' + required);
@@ -324,6 +327,7 @@ async function startTailnetGatewayIfNeeded(config) {
         '--control-port', String(controlPort),
         '--broker-port', String(brokerPort),
         '--bootstrap-port', String(bootstrapPort),
+        '--gameplay-port', String(gameplayPort),
         '--bootstrap-bundle', paths.bootstrapBundlePath,
         '--bootstrap-token', paths.bootstrapTokenPath,
         '--health-file', paths.tailnetGatewayHealthPath,
@@ -360,7 +364,8 @@ async function startTailnetGatewayIfNeeded(config) {
                 console.log(
                     'Embedded tailnet gateway already healthy at ' + ip +
                     ': control=' + controlPort + ' broker=' + brokerPort +
-                    ' bootstrap=' + bootstrapPort + ' (PID ' + state.pid + ').'
+                    ' bootstrap=' + bootstrapPort + ' gameplay=' + gameplayPort +
+                    ' (PID ' + state.pid + ').'
                 );
                 return;
             }
