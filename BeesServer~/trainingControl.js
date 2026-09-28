@@ -1554,6 +1554,12 @@ class TrainingControlStore {
         const trainerId = requireString(payload.trainer_id, 'trainer_id', 128);
         const role = requireRole(payload.role);
         const platform = requireString(payload.platform, 'platform', 64);
+        if (!/^[A-Za-z0-9._-]+$/.test(trainerId) ||
+            !/^[A-Za-z0-9._-]+$/.test(platform)) {
+            throw Object.assign(
+                new Error('trainer_id and platform may contain only letters, digits, dot, underscore, and dash'),
+                { statusCode: 400 });
+        }
         const now = this.now();
         const previousTrainerRecord = this.trainers.get(trainerId);
         if (previousTrainerRecord &&
