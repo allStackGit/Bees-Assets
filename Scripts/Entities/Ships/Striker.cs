@@ -46,6 +46,11 @@ namespace Assets.Scripts.Entities.Ships
             Level.AddTimer(_checkCarrierReloadTimer);
         }
 
+        protected override void PrepareForNetworkReplica()
+        {
+            Level.CancelTimer(_checkCarrierReloadTimer);
+        }
+
         public override void ClearData()
         {
             base.ClearData();

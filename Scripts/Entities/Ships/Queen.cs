@@ -55,6 +55,12 @@ namespace Assets.Scripts.Entities.Ships
             Level.AddTimer(_spawnMinionsTimer);
             //InvokeRepeating(nameof(SpawnMinions), SpawnFrequency, SpawnFrequency);
         }
+        protected override void PrepareForNetworkReplica()
+        {
+            Level.CancelTimer(_spawnMinionsTimer);
+            StopAllCoroutines();
+        }
+
         public override void ClearData()
         {
             // Minion waves are delayed coroutines. A pooled Queen must never inherit a

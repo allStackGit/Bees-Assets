@@ -31,6 +31,11 @@ namespace Assets.Scripts.Entities.Ships
                 : StandardSprite;
         }
 
+        protected override void PrepareForNetworkReplica()
+        {
+            Level.CancelTimer(_beaconStatusTimer);
+        }
+
         public override void SetColor()
         {
             if (!Stage.IsRendering)
