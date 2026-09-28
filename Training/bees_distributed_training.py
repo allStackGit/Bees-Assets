@@ -448,6 +448,100 @@ def _create_external_environment(
         )
 
 
+class _DistributedEnvironmentFactory:
+    """Picklable ML-Agents worker factory for local and externally launched Unity players."""
+
+    def __init__(
+        self,
+        local_factory: Callable,
+        external_worker_ids: Sequence[int],
+        *,
+        env_path: str,
+        seed: int,
+        num_areas: int,
+        no_graphics: bool,
+        no_graphics_monitor: bool,
+        base_port: int,
+        env_args: Optional[List[str]],
+        timeout_wait: int,
+    ) -> None:
+        self.local_factory = local_factory
+        self.external_worker_ids = frozenset(external_worker_ids)
+        self.env_path = env_path
+        self.seed = seed
+        self.num_areas = num_areas
+        self.no_graphics = no_graphics
+        self.no_graphics_monitor = no_graphics_monitor
+        self.base_port = base_port
+        self.env_args = env_args
+        self.timeout_wait = timeout_wait
+
+    def __call__(self, worker_id, side_channels):
+        if worker_id not in self.external_worker_ids:
+            return self.local_factory(worker_id, side_channels)
+        return _create_external_environment(
+            env_path=self.env_path,
+            worker_id=worker_id,
+            seed=self.seed,
+            num_areas=self.num_areas,
+            no_graphics=self.no_graphics,
+            no_graphics_monitor=self.no_graphics_monitor,
+            base_port=self.base_port,
+            env_args=self.env_args,
+            side_channels=side_channels,
+            timeout_wait=self.timeout_wait,
+        )
+
+
+class _DistributedEnvironmentFactoryInstaller:
+    """Top-level replacement for ML-Agents' factory, safe to pass to spawned workers."""
+
+    def __init__(self, original_factory: Callable, external_worker_ids: Sequence[int]) -> None:
+        self.original_factory = original_factory
+        self.external_worker_ids = tuple(external_worker_ids)
+
+    def __call__(
+        self,
+        env_path,
+        no_graphics,
+        no_graphics_monitor,
+        seed,
+        num_areas,
+        timeout_wait,
+        start_port,
+        env_args,
+        log_folder,
+    ):
+        if self.external_worker_ids and not env_path:
+            raise RuntimeError(
+                "Distributed external workers require --env so remote Unity executables share the "
+                "same build as local workers."
+            )
+        local_factory = self.original_factory(
+            env_path,
+            no_graphics,
+            no_graphics_monitor,
+            seed,
+            num_areas,
+            timeout_wait,
+            start_port,
+            env_args,
+            log_folder,
+        )
+        return _DistributedEnvironmentFactory(
+            local_factory,
+            self.external_worker_ids,
+            env_path=env_path,
+            seed=seed,
+            num_areas=num_areas,
+            no_graphics=no_graphics,
+            no_graphics_monitor=no_graphics_monitor,
+            base_port=start_port,
+            env_args=env_args,
+            timeout_wait=timeout_wait,
+        )
+
+
 def install_external_worker_factory(
     *,
     total_envs: int,
@@ -467,56 +561,8 @@ def install_external_worker_factory(
     normalized = tuple(sorted(set(int(value) for value in external_worker_ids)))
     if any(worker_id < 0 or worker_id >= total_envs for worker_id in normalized):
         raise RuntimeError("External ML-Agents worker IDs are outside the configured environment range.")
-    external_set = frozenset(normalized)
     original = learn.create_environment_factory
-
-    def distributed_create_environment_factory(
-        env_path,
-        no_graphics,
-        no_graphics_monitor,
-        seed,
-        num_areas,
-        timeout_wait,
-        start_port,
-        env_args,
-        log_folder,
-    ):
-        if external_set and not env_path:
-            raise RuntimeError(
-                "Distributed external workers require --env so remote Unity executables share the "
-                "same build as local workers."
-            )
-        local_factory = original(
-            env_path,
-            no_graphics,
-            no_graphics_monitor,
-            seed,
-            num_areas,
-            timeout_wait,
-            start_port,
-            env_args,
-            log_folder,
-        )
-
-        def create_environment(worker_id, side_channels):
-            if worker_id not in external_set:
-                return local_factory(worker_id, side_channels)
-            return _create_external_environment(
-                env_path=env_path,
-                worker_id=worker_id,
-                seed=seed,
-                num_areas=num_areas,
-                no_graphics=no_graphics,
-                no_graphics_monitor=no_graphics_monitor,
-                base_port=start_port,
-                env_args=env_args,
-                side_channels=side_channels,
-                timeout_wait=timeout_wait,
-            )
-
-        return create_environment
-
-    learn.create_environment_factory = distributed_create_environment_factory
+    learn.create_environment_factory = _DistributedEnvironmentFactoryInstaller(original, normalized)
     return original
 
 
