@@ -92,6 +92,33 @@ def heartbeat_retry_delay(received_desired: bool, heartbeat_seconds: float) -> f
     return normal if received_desired else min(1.0, normal)
 
 
+def heartbeat_with_transport_retry(
+    client: TrainingControlClient,
+    payload: Mapping[str, object],
+    *,
+    attempts: int = 2,
+    retry_delay_seconds: float = 0.25,
+) -> Mapping[str, Any]:
+    """Mask a single transient transport stall without weakening the server lease.
+
+    Heartbeats are safe to repeat: the server treats each as the current trainer snapshot.
+    A lost response can therefore be retried immediately instead of turning one short tailnet
+    forwarding hiccup into a worker-visible outage.
+    """
+    maximum = max(1, int(attempts))
+    last_error: Optional[ControlUnavailable] = None
+    for attempt in range(1, maximum + 1):
+        try:
+            return client.heartbeat(payload)
+        except ControlUnavailable as exc:
+            last_error = exc
+            if attempt >= maximum:
+                raise
+            time.sleep(max(0.0, float(retry_delay_seconds)))
+    assert last_error is not None
+    raise last_error
+
+
 def heartbeat_last_error(
     last_error: str,
     preparation_error: str,
@@ -1657,7 +1684,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             )
             desired_process_safe = False
             try:
-                desired = client.heartbeat(heartbeat)
+                desired = heartbeat_with_transport_retry(client, heartbeat)
                 received_desired = True
                 last_contact = time.monotonic()
                 lease_seconds = float(desired["lease_seconds"])
@@ -1922,7 +1949,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     last_control_failure_type = type(exc).__name__
                 offline = last_contact <= 0 or time.monotonic() - last_contact > lease_seconds
                 transient_control_error = isinstance(exc, ControlUnavailable) and not offline
-                if not transient_control_error:
+                # Transport unavailability belongs in the dedicated control metrics above, not
+                # in last_error. Echoing it as a worker-process error on the recovery heartbeat
+                # makes BeesServer hold env optimization for 15 minutes after a connection that
+                # has already healed.
+                if not isinstance(exc, ControlUnavailable):
                     last_error = error_text
                 try:
                     write_local_state(
