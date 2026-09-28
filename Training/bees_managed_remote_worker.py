@@ -1935,7 +1935,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 ):
                     code = tailnet.poll()
                     print(
-                        "[Bees remote] private transport failed to reach learner control"
+                        "[Bees remote] private tailnet forwarder failed to become ready"
                         + ("" if code is None else f" (exit {code})")
                         + ".",
                         file=sys.stderr,
