@@ -2459,7 +2459,7 @@ namespace Bees.Tests.EditMode
                 "GameState.Commands.cs");
             string source = File.ReadAllText(path);
 
-            StringAssert.Contains("public const int Version = 4;", source);
+            StringAssert.Contains("public const int Version = 5;", source);
             StringAssert.Contains("ParentCarrierMatchShipId", source);
             StringAssert.Contains("CarrierSquadType", source);
             StringAssert.Contains("Utilities.ConvertShipTypeToSide.TryGetValue(", source);
@@ -2645,7 +2645,7 @@ namespace Bees.Tests.EditMode
             string source = File.ReadAllText(commandPath);
             string stateSource = File.ReadAllText(statePath);
 
-            StringAssert.Contains("public const int Version = 4;", source);
+            StringAssert.Contains("public const int Version = 5;", source);
             StringAssert.Contains("ScoutDropBeacon", source);
             StringAssert.Contains("BargeCharge", source);
             StringAssert.Contains("FireBargeDetonate", source);
@@ -2685,7 +2685,7 @@ namespace Bees.Tests.EditMode
                 "GameState.Commands.cs");
             string source = File.ReadAllText(commandPath);
 
-            StringAssert.Contains("public const int Version = 4;", source);
+            StringAssert.Contains("public const int Version = 5;", source);
             StringAssert.Contains("public bool GameOver;", source);
             StringAssert.Contains("public int WinningSide;", source);
             StringAssert.Contains("ResolveAuthoritativeWinningSideForSnapshot()", source);
@@ -2694,6 +2694,32 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains("Level.WinningSide = snapshot.WinningSide;", source);
             StringAssert.Contains("GameOver = snapshot.GameOver;", source);
             StringAssert.DoesNotContain("snapshot.LevelEnded", source);
+        }
+
+        [Test]
+        public void SquadActionBoxDiscreteControlsUseAuthorityCommandPath()
+        {
+            string path = Path.Combine(
+                Application.dataPath,
+                "Scripts",
+                "UI Components",
+                "SquadActionBox.cs");
+            string source = File.ReadAllText(path);
+
+            StringAssert.Contains("PlayerCommandKind.SetChase", source);
+            StringAssert.Contains("PlayerCommandKind.SetCeaseFire", source);
+            StringAssert.Contains("PlayerCommandKind.SetMatchSpeed", source);
+            StringAssert.Contains("PlayerCommandKind.SetShootingStrategy", source);
+            StringAssert.Contains("PlayerCommandKind.SetLockOn", source);
+            StringAssert.Contains("GetSelectedSquadsForPlayer(playerId)", source);
+
+            StringAssert.DoesNotContain("squad.StopChasing();", source);
+            StringAssert.DoesNotContain("squad.SetChase(true);", source);
+            StringAssert.DoesNotContain("squad.SetSquadCeaseFire(", source);
+            StringAssert.DoesNotContain("squad.IsLockedOn =", source);
+            StringAssert.DoesNotContain("squad.UnmatchSpeed();", source);
+            StringAssert.DoesNotContain("squad.MatchSpeed(", source);
+            StringAssert.DoesNotContain("squad.SetShootingStrategy(", source);
         }
     }
 }

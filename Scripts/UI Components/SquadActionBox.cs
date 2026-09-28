@@ -792,10 +792,13 @@ namespace Assets.Scripts.UIComponents
         {
             if (HasSquad())
             {
-                Level.State.GetSelectedSquads().ForEach((squad) =>
-                {
-                    squad.StopChasing();
-                });
+                int playerId = Level.State.GetPrimaryInputPlayerId();
+                Level.State.GetSelectedSquadsForPlayer(playerId).ForEach((squad) =>
+                    Level.State.TryIssuePlayerCommand(
+                        playerId,
+                        PlayerCommandKind.SetChase,
+                        squad.CommandSquadId,
+                        value: 0));
                 HighlightSelectedButtons();
             }
 
@@ -804,10 +807,13 @@ namespace Assets.Scripts.UIComponents
         {
             if (HasSquad())
             {
-                Level.State.GetSelectedSquads().ForEach((squad) =>
-                {
-                    squad.SetChase(true);
-                });
+                int playerId = Level.State.GetPrimaryInputPlayerId();
+                Level.State.GetSelectedSquadsForPlayer(playerId).ForEach((squad) =>
+                    Level.State.TryIssuePlayerCommand(
+                        playerId,
+                        PlayerCommandKind.SetChase,
+                        squad.CommandSquadId,
+                        value: 1));
                 HighlightSelectedButtons();
             }
 
@@ -834,10 +840,13 @@ namespace Assets.Scripts.UIComponents
         {
             if (HasSquad())
             {
-                Level.State.GetSelectedSquads().ForEach((squad) =>
-                {
-                    squad.SetSquadCeaseFire(true);
-                });
+                int playerId = Level.State.GetPrimaryInputPlayerId();
+                Level.State.GetSelectedSquadsForPlayer(playerId).ForEach((squad) =>
+                    Level.State.TryIssuePlayerCommand(
+                        playerId,
+                        PlayerCommandKind.SetCeaseFire,
+                        squad.CommandSquadId,
+                        value: 1));
                 HighlightSelectedButtons();
             }
 
@@ -846,13 +855,13 @@ namespace Assets.Scripts.UIComponents
         {
             if (HasSquad())
             {
-                Level.State.GetSelectedSquads().ForEach((squad) =>
-                {
-                    if (!squad.HasCommand || squad.GetCommand().CommandType != ConfigData.CommandTypes.Heal)
-                    {
-                        squad.SetSquadCeaseFire(false);
-                    }
-                });
+                int playerId = Level.State.GetPrimaryInputPlayerId();
+                Level.State.GetSelectedSquadsForPlayer(playerId).ForEach((squad) =>
+                    Level.State.TryIssuePlayerCommand(
+                        playerId,
+                        PlayerCommandKind.SetCeaseFire,
+                        squad.CommandSquadId,
+                        value: 0));
                 HighlightSelectedButtons();
             }
 
@@ -861,20 +870,15 @@ namespace Assets.Scripts.UIComponents
         {
             if (HasSquad())
             {
-                bool onOrOff = !Level.State.GetSelectedSquads().All((squad) => squad.IsLockedOn);
-                Debug.Log($"onOrOff: {onOrOff}");
-                Level.State.GetSelectedSquads().ForEach((squad) =>
-                {
-                    //Debug.Log(squad);
-                    //Debug.Log(squad.HasCommand);
-                    //Debug.Log(squad.GetCommand()?.HasEnemy);
-                    if (squad.HasCommand && squad.GetCommand().HasEnemy)
-                    {
-                        //Debug.Log($"Setting is locked on: {onOrOff}");
-                        squad.IsLockedOn = onOrOff;
-                        //squad.GetShips().ForEach((s) =>  s.CannotChangeMovementOrders = onOrOff);
-                    }
-                });
+                int playerId = Level.State.GetPrimaryInputPlayerId();
+                List<Squad> squads = Level.State.GetSelectedSquadsForPlayer(playerId);
+                bool onOrOff = !squads.All((squad) => squad.IsLockedOn);
+                squads.ForEach((squad) =>
+                    Level.State.TryIssuePlayerCommand(
+                        playerId,
+                        PlayerCommandKind.SetLockOn,
+                        squad.CommandSquadId,
+                        value: onOrOff ? 1 : 0));
                 HighlightSelectedButtons();
             }
 
@@ -883,20 +887,17 @@ namespace Assets.Scripts.UIComponents
         {
             if (HasSquad())
             {
-                List<Squad> squads = Level.State.GetSelectedSquads();
-                bool IsMatchingSpeed = squads.All(squad => squad.IsMatchingSpeed);
+                int playerId = Level.State.GetPrimaryInputPlayerId();
+                List<Squad> squads = Level.State.GetSelectedSquadsForPlayer(playerId);
+                bool isMatchingSpeed = squads.All(squad => squad.IsMatchingSpeed);
                 float slowestSpeed = squads.Min(squad => squad.SlowestSpeed);
                 squads.ForEach((squad) =>
-                {
-                    if (IsMatchingSpeed)
-                    {
-                        squad.UnmatchSpeed();
-                    }
-                    else
-                    {
-                        squad.MatchSpeed(slowestSpeed);
-                    }
-                });
+                    Level.State.TryIssuePlayerCommand(
+                        playerId,
+                        PlayerCommandKind.SetMatchSpeed,
+                        squad.CommandSquadId,
+                        pointA: new Vector2(slowestSpeed, 0f),
+                        value: isMatchingSpeed ? 0 : 1));
                 HighlightSelectedButtons();
             }
 
@@ -927,11 +928,13 @@ namespace Assets.Scripts.UIComponents
                 }
                 else if (HasLevel)
                 {
-                    Level.State.GetSelectedSquads().ForEach((squad) =>
-                    {
-                        //Debug.Log($"Setting the squad to shoot with {strategy}!");
-                        squad.SetShootingStrategy(shootingStrategy);
-                    });
+                    int playerId = Level.State.GetPrimaryInputPlayerId();
+                    Level.State.GetSelectedSquadsForPlayer(playerId).ForEach((squad) =>
+                        Level.State.TryIssuePlayerCommand(
+                            playerId,
+                            PlayerCommandKind.SetShootingStrategy,
+                            squad.CommandSquadId,
+                            value: (int)shootingStrategy));
                 }
                 SetDropdownValue();
                 DeselectButton();
