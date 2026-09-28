@@ -343,6 +343,7 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
 
             response = mock.MagicMock()
             response.__enter__.return_value.read.return_value = payload.getvalue()
+            response.__enter__.return_value.headers.get.return_value = '"bundle-1"'
             response.__exit__.return_value = False
             with (
                 mock.patch.object(
@@ -357,6 +358,7 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
             self.assertEqual(urlopen.call_count, 2)
             self.assertEqual(result[0], b"runtime")
             self.assertEqual(result[1], b"worker")
+            self.assertEqual(result[5], '"bundle-1"')
             self.assertEqual(updater.last_error, "")
 
     def test_default_envs_fall_back_to_cpu_when_memory_is_unknown(self):
@@ -733,6 +735,87 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
         updater.start.assert_called_once_with()
         status.assert_not_called()
 
+    def test_bootstrap_identity_probe_uses_head_without_downloading_bundle(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            token = root / "bootstrap.token"
+            token.write_text("secret", encoding="ascii")
+            args = Namespace(
+                runtime_archive=str(root / "runtime.zip"),
+                bootstrap_token_file=str(token),
+                bootstrap_port=7151,
+            )
+            updater = managed.RuntimeUpdater(args, root / "install")
+            response = mock.MagicMock()
+            response.__enter__.return_value.headers.get.return_value = '"bundle-identity"'
+            response.__exit__.return_value = False
+
+            with mock.patch.object(
+                managed.urllib.request,
+                "urlopen",
+                return_value=response,
+            ) as urlopen:
+                identity = updater._fetch_bootstrap_identity()
+
+            self.assertEqual(identity, '"bundle-identity"')
+            request = urlopen.call_args.args[0]
+            self.assertEqual(request.get_method(), "HEAD")
+            response.__enter__.return_value.read.assert_not_called()
+
+    def test_bootstrap_identity_probe_falls_back_for_old_gateway(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            token = root / "bootstrap.token"
+            token.write_text("secret", encoding="ascii")
+            args = Namespace(
+                runtime_archive=str(root / "runtime.zip"),
+                bootstrap_token_file=str(token),
+                bootstrap_port=7151,
+            )
+            updater = managed.RuntimeUpdater(args, root / "install")
+            error = managed.urllib.error.HTTPError(
+                "http://127.0.0.1:7151/bootstrap",
+                404,
+                "not found",
+                {},
+                None,
+            )
+            with mock.patch.object(
+                managed.urllib.request,
+                "urlopen",
+                side_effect=error,
+            ):
+                self.assertEqual(updater._fetch_bootstrap_identity(), "")
+
+    def test_unchanged_bootstrap_identity_skips_full_bundle_download(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            args = Namespace(runtime_archive=str(root / "missing.zip"))
+            updater = managed.RuntimeUpdater(args, root / "install")
+            updater.bootstrap_identity = '"bundle-stable"'
+            with (
+                mock.patch.object(
+                    updater,
+                    "_fetch_bootstrap_identity",
+                    return_value='"bundle-stable"',
+                ),
+                mock.patch.object(updater, "_fetch_bootstrap") as full_fetch,
+            ):
+                updater._stage_once()
+
+            full_fetch.assert_not_called()
+
+    def test_transport_watchdog_requires_sustained_failure_and_resets_on_success(self):
+        watchdog = managed._TransportWatchdog(30.0)
+
+        self.assertFalse(watchdog.observe(False, 100.0))
+        self.assertFalse(watchdog.observe(False, 129.9))
+        self.assertTrue(watchdog.observe(False, 130.0))
+        self.assertFalse(watchdog.observe(True, 131.0))
+        self.assertIsNone(watchdog.failure_since)
+        self.assertFalse(watchdog.observe(False, 200.0))
+        self.assertFalse(watchdog.observe(False, 229.9))
+
     def test_incomplete_bootstrap_read_is_retryable_transport_failure(self):
         failure = http.client.IncompleteRead(b"partial", 128)
         self.assertTrue(managed._is_transient_transport_error(failure))
@@ -894,7 +977,13 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
                         b"wan-token",
                         b"same-bridge",
                         release,
+                        '"bundle-bad"',
                     ),
+                ),
+                mock.patch.object(
+                    updater,
+                    "_fetch_bootstrap_identity",
+                    return_value='"bundle-bad"',
                 ),
                 mock.patch.object(
                     managed,
@@ -935,7 +1024,13 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
                         b"wan-token",
                         b"same-bridge",
                         release,
+                        '"bundle-repair"',
                     ),
+                ),
+                mock.patch.object(
+                    updater,
+                    "_fetch_bootstrap_identity",
+                    return_value='"bundle-repair"',
                 ),
                 mock.patch.object(
                     managed,
