@@ -2404,5 +2404,38 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains("SetCommandNull();", replicaSetup);
             StringAssert.Contains("enabled = false;", replicaSetup);
         }
+
+        [Test]
+        public void ReplicaLifecyclePreflightsUnsupportedOrConflictingWorldBeforeMutation()
+        {
+            string path = Path.Combine(
+                Application.dataPath,
+                "Scripts",
+                "Levels",
+                "GameState.Commands.cs");
+            string source = File.ReadAllText(path);
+
+            int apply = source.IndexOf("TryApplyAuthoritativeBattleStateSnapshot(");
+            int preflight = source.IndexOf(
+                "CanReconcileReplicaLifecycle(snapshot)",
+                apply);
+            int mutate = source.IndexOf(
+                "TryReconcileReplicaLifecycle(snapshot)",
+                apply);
+            Assert.That(preflight, Is.GreaterThan(apply));
+            Assert.That(mutate, Is.GreaterThan(preflight));
+
+            int preflightMethod = source.IndexOf(
+                "private bool CanReconcileReplicaLifecycle(");
+            int reconcileMethod = source.IndexOf(
+                "private bool TryReconcileReplicaLifecycle(");
+            string preflightSource = source.Substring(
+                preflightMethod,
+                reconcileMethod - preflightMethod);
+            StringAssert.Contains("else if (state.IsCarrierSquad)", preflightSource);
+            StringAssert.Contains("else if (state.IsCarrierShip)", preflightSource);
+            StringAssert.DoesNotContain("ReplicaDespawn();", preflightSource);
+            StringAssert.DoesNotContain("SetupReplica(", preflightSource);
+        }
     }
 }

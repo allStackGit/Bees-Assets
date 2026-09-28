@@ -195,7 +195,8 @@ namespace Assets.Scripts.Levels
                 return false;
             }
 
-            if (!TryReconcileReplicaLifecycle(snapshot))
+            if (!CanReconcileReplicaLifecycle(snapshot) ||
+                !TryReconcileReplicaLifecycle(snapshot))
             {
                 return false;
             }
@@ -249,6 +250,103 @@ namespace Assets.Scripts.Levels
             }
 
             _lastAppliedBattleStateSequence = snapshot.Sequence;
+            return true;
+        }
+
+        private bool CanReconcileReplicaLifecycle(BattleStateSnapshot snapshot)
+        {
+            MatchSession matchSession = Stage != null ? Stage.MatchSession : null;
+            if (matchSession == null ||
+                matchSession.IsLocalAuthority ||
+                snapshot == null ||
+                snapshot.Squads == null ||
+                snapshot.Ships == null)
+            {
+                return false;
+            }
+
+            Dictionary<long, BattleSquadStateSnapshot> authoritySquads =
+                new Dictionary<long, BattleSquadStateSnapshot>();
+            for (int i = 0; i < snapshot.Squads.Count; i++)
+            {
+                BattleSquadStateSnapshot state = snapshot.Squads[i];
+                authoritySquads[state.MatchSquadId] = state;
+
+                if (state.OwnerPlayerId != MatchSession.UnownedPlayerId &&
+                    matchSession.GetPlayerSide(state.OwnerPlayerId) != state.Side)
+                {
+                    return false;
+                }
+
+                if (SquadsByMatchId.TryGetValue(state.MatchSquadId, out Squad existingSquad))
+                {
+                    if (existingSquad == null ||
+                        existingSquad.IsDead ||
+                        existingSquad.Side != state.Side ||
+                        existingSquad.OwnerPlayerId != state.OwnerPlayerId ||
+                        existingSquad.IsMinionSquad != state.IsMinionSquad ||
+                        existingSquad.IsCarrierSquad != state.IsCarrierSquad)
+                    {
+                        return false;
+                    }
+                }
+                else if (state.IsCarrierSquad)
+                {
+                    return false;
+                }
+            }
+
+            HashSet<long> authorityShipIds = new HashSet<long>();
+            for (int i = 0; i < snapshot.Ships.Count; i++)
+            {
+                BattleShipStateSnapshot state = snapshot.Ships[i];
+                authorityShipIds.Add(state.MatchShipId);
+
+                if (!authoritySquads.TryGetValue(
+                        state.MatchSquadId,
+                        out BattleSquadStateSnapshot squadState) ||
+                    squadState.Side != state.Side)
+                {
+                    return false;
+                }
+
+                if (ShipsByMatchId.TryGetValue(state.MatchShipId, out Ship existingShip))
+                {
+                    if (existingShip == null ||
+                        existingShip.IsDead ||
+                        existingShip.Squad == null ||
+                        existingShip.Squad.MatchSquadId != state.MatchSquadId ||
+                        existingShip.Side != state.Side ||
+                        (int)existingShip.ShipType != state.ShipType)
+                    {
+                        return false;
+                    }
+                }
+                else if (state.IsCarrierShip)
+                {
+                    return false;
+                }
+            }
+
+            foreach (KeyValuePair<long, Squad> localSquad in SquadsByMatchId)
+            {
+                if (authoritySquads.ContainsKey(localSquad.Key) ||
+                    localSquad.Value == null)
+                {
+                    continue;
+                }
+
+                List<Ship> ships = localSquad.Value.GetShips();
+                for (int i = 0; i < ships.Count; i++)
+                {
+                    Ship ship = ships[i];
+                    if (ship != null && authorityShipIds.Contains(ship.MatchShipId))
+                    {
+                        return false;
+                    }
+                }
+            }
+
             return true;
         }
 
