@@ -139,8 +139,25 @@ LAUNCHER=$q_launcher
 INSTALL_ROOT=$q_install
 TORCH_DEVICE=$q_torch
 MONITOR_LOG=$q_log
+
+supervisor_alive() {
+    local pid_file="\$INSTALL_ROOT/remote-worker.pid"
+    local pid="" part="" command_line=""
+    [[ -f "\$pid_file" ]] || return 1
+    IFS= read -r pid < "\$pid_file" || true
+    [[ "\$pid" =~ ^[0-9]+$ ]] || return 1
+    kill -0 "\$pid" 2>/dev/null || return 1
+    [[ -r "/proc/\$pid/cmdline" ]] || return 1
+    while IFS= read -r -d '' part; do
+        command_line+="\$part "
+    done < "/proc/\$pid/cmdline"
+    [[ "\$command_line" == *"bees_managed_remote_worker.py"* && "\$command_line" == *"\$INSTALL_ROOT"* ]]
+}
+
 while [[ -f "\$MARKER" ]]; do
-    BEES_AUTOSTART_CHILD=1 bash "\$LAUNCHER" start --install-root "\$INSTALL_ROOT" --torch-device "\$TORCH_DEVICE"${ENVS:+ --envs $ENVS} >>"\$MONITOR_LOG" 2>&1 || true
+    if ! supervisor_alive; then
+        BEES_AUTOSTART_CHILD=1 bash "\$LAUNCHER" start --install-root "\$INSTALL_ROOT" --torch-device "\$TORCH_DEVICE"${ENVS:+ --envs $ENVS} >>"\$MONITOR_LOG" 2>&1 || true
+    fi
     sleep 10
 done
 EOF
