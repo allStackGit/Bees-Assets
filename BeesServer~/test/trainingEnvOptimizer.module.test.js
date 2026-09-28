@@ -22,6 +22,7 @@ function record(
         lastError = '',
         sessionFailures = 0,
         failureAgeSeconds = null,
+        failureType = '',
     } = {},
 ) {
     return {
@@ -41,6 +42,7 @@ function record(
                 accepted_steps_total: accepted,
                 session_failures_total: sessionFailures,
                 seconds_since_last_session_failure: failureAgeSeconds,
+                last_session_failure_type: failureType,
             },
         },
     };
@@ -325,6 +327,66 @@ test('optimizer holds a recovered worker before probing again after a reported f
     assert.equal(state.baseline_envs, 8);
     assert.equal(state.desired_envs, 9);
     assert.equal(state.probing, true);
+});
+
+test('BrokerStaleActor freshness races do not create optimizer instability', () => {
+    const optimizer = new TrainingEnvOptimizer({
+        warmupMs: 0,
+        measurementMs: 1000,
+        cooldownMs: 0,
+        instabilityHoldMs: 10_000,
+    });
+
+    const state = update(
+        optimizer,
+        'remote-a',
+        8,
+        100,
+        1000,
+        {
+            max: 16,
+            sessionFailures: 48,
+            failureAgeSeconds: 0,
+            failureType: 'BrokerStaleActor',
+        },
+    );
+
+    assert.notEqual(state.phase, 'stability-hold');
+    assert.equal(state.stability_hold_until_ms, 0);
+});
+
+test('healthy worker clears legacy hold caused by BrokerStaleActor resyncs', () => {
+    const optimizer = new TrainingEnvOptimizer({
+        warmupMs: 0,
+        measurementMs: 1000,
+        cooldownMs: 0,
+        instabilityHoldMs: 10_000,
+    });
+
+    update(optimizer, 'remote-a', 8, 0, 0, { max: 16 });
+    const internal = optimizer.states.get('remote-a');
+    internal.phase = 'stability-hold';
+    internal.instability_hold_until_ms = 20_000;
+    internal.last_instability_reason = 'WAN actor session failure';
+    internal.last_instability_ms = 1_000;
+
+    const state = update(
+        optimizer,
+        'remote-a',
+        8,
+        100,
+        5_000,
+        {
+            max: 16,
+            sessionFailures: 48,
+            failureAgeSeconds: 0,
+            failureType: 'BrokerStaleActor',
+        },
+    );
+
+    assert.equal(state.phase, 'warmup');
+    assert.equal(state.stability_hold_until_ms, 5_000);
+    assert.match(state.decision, /collecting fresh baseline/);
 });
 
 test('control transport recovery does not create optimizer instability', () => {
