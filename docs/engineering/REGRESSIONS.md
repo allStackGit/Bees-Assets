@@ -1363,3 +1363,12 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** `Training/bees_continual_service_tests.py` asserts that the interruptible-stop wait exceeds the owned-child tree grace interval. This regression test was added but not executed under the static-only request.
 **Verification:** Re-read the shutdown constants, guardian escalation, and service stop helper through GitHub. No tests, builds, Unity, or runtime checks were run.
 **Invariant/knowledge:** An owner must wait through the full descendant-cleanup grace of any subprocess guardian before force-killing that guardian.
+
+### REG-156 — Windows phase completion must clear owned descendants
+**Area:** `Training/bees_process_safety.py`, `Training/bees_continual_service.py`; Windows continual phase lifecycle
+**Symptom:** A release/build child could exit while a nested process remained alive in the service owner's kill-on-close Job Object. Because the long-lived service retained that job for later generations, descendants could continue after the phase had been reported complete or stopped.
+**Root cause:** Windows `Popen.terminate()` and `Popen.wait()` affect only the root process; the shared Job Object is otherwise terminated only when the service owner exits.
+**Fix:** Add an owner-job termination operation and call it after each managed phase process exits, including interruptible stop paths, so the full descendant set is cleared before retry or phase transition.
+**Permanent protection:** `Training/bees_continual_service_tests.py` covers Windows interruptible-stop cleanup and cleanup after the root phase process has already exited. Tests were added but not executed under the static-only request.
+**Verification:** Re-read the Windows Job Object setup, managed subprocess completion path, and regression source through GitHub. No tests, builds, Unity, or runtime checks were run.
+**Invariant/knowledge:** Windows child-tree cleanup must terminate the owning Job Object; terminating or reaping the root process alone does not guarantee descendant exit.
