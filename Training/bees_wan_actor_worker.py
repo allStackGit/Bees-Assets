@@ -1153,7 +1153,7 @@ class ActorSession:
                         "policy_versions": dict(self.policy_versions),
                         "trajectories": trajectories[start : start + MAX_TRAJECTORIES_PER_UPLOAD],
                     }
-                    while not self.stop.is_set():
+                    while True:
                         if self._session_changed.is_set():
                             discard_remaining = True
                             break
@@ -1162,7 +1162,20 @@ class ActorSession:
                             # lease. Do not keep retrying batches that cannot be accepted.
                             discard_remaining = True
                             break
-                        if self._state_changed.is_set():
+
+                        stopping = self.stop.is_set()
+                        if stopping:
+                            # Preserve already-completed experience during orderly stop, using
+                            # the same finite drain budget as the uploader's pending requests.
+                            if self._upload_drain_deadline is None:
+                                self._upload_drain_deadline = (
+                                    time.monotonic() + ACTOR_SHUTDOWN_UPLOAD_DRAIN_SECONDS
+                                )
+                            remaining = self._upload_drain_deadline - time.monotonic()
+                            if remaining <= 0:
+                                discard_remaining = True
+                                break
+                        elif self._state_changed.is_set():
                             # A topology-only update keeps these completed trajectories valid.
                             # Synchronize before retrying a full bounded queue; policy/control
                             # changes make the captured batch stale and require discarding it.
@@ -1173,8 +1186,12 @@ class ActorSession:
                             ):
                                 discard_remaining = True
                                 break
+
+                        timeout = 0.5
+                        if stopping:
+                            timeout = min(timeout, remaining)
                         try:
-                            self._upload_queue.put(payload, timeout=0.5)
+                            self._upload_queue.put(payload, timeout=max(0.001, timeout))
                             break
                         except queue.Full:
                             self._raise_thread_error()
