@@ -107,6 +107,11 @@ EPISODE_LOG_PATTERN = re.compile(
 )
 
 
+def _log_file_identity(file_stat: os.stat_result) -> Optional[tuple[int, int]]:
+    identity = (int(file_stat.st_dev), int(file_stat.st_ino))
+    return None if identity[1] == 0 else identity
+
+
 def _episode_numeric_field(line: str, key: str) -> Optional[float]:
     match = re.search(
         rf"\b{re.escape(key)}=(-?[0-9]+(?:\.[0-9]+)?)(?:deg|%)?",
@@ -153,12 +158,7 @@ class EpisodeLogMetrics:
             size = file_stat.st_size
         except OSError:
             return
-        identity: Optional[tuple[int, int]] = (
-            int(file_stat.st_dev),
-            int(file_stat.st_ino),
-        )
-        if identity[1] == 0:
-            identity = None
+        identity = _log_file_identity(file_stat)
         position = self._positions.get(log_path)
         previous_identity = self._file_identities.get(log_path)
         identity_changed = (
@@ -177,6 +177,11 @@ class EpisodeLogMetrics:
             self._pending.pop(log_path, None)
         try:
             with log_path.open("rb") as handle:
+                opened_identity = _log_file_identity(os.fstat(handle.fileno()))
+                if identity is not None and opened_identity != identity:
+                    # The path was replaced after stat but before open. Do not attribute
+                    # bytes from the new generation to the old generation's cursor.
+                    return
                 previous_byte = b""
                 if first_read and position > 0:
                     handle.seek(position - 1)
@@ -632,9 +637,7 @@ class TrainingLogUploader:
                 size = file_stat.st_size
             except OSError:
                 continue
-            identity = (int(file_stat.st_dev), int(file_stat.st_ino))
-            if identity[1] == 0:
-                identity = None
+            identity = _log_file_identity(file_stat)
             previous_identity = self._file_identities.get(log_path)
             identity_changed = (
                 previous_identity is not None
@@ -665,6 +668,11 @@ class TrainingLogUploader:
             )
             try:
                 with log_path.open("rb") as handle:
+                    opened_identity = _log_file_identity(os.fstat(handle.fileno()))
+                    if identity is not None and opened_identity != identity:
+                        # A rotation between stat and open must not append bytes from the
+                        # replacement file at the previous generation's remote offset.
+                        continue
                     handle.seek(position)
                     data = handle.read(amount)
             except OSError:
