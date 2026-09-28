@@ -42,6 +42,7 @@ namespace Assets.Scripts.Levels
                 matchSession.Phase != MatchSessionPhase.Battle ||
                 MatchLevelId <= 0 ||
                 _nextBattleStateSequence <= 0 ||
+                MiningAsteroids.Count > MultiplayerProtocol.MaxBattleStateMiningAsteroids ||
                 Squads.Count > MultiplayerProtocol.MaxBattleStateSquads ||
                 Ships.Count > MultiplayerProtocol.MaxBattleStateShips)
             {
@@ -55,6 +56,24 @@ namespace Assets.Scripts.Levels
                 GameOver = GameOver,
                 WinningSide = ResolveAuthoritativeWinningSideForSnapshot()
             };
+
+            for (int i = 0; i < MiningAsteroids.Count; i++)
+            {
+                MiningAsteroid asteroid = MiningAsteroids[i];
+                if (asteroid == null ||
+                    asteroid.IsDead ||
+                    asteroid.MatchMiningAsteroidId <= 0 ||
+                    asteroid.Health <= 0)
+                {
+                    return false;
+                }
+
+                candidate.MiningAsteroids.Add(new BattleMiningAsteroidStateSnapshot
+                {
+                    MatchMiningAsteroidId = asteroid.MatchMiningAsteroidId,
+                    Health = asteroid.Health
+                });
+            }
 
             for (int i = 0; i < Squads.Count; i++)
             {
@@ -266,18 +285,22 @@ namespace Assets.Scripts.Levels
                 snapshot == null ||
                 snapshot.MatchLevelId != MatchLevelId ||
                 snapshot.Sequence <= _lastAppliedBattleStateSequence ||
+                snapshot.MiningAsteroids == null ||
                 snapshot.Ships == null)
             {
                 return false;
             }
 
-            if (!CanReconcileReplicaLifecycle(snapshot) ||
-                !TryReconcileReplicaLifecycle(snapshot))
+            if (!CanApplyAuthoritativeMiningAsteroidState(snapshot) ||
+                !CanReconcileReplicaLifecycle(snapshot) ||
+                !TryReconcileReplicaLifecycle(snapshot) ||
+                !TryApplyAuthoritativeMiningAsteroidState(snapshot))
             {
                 return false;
             }
 
-            if (snapshot.Squads.Count != SquadsByMatchId.Count ||
+            if (snapshot.MiningAsteroids.Count != MiningAsteroidsByMatchId.Count ||
+                snapshot.Squads.Count != SquadsByMatchId.Count ||
                 snapshot.Ships.Count != ShipsByMatchId.Count)
             {
                 return false;
@@ -346,6 +369,85 @@ namespace Assets.Scripts.Levels
             Level.WinningSide = snapshot.WinningSide;
             GameOver = snapshot.GameOver;
             _lastAppliedBattleStateSequence = snapshot.Sequence;
+            return true;
+        }
+
+        private bool CanApplyAuthoritativeMiningAsteroidState(
+            BattleStateSnapshot snapshot)
+        {
+            if (snapshot == null || snapshot.MiningAsteroids == null)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < snapshot.MiningAsteroids.Count; i++)
+            {
+                BattleMiningAsteroidStateSnapshot state = snapshot.MiningAsteroids[i];
+                if (state == null ||
+                    state.MatchMiningAsteroidId <= 0 ||
+                    state.Health <= 0 ||
+                    !MiningAsteroidsByMatchId.TryGetValue(
+                        state.MatchMiningAsteroidId,
+                        out MiningAsteroid asteroid) ||
+                    asteroid == null ||
+                    asteroid.IsDead ||
+                    (asteroid.OriginalHealth > 0 && state.Health > asteroid.OriginalHealth))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private bool TryApplyAuthoritativeMiningAsteroidState(
+            BattleStateSnapshot snapshot)
+        {
+            HashSet<long> authoritativeIds = new HashSet<long>();
+            for (int i = 0; i < snapshot.MiningAsteroids.Count; i++)
+            {
+                authoritativeIds.Add(snapshot.MiningAsteroids[i].MatchMiningAsteroidId);
+            }
+
+            List<MiningAsteroid> toDespawn = null;
+            foreach (KeyValuePair<long, MiningAsteroid> local in MiningAsteroidsByMatchId)
+            {
+                if (!authoritativeIds.Contains(local.Key))
+                {
+                    toDespawn ??= new List<MiningAsteroid>();
+                    toDespawn.Add(local.Value);
+                }
+            }
+
+            if (toDespawn != null)
+            {
+                for (int i = 0; i < toDespawn.Count; i++)
+                {
+                    MiningAsteroid asteroid = toDespawn[i];
+                    if (asteroid != null &&
+                        !asteroid.IsDead &&
+                        !asteroid.ReplicaDespawn())
+                    {
+                        return false;
+                    }
+                }
+            }
+
+            for (int i = 0; i < snapshot.MiningAsteroids.Count; i++)
+            {
+                BattleMiningAsteroidStateSnapshot state = snapshot.MiningAsteroids[i];
+                if (!MiningAsteroidsByMatchId.TryGetValue(
+                        state.MatchMiningAsteroidId,
+                        out MiningAsteroid asteroid) ||
+                    asteroid == null ||
+                    asteroid.IsDead)
+                {
+                    return false;
+                }
+
+                asteroid.Health = state.Health;
+            }
+
             return true;
         }
 
@@ -784,6 +886,16 @@ namespace Assets.Scripts.Levels
                 GameOver = source.GameOver,
                 WinningSide = source.WinningSide
             };
+
+            for (int i = 0; i < source.MiningAsteroids.Count; i++)
+            {
+                BattleMiningAsteroidStateSnapshot asteroid = source.MiningAsteroids[i];
+                copy.MiningAsteroids.Add(new BattleMiningAsteroidStateSnapshot
+                {
+                    MatchMiningAsteroidId = asteroid.MatchMiningAsteroidId,
+                    Health = asteroid.Health
+                });
+            }
 
             for (int i = 0; i < source.Squads.Count; i++)
             {
@@ -1706,12 +1818,21 @@ namespace Assets.Scripts.Levels
     }
 
     [Serializable]
+    public sealed class BattleMiningAsteroidStateSnapshot
+    {
+        public long MatchMiningAsteroidId;
+        public int Health;
+    }
+
+    [Serializable]
     public sealed class BattleStateSnapshot
     {
         public int MatchLevelId;
         public long Sequence;
         public bool GameOver;
         public int WinningSide;
+        public List<BattleMiningAsteroidStateSnapshot> MiningAsteroids =
+            new List<BattleMiningAsteroidStateSnapshot>();
         public List<BattleSquadStateSnapshot> Squads = new List<BattleSquadStateSnapshot>();
         public List<BattleShipStateSnapshot> Ships = new List<BattleShipStateSnapshot>();
     }
@@ -1789,6 +1910,7 @@ namespace Assets.Scripts.Levels
         public const int MaxPacketBytes = 4096;
         public const int MaxLobbyPacketBytes = 65536;
         public const int MaxBattleStatePacketBytes = 262144;
+        public const int MaxBattleStateMiningAsteroids = 256;
         public const int MaxBattleStateSquads = 512;
         public const int MaxBattleStateShips = 2048;
         private const string CommandPacketType = "command";
@@ -1840,7 +1962,12 @@ namespace Assets.Scripts.Levels
         };
         private static readonly HashSet<string> BattleStateFields = new HashSet<string>
         {
-            "v", "match", "type", "level", "seq", "gameOver", "winner", "squads", "ships"
+            "v", "match", "type", "level", "seq", "gameOver", "winner",
+            "miningAsteroids", "squads", "ships"
+        };
+        private static readonly HashSet<string> BattleMiningAsteroidStateFields = new HashSet<string>
+        {
+            "id", "health"
         };
         private static readonly HashSet<string> BattleSquadStateFields = new HashSet<string>
         {
@@ -1864,6 +1991,17 @@ namespace Assets.Scripts.Levels
                 !IsValidBattleStateSnapshot(snapshot))
             {
                 return false;
+            }
+
+            JArray miningAsteroids = new JArray();
+            for (int i = 0; i < snapshot.MiningAsteroids.Count; i++)
+            {
+                BattleMiningAsteroidStateSnapshot asteroid = snapshot.MiningAsteroids[i];
+                miningAsteroids.Add(new JObject
+                {
+                    ["id"] = asteroid.MatchMiningAsteroidId,
+                    ["health"] = asteroid.Health
+                });
             }
 
             JArray squads = new JArray();
@@ -1928,6 +2066,7 @@ namespace Assets.Scripts.Levels
                 ["seq"] = snapshot.Sequence,
                 ["gameOver"] = snapshot.GameOver,
                 ["winner"] = snapshot.WinningSide,
+                ["miningAsteroids"] = miningAsteroids,
                 ["squads"] = squads,
                 ["ships"] = ships
             };
@@ -1983,6 +2122,8 @@ namespace Assets.Scripts.Levels
                 !TryReadInt64(json, "winner", out long winningSide) ||
                 winningSide < int.MinValue ||
                 winningSide > int.MaxValue ||
+                !(json["miningAsteroids"] is JArray miningAsteroids) ||
+                miningAsteroids.Count > MaxBattleStateMiningAsteroids ||
                 !(json["squads"] is JArray squads) ||
                 squads.Count > MaxBattleStateSquads ||
                 !(json["ships"] is JArray ships) ||
@@ -1998,6 +2139,28 @@ namespace Assets.Scripts.Levels
                 GameOver = gameOver,
                 WinningSide = (int)winningSide
             };
+
+            HashSet<long> matchMiningAsteroidIds = new HashSet<long>();
+            for (int i = 0; i < miningAsteroids.Count; i++)
+            {
+                if (!(miningAsteroids[i] is JObject asteroidJson) ||
+                    !HasExactFields(asteroidJson, BattleMiningAsteroidStateFields) ||
+                    !TryReadInt64(asteroidJson, "id", out long matchMiningAsteroidId) ||
+                    matchMiningAsteroidId <= 0 ||
+                    !matchMiningAsteroidIds.Add(matchMiningAsteroidId) ||
+                    !TryReadInt64(asteroidJson, "health", out long asteroidHealth) ||
+                    asteroidHealth <= 0 ||
+                    asteroidHealth > int.MaxValue)
+                {
+                    return false;
+                }
+
+                parsed.MiningAsteroids.Add(new BattleMiningAsteroidStateSnapshot
+                {
+                    MatchMiningAsteroidId = matchMiningAsteroidId,
+                    Health = (int)asteroidHealth
+                });
+            }
 
             HashSet<long> matchSquadIds = new HashSet<long>();
             for (int i = 0; i < squads.Count; i++)
@@ -2141,12 +2304,27 @@ namespace Assets.Scripts.Levels
                  snapshot.WinningSide != ConfigData.Configuration.BeeSide &&
                  snapshot.WinningSide != ConfigData.Configuration.HumanSide) ||
                 (!snapshot.GameOver && snapshot.WinningSide != 0) ||
+                snapshot.MiningAsteroids == null ||
+                snapshot.MiningAsteroids.Count > MaxBattleStateMiningAsteroids ||
                 snapshot.Squads == null ||
                 snapshot.Squads.Count > MaxBattleStateSquads ||
                 snapshot.Ships == null ||
                 snapshot.Ships.Count > MaxBattleStateShips)
             {
                 return false;
+            }
+
+            HashSet<long> miningAsteroidIds = new HashSet<long>();
+            for (int i = 0; i < snapshot.MiningAsteroids.Count; i++)
+            {
+                BattleMiningAsteroidStateSnapshot asteroid = snapshot.MiningAsteroids[i];
+                if (asteroid == null ||
+                    asteroid.MatchMiningAsteroidId <= 0 ||
+                    !miningAsteroidIds.Add(asteroid.MatchMiningAsteroidId) ||
+                    asteroid.Health <= 0)
+                {
+                    return false;
+                }
             }
 
             Dictionary<long, BattleSquadStateSnapshot> squads =

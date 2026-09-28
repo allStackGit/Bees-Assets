@@ -70,6 +70,23 @@ namespace Assets.Scripts.Entities
             }
         }
 
+        public bool ReplicaDespawn()
+        {
+            MatchSession matchSession = Level != null && Level.Stage != null
+                ? Level.Stage.MatchSession
+                : null;
+            if (matchSession == null ||
+                matchSession.IsLocalAuthority ||
+                matchSession.Phase != MatchSessionPhase.Battle ||
+                IsDead)
+            {
+                return false;
+            }
+
+            Kill(true);
+            return true;
+        }
+
         public void Kill(bool endKill)
         {
             if (!IsDead)
