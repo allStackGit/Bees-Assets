@@ -575,6 +575,21 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
         self.assertIn("$unhealthyCycles=0", windows)
         self.assertIn("$unhealthyCycles -ge 3", windows)
         self.assertIn("Invoke-LauncherRepair", windows)
+        self.assertIn("$RepairTimeoutSeconds=180", windows)
+        self.assertIn("remote-monitor-repair.out.log", windows)
+        self.assertIn("remote-monitor-repair.err.log", windows)
+        self.assertIn(
+            "Start-Process -FilePath $env:COMSPEC",
+            windows,
+        )
+        self.assertIn(
+            "taskkill.exe /PID $script:RepairProcess.Id /T /F",
+            windows,
+        )
+        self.assertNotIn(
+            "try {& $env:COMSPEC /d /c $command *> $null} catch {}",
+            windows,
+        )
         self.assertIn("function Restart-UnhealthySupervisor", windows)
         self.assertIn("unhealthy supervisor stopped cleanly; continuing bootstrap", windows)
         self.assertIn("forcing the stale remote supervisor to terminate", windows)
