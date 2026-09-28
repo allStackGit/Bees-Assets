@@ -1399,3 +1399,10 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** The guide now names `RlPolicySchema` and `RlCombatPerception` as the executable sources of truth. Documentation was checked against the v20 signature and `Training/rl_1v1_config.yaml`; no tests were run under the static-only audit scope.
 **Verification:** Read back the rewritten ABI sections and searched the guide for stale v6 dimensions, target-branch claims, 16-weapon limits, and the old 512-unit network. No stale claims remain.
 **Invariant/knowledge:** User-facing training documentation must match the active executable ABI; incorrect interface dimensions can cause checkpoint/configuration errors.
+
+### REG-160 — Stop managed phase children when service supervision fails
+**Area:** `Training/bees_continual_service.py`, managed phase child lifecycle
+**Symptom:** An ordinary supervisor-side exception after `popen_owned` could unwind to `run_service`'s retry handler while leaving the phase child attached to the still-running owner. The next retry could start a second trainer or release process alongside the unsupervised child.
+**Fix:** `_run_managed_subprocess` now stops and waits for the managed child before re-raising an ordinary supervision error. If the normal owned-child cleanup fails, it force-kills the root and clears the Windows Job Object as a fallback.
+**Permanent protection:** Any phase error handled by the long-lived retry loop must retire its currently supervised child first. Owner-process exit remains the final guardian fallback when the service itself terminates.
+**Verification:** Static control-flow review traced post-launch errors into `run_service`'s exception-and-retry path and confirmed cleanup runs before propagation. No tests, builds, Unity, simulations, or runtime checks were run. Post-fix clean-pass count remains **0 / 2**.
