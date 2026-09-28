@@ -1291,3 +1291,11 @@ Manual-only protection is acceptable only when the record explains why determini
 **Verification:** Statically compared `_runtime_cutover_selected` with `TrainingControlStore._trainerStoppedForPending` and confirmed stale or pre-phase records no longer authorize cutover. No tests or runtime checks were performed.  
 **Invariant/knowledge:** Incompatible release cutover requires a fresh stop acknowledgement for the active barrier revision; process state alone is insufficient.
 
+### REG-148 — Concurrent remote launchers overwrote shared worker state
+**Area:** `Training/bees_remote_bootstrap.ps1`, `Training/bees_remote_bootstrap.sh`, remote worker install root  
+**Symptom:** Two near-simultaneous start requests could both pass the PID-file check, overwrite the same runtime and environment files, and start duplicate supervisors sharing one persistent trainer identity.  
+**Root cause:** The check-then-start sequence had no exclusive lock; the PID file was written only after lengthy shared-file preparation.  
+**Fix:** Acquire an OS-managed exclusive startup lock before modifying shared files and recheck the supervisor PID while holding it. Linux keeps the lock descriptor in the supervisor; Windows holds an exclusive file handle through launch and PID publication.  
+**Permanent protection:** Every launcher must serialize shared install-root preparation and supervisor creation, with a second live-process check inside the lock. A focused concurrent-launch regression test was not added under the static-analysis-only request.  
+**Verification:** Statically traced both lock acquisition paths, stale-PID checks, shared-file writes, child launch, and PID publication. No tests, builds, Unity, or runtime checks were performed.  
+**Invariant/knowledge:** A PID file alone cannot serialize startup because it is published after runtime preparation; use an OS-managed lock around the full critical section.
