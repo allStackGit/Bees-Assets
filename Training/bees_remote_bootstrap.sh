@@ -160,20 +160,43 @@ control_probe_once() {
     local python="\$INSTALL_ROOT/.venv/bin/python"
     local token_file="\$INSTALL_ROOT/Secrets/training-worker.token"
     [[ -x "\$python" && -s "\$token_file" ]] || return 1
-    "\$python" - "\$CONTROL_PORT" "\$token_file" <<'PY'
+    "\$python" - "\$CONTROL_PORT" "\$token_file" "\$INSTALL_ROOT" <<'PY'
+import json
+import socket
 import sys
 import urllib.request
+from pathlib import Path
 
-port, token_file = sys.argv[1], sys.argv[2]
+port, token_file, install_root = sys.argv[1], sys.argv[2], sys.argv[3]
 try:
-    token = open(token_file, "r", encoding="utf-8").read().strip()
+    token = Path(token_file).read_text(encoding="utf-8").strip()
+    actor_key = (Path(install_root) / "actor-key.txt").read_text(
+        encoding="ascii"
+    ).strip().lower()
+    if len(actor_key) != 32 or any(ch not in "0123456789abcdef" for ch in actor_key):
+        raise ValueError("invalid actor key")
+    trainer_id = f"remote-{socket.gethostname().lower()}-{actor_key[:8]}"
     request = urllib.request.Request(
         f"http://127.0.0.1:{port}/v1/status",
         headers={"Authorization": "Bearer " + token},
     )
     with urllib.request.urlopen(request, timeout=3.0) as response:
-        response.read(1)
-        raise SystemExit(0 if int(getattr(response, "status", 200)) == 200 else 1)
+        status = json.load(response)
+    record = next(
+        (item for item in status.get("trainers", ())
+         if str(item.get("trainer_id", "")) == trainer_id),
+        None,
+    )
+    if not isinstance(record, dict) or bool(record.get("stale", False)):
+        raise SystemExit(1)
+    desired = status.get("desired") if isinstance(status.get("desired"), dict) else {}
+    stalled = (
+        bool(desired.get("training_enabled", False))
+        and desired.get("pending_release") is None
+        and str(record.get("process_state", "")) == "stopped"
+        and str(record.get("last_error", "")).startswith("ControlUnavailable:")
+    )
+    raise SystemExit(1 if stalled else 0)
 except Exception:
     raise SystemExit(1)
 PY
@@ -295,20 +318,43 @@ supervisor_control_probe_once() {
     local python="$INSTALL_ROOT/.venv/bin/python"
     local token_file="$INSTALL_ROOT/Secrets/training-worker.token"
     [[ -x "$python" && -s "$token_file" ]] || return 1
-    "$python" - "$CONTROL_PORT" "$token_file" <<'PY'
+    "$python" - "$CONTROL_PORT" "$token_file" "$INSTALL_ROOT" <<'PY'
+import json
+import socket
 import sys
 import urllib.request
+from pathlib import Path
 
-port, token_file = sys.argv[1], sys.argv[2]
+port, token_file, install_root = sys.argv[1], sys.argv[2], sys.argv[3]
 try:
-    token = open(token_file, "r", encoding="utf-8").read().strip()
+    token = Path(token_file).read_text(encoding="utf-8").strip()
+    actor_key = (Path(install_root) / "actor-key.txt").read_text(
+        encoding="ascii"
+    ).strip().lower()
+    if len(actor_key) != 32 or any(ch not in "0123456789abcdef" for ch in actor_key):
+        raise ValueError("invalid actor key")
+    trainer_id = f"remote-{socket.gethostname().lower()}-{actor_key[:8]}"
     request = urllib.request.Request(
         f"http://127.0.0.1:{port}/v1/status",
         headers={"Authorization": "Bearer " + token},
     )
     with urllib.request.urlopen(request, timeout=3.0) as response:
-        response.read(1)
-        raise SystemExit(0 if int(getattr(response, "status", 200)) == 200 else 1)
+        status = json.load(response)
+    record = next(
+        (item for item in status.get("trainers", ())
+         if str(item.get("trainer_id", "")) == trainer_id),
+        None,
+    )
+    if not isinstance(record, dict) or bool(record.get("stale", False)):
+        raise SystemExit(1)
+    desired = status.get("desired") if isinstance(status.get("desired"), dict) else {}
+    stalled = (
+        bool(desired.get("training_enabled", False))
+        and desired.get("pending_release") is None
+        and str(record.get("process_state", "")) == "stopped"
+        and str(record.get("last_error", "")).startswith("ControlUnavailable:")
+    )
+    raise SystemExit(1 if stalled else 0)
 except Exception:
     raise SystemExit(1)
 PY
