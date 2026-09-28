@@ -165,6 +165,7 @@ class _SessionFailureTelemetry:
         self._count = 0
         self._last_failure_unix_seconds: Optional[float] = None
         self._last_failure_type = ""
+        self._last_failure_message = ""
         loaded = self._load()
         if self._state_path is not None and self._run_id and not loaded:
             self._persist()
@@ -184,6 +185,7 @@ class _SessionFailureTelemetry:
         count = value.get("session_failures_total")
         last_failure = value.get("last_failure_unix_seconds")
         failure_type = value.get("last_session_failure_type")
+        failure_message = value.get("last_session_failure_message", "")
         if (
             not isinstance(count, int)
             or isinstance(count, bool)
@@ -198,6 +200,7 @@ class _SessionFailureTelemetry:
                 )
             )
             or not isinstance(failure_type, str)
+            or not isinstance(failure_message, str)
         ):
             return False
         self._count = count
@@ -205,6 +208,7 @@ class _SessionFailureTelemetry:
             None if last_failure is None else float(last_failure)
         )
         self._last_failure_type = failure_type
+        self._last_failure_message = failure_message
         return True
 
     def _persist(self) -> None:
@@ -217,6 +221,7 @@ class _SessionFailureTelemetry:
             "session_failures_total": self._count,
             "last_failure_unix_seconds": self._last_failure_unix_seconds,
             "last_session_failure_type": self._last_failure_type,
+            "last_session_failure_message": self._last_failure_message,
         }
         try:
             atomic_write_text(
@@ -233,6 +238,7 @@ class _SessionFailureTelemetry:
             self._count += 1
             self._last_failure_unix_seconds = time.time()
             self._last_failure_type = type(exc).__name__
+            self._last_failure_message = " ".join(str(exc).split())[:240]
             self._persist()
 
     def snapshot(self) -> dict[str, Any]:
@@ -246,6 +252,7 @@ class _SessionFailureTelemetry:
                 "session_failures_total": self._count,
                 "seconds_since_last_session_failure": age,
                 "last_session_failure_type": self._last_failure_type,
+                "last_session_failure_message": self._last_failure_message,
             }
 
 
