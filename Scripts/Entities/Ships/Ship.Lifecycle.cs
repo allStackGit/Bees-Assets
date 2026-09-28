@@ -183,6 +183,45 @@ namespace Assets.Scripts.Entities.Ships
 
         public virtual void Setup(Level level, FleetShip fleetShip, Squad squad, Vector2 offsetFromCenter)
         {
+            SetupCore(level, fleetShip, squad, offsetFromCenter, 0, false);
+        }
+
+        public void SetupReplica(
+            Level level,
+            FleetShip fleetShip,
+            Squad squad,
+            Vector2 offsetFromCenter,
+            long authoritativeMatchShipId)
+        {
+            MatchSession matchSession = level != null && level.Stage != null
+                ? level.Stage.MatchSession
+                : null;
+            if (matchSession == null ||
+                matchSession.IsLocalAuthority ||
+                matchSession.Phase != MatchSessionPhase.Battle ||
+                !matchSession.ReserveReplicaMatchShipId(authoritativeMatchShipId))
+            {
+                throw new InvalidOperationException(
+                    "Replica ship setup requires an active non-authoritative match and a valid authority ship id.");
+            }
+
+            SetupCore(
+                level,
+                fleetShip,
+                squad,
+                offsetFromCenter,
+                authoritativeMatchShipId,
+                true);
+        }
+
+        private void SetupCore(
+            Level level,
+            FleetShip fleetShip,
+            Squad squad,
+            Vector2 offsetFromCenter,
+            long authoritativeMatchShipId,
+            bool isNetworkReplica)
+        {
             Squad = squad;
             Level = level;
             Id = Level.State.GetId();
@@ -196,10 +235,14 @@ namespace Assets.Scripts.Entities.Ships
             }
             ClearData();
             MatchSession matchSession = Level.Stage.MatchSession;
-            MatchShipId = matchSession == null ? 0 : matchSession.AllocateMatchShipId();
+            MatchShipId = isNetworkReplica
+                ? authoritativeMatchShipId
+                : matchSession == null ? 0 : matchSession.AllocateMatchShipId();
+            IsNetworkReplica = isNetworkReplica;
             IsPlayerControlled = squad.IsPlayerControlled;
             IsUserControlled = squad.IsUserControlled;
-            IsHiveMindControlled = Stage.IsTrainingNueralNetwork || !IsPlayerControlled;
+            IsHiveMindControlled =
+                !isNetworkReplica && (Stage.IsTrainingNueralNetwork || !IsPlayerControlled);
             IsSpawnedShip = FleetShip.Id < 0;
 
             if (!Level.Stage.IsTraining)
@@ -231,11 +274,43 @@ namespace Assets.Scripts.Entities.Ships
                 Level.State.MiningShips.Add(this);
             UpdateHealthBar();
             Activate();
+
+            if (isNetworkReplica)
+            {
+                EnterNetworkReplicaMode();
+            }
+        }
+
+        private void EnterNetworkReplicaMode()
+        {
+            CancelOwnedTimers();
+            StopAllCoroutines();
+            if (HasWeapons)
+            {
+                for (int i = 0; i < Weapons.Count; i++)
+                {
+                    Weapons[i].Deactivate();
+                }
+            }
+            if (HiveMindVision != null)
+            {
+                HiveMindVision.Deactivate();
+            }
+            if (HasProximityCollider && ProximityCollider != null)
+            {
+                ProximityCollider.Deactivate();
+            }
+            if (Body != null)
+            {
+                Body.linearVelocity = Vector2.zero;
+            }
+            enabled = false;
         }
 
         public virtual void ClearData()
         {
             MatchShipId = 0;
+            IsNetworkReplica = false;
             Rotation = OriginalRotation;
             Tsv = OriginalTsv;
             Transform.eulerAngles = new Vector3(0, 0, OriginalRotation);

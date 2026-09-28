@@ -1726,6 +1726,34 @@ namespace Assets.Scripts.Levels
             return _nextMatchShipId++;
         }
 
+        public bool ReserveReplicaMatchSquadId(long matchSquadId)
+        {
+            if (IsLocalAuthority ||
+                Phase != MatchSessionPhase.Battle ||
+                matchSquadId <= 0 ||
+                matchSquadId == long.MaxValue)
+            {
+                return false;
+            }
+
+            _nextMatchSquadId = Math.Max(_nextMatchSquadId, matchSquadId + 1);
+            return true;
+        }
+
+        public bool ReserveReplicaMatchShipId(long matchShipId)
+        {
+            if (IsLocalAuthority ||
+                Phase != MatchSessionPhase.Battle ||
+                matchShipId <= 0 ||
+                matchShipId == long.MaxValue)
+            {
+                return false;
+            }
+
+            _nextMatchShipId = Math.Max(_nextMatchShipId, matchShipId + 1);
+            return true;
+        }
+
         public int GetPlayerSide(int playerId)
         {
             MatchPlayer player = _players.FirstOrDefault(candidate => candidate.Id == playerId);

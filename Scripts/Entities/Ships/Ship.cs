@@ -17,6 +17,7 @@ namespace Assets.Scripts.Entities.Ships
         /// pooled runtime Id and persistent/transient FleetShip.Id.
         /// </summary>
         public long MatchShipId;
+        public bool IsNetworkReplica;
         public int Health, MaxHealth, OriginalHealth, OriginalTsv, Sight, Clearance, MaxRange, HalfMaxRange;
         public float SizeClass, ProjectileValue, Speed, SpecialFirePower, CurrentSpeed, LongestSide;
         public GameObject ShipExplosion, HealthBar, MiniMapIcon, ShipAnimation, MovementMarker;

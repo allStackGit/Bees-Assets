@@ -2243,5 +2243,59 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains("SquadsByMatchId.Remove(squad.MatchSquadId);", registrySource);
             StringAssert.Contains("Duplicate match squad id", registrySource);
         }
+
+        [Test]
+        public void ReplicaShipSetupAdoptsAuthorityIdWithoutDerivedSetupDispatch()
+        {
+            string path = Path.Combine(
+                Application.dataPath,
+                "Scripts",
+                "Entities",
+                "Ships",
+                "Ship.Lifecycle.cs");
+            string source = File.ReadAllText(path);
+
+            StringAssert.Contains("public void SetupReplica(", source);
+            StringAssert.Contains("SetupCore(", source);
+            StringAssert.Contains("authoritativeMatchShipId", source);
+            StringAssert.Contains("ReserveReplicaMatchShipId(authoritativeMatchShipId)", source);
+            StringAssert.Contains("EnterNetworkReplicaMode();", source);
+        }
+
+        [Test]
+        public void ReplicaShipModeCancelsAutonomousGameplayActivityButKeepsObjectPresented()
+        {
+            string path = Path.Combine(
+                Application.dataPath,
+                "Scripts",
+                "Entities",
+                "Ships",
+                "Ship.Lifecycle.cs");
+            string source = File.ReadAllText(path);
+            int start = source.IndexOf("private void EnterNetworkReplicaMode()");
+            int end = source.IndexOf("public virtual void ClearData()", start);
+            Assert.That(start, Is.GreaterThanOrEqualTo(0));
+            Assert.That(end, Is.GreaterThan(start));
+            string replicaMode = source.Substring(start, end - start);
+
+            StringAssert.Contains("CancelOwnedTimers();", replicaMode);
+            StringAssert.Contains("StopAllCoroutines();", replicaMode);
+            StringAssert.Contains("Weapons[i].Deactivate();", replicaMode);
+            StringAssert.Contains("ProximityCollider.Deactivate();", replicaMode);
+            StringAssert.Contains("enabled = false;", replicaMode);
+            StringAssert.DoesNotContain("Deactivate();", replicaMode);
+        }
+
+        [Test]
+        public void ReplicaMatchIdsReserveAllocatorSpaceWithoutAuthorityMutation()
+        {
+            string path = Path.Combine(Application.dataPath, "Scripts", "Levels", "GameState.cs");
+            string source = File.ReadAllText(path);
+
+            StringAssert.Contains("ReserveReplicaMatchSquadId", source);
+            StringAssert.Contains("ReserveReplicaMatchShipId", source);
+            StringAssert.Contains("IsLocalAuthority", source);
+            StringAssert.Contains("Phase != MatchSessionPhase.Battle", source);
+        }
     }
 }
