@@ -899,13 +899,22 @@ class ActorSession:
                 self._current_env_config = config
                 self.manager.reset(config=config)
                 _remap_manager_initial_steps(self.manager, self.worker_offset)
-                self.client.reset_ack(
-                    {
-                        "session_id": self.session_id,
-                        "actor_id": self.actor_id,
-                        "control_epoch": new_control,
-                    }
-                )
+                try:
+                    self.client.reset_ack(
+                        {
+                            "session_id": self.session_id,
+                            "actor_id": self.actor_id,
+                            "control_epoch": new_control,
+                        }
+                    )
+                except BrokerStaleActor:
+                    # Central control advanced again between the state/control fetch and this
+                    # acknowledgement. That is an expected synchronization race, not a broken
+                    # actor session. Keep rollout paused and immediately synchronize to the
+                    # newest epoch instead of surfacing a false session failure.
+                    self._stale.set()
+                    self._state_changed.set()
+                    return
             elif kind == "parameters":
                 self._current_env_config = config
                 self.manager.set_env_parameters(config)
