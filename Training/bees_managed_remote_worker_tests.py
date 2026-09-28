@@ -960,6 +960,41 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
         self.assertFalse(expired.observe(22, 130.0))
         self.assertFalse(expired.observe(23, 131.0))
 
+    def test_broker_probe_uses_wan_token_and_only_applies_while_training(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            wan_token = root / "wan.token"
+            wan_token.write_text("wan-secret", encoding="ascii")
+            args = Namespace(wan_token_file=str(wan_token), broker_port=55051)
+            response = mock.MagicMock()
+            response.status = 200
+            response.__enter__.return_value = response
+            response.__exit__.return_value = False
+
+            with mock.patch.object(
+                managed.urllib.request,
+                "urlopen",
+                return_value=response,
+            ) as urlopen:
+                self.assertTrue(managed._broker_session_available(args))
+
+            request = urlopen.call_args.args[0]
+            self.assertEqual(request.full_url, "http://127.0.0.1:55051/session")
+            self.assertEqual(
+                request.headers.get("Authorization"),
+                "Bearer wan-secret",
+            )
+            self.assertTrue(
+                managed._training_desired(
+                    {"desired": {"training_enabled": True}}
+                )
+            )
+            self.assertFalse(
+                managed._training_desired(
+                    {"desired": {"training_enabled": False}}
+                )
+            )
+
     def test_transport_watchdog_requires_sustained_failure_and_resets_on_success(self):
         watchdog = managed._TransportWatchdog(30.0)
 
