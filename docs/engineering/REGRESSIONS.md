@@ -1264,3 +1264,12 @@ Manual-only protection is acceptable only when the record explains why determini
 **Verification:** Static comparison of the client checks against server offset response shapes confirms malformed values are rejected as `ControlRejected`; no tests or runtime checks were performed.  
 **Invariant/knowledge:** In Python, `bool` is an `int` subtype; protocol integer validation must explicitly reject booleans.
 
+### REG-145 — Continual telemetry watcher exited on initialization failure
+**Area:** `Training/bees_continual_auto_train.py`, `_watch_public_learning`  
+**Symptom:** A transient configuration read or learning-store initialization failure before the watch loop could terminate the daemon watcher permanently, so later telemetry arrivals were never reviewed during that training process.  
+**Root cause:** Store construction and initialization were outside the loop's exception handler.  
+**Fix:** Initialize the store lazily inside each retryable watch iteration; clear the store after failures so the next interval can rebuild it.  
+**Permanent protection:** All watcher setup and refresh work remains inside the retry boundary, keeping background ingestion failures separate from authoritative PPO lifecycle. A focused test was not added under the static-only audit instruction.  
+**Verification:** Static control-flow review confirms initialization errors are caught, logged, and retried on the next interval without escaping the watcher thread. No tests or runtime checks were performed.  
+**Invariant/knowledge:** Background telemetry ingestion is auxiliary and must recover from initialization failures without terminating the learner or permanently disabling future scans.
+
