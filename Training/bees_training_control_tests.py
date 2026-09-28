@@ -866,6 +866,32 @@ class TrainingControlClientTests(unittest.TestCase):
             current = json.loads((root / "managed" / "current.json").read_text(encoding="utf-8"))
             self.assertEqual(current["build_id"], "build-123")
 
+    def test_managed_build_current_manifest_uses_retrying_atomic_writer(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            store = control.ManagedBuildStore(root / "managed")
+            entrypoint = root / "managed" / "builds" / "build-a" / "Bees.exe"
+            entrypoint.parent.mkdir(parents=True)
+            entrypoint.write_bytes(b"binary")
+            descriptor = {
+                "role": "dedicated",
+                "platform": "WindowsPlayer",
+                "build_id": "build-a",
+                "archive_sha256": "a" * 64,
+            }
+
+            with mock.patch.object(
+                control,
+                "atomic_write_text",
+                wraps=control.atomic_write_text,
+            ) as atomic_write:
+                store._set_current(descriptor, entrypoint)
+
+            atomic_write.assert_called_once()
+            self.assertEqual(atomic_write.call_args.args[0], store.current_manifest)
+            current = json.loads(store.current_manifest.read_text(encoding="utf-8"))
+            self.assertEqual(current["build_id"], "build-a")
+
     def test_managed_build_prepare_does_not_activate_until_ensure(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
