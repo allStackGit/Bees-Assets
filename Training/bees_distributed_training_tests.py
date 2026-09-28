@@ -158,6 +158,72 @@ class DistributedOptionTests(unittest.TestCase):
                 distributed.load_remote_worker_spec(path)
 
 
+class ExternalWorkerServerTests(unittest.TestCase):
+    def _assert_startup_failure_stops_server(self, failure_point):
+        from types import ModuleType
+        from unittest.mock import Mock
+
+        fake_server = Mock()
+        fake_server.add_insecure_port.return_value = 0
+        if failure_point == "bind":
+            fake_server.add_insecure_port.return_value = 0
+        elif failure_point == "start":
+            fake_server.add_insecure_port.return_value = 5005
+            fake_server.start.side_effect = RuntimeError("start failed")
+
+        grpc_module = ModuleType("grpc")
+        grpc_module.server = Mock(return_value=fake_server)
+        proto_module = ModuleType("mlagents_envs.communicator_objects.unity_to_external_pb2_grpc")
+        register_servicer = Mock()
+        if failure_point == "registration":
+            register_servicer.side_effect = RuntimeError("registration failed")
+        proto_module.add_UnityToExternalProtoServicer_to_server = register_servicer
+        rpc_module = ModuleType("mlagents_envs.rpc_communicator")
+        rpc_module.UnityToExternalServicerImplementation = Mock(return_value=object())
+        exception_module = ModuleType("mlagents_envs.exception")
+        worker_in_use = type("UnityWorkerInUseException", (Exception,), {})
+        exception_module.UnityWorkerInUseException = worker_in_use
+
+        modules = {
+            "grpc": grpc_module,
+            "mlagents_envs": ModuleType("mlagents_envs"),
+            "mlagents_envs.communicator_objects": ModuleType("mlagents_envs.communicator_objects"),
+            "mlagents_envs.communicator_objects.unity_to_external_pb2_grpc": proto_module,
+            "mlagents_envs.rpc_communicator": rpc_module,
+            "mlagents_envs.exception": exception_module,
+        }
+
+        class CommunicatorHarness(distributed._LoopbackRpcCommunicatorMixin):
+            def __init__(self):
+                self.port = 5005
+                self.server = object()
+                self.is_open = True
+
+            def check_port(self, port):
+                self.asserted_port = port
+
+        with patch.dict("sys.modules", modules), patch(
+            "concurrent.futures.ThreadPoolExecutor"
+        ):
+            communicator = CommunicatorHarness()
+            with self.assertRaises(worker_in_use):
+                communicator.create_server()
+
+        self.assertEqual(communicator.asserted_port, 5005)
+        self.assertIsNone(communicator.server)
+        self.assertFalse(communicator.is_open)
+        fake_server.stop.assert_called_once_with(0)
+
+    def test_registration_failure_stops_partial_server(self):
+        self._assert_startup_failure_stops_server("registration")
+
+    def test_bind_failure_stops_partial_server(self):
+        self._assert_startup_failure_stops_server("bind")
+
+    def test_start_failure_stops_partial_server(self):
+        self._assert_startup_failure_stops_server("start")
+
+
 class RemoteWorkerTests(unittest.TestCase):
     def test_parse_worker_ranges(self):
         self.assertEqual(remote.parse_worker_ids("8-10,12,14-15"), (8, 9, 10, 12, 14, 15))
