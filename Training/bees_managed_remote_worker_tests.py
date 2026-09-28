@@ -436,7 +436,7 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
         with mock.patch.object(managed.subprocess, "run", return_value=completed):
             self.assertFalse(managed._python_remote_dependencies_ok(Path("/tmp/python")))
 
-    def test_generated_remote_launchers_pass_the_gameplay_forward_port(self):
+    def test_generated_remote_launchers_and_learner_gateway_share_gameplay_port(self):
         root = Path(__file__).resolve().parents[1]
         windows = (root / "Training" / "bees_remote_bootstrap.ps1").read_text(
             encoding="utf-8"
@@ -447,6 +447,9 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
         generator = (root / "Training" / "operator" / "tailnet.js").read_text(
             encoding="utf-8"
         )
+        gateway = (root / "Tools~" / "bees-tailnet-bridge" / "main.go").read_text(
+            encoding="utf-8"
+        )
 
         for source in (windows, linux):
             self.assertIn("__BEES_GAMEPLAY_PORT__", source)
@@ -455,7 +458,11 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
             generator.count("'__BEES_GAMEPLAY_PORT__': String(gameplayPort)"),
             2,
         )
-        self.assertIn("GAMEPLAY_SERVER_PORT", generator)
+        self.assertIn("const gameplayPort = GAMEPLAY_SERVER_PORT;", generator)
+        self.assertIn("'--gameplay-port', String(gameplayPort)", generator)
+        self.assertIn('fs.Int("gameplay-port", 7146', gateway)
+        self.assertIn('"gameplay"', gateway)
+        self.assertIn('localDial(fmt.Sprintf("127.0.0.1:%d", gameplayPort))', gateway)
 
     def test_tailnet_transport_includes_gameplay_server_and_child_override(self):
         args = Namespace(
