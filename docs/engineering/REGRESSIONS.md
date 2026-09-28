@@ -1427,3 +1427,10 @@ Manual-only protection is acceptable only when the record explains why determini
 **Fix:** Accept only built-in integer or float values in the supported interval `(0, 0.5]`; reject strings, booleans, and other coercible objects before conversion.
 **Permanent protection:** Public training pressure configuration is validated by type and range before scenario weights are calculated.
 **Verification:** Static review traced the value from `process_public_learning_once` through per-orientation scenario fraction calculation and registration. CLI values are converted by argparse before reaching this validator. No tests, builds, Unity, simulations, or runtime checks were run. Post-fix clean-pass count remains **0 / 2**.
+
+### REG-164 — Require exact contributor limits in telemetry curation
+**Area:** `Training/bees_continual_telemetry_curation.py`, `_positive_integer`
+**Symptom:** The curation layer separately converted per-contributor limits with `int(value)`; numeric strings and non-float fractional numeric types could be silently coerced even after the automatic-learning CLI boundary was hardened.
+**Fix:** Require an exact positive integer at the curation boundary, rejecting booleans and coercible substitutes.
+**Permanent protection:** Contributor caps are checked using the exact configured integer before approved telemetry can enter a scenario selection.
+**Verification:** Static review traced `_positive_integer` through the per-contributor cap loaded from store configuration and into selection validation. No tests, builds, Unity, simulations, or runtime checks were run. Post-fix clean-pass count remains **0 / 2**.
