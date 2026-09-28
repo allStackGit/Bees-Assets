@@ -844,12 +844,13 @@ class TrainingControlStore {
             kept.push(spec);
         }
         if (!changed) return false;
+        const previousState = this._snapshotState();
         pending.required_trainers = kept;
         const keptIds = new Set(kept.map(spec => spec.trainer_id));
         pending.rolled_trainers = (pending.rolled_trainers || [])
             .filter(trainerId => keptIds.has(trainerId));
         this.state.revision++;
-        this._persist();
+        this._persistWithRollback(previousState);
         return true;
     }
 
@@ -905,6 +906,7 @@ class TrainingControlStore {
     _promotePendingRelease() {
         const pending = this.state.pending_release;
         if (!pending) return false;
+        const previousState = this._snapshotState();
         this.state.canonical_build_id = pending.build_id;
         this.state.run_id = pending.run_id;
         this.state.compatibility_key = pending.compatibility_key;
@@ -913,7 +915,7 @@ class TrainingControlStore {
         }
         this.state.pending_release = null;
         this.state.revision++;
-        this._persist();
+        this._persistWithRollback(previousState);
         return true;
     }
 
@@ -936,13 +938,14 @@ class TrainingControlStore {
             if (!this.state.training_enabled && !pending.incompatible) {
                 return this._promotePendingRelease();
             }
+            const previousState = this._snapshotState();
             pending.phase = pending.incompatible ? 'stopping' : 'rolling';
             for (const spec of pending.required_trainers) {
                 delete spec.failure_since_ms;
             }
             this.state.revision++;
             pending.phase_revision = this.state.revision;
-            this._persist();
+            this._persistWithRollback(previousState);
             return true;
         }
 
@@ -965,6 +968,7 @@ class TrainingControlStore {
                 const targetSpec = pending.required_trainers.find(
                     spec => spec.trainer_id === rollingTargetId);
                 if (targetSpec && this._trainerHealthyOnPending(targetSpec, pending)) {
+                    const previousState = this._snapshotState();
                     let changed = false;
                     if (!pending.rolled_trainers.includes(rollingTargetId)) {
                         pending.rolled_trainers.push(rollingTargetId);
@@ -979,7 +983,7 @@ class TrainingControlStore {
                     }
                     if (changed) {
                         this.state.revision++;
-                        this._persist();
+                        this._persistWithRollback(previousState);
                     }
                 }
             }
@@ -1186,6 +1190,7 @@ class TrainingControlStore {
                 .filter(trainer => trainer.trainer_id !== 'central-learner')
                 .map(trainer => trainer.platform),
         )].sort();
+        const previousState = this._snapshotState();
         this.state.pending_release = {
             build_id: buildId,
             run_id: runId,
@@ -1208,7 +1213,7 @@ class TrainingControlStore {
             ),
         };
         this.state.revision++;
-        this._persist();
+        this._persistWithRollback(previousState);
         this._advanceRollout();
         return this.desiredState();
     }
@@ -1328,12 +1333,28 @@ class TrainingControlStore {
         const destination = path.join(platformRoot, buildId + '-' + archiveSha256 + '.zip');
         if (!fs.existsSync(destination)) {
             const temporary = destination + '.tmp-' + process.pid + '-' + crypto.randomBytes(6).toString('hex');
-            fs.copyFileSync(source, temporary);
-            if (sha256File(temporary) !== archiveSha256) {
-                fs.unlinkSync(temporary);
-                throw new Error('canonical build copy failed SHA-256 verification');
+            try {
+                fs.copyFileSync(source, temporary);
+                if (sha256File(temporary) !== archiveSha256) {
+                    throw new Error('canonical build copy failed SHA-256 verification');
+                }
+                fs.renameSync(temporary, destination);
+            } catch (error) {
+                try {
+                    if (fs.existsSync(temporary)) fs.unlinkSync(temporary);
+                } catch (cleanupError) {
+                    error.temporaryCleanupError = cleanupError.message;
+                }
+                throw error;
             }
-            fs.renameSync(temporary, destination);
+        }
+        const storedStats = fs.lstatSync(destination);
+        if (
+            storedStats.isSymbolicLink() ||
+            !storedStats.isFile() ||
+            sha256File(destination) !== archiveSha256
+        ) {
+            throw new Error('existing canonical build artifact failed SHA-256 verification');
         }
         const record = {
             role,
@@ -1341,9 +1362,10 @@ class TrainingControlStore {
             build_id: buildId,
             archive_path: destination,
             archive_sha256: archiveSha256,
-            archive_size_bytes: stats.size,
+            archive_size_bytes: fs.statSync(destination).size,
             entrypoint,
         };
+        const previousState = this._snapshotState();
         const catalog = this._catalogForRole(role);
         if (!catalog[platform] ||
             typeof catalog[platform] !== 'object' ||
@@ -1355,9 +1377,17 @@ class TrainingControlStore {
             if (previous.archive_sha256 !== record.archive_sha256 ||
                 previous.entrypoint !== record.entrypoint ||
                 previous.archive_size_bytes !== record.archive_size_bytes) {
-                throw Object.assign(
+                const error = Object.assign(
                     new Error('published role/platform/build identity is immutable; use a new build_id'),
                     { statusCode: 409 });
+                if (previous.archive_path !== destination) {
+                    try {
+                        fs.unlinkSync(destination);
+                    } catch (cleanupError) {
+                        error.artifactCleanupError = cleanupError.message;
+                    }
+                }
+                throw error;
             }
             return publicBuildDescriptor(previous);
         }
@@ -1366,7 +1396,20 @@ class TrainingControlStore {
             this.state.revision++;
         }
         const prunedArtifactPaths = this._pruneArtifactCatalog();
-        this._persist();
+        try {
+            this._persistWithRollback(previousState);
+        } catch (error) {
+            // The new copy has no durable catalog owner when persistence fails. Remove it only
+            // when this call introduced an unreferenced build identity; retain existing artifacts.
+            if (!previous) {
+                try {
+                    fs.unlinkSync(destination);
+                } catch (cleanupError) {
+                    error.artifactCleanupError = cleanupError.message;
+                }
+            }
+            throw error;
+        }
         this._deletePrunedArtifacts(prunedArtifactPaths);
         return publicBuildDescriptor(record);
     }
@@ -1500,7 +1543,7 @@ class TrainingControlStore {
             preparation_error: typeof payload.preparation_error === 'string'
                 ? payload.preparation_error.slice(0, 2048)
                 : '',
-            applied_revision: Number.isInteger(payload.applied_revision) ? payload.applied_revision : -1,
+            applied_revision: Number.isSafeInteger(payload.applied_revision) ? payload.applied_revision : -1,
             last_error: typeof payload.last_error === 'string' ? payload.last_error.slice(0, 2048) : '',
             environment_id: (
                 typeof payload.environment_id === 'string' &&
@@ -1512,6 +1555,8 @@ class TrainingControlStore {
             worker_capacity: normalizeCapacity(payload.worker_capacity),
             last_seen_ms: now,
         };
+        const previousState = this._snapshotState();
+        const previousTrainerRecord = this.trainers.get(trainerId);
         let persistentHeartbeatStateChanged = false;
         if (role === 'dedicated') {
             persistentHeartbeatStateChanged = this._ensurePendingTrainer(record) ||
@@ -1519,6 +1564,19 @@ class TrainingControlStore {
             persistentHeartbeatStateChanged = this._rememberDedicatedTrainer(record) ||
                 persistentHeartbeatStateChanged;
         }
+        this.trainers.set(trainerId, record);
+        if (persistentHeartbeatStateChanged) {
+            try {
+                this._persist();
+            } catch (error) {
+                this.state = previousState;
+                if (previousTrainerRecord) this.trainers.set(trainerId, previousTrainerRecord);
+                else this.trainers.delete(trainerId);
+                throw error;
+            }
+        }
+
+        // Only accepted heartbeats may affect the adaptive environment optimizer.
         const canonicalBuild = this._catalogForRole(role)[platform]?.[this.state.canonical_build_id];
         const optimizerContextKey = [
             this.state.run_id,
@@ -1532,8 +1590,6 @@ class TrainingControlStore {
                 !this.state.pending_release &&
                 Boolean(canonicalBuild),
         });
-        this.trainers.set(trainerId, record);
-        if (persistentHeartbeatStateChanged) this._persist();
         this._advanceRollout();
         return this.stateFor({ trainerId, role, platform });
     }
@@ -1759,9 +1815,43 @@ function createTrainingControlHandler(store, token, adminToken = null) {
                 const platform = decodeURIComponent(artifactMatch[2]);
                 const buildId = decodeURIComponent(artifactMatch[3]);
                 const record = store.artifact(role, platform, buildId);
-                if (!record || !fs.existsSync(record.archive_path)) {
+                if (!record) {
                     sendJson(response, 404, { error: 'artifact-not-found' });
                     return;
+                }
+                let artifactFd;
+                try {
+                    const noFollow = fs.constants.O_NOFOLLOW || 0;
+                    artifactFd = fs.openSync(
+                        record.archive_path,
+                        fs.constants.O_RDONLY | noFollow,
+                    );
+                    const openedStats = fs.fstatSync(artifactFd);
+                    const pathStats = fs.lstatSync(record.archive_path);
+                    const identityChanged = pathStats.dev !== openedStats.dev ||
+                        pathStats.ino !== openedStats.ino;
+                    if (pathStats.isSymbolicLink() ||
+                        !pathStats.isFile() ||
+                        !openedStats.isFile() ||
+                        identityChanged ||
+                        openedStats.size !== record.archive_size_bytes) {
+                        fs.closeSync(artifactFd);
+                        sendJson(response, 404, { error: 'artifact-not-found' });
+                        return;
+                    }
+                } catch (error) {
+                    if (artifactFd !== undefined) {
+                        try {
+                            fs.closeSync(artifactFd);
+                        } catch (_) {
+                            // Preserve the original artifact-open/validation failure.
+                        }
+                    }
+                    if (error.code === 'ENOENT' || error.code === 'ELOOP') {
+                        sendJson(response, 404, { error: 'artifact-not-found' });
+                        return;
+                    }
+                    throw error;
                 }
                 response.writeHead(200, {
                     'Content-Type': 'application/zip',
@@ -1770,7 +1860,7 @@ function createTrainingControlHandler(store, token, adminToken = null) {
                     'X-Bees-Archive-Sha256': record.archive_sha256,
                     'Cache-Control': 'no-store',
                 });
-                fs.createReadStream(record.archive_path)
+                fs.createReadStream(null, { fd: artifactFd, autoClose: true })
                     .on('error', error => response.destroy(error))
                     .pipe(response);
                 return;
