@@ -15,13 +15,18 @@ internal static class RlOneVsOneScenarioSeed
     internal const int MapSizeStreamSalt = 0x4D415053; // "MAPS"
     internal const int IdentityStreamSalt = 0x4944454E; // "IDEN"
     internal const int CoordinateFrameStreamSalt = 0x4346524D; // "CFRM"
+    internal const int SpawnPositionStreamSalt = 0x5350574E; // "SPWN"
+    internal const int FacingStreamSalt = 0x46414345; // "FACE"
 
     private static int? _rootSeed;
+    private static readonly Dictionary<Level, Dictionary<int, System.Random>> RandomStreams =
+        new Dictionary<Level, Dictionary<int, System.Random>>();
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
     private static void ResetStatics()
     {
         _rootSeed = null;
+        RandomStreams.Clear();
     }
 
     internal static int Create(string[] args)
@@ -51,6 +56,30 @@ internal static class RlOneVsOneScenarioSeed
             _rootSeed = Create(args);
         }
         return _rootSeed.Value;
+    }
+
+    internal static System.Random GetRandom(Level level, int streamSalt, string[] args = null)
+    {
+        if (level == null)
+        {
+            throw new ArgumentNullException(nameof(level));
+        }
+
+        if (!RandomStreams.TryGetValue(level, out Dictionary<int, System.Random> streams))
+        {
+            streams = new Dictionary<int, System.Random>();
+            RandomStreams.Add(level, streams);
+        }
+        if (!streams.TryGetValue(streamSalt, out System.Random random))
+        {
+            int seed = Derive(
+                GetRootSeed(args ?? Environment.GetCommandLineArgs()),
+                GetArenaIndex(level),
+                streamSalt);
+            random = new System.Random(seed);
+            streams.Add(streamSalt, random);
+        }
+        return random;
     }
 
     private static int GetArenaIndex(Level level)
@@ -95,5 +124,6 @@ internal static class RlOneVsOneScenarioSeed
     internal static void ResetForTests()
     {
         _rootSeed = null;
+        RandomStreams.Clear();
     }
 }
