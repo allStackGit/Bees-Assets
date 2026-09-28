@@ -43,7 +43,7 @@ WAN_MIN_ACTORS_FLAG = "--bees-wan-min-actors"
 WAN_BROKER_PORT_FLAG = "--bees-wan-broker-port"
 WAN_AUTH_TOKEN_FILE_FLAG = "--bees-wan-auth-token-file"
 WAN_MAX_QUEUED_BATCHES_FLAG = "--bees-wan-max-queued-batches"
-WAN_PROTOCOL_VERSION = 1
+WAN_PROTOCOL_VERSION = 2
 DEFAULT_BROKER_PORT = 55051
 DEFAULT_MIN_ACTORS = 1
 DEFAULT_MAX_QUEUED_BATCHES = 32
@@ -520,6 +520,7 @@ class WanActorBroker:
                             control_epoch,
                             wait_seconds,
                             actor_id=int(actor_id[0]) if actor_id else None,
+                            actor_token=query.get("actor_token", [None])[0],
                         )
                         self._json(state)
                         return
@@ -550,6 +551,8 @@ class WanActorBroker:
                             self._binary(encode_payload(record))
                         return
                     self._error(404, "not-found", "Unknown WAN actor endpoint.")
+                except StaleActorStateError as exc:
+                    self._error(409, "stale-actor-state", str(exc))
                 except (ValueError, RuntimeError) as exc:
                     self._error(400, "invalid-request", str(exc))
 
@@ -582,8 +585,8 @@ class WanActorBroker:
                         self._json({"status": "released"})
                         return
                     if parsed.path == "/register":
-                        broker.register_actor(payload)
-                        self._json({"status": "registered"})
+                        actor_token = broker.register_actor(payload)
+                        self._json({"status": "registered", "actor_token": actor_token})
                         return
                     if parsed.path == "/trajectories":
                         accepted = broker.submit_trajectory_batch(payload)
@@ -658,7 +661,22 @@ class WanActorBroker:
             )
         return value
 
-    def register_actor(self, payload: Mapping[str, Any]) -> None:
+    def _validate_actor_token_locked(self, actor_id: int, actor_token: Any) -> Mapping[str, Any]:
+        registration = self._registrations.get(actor_id)
+        expected = registration.get("actor_token") if registration is not None else None
+        if (
+            not isinstance(actor_token, str)
+            or not actor_token
+            or not isinstance(expected, str)
+            or not hmac.compare_digest(actor_token, expected)
+        ):
+            raise StaleActorStateError(
+                f"actor {actor_id} registration was replaced; reconnect with the current lease"
+            )
+        self._touch_actor_locked(actor_id)
+        return registration
+
+    def register_actor(self, payload: Mapping[str, Any]) -> str:
         actor_id = self._validate_actor_id(payload.get("actor_id"))
         control_epoch = self._validate_control_epoch(
             payload.get("control_epoch"),
@@ -677,13 +695,17 @@ class WanActorBroker:
                 reference = next(iter(self._registrations.values()))["signatures"]
                 if signatures != reference:
                     raise ValueError("actor behavior specifications differ from already registered workers")
+            actor_token = secrets.token_urlsafe(32)
+            now = time.monotonic()
             self._registrations[actor_id] = {
                 "behavior_specs": dict(behavior_specs),
                 "signatures": signatures,
-                "registered_at": time.monotonic(),
-                "last_seen": time.monotonic(),
+                "actor_token": actor_token,
+                "registered_at": now,
+                "last_seen": now,
             }
             self._condition.notify_all()
+            return actor_token
 
     def wait_for_minimum_registrations(self, timeout_seconds: float) -> None:
         deadline = time.monotonic() + timeout_seconds
@@ -792,11 +814,13 @@ class WanActorBroker:
         control_epoch: int,
         wait_seconds: float,
         actor_id: Optional[int] = None,
+        actor_token: Optional[str] = None,
     ) -> Mapping[str, Any]:
         deadline = time.monotonic() + wait_seconds
         with self._condition:
             if actor_id is not None:
-                self._touch_actor_locked(self._validate_actor_id(actor_id))
+                actor_id = self._validate_actor_id(actor_id)
+                self._validate_actor_token_locked(actor_id, actor_token)
             while (
                 not self._closed
                 and policy_epoch == self._policy_epoch
@@ -808,7 +832,7 @@ class WanActorBroker:
                     break
                 self._condition.wait(remaining)
             if actor_id is not None:
-                self._touch_actor_locked(self._validate_actor_id(actor_id))
+                self._validate_actor_token_locked(actor_id, actor_token)
             return {
                 "session_id": self.session_id,
                 "policy_epoch": self._policy_epoch,
@@ -856,6 +880,7 @@ class WanActorBroker:
         ):
             raise ValueError("trajectory batch_id must be a non-empty string up to 64 characters")
         with self._condition:
+            self._validate_actor_token_locked(actor_id, payload.get("actor_token"))
             control_epoch = self._validate_control_epoch(
                 payload.get("control_epoch"),
                 self._control_epoch,
@@ -908,6 +933,7 @@ class WanActorBroker:
                 raise ValueError(
                     "actor registration expired or was replaced while validating the batch"
                 )
+            self._validate_actor_token_locked(actor_id, payload.get("actor_token"))
             self._validate_policy_versions(payload.get("policy_versions"))
             if actor_id in self._cohort_blocked_actors:
                 raise queue.Full
