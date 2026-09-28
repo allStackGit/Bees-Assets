@@ -496,20 +496,6 @@ def _python_executable_path(path: str | Path) -> Path:
     return Path(os.path.abspath(os.fspath(path)))
 
 
-def _python_remote_dependencies_ok(python_path: Path) -> bool:
-    completed = subprocess.run(
-        [
-            str(python_path),
-            "-c",
-            "import pkg_resources, mlagents, torch, numpy",
-        ],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        check=False,
-    )
-    return completed.returncode == 0
-
-
 def _decode_release_metadata(data: bytes) -> Mapping[str, object]:
     try:
         value = json.loads(data.decode("utf-8-sig"))
@@ -714,6 +700,7 @@ class RuntimeUpdater:
         self._lock = threading.Lock()
         self._thread = threading.Thread(target=self._run, name="bees-runtime-updater", daemon=True)
         self._started = False
+        self._staging_process: Optional[subprocess.Popen] = None
         archive = Path(args.runtime_archive).expanduser().resolve()
         self.current_sha256 = _sha256_file(archive) if archive.is_file() else ""
         self.current_version = _runtime_version_from_root(Path(__file__).resolve().parent)
@@ -740,9 +727,17 @@ class RuntimeUpdater:
         self._refresh.set()
         if self._started:
             # Cutover must not replace staged files while this thread is still writing them.
-            # Bootstrap requests have finite timeouts, so wait for the active stage operation
-            # to finish before the caller activates a staged runtime or exits.
+            # Bootstrap requests have finite timeouts; staging subprocesses are terminated
+            # cooperatively below before this join completes.
             self._thread.join()
+            with self._lock:
+                active = self._staging_process
+            if active is not None and active.poll() is None:
+                _terminate(active)
+                if active.poll() is None:
+                    raise RuntimeError(
+                        "runtime updater staging subprocess remained alive after stop"
+                    )
 
     def verified(self) -> tuple[str, str]:
         with self._lock:
@@ -766,6 +761,51 @@ class RuntimeUpdater:
         if not value:
             raise ValueError("bootstrap token is empty")
         return value
+
+    def _run_staging_command(
+        self,
+        command: Sequence[str | Path],
+        *,
+        stdout=None,
+        stderr=None,
+    ) -> int:
+        if self._stop.is_set():
+            raise RuntimeError("runtime updater stopped before a staging subprocess launched")
+        process = popen_owned(
+            [str(value) for value in command],
+            stdout=stdout,
+            stderr=stderr,
+        )
+        with self._lock:
+            self._staging_process = process
+        try:
+            while process.poll() is None:
+                if self._stop.wait(0.25):
+                    _terminate(process)
+                    if process.poll() is None:
+                        raise RuntimeError(
+                            "runtime updater could not stop its staging subprocess"
+                        )
+                    raise RuntimeError(
+                        "runtime updater stopped during a staging subprocess"
+                    )
+            return int(process.returncode)
+        finally:
+            if process.poll() is not None:
+                with self._lock:
+                    if self._staging_process is process:
+                        self._staging_process = None
+
+    def self._python_remote_dependencies_ok(self, python_path: Path) -> bool:
+        return self._run_staging_command(
+            [
+                python_path,
+                "-c",
+                "import pkg_resources, mlagents, torch, numpy",
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        ) == 0
 
     def _fetch_bootstrap(self) -> tuple[bytes, bytes, bytes, bytes, bytes]:
         maximum_attempts = 4
@@ -819,7 +859,7 @@ class RuntimeUpdater:
         active_requirements = Path(__file__).resolve().parent / "bees_remote_requirements.txt"
         new_hash = _sha256_file(requirements)
         active_hash = _sha256_file(active_requirements) if active_requirements.is_file() else ""
-        if new_hash == active_hash and _python_remote_dependencies_ok(Path(sys.executable)):
+        if new_hash == active_hash and self._python_remote_dependencies_ok(Path(sys.executable)):
             return _python_executable_path(sys.executable)
 
         venv_root = self.install_root / "VenvVersions" / new_hash
@@ -829,7 +869,7 @@ class RuntimeUpdater:
             else venv_root / "bin" / "python"
         )
         if python_path.is_file():
-            if _python_remote_dependencies_ok(python_path):
+            if self._python_remote_dependencies_ok(python_path):
                 return _python_executable_path(python_path)
             shutil.rmtree(venv_root, ignore_errors=True)
 
@@ -839,26 +879,24 @@ class RuntimeUpdater:
             shutil.rmtree(temporary)
 
         if os.name == "nt":
-            completed = subprocess.run(
+            completed = self._run_staging_command(
                 [sys.executable, "-m", "venv", str(temporary)],
-                check=False,
             )
-            if completed.returncode != 0:
+            if completed != 0:
                 raise RuntimeError(
                     "failed to create staged Windows Python environment "
-                    f"(exit {completed.returncode})"
+                    f"(exit {completed})"
                 )
             staged_python = temporary / "Scripts" / "python.exe"
-            completed = subprocess.run(
+            completed = self._run_staging_command(
                 [
-                    str(staged_python),
+                    staged_python,
                     "-m",
                     "pip",
                     "install",
                     "-r",
-                    str(requirements),
+                    requirements,
                 ],
-                check=False,
             )
         else:
             uv = shutil.which("uv")
@@ -870,36 +908,26 @@ class RuntimeUpdater:
                     "changed remote requirements need uv on Linux; rerun the generated "
                     "launcher once to restore the managed uv installation"
                 )
-            completed = subprocess.run(
-                [uv, "venv", "--python", "3.10", str(temporary)],
-                check=False,
+            completed = self._run_staging_command(
+                [uv, "venv", "--python", "3.10", temporary],
             )
-            if completed.returncode != 0:
+            if completed != 0:
                 raise RuntimeError(
                     "failed to create staged Linux Python environment "
-                    f"(exit {completed.returncode})"
+                    f"(exit {completed})"
                 )
             staged_python = temporary / "bin" / "python"
-            completed = subprocess.run(
-                [
-                    uv,
-                    "pip",
-                    "install",
-                    "--python",
-                    str(staged_python),
-                    "-r",
-                    str(requirements),
-                ],
-                check=False,
+            completed = self._run_staging_command(
+                [uv, "pip", "install", "--python", staged_python, "-r", requirements],
             )
 
-        if completed.returncode != 0:
+        if completed != 0:
             shutil.rmtree(temporary, ignore_errors=True)
             raise RuntimeError(
                 "staged remote dependency installation failed "
-                f"(exit {completed.returncode})"
+                f"(exit {completed})"
             )
-        if not _python_remote_dependencies_ok(staged_python):
+        if not self._python_remote_dependencies_ok(staged_python):
             shutil.rmtree(temporary, ignore_errors=True)
             raise RuntimeError(
                 "staged remote dependency validation failed; "
@@ -915,7 +943,7 @@ class RuntimeUpdater:
         )
         if not python_path.is_file():
             raise RuntimeError("staged Python environment is missing its interpreter")
-        if not _python_remote_dependencies_ok(python_path):
+        if not self._python_remote_dependencies_ok(python_path):
             shutil.rmtree(venv_root, ignore_errors=True)
             raise RuntimeError(
                 "staged remote dependency validation failed after activation path move"
@@ -971,7 +999,7 @@ class RuntimeUpdater:
             # Backward compatibility for runtimes produced before explicit version markers.
             runtime_changed = runtime_sha != self.current_sha256
         bridge_changed = bridge_sha != current_bridge_sha
-        active_dependencies_ok = _python_remote_dependencies_ok(Path(sys.executable))
+        active_dependencies_ok = self._python_remote_dependencies_ok(Path(sys.executable))
         with self._lock:
             if (
                 not runtime_changed
