@@ -25,6 +25,7 @@ HEALTH_FILE_ENV = "BEES_TRAINING_CHILD_HEALTH_FILE"
 HEALTH_TOKEN_ENV = "BEES_TRAINING_CHILD_HEALTH_TOKEN"
 VALID_HEALTH_STATES = frozenset(("starting", "ready", "error"))
 OWNED_CHILD_TERMINATION_GRACE_SECONDS = 10.0
+MANAGED_HEALTH_FUTURE_CLOCK_SKEW_SECONDS = 5.0
 ATOMIC_REPLACE_RETRY_DELAYS = (0.01, 0.025, 0.05, 0.1, 0.2, 0.4)
 
 _windows_job_handle: Optional[int] = None
@@ -142,6 +143,8 @@ def read_managed_health(path: Optional[Path], token: str) -> Optional[dict[str, 
     except (OverflowError, ValueError):
         return None
     if not math.isfinite(updated_seconds):
+        return None
+    if updated_seconds - time.time() > MANAGED_HEALTH_FUTURE_CLOCK_SKEW_SECONDS:
         return None
     return dict(value)
 

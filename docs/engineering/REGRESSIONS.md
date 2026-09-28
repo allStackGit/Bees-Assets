@@ -1612,3 +1612,11 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** the rollback snapshot is now captured immediately before changing `required_remote_platforms`. `BeesServer~/trainingControl.rollback.test.js` injects a persistence failure after both trainer and platform pruning and asserts the entire in-memory state matches its pre-prune snapshot.  
 **Verification:** implementation and focused regression source were read back and reviewed statically. The test was not run under the code-analysis-only instruction.  
 **Invariant/knowledge:** every mutation included in a persistence transaction must follow the rollback snapshot; rollback restores the complete control state, not only the most recently changed field.
+
+### REG-190 — Future-dated managed health could suppress startup timeout
+**Area:** `Training/bees_process_safety.py`, managed-child health validation
+**Symptom:** a `starting` health record with a timestamp far ahead of the supervisor clock was clamped to age zero, so a stale record could remain fresh and prevent startup failure from being reported.
+**Root cause:** `read_managed_health` rejected non-finite timestamps but accepted arbitrarily future finite values; `_starting_health_error` treated negative age as zero.
+**Permanent protection:** health records more than five seconds ahead of the supervisor clock are rejected. The existing startup grace then reports missing health as an error if the child remains alive.
+**Verification:** implementation was read back and reviewed statically. No tests or runtime checks were run under the code-analysis-only instruction.
+**Invariant/knowledge:** managed-child health timestamps must be finite and plausibly current; future-dated reports must not extend startup indefinitely.
