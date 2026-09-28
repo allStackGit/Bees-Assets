@@ -176,6 +176,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         public virtual bool IsShipValidTarget(Ship potentialTargetShip)
         {
             return potentialTargetShip != null &&
+                   potentialTargetShip.Side != Side &&
                    !potentialTargetShip.IsDead &&
                    IsShipWithinRange(potentialTargetShip) &&
                    HasClearLineOfFire(potentialTargetShip);
