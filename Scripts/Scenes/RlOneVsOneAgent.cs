@@ -794,7 +794,8 @@ internal sealed class RlOneVsOneAgent : Agent
         }
 
         WarpGate warpGate = FindTouchingWarpGate();
-        if (warpGate == null || warpGate.ShipAnimationController == null)
+        if (warpGate == null || warpGate.ShipAnimationController == null ||
+            warpGate.ShipAnimationController.Animator == null)
         {
             return;
         }
@@ -807,7 +808,7 @@ internal sealed class RlOneVsOneAgent : Agent
         // event before removing ships. Keep the RL action on the same mechanic instead of
         // allowing an instant warp that bypasses the gate's warmup.
         if (!warpGate.ShipAnimationController.IsReadyToWarp &&
-            (warpGate.ShipAnimationController.Animator == null || !warpGate.ShipAnimationController.Animator.enabled))
+            !warpGate.ShipAnimationController.Animator.enabled)
         {
             warpGate.ShipAnimationController.Activate();
         }
