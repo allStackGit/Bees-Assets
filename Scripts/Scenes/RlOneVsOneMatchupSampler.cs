@@ -15,6 +15,7 @@ internal static class RlShipCombatCapability
             case ConfigData.ShipTypes.Factory:
             case ConfigData.ShipTypes.CarpenterBee:
             case ConfigData.ShipTypes.Beehive:
+            case ConfigData.ShipTypes.Beacon:
                 return true;
             default:
                 return false;
