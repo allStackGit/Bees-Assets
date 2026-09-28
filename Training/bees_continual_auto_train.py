@@ -158,11 +158,13 @@ def _watch_public_learning(
     config_path: Optional[str],
     options: AutomaticPublicOptions,
 ) -> None:
-    config = load_config(config_path) if config_path else load_config()
-    store = ContinualLearningStore(root, config)
-    store.initialize()
+    store = None
     while not stop.wait(options.watch_seconds):
         try:
+            if store is None:
+                config = load_config(config_path) if config_path else load_config()
+                store = ContinualLearningStore(root, config)
+                store.initialize()
             result = _process(store, options)
             print(
                 "[Bees continual] automatic gameplay telemetry refresh "
@@ -171,8 +173,9 @@ def _watch_public_learning(
                 f"rejected={len(result.get('rejected', []))}"
             )
         except Exception as exc:
-            # Gameplay-data automation must never corrupt/kill the authoritative PPO process.
-            # Rejected or temporarily unreadable input stays quarantined and a later scan retries it.
+            # Initialization failures must not permanently kill this daemon watcher. Rebuild
+            # the store on the next interval while leaving the authoritative PPO process alone.
+            store = None
             print(
                 f"[Bees continual] automatic gameplay telemetry refresh failed: "
                 f"{type(exc).__name__}: {exc}",
