@@ -1361,7 +1361,10 @@ def _wait_for_runtime_alignment(
         now = time.monotonic()
         control_healthy = isinstance(status, Mapping)
         if transport_watchdog.observe(control_healthy, now):
-            outage = now - float(transport_watchdog.failure_since or now)
+            failure_since = transport_watchdog.failure_since
+            outage = now - (
+                failure_since if failure_since is not None else now
+            )
             print(
                 "[Bees remote] authenticated learner control has been unreachable "
                 f"for {outage:.1f}s during runtime alignment; recycling private transport.",
@@ -1634,8 +1637,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                             status = _control_status(args)
                             control_healthy = isinstance(status, Mapping)
                             if transport_watchdog.observe(control_healthy, now):
-                                outage = now - float(
-                                    transport_watchdog.failure_since or now
+                                failure_since = transport_watchdog.failure_since
+                                outage = now - (
+                                    failure_since
+                                    if failure_since is not None
+                                    else now
                                 )
                                 print(
                                     "[Bees remote] authenticated learner control has been "
