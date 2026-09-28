@@ -1518,6 +1518,19 @@ def _session_failure_total(record: Optional[Mapping[str, object]]) -> Optional[i
     return None
 
 
+def _control_failure_total(record: Optional[Mapping[str, object]]) -> Optional[int]:
+    if not isinstance(record, Mapping):
+        return None
+    metrics = record.get("metrics")
+    metrics_map = metrics if isinstance(metrics, Mapping) else {}
+    control = metrics_map.get("control")
+    control_map = control if isinstance(control, Mapping) else {}
+    value = control_map.get("failures_total")
+    if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+        return value
+    return None
+
+
 class _SessionFailureWatchdog:
     def __init__(self, *, threshold: int = 3, window_seconds: float = 120.0) -> None:
         self.threshold = max(1, int(threshold))
@@ -1937,6 +1950,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         max(60.0, args.transport_watchdog_seconds * 2.0)
                     )
                     session_failure_watchdog = _SessionFailureWatchdog()
+                    # The inner worker can lose heartbeat POST responses even while this outer
+                    # supervisor's independent GET /v1/status probe still succeeds. Watch the
+                    # worker's cumulative control failures so that asymmetric/wedged forwarding
+                    # cannot strand a trainer indefinitely in stopped/awaiting-restart.
+                    control_failure_watchdog = _SessionFailureWatchdog(
+                        threshold=3,
+                        window_seconds=60.0,
+                    )
                     transport_watchdog_restart = False
                     while (
                         runtime_cutover is None
@@ -1987,6 +2008,19 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                                 broker_watchdog.observe(True, now)
 
                             record = _trainer_record(status, trainer_id)
+                            if control_failure_watchdog.observe(
+                                _control_failure_total(record),
+                                now,
+                            ):
+                                print(
+                                    "[Bees remote] repeated inner worker control failures indicate "
+                                    "a private control path that is not healing; recycling private "
+                                    "transport.",
+                                    file=sys.stderr,
+                                    flush=True,
+                                )
+                                transport_watchdog_restart = True
+                                break
                             if isinstance(record, Mapping) and bool(record.get("stale", False)):
                                 print(
                                     "[Bees remote] trainer heartbeat is STALE while the "
