@@ -93,6 +93,22 @@ test('capacity and learner-consumed-step metrics reject malformed values', () =>
     );
 });
 
+test('optimizer clears a stale recommendation when worker capacity is invalid', () => {
+    const optimizer = new TrainingEnvOptimizer();
+    const context = { now: 1000, contextKey: 'run|build|args', enabled: true };
+    optimizer.update(record('remote-a', 8, 0), context);
+    assert.equal(optimizer.desiredEnvCount('remote-a'), 8);
+
+    const missingCapacity = record('remote-a', 8, 0);
+    missingCapacity.worker_capacity = null;
+    assert.equal(
+        optimizer.update(missingCapacity, { ...context, now: 2000 }),
+        null,
+    );
+    assert.equal(optimizer.snapshot('remote-a'), null);
+    assert.equal(optimizer.desiredEnvCount('remote-a'), null);
+});
+
 test('optimizer measures learner-consumed steps, increases envs, and keeps an improvement', () => {
     const optimizer = new TrainingEnvOptimizer({
         warmupMs: 0,
