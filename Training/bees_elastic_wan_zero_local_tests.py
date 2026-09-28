@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 import unittest
 from unittest import mock
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 
 import bees_continual_elastic_wan_auto_train as elastic_auto
 import bees_continual_elastic_wan_service as elastic_service
@@ -131,8 +131,12 @@ class ZeroLocalArgumentTests(unittest.TestCase):
     def test_zero_local_learner_publishes_ready_health_after_broker_start(self):
         source = Path(zero_local.__file__).read_text(encoding="utf-8")
         initializer = source.index("def _bees_elastic_initialize")
-        broker_start = source.index("self._bees_wan_broker.start()", initializer)
+        broker_create = source.index("broker = elastic.ElasticWanBroker(", initializer)
+        manager_create = source.index("local_manager_class(env_factory, run_options, n_env)", initializer)
+        broker_start = source.index("broker.start()", manager_create)
         health_ready = source.index('write_managed_health(\n            "ready"', broker_start)
+        self.assertLess(broker_create, manager_create)
+        self.assertLess(manager_create, broker_start)
         self.assertLess(broker_start, health_ready)
 
     def test_remote_actor_accepts_worker_base_zero(self):
@@ -163,6 +167,94 @@ class ZeroLocalArgumentTests(unittest.TestCase):
         )
         self.assertEqual(session.total_envs, 8)
         self.assertEqual(session.topology_epoch, 1)
+
+
+
+
+class ElasticWanInitializationTests(unittest.TestCase):
+    @staticmethod
+    def _initializer_cases():
+        return (
+            ("hybrid", elastic.ElasticWanEnvManagerMixin),
+            ("zero-local", zero_local.ZeroLocalElasticWanEnvManagerMixin),
+        )
+
+    @staticmethod
+    def _options():
+        return elastic.ElasticWanOptions(max_actors=1, auth_token_file="token")
+
+    @staticmethod
+    def _run_options():
+        return SimpleNamespace(
+            env_settings=SimpleNamespace(timeout_wait=1.0),
+            checkpoint_settings=SimpleNamespace(run_id="initialization-test"),
+        )
+
+    @staticmethod
+    def _patch_env_manager():
+        fake_module = ModuleType("mlagents.trainers.env_manager")
+
+        class FakeEnvManager:
+            def __init__(self):
+                self.agent_managers = {}
+
+        fake_module.EnvManager = FakeEnvManager
+        return mock.patch.dict(
+            "sys.modules",
+            {"mlagents.trainers.env_manager": fake_module},
+        )
+
+    def test_broker_validation_failure_precedes_local_worker_creation(self):
+        with self._patch_env_manager():
+            for name, mixin_type in self._initializer_cases():
+                with self.subTest(mode=name):
+                    instance = object.__new__(mixin_type)
+                    local_manager_factory = mock.Mock()
+                    with (
+                        mock.patch.object(base, "load_auth_token", return_value="token"),
+                        mock.patch.object(
+                            elastic,
+                            "ElasticWanBroker",
+                            side_effect=ValueError("invalid release identity"),
+                        ),
+                    ):
+                        with self.assertRaisesRegex(ValueError, "invalid release identity"):
+                            instance._bees_elastic_initialize(
+                                self._options(),
+                                self._run_options(),
+                                1,
+                                object(),
+                                local_manager_factory,
+                            )
+                    local_manager_factory.assert_not_called()
+
+    def test_broker_start_failure_closes_broker_and_local_workers(self):
+        with self._patch_env_manager():
+            for name, mixin_type in self._initializer_cases():
+                with self.subTest(mode=name):
+                    instance = object.__new__(mixin_type)
+                    local_manager = mock.Mock()
+                    local_manager_factory = mock.Mock(return_value=local_manager)
+                    broker = mock.Mock()
+                    broker.start.side_effect = RuntimeError("listener failed")
+                    with (
+                        mock.patch.object(base, "load_auth_token", return_value="token"),
+                        mock.patch.object(
+                            elastic,
+                            "ElasticWanBroker",
+                            return_value=broker,
+                        ),
+                    ):
+                        with self.assertRaisesRegex(RuntimeError, "listener failed"):
+                            instance._bees_elastic_initialize(
+                                self._options(),
+                                self._run_options(),
+                                1,
+                                object(),
+                                local_manager_factory,
+                            )
+                    broker.close.assert_called_once_with()
+                    local_manager.close.assert_called_once_with()
 
 
 class ZeroLocalBrokerTests(unittest.TestCase):
