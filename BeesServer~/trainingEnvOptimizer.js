@@ -315,7 +315,11 @@ class TrainingEnvOptimizer {
             capacity && capacity.auto;
 
         if (!capacity) {
-            this._releaseProbe(record && record.trainer_id);
+            const trainerId = record && record.trainer_id;
+            this._releaseProbe(trainerId);
+            if (typeof trainerId === 'string' && trainerId) {
+                this.states.delete(trainerId);
+            }
             return null;
         }
 
