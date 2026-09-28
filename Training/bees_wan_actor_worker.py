@@ -506,6 +506,7 @@ class ActorSession:
         stop: threading.Event,
         upload_queue_size: int,
         startup_health: Optional[Callable[[str], None]] = None,
+        runtime_progress: Optional[Callable[[], None]] = None,
     ) -> None:
         self.client = client
         self.session = session
@@ -547,12 +548,17 @@ class ActorSession:
         self._last_throughput_write = 0.0
         self._session_failure_telemetry = None
         self._startup_health = startup_health
+        self._runtime_progress = runtime_progress
 
     def _report_startup_phase(self, phase: str) -> None:
         callback = self._startup_health
         if callback is not None:
             callback(str(phase))
 
+    def _report_runtime_progress(self) -> None:
+        callback = self._runtime_progress
+        if callback is not None:
+            callback()
 
     def _write_throughput_metrics(self, *, force: bool = False) -> None:
         path = self._throughput_metrics_path
@@ -1002,11 +1008,13 @@ class ActorSession:
                 raise BrokerSessionChanged("central WAN trainer session changed")
             if self._state_changed.is_set() or self._stale.is_set():
                 self._synchronize_state()
+                self._report_runtime_progress()
                 continue
 
             local_steps = self.manager.get_steps()
             mapped_steps = _remap_completed_steps(self.manager, local_steps, self.worker_offset)
             self.manager.process_steps(mapped_steps)
+            self._report_runtime_progress()
             trajectories = self._collect_trajectories()
             if trajectories:
                 # One actor generally emits one compact cohort batch. The 256-trajectory ceiling can
