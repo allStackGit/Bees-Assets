@@ -52,13 +52,22 @@ function producerAcceptedSteps(metrics) {
     return total;
 }
 
-function recentSessionFailureAgeSeconds(metrics) {
+function sessionFailureCount(metrics) {
     if (!metrics || typeof metrics !== 'object' || Array.isArray(metrics)) return null;
     const throughput = metrics.throughput;
     if (!throughput || typeof throughput !== 'object' || Array.isArray(throughput)) return null;
     const count = throughput.session_failures_total;
+    if (!finiteInteger(count) || count < 0) return null;
+    return count;
+}
+
+function recentSessionFailureAgeSeconds(metrics) {
+    if (!metrics || typeof metrics !== 'object' || Array.isArray(metrics)) return null;
+    const throughput = metrics.throughput;
+    if (!throughput || typeof throughput !== 'object' || Array.isArray(throughput)) return null;
+    const count = sessionFailureCount(metrics);
     const age = throughput.seconds_since_last_session_failure;
-    if (!finiteInteger(count) || count <= 0) return null;
+    if (count === null || count <= 0) return null;
     if (typeof age !== 'number' || !Number.isFinite(age) || age < 0) return null;
     return age;
 }
@@ -125,6 +134,8 @@ class TrainingEnvOptimizer {
             instability_hold_until_ms: 0,
             last_instability_ms: null,
             last_instability_reason: '',
+            last_session_failures_total: null,
+            consecutive_baseline_session_failures: 0,
             last_update_ms: now,
             metrics_missing_since_ms: null,
         };
@@ -232,8 +243,37 @@ class TrainingEnvOptimizer {
         // Keep the cluster-wide probe lock until the worker reports the accepted baseline again.
     }
 
+    _backoffRepeatedSessionFailure(state, capacity, now, totalSteps) {
+        const from = capacity.current_envs;
+        if (from <= capacity.min_envs) return false;
+        const target = Math.max(capacity.min_envs, from - 1);
+        this._releaseProbe(state.trainer_id);
+        state.baseline_envs = target;
+        state.baseline_sps = null;
+        state.last_sps = null;
+        state.direction = -1;
+        state.step = 1;
+        state.blocked_up = true;
+        state.blocked_down = false;
+        state.desired_envs = target;
+        state.phase = 'awaiting-restart';
+        state.phase_started_ms = now;
+        state.cooldown_until_ms = now + this.cooldownMs;
+        state.measurement_started_ms = null;
+        state.measurement_start_steps = null;
+        state.measurement_start_produced_steps = null;
+        state.source_steps = totalSteps;
+        state.metrics_missing_since_ms = null;
+        state.consecutive_baseline_session_failures = 0;
+        state.last_decision =
+            'repeated WAN actor session failures at ' + from +
+            ' envs; backing off to ' + target + ' envs';
+        return true;
+    }
+
     _finishMeasurement(state, capacity, now, sps) {
         state.last_sps = sps;
+        state.consecutive_baseline_session_failures = 0;
         if (state.baseline_envs === null || state.baseline_sps === null) {
             state.baseline_envs = capacity.current_envs;
             state.baseline_sps = sps;
@@ -302,6 +342,7 @@ class TrainingEnvOptimizer {
         const producedSteps = producerAcceptedSteps(record && record.metrics);
         const sessionFailureAgeSeconds = recentSessionFailureAgeSeconds(
             record && record.metrics);
+        const sessionFailuresTotal = sessionFailureCount(record && record.metrics);
         const contextKey = String(context.contextKey || '');
         if (this.activeProbeTrainerId && this.activeProbeTrainerId !== record?.trainer_id) {
             const active = this.states.get(this.activeProbeTrainerId);
@@ -334,6 +375,19 @@ class TrainingEnvOptimizer {
             this.states.set(record.trainer_id, state);
         }
         state.last_update_ms = timestamp;
+        let newSessionFailure = false;
+        if (sessionFailuresTotal !== null) {
+            if (
+                state.last_session_failures_total === null ||
+                sessionFailuresTotal < state.last_session_failures_total
+            ) {
+                state.last_session_failures_total = sessionFailuresTotal;
+                state.consecutive_baseline_session_failures = 0;
+            } else if (sessionFailuresTotal > state.last_session_failures_total) {
+                newSessionFailure = true;
+                state.last_session_failures_total = sessionFailuresTotal;
+            }
+        }
 
         if (!enabled) {
             this._releaseProbe(record.trainer_id);
@@ -395,6 +449,20 @@ class TrainingEnvOptimizer {
             Boolean(reportedError);
         const workerUnstable = currentProcessFailure || recentSessionFailure;
         if (workerUnstable) {
+            if (recentSessionFailure && newSessionFailure && !probingAwayFromBaseline) {
+                state.consecutive_baseline_session_failures += 1;
+                if (
+                    state.consecutive_baseline_session_failures >= 2 &&
+                    this._backoffRepeatedSessionFailure(
+                        state,
+                        capacity,
+                        timestamp,
+                        totalSteps,
+                    )
+                ) {
+                    return this.snapshot(record.trainer_id);
+                }
+            }
             const useSessionFailureTime = recentSessionFailure && !currentProcessFailure;
             const sessionFailureAgeMs = useSessionFailureTime
                 ? sessionFailureAgeSeconds * 1000
@@ -610,5 +678,6 @@ module.exports = {
     learnerConsumedSteps,
     producerAcceptedSteps,
     recentSessionFailureAgeSeconds,
+    sessionFailureCount,
     initialStep,
 };
