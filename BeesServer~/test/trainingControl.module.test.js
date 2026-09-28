@@ -1,6 +1,7 @@
 'use strict';
 
 const test = require('node:test');
+const { EventEmitter } = require('node:events');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 const fs = require('node:fs');
@@ -98,6 +99,35 @@ function heartbeatDedicated(store, trainerId, buildId, buildSha256, options = {}
                 ? store.state.environment_args
                 : options.environmentArgs
         ),
+    });
+}
+
+function invokePost(handler, url, token, body = Buffer.alloc(0)) {
+    return new Promise(resolve => {
+        const request = new EventEmitter();
+        request.method = 'POST';
+        request.url = url;
+        request.headers = { authorization: 'Bearer ' + token };
+        request.pause = () => {};
+        const response = {
+            statusCode: null,
+            headers: null,
+            writeHead(statusCode, headers) {
+                this.statusCode = statusCode;
+                this.headers = headers;
+            },
+            end(responseBody) {
+                resolve({
+                    statusCode: this.statusCode,
+                    body: responseBody ? JSON.parse(Buffer.from(responseBody).toString('utf8')) : null,
+                });
+            },
+        };
+        handler(request, response);
+        process.nextTick(() => {
+            if (body.length > 0) request.emit('data', body);
+            request.emit('end');
+        });
     });
 }
 
@@ -3521,6 +3551,36 @@ test('schema 4 rolling migration recollects remotes before assigning a new rolli
             role: 'dedicated',
             platform: 'WindowsPlayer',
         }).desired_build_id, 'migration-rolling-old');
+    });
+});
+
+test('trainer log reset requires an explicit offset', async () => {
+    await withTempDir(async root => {
+        const logRoot = path.join(root, 'logs');
+        const store = new TrainingControlStore({
+            statePath: path.join(root, 'state.json'),
+            artifactRoot: path.join(root, 'artifacts'),
+            logRoot,
+        });
+        store.appendTrainerLog({
+            trainerId: 'trainer-a',
+            runId: 'run-a',
+            relativePath: 'Player-0.log',
+            offset: 0,
+            reset: false,
+            data: Buffer.from('preserve'),
+        });
+        const handler = createTrainingControlHandler(store, 'worker-secret');
+        const response = await invokePost(
+            handler,
+            '/v1/log?trainer_id=trainer-a&run_id=run-a&path=Player-0.log&reset=1',
+            'worker-secret',
+        );
+        assert.equal(response.statusCode, 400);
+        assert.equal(
+            fs.readFileSync(path.join(logRoot, 'run-a', 'trainer-a', 'Player-0.log'), 'utf8'),
+            'preserve',
+        );
     });
 });
 
