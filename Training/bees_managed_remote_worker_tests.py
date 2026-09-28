@@ -428,6 +428,35 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
         with mock.patch.object(managed.subprocess, "run", return_value=completed):
             self.assertFalse(managed._python_remote_dependencies_ok(Path("/tmp/python")))
 
+    def test_tailnet_transport_includes_gameplay_server_and_child_override(self):
+        args = Namespace(
+            tailnet_bridge="/tmp/bees-tailnet-bridge",
+            tailnet_state="/tmp/tailnet-state",
+            tailnet_hostname="bees-worker-test",
+            tailnet_target="100.80.169.87",
+            control_port=7150,
+            broker_port=55051,
+            bootstrap_port=7151,
+            gameplay_port=7146,
+        )
+
+        command = managed._tailnet_forward_command(args)
+        self.assertIn(
+            "127.0.0.1:7146=100.80.169.87:7146",
+            command,
+        )
+
+        with mock.patch.dict(managed.os.environ, {}, clear=True):
+            environment = managed._worker_environment(args)
+        self.assertEqual(
+            environment[managed.TRAINING_GAMEPLAY_HOST_ENV],
+            "127.0.0.1",
+        )
+        self.assertEqual(
+            environment[managed.TRAINING_GAMEPLAY_PORT_ENV],
+            "7146",
+        )
+
     def test_supervisor_launches_worker_through_owned_process_container(self):
         process = mock.Mock()
         process.stdout = io.StringIO("")
