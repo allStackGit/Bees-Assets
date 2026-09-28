@@ -519,6 +519,38 @@ def _stop_interruptible_managed_child(process: subprocess.Popen) -> None:
         ) from exc
 
 
+def _request_graceful_training_child_stop(process: subprocess.Popen) -> None:
+    """Ask an active trainer to save its checkpoint before this owner exits."""
+    if process.poll() is not None:
+        process.wait()
+        return
+
+    stop_file = _managed_stop_file()
+    if stop_file is not None:
+        stop_file.parent.mkdir(parents=True, exist_ok=True)
+        stop_file.write_text("stop\\n", encoding="ascii")
+    elif os.name == "nt" and hasattr(signal, "CTRL_BREAK_EVENT"):
+        process.send_signal(signal.CTRL_BREAK_EVENT)
+    else:
+        # The child owns its process group, so interrupt the trainer and its environment
+        # workers through the same graceful signal path used by Ctrl+C.
+        os.killpg(process.pid, signal.SIGINT)
+
+    print(
+        "[Bees continuous] waiting for the trainer to finalize checkpoint/model output.",
+        flush=True,
+    )
+    while process.poll() is None:
+        try:
+            time.sleep(MANAGED_CHILD_POLL_SECONDS)
+        except KeyboardInterrupt:
+            # A repeated Ctrl+C must not turn a requested checkpoint save into a hard stop.
+            continue
+    process.wait()
+    if os.name == "nt":
+        terminate_owned_processes()
+
+
 def _run_managed_subprocess(
     command: Sequence[str],
     options: ServiceOptions,
@@ -569,32 +601,12 @@ def _run_managed_subprocess(
         return return_code
     except BaseException:
         # run_service retries ordinary phase errors while keeping this owner process alive.
-        # Retire the child before propagating so a supervisor-side failure or interrupt cannot
-        # leave an unsupervised trainer running alongside the retry generation.
-        try:
+        # Training owns valuable optimizer state, so request its graceful checkpoint path and
+        # wait for it to finish. Only release/publish subprocesses may be force-stopped.
+        if interruptible_on_stop:
             _stop_interruptible_managed_child(process)
-        except Exception as cleanup_error:
-            print(
-                "[Bees continuous] managed child cleanup failed after supervision error: "
-                f"{type(cleanup_error).__name__}: {cleanup_error}",
-                file=sys.stderr,
-                flush=True,
-            )
-            try:
-                process.kill()
-                process.wait(timeout=5)
-            except Exception:
-                pass
-            if os.name == "nt":
-                try:
-                    terminate_owned_processes()
-                except Exception as job_error:
-                    print(
-                        "[Bees continuous] managed child job cleanup failed: "
-                        f"{type(job_error).__name__}: {job_error}",
-                        file=sys.stderr,
-                        flush=True,
-                    )
+        else:
+            _request_graceful_training_child_stop(process)
         raise
 
 def _run(
