@@ -195,26 +195,48 @@ func bearerMatches(header, expected string) bool {
 	return subtle.ConstantTimeCompare([]byte(actual), []byte(expected)) == 1
 }
 
-func snapshotRegularFile(path string) (*os.File, int64, func(), error) {
-	info, err := os.Stat(path)
+func bootstrapFileETag(info os.FileInfo) string {
+	return fmt.Sprintf("\"%x-%x\"", info.Size(), info.ModTime().UnixNano())
+}
+
+func bootstrapRegularFileMetadata(path string) (int64, string, error) {
+	source, err := os.Open(path)
 	if err != nil {
-		return nil, 0, nil, err
+		return 0, "", err
+	}
+	defer source.Close()
+	info, err := source.Stat()
+	if err != nil {
+		return 0, "", err
 	}
 	if !info.Mode().IsRegular() {
-		return nil, 0, nil, fmt.Errorf("bootstrap source is not a regular file: %s", path)
+		return 0, "", fmt.Errorf("bootstrap source is not a regular file: %s", path)
 	}
+	return info.Size(), bootstrapFileETag(info), nil
+}
 
+func snapshotRegularFile(path string) (*os.File, int64, string, func(), error) {
 	// Copy the atomic publication file to a private snapshot before replying. On Windows this
 	// closes the mutable bundle quickly, so the operator can publish the next generation even
 	// while a slow worker is still downloading the previous complete snapshot.
 	source, err := os.Open(path)
 	if err != nil {
-		return nil, 0, nil, err
+		return nil, 0, "", nil, err
 	}
+	sourceInfo, err := source.Stat()
+	if err != nil {
+		_ = source.Close()
+		return nil, 0, "", nil, err
+	}
+	if !sourceInfo.Mode().IsRegular() {
+		_ = source.Close()
+		return nil, 0, "", nil, fmt.Errorf("bootstrap source is not a regular file: %s", path)
+	}
+	etag := bootstrapFileETag(sourceInfo)
 	snapshot, err := os.CreateTemp("", "bees-bootstrap-snapshot-*")
 	if err != nil {
 		_ = source.Close()
-		return nil, 0, nil, err
+		return nil, 0, "", nil, err
 	}
 	snapshotPath := snapshot.Name()
 	cleanup := func() {
@@ -224,27 +246,27 @@ func snapshotRegularFile(path string) (*os.File, int64, func(), error) {
 	if _, err = io.Copy(snapshot, source); err != nil {
 		_ = source.Close()
 		cleanup()
-		return nil, 0, nil, err
+		return nil, 0, "", nil, err
 	}
 	if err = source.Close(); err != nil {
 		cleanup()
-		return nil, 0, nil, err
+		return nil, 0, "", nil, err
 	}
 	snapshotInfo, err := snapshot.Stat()
 	if err != nil {
 		cleanup()
-		return nil, 0, nil, err
+		return nil, 0, "", nil, err
 	}
 	if _, err = snapshot.Seek(0, io.SeekStart); err != nil {
 		cleanup()
-		return nil, 0, nil, err
+		return nil, 0, "", nil, err
 	}
-	return snapshot, snapshotInfo.Size(), cleanup, nil
+	return snapshot, snapshotInfo.Size(), etag, cleanup, nil
 }
 
 func bootstrapHandler(token, bundlePath string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet || r.URL.Path != "/bootstrap" {
+		if (r.Method != http.MethodGet && r.Method != http.MethodHead) || r.URL.Path != "/bootstrap" {
 			http.NotFound(w, r)
 			return
 		}
@@ -254,7 +276,21 @@ func bootstrapHandler(token, bundlePath string) http.Handler {
 			return
 		}
 
-		snapshot, size, cleanup, err := snapshotRegularFile(bundlePath)
+		if r.Method == http.MethodHead {
+			size, etag, err := bootstrapRegularFileMetadata(bundlePath)
+			if err != nil {
+				http.Error(w, "bootstrap payload is not ready", http.StatusServiceUnavailable)
+				return
+			}
+			w.Header().Set("Content-Type", "application/zip")
+			w.Header().Set("Cache-Control", "no-store")
+			w.Header().Set("ETag", etag)
+			w.Header().Set("Content-Length", strconv.FormatInt(size, 10))
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		snapshot, size, etag, cleanup, err := snapshotRegularFile(bundlePath)
 		if err != nil {
 			http.Error(w, "bootstrap payload is not ready", http.StatusServiceUnavailable)
 			return
@@ -264,6 +300,7 @@ func bootstrapHandler(token, bundlePath string) http.Handler {
 		w.Header().Set("Content-Type", "application/zip")
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("Content-Disposition", "attachment; filename=bees-bootstrap.zip")
+		w.Header().Set("ETag", etag)
 		w.Header().Set("Content-Length", strconv.FormatInt(size, 10))
 		if _, err := io.Copy(w, snapshot); err != nil {
 			log.Printf("[Bees tailnet] bootstrap snapshot write failed: %v", err)
