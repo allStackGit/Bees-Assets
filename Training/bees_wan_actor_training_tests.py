@@ -294,6 +294,7 @@ class WanOptionTests(unittest.TestCase):
             session._accepted_steps_total = 0
             session._accepted_trajectories_total = 0
             session._learner_consumed_steps_total = 4
+            session._learner_consumed_steps_per_sec = None
             session._last_throughput_write = 0.0
             session._upload_queue = queue.Queue()
             session._session_failure_telemetry = SimpleNamespace(
