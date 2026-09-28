@@ -24,6 +24,7 @@ from typing import Any, Mapping, MutableMapping, Optional, Sequence
 HEALTH_FILE_ENV = "BEES_TRAINING_CHILD_HEALTH_FILE"
 HEALTH_TOKEN_ENV = "BEES_TRAINING_CHILD_HEALTH_TOKEN"
 VALID_HEALTH_STATES = frozenset(("starting", "ready", "error"))
+OWNED_CHILD_TERMINATION_GRACE_SECONDS = 10.0
 ATOMIC_REPLACE_RETRY_DELAYS = (0.01, 0.025, 0.05, 0.1, 0.2, 0.4)
 
 _windows_job_handle: Optional[int] = None
@@ -203,7 +204,7 @@ def _owned_child_main(argv: Sequence[str]) -> int:
             if (
                 termination_started is not None
                 and not child_group_kill_sent
-                and time.monotonic() - termination_started >= 10.0
+                and time.monotonic() - termination_started >= OWNED_CHILD_TERMINATION_GRACE_SECONDS
             ):
                 signal_child_group(signal.SIGKILL)
                 child_group_kill_sent = True
