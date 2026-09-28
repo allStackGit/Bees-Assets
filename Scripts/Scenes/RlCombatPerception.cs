@@ -437,12 +437,11 @@ internal sealed class RlCombatPerception
         }
         else
         {
-            // Match the turret branch's fixed five fields after the leading presence/type data:
-            // turret heading (two values), ready, and aligned. Non-turrets use zeros plus target state.
             sensor.AddObservation(0f);
             sensor.AddObservation(0f);
             sensor.AddObservation(0f);
             sensor.AddObservation(weapon.HasTargetShip ? 1f : 0f);
+            sensor.AddObservation(0f);
         }
     }
 
