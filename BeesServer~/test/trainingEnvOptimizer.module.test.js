@@ -23,6 +23,7 @@ function record(
         sessionFailures = 0,
         failureAgeSeconds = null,
         failureType = '',
+        reconciliationPhase = '',
     } = {},
 ) {
     return {
@@ -44,6 +45,9 @@ function record(
                 seconds_since_last_session_failure: failureAgeSeconds,
                 last_session_failure_type: failureType,
             },
+            reconciliation: reconciliationPhase
+                ? { phase: reconciliationPhase, seconds_in_phase: 1 }
+                : undefined,
         },
     };
 }
@@ -327,6 +331,56 @@ test('optimizer holds a recovered worker before probing again after a reported f
     assert.equal(state.baseline_envs, 8);
     assert.equal(state.desired_envs, 9);
     assert.equal(state.probing, true);
+});
+
+test('brief stopped heartbeat during runtime cutover does not trigger stability hold', () => {
+    const optimizer = new TrainingEnvOptimizer({
+        warmupMs: 0,
+        measurementMs: 1000,
+        cooldownMs: 0,
+        instabilityHoldMs: 10_000,
+    });
+
+    let state = update(optimizer, 'remote-a', 8, 100, 1000, {
+        max: 16,
+        processState: 'stopped',
+    });
+    assert.notEqual(state.phase, 'stability-hold');
+
+    state = update(optimizer, 'remote-a', 8, 100, 20_000, {
+        max: 16,
+        processState: 'stopped',
+    });
+    assert.notEqual(state.phase, 'stability-hold');
+
+    state = update(optimizer, 'remote-a', 8, 100, 32_000, {
+        max: 16,
+        processState: 'stopped',
+    });
+    assert.equal(state.phase, 'stability-hold');
+});
+
+test('active reconciliation keeps planned stopped worker out of stability hold', () => {
+    const optimizer = new TrainingEnvOptimizer({
+        warmupMs: 0,
+        measurementMs: 1000,
+        cooldownMs: 0,
+        instabilityHoldMs: 10_000,
+    });
+
+    let state = update(optimizer, 'remote-a', 8, 100, 1000, {
+        max: 16,
+        processState: 'stopped',
+        reconciliationPhase: 'ensuring canonical build',
+    });
+    assert.notEqual(state.phase, 'stability-hold');
+
+    state = update(optimizer, 'remote-a', 8, 100, 120_000, {
+        max: 16,
+        processState: 'stopped',
+        reconciliationPhase: 'ensuring canonical build',
+    });
+    assert.notEqual(state.phase, 'stability-hold');
 });
 
 test('BrokerStaleActor freshness races do not create optimizer instability', () => {
