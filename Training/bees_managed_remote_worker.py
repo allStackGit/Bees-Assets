@@ -2024,50 +2024,62 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                             if not control_healthy:
                                 inner_control_stall_watchdog.observe(True, now)
                                 control_failure_watchdog.reset()
-                            if inner_control_stall_watchdog.observe(
-                                not _inner_control_stalled(status, record),
-                                now,
+                            record_stale = (
+                                isinstance(record, Mapping)
+                                and bool(record.get("stale", False))
+                            )
+                            registration_grace = (
+                                worker_started_monotonic > 0.0
+                                and now - worker_started_monotonic
+                                < WORKER_REGISTRATION_GRACE_SECONDS
+                            )
+
+                            # The server may still expose the previous instance's stale record
+                            # immediately after this supervisor launches a replacement worker. Give
+                            # the new worker one bounded heartbeat-registration window before using
+                            # that historical record to trigger another recycle; otherwise the
+                            # supervisor can kill every replacement before its first heartbeat.
+                            if control_healthy and not record_stale and not registration_grace:
+                                if inner_control_stall_watchdog.observe(
+                                    not _inner_control_stalled(status, record),
+                                    now,
+                                ):
+                                    print(
+                                        "[Bees remote] inner worker is stopped during active training "
+                                        "after repeated heartbeat response failures while outer control "
+                                        "GETs still succeed; recycling private transport.",
+                                        file=sys.stderr,
+                                        flush=True,
+                                    )
+                                    transport_watchdog_restart = True
+                                    break
+                                if control_failure_watchdog.observe(
+                                    _control_failure_total(record),
+                                    now,
+                                ):
+                                    print(
+                                        "[Bees remote] repeated inner worker control failures indicate "
+                                        "a private control path that is not healing; recycling private "
+                                        "transport.",
+                                        file=sys.stderr,
+                                        flush=True,
+                                    )
+                                    transport_watchdog_restart = True
+                                    break
+                            else:
+                                inner_control_stall_watchdog.observe(True, now)
+                                if record_stale or not control_healthy:
+                                    control_failure_watchdog.reset()
+
+                            if stale_trainer_requires_recycle(
+                                record,
+                                worker_started_monotonic=worker_started_monotonic,
+                                now=now,
                             ):
                                 print(
-                                    "[Bees remote] inner worker is stopped during active training "
-                                    "after repeated heartbeat response failures while outer control "
-                                    "GETs still succeed; recycling private transport.",
-                                    file=sys.stderr,
-                                    flush=True,
-                                )
-                                transport_watchdog_restart = True
-                                break
-                            if control_failure_watchdog.observe(
-                                _control_failure_total(record),
-                                now,
-                            ):
-                                print(
-                                    "[Bees remote] repeated inner worker control failures indicate "
-                                    "a private control path that is not healing; recycling private "
-                                    "transport.",
-                                    file=sys.stderr,
-                                    flush=True,
-                                )
-                                transport_watchdog_restart = True
-                                break
-                            if isinstance(record, Mapping) and bool(record.get("stale", False)):
-                                print(
-                                    "[Bees remote] trainer heartbeat is STALE while the "
-                                    "supervisor process is still alive; recycling the managed "
-                                    "worker and private transport.",
-                                    file=sys.stderr,
-                                    flush=True,
-                                )
-                                transport_watchdog_restart = True
-                                break
-                            if session_failure_watchdog.observe(
-                                _session_failure_total(record),
-                                now,
-                            ):
-                                print(
-                                    "[Bees remote] repeated WAN actor session failures indicate "
-                                    "a broker/gameplay path that is not healing; recycling private "
-                                    "transport.",
+                                    "[Bees remote] trainer heartbeat remained STALE beyond the "
+                                    f"{WORKER_REGISTRATION_GRACE_SECONDS:g}s registration grace; "
+                                    "recycling the managed worker and private transport.",
                                     file=sys.stderr,
                                     flush=True,
                                 )
