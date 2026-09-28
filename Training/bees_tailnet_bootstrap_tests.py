@@ -10,6 +10,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 OPERATOR = ROOT / "bees.ps1"
+OPERATOR_NODE = ROOT / "Training" / "operator" / "tailnet.js"
 WINDOWS_TEMPLATE = ROOT / "Training" / "bees_remote_bootstrap.ps1"
 LINUX_TEMPLATE = ROOT / "Training" / "bees_remote_bootstrap.sh"
 MANAGED_WORKER = ROOT / "Training" / "bees_managed_remote_worker.py"
@@ -161,21 +162,28 @@ class TailnetBootstrapSourceTests(unittest.TestCase):
         self.assertIn("DevelopmentPort = 7146", config)
         self.assertIn("([string]$GameplayServerPort)", source)
 
-    def test_generated_workers_self_update_runtime_and_gate_release_readiness(self):
+    def test_generated_workers_self_update_runtime_launcher_and_gate_release_readiness(self):
         operator = OPERATOR.read_text(encoding="utf-8")
+        operator_node = OPERATOR_NODE.read_text(encoding="utf-8")
         worker = MANAGED_WORKER.read_text(encoding="utf-8")
         windows = WINDOWS_TEMPLATE.read_text(encoding="utf-8")
         linux = LINUX_TEMPLATE.read_text(encoding="utf-8")
         self.assertIn("runtime-ready-build.txt", worker)
         self.assertIn("--runtime-ready-file", worker)
         self.assertIn("latest-training-release.json", worker)
+        self.assertIn("--launcher-path", worker)
         self.assertIn("--runtime-archive", windows)
+        self.assertIn("--launcher-path", windows)
         self.assertIn("--bootstrap-token-file", windows)
         self.assertIn("--runtime-archive", linux)
+        self.assertIn("--launcher-path", linux)
         self.assertIn("--bootstrap-token-file", linux)
         self.assertIn("'--release',$LatestReleasePath", operator)
         self.assertIn("'--windows-bridge',[string]$bridges.distribution_windows", operator)
         self.assertIn("'--linux-bridge',[string]$bridges.distribution_linux", operator)
+        self.assertIn("'--windows-launcher', windowsCandidate", operator_node)
+        self.assertIn("'--linux-launcher', linuxCandidate", operator_node)
+        self.assertIn("BEES_REMOTE_LAUNCHER_PATH", operator_node)
 
     def test_tailnet_helper_exposes_private_gateway_bootstrap_and_multi_forward(self):
         source = TAILNET_MAIN.read_text(encoding="utf-8")
