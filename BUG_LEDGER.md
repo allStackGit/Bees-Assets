@@ -10,6 +10,8 @@ Static-only repository audit on `rl/initial-design-work`. This ledger is the cur
 
 ## Audit status
 
+- REG-184 rejects inexactly represented optimizer counters before they influence throughput measurements or env-count probe decisions. Focused regression source was added but not run. Static review only; post-fix clean-pass count remains **0 / 2**.
+
 - REG-183 makes unsafe heartbeat revisions fail closed as `-1`, preventing them from falsely satisfying a rollout phase revision. Focused regression source was added but not run. Static review only; post-fix clean-pass count remains **0 / 2**.
 
 - REG-182 preserves the central learner in every compatible-release barrier through lease expiry, preventing canonical promotion without its acknowledgement. Focused regression source was added but not run. Static review only; post-fix clean-pass count remains **0 / 2**.
