@@ -1531,6 +1531,38 @@ def _control_failure_total(record: Optional[Mapping[str, object]]) -> Optional[i
     return None
 
 
+def _inner_control_stalled(
+    status: object,
+    record: Optional[Mapping[str, object]],
+) -> bool:
+    """Detect a dedicated worker stranded by asymmetric heartbeat response failure.
+
+    A healthy outer GET /v1/status does not prove the inner worker receives POST /v1/heartbeat
+    responses. During ordinary training, a stopped trainer reporting ControlUnavailable is not a
+    useful steady state: it cannot receive the desired state needed to relaunch. Ignore release
+    rollouts because a pending release can intentionally stop dedicated trainers.
+    """
+    if not isinstance(status, Mapping) or not isinstance(record, Mapping):
+        return False
+    desired = status.get("desired")
+    desired_map = desired if isinstance(desired, Mapping) else {}
+    if not bool(desired_map.get("training_enabled", False)):
+        return False
+    if desired_map.get("pending_release"):
+        return False
+    if str(record.get("process_state", "") or "") != "stopped":
+        return False
+    error = str(record.get("last_error", "") or "")
+    if not error.startswith("ControlUnavailable:"):
+        return False
+    metrics = record.get("metrics")
+    metrics_map = metrics if isinstance(metrics, Mapping) else {}
+    control = metrics_map.get("control")
+    control_map = control if isinstance(control, Mapping) else {}
+    failure_type = str(control_map.get("last_failure_type", "") or "")
+    return failure_type == "ControlUnavailable"
+
+
 class _SessionFailureWatchdog:
     def __init__(self, *, threshold: int = 3, window_seconds: float = 120.0) -> None:
         self.threshold = max(1, int(threshold))
@@ -1958,6 +1990,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         threshold=3,
                         window_seconds=60.0,
                     )
+                    # Count-based escalation intentionally adopts the first cumulative counter as
+                    # a baseline. Cover the complementary failure mode where several failed POSTs
+                    # occurred before the outer supervisor first sampled status and the worker is
+                    # already stranded stopped waiting for desired state.
+                    inner_control_stall_watchdog = _TransportWatchdog(10.0)
                     transport_watchdog_restart = False
                     while (
                         runtime_cutover is None
@@ -2008,6 +2045,19 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                                 broker_watchdog.observe(True, now)
 
                             record = _trainer_record(status, trainer_id)
+                            if inner_control_stall_watchdog.observe(
+                                not _inner_control_stalled(status, record),
+                                now,
+                            ):
+                                print(
+                                    "[Bees remote] inner worker is stopped during active training "
+                                    "after repeated heartbeat response failures while outer control "
+                                    "GETs still succeed; recycling private transport.",
+                                    file=sys.stderr,
+                                    flush=True,
+                                )
+                                transport_watchdog_restart = True
+                                break
                             if control_failure_watchdog.observe(
                                 _control_failure_total(record),
                                 now,
