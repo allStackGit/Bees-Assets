@@ -61,6 +61,15 @@ function sessionFailureCount(metrics) {
     return count;
 }
 
+function sessionFailureType(metrics) {
+    if (!metrics || typeof metrics !== 'object' || Array.isArray(metrics)) return '';
+    const throughput = metrics.throughput;
+    if (!throughput || typeof throughput !== 'object' || Array.isArray(throughput)) return '';
+    return typeof throughput.last_session_failure_type === 'string'
+        ? throughput.last_session_failure_type.trim()
+        : '';
+}
+
 function recentSessionFailureAgeSeconds(metrics) {
     if (!metrics || typeof metrics !== 'object' || Array.isArray(metrics)) return null;
     const throughput = metrics.throughput;
@@ -68,6 +77,9 @@ function recentSessionFailureAgeSeconds(metrics) {
     const count = sessionFailureCount(metrics);
     const age = throughput.seconds_since_last_session_failure;
     if (count === null || count <= 0) return null;
+    // BrokerStaleActor means the learner advanced policy/control state while an old request
+    // was still in flight. Actors resynchronize from it; it is not an unstable worker session.
+    if (sessionFailureType(metrics) === 'BrokerStaleActor') return null;
     if (typeof age !== 'number' || !Number.isFinite(age) || age < 0) return null;
     return age;
 }
@@ -389,6 +401,7 @@ class TrainingEnvOptimizer {
         const sessionFailureAgeSeconds = recentSessionFailureAgeSeconds(
             record && record.metrics);
         const sessionFailuresTotal = sessionFailureCount(record && record.metrics);
+        const lastSessionFailureType = sessionFailureType(record && record.metrics);
         const contextKey = String(context.contextKey || '');
         if (this.activeProbeTrainerId && this.activeProbeTrainerId !== record?.trainer_id) {
             const active = this.states.get(this.activeProbeTrainerId);
@@ -481,6 +494,17 @@ class TrainingEnvOptimizer {
             typeof state.last_instability_reason === 'string' &&
             state.last_instability_reason.startsWith(
                 'worker-reported error: ControlUnavailable:')
+        ) {
+            state.instability_hold_until_ms = Math.min(
+                state.instability_hold_until_ms,
+                timestamp,
+            );
+        }
+
+        if (
+            processState === 'running' &&
+            lastSessionFailureType === 'BrokerStaleActor' &&
+            state.last_instability_reason === 'WAN actor session failure'
         ) {
             state.instability_hold_until_ms = Math.min(
                 state.instability_hold_until_ms,
@@ -746,5 +770,6 @@ module.exports = {
     producerAcceptedSteps,
     recentSessionFailureAgeSeconds,
     sessionFailureCount,
+    sessionFailureType,
     initialStep,
 };
