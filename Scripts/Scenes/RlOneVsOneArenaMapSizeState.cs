@@ -154,7 +154,19 @@ internal static class RlOneVsOneArenaMapSizeState
         }
 
         double range = (double)maximum - minimum;
-        int maximumStep = (int)Math.Ceiling(range / MapSizeStep);
+        double maximumStepCount = Math.Ceiling(range / MapSizeStep);
+        // Random.Next takes an exclusive Int32 upper bound. Converting an out-of-range
+        // double to int can wrap, and maximumStep + 1 overflows at Int32.MaxValue.
+        // Reject unsupported ranges instead of silently sampling the minimum or failing later.
+        if (maximumStepCount >= int.MaxValue)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(maximum),
+                maximum,
+                "The map-size range is too large for stepped sampling.");
+        }
+
+        int maximumStep = (int)maximumStepCount;
         if (maximumStep <= 0)
         {
             return minimum;
