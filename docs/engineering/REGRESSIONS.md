@@ -1634,6 +1634,6 @@ Manual-only protection is acceptable only when the record explains why determini
 **Area:** `Training/bees_continual_wan_service.py`, continual-service training callback contract  
 **Symptom:** when a first WAN training attempt created a run directory but no checkpoint, the supervisor's fresh retry passed `force_fresh` to the wrapper callback and failed before launching training. A separately configured `--runtime-training-root` was also ignored when choosing the WAN trainer script.  
 **Root cause:** the WAN wrapper callback did not match the base service's `training_command` signature and selected its script from `assets_root` instead of the configured runtime root.  
-**Permanent protection:** `ContinualElasticWanServiceTests.WanWrapperForwardsFreshRetryAndUsesPinnedRuntimeRoot` exercises the WAN entrypoint with a separate runtime folder and a forced fresh retry, checking the forwarded flag and selected script path.  
+**Permanent protection:** `ContinualElasticWanServiceTests.test_wan_wrapper_forwards_fresh_retry_and_uses_pinned_runtime_root` exercises the WAN entrypoint with a separate runtime folder and a forced fresh retry, checking the forwarded flag and selected script path.  
 **Verification:** production and regression sources were read back and reviewed statically. The test was not run under the code-analysis-only instruction.  
 **Invariant/knowledge:** continual-service mode wrappers must preserve the base training-command options and use the explicitly configured runtime training root.
