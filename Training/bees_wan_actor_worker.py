@@ -866,7 +866,11 @@ class ActorSession:
         if kind == "torch":
             weights = payload.get("weights")
             step = payload.get("step")
-            if not isinstance(weights, Mapping) or not isinstance(step, int):
+            if (
+                not isinstance(weights, Mapping)
+                or not isinstance(step, int)
+                or isinstance(step, bool)
+            ):
                 raise RuntimeError("Torch WAN policy payload is malformed")
             template.load_weights(weights)
             template.set_step(step)
