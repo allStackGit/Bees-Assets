@@ -1299,3 +1299,12 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** Every launcher must serialize shared install-root preparation and supervisor creation, with a second live-process check inside the lock. A focused concurrent-launch regression test was not added under the static-analysis-only request.  
 **Verification:** Statically traced both lock acquisition paths, stale-PID checks, shared-file writes, child launch, and PID publication. No tests, builds, Unity, or runtime checks were performed.  
 **Invariant/knowledge:** A PID file alone cannot serialize startup because it is published after runtime preparation; use an OS-managed lock around the full critical section.
+
+### REG-149 — Non-finite health timestamps bypassed staleness checks
+**Area:** `Training/bees_process_safety.py`, managed child health reader; `Training/bees_training_worker_agent.py`, startup staleness handling  
+**Symptom:** A health record with `NaN` or `Infinity` in `updated_unix_seconds` could be accepted while the child remained `starting`, preventing the stale-health timeout from firing.  
+**Root cause:** Python's JSON decoder accepts non-standard non-finite numbers, and the reader checked only the timestamp's numeric type.  
+**Fix:** Convert the timestamp to a float under overflow handling and reject it unless it is finite. Invalid records follow the existing missing-health startup grace and then fail closed.  
+**Permanent protection:** Managed child health timestamps must be finite, representable seconds values; malformed health is never authoritative. A focused malformed-health test was not added under the static-analysis-only request.  
+**Verification:** Statically traced JSON parsing, health-field validation, and worker startup timeout behavior; rejected timestamps now return no health record and enter the existing timeout path. No tests, builds, Unity, or runtime checks were performed.  
+**Invariant/knowledge:** Numeric JSON type checks must also reject non-finite values and unrepresentable integers before timestamp arithmetic.
