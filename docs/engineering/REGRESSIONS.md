@@ -1586,3 +1586,12 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** invalid capacity now clears that trainer's optimizer state as well as its probe ownership. `trainingEnvOptimizer.module.test.js` verifies that the prior recommendation and snapshot disappear after capacity becomes invalid.  
 **Verification:** source and focused regression coverage were read back and reviewed statically. The test was not run under the static-only audit instruction.  
 **Invariant/knowledge:** automatic environment-count recommendations are valid only while the trainer advertises a valid capacity contract.
+
+
+### REG-186 — Training reset indexed removed campaign HUD entries
+**Area:** `Scripts/Scenes/HiveMindTrainingBootstrap.cs`, `Scripts/Levels/Level.Reset.cs`, training level reset
+**Symptom:** a training reset using Campaign mode could index fixed UI list positions after the training bootstrap removed UI entries, risking an exception and stopping episode setup.
+**Root cause:** campaign-only HUD layout code ran for training levels even though the training bootstrap removes player UI objects from `Stage.UIElements`.
+**Permanent protection:** campaign HUD indexing now runs only when `!Stage.IsTraining`. `TrainingHudIsolationInvariantTests` checks that the bootstrap removes UI entries and the reset guard excludes training.
+**Verification:** changed source and focused regression source were read back and reviewed statically. The test was not run under the code-analysis-only instruction.
+**Invariant/knowledge:** code that indexes player UI hierarchies must not run in headless/training mode after the training bootstrap removes those hierarchies.
