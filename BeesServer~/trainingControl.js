@@ -498,7 +498,19 @@ class TrainingControlStore {
                             'training-control persisted build descriptor is invalid for ' +
                             role + '/' + platform + '/' + buildId);
                     }
-                    record.archive_path = path.resolve(record.archive_path);
+                    const resolvedArchivePath = path.resolve(record.archive_path);
+                    const expectedArchivePath = path.join(
+                        this.artifactRoot,
+                        role,
+                        platform,
+                        buildId + '-' + record.archive_sha256 + '.zip',
+                    );
+                    if (resolvedArchivePath !== expectedArchivePath) {
+                        throw new Error(
+                            'training-control persisted artifact path is invalid for ' +
+                            role + '/' + platform + '/' + buildId);
+                    }
+                    record.archive_path = resolvedArchivePath;
                 }
             }
         }
@@ -513,10 +525,11 @@ class TrainingControlStore {
                 canonicalArtifacts++;
                 if (verifiedPaths.has(record.archive_path)) continue;
                 verifiedPaths.add(record.archive_path);
-                const stats = fs.statSync(record.archive_path);
-                if (!stats.isFile() || stats.size !== record.archive_size_bytes) {
+                const stats = fs.lstatSync(record.archive_path);
+                if (stats.isSymbolicLink() || !stats.isFile() ||
+                    stats.size !== record.archive_size_bytes) {
                     throw new Error(
-                        'training-control canonical artifact size is invalid for ' +
+                        'training-control canonical artifact size or file type is invalid for ' +
                         role + '/' + platform);
                 }
                 if (sha256File(record.archive_path) !== record.archive_sha256) {
