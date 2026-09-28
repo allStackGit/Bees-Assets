@@ -508,10 +508,11 @@ class TrainingControlStore {
                 canonicalArtifacts++;
                 if (verifiedPaths.has(record.archive_path)) continue;
                 verifiedPaths.add(record.archive_path);
-                const stats = fs.statSync(record.archive_path);
-                if (!stats.isFile() || stats.size !== record.archive_size_bytes) {
+                const stats = fs.lstatSync(record.archive_path);
+                if (stats.isSymbolicLink() || !stats.isFile() ||
+                    stats.size !== record.archive_size_bytes) {
                     throw new Error(
-                        'training-control canonical artifact size is invalid for ' +
+                        'training-control canonical artifact size or file type is invalid for ' +
                         role + '/' + platform);
                 }
                 if (sha256File(record.archive_path) !== record.archive_sha256) {
@@ -1797,7 +1798,19 @@ function createTrainingControlHandler(store, token, adminToken = null) {
                 const platform = decodeURIComponent(artifactMatch[2]);
                 const buildId = decodeURIComponent(artifactMatch[3]);
                 const record = store.artifact(role, platform, buildId);
-                if (!record || !fs.existsSync(record.archive_path)) {
+                if (!record) {
+                    sendJson(response, 404, { error: 'artifact-not-found' });
+                    return;
+                }
+                let artifactStats;
+                try {
+                    artifactStats = fs.lstatSync(record.archive_path);
+                } catch (error) {
+                    if (error.code !== 'ENOENT') throw error;
+                }
+                if (!artifactStats || artifactStats.isSymbolicLink() ||
+                    !artifactStats.isFile() ||
+                    artifactStats.size !== record.archive_size_bytes) {
                     sendJson(response, 404, { error: 'artifact-not-found' });
                     return;
                 }
