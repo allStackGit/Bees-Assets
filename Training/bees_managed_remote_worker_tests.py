@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import http.client
 import io
 import tempfile
 import unittest
@@ -503,6 +504,10 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
         self.assertIs(returned, process)
         owned.assert_called_once()
         self.assertEqual(owned.call_args.args[0], ["python", "worker.py"])
+        self.assertEqual(
+            owned.call_args.kwargs["start_new_session"],
+            managed.os.name != "nt",
+        )
 
     def test_terminate_raises_when_child_exit_cannot_be_confirmed(self):
         process = mock.Mock()
@@ -510,11 +515,37 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
         process.poll.return_value = None
         process.wait.side_effect = TimeoutError("still running")
 
-        with self.assertRaisesRegex(RuntimeError, "did not stop"):
+        with (
+            mock.patch.object(managed.os, "name", "posix"),
+            mock.patch.object(managed.os, "killpg", side_effect=OSError("no group")),
+            self.assertRaisesRegex(RuntimeError, "did not stop"),
+        ):
             managed._terminate(process)
 
         process.terminate.assert_called_once()
         process.kill.assert_called_once()
+
+    def test_posix_terminate_kills_entire_managed_process_group(self):
+        process = mock.Mock()
+        process.pid = 7332
+        process.poll.return_value = None
+        process.wait.side_effect = [TimeoutError("term timed out"), 0]
+
+        with (
+            mock.patch.object(managed.os, "name", "posix"),
+            mock.patch.object(managed.os, "killpg") as killpg,
+        ):
+            managed._terminate(process)
+
+        self.assertEqual(
+            killpg.call_args_list,
+            [
+                mock.call(7332, managed.signal.SIGTERM),
+                mock.call(7332, managed.signal.SIGKILL),
+            ],
+        )
+        process.terminate.assert_not_called()
+        process.kill.assert_not_called()
 
     def test_supervisor_requests_worker_agent_shutdown_before_force_kill(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -643,6 +674,32 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
         self.assertEqual(cutover, expected)
         updater.start.assert_called_once_with()
         status.assert_not_called()
+
+    def test_incomplete_bootstrap_read_is_retryable_transport_failure(self):
+        failure = http.client.IncompleteRead(b"partial", 128)
+        self.assertTrue(managed._is_transient_transport_error(failure))
+
+    def test_runtime_updater_keeps_http_failures_in_worker_state_instead_of_dying(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            args = Namespace(
+                runtime_archive=str(root / "missing.zip"),
+                runtime_poll_seconds=0.01,
+            )
+            updater = managed.RuntimeUpdater(args, root / "install")
+            updater._stage_once = mock.Mock(
+                side_effect=http.client.IncompleteRead(b"partial", 128)
+            )
+            updater.start()
+            for _ in range(100):
+                _build, error = updater.verified()
+                if "IncompleteRead" in error:
+                    break
+                managed.time.sleep(0.01)
+            updater.stop()
+
+            self.assertIn("IncompleteRead", updater.last_error)
+            self.assertGreaterEqual(updater._stage_once.call_count, 1)
 
     def test_runtime_updater_stop_is_safe_before_thread_start(self):
         with tempfile.TemporaryDirectory() as temp:
