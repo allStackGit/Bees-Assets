@@ -10,7 +10,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 OPERATOR = ROOT / "bees.ps1"
+BEES_OPERATOR_NODE = ROOT / "Training" / "bees_operator.js"
 OPERATOR_NODE = ROOT / "Training" / "operator" / "tailnet.js"
+CENTRAL_NODE = ROOT / "Training" / "operator" / "central.js"
+COMMON_NODE = ROOT / "Training" / "operator" / "common.js"
 WINDOWS_TEMPLATE = ROOT / "Training" / "bees_remote_bootstrap.ps1"
 LINUX_TEMPLATE = ROOT / "Training" / "bees_remote_bootstrap.sh"
 MANAGED_WORKER = ROOT / "Training" / "bees_managed_remote_worker.py"
@@ -22,27 +25,27 @@ PLACEHOLDER = re.compile(r"__BEES_[A-Z0-9_]+__")
 
 
 class TailnetBootstrapSourceTests(unittest.TestCase):
-    def test_operator_script_has_one_command_dispatch_and_unique_functions(self):
-        source = OPERATOR.read_text(encoding="utf-8")
-        self.assertEqual(source.count("switch($Command)"), 1)
-        functions = re.findall(r"(?m)^function\s+([A-Za-z0-9_-]+)", source)
-        duplicates = sorted({name for name in functions if functions.count(name) > 1})
-        self.assertEqual(duplicates, [])
-        self.assertEqual(functions.count("Prepare-RemoteBootstrap"), 1)
-        self.assertEqual(functions.count("Start-TailnetGatewayIfNeeded"), 1)
-        self.assertEqual(functions.count("Ensure-TailnetIdentity"), 1)
+    def test_operator_shim_delegates_once_to_node_dispatch(self):
+        shim = OPERATOR.read_text(encoding="utf-8")
+        operator = BEES_OPERATOR_NODE.read_text(encoding="utf-8")
+        self.assertIn("$operator=Join-Path $assetsRoot 'Training\\bees_operator.js'", shim)
+        self.assertEqual(shim.count("& $node @arguments"), 1)
+        self.assertNotIn("switch($Command)", shim)
+        self.assertIn("async function dispatch(parsed)", operator)
+        for command in ("build", "runtime", "server", "start", "stop", "status", "bundle", "qualify"):
+            self.assertIn(f"command === '{command}'", operator)
 
     def test_operator_replaces_every_generated_launcher_placeholder(self):
-        operator = OPERATOR.read_text(encoding="utf-8")
+        operator = OPERATOR_NODE.read_text(encoding="utf-8")
         for template_path in (WINDOWS_TEMPLATE, LINUX_TEMPLATE):
             template = template_path.read_text(encoding="utf-8")
             placeholders = sorted(set(PLACEHOLDER.findall(template)))
             self.assertTrue(placeholders, template_path.name)
-            missing = [p for p in placeholders if f"'{p}'=" not in operator]
+            missing = [p for p in placeholders if f"'{p}'" not in operator]
             self.assertEqual(missing, [], template_path.name)
 
     def test_launchers_are_single_platform_files_not_numbered_slots(self):
-        operator = OPERATOR.read_text(encoding="utf-8")
+        operator = OPERATOR_NODE.read_text(encoding="utf-8")
         self.assertIn("'bees-remote-worker.ps1'", operator)
         self.assertIn("'bees-remote-worker.sh'", operator)
         self.assertNotIn("bees-remote-worker-N", operator)
@@ -50,23 +53,35 @@ class TailnetBootstrapSourceTests(unittest.TestCase):
         self.assertNotIn("__BEES_ENVS__", operator)
 
     def test_linux_launcher_uses_real_lf_characters_not_literal_backslash_n(self):
-        operator = OPERATOR.read_text(encoding="utf-8")
-        self.assertIn('$linuxBody=$linuxBody.Replace("`r`n","`n").Replace("`r","`n")', operator)
-        self.assertIn('$linuxWrapper=$linuxWrapper.Replace("`r`n","`n").Replace("`r","`n")', operator)
-        self.assertIn('StartsWith("#!/usr/bin/env bash`n")', operator)
-        self.assertNotIn('[regex]::Replace($linuxWrapper,"\\r\\n","\\n")', operator)
-        self.assertNotIn('[regex]::Replace($linuxBody,"\\r\\n","\\n")', operator)
+        operator = OPERATOR_NODE.read_text(encoding="utf-8")
+        self.assertEqual(operator.count("replace(/\\r\\n?/g, '\\n')"), 2)
+        self.assertIn("startsWith('#!/usr/bin/env bash\\n')", operator)
+        self.assertNotIn('replace(/\\\\r\\\\n/g', operator)
 
     def test_central_agent_restart_requests_checkpoint_before_force_kill(self):
-        operator = OPERATOR.read_text(encoding="utf-8")
-        self.assertIn("function Stop-CentralAgentGracefully", operator)
-        self.assertIn("'--shutdown-request-file',$CentralAgentShutdownRequestPath", operator)
-        self.assertIn("graceful_checkpoint_shutdown=$true", operator)
-        self.assertIn("checkpointing before restarting the managed central agent", operator)
-        self.assertNotIn("Stop-ProcessTree ([int]$existing.pid)", operator)
-        self.assertIn("AddSeconds(180)", operator)
-        self.assertIn("Refusing to stop BeesServer while checkpoint/log preservation is incomplete.", operator)
-        self.assertIn("Refusing to stop BeesServer because checkpoint completion cannot be coordinated.", operator)
+        central = CENTRAL_NODE.read_text(encoding="utf-8")
+        self.assertIn("async function stopCentralAgentGracefully", central)
+        self.assertIn(
+            "writeTextAtomic(paths.centralAgentShutdownRequestPath, 'stop\\n')",
+            central,
+        )
+        self.assertIn("graceful_checkpoint_shutdown: true", central)
+        self.assertIn(
+            "checkpointing the learner before replacing the verified supervisor",
+            central,
+        )
+        self.assertIn(
+            "Optimizer checkpoint/model files are already durable.",
+            central,
+        )
+        self.assertIn(
+            "stopManagedProcessTree(state, '', 'central training supervisor')",
+            central,
+        )
+        self.assertIn(
+            "Refusing forced termination; the existing learner remains authoritative.",
+            central,
+        )
 
     def test_remote_runtime_pins_pkg_resources_provider_and_validates_imports(self):
         requirements = REMOTE_REQUIREMENTS.read_text(encoding="utf-8")
@@ -100,7 +115,7 @@ class TailnetBootstrapSourceTests(unittest.TestCase):
     def test_remote_launcher_describes_cpu_and_ram_environment_default(self):
         windows = WINDOWS_TEMPLATE.read_text(encoding="utf-8")
         linux = LINUX_TEMPLATE.read_text(encoding="utf-8")
-        expected = "environment count defaults automatically from available CPU and RAM (maximum 64)."
+        expected = "BeesServer environment auto-optimization (CPU-derived start, RAM-capped maximum 64)."
         stale = "environment count defaults to 4x available CPU threads (maximum 64)."
         for source in (windows, linux):
             self.assertIn(expected, source)
@@ -156,14 +171,12 @@ class TailnetBootstrapSourceTests(unittest.TestCase):
             self.assertNotIn("shutil.which(\"ssh\")", source, path.name)
 
     def test_operator_server_uses_regular_game_development_port(self):
-        source = OPERATOR.read_text(encoding="utf-8")
+        common = COMMON_NODE.read_text(encoding="utf-8")
         config = (ROOT / "Scripts" / "ConfigData.cs").read_text(encoding="utf-8")
-        self.assertIn("$GameplayServerPort=7146", source)
+        self.assertIn("const GAMEPLAY_SERVER_PORT = 7146;", common)
         self.assertIn("DevelopmentPort = 7146", config)
-        self.assertIn("([string]$GameplayServerPort)", source)
 
     def test_generated_workers_self_update_runtime_launcher_and_gate_release_readiness(self):
-        operator = OPERATOR.read_text(encoding="utf-8")
         operator_node = OPERATOR_NODE.read_text(encoding="utf-8")
         worker = MANAGED_WORKER.read_text(encoding="utf-8")
         windows = WINDOWS_TEMPLATE.read_text(encoding="utf-8")
@@ -178,9 +191,9 @@ class TailnetBootstrapSourceTests(unittest.TestCase):
         self.assertIn("--runtime-archive", linux)
         self.assertIn("--launcher-path", linux)
         self.assertIn("--bootstrap-token-file", linux)
-        self.assertIn("'--release',$LatestReleasePath", operator)
-        self.assertIn("'--windows-bridge',[string]$bridges.distribution_windows", operator)
-        self.assertIn("'--linux-bridge',[string]$bridges.distribution_linux", operator)
+        self.assertIn("'--release', paths.latestReleasePath", operator_node)
+        self.assertIn("'--windows-bridge', windowsBridge", operator_node)
+        self.assertIn("'--linux-bridge', linuxBridge", operator_node)
         self.assertIn("'--windows-launcher', windowsCandidate", operator_node)
         self.assertIn("'--linux-launcher', linuxCandidate", operator_node)
         self.assertIn("BEES_REMOTE_LAUNCHER_PATH", operator_node)
