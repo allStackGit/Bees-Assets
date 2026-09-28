@@ -111,7 +111,7 @@ namespace Assets.Scripts.UIComponents
                 float availableTextWidth = textRect != null
                     ? Mathf.Max(1f, textRect.rect.width)
                     : Mathf.Max(1f, statusRect.rect.width);
-                float preferredTextHeight = text.GetPreferredValues("Ag", availableTextWidth, 0f).y;
+                float preferredTextHeight = MeasurePreferredTextHeight(text, "Ag", availableTextWidth);
                 float statusHeight = CalculateMissionStatusHeight(preferredTextHeight);
 
                 // The mission-status owner is already positioned at the top of the gameplay HUD.
@@ -150,6 +150,23 @@ namespace Assets.Scripts.UIComponents
             }
 
             _missionStatusStyled = true;
+        }
+
+        private float MeasurePreferredTextHeight(TMP_Text source, string value, float width)
+        {
+            // TMP's string overload uses the component's internal text buffers. Measure the
+            // placeholder on a hidden copy so the visible mission-status message stays intact.
+            TMP_Text measurementText = Instantiate(source, source.transform.parent);
+            measurementText.gameObject.name = "Mission Status Measurement";
+            measurementText.gameObject.SetActive(false);
+            try
+            {
+                return measurementText.GetPreferredValues(value, width, 0f).y;
+            }
+            finally
+            {
+                Destroy(measurementText.gameObject);
+            }
         }
 
         internal static float CalculateMissionStatusHeight(float preferredTextHeight)
