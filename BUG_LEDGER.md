@@ -10,6 +10,8 @@ Static-only repository audit on `rl/initial-design-work`. This ledger is the cur
 
 ## Audit status
 
+- **REG-192 fixes the continual WAN service command contract:** fresh retries now forward `force_fresh`, and the trainer script resolves from the configured runtime training root. Focused wrapper regression coverage was added and reviewed statically; it was not run. No builds or training runs were executed. Post-fix clean-pass count remains **0 / 2**.
+
 - **REG-191 aligns live-policy warp timing with training:** the live agent now registers with a touching gate, waits for the gate readiness animation, and cancels its participant state during ship release instead of instantly removing the ship. A focused source-contract regression was added but not run. Static review only; no runtime checks.
 
 - **REG-190 rejects future-dated managed-child health:** `read_managed_health` now rejects timestamps more than five seconds ahead of the supervisor clock. A future-dated `starting` report can no longer remain fresh forever and keep a stalled learner in `starting`; invalid health falls through to the existing startup timeout. Static code review only; no tests or runtime checks were run.
