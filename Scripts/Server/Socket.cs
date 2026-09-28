@@ -1383,6 +1383,10 @@ namespace Assets.Scripts.Server
             handleBasicResponseStandingRequest = GetStandingRequest(response.Hash);
             if (handleBasicResponseStandingRequest != null)
             {
+                if (handleBasicResponseStandingRequest is StoreUserDataRequest storeRequest)
+                {
+                    CampaignCheckpoint.HandleWriteResponse(storeRequest, response.Status);
+                }
                 StandingRequests.Remove(handleBasicResponseStandingRequest);
             }
             else
@@ -1391,3 +1395,7 @@ namespace Assets.Scripts.Server
         }
     }
 }
+
+
+
+
