@@ -1393,7 +1393,12 @@ def _wait_for_runtime_alignment(
     return False, None
 
 
-def _worker_command(args: argparse.Namespace, root: Path, actor_key: str) -> list[str]:
+def _worker_command(
+    args: argparse.Namespace,
+    root: Path,
+    actor_key: str,
+    shutdown_request_file: Path,
+) -> list[str]:
     trainer_id = f"remote-{socket.gethostname().lower()}-{actor_key[:8]}"
     command = [
         sys.executable,
@@ -1414,7 +1419,7 @@ def _worker_command(args: argparse.Namespace, root: Path, actor_key: str) -> lis
         "--runtime-ready-file",
         str(Path(args.install_root).expanduser().resolve() / "runtime-ready-build.txt"),
         "--shutdown-request-file",
-        str(_worker_agent_stop_request_path(args)),
+        str(shutdown_request_file),
         "--worker-envs",
         str(args.envs),
         "--worker-envs-min",
@@ -1564,6 +1569,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             tailnet: Optional[subprocess.Popen] = None
             worker: Optional[subprocess.Popen] = None
             worker_log_thread: Optional[threading.Thread] = None
+            worker_stop_request_path: Optional[Path] = None
             runtime_cutover: Optional[Path] = None
             try:
                 tailnet = popen_owned(_tailnet_forward_command(args))
@@ -1608,8 +1614,17 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                             f"{runtime_cutover.name[:12]} before rollout."
                         )
                     elif runtime_aligned and not stop[0] and tailnet.poll() is None:
+                        worker_stop_request_path = _worker_agent_stop_request_path(args)
+                        try:
+                            worker_stop_request_path.unlink()
+                        except FileNotFoundError:
+                            pass
+                        except OSError as exc:
+                            raise RuntimeError(
+                                f"could not clear stale worker stop request: {exc}"
+                            ) from exc
                         worker, worker_log_thread = _start_logged_process(
-                            _worker_command(args, root, actor_key)
+                            _worker_command(args, root, actor_key, worker_stop_request_path)
                         )
 
                     next_status = 0.0
@@ -1656,7 +1671,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 termination_errors = []
                 worker_stopped = _request_graceful_worker_stop(
                     worker,
-                    _worker_agent_stop_request_path(args),
+                    worker_stop_request_path or _worker_agent_stop_request_path(args),
                 )
                 if not worker_stopped:
                     try:
@@ -1669,6 +1684,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     termination_errors.append(f"tailnet: {exc}")
                 if worker_log_thread is not None:
                     worker_log_thread.join(timeout=1.0)
+                if worker_stop_request_path is not None:
+                    try:
+                        worker_stop_request_path.unlink()
+                    except FileNotFoundError:
+                        pass
                 if termination_errors:
                     raise RuntimeError(
                         "remote supervisor cleanup could not confirm child shutdown: " +
