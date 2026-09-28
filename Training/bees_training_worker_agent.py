@@ -687,19 +687,51 @@ class TrainingLogUploader:
         maximum_passes: int = 10000,
         progress_callback: Optional[Callable[[], None]] = None,
     ) -> None:
-        for _ in range(maximum_passes):
-            self.flush_once(
-                client,
-                trainer_id=trainer_id,
-                run_id=run_id,
-            )
-            if progress_callback is not None:
+        keepalive_stop = threading.Event()
+        keepalive_thread: Optional[threading.Thread] = None
+
+        if progress_callback is not None:
+            def keepalive() -> None:
+                while not keepalive_stop.wait(5.0):
+                    try:
+                        progress_callback()
+                    except Exception:
+                        # Log preservation must not fail because a best-effort lease refresh
+                        # raced a control cutover. The main flush request still owns success/failure.
+                        pass
+
+            try:
                 progress_callback()
-            if not self._has_pending_local_bytes(run_id):
-                return
-        raise RuntimeError(
-            f"training log flush exceeded {maximum_passes} passes for run {run_id}"
-        )
+            except Exception:
+                pass
+            keepalive_thread = threading.Thread(
+                target=keepalive,
+                name="bees-log-flush-keepalive",
+                daemon=True,
+            )
+            keepalive_thread.start()
+
+        try:
+            for _ in range(maximum_passes):
+                self.flush_once(
+                    client,
+                    trainer_id=trainer_id,
+                    run_id=run_id,
+                )
+                if progress_callback is not None:
+                    try:
+                        progress_callback()
+                    except Exception:
+                        pass
+                if not self._has_pending_local_bytes(run_id):
+                    return
+            raise RuntimeError(
+                f"training log flush exceeded {maximum_passes} passes for run {run_id}"
+            )
+        finally:
+            keepalive_stop.set()
+            if keepalive_thread is not None:
+                keepalive_thread.join(timeout=1.0)
 
 
 def _is_windows() -> bool:
