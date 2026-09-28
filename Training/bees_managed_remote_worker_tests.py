@@ -608,6 +608,33 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
         process.terminate.assert_not_called()
         process.kill.assert_not_called()
 
+    def test_windows_terminate_is_bounded_after_force_tree_kill(self):
+        process = mock.Mock()
+        process.pid = 8124
+        process.poll.return_value = None
+        process.wait.side_effect = [TimeoutError("taskkill wait"), 0]
+
+        with (
+            mock.patch.object(managed.os, "name", "nt"),
+            mock.patch.object(managed.subprocess, "run") as run,
+        ):
+            managed._terminate(process)
+
+        run.assert_called_once()
+        self.assertEqual(
+            run.call_args.args[0],
+            ["taskkill", "/PID", "8124", "/T", "/F"],
+        )
+        self.assertEqual(
+            process.wait.call_args_list,
+            [mock.call(timeout=5), mock.call(timeout=5)],
+        )
+        process.kill.assert_called_once()
+
+    def test_transport_watchdog_recovery_uses_shorter_graceful_cleanup_budget(self):
+        self.assertEqual(managed._worker_cleanup_grace_seconds(True), 8.0)
+        self.assertEqual(managed._worker_cleanup_grace_seconds(False), 30.0)
+
     def test_supervisor_requests_worker_agent_shutdown_before_force_kill(self):
         with tempfile.TemporaryDirectory() as temp:
             request = Path(temp) / "worker-agent-stop.request"
