@@ -4,7 +4,10 @@ Static-only repository audit on `rl/initial-design-work`. This ledger is the cur
 
 ## Active validated defects
 
-None currently confirmed. The active audit continues; resolved findings have been removed from this work queue.
+### BUG-001 — WAN learner initialization can leak local Unity workers
+**Location:** `Training/bees_elastic_wan_training.py`, `Training/bees_elastic_wan_zero_local.py`, `ElasticWanEnvManagerMixin._bees_elastic_initialize`
+**Description:** The wrapper constructs ML-Agents' `SubprocessEnvManager` before constructing `ElasticWanBroker`. The pinned ML-Agents worker manager starts each worker process in its constructor, while the broker constructor can then raise for missing or malformed managed release identity. Since the custom manager constructor never completes, its normal `close()` path is not guaranteed to run and those Unity worker processes may be orphaned. Broker startup failure after manager construction has the same ownership gap.
+
 
 ## Reported issues under investigation
 
