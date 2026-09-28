@@ -617,7 +617,7 @@ def _runtime_root_matches_archive(runtime_zip: bytes, runtime_root: Path) -> boo
     try:
         with zipfile.ZipFile(io.BytesIO(runtime_zip), "r") as bundle:
             for member in bundle.infolist():
-                normalized = member.filename.replace("\\\\", "/")
+                normalized = member.filename.replace("\\", "/")
                 if (
                     not normalized
                     or normalized.startswith("/")
