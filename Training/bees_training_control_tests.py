@@ -70,6 +70,40 @@ class TrainingControlClientTests(unittest.TestCase):
             ):
                 client.heartbeat({"trainer_id": "remote-seagrams"})
 
+    def test_artifact_download_retries_transient_transport_failure_inside_lease(self):
+        client = control.TrainingControlClient(
+            "http://127.0.0.1:7150",
+            "worker-token",
+            timeout=0.01,
+        )
+        response = mock.MagicMock()
+        response.__enter__.return_value.read.side_effect = [b"abc", b""]
+        response.__exit__.return_value = False
+        progress = mock.Mock()
+
+        with tempfile.TemporaryDirectory() as temp:
+            destination = Path(temp) / "artifact.zip"
+            with (
+                mock.patch.object(
+                    control.urllib.request,
+                    "urlopen",
+                    side_effect=[ConnectionResetError("reset"), response],
+                ) as urlopen,
+                mock.patch.object(control.time, "sleep") as sleep,
+            ):
+                client.download_artifact(
+                    "/v1/artifact/build-a",
+                    destination,
+                    progress_callback=progress,
+                )
+
+            self.assertEqual(destination.read_bytes(), b"abc")
+            self.assertEqual(urlopen.call_count, 2)
+            self.assertEqual(urlopen.call_args_list[0].kwargs["timeout"], 20.0)
+            self.assertEqual(urlopen.call_args_list[1].kwargs["timeout"], 20.0)
+            progress.assert_called_once_with()
+            sleep.assert_called_once_with(0.5)
+
     def test_central_runtime_pointer_requires_verified_runtime_and_service(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
