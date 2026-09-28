@@ -549,7 +549,6 @@ class ContinualServiceTests(unittest.TestCase):
             state["training_started"] = True
             service.save_state(options, state)
             runner = mock.Mock()
-            health = []
 
             with (
                 mock.patch.object(
@@ -566,20 +565,17 @@ class ContinualServiceTests(unittest.TestCase):
                     runner=runner,
                     sleeper=lambda _seconds: None,
                 )
-                health.extend(call.args for call in write_health.call_args_list)
 
             self.assertEqual(result, 2)
             runner.assert_not_called()
             publish.assert_not_called()
-            self.assertTrue(
-                any(
-                    args[0] == "error" and "explicitly" in str(kwargs.get("error", ""))
-                    for args, kwargs in (
-                        (call.args, call.kwargs)
-                        for call in write_health.call_args_list
-                    )
-                )
-            )
+            error_health = [
+                call
+                for call in write_health.call_args_list
+                if call.args and call.args[0] == "error"
+            ]
+            self.assertEqual(len(error_health), 1)
+            self.assertIn("explicitly", error_health[0].kwargs["error"])
 
     def test_resumed_release_phase_reports_ready_health_before_evaluation(self):
         with tempfile.TemporaryDirectory() as temp_dir:
