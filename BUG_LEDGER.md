@@ -10,6 +10,8 @@ Static-only repository audit on `rl/initial-design-work`. This ledger is the cur
 
 ## Audit status
 
+- REG-186 skips campaign HUD list indexing during training resets after training removes UI entries. Focused regression source was added but not run. Static review only; post-fix clean-pass count remains **0 / 2**.
+
 - REG-185 clears an optimizer recommendation when that trainer no longer supplies a valid capacity contract. Focused regression source was added but not run. Static review only; post-fix clean-pass count remains **0 / 2**.
 
 - REG-184 rejects inexactly represented optimizer counters before they influence throughput measurements or env-count probe decisions. Focused regression source was added but not run. Static review only; post-fix clean-pass count remains **0 / 2**.
