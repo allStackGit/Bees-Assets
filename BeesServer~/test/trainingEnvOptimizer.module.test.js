@@ -163,6 +163,41 @@ test('optimizer retries a starved sample instead of treating producer activity a
     assert.equal(state.desired_envs, 9);
 });
 
+test('successful worker yields the next probe to another ready worker', () => {
+    const optimizer = new TrainingEnvOptimizer({
+        warmupMs: 0,
+        measurementMs: 1000,
+        cooldownMs: 0,
+        retestMs: 60_000,
+        minImprovementRatio: 0.03,
+    });
+
+    update(optimizer, 'remote-a', 1, 0, 0, { max: 16 });
+    update(optimizer, 'remote-b', 1, 0, 0, { max: 16 });
+
+    let stateA = update(optimizer, 'remote-a', 1, 1000, 1000, { max: 16 });
+    assert.equal(stateA.desired_envs, 2);
+    assert.equal(stateA.probing, true);
+
+    let stateB = update(optimizer, 'remote-b', 1, 800, 1000, { max: 16 });
+    assert.equal(stateB.desired_envs, 1);
+    assert.equal(stateB.phase, 'stable');
+    assert.match(stateB.decision, /waiting for another worker probe/);
+
+    update(optimizer, 'remote-a', 2, 0, 1010, { max: 16 });
+    update(optimizer, 'remote-a', 2, 0, 1011, { max: 16 });
+    stateA = update(optimizer, 'remote-a', 2, 1200, 2011, { max: 16 });
+    assert.equal(stateA.baseline_envs, 2);
+    assert.equal(stateA.desired_envs, 2);
+    assert.equal(stateA.probing, false);
+    assert.match(stateA.decision, /yielding probe slot/);
+
+    stateB = update(optimizer, 'remote-b', 1, 1600, 2012, { max: 16 });
+    assert.equal(stateB.desired_envs, 2);
+    assert.equal(stateB.probing, true);
+    assert.match(stateB.decision, /probing 1->2/);
+});
+
 test('optimizer backs off a slower probe before another worker may probe', () => {
     const optimizer = new TrainingEnvOptimizer({
         warmupMs: 0,
