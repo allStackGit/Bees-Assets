@@ -278,6 +278,83 @@ class WanOptionTests(unittest.TestCase):
         self.assertEqual(options.env_settings.restarts_rate_limit_period_s, 60)
         self.assertEqual(options.env_settings.num_envs, 3)
 
+    def test_missing_initial_reset_is_central_availability_not_session_failure(self):
+        session = object.__new__(actor.ActorSession)
+        session.central_run_options = SimpleNamespace(
+            env_settings=SimpleNamespace(timeout_wait=0.0)
+        )
+        session.stop = actor.threading.Event()
+        session.client = mock.Mock()
+        session.client.control.return_value = None
+        session.session_id = "session-a"
+        session.control_epoch = 0
+
+        with (
+            mock.patch.object(actor.time, "monotonic", side_effect=[0.0, 31.0]),
+            mock.patch.object(actor.time, "sleep"),
+        ):
+            with self.assertRaisesRegex(
+                actor.BrokerUnavailable,
+                "waiting for initial central reset",
+            ):
+                session._initial_control()
+
+    def test_empty_initial_policy_set_is_central_availability_not_session_failure(self):
+        session = object.__new__(actor.ActorSession)
+        session.central_run_options = SimpleNamespace(
+            env_settings=SimpleNamespace(timeout_wait=0.0)
+        )
+        session.stop = actor.threading.Event()
+        session.client = mock.Mock()
+        session.client.state.return_value = {
+            "control_epoch": 0,
+            "policy_epoch": -1,
+            "policy_versions": {},
+        }
+        session.session_id = "session-a"
+        session.control_epoch = 0
+        session.policy_epoch = -1
+        session.policy_versions = {}
+        session.templates = {"Behavior?team=0": object()}
+
+        with (
+            mock.patch.object(actor.time, "monotonic", side_effect=[0.0, 31.0]),
+            mock.patch.object(actor.time, "sleep"),
+        ):
+            with self.assertRaisesRegex(
+                actor.BrokerUnavailable,
+                "complete central policy set",
+            ):
+                session._synchronize_state(require_policy=True)
+
+    def test_partial_wrong_policy_set_remains_protocol_failure(self):
+        session = object.__new__(actor.ActorSession)
+        session.central_run_options = SimpleNamespace(
+            env_settings=SimpleNamespace(timeout_wait=0.0)
+        )
+        session.stop = actor.threading.Event()
+        session.client = mock.Mock()
+        session.client.state.return_value = {
+            "control_epoch": 0,
+            "policy_epoch": 1,
+            "policy_versions": {"Behavior?team=0": 1},
+        }
+        session.session_id = "session-a"
+        session.control_epoch = 0
+        session.policy_epoch = -1
+        session.policy_versions = {}
+        session.templates = {
+            "Behavior?team=0": object(),
+            "Behavior?team=1": object(),
+        }
+
+        with (
+            mock.patch.object(actor.time, "monotonic", side_effect=[0.0, 31.0]),
+            mock.patch.object(actor.time, "sleep"),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "complete central policy set"):
+                session._synchronize_state(require_policy=True)
+
     def test_actor_counts_only_steps_in_accepted_trajectories(self):
         trajectories = [
             FakeTrajectory("Behavior?team=0", "agent-1", count=3),
