@@ -567,10 +567,10 @@ def _run_managed_subprocess(
         if stop_requested or _managed_stop_requested():
             raise KeyboardInterrupt
         return return_code
-    except Exception:
+    except BaseException:
         # run_service retries ordinary phase errors while keeping this owner process alive.
-        # Retire the child before propagating so a supervisor-side failure cannot leave an
-        # unsupervised trainer running alongside the retry generation.
+        # Retire the child before propagating so a supervisor-side failure or interrupt cannot
+        # leave an unsupervised trainer running alongside the retry generation.
         try:
             _stop_interruptible_managed_child(process)
         except Exception as cleanup_error:
