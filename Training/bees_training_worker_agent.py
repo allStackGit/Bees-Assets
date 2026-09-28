@@ -1110,6 +1110,19 @@ def full_game_update_requires_deferred_restart(
     )
 
 
+def _restart_worker_agent(raw_argv: Sequence[str]) -> int:
+    command = [sys.executable, str(Path(__file__).resolve()), *[str(v) for v in raw_argv]]
+    if not _is_windows():
+        os.execv(command[0], command)
+        raise RuntimeError("POSIX worker-agent exec unexpectedly returned")
+
+    # Keep the original worker-agent PID alive as the supervised owner while the replacement
+    # runs. This avoids Windows exec quoting failures for profile paths containing spaces without
+    # creating an unsupervised replacement process.
+    completed = subprocess.run(command, check=False)
+    return int(completed.returncode)
+
+
 def write_local_state(
     path: Path,
     *,
@@ -1611,10 +1624,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         )
                     except (ControlUnavailable, ControlRejected, OSError, ValueError, RuntimeError):
                         pass
-                    os.execv(
-                        sys.executable,
-                        [sys.executable, str(Path(__file__).resolve()), *raw_argv],
-                    )
+                    return _restart_worker_agent(raw_argv)
 
                 if mode == "stopped":
                     managed.stop(progress_callback=stopping_keepalive)
@@ -1896,12 +1906,28 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 time.sleep(min(0.25, max(0.0, deadline - time.monotonic())))
         return 0
     finally:
-        while managed.alive():
+        cleanup_error: Optional[RuntimeError] = None
+        for attempt in range(1, 4):
+            if not managed.alive():
+                break
             try:
                 managed.stop(progress_callback=stopping_keepalive)
+                cleanup_error = None
+                break
             except RuntimeError as exc:
-                print(f"[Bees control] {type(exc).__name__}: {exc}", file=sys.stderr)
-                continue
+                cleanup_error = exc
+                print(
+                    f"[Bees control] cleanup attempt {attempt}/3 failed: "
+                    f"{type(exc).__name__}: {exc}",
+                    file=sys.stderr,
+                    flush=True,
+                )
+                if attempt < 3:
+                    time.sleep(float(attempt))
+        if managed.alive() and cleanup_error is not None:
+            raise RuntimeError(
+                "managed trainer could not be stopped after three cleanup attempts"
+            ) from cleanup_error
         if shutdown_request_file is not None:
             try:
                 shutdown_request_file.unlink()
