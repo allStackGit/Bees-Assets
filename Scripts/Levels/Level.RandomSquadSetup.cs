@@ -74,7 +74,10 @@ namespace Assets.Scripts.Levels
 
         private void ConfigureRlOneVsOneSpawnPositions()
         {
-            float angle = Random.Range(0f, Mathf.PI * 2f);
+            System.Random random = global::RlOneVsOneScenarioSeed.GetRandom(
+                this,
+                global::RlOneVsOneScenarioSeed.SpawnPositionStreamSalt);
+            float angle = (float)(random.NextDouble() * System.Math.PI * 2d);
             Vector2 offset = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) *
                              global::RlOneVsOneArenaMapSizeState.GetSpawnRadius(this);
 
@@ -84,12 +87,15 @@ namespace Assets.Scripts.Levels
 
         private void RandomizeRlOneVsOneFacing(int side)
         {
+            System.Random random = global::RlOneVsOneScenarioSeed.GetRandom(
+                this,
+                global::RlOneVsOneScenarioSeed.FacingStreamSalt);
             List<Ship> ships = State.GetShips(side);
             for (int i = 0; i < ships.Count; i++)
             {
                 Ship ship = ships[i];
                 Vector3 euler = ship.transform.localEulerAngles;
-                euler.z = Random.Range(0f, 360f);
+                euler.z = (float)(random.NextDouble() * 360d);
                 ship.transform.localEulerAngles = euler;
 
                 // Ship movement and turret aiming use their cached world rotations rather than
