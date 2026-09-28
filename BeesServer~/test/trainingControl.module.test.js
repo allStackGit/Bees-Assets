@@ -3671,3 +3671,141 @@ test('training control leaves explicit fixed worker env counts unchanged', () =>
         assert.equal(state.env_optimizer.enabled, false);
     });
 });
+
+test('rejected heartbeat persistence does not advance env optimizer state', () => {
+    withTempDir(root => {
+        const store = new TrainingControlStore({
+            statePath: path.join(root, 'state.json'),
+            artifactRoot: path.join(root, 'artifacts'),
+        });
+        publishDedicatedBuild(store, root, 'optimizer-build');
+        store.stageRelease({
+            buildId: 'optimizer-build',
+            runId: 'run-optimizer-build',
+            compatibilityKey: 'a'.repeat(64),
+            incompatible: false,
+        });
+        store.setDesiredState({ training_enabled: true });
+        assert.equal(store.envOptimizer.snapshot('remote-auto'), null);
+
+        store._persist = () => {
+            throw new Error('synthetic control-state write failure');
+        };
+        assert.throws(() => store.heartbeat({
+            trainer_id: 'remote-auto',
+            role: 'dedicated',
+            platform: 'WindowsPlayer',
+            process_state: 'running',
+            worker_capacity: {
+                auto: true,
+                current_envs: 2,
+                min_envs: 1,
+                max_envs: 4,
+            },
+            metrics: {},
+        }), /synthetic control-state write failure/);
+
+        assert.equal(store.envOptimizer.snapshot('remote-auto'), null);
+        assert.equal(store.trainers.has('remote-auto'), false);
+    });
+});
+
+test('heartbeats cannot claim an unsafe rollout revision', () => {
+    withTempDir(root => {
+        const store = new TrainingControlStore({
+            statePath: path.join(root, 'state.json'),
+            artifactRoot: path.join(root, 'artifacts'),
+        });
+        store.heartbeat({
+            trainer_id: 'trainer-a',
+            role: 'dedicated',
+            platform: 'LinuxPlayer',
+            process_state: 'running',
+            applied_revision: Number.MAX_SAFE_INTEGER + 1,
+        });
+
+        assert.equal(store.trainers.get('trainer-a').applied_revision, -1);
+    });
+});
+
+test('failed artifact catalog persistence removes the unreferenced canonical copy', () => {
+    withTempDir(root => {
+        const source = path.join(root, 'source.zip');
+        const bytes = Buffer.from('uncatalogued-canonical-build');
+        fs.writeFileSync(source, bytes);
+        const archiveSha = crypto.createHash('sha256').update(bytes).digest('hex');
+        const store = new TrainingControlStore({
+            statePath: path.join(root, 'state.json'),
+            artifactRoot: path.join(root, 'artifacts'),
+        });
+        store._persist = () => {
+            throw new Error('synthetic control-state write failure');
+        };
+
+        assert.throws(() => store.publishArtifact({
+            role: 'dedicated',
+            platform: 'LinuxPlayer',
+            buildId: 'uncommitted-release',
+            archivePath: source,
+            entrypoint: 'Bees.x86_64',
+        }), /synthetic control-state write failure/);
+
+        const canonicalCopy = path.join(
+            root,
+            'artifacts',
+            'dedicated',
+            'LinuxPlayer',
+            'uncommitted-release-' + archiveSha + '.zip',
+        );
+        assert.equal(fs.existsSync(canonicalCopy), false);
+        assert.equal(store.artifact('dedicated', 'LinuxPlayer', 'uncommitted-release'), null);
+    });
+});
+
+test('compatible rollout keeps a stale central learner in the preparation barrier', () => {
+    withTempDir(root => {
+        let now = 1000;
+        const store = new TrainingControlStore({
+            statePath: path.join(root, 'state.json'),
+            artifactRoot: path.join(root, 'artifacts'),
+            leaseSeconds: 10,
+            now: () => now,
+        });
+        const oldSha = publishDedicatedBuild(store, root, 'central-stale-old');
+        publishDedicatedBuild(store, root, 'central-stale-new');
+        store.stageRelease({
+            buildId: 'central-stale-old',
+            runId: 'central-stale-run',
+            compatibilityKey: 'c'.repeat(64),
+            incompatible: false,
+        });
+        store.setDesiredState({ training_enabled: true });
+        heartbeatDedicated(store, 'remote-a', 'central-stale-old', oldSha);
+        heartbeatDedicated(store, 'central-learner', 'central-stale-old', oldSha);
+
+        store.stageRelease({
+            buildId: 'central-stale-new',
+            runId: 'central-stale-run',
+            compatibilityKey: 'c'.repeat(64),
+            incompatible: false,
+        });
+        now = 9000;
+        heartbeatDedicated(
+            store,
+            'remote-a',
+            'central-stale-old',
+            oldSha,
+            { preparedBuildId: 'central-stale-new' },
+        );
+
+        now = 11001;
+        const desired = store.status().desired;
+
+        assert.equal(desired.canonical_build_id, 'central-stale-old');
+        assert.equal(desired.pending_release.phase, 'preparing');
+        assert.deepEqual(
+            desired.pending_release.required_trainers.map(item => item.trainer_id),
+            ['remote-a', 'central-learner'],
+        );
+    });
+});
