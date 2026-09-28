@@ -107,14 +107,14 @@ namespace Assets.Scripts.UIComponents
                 ? activeTooltip.TooltipText.text ?? string.Empty
                 : string.Empty;
 
-            bool selectingPage = Contains(text, "select an entire squad");
-            bool settingsPage = Contains(text, "flight pattern") && Contains(text, "shooting strateg");
+            bool selectingPage = Contains(text, "select the scout squad");
+            bool settingsPage = Contains(text, "flight pattern") && Contains(text, "shooting strategies");
             bool squadNumberPage = Contains(text, "number hotkeys");
             bool tacticalSequencePage = squadNumberPage ||
-                                        Contains(text, "selected ships’ range") ||
-                                        Contains(text, "selected ships' range") ||
-                                        Contains(text, "quickly find a selected squad") ||
-                                        Contains(text, "shooting strategy and flight pattern");
+                                        Contains(text, "select multiple squads") ||
+                                        Contains(text, "selected ships’ ranges") ||
+                                        Contains(text, "selected ships' ranges") ||
+                                        Contains(text, "manually fire towards your cursor");
 
             if (selectingPage || settingsPage || tacticalSequencePage)
             {
