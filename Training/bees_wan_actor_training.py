@@ -866,7 +866,6 @@ class WanActorBroker:
             actor_registration = self._registrations.get(actor_id)
             if actor_registration is None:
                 raise ValueError("actor registration disappeared before trajectory upload")
-            self._touch_actor_locked(actor_id)
             duplicate_count = self._accepted_batch_count_locked(actor_id, batch_id)
             if duplicate_count is not None:
                 return duplicate_count
@@ -926,6 +925,7 @@ class WanActorBroker:
             if actor_batch_pending:
                 raise queue.Full
             self._trajectory_batches.put_nowait(item)
+            self._touch_actor_locked(actor_id)
             self._remember_accepted_batch_locked(actor_id, batch_id, len(trajectories))
             self._condition.notify()
         return len(trajectories)
