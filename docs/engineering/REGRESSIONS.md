@@ -1413,3 +1413,10 @@ Manual-only protection is acceptable only when the record explains why determini
 **Fix:** Require `training_step` to be an integer, explicitly reject booleans, and require a nonnegative value before hashing or registering the model.
 **Permanent protection:** Model lineage fields must be validated in their original types before coercion or persistence.
 **Verification:** Static call-path review confirms validation precedes artifact hashing, copy, and the SQLite insert. CLI input already parses as an integer; direct API callers now receive the same strict contract. No tests, builds, Unity, simulations, or runtime checks were run. Post-fix clean-pass count remains **0 / 2**.
+
+### REG-162 — Require exact positive integers for automatic public-learning limits
+**Area:** `Training/bees_continual_public_auto.py`, `_positive_int`
+**Symptom:** The shared validator converted values with `int(value)`, so direct callers and JSON configuration could silently truncate fractional thresholds (for example, 1.9 became 1) or accept numeric strings as policy values.
+**Fix:** Require an actual positive Python integer and reject booleans, floats, strings, and integer-like substitutes before using the limit.
+**Permanent protection:** Training pressure limits and evidence thresholds retain the exact configured integer value rather than accepting coercions.
+**Verification:** Static review traced the validator through selection-batch limits, suggestion caps, occurrence thresholds, contributor thresholds, and per-contributor configuration. CLI arguments already parse as integers. No tests, builds, Unity, simulations, or runtime checks were run. Post-fix clean-pass count remains **0 / 2**.
