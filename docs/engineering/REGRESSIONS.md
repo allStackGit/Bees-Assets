@@ -1476,3 +1476,10 @@ Manual-only protection is acceptable only when the record explains why determini
 **Fix:** Nest historical patch restoration so candidate monitor shutdown and its final scans always run, even when restoration fails.
 **Permanent protection:** Independent cleanup obligations after trainer execution must be nested so failure in one cleanup step cannot skip the next.
 **Verification:** Static control-flow review confirms `monitor.stop()` is in an inner `finally` that executes after the restore attempt for both normal return and launcher/restore exceptions. No tests or training runs were executed. Post-fix clean-pass count remains **0 / 2**.
+
+### REG-171 — Serialize candidate scans and isolate pending-marker writes
+**Area:** `Training/bees_continual_train.py`, `CandidateMonitor`
+**Symptom:** If the monitor thread's timed join expired during a slow scan, `stop()` immediately started final scans on the same mutable registration maps. Concurrent scans could duplicate registration work and contend on a shared PID-only temporary marker filename.
+**Fix:** Serialize all `scan_once` work with a monitor lock and write pending markers through unique same-directory temporary files with flush/fsync before atomic replacement.
+**Permanent protection:** Background and shutdown scans share one serialized state path, and atomic intent markers use unique temporary names even across concurrent monitor instances.
+**Verification:** Static control-flow review confirmed `_run` and both stop-time scans use the same lock; marker writes now use `mkstemp`, flush, fsync, and `os.replace`. No tests or training runs were executed. Post-fix clean-pass count remains **0 / 2**.
