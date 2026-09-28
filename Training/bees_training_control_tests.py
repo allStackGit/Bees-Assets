@@ -248,6 +248,10 @@ class TrainingControlClientTests(unittest.TestCase):
                         "error": "",
                         "updated_unix_seconds": 1000.0,
                         "pid": 123,
+                        "details": {
+                            "component": "elastic-wan-actor",
+                            "phase": "waiting-for-central",
+                        },
                     }
                 ),
                 encoding="utf-8",
@@ -261,7 +265,10 @@ class TrainingControlClientTests(unittest.TestCase):
                 "time",
                 return_value=1000.0 + agent.CHILD_HEALTH_STALE_SECONDS + 1.0,
             ):
-                self.assertIn("ready health has not refreshed", managed.health_error())
+                self.assertIn(
+                    "waiting-for-central health has not refreshed",
+                    managed.health_error(),
+                )
 
             health_path.write_text(
                 json.dumps(
@@ -327,6 +334,7 @@ class TrainingControlClientTests(unittest.TestCase):
                         "updated_unix_seconds": 3000.0,
                         "pid": 123,
                         "details": {
+                            "component": "elastic-wan-actor",
                             "phase": "running",
                             "phase_started_unix_seconds": 2500.0,
                             "progress_unix_seconds": 2800.0,
@@ -340,6 +348,40 @@ class TrainingControlClientTests(unittest.TestCase):
                     "rollout has made no progress",
                     managed.health_error(),
                 )
+
+    def test_one_shot_central_learner_ready_health_is_not_misclassified_as_remote_stale(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            health_path = root / "child-health.json"
+            process = mock.Mock()
+            process.poll.return_value = None
+
+            managed = agent.ManagedProcess()
+            managed.process = process
+            managed.health_required = True
+            managed.health_file = health_path
+            managed.health_token = "health-token"
+            managed.started_monotonic = agent.time.monotonic()
+            health_path.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "token": "health-token",
+                        "state": "ready",
+                        "error": "",
+                        "updated_unix_seconds": 1000.0,
+                        "pid": 123,
+                        "details": {
+                            "component": "elastic-wan-learner",
+                            "local_envs": 1,
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with mock.patch.object(agent.time, "time", return_value=5000.0):
+                self.assertEqual(managed.health_error(), "")
 
     def test_managed_process_uses_separate_posix_process_group_and_stops_tree(self):
         fake = mock.Mock()
