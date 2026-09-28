@@ -766,7 +766,7 @@ class ElasticBrokerTests(unittest.TestCase):
             )
 
 
-    def test_stale_reset_ack_does_not_refresh_actor_lease(self):
+    def test_invalid_control_epochs_do_not_renew_or_register_actor(self):
         broker, specs = self._broker()
         broker.register_actor(
             {
@@ -803,6 +803,29 @@ class ElasticBrokerTests(unittest.TestCase):
                 with self.assertRaisesRegex(elastic.base.StaleActorStateError, "control epoch"):
                     broker.submit_trajectory_batch(stale_batch)
             self.assertEqual(broker._registrations[0]["last_seen"], last_seen)
+
+        with self.assertRaisesRegex(elastic.base.StaleActorStateError, "control epoch"):
+            broker.acknowledge_reset(
+                {
+                    **broker.release_identity,
+                    "actor_id": 0,
+                    "actor_instance_id": "manual-process-0",
+                    "control_epoch": True,
+                }
+            )
+        with self.assertRaisesRegex(elastic.base.StaleActorStateError, "control epoch"):
+            broker.register_actor(
+                {
+                    **broker.release_identity,
+                    "actor_id": 1,
+                    "actor_instance_id": "manual-process-1",
+                    "env_count": 4,
+                    "control_epoch": True,
+                    "behavior_specs": specs,
+                }
+            )
+        self.assertNotIn(1, broker._registrations)
+        self.assertEqual(broker._registrations[0]["last_seen"], last_seen)
 
 
 class ActorFailureDiagnosticsTests(unittest.TestCase):
