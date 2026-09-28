@@ -642,14 +642,19 @@ def _runtime_root_matches_archive(runtime_zip: bytes, runtime_root: Path) -> boo
                 )
                 if target.is_symlink() or not target.is_file():
                     return False
-                digest = hashlib.sha256()
+                expected_digest = hashlib.sha256()
+                actual_digest = hashlib.sha256()
                 with bundle.open(member, "r") as source, target.open("rb") as actual:
                     while True:
                         expected = source.read(1024 * 1024)
-                        if not expected:
+                        actual_chunk = actual.read(1024 * 1024)
+                        if not expected and not actual_chunk:
                             break
-                        digest.update(expected)
-                    if digest.digest() != hashlib.sha256(actual.read()).digest():
+                        if len(expected) != len(actual_chunk):
+                            return False
+                        expected_digest.update(expected)
+                        actual_digest.update(actual_chunk)
+                    if expected_digest.digest() != actual_digest.digest():
                         return False
 
         actual_files = set()
