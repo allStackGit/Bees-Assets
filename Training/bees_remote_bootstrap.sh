@@ -413,6 +413,9 @@ WORKER_ARGS=(
 if [[ -n "$ENVS" ]]; then
     WORKER_ARGS+=(--envs "$ENVS")
 fi
+if (( NO_AUTOSTART )); then
+    WORKER_ARGS+=(--no-autostart)
+fi
 
 echo
 echo "[Bees remote] Stage 5/5: starting managed training worker in the background..."
