@@ -22,6 +22,8 @@ import zipfile
 from pathlib import Path
 from typing import Any, Mapping, Optional
 
+from bees_process_safety import atomic_write_text
+
 
 CONTROL_SCHEMA_VERSION = 5
 DEFAULT_TIMEOUT_SECONDS = 15.0
@@ -451,9 +453,11 @@ class ManagedBuildStore:
             "archive_sha256": descriptor["archive_sha256"],
             "entrypoint": str(entrypoint),
         }
-        temporary = self.current_manifest.with_suffix(".tmp")
-        temporary.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-        os.replace(temporary, self.current_manifest)
+        atomic_write_text(
+            self.current_manifest,
+            json.dumps(value, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
 
 
 def default_heartbeat(
