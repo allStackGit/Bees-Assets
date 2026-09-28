@@ -160,6 +160,34 @@ class WorkerTrafficMetricsTests(unittest.TestCase):
             )
             self.assertNotIn("network_mib_per_s", snapshot["throughput"])
 
+    def test_persisted_network_totals_survive_worker_agent_restart_before_actor_launch(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            traffic = root / worker_agent.NETWORK_TRAFFIC_STATE_FILE
+            traffic.write_text(
+                '{"run_id":"run-a","sent_bytes_total":3221225472,'
+                '"received_bytes_total":1073741824}\n',
+                encoding="utf-8",
+            )
+            snapshot = {}
+
+            worker_agent._add_persisted_network_traffic(
+                snapshot,
+                None,
+                run_id="run-a",
+                install_root=root,
+            )
+
+            self.assertEqual(
+                snapshot["throughput"]["network_sent_bytes_total"],
+                3221225472,
+            )
+            self.assertEqual(
+                snapshot["throughput"]["network_received_bytes_total"],
+                1073741824,
+            )
+            self.assertNotIn("network_mib_per_s", snapshot["throughput"])
+
     def test_persisted_network_totals_never_cross_run_boundary(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
@@ -1108,6 +1136,50 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
                 {"metrics": {"control": {"failures_total": True}}}
             )
         )
+
+    def test_stopped_training_worker_with_control_unavailable_is_stalled(self):
+        status = {
+            "desired": {
+                "training_enabled": True,
+                "pending_release": None,
+            }
+        }
+        record = {
+            "process_state": "stopped",
+            "last_error": "ControlUnavailable: POST /v1/heartbeat: timed out",
+            "metrics": {
+                "control": {
+                    "failures_total": 4,
+                    "seconds_since_last_failure": 0.2,
+                    "last_failure_type": "ControlUnavailable",
+                }
+            },
+        }
+
+        self.assertTrue(managed._inner_control_stalled(status, record))
+        watchdog = managed._TransportWatchdog(10.0)
+        self.assertFalse(watchdog.observe(False, 100.0))
+        self.assertFalse(watchdog.observe(False, 109.9))
+        self.assertTrue(watchdog.observe(False, 110.0))
+
+    def test_control_stall_detector_ignores_running_or_release_stop(self):
+        base_record = {
+            "process_state": "running",
+            "last_error": "ControlUnavailable: POST /v1/heartbeat: timed out",
+            "metrics": {
+                "control": {
+                    "failures_total": 1,
+                    "seconds_since_last_failure": 0.2,
+                    "last_failure_type": "ControlUnavailable",
+                }
+            },
+        }
+        status = {"desired": {"training_enabled": True, "pending_release": None}}
+        self.assertFalse(managed._inner_control_stalled(status, base_record))
+
+        stopped = dict(base_record, process_state="stopped")
+        rollout = {"desired": {"training_enabled": True, "pending_release": {"phase": "stopping"}}}
+        self.assertFalse(managed._inner_control_stalled(rollout, stopped))
 
     def test_repeated_inner_control_failures_trip_transport_recycle_watchdog(self):
         watchdog = managed._SessionFailureWatchdog(
