@@ -11,6 +11,7 @@ const CONTROL_SCHEMA_VERSION = 5;
 const DEFAULT_PORT = 7150;
 const DEFAULT_HOST = '127.0.0.1';
 const DEFAULT_LEASE_SECONDS = 60;
+const MAX_TRAINER_LOG_FILE_BYTES = 64 * 1024 * 1024;
 const VALID_ROLES = new Set(['dedicated', 'full-game']);
 
 function sha256File(filePath) {
@@ -1670,6 +1671,11 @@ class TrainingControlStore {
         } catch (error) {
             if (error.code !== 'ENOENT') throw error;
         }
+        if (!reset && current > MAX_TRAINER_LOG_FILE_BYTES) {
+            throw Object.assign(
+                new Error('trainer log file exceeds the 64 MiB limit'),
+                { statusCode: 413 });
+        }
         if (reset) {
             if (offset !== 0) {
                 const error = Object.assign(
@@ -1687,6 +1693,11 @@ class TrainingControlStore {
                 ? sha256File(destination)
                 : crypto.createHash('sha256').digest('hex');
             throw error;
+        }
+        if (current + data.length > MAX_TRAINER_LOG_FILE_BYTES) {
+            throw Object.assign(
+                new Error('trainer log file exceeds the 64 MiB limit'),
+                { statusCode: 413 });
         }
         if (data.length > 0) {
             fs.appendFileSync(destination, data, { mode: 0o600 });
