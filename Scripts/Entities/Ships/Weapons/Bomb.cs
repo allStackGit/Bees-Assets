@@ -37,7 +37,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         /// </summary>
         public override bool IsShipValidTarget(Ship potentialTargetShip)
         {
-            return !potentialTargetShip.IsDead;
+            return potentialTargetShip != null && !potentialTargetShip.IsDead;
         }
 
         protected override void SetTargetShip(Ship targetShip)
