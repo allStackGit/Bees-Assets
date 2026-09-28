@@ -1483,3 +1483,10 @@ Manual-only protection is acceptable only when the record explains why determini
 **Fix:** Serialize all `scan_once` work with a monitor lock and write pending markers through unique same-directory temporary files with flush/fsync before atomic replacement.
 **Permanent protection:** Background and shutdown scans share one serialized state path, and atomic intent markers use unique temporary names even across concurrent monitor instances.
 **Verification:** Static control-flow review confirmed `_run` and both stop-time scans use the same lock; marker writes now use `mkstemp`, flush, fsync, and `os.replace`. No tests or training runs were executed. Post-fix clean-pass count remains **0 / 2**.
+
+### REG-172 — Restore historical-opponent patch when candidate monitoring cannot start
+**Area:** `Training/bees_continual_train.py`, monitor startup and historical patch lifecycle
+**Symptom:** The historical-opponent GhostTrainer patch was installed before `CandidateMonitor.start()`, but the cleanup handler began afterward. A failure during baseline scanning or thread startup could leave the process-wide GhostTrainer methods patched in a still-running caller.
+**Fix:** Catch monitor startup failures, attempt to restore the historical patch, report restoration errors, and re-raise the original startup failure.
+**Permanent protection:** Process-wide trainer monkeypatches must be restored on every failure path after installation, including failures before the main launcher `try/finally` begins.
+**Verification:** Static control-flow review confirms restoration is attempted for all `BaseException` paths from monitor startup while the original exception is re-raised. No tests or training runs were executed. Post-fix clean-pass count remains **0 / 2**.
