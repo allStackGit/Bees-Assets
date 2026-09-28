@@ -46,6 +46,7 @@ MANAGED_LOG_DIR_ENV = "BEES_TRAINING_LOG_DIR"
 LIVE_LEARNER_LOG_NAME = "learner-live.log"
 LIVE_LEARNER_LOG_MAX_BYTES = 16 * 1024 * 1024
 _ORIGINAL_MLAGENTS_WORKER = None
+_MODEL_SNAPSHOT_LOCK = threading.Lock()
 
 
 class _LiveLogSink:
@@ -749,7 +750,10 @@ def _install_model_snapshot_requests():
 
     def maybe_save_model_with_snapshot(self, step_after_process: int) -> None:
         original(self, step_after_process)
-        _handle_model_snapshot_request(self, request_path, response_path)
+        # A threaded configuration can invoke this hook concurrently for several trainers.
+        # Snapshot requests share one request/response file pair, so only one trainer may consume it.
+        with _MODEL_SNAPSHOT_LOCK:
+            _handle_model_snapshot_request(self, request_path, response_path)
 
     RLTrainer._maybe_save_model = maybe_save_model_with_snapshot
     return original
