@@ -335,6 +335,24 @@ test('heartbeats retain machine-readable lease status', () => {
 });
 
 
+test('heartbeats cannot claim an unsafe rollout revision', () => {
+    withTempDir(root => {
+        const store = new TrainingControlStore({
+            statePath: path.join(root, 'state.json'),
+            artifactRoot: path.join(root, 'artifacts'),
+        });
+        store.heartbeat({
+            trainer_id: 'trainer-a',
+            role: 'dedicated',
+            platform: 'LinuxPlayer',
+            process_state: 'running',
+            applied_revision: Number.MAX_SAFE_INTEGER + 1,
+        });
+
+        assert.equal(store.trainers.get('trainer-a').applied_revision, -1);
+    });
+});
+
 test('training refuses to start while an active platform lacks the canonical build', () => {
     withTempDir(root => {
         const windows = path.join(root, 'windows.zip');
