@@ -110,6 +110,14 @@ class DistributedOptionTests(unittest.TestCase):
             ("--rl-map-size", "64", "--rl-timeout-seconds=30"),
         )
 
+    def test_unity_environment_args_cannot_override_managed_worker_port(self):
+        for port_args in (["--mlagents-port", "6100"], ["--mlagents-port=6100"]):
+            with self.subTest(port_args=port_args):
+                with self.assertRaisesRegex(SystemExit, "managed --mlagents-port"):
+                    distributed.unity_environment_args(
+                        ["config.yaml", "--env-args", *port_args]
+                    )
+
     def test_remote_spec_round_trip_pins_worker_ids_run_and_unity_args(self):
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "remote.json"
