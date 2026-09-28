@@ -690,6 +690,10 @@ class TrainingControlStore {
         const rollingTargetId = pending.phase === 'rolling'
             ? this._rollingTargetId()
             : null;
+        let previousState = null;
+        const snapshotBeforeMutation = () => {
+            if (previousState === null) previousState = this._snapshotState();
+        };
         const kept = [];
         let changed = false;
         for (const spec of pending.required_trainers) {
@@ -705,7 +709,8 @@ class TrainingControlStore {
                         item.platform === spec.platform);
                 if (known) lastSeen = known.last_seen_ms;
             }
-            if (lastSeen !== null && lastSeen < cutoff) {
+            if (spec.trainer_id !== 'central-learner' &&
+                lastSeen !== null && lastSeen < cutoff) {
                 changed = true;
                 continue;
             }
@@ -729,9 +734,11 @@ class TrainingControlStore {
 
             if (releaseFailure) {
                 if (!Number.isFinite(spec.failure_since_ms)) {
+                    snapshotBeforeMutation();
                     spec.failure_since_ms = now;
                     changed = true;
                 } else if (now - spec.failure_since_ms >= failureGraceMs) {
+                    snapshotBeforeMutation();
                     if (!Array.isArray(pending.quarantined_trainers)) {
                         pending.quarantined_trainers = [];
                     }
@@ -743,6 +750,7 @@ class TrainingControlStore {
                     continue;
                 }
             } else if (Object.prototype.hasOwnProperty.call(spec, 'failure_since_ms')) {
+                snapshotBeforeMutation();
                 delete spec.failure_since_ms;
                 changed = true;
             }
@@ -767,17 +775,19 @@ class TrainingControlStore {
                 keptPlatforms.has(platform) ||
                 activeRemotePlatforms.has(platform));
         if (retainedPlatforms.length !== requiredPlatforms.length) {
+            snapshotBeforeMutation();
             pending.required_remote_platforms = retainedPlatforms;
             changed = true;
         }
 
         if (!changed) return false;
+        snapshotBeforeMutation();
         pending.required_trainers = kept;
         const keptIds = new Set(kept.map(spec => spec.trainer_id));
         pending.rolled_trainers = (pending.rolled_trainers || [])
             .filter(trainerId => keptIds.has(trainerId));
         this.state.revision++;
-        this._persist();
+        this._persistWithRollback(previousState);
         return true;
     }
 
@@ -1186,6 +1196,21 @@ class TrainingControlStore {
         return this.desiredState();
     }
 
+    _snapshotState() {
+        // Control state is JSON-backed. Nested rollout mutations need an actual snapshot so
+        // a failed durable write cannot leave an uncommitted in-memory transition active.
+        return JSON.parse(JSON.stringify(this.state));
+    }
+
+    _persistWithRollback(previousState) {
+        try {
+            this._persist();
+        } catch (error) {
+            this.state = previousState;
+            throw error;
+        }
+    }
+
     _persist() {
         atomicWriteJson(this.statePath, this.state);
     }
@@ -1203,7 +1228,8 @@ class TrainingControlStore {
         }
 
         const requestedBuildId = this.state.canonical_build_id;
-        const requestedTraining = Object.prototype.hasOwnProperty.call(patch, 'training_enabled')
+        const hasTrainingPatch = Object.prototype.hasOwnProperty.call(patch, 'training_enabled');
+        const requestedTraining = hasTrainingPatch
             ? patch.training_enabled
             : this.state.training_enabled;
         if (typeof requestedTraining !== 'boolean') {
@@ -1225,33 +1251,40 @@ class TrainingControlStore {
             }
         }
 
-        let changed = false;
-        if (Object.prototype.hasOwnProperty.call(patch, 'training_enabled')) {
-            if (typeof patch.training_enabled !== 'boolean') {
-                throw Object.assign(new Error('training_enabled must be boolean'), { statusCode: 400 });
-            }
-            if (patch.training_enabled !== this.state.training_enabled) {
-                this.state.training_enabled = patch.training_enabled;
-                changed = true;
-            }
-        }
+        // Validate and stage every field before mutating shared desired state. A rejected
+        // environment_args field must not leave an earlier training_enabled change in memory.
+        let requestedEnvironmentArgs = this.state.environment_args;
+        let environmentArgsChanged = false;
         if (Object.prototype.hasOwnProperty.call(patch, 'environment_args')) {
-            const args = normalizeEnvironmentArgs(patch.environment_args);
-            if (JSON.stringify(args) !== JSON.stringify(this.state.environment_args)) {
-                if (this.state.canonical_build_id) {
-                    throw Object.assign(
-                        new Error(
-                            'environment_args are rollout-owned once a canonical build exists; ' +
-                            'stage the canonical release with validated environment_args instead'),
-                        { statusCode: 409 });
-                }
-                this.state.environment_args = args;
-                changed = true;
+            const normalizedArgs = normalizeEnvironmentArgs(patch.environment_args);
+            environmentArgsChanged =
+                JSON.stringify(normalizedArgs) !== JSON.stringify(this.state.environment_args);
+            if (environmentArgsChanged && this.state.canonical_build_id) {
+                throw Object.assign(
+                    new Error(
+                        'environment_args are rollout-owned once a canonical build exists; ' +
+                        'stage the canonical release with validated environment_args instead'),
+                    { statusCode: 409 });
             }
+            if (environmentArgsChanged) requestedEnvironmentArgs = normalizedArgs;
         }
-        if (changed) {
-            this.state.revision++;
-            this._persist();
+
+        const trainingChanged =
+            hasTrainingPatch && requestedTraining !== this.state.training_enabled;
+        if (trainingChanged || environmentArgsChanged) {
+            const previousState = this.state;
+            this.state = {
+                ...previousState,
+                training_enabled: requestedTraining,
+                environment_args: requestedEnvironmentArgs,
+                revision: previousState.revision + 1,
+            };
+            try {
+                this._persist();
+            } catch (error) {
+                this.state = previousState;
+                throw error;
+            }
         }
         this._advanceRollout();
         return this.desiredState();
@@ -1639,14 +1672,26 @@ function createTrainingControlHandler(store, token, adminToken = null) {
                 return;
             }
             if (request.method === 'POST' && url.pathname === '/v1/log') {
-                const offset = Number(url.searchParams.get('offset'));
+                const data = await readRawBody(request);
+                const rawOffset = url.searchParams.get('offset');
+                if (rawOffset === null || !/^\d+$/.test(rawOffset)) {
+                    throw Object.assign(
+                        new Error('log offset must be an explicit non-negative integer'),
+                        { statusCode: 400 });
+                }
+                const offset = Number(rawOffset);
+                if (!Number.isSafeInteger(offset)) {
+                    throw Object.assign(
+                        new Error('log offset must be a safe non-negative integer'),
+                        { statusCode: 400 });
+                }
                 const result = store.appendTrainerLog({
                     trainerId: url.searchParams.get('trainer_id'),
                     runId: url.searchParams.get('run_id'),
                     relativePath: url.searchParams.get('path'),
                     offset,
                     reset: url.searchParams.get('reset') === '1',
-                    data: await readRawBody(request),
+                    data,
                 });
                 sendJson(response, 200, result);
                 return;
