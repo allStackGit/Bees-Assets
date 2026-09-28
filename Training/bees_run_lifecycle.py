@@ -111,9 +111,9 @@ def _semantic_csharp_tree_sha256(root: Path, assets_root: Path) -> str:
     for path in sources:
         relative_path = path.relative_to(assets_root).as_posix()
         digest.update(relative_path.encode("utf-8"))
-        digest.update(b"\\0")
+        digest.update(b"\0")
         digest.update(_semantic_csharp_sha256(path).encode("ascii"))
-        digest.update(b"\\n")
+        digest.update(b"\n")
     return digest.hexdigest()
 
 
