@@ -681,7 +681,9 @@ class ActorSession:
                     raise RuntimeError("WAN actor initial central control record must be a reset")
                 return record
             time.sleep(0.1)
-        raise TimeoutError("WAN actor timed out waiting for initial central reset")
+        raise BrokerUnavailable(
+            "WAN actor timed out waiting for initial central reset"
+        )
 
     def start(self) -> None:
         import mlagents.trainers
@@ -863,10 +865,16 @@ class ActorSession:
                     remote_versions = {str(key): int(value) for key, value in remote_versions_raw.items()}
                     new_control = int(state.get("control_epoch", -1))
             if set(remote_versions) != expected_behaviors:
-                raise TimeoutError(
+                message = (
                     "WAN actor timed out waiting for the complete central policy set; "
                     f"expected={sorted(expected_behaviors)} got={sorted(remote_versions)}"
                 )
+                if not remote_versions:
+                    # During learner startup/cutover the broker can be reachable before the
+                    # first complete policy cohort is published. Treat that as central
+                    # availability, not as a failed actor session.
+                    raise BrokerUnavailable(message)
+                raise RuntimeError(message)
         elif remote_versions and set(remote_versions) != expected_behaviors:
             raise RuntimeError(
                 "Central WAN policy set does not match local behavior set: "
