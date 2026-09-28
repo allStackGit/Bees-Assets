@@ -42,16 +42,21 @@ function readJsonBody(request, limitBytes = 1024 * 1024) {
     return new Promise((resolve, reject) => {
         const chunks = [];
         let total = 0;
+        let oversized = false;
         request.on('data', chunk => {
+            if (oversized) return;
             total += chunk.length;
             if (total > limitBytes) {
+                oversized = true;
+                chunks.length = 0;
                 reject(Object.assign(new Error('request body exceeds limit'), { statusCode: 413 }));
-                request.destroy();
+                request.pause();
                 return;
             }
             chunks.push(chunk);
         });
         request.on('end', () => {
+            if (oversized) return;
             if (total === 0) {
                 resolve({});
                 return;
@@ -62,7 +67,9 @@ function readJsonBody(request, limitBytes = 1024 * 1024) {
                 reject(Object.assign(new Error('request body is invalid JSON'), { statusCode: 400 }));
             }
         });
-        request.on('error', reject);
+        request.on('error', error => {
+            if (!oversized) reject(error);
+        });
     });
 }
 
@@ -70,17 +77,26 @@ function readRawBody(request, limitBytes = 1024 * 1024) {
     return new Promise((resolve, reject) => {
         const chunks = [];
         let total = 0;
+        let oversized = false;
         request.on('data', chunk => {
+            if (oversized) return;
             total += chunk.length;
             if (total > limitBytes) {
+                oversized = true;
+                chunks.length = 0;
                 reject(Object.assign(new Error('request body exceeds limit'), { statusCode: 413 }));
-                request.destroy();
+                request.pause();
                 return;
             }
             chunks.push(chunk);
         });
-        request.on('end', () => resolve(Buffer.concat(chunks)));
-        request.on('error', reject);
+        request.on('end', () => {
+            if (oversized) return;
+            resolve(Buffer.concat(chunks));
+        });
+        request.on('error', error => {
+            if (!oversized) reject(error);
+        });
     });
 }
 
@@ -1869,6 +1885,16 @@ function createTrainingControlHandler(store, token, adminToken = null) {
             if (Number.isInteger(error.expectedOffset)) body.expected_offset = error.expectedOffset;
             if (typeof error.expectedSha256 === 'string') {
                 body.expected_sha256 = error.expectedSha256;
+            }
+            if (statusCode === 413) {
+                response.writeHead(statusCode, {
+                    'Content-Type': 'application/json; charset=utf-8',
+                    'Content-Length': Buffer.byteLength(JSON.stringify(body) + '\n'),
+                    'Cache-Control': 'no-store',
+                    'Connection': 'close',
+                });
+                response.end(JSON.stringify(body) + '\n', () => request.destroy());
+                return;
             }
             sendJson(response, statusCode, body);
         }
