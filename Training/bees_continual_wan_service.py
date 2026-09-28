@@ -54,9 +54,22 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     original_training_command = service.training_command
 
-    def wan_training_command(options: service.ServiceOptions, index: int, *, resume: bool):
-        command = original_training_command(options, index, resume=resume)
-        command[1] = str(options.assets_root / "Training" / "bees_continual_wan_auto_train.py")
+    def wan_training_command(
+        options: service.ServiceOptions,
+        index: int,
+        *,
+        resume: bool,
+        force_fresh: bool = False,
+    ):
+        command = original_training_command(
+            options,
+            index,
+            resume=resume,
+            force_fresh=force_fresh,
+        )
+        command[1] = str(
+            options.runtime_training_root / "bees_continual_wan_auto_train.py"
+        )
         command.extend(
             [
                 f"{wan.WAN_ACTORS_FLAG}={actor_options.actor_count}",
