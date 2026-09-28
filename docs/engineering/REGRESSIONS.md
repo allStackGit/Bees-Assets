@@ -1308,3 +1308,12 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** Managed child health timestamps must be finite, representable seconds values; malformed health is never authoritative. A focused malformed-health test was not added under the static-analysis-only request.  
 **Verification:** Statically traced JSON parsing, health-field validation, and worker startup timeout behavior; rejected timestamps now return no health record and enter the existing timeout path. No tests, builds, Unity, or runtime checks were performed.  
 **Invariant/knowledge:** Numeric JSON type checks must also reject non-finite values and unrepresentable integers before timestamp arithmetic.
+
+### REG-150 — A live trainer ID could change roles
+**Area:** `BeesServer~/trainingControl.js`, `TrainingControlStore.heartbeat`, in-memory trainer registry  
+**Symptom:** A fresh heartbeat could reuse a live trainer ID under a different role and overwrite its map entry, hiding a dedicated trainer from rollout barriers until its lease expired.  
+**Root cause:** The registry is keyed globally by `trainer_id`, but heartbeat validation did not preserve the role associated with a live key.  
+**Fix:** Reject a role change with HTTP 409 while the previous identity's control lease is still active. Reuse is allowed after expiry.  
+**Permanent protection:** A live trainer ID retains its role for the duration of its lease; role changes must not replace another live registry record. A focused heartbeat collision test was not added under the static-analysis-only request.  
+**Verification:** Statically traced heartbeat validation before registry mutation, the shared trainer map, and rollout barrier lookup by dedicated role. Conflicting heartbeats now return before changing the map or persistent trainer state. No tests, builds, Unity, or runtime checks were performed.  
+**Invariant/knowledge:** Trainer IDs are global registry keys and cannot identify two roles concurrently.
