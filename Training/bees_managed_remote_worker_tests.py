@@ -228,19 +228,21 @@ class WorkerTrafficMetricsTests(unittest.TestCase):
 
 
 class ManagedRemoteWorkerTests(unittest.TestCase):
-    def test_default_envs_are_four_times_available_threads_when_memory_allows(self):
+    def test_default_envs_start_at_one_per_available_thread_when_memory_allows(self):
         with (
             mock.patch.object(managed, "_available_cpu_threads", return_value=6),
             mock.patch.object(managed, "_memory_env_limit", return_value=64),
         ):
-            self.assertEqual(managed._default_envs(), 24)
+            self.assertEqual(managed._cpu_env_start_limit(), 6)
+            self.assertEqual(managed._cpu_env_capacity_limit(), 12)
+            self.assertEqual(managed._default_envs(), 6)
 
-    def test_default_envs_respect_actor_capacity_cap(self):
-        with (
-            mock.patch.object(managed, "_available_cpu_threads", return_value=32),
-            mock.patch.object(managed, "_memory_env_limit", return_value=64),
-        ):
-            self.assertEqual(managed._default_envs(), managed.MAX_ENVS_PER_ACTOR)
+    def test_cpu_capacity_respects_actor_capacity_cap(self):
+        with mock.patch.object(managed, "_available_cpu_threads", return_value=64):
+            self.assertEqual(
+                managed._cpu_env_capacity_limit(),
+                managed.MAX_ENVS_PER_ACTOR,
+            )
 
     def test_default_envs_are_capped_by_available_memory(self):
         gib = 1024 * 1024 * 1024
@@ -281,9 +283,31 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
 
         source = Path(managed.__file__).read_text(encoding="utf-8")
         self.assertIn(
-            "args.max_envs = min(requested_max, memory_capacity_cap)",
+            "args.max_envs = min(requested_max, memory_capacity_cap, cpu_capacity_cap)",
             source,
         )
+
+    def test_four_thread_high_memory_worker_starts_at_four_and_caps_at_eight(self):
+        gib = 1024 * 1024 * 1024
+        with (
+            mock.patch.object(managed, "_available_cpu_threads", return_value=4),
+            mock.patch.object(managed, "_available_memory_bytes", return_value=31 * gib),
+            mock.patch.object(managed, "_total_memory_bytes", return_value=32 * gib),
+        ):
+            self.assertEqual(managed._memory_env_limit(), 60)
+            self.assertEqual(managed._memory_env_capacity_limit(), 62)
+            self.assertEqual(managed._cpu_env_start_limit(), 4)
+            self.assertEqual(managed._cpu_env_capacity_limit(), 8)
+            self.assertEqual(managed._default_envs(), 4)
+
+    def test_auto_capacity_source_combines_cpu_and_memory_caps(self):
+        source = Path(managed.__file__).read_text(encoding="utf-8")
+        self.assertIn(
+            "args.max_envs = min(requested_max, memory_capacity_cap, cpu_capacity_cap)",
+            source,
+        )
+        self.assertIn("cpu_threads={cpu_threads}", source)
+        self.assertIn("cpu_capacity_cap={cpu_capacity_cap}", source)
 
     def test_atomic_text_publication_retries_transient_sharing_failure(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -356,7 +380,7 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
             mock.patch.object(managed, "_available_memory_bytes", return_value=None),
         ):
             self.assertEqual(managed._memory_env_limit(), managed.MAX_ENVS_PER_ACTOR)
-            self.assertEqual(managed._default_envs(), 16)
+            self.assertEqual(managed._default_envs(), 4)
 
     def test_actor_key_is_persistent_per_installation(self):
         with tempfile.TemporaryDirectory() as temp:
