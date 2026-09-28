@@ -438,21 +438,28 @@ def _elastic_session(
         raise RuntimeError("Elastic WAN worker-slot contract is incompatible with this actor helper")
     if not isinstance(worker_base, int) or isinstance(worker_base, bool) or worker_base < 0:
         raise RuntimeError("Elastic WAN session has an invalid remote_worker_base")
+    expected_capacity = worker_base + max_actors * stride
     if (
         not isinstance(capacity_envs, int)
         or isinstance(capacity_envs, bool)
-        or capacity_envs <= worker_base
+        or capacity_envs != expected_capacity
     ):
-        raise RuntimeError("Elastic WAN session has an invalid capacity_envs value")
+        raise RuntimeError(
+            "Elastic WAN session capacity does not match its reserved actor slots"
+        )
     if not 0 <= actor_id < max_actors:
         raise RuntimeError(f"actor id {actor_id} is outside central slot count {max_actors}")
     if not 1 <= env_count <= max_envs:
         raise RuntimeError(f"--envs must be between 1 and {max_envs}")
 
+    worker_offset = worker_base + actor_id * stride
+    if worker_offset + env_count > capacity_envs:
+        raise RuntimeError("Elastic WAN actor environment IDs exceed central capacity")
+
     compatible = dict(session)
     compatible["actor_count"] = max_actors
     compatible["envs_per_actor"] = env_count
-    return compatible, worker_base + actor_id * stride, capacity_envs
+    return compatible, worker_offset, capacity_envs
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
