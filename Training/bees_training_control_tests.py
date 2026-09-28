@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import io
 import json
 import os
 import signal
 import tempfile
 import unittest
+import urllib.error
 from unittest import mock
 import zipfile
 from pathlib import Path
@@ -25,6 +27,34 @@ class FakeClient:
 
 
 class TrainingControlClientTests(unittest.TestCase):
+    def test_transient_http_statuses_use_lease_aware_unavailable_path(self):
+        client = control.TrainingControlClient("http://training-control", "token")
+        for status in (408, 425, 429, 500, 502, 503, 504):
+            with self.subTest(status=status):
+                error = urllib.error.HTTPError(
+                    "http://training-control/v1/heartbeat",
+                    status,
+                    "temporary server failure",
+                    {},
+                    io.BytesIO(b"temporary server failure"),
+                )
+                with mock.patch("urllib.request.urlopen", side_effect=error):
+                    with self.assertRaises(control.ControlUnavailable):
+                        client._request("POST", "/v1/heartbeat")
+
+    def test_client_http_rejection_remains_rejected(self):
+        client = control.TrainingControlClient("http://training-control", "token")
+        error = urllib.error.HTTPError(
+            "http://training-control/v1/heartbeat",
+            400,
+            "invalid request",
+            {},
+            io.BytesIO(b"invalid request"),
+        )
+        with mock.patch("urllib.request.urlopen", side_effect=error):
+            with self.assertRaises(control.ControlRejected):
+                client._request("POST", "/v1/heartbeat")
+
     def _runtime_pointer_fixture(self, root: Path, build_id: str, version: str):
         runtime_root = root / f"runtime-{build_id}"
         runtime_root.mkdir(parents=True)
