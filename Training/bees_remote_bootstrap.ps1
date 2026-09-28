@@ -752,8 +752,8 @@ while([DateTime]::UtcNow -lt $startupDeadline){
         $startupState='private transport ready; trainer startup continuing in background'
         break
     }
-    if($combined -match 'private transport failed to reach learner control'){
-        $startupState='supervisor running, but learner private transport is not reachable yet'
+    if($combined -match 'private tailnet forwarder failed to become ready'){
+        $startupState='supervisor running, but the private tailnet forwarder is not ready yet'
         break
     }
     Start-Sleep -Milliseconds 250
