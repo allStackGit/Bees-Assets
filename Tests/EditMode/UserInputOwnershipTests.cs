@@ -2297,5 +2297,41 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains("IsLocalAuthority", source);
             StringAssert.Contains("Phase != MatchSessionPhase.Battle", source);
         }
+
+        [Test]
+        public void BattleStateSnapshotCarriesCompleteSquadAndSpawnMetadata()
+        {
+            string path = Path.Combine(
+                Application.dataPath,
+                "Scripts",
+                "Levels",
+                "GameState.Commands.cs");
+            string source = File.ReadAllText(path);
+
+            StringAssert.Contains("public sealed class BattleSquadStateSnapshot", source);
+            StringAssert.Contains("public List<BattleSquadStateSnapshot> Squads", source);
+            StringAssert.Contains("OwnerPlayerId = squad.OwnerPlayerId", source);
+            StringAssert.Contains("ShouldChase = squad.ShouldChase()", source);
+            StringAssert.Contains("OffsetX = ship.OffsetFromCenter.x", source);
+            StringAssert.Contains("IsMinionShip = ship.IsMinionShip", source);
+            StringAssert.Contains("IsCarrierShip = ship.IsCarrierShip", source);
+        }
+
+        [Test]
+        public void BattleStateValidationRequiresShipsToReferenceDeclaredSameSideSquads()
+        {
+            string path = Path.Combine(
+                Application.dataPath,
+                "Scripts",
+                "Levels",
+                "GameState.Commands.cs");
+            string source = File.ReadAllText(path);
+
+            StringAssert.Contains("MaxBattleStateSquads = 512", source);
+            StringAssert.Contains("Dictionary<long, BattleSquadStateSnapshot> squads", source);
+            StringAssert.Contains("!squads.TryGetValue(", source);
+            StringAssert.Contains("squad.Side != ship.Side", source);
+            StringAssert.Contains("ship.IsDead", source);
+        }
     }
 }

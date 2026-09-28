@@ -40,6 +40,7 @@ namespace Assets.Scripts.Levels
                 matchSession.Phase != MatchSessionPhase.Battle ||
                 MatchLevelId <= 0 ||
                 _nextBattleStateSequence <= 0 ||
+                Squads.Count > MultiplayerProtocol.MaxBattleStateSquads ||
                 Ships.Count > MultiplayerProtocol.MaxBattleStateShips)
             {
                 return false;
@@ -50,6 +51,38 @@ namespace Assets.Scripts.Levels
                 MatchLevelId = MatchLevelId,
                 Sequence = _nextBattleStateSequence++
             };
+
+            for (int i = 0; i < Squads.Count; i++)
+            {
+                Squad squad = Squads[i];
+                if (squad == null ||
+                    squad.IsDead ||
+                    squad.MatchSquadId <= 0 ||
+                    string.IsNullOrEmpty(squad.Name))
+                {
+                    return false;
+                }
+
+                candidate.Squads.Add(new BattleSquadStateSnapshot
+                {
+                    MatchSquadId = squad.MatchSquadId,
+                    OwnerPlayerId = squad.OwnerPlayerId,
+                    Side = squad.Side,
+                    SquadNumber = squad.SquadNumber,
+                    Name = squad.Name,
+                    ColorR = squad.Color.r,
+                    ColorG = squad.Color.g,
+                    ColorB = squad.Color.b,
+                    ColorA = squad.Color.a,
+                    CeaseFire = squad.CeaseFire,
+                    IsMatchingSpeed = squad.IsMatchingSpeed,
+                    ShouldChase = squad.ShouldChase(),
+                    IsImmobile = squad.IsImmobile,
+                    IsMinionSquad = squad.IsMinionSquad,
+                    IsCarrierSquad = squad.IsCarrierSquad,
+                    ShootingStrategy = (int)squad.GetShootingStrategy()
+                });
+            }
 
             for (int i = 0; i < Ships.Count; i++)
             {
@@ -79,7 +112,11 @@ namespace Assets.Scripts.Levels
                     VelocityX = velocity.x,
                     VelocityY = velocity.y,
                     Health = ship.Health,
-                    IsDead = ship.IsDead
+                    IsDead = ship.IsDead,
+                    OffsetX = ship.OffsetFromCenter.x,
+                    OffsetY = ship.OffsetFromCenter.y,
+                    IsMinionShip = ship.IsMinionShip,
+                    IsCarrierShip = ship.IsCarrierShip
                 });
             }
 
@@ -245,6 +282,30 @@ namespace Assets.Scripts.Levels
                 Sequence = source.Sequence
             };
 
+            for (int i = 0; i < source.Squads.Count; i++)
+            {
+                BattleSquadStateSnapshot squad = source.Squads[i];
+                copy.Squads.Add(new BattleSquadStateSnapshot
+                {
+                    MatchSquadId = squad.MatchSquadId,
+                    OwnerPlayerId = squad.OwnerPlayerId,
+                    Side = squad.Side,
+                    SquadNumber = squad.SquadNumber,
+                    Name = squad.Name,
+                    ColorR = squad.ColorR,
+                    ColorG = squad.ColorG,
+                    ColorB = squad.ColorB,
+                    ColorA = squad.ColorA,
+                    CeaseFire = squad.CeaseFire,
+                    IsMatchingSpeed = squad.IsMatchingSpeed,
+                    ShouldChase = squad.ShouldChase,
+                    IsImmobile = squad.IsImmobile,
+                    IsMinionSquad = squad.IsMinionSquad,
+                    IsCarrierSquad = squad.IsCarrierSquad,
+                    ShootingStrategy = squad.ShootingStrategy
+                });
+            }
+
             for (int i = 0; i < source.Ships.Count; i++)
             {
                 BattleShipStateSnapshot ship = source.Ships[i];
@@ -260,7 +321,11 @@ namespace Assets.Scripts.Levels
                     VelocityX = ship.VelocityX,
                     VelocityY = ship.VelocityY,
                     Health = ship.Health,
-                    IsDead = ship.IsDead
+                    IsDead = ship.IsDead,
+                    OffsetX = ship.OffsetX,
+                    OffsetY = ship.OffsetY,
+                    IsMinionShip = ship.IsMinionShip,
+                    IsCarrierShip = ship.IsCarrierShip
                 });
             }
 
@@ -822,6 +887,27 @@ namespace Assets.Scripts.Levels
     }
 
     [Serializable]
+    public sealed class BattleSquadStateSnapshot
+    {
+        public long MatchSquadId;
+        public int OwnerPlayerId;
+        public int Side;
+        public int SquadNumber;
+        public string Name;
+        public float ColorR;
+        public float ColorG;
+        public float ColorB;
+        public float ColorA;
+        public bool CeaseFire;
+        public bool IsMatchingSpeed;
+        public bool ShouldChase;
+        public bool IsImmobile;
+        public bool IsMinionSquad;
+        public bool IsCarrierSquad;
+        public int ShootingStrategy;
+    }
+
+    [Serializable]
     public sealed class BattleShipStateSnapshot
     {
         public long MatchShipId;
@@ -835,6 +921,10 @@ namespace Assets.Scripts.Levels
         public float VelocityY;
         public int Health;
         public bool IsDead;
+        public float OffsetX;
+        public float OffsetY;
+        public bool IsMinionShip;
+        public bool IsCarrierShip;
     }
 
     [Serializable]
@@ -842,6 +932,7 @@ namespace Assets.Scripts.Levels
     {
         public int MatchLevelId;
         public long Sequence;
+        public List<BattleSquadStateSnapshot> Squads = new List<BattleSquadStateSnapshot>();
         public List<BattleShipStateSnapshot> Ships = new List<BattleShipStateSnapshot>();
     }
 
@@ -900,6 +991,7 @@ namespace Assets.Scripts.Levels
         public const int MaxPacketBytes = 4096;
         public const int MaxLobbyPacketBytes = 65536;
         public const int MaxBattleStatePacketBytes = 262144;
+        public const int MaxBattleStateSquads = 512;
         public const int MaxBattleStateShips = 2048;
         private const string CommandPacketType = "command";
         private const string AcknowledgementPacketType = "ack";
@@ -950,11 +1042,17 @@ namespace Assets.Scripts.Levels
         };
         private static readonly HashSet<string> BattleStateFields = new HashSet<string>
         {
-            "v", "match", "type", "level", "seq", "ships"
+            "v", "match", "type", "level", "seq", "squads", "ships"
+        };
+        private static readonly HashSet<string> BattleSquadStateFields = new HashSet<string>
+        {
+            "id", "owner", "side", "number", "name", "r", "g", "b", "a",
+            "cease", "matching", "chase", "immobile", "minion", "carrier", "strategy"
         };
         private static readonly HashSet<string> BattleShipStateFields = new HashSet<string>
         {
-            "id", "squad", "side", "shipType", "x", "y", "rot", "vx", "vy", "health", "dead"
+            "id", "squad", "side", "shipType", "x", "y", "rot", "vx", "vy",
+            "health", "dead", "ox", "oy", "minion", "carrier"
         };
 
         public static bool TrySerializeBattleState(
@@ -967,6 +1065,31 @@ namespace Assets.Scripts.Levels
                 !IsValidBattleStateSnapshot(snapshot))
             {
                 return false;
+            }
+
+            JArray squads = new JArray();
+            for (int i = 0; i < snapshot.Squads.Count; i++)
+            {
+                BattleSquadStateSnapshot squad = snapshot.Squads[i];
+                squads.Add(new JObject
+                {
+                    ["id"] = squad.MatchSquadId,
+                    ["owner"] = squad.OwnerPlayerId,
+                    ["side"] = squad.Side,
+                    ["number"] = squad.SquadNumber,
+                    ["name"] = squad.Name,
+                    ["r"] = squad.ColorR,
+                    ["g"] = squad.ColorG,
+                    ["b"] = squad.ColorB,
+                    ["a"] = squad.ColorA,
+                    ["cease"] = squad.CeaseFire,
+                    ["matching"] = squad.IsMatchingSpeed,
+                    ["chase"] = squad.ShouldChase,
+                    ["immobile"] = squad.IsImmobile,
+                    ["minion"] = squad.IsMinionSquad,
+                    ["carrier"] = squad.IsCarrierSquad,
+                    ["strategy"] = squad.ShootingStrategy
+                });
             }
 
             JArray ships = new JArray();
@@ -985,7 +1108,11 @@ namespace Assets.Scripts.Levels
                     ["vx"] = ship.VelocityX,
                     ["vy"] = ship.VelocityY,
                     ["health"] = ship.Health,
-                    ["dead"] = ship.IsDead
+                    ["dead"] = ship.IsDead,
+                    ["ox"] = ship.OffsetX,
+                    ["oy"] = ship.OffsetY,
+                    ["minion"] = ship.IsMinionShip,
+                    ["carrier"] = ship.IsCarrierShip
                 });
             }
 
@@ -996,6 +1123,7 @@ namespace Assets.Scripts.Levels
                 ["type"] = BattleStatePacketType,
                 ["level"] = snapshot.MatchLevelId,
                 ["seq"] = snapshot.Sequence,
+                ["squads"] = squads,
                 ["ships"] = ships
             };
 
@@ -1046,6 +1174,8 @@ namespace Assets.Scripts.Levels
                 matchLevelId > int.MaxValue ||
                 !TryReadInt64(json, "seq", out long sequence) ||
                 sequence <= 0 ||
+                !(json["squads"] is JArray squads) ||
+                squads.Count > MaxBattleStateSquads ||
                 !(json["ships"] is JArray ships) ||
                 ships.Count > MaxBattleStateShips)
             {
@@ -1057,6 +1187,64 @@ namespace Assets.Scripts.Levels
                 MatchLevelId = (int)matchLevelId,
                 Sequence = sequence
             };
+
+            HashSet<long> matchSquadIds = new HashSet<long>();
+            for (int i = 0; i < squads.Count; i++)
+            {
+                if (!(squads[i] is JObject squadJson) ||
+                    !HasExactFields(squadJson, BattleSquadStateFields) ||
+                    !TryReadInt64(squadJson, "id", out long matchSquadId) ||
+                    matchSquadId <= 0 ||
+                    !matchSquadIds.Add(matchSquadId) ||
+                    !TryReadInt64(squadJson, "owner", out long ownerPlayerId) ||
+                    ownerPlayerId < MatchSession.UnownedPlayerId ||
+                    ownerPlayerId > int.MaxValue ||
+                    !TryReadInt64(squadJson, "side", out long squadSide) ||
+                    squadSide < int.MinValue ||
+                    squadSide > int.MaxValue ||
+                    !TryReadInt64(squadJson, "number", out long squadNumber) ||
+                    squadNumber < int.MinValue ||
+                    squadNumber > int.MaxValue ||
+                    !TryReadString(squadJson, "name", out string squadName) ||
+                    string.IsNullOrEmpty(squadName) ||
+                    squadName.Length > MatchSession.MaxLobbyNameLength ||
+                    !TryReadFloat(squadJson, "r", out float colorR) ||
+                    !TryReadFloat(squadJson, "g", out float colorG) ||
+                    !TryReadFloat(squadJson, "b", out float colorB) ||
+                    !TryReadFloat(squadJson, "a", out float colorA) ||
+                    !TryReadBool(squadJson, "cease", out bool ceaseFire) ||
+                    !TryReadBool(squadJson, "matching", out bool isMatchingSpeed) ||
+                    !TryReadBool(squadJson, "chase", out bool shouldChase) ||
+                    !TryReadBool(squadJson, "immobile", out bool isImmobile) ||
+                    !TryReadBool(squadJson, "minion", out bool isMinionSquad) ||
+                    !TryReadBool(squadJson, "carrier", out bool isCarrierSquad) ||
+                    !TryReadInt64(squadJson, "strategy", out long shootingStrategy) ||
+                    shootingStrategy < int.MinValue ||
+                    shootingStrategy > int.MaxValue)
+                {
+                    return false;
+                }
+
+                parsed.Squads.Add(new BattleSquadStateSnapshot
+                {
+                    MatchSquadId = matchSquadId,
+                    OwnerPlayerId = (int)ownerPlayerId,
+                    Side = (int)squadSide,
+                    SquadNumber = (int)squadNumber,
+                    Name = squadName,
+                    ColorR = colorR,
+                    ColorG = colorG,
+                    ColorB = colorB,
+                    ColorA = colorA,
+                    CeaseFire = ceaseFire,
+                    IsMatchingSpeed = isMatchingSpeed,
+                    ShouldChase = shouldChase,
+                    IsImmobile = isImmobile,
+                    IsMinionSquad = isMinionSquad,
+                    IsCarrierSquad = isCarrierSquad,
+                    ShootingStrategy = (int)shootingStrategy
+                });
+            }
 
             HashSet<long> matchShipIds = new HashSet<long>();
             for (int i = 0; i < ships.Count; i++)
@@ -1083,7 +1271,11 @@ namespace Assets.Scripts.Levels
                     !TryReadInt64(shipJson, "health", out long health) ||
                     health < 0 ||
                     health > int.MaxValue ||
-                    !TryReadBool(shipJson, "dead", out bool isDead))
+                    !TryReadBool(shipJson, "dead", out bool isDead) ||
+                    !TryReadFloat(shipJson, "ox", out float offsetX) ||
+                    !TryReadFloat(shipJson, "oy", out float offsetY) ||
+                    !TryReadBool(shipJson, "minion", out bool isMinionShip) ||
+                    !TryReadBool(shipJson, "carrier", out bool isCarrierShip))
                 {
                     return false;
                 }
@@ -1100,7 +1292,11 @@ namespace Assets.Scripts.Levels
                     VelocityX = velocityX,
                     VelocityY = velocityY,
                     Health = (int)health,
-                    IsDead = isDead
+                    IsDead = isDead,
+                    OffsetX = offsetX,
+                    OffsetY = offsetY,
+                    IsMinionShip = isMinionShip,
+                    IsCarrierShip = isCarrierShip
                 });
             }
 
@@ -1118,10 +1314,37 @@ namespace Assets.Scripts.Levels
             if (snapshot == null ||
                 snapshot.MatchLevelId <= 0 ||
                 snapshot.Sequence <= 0 ||
+                snapshot.Squads == null ||
+                snapshot.Squads.Count > MaxBattleStateSquads ||
                 snapshot.Ships == null ||
                 snapshot.Ships.Count > MaxBattleStateShips)
             {
                 return false;
+            }
+
+            Dictionary<long, BattleSquadStateSnapshot> squads =
+                new Dictionary<long, BattleSquadStateSnapshot>();
+            for (int i = 0; i < snapshot.Squads.Count; i++)
+            {
+                BattleSquadStateSnapshot squad = snapshot.Squads[i];
+                if (squad == null ||
+                    squad.MatchSquadId <= 0 ||
+                    squads.ContainsKey(squad.MatchSquadId) ||
+                    squad.OwnerPlayerId < MatchSession.UnownedPlayerId ||
+                    (squad.Side != ConfigData.Configuration.BeeSide &&
+                     squad.Side != ConfigData.Configuration.HumanSide) ||
+                    string.IsNullOrEmpty(squad.Name) ||
+                    squad.Name.Length > MatchSession.MaxLobbyNameLength ||
+                    !IsFinite(new Vector2(squad.ColorR, squad.ColorG)) ||
+                    !IsFinite(new Vector2(squad.ColorB, squad.ColorA)) ||
+                    !Enum.IsDefined(
+                        typeof(ConfigData.ShootingStrategyTypes),
+                        squad.ShootingStrategy))
+                {
+                    return false;
+                }
+
+                squads.Add(squad.MatchSquadId, squad);
             }
 
             HashSet<long> ids = new HashSet<long>();
@@ -1132,13 +1355,19 @@ namespace Assets.Scripts.Levels
                     ship.MatchShipId <= 0 ||
                     !ids.Add(ship.MatchShipId) ||
                     ship.MatchSquadId <= 0 ||
+                    !squads.TryGetValue(
+                        ship.MatchSquadId,
+                        out BattleSquadStateSnapshot squad) ||
+                    squad.Side != ship.Side ||
                     (ship.Side != ConfigData.Configuration.BeeSide &&
                      ship.Side != ConfigData.Configuration.HumanSide) ||
                     !Enum.IsDefined(typeof(ConfigData.ShipTypes), ship.ShipType) ||
                     !IsFinite(new Vector2(ship.X, ship.Y)) ||
                     (float.IsNaN(ship.Rotation) || float.IsInfinity(ship.Rotation)) ||
                     !IsFinite(new Vector2(ship.VelocityX, ship.VelocityY)) ||
-                    ship.Health < 0)
+                    !IsFinite(new Vector2(ship.OffsetX, ship.OffsetY)) ||
+                    ship.Health < 0 ||
+                    ship.IsDead)
                 {
                     return false;
                 }
