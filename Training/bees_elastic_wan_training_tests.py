@@ -275,6 +275,8 @@ class ElasticWorkerIdentityTests(unittest.TestCase):
         ):
             malformed = dict(valid)
             malformed[field] = value
+            if field == "capacity_envs":
+                malformed["remote_worker_base"] = 0
             with self.subTest(field=field):
                 with self.assertRaisesRegex(RuntimeError, "invalid|incompatible"):
                     actor_worker._elastic_session(
