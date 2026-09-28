@@ -587,14 +587,16 @@ class BackgroundBuildPreparer:
             return False
         if progress_callback is None:
             thread.join()
-            return True
+            with self._lock:
+                return self._prepared_identity == identity
 
         poll_seconds = max(0.05, float(poll_seconds))
         while thread.is_alive():
             thread.join(timeout=poll_seconds)
             if thread.is_alive() and not progress_callback():
                 return False
-        return True
+        with self._lock:
+            return self._prepared_identity == identity
 
     def _prepare(self, descriptor: Mapping[str, Any]) -> None:
         build_id = str(descriptor.get("build_id", ""))
