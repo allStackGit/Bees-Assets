@@ -80,6 +80,12 @@ class ContinualServiceTests(unittest.TestCase):
                 timeout=service.MANAGED_INTERRUPTIBLE_STOP_SECONDS
             )
 
+    def test_interruptible_stop_wait_exceeds_owned_child_tree_grace(self):
+        self.assertGreater(
+            service.MANAGED_INTERRUPTIBLE_STOP_SECONDS,
+            process_safety.OWNED_CHILD_TERMINATION_GRACE_SECONDS,
+        )
+
     def test_windows_interruptible_phase_terminates_owned_release_process(self):
         fake = mock.Mock()
         fake.poll.return_value = None
