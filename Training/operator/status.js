@@ -207,8 +207,8 @@ function statusError(record) {
         ) {
             historical.push({
                 ageSeconds,
-                text: 'WAN session x' + count + ', ' + ageLabel(ageSeconds) +
-                    ' ago: ' + failureType +
+                text: 'WAN failures ' + count + ' total, last ' +
+                    ageLabel(ageSeconds) + ' ago: ' + failureType +
                     (failureMessage ? ': ' + failureMessage : ''),
             });
         }
