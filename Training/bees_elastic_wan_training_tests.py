@@ -260,6 +260,29 @@ class ElasticWorkerIdentityTests(unittest.TestCase):
         self.assertEqual(worker_offset, 32 + 3 * 64)
         self.assertEqual(capacity, 800)
 
+    def test_actor_helper_rejects_boolean_session_dimensions(self):
+        valid = {
+            "max_actors": 12,
+            "max_envs_per_actor": 64,
+            "remote_worker_base": 32,
+            "worker_stride": 64,
+            "capacity_envs": 800,
+        }
+        for field, value in (
+            ("max_actors", True),
+            ("remote_worker_base", True),
+            ("capacity_envs", True),
+        ):
+            malformed = dict(valid)
+            malformed[field] = value
+            with self.subTest(field=field):
+                with self.assertRaisesRegex(RuntimeError, "invalid|incompatible"):
+                    actor_worker._elastic_session(
+                        malformed,
+                        actor_id=0,
+                        env_count=4,
+                    )
+
 
 class ElasticBrokerTests(unittest.TestCase):
     def _broker(self):
