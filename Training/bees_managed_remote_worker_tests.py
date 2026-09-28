@@ -641,7 +641,7 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
             bundle.writestr("bees-runtime-version.txt", "not-a-sha")
         self.assertEqual(managed._runtime_version_from_zip(buffer.getvalue()), "")
 
-    def test_legacy_gameplay_port_argument_is_accepted_but_not_forwarded(self):
+    def test_gameplay_port_argument_is_forwarded_over_tailnet(self):
         args = managed._parser().parse_args([
             "--tailnet-bridge", "bridge",
             "--tailnet-state", "state",
@@ -656,7 +656,7 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
         ])
         self.assertEqual(args.gameplay_port, 7146)
         command = managed._tailnet_forward_command(args)
-        self.assertNotIn("127.0.0.1:7146=100.64.0.10:7146", command)
+        self.assertIn("127.0.0.1:7146=100.64.0.10:7146", command)
 
     def test_managed_worker_command_uses_actor_key_and_local_tailnet_broker(self):
         args = Namespace(
@@ -816,6 +816,7 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
             control_port=7150,
             broker_port=55051,
             bootstrap_port=7151,
+            gameplay_port=7146,
         )
         process = mock.Mock()
         process.poll.return_value = None
@@ -847,6 +848,7 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
             control_port=7150,
             broker_port=55051,
             bootstrap_port=7151,
+            gameplay_port=7146,
         )
         process = mock.Mock()
         stop = [False]
@@ -875,12 +877,14 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
             control_port=7150,
             bootstrap_port=7151,
             broker_port=55051,
+            gameplay_port=7146,
         )
         command = managed._tailnet_forward_command(args)
         self.assertIn("forward-multi", command)
         self.assertIn("127.0.0.1:7150=100.64.0.10:7150", command)
         self.assertIn("127.0.0.1:55051=100.64.0.10:55051", command)
         self.assertIn("127.0.0.1:7151=100.64.0.10:7151", command)
+        self.assertIn("127.0.0.1:7146=100.64.0.10:7146", command)
         self.assertNotIn("ssh", " ".join(command).lower())
 
 
