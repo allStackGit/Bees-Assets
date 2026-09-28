@@ -251,6 +251,15 @@ class ElasticBrokerTests(unittest.TestCase):
         broker.initialize_control({})
         return broker, specs
 
+    def test_elastic_broker_hot_path_checks_server_thread_liveness(self):
+        broker, _specs = self._broker()
+        with mock.patch.object(broker, "ensure_server_alive") as ensure:
+            broker.active_actor_snapshot()
+            broker.wait_for_minimum_registrations(0.01)
+            broker.wait_state(-1, -1, 0.0)
+
+        self.assertGreaterEqual(ensure.call_count, 3)
+
     def test_zero_remote_actors_is_a_valid_local_training_state(self):
         broker, specs = self._broker()
         self.assertEqual(broker.active_actor_snapshot(), {})
