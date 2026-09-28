@@ -84,9 +84,13 @@ namespace Bees.Tests.EditMode
             Assert.That(source, Does.Contain("BEES_TRAINING_GAMEPLAY_HOST"));
             Assert.That(source, Does.Contain("BEES_TRAINING_GAMEPLAY_PORT"));
             Assert.That(source, Does.Contain("TryGetManagedTrainingGameplayServer"));
+            string normalized = string.Join(
+                " ",
+                source.Split((char[])null, StringSplitOptions.RemoveEmptyEntries));
             Assert.That(
-                source,
-                Does.Contain("trainingPort,\n                            trainingHostname,\n                            UseWebSocketSharp"));
+                normalized,
+                Does.Contain("new Socket( trainingPort, trainingHostname, UseWebSocketSharp);"),
+                "Managed dedicated training must route gameplay/settings through the local tailnet forward.");
         }
 
         [Test]
