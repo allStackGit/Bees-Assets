@@ -838,8 +838,8 @@ internal sealed class RlOneVsOneAgent : Agent
         ReleaseHealingReservation();
 
         // Invalidate only this arena's randomized frame. Other arenas may be part-way through an
-        // unrelated episode and must retain their coordinate assignment. Ignore duplicate/stale
-        // episode-end events before touching the current episode's frame or ship reservations.
+        // unrelated episode and must retain their coordinate assignment.
+        RlPolicyCoordinateFrame.EndEpisode(level);
         int assignedTeam = _side == ConfigData.Configuration.BeeSide ? result.BeeTeamId : result.HumanTeamId;
         bool isAssignedParticipant = _teamId == assignedTeam && _hasParticipatedThisEpisode;
         if (isAssignedParticipant)
