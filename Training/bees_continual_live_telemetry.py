@@ -24,6 +24,7 @@ from bees_continual_learning import (
     ContinualLearningStore,
     ValidationError,
     canonical_json,
+    sha256_bytes,
 )
 
 
@@ -94,7 +95,11 @@ def _deployment_manifest(store: ContinualLearningStore, deployment_id: str) -> M
         ) from exc
     if not isinstance(value, dict):
         raise ValidationError(f"Deployment manifest for {deployment_id} must be an object.")
-    if value.get("schema_version") != 1:
+    if (
+        not isinstance(value.get("schema_version"), int)
+        or isinstance(value.get("schema_version"), bool)
+        or value["schema_version"] != 1
+    ):
         raise ValidationError(f"Deployment manifest for {deployment_id} has an unsupported schema.")
     identity = value.get("identity")
     identity_sha256 = value.get("identity_sha256")
