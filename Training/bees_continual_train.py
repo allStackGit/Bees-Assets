@@ -25,6 +25,7 @@ import os
 import re
 import shutil
 import sys
+import tempfile
 import threading
 from dataclasses import dataclass
 from pathlib import Path
@@ -617,6 +618,7 @@ class CandidateMonitor:
         self._stats: Dict[str, Tuple[int, int, int]] = {}
         self._registered: Dict[str, Tuple[int, int]] = {}
         self._stop = threading.Event()
+        self._scan_lock = threading.Lock()
         self._thread: Optional[threading.Thread] = None
         self.errors: List[str] = []
 
@@ -648,17 +650,23 @@ class CandidateMonitor:
         step: int,
     ) -> None:
         marker = self._pending_path(path)
-        temporary = marker.with_name(marker.name + f".{os.getpid()}.tmp")
         payload = self._pending_payload(path, identity, step)
+        fd, temporary_name = tempfile.mkstemp(
+            prefix=marker.name + ".",
+            suffix=".tmp",
+            dir=str(marker.parent),
+        )
         try:
-            temporary.write_text(
-                json.dumps(payload, indent=2, sort_keys=True) + "\n",
-                encoding="utf-8",
-            )
-            os.replace(temporary, marker)
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                handle.write(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temporary_name, marker)
         finally:
-            if temporary.exists():
-                temporary.unlink()
+            try:
+                os.unlink(temporary_name)
+            except FileNotFoundError:
+                pass
 
     def _pending_matches(self, path: Path, identity: Tuple[int, int]) -> bool:
         marker = self._pending_path(path)
@@ -736,6 +744,11 @@ class CandidateMonitor:
             self.scan_once()
 
     def scan_once(self) -> None:
+        # The stop-time final scans must not race a slow background scan over shared state.
+        with self._scan_lock:
+            self._scan_once_unlocked()
+
+    def _scan_once_unlocked(self) -> None:
         if not self.results_run_dir.exists():
             return
         for path in sorted(self.results_run_dir.rglob("*.onnx")):
