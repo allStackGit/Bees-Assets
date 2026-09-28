@@ -320,6 +320,11 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--broker-port", type=int, default=55051)
     parser.add_argument("--install-root", required=True)
     parser.add_argument("--runtime-archive", required=True)
+    parser.add_argument(
+        "--launcher-path",
+        default="",
+        help="Absolute path to the copied one-file launcher so it can self-update.",
+    )
     parser.add_argument("--bootstrap-token-file", required=True)
     parser.add_argument("--worker-token-file", required=True)
     parser.add_argument("--wan-token-file", required=True)
@@ -616,7 +621,15 @@ def _atomic_bytes(path: Path, data: bytes, mode: int = 0o600) -> None:
         os.chmod(temporary, mode)
     except OSError:
         pass
-    os.replace(temporary, path)
+    deadline = time.monotonic() + 30.0
+    while True:
+        try:
+            os.replace(temporary, path)
+            return
+        except PermissionError:
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(0.1)
 
 
 def _watch_shutdown_request(
@@ -766,6 +779,7 @@ class RuntimeUpdater:
         self._lock = threading.Lock()
         self._thread = threading.Thread(target=self._run, name="bees-runtime-updater", daemon=True)
         self._started = False
+        self._last_attempt_monotonic = 0.0
         archive = Path(args.runtime_archive).expanduser().resolve()
         self.current_sha256 = _sha256_file(archive) if archive.is_file() else ""
         self.current_version = _runtime_version_from_root(Path(__file__).resolve().parent)
@@ -786,13 +800,28 @@ class RuntimeUpdater:
         self._thread.start()
 
     def request_refresh(self) -> None:
+        # Runtime-alignment loops can request refresh frequently. Never let those requests
+        # bypass the normal poll interval; older gateways answer with a full bootstrap GET.
+        now = time.monotonic()
+        if (
+            self._last_attempt_monotonic > 0.0
+            and now - self._last_attempt_monotonic < self.args.runtime_poll_seconds
+        ):
+            return
         self._refresh.set()
 
     def stop(self) -> None:
         self._stop.set()
         self._refresh.set()
         if self._started:
-            self._thread.join(timeout=5)
+            self._thread.join(timeout=12.0)
+            if self._thread.is_alive():
+                raise RuntimeError(
+                    "runtime updater did not stop within 12 seconds; refusing unsafe cutover"
+                )
+
+    def alive(self) -> bool:
+        return not self._started or self._thread.is_alive()
 
     def verified(self) -> tuple[str, str]:
         with self._lock:
@@ -833,7 +862,7 @@ class RuntimeUpdater:
                 return ""
             raise
 
-    def _fetch_bootstrap(self) -> tuple[bytes, bytes, bytes, bytes, bytes, str]:
+    def _fetch_bootstrap(self) -> tuple[bytes, bytes, bytes, bytes, bytes, bytes, str]:
         maximum_attempts = 4
         last_error: Optional[Exception] = None
         for attempt in range(1, maximum_attempts + 1):
@@ -843,21 +872,41 @@ class RuntimeUpdater:
                 headers={"Authorization": "Bearer " + self._bootstrap_token()},
             )
             try:
-                with urllib.request.urlopen(request, timeout=120.0) as response:
+                with urllib.request.urlopen(request, timeout=10.0) as response:
                     identity = str(response.headers.get("ETag", "") or "").strip()
-                    outer = response.read()
+                    chunks: list[bytes] = []
+                    while True:
+                        if self._stop.is_set():
+                            raise RuntimeError("runtime updater stopped during bootstrap download")
+                        chunk = response.read(1024 * 1024)
+                        if not chunk:
+                            break
+                        chunks.append(chunk)
+                    outer = b"".join(chunks)
                 with zipfile.ZipFile(io.BytesIO(outer), "r") as bundle:
                     bridge_name = (
                         "bees-tailnet-bridge-windows.exe"
                         if os.name == "nt"
                         else "bees-tailnet-bridge-linux"
                     )
+                    launcher_name = (
+                        "bees-remote-worker.cmd"
+                        if os.name == "nt"
+                        else "bees-remote-worker.sh"
+                    )
+                    try:
+                        launcher_bytes = bundle.read(launcher_name)
+                    except KeyError:
+                        # Compatibility with bootstrap bundles published before launchers
+                        # were included in the self-update payload.
+                        launcher_bytes = b""
                     return (
                         bundle.read("bees-remote-runtime.zip"),
                         bundle.read("training-worker.token"),
                         bundle.read("wan.token"),
                         bundle.read(bridge_name),
                         bundle.read("latest-training-release.json"),
+                        launcher_bytes,
                         identity,
                     )
             except Exception as exc:
@@ -1003,6 +1052,7 @@ class RuntimeUpdater:
             wan_token,
             bridge_bytes,
             release_bytes,
+            launcher_bytes,
             downloaded_identity,
         ) = self._fetch_bootstrap()
         bootstrap_identity = downloaded_identity or identity
@@ -1042,6 +1092,23 @@ class RuntimeUpdater:
         bridge_path = Path(self.args.tailnet_bridge).expanduser().resolve()
         bridge_sha = hashlib.sha256(bridge_bytes).hexdigest()
         current_bridge_sha = _sha256_file(bridge_path) if bridge_path.is_file() else ""
+
+        launcher_changed = False
+        launcher_path_text = str(getattr(self.args, "launcher_path", "") or "").strip()
+        if launcher_bytes and launcher_path_text:
+            launcher_path = Path(launcher_path_text).expanduser().resolve()
+            launcher_sha = hashlib.sha256(launcher_bytes).hexdigest()
+            current_launcher_sha = (
+                _sha256_file(launcher_path) if launcher_path.is_file() else ""
+            )
+            launcher_changed = launcher_sha != current_launcher_sha
+            if launcher_changed:
+                _atomic_bytes(launcher_path, launcher_bytes, 0o700)
+                print(
+                    f"[Bees remote] updated copied launcher in place: {launcher_path}",
+                    flush=True,
+                )
+
         _atomic_bytes(Path(self.args.worker_token_file).expanduser().resolve(), worker_token)
         _atomic_bytes(Path(self.args.wan_token_file).expanduser().resolve(), wan_token)
 
@@ -1124,22 +1191,20 @@ class RuntimeUpdater:
             retain=MAX_RETAINED_VENV_VERSIONS,
         )
         update_parts = [f"runtime={runtime_sha[:12]}", f"bridge={bridge_sha[:12]}"]
+        if launcher_changed:
+            update_parts.append("launcher=updated")
         if not active_dependencies_ok:
             update_parts.append("python-dependencies=repair")
         print("[Bees remote] staged worker update " + " ".join(update_parts) + ".")
 
     def _run(self) -> None:
         while not self._stop.is_set():
+            self._last_attempt_monotonic = time.monotonic()
             try:
                 self._stage_once()
-            except (
-                OSError,
-                ValueError,
-                RuntimeError,
-                urllib.error.URLError,
-                http.client.HTTPException,
-                zipfile.BadZipFile,
-            ) as exc:
+            except Exception as exc:
+                # An unexpected updater exception must degrade to a visible retryable error,
+                # never silently kill the daemon thread and permanently disable auto-update.
                 with self._lock:
                     self.last_error = f"{type(exc).__name__}: {exc}"
             self._refresh.wait(self.args.runtime_poll_seconds)
