@@ -24,11 +24,12 @@ namespace Bees.Tests.EditMode
             int managedOverride = config.IndexOf(
                 "if (TryGetManagedTrainingGameplayServer(",
                 StringComparison.Ordinal);
+            Assert.That(managedOverride, Is.GreaterThanOrEqualTo(0));
+
             int developmentFallback = config.IndexOf(
                 "else if (Development)",
                 managedOverride,
                 StringComparison.Ordinal);
-            Assert.That(managedOverride, Is.GreaterThanOrEqualTo(0));
             Assert.That(developmentFallback, Is.GreaterThan(managedOverride),
                 "Only explicitly managed training may override the gameplay/settings endpoint; ordinary Development must retain the verified public endpoint fallback.");
         }
