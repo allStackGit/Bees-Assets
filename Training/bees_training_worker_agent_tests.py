@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import tempfile
 import threading
+import zipfile
 import unittest
 from unittest import mock
 from pathlib import Path
@@ -102,6 +103,22 @@ class BackgroundBuildPreparerTests(unittest.TestCase):
 
         self.assertEqual(preparer.prepared_build_id, "")
         thread.start.assert_called_once_with()
+
+    def test_unexpected_archive_error_is_reported_from_preparation_thread(self):
+        preparer = worker.BackgroundBuildPreparer.__new__(worker.BackgroundBuildPreparer)
+        preparer.builds = mock.Mock()
+        preparer.builds.prepare.side_effect = zipfile.BadZipFile("invalid build archive")
+        preparer.client = mock.Mock()
+        preparer._lock = threading.Lock()
+        preparer._thread = None
+        preparer._requested_build_id = "build-a"
+        preparer.prepared_build_id = ""
+        preparer.last_error = ""
+
+        preparer._prepare({"build_id": "build-a"})
+
+        self.assertEqual(preparer.prepared_build_id, "")
+        self.assertIn("BadZipFile: invalid build archive", preparer.last_error)
 
     def test_wait_for_build_heartbeats_and_can_yield_for_new_state(self):
         preparer = worker.BackgroundBuildPreparer.__new__(worker.BackgroundBuildPreparer)
