@@ -8,6 +8,8 @@ None currently confirmed. The active audit continues; resolved findings have bee
 
 ## Audit status
 
+- REG-141 gives each rotated Unity episode-diagnostic log a new file identity and makes Python episode metrics reset their cursor on file replacement. This prevents a fast 8 MiB truncate-and-regrow from being mistaken for an append and splicing generations. This production change resets the post-fix clean-pass count to **0 / 2**. Static source review only; no tests or runtime checks were run.
+
 - REG-140 retains the cluster probe lock while a failed environment-count probe is still rolling back to its measured baseline, even across subsequent unhealthy heartbeats. This production change resets the post-fix clean-pass count to **0 / 2**. Static source review only; no tests or runtime checks were run.
 
 - REG-139 fixes a WAN actor spin after a late stale-upload response: when the broker confirms the actor already has current policy/control versions, the no-change sync path now clears stale/state-change signals. This production change resets the post-fix clean-pass count to **0 / 2**. Static source review only; no tests or runtime checks were run.
