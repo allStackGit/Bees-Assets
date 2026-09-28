@@ -250,17 +250,54 @@ function Test-TrainerFresh {
     }
 }
 
+$RepairProcess=$null
+$RepairStartedUtc=[DateTime]::MinValue
+$RepairTimeoutSeconds=180
+$RepairLogRoot=Join-Path $InstallRoot 'Logs'
+$RepairOutLog=Join-Path $RepairLogRoot 'remote-monitor-repair.out.log'
+$RepairErrLog=Join-Path $RepairLogRoot 'remote-monitor-repair.err.log'
+$null=New-Item -ItemType Directory -Force -Path $RepairLogRoot
+
+function Update-LauncherRepair {
+    if($null -eq $script:RepairProcess){return}
+    try {$script:RepairProcess.Refresh()} catch {}
+    if($script:RepairProcess.HasExited){
+        try {$script:RepairProcess.Dispose()} catch {}
+        $script:RepairProcess=$null
+        return
+    }
+    if(([DateTime]::UtcNow - $script:RepairStartedUtc).TotalSeconds -lt $RepairTimeoutSeconds){
+        return
+    }
+
+    # A rescue attempt must never monopolize the rescue watchdog. Kill the entire cmd/PowerShell
+    # repair tree after the bounded deadline, then allow the next monitor cycle to retry cleanly.
+    try {& taskkill.exe /PID $script:RepairProcess.Id /T /F *> $null} catch {}
+    try {$script:RepairProcess.WaitForExit(10000)} catch {}
+    try {$script:RepairProcess.Dispose()} catch {}
+    $script:RepairProcess=$null
+}
+
 function Invoke-LauncherRepair {
+    Update-LauncherRepair
+    if($null -ne $script:RepairProcess){return}
+
     $command='call "' + $Launcher.Replace('"','""') + '" start -InstallRoot "' +
         $InstallRoot.Replace('"','""') + '" -TorchDevice "' +
         $TorchDevice.Replace('"','""') + '"'
     if($Envs -gt 0){$command+=' -Envs ' + [string]$Envs}
-    try {& $env:COMSPEC /d /c $command *> $null} catch {}
+    try {
+        $script:RepairProcess=Start-Process -FilePath $env:COMSPEC -ArgumentList @('/d','/c',$command) -WindowStyle Hidden -RedirectStandardOutput $RepairOutLog -RedirectStandardError $RepairErrLog -PassThru
+        $script:RepairStartedUtc=[DateTime]::UtcNow
+    } catch {
+        $script:RepairProcess=$null
+    }
 }
 
 $unhealthyCycles=0
 try {
     while(Test-Path -LiteralPath $Marker){
+        Update-LauncherRepair
         $healthy=(Test-SupervisorAlive) -and (Test-TrainerFresh)
         if($healthy){
             $unhealthyCycles=0
