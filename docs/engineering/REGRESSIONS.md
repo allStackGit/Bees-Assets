@@ -1469,3 +1469,10 @@ Manual-only protection is acceptable only when the record explains why determini
 **Fix:** Infer from the ONNX filename or its immediate parent directory only, which supports step-stamped exports and the explicit `step_250000/Behavior.onnx` layout without treating run ancestors as checkpoint metadata.
 **Permanent protection:** Model lineage step metadata must come from the artifact name or its checkpoint directory, never from arbitrary storage ancestry.
 **Verification:** Static review checked the existing source-level cases for a step-stamped filename, a step directory, and an unversioned latest model; the new candidate set preserves those outcomes while excluding higher ancestors. No tests or training runs were executed. Post-fix clean-pass count remains **0 / 2**.
+
+### REG-170 — Always finalize candidate monitoring during trainer cleanup
+**Area:** `Training/bees_continual_train.py`, trainer `finally` block
+**Symptom:** If restoring the historical-opponent launcher patch raised after training returned, control skipped `monitor.stop()`. The daemon candidate monitor then missed its final scans, potentially leaving the final ONNX export unregistered.
+**Fix:** Nest historical patch restoration so candidate monitor shutdown and its final scans always run, even when restoration fails.
+**Permanent protection:** Independent cleanup obligations after trainer execution must be nested so failure in one cleanup step cannot skip the next.
+**Verification:** Static control-flow review confirms `monitor.stop()` is in an inner `finally` that executes after the restore attempt for both normal return and launcher/restore exceptions. No tests or training runs were executed. Post-fix clean-pass count remains **0 / 2**.
