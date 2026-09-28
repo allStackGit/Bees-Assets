@@ -2,6 +2,7 @@ using Assets.Scripts.Levels;
 using Assets.Scripts.Server;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using UnityEngine;
 
 namespace Assets.Scripts
 {
@@ -14,7 +15,9 @@ namespace Assets.Scripts
     {
         public const string DataFile = "__campaign_checkpoint__";
 
+        private const float FailedWriteRetryDelaySeconds = 30f;
         private static bool _pendingSave;
+        private static float _retryAfterRealtime;
 
         public static bool IsProfileMember(string filename)
         {
@@ -85,6 +88,26 @@ namespace Assets.Scripts
                    ConfigData.GetChallengeSavedSquadsData() != null;
         }
 
+        internal static void HandleWriteResponse(StoreUserDataRequest request, int status)
+        {
+            if (request?.Request == null || request.Request.DataFile != DataFile)
+            {
+                return;
+            }
+
+            if (status == 1 || (status >= 200 && status < 300))
+            {
+                _retryAfterRealtime = 0f;
+                return;
+            }
+
+            _pendingSave = true;
+            _retryAfterRealtime = Time.realtimeSinceStartup + FailedWriteRetryDelaySeconds;
+            Debug.LogWarning(
+                "Campaign checkpoint write failed with status " + status +
+                "; the latest profile snapshot will be retried.");
+        }
+
         internal static void FlushIfReady()
         {
             // Keep the coalesced save pending while transport recovery is in progress. Serializing
@@ -92,6 +115,7 @@ namespace Assets.Scripts
             // a closed WebSocket turns a normal disconnect into a main-thread allocation/error loop.
             if (!_pendingSave ||
                 !AreProfileMembersReady() ||
+                Time.realtimeSinceStartup < _retryAfterRealtime ||
                 !ConfigData.Socket.IsOpen ||
                 HasOutstandingCheckpointWrite())
             {
