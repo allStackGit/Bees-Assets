@@ -141,7 +141,7 @@ class ReleaseCycleTests(unittest.TestCase):
             **kwargs,
         )
 
-    def test_fresh_store_automatically_bootstraps_newest_generation_zero_candidate(self):
+    def test_fresh_store_requires_explicit_generation_zero_review(self):
         older = self.register("generation-zero-older.onnx", b"generation-zero-older", 100)
         newer = self.register("generation-zero-newer.onnx", b"generation-zero-newer", 200)
         evaluator_calls = []
@@ -150,19 +150,18 @@ class ReleaseCycleTests(unittest.TestCase):
             evaluator_calls.append((args, kwargs))
             return self.passing_evaluator(*args, **kwargs)
 
-        result = self.run_cycle(evaluator=evaluator)
+        with self.assertRaisesRegex(ReleaseError, "cannot establish generation zero"):
+            self.run_cycle(evaluator=evaluator)
 
-        self.assertEqual(result["status"], "bootstrapped")
-        self.assertEqual(result["processed"][0]["decision"], "bootstrapped")
-        self.assertEqual(result["processed"][0]["candidate_model_id"], newer["model_id"])
-        self.assertEqual(self.store.current_champion_id(), newer["model_id"])
-        self.assertEqual(self.store.current_compatible_champion_id(), newer["model_id"])
+        self.assertIsNone(self.store.current_champion_id())
+        self.assertIsNone(self.store.current_compatible_champion_id())
         self.assertEqual(self.store.get_model(older["model_id"])["status"], "candidate")
+        self.assertEqual(self.store.get_model(newer["model_id"])["status"], "candidate")
         self.assertEqual(evaluator_calls, [])
-        self.assertEqual(self.published_model_ids, [newer["model_id"]])
-        self.assertEqual(self.health_checked_model_ids, [newer["model_id"]])
+        self.assertEqual(self.published_model_ids, [])
+        self.assertEqual(self.health_checked_model_ids, [])
 
-    def test_incompatible_old_champion_is_rebased_automatically(self):
+    def test_incompatible_old_champion_requires_explicit_generation_zero_review(self):
         old_config = copy.deepcopy(TEST_CONFIG)
         old_config["policy_abi_version"] = TEST_CONFIG["policy_abi_version"] - 1
         old_config["policy_signature"] = "obsolete-release-test-policy"
@@ -187,18 +186,15 @@ class ReleaseCycleTests(unittest.TestCase):
         self.assertIsNone(self.store.current_compatible_champion_id())
         candidate = self.register("new-generation.onnx", b"new-generation", 300)
 
-        result = self.run_cycle()
+        with self.assertRaisesRegex(ReleaseError, "cannot establish generation zero"):
+            self.run_cycle()
 
-        self.assertEqual(result["status"], "bootstrapped")
-        self.assertEqual(self.store.current_champion_id(), candidate["model_id"])
-        self.assertEqual(self.store.current_compatible_champion_id(), candidate["model_id"])
-        self.assertEqual(self.store.get_model(old_champion["model_id"])["status"], "retired")
-        self.assertEqual(
-            self.store.get_model(candidate["model_id"])["metadata"]["champion_bootstrap"][
-                "replaced_incompatible_champion_model_id"
-            ],
-            old_champion["model_id"],
-        )
+        self.assertEqual(self.store.current_champion_id(), old_champion["model_id"])
+        self.assertIsNone(self.store.current_compatible_champion_id())
+        self.assertEqual(self.store.get_model(old_champion["model_id"])["status"], "champion")
+        self.assertEqual(self.store.get_model(candidate["model_id"])["status"], "candidate")
+        self.assertEqual(self.published_model_ids, [])
+        self.assertEqual(self.health_checked_model_ids, [])
 
     def test_default_cycle_processes_only_newest_compatible_candidate(self):
         first = self.bootstrap()
