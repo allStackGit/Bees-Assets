@@ -1797,7 +1797,8 @@ namespace Assets.Scripts.Levels
                 command.TargetSquadCommandId,
                 command.PointA,
                 command.PointB,
-                command.MatchShipId);
+                command.MatchShipId,
+                command.Value);
 
             lock (_outgoingPlayerCommandsLock)
             {
@@ -1836,7 +1837,8 @@ namespace Assets.Scripts.Levels
                             source.TargetSquadCommandId,
                             source.PointA,
                             source.PointB,
-                            source.MatchShipId)));
+                            source.MatchShipId,
+                            source.Value)));
                     if (destination.Count >= maxCommands)
                     {
                         break;

@@ -83,6 +83,7 @@ namespace Assets.Scripts.Levels
                     IsImmobile = squad.IsImmobile,
                     IsMinionSquad = squad.IsMinionSquad,
                     IsCarrierSquad = squad.IsCarrierSquad,
+                    IsLockedOn = squad.IsLockedOn,
                     ParentCarrierMatchShipId =
                         squad is CarrierSquad carrierSquad && carrierSquad.Carrier != null
                             ? carrierSquad.Carrier.MatchShipId
@@ -279,6 +280,24 @@ namespace Assets.Scripts.Levels
                 snapshot.Ships.Count != ShipsByMatchId.Count)
             {
                 return false;
+            }
+
+            for (int i = 0; i < snapshot.Squads.Count; i++)
+            {
+                BattleSquadStateSnapshot state = snapshot.Squads[i];
+                if (!SquadsByMatchId.TryGetValue(state.MatchSquadId, out Squad squad) ||
+                    squad == null ||
+                    squad.IsDead)
+                {
+                    return false;
+                }
+
+                squad.SetChase(state.ShouldChase);
+                squad.IsMatchingSpeed = state.IsMatchingSpeed;
+                squad.SetSquadCeaseFire(state.CeaseFire);
+                squad.SetShootingStrategy(
+                    (ConfigData.ShootingStrategyTypes)state.ShootingStrategy);
+                squad.IsLockedOn = state.IsLockedOn;
             }
 
             for (int i = 0; i < snapshot.Ships.Count; i++)
@@ -785,6 +804,7 @@ namespace Assets.Scripts.Levels
                     IsImmobile = squad.IsImmobile,
                     IsMinionSquad = squad.IsMinionSquad,
                     IsCarrierSquad = squad.IsCarrierSquad,
+                    IsLockedOn = squad.IsLockedOn,
                     ParentCarrierMatchShipId = squad.ParentCarrierMatchShipId,
                     CarrierSquadType = squad.CarrierSquadType,
                     ShootingStrategy = squad.ShootingStrategy
@@ -861,7 +881,8 @@ namespace Assets.Scripts.Levels
                 command.TargetSquadCommandId,
                 command.PointA,
                 command.PointB,
-                command.MatchShipId);
+                command.MatchShipId,
+                command.Value);
 
             lock (_queuedPlayerCommandsLock)
             {
@@ -959,7 +980,8 @@ namespace Assets.Scripts.Levels
             long targetSquadCommandId = 0,
             Vector2 pointA = default,
             Vector2 pointB = default,
-            long matchShipId = 0)
+            long matchShipId = 0,
+            int value = 0)
         {
             MatchSession matchSession = Stage != null ? Stage.MatchSession : null;
             long sequence = 0;
@@ -989,7 +1011,8 @@ namespace Assets.Scripts.Levels
                 targetSquadCommandId,
                 pointA,
                 pointB,
-                matchShipId);
+                matchShipId,
+                value);
 
             if (matchSession != null && !matchSession.IsLocalAuthority)
             {
@@ -1067,9 +1090,135 @@ namespace Assets.Scripts.Levels
                         command.PlayerId,
                         command.SquadCommandId,
                         command.MatchShipId);
+                case PlayerCommandKind.SetChase:
+                    return TryPlayerSetChase(
+                        command.PlayerId,
+                        command.SquadCommandId,
+                        command.Value != 0);
+                case PlayerCommandKind.SetCeaseFire:
+                    return TryPlayerSetCeaseFire(
+                        command.PlayerId,
+                        command.SquadCommandId,
+                        command.Value != 0);
+                case PlayerCommandKind.SetMatchSpeed:
+                    return TryPlayerSetMatchSpeed(
+                        command.PlayerId,
+                        command.SquadCommandId,
+                        command.Value != 0,
+                        command.PointA.x);
+                case PlayerCommandKind.SetShootingStrategy:
+                    return TryPlayerSetShootingStrategy(
+                        command.PlayerId,
+                        command.SquadCommandId,
+                        command.Value);
+                case PlayerCommandKind.SetLockOn:
+                    return TryPlayerSetLockOn(
+                        command.PlayerId,
+                        command.SquadCommandId,
+                        command.Value != 0);
                 default:
                     return false;
             }
+        }
+
+        public bool TryPlayerSetChase(
+            int playerId,
+            long squadCommandId,
+            bool shouldChase)
+        {
+            Squad squad = GetPlayerCommandSquad(squadCommandId);
+            if (!CanPlayerCommandSquad(playerId, squad))
+            {
+                return false;
+            }
+
+            if (shouldChase)
+            {
+                squad.SetChase(true);
+            }
+            else
+            {
+                squad.StopChasing();
+            }
+            return true;
+        }
+
+        public bool TryPlayerSetCeaseFire(
+            int playerId,
+            long squadCommandId,
+            bool ceaseFire)
+        {
+            Squad squad = GetPlayerCommandSquad(squadCommandId);
+            if (!CanPlayerCommandSquad(playerId, squad) ||
+                (!ceaseFire &&
+                 squad.HasCommand &&
+                 squad.GetCommand() != null &&
+                 squad.GetCommand().CommandType == ConfigData.CommandTypes.Heal))
+            {
+                return false;
+            }
+
+            squad.SetSquadCeaseFire(ceaseFire);
+            return true;
+        }
+
+        public bool TryPlayerSetMatchSpeed(
+            int playerId,
+            long squadCommandId,
+            bool matching,
+            float speed)
+        {
+            Squad squad = GetPlayerCommandSquad(squadCommandId);
+            if (!CanPlayerCommandSquad(playerId, squad) ||
+                (matching &&
+                 (float.IsNaN(speed) || float.IsInfinity(speed) || speed <= 0f)))
+            {
+                return false;
+            }
+
+            if (matching)
+            {
+                squad.MatchSpeed(speed);
+            }
+            else
+            {
+                squad.UnmatchSpeed();
+            }
+            return true;
+        }
+
+        public bool TryPlayerSetShootingStrategy(
+            int playerId,
+            long squadCommandId,
+            int strategy)
+        {
+            Squad squad = GetPlayerCommandSquad(squadCommandId);
+            if (!CanPlayerCommandSquad(playerId, squad) ||
+                !Enum.IsDefined(typeof(ConfigData.ShootingStrategyTypes), strategy))
+            {
+                return false;
+            }
+
+            squad.SetShootingStrategy((ConfigData.ShootingStrategyTypes)strategy);
+            return true;
+        }
+
+        public bool TryPlayerSetLockOn(
+            int playerId,
+            long squadCommandId,
+            bool lockedOn)
+        {
+            Squad squad = GetPlayerCommandSquad(squadCommandId);
+            if (!CanPlayerCommandSquad(playerId, squad) ||
+                !squad.HasCommand ||
+                squad.GetCommand() == null ||
+                !squad.GetCommand().HasEnemy)
+            {
+                return false;
+            }
+
+            squad.IsLockedOn = lockedOn;
+            return true;
         }
 
         private Ship GetPlayerCommandShip(long matchShipId)
@@ -1499,6 +1648,7 @@ namespace Assets.Scripts.Levels
         public bool IsImmobile;
         public bool IsMinionSquad;
         public bool IsCarrierSquad;
+        public bool IsLockedOn;
         public long ParentCarrierMatchShipId;
         public int CarrierSquadType = -1;
         public int ShootingStrategy;
@@ -1546,7 +1696,12 @@ namespace Assets.Scripts.Levels
         Heal,
         ScoutDropBeacon,
         BargeCharge,
-        FireBargeDetonate
+        FireBargeDetonate,
+        SetChase,
+        SetCeaseFire,
+        SetMatchSpeed,
+        SetShootingStrategy,
+        SetLockOn
     }
 
     /// <summary>
@@ -1562,6 +1717,7 @@ namespace Assets.Scripts.Levels
         public long SquadCommandId;
         public long TargetSquadCommandId;
         public long MatchShipId;
+        public int Value;
         public Vector2 PointA;
         public Vector2 PointB;
 
@@ -1577,7 +1733,8 @@ namespace Assets.Scripts.Levels
             long targetSquadCommandId = 0,
             Vector2 pointA = default,
             Vector2 pointB = default,
-            long matchShipId = 0)
+            long matchShipId = 0,
+            int value = 0)
         {
             PlayerId = playerId;
             Sequence = sequence;
@@ -1585,6 +1742,7 @@ namespace Assets.Scripts.Levels
             SquadCommandId = squadCommandId;
             TargetSquadCommandId = targetSquadCommandId;
             MatchShipId = matchShipId;
+            Value = value;
             PointA = pointA;
             PointB = pointB;
         }
@@ -1593,7 +1751,7 @@ namespace Assets.Scripts.Levels
 
     public static class MultiplayerProtocol
     {
-        public const int Version = 4;
+        public const int Version = 5;
         public const int MaxPacketBytes = 4096;
         public const int MaxLobbyPacketBytes = 65536;
         public const int MaxBattleStatePacketBytes = 262144;
@@ -1607,7 +1765,7 @@ namespace Assets.Scripts.Levels
         private static readonly HashSet<string> CommandFields = new HashSet<string>
         {
             "v", "match", "type", "level", "player", "seq", "kind", "squad", "target",
-            "ship", "ax", "ay", "bx", "by"
+            "ship", "value", "ax", "ay", "bx", "by"
         };
         private static readonly HashSet<string> AcknowledgementFields = new HashSet<string>
         {
@@ -1653,7 +1811,7 @@ namespace Assets.Scripts.Levels
         private static readonly HashSet<string> BattleSquadStateFields = new HashSet<string>
         {
             "id", "owner", "side", "number", "name", "r", "g", "b", "a",
-            "cease", "matching", "chase", "immobile", "minion", "carrier",
+            "cease", "matching", "chase", "immobile", "minion", "carrier", "locked",
             "parentCarrier", "carrierType", "strategy"
         };
         private static readonly HashSet<string> BattleShipStateFields = new HashSet<string>
@@ -1695,6 +1853,7 @@ namespace Assets.Scripts.Levels
                     ["immobile"] = squad.IsImmobile,
                     ["minion"] = squad.IsMinionSquad,
                     ["carrier"] = squad.IsCarrierSquad,
+                    ["locked"] = squad.IsLockedOn,
                     ["parentCarrier"] = squad.ParentCarrierMatchShipId,
                     ["carrierType"] = squad.CarrierSquadType,
                     ["strategy"] = squad.ShootingStrategy
@@ -1836,6 +1995,7 @@ namespace Assets.Scripts.Levels
                     !TryReadBool(squadJson, "immobile", out bool isImmobile) ||
                     !TryReadBool(squadJson, "minion", out bool isMinionSquad) ||
                     !TryReadBool(squadJson, "carrier", out bool isCarrierSquad) ||
+                    !TryReadBool(squadJson, "locked", out bool isLockedOn) ||
                     !TryReadInt64(squadJson, "parentCarrier", out long parentCarrierMatchShipId) ||
                     parentCarrierMatchShipId < 0 ||
                     !TryReadInt64(squadJson, "carrierType", out long carrierSquadType) ||
@@ -1865,6 +2025,7 @@ namespace Assets.Scripts.Levels
                     IsImmobile = isImmobile,
                     IsMinionSquad = isMinionSquad,
                     IsCarrierSquad = isCarrierSquad,
+                    IsLockedOn = isLockedOn,
                     ParentCarrierMatchShipId = parentCarrierMatchShipId,
                     CarrierSquadType = (int)carrierSquadType,
                     ShootingStrategy = (int)shootingStrategy
@@ -2098,6 +2259,7 @@ namespace Assets.Scripts.Levels
                 ["squad"] = command.SquadCommandId,
                 ["target"] = command.TargetSquadCommandId,
                 ["ship"] = command.MatchShipId,
+                ["value"] = command.Value,
                 ["ax"] = command.PointA.x,
                 ["ay"] = command.PointA.y,
                 ["bx"] = command.PointB.x,
@@ -2714,6 +2876,8 @@ namespace Assets.Scripts.Levels
                 !TryReadInt64(json, "squad", out long squadCommandId) || squadCommandId <= 0 ||
                 !TryReadInt64(json, "target", out long targetSquadCommandId) || targetSquadCommandId < 0 ||
                 !TryReadInt64(json, "ship", out long matchShipId) || matchShipId < 0 ||
+                !TryReadInt64(json, "value", out long value) ||
+                value < int.MinValue || value > int.MaxValue ||
                 !TryReadFloat(json, "ax", out float ax) ||
                 !TryReadFloat(json, "ay", out float ay) ||
                 !TryReadFloat(json, "bx", out float bx) ||
@@ -2730,7 +2894,8 @@ namespace Assets.Scripts.Levels
                 targetSquadCommandId,
                 new Vector2(ax, ay),
                 new Vector2(bx, by),
-                matchShipId);
+                matchShipId,
+                (int)value);
 
             if (!IsValidCommand(parsed))
             {
@@ -2772,6 +2937,36 @@ namespace Assets.Scripts.Levels
                 command.Kind == PlayerCommandKind.BargeCharge ||
                 command.Kind == PlayerCommandKind.FireBargeDetonate;
             if (requiresShip != (command.MatchShipId > 0))
+            {
+                return false;
+            }
+
+            bool booleanValue =
+                command.Kind == PlayerCommandKind.SetChase ||
+                command.Kind == PlayerCommandKind.SetCeaseFire ||
+                command.Kind == PlayerCommandKind.SetMatchSpeed ||
+                command.Kind == PlayerCommandKind.SetLockOn;
+            if (booleanValue && command.Value != 0 && command.Value != 1)
+            {
+                return false;
+            }
+
+            if (command.Kind == PlayerCommandKind.SetShootingStrategy &&
+                !Enum.IsDefined(typeof(ConfigData.ShootingStrategyTypes), command.Value))
+            {
+                return false;
+            }
+
+            bool usesValue = booleanValue ||
+                command.Kind == PlayerCommandKind.SetShootingStrategy;
+            if (!usesValue && command.Value != 0)
+            {
+                return false;
+            }
+
+            if (command.Kind == PlayerCommandKind.SetMatchSpeed &&
+                command.Value == 1 &&
+                command.PointA.x <= 0f)
             {
                 return false;
             }
