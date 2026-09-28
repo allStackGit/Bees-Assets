@@ -496,8 +496,8 @@ class TrainingEnvOptimizer {
             reconciliation && String(reconciliation.phase || '').trim()
         );
 
-        const stoppedTransitionGrace =
-            processState === 'stopped' &&
+        const reconciliationTransition =
+            (processState === 'stopped' || processState === 'stopping') &&
             !optimizerError &&
             reconciliationActive;
 
@@ -550,7 +550,7 @@ class TrainingEnvOptimizer {
                 state.phase === 'awaiting-restart' ||
                 state.baseline_envs === null
             );
-        const expectedTransition = expectedStarting || stoppedTransitionGrace;
+        const expectedTransition = expectedStarting || reconciliationTransition;
         const currentProcessFailure =
             (processState &&
                 processState !== 'running' &&
