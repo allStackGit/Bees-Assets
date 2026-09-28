@@ -809,6 +809,7 @@ class TrainingControlStore {
                 keptPlatforms.has(platform) ||
                 activeRemotePlatforms.has(platform));
         if (retainedPlatforms.length !== requiredPlatforms.length) {
+            snapshotBeforeMutation();
             pending.required_remote_platforms = retainedPlatforms;
             changed = true;
         }
