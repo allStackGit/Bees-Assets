@@ -1687,14 +1687,30 @@ def _runtime_cutover_selected(
     if phase == "rolling" and str(state.get("desired_build_id", "")) == pending_build:
         return staged_root
     if incompatible and phase == "stopping" and state.get("desired_mode") == "stopped":
+        phase_revision = pending.get("phase_revision")
+        if (
+            not isinstance(phase_revision, int)
+            or isinstance(phase_revision, bool)
+            or phase_revision < 0
+        ):
+            return None
         status = _control_status(args)
         trainers = status.get("trainers", ()) if isinstance(status, Mapping) else ()
         if isinstance(trainers, list):
             for record in trainers:
+                applied_revision = (
+                    record.get("applied_revision")
+                    if isinstance(record, Mapping)
+                    else None
+                )
                 if (
                     isinstance(record, Mapping)
                     and record.get("trainer_id") == trainer_id
+                    and record.get("stale") is False
                     and record.get("process_state") == "stopped"
+                    and isinstance(applied_revision, int)
+                    and not isinstance(applied_revision, bool)
+                    and applied_revision >= phase_revision
                 ):
                     return staged_root
     return None
