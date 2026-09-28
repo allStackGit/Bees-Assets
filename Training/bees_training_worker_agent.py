@@ -812,20 +812,27 @@ class ManagedProcess:
         state = str(health.get("state", ""))
         if state == "error":
             return str(health.get("error") or "managed child reported an internal failure")
+
+        details = health.get("details")
+        details_map = details if isinstance(details, Mapping) else {}
+        component = str(details_map.get("component", "") or "")
+        phase = str(details_map.get("phase", "") or "")
         now = time.time()
         updated = health.get("updated_unix_seconds")
         if isinstance(updated, (int, float)) and not isinstance(updated, bool):
             age = max(0.0, now - float(updated))
-            if age >= CHILD_HEALTH_STALE_SECONDS:
-                phase = "startup" if state == "starting" else state or "unknown"
+            requires_ready_heartbeat = (
+                state == "ready" and component == "elastic-wan-actor"
+            )
+            if (
+                state == "starting" or requires_ready_heartbeat
+            ) and age >= CHILD_HEALTH_STALE_SECONDS:
+                phase_name = "startup" if state == "starting" else phase or state
                 return (
-                    f"managed child {phase} health has not refreshed for "
+                    f"managed child {phase_name} health has not refreshed for "
                     f"{age:.1f} seconds"
                 )
 
-        details = health.get("details")
-        details_map = details if isinstance(details, Mapping) else {}
-        phase = str(details_map.get("phase", "") or "")
         phase_started = details_map.get("phase_started_unix_seconds")
         if state == "starting" and isinstance(
             phase_started, (int, float)
@@ -838,7 +845,11 @@ class ManagedProcess:
                     f"{phase_age:.1f} seconds"
                 )
 
-        if state == "ready" and phase == "running":
+        if (
+            state == "ready"
+            and component == "elastic-wan-actor"
+            and phase == "running"
+        ):
             progress = details_map.get("progress_unix_seconds")
             if not isinstance(progress, (int, float)) or isinstance(progress, bool):
                 return "managed child running health has no rollout progress timestamp"
