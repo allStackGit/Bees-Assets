@@ -653,7 +653,7 @@ ${windowsPayload}
 set -euo pipefail
 
 echo "[Bees remote] launching Linux training worker..."
-BEES_REMOTE_LAUNCHER_PATH="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)/$(basename -- "${BASH_SOURCE[0]}")"
+BEES_REMOTE_LAUNCHER_PATH="$(cd -- "$(dirname -- "\${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)/$(basename -- "\${BASH_SOURCE[0]}")"
 export BEES_REMOTE_LAUNCHER_PATH
 
 have() { command -v "$1" >/dev/null 2>&1; }
