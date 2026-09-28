@@ -10,7 +10,7 @@ Static-only repository audit on `rl/initial-design-work`. This ledger is the cur
 
 ## Audit status
 
-- REG-187 releases generated static obstacles and their background before returning a training map to the pool. Focused regression source was added but not run. Static review only; post-fix clean-pass count remains **0 / 2**.
+- REG-187 makes direct level reset own cleanup of pooled generated obstacles before returning the map. Hive Mind timeout already cleans these through `SaveAndEnd`; the fix covers reset paths that bypass that callback. Focused regression source was added but not run. Static review only; post-fix clean-pass count remains **0 / 2**.
 
 - REG-186 skips campaign HUD list indexing during training resets after training removes UI entries. Focused regression source was added but not run. Static review only; post-fix clean-pass count remains **0 / 2**.
 
