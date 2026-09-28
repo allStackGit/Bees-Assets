@@ -1802,17 +1802,39 @@ function createTrainingControlHandler(store, token, adminToken = null) {
                     sendJson(response, 404, { error: 'artifact-not-found' });
                     return;
                 }
-                let artifactStats;
+                let artifactFd;
                 try {
-                    artifactStats = fs.lstatSync(record.archive_path);
+                    const noFollow = fs.constants.O_NOFOLLOW || 0;
+                    artifactFd = fs.openSync(
+                        record.archive_path,
+                        fs.constants.O_RDONLY | noFollow,
+                    );
+                    const openedStats = fs.fstatSync(artifactFd);
+                    const pathStats = fs.lstatSync(record.archive_path);
+                    const identityChanged = pathStats.dev !== openedStats.dev ||
+                        pathStats.ino !== openedStats.ino;
+                    if (pathStats.isSymbolicLink() ||
+                        !pathStats.isFile() ||
+                        !openedStats.isFile() ||
+                        identityChanged ||
+                        openedStats.size !== record.archive_size_bytes) {
+                        fs.closeSync(artifactFd);
+                        sendJson(response, 404, { error: 'artifact-not-found' });
+                        return;
+                    }
                 } catch (error) {
-                    if (error.code !== 'ENOENT') throw error;
-                }
-                if (!artifactStats || artifactStats.isSymbolicLink() ||
-                    !artifactStats.isFile() ||
-                    artifactStats.size !== record.archive_size_bytes) {
-                    sendJson(response, 404, { error: 'artifact-not-found' });
-                    return;
+                    if (artifactFd !== undefined) {
+                        try {
+                            fs.closeSync(artifactFd);
+                        } catch (_) {
+                            // Preserve the original artifact-open/validation failure.
+                        }
+                    }
+                    if (error.code === 'ENOENT' || error.code === 'ELOOP') {
+                        sendJson(response, 404, { error: 'artifact-not-found' });
+                        return;
+                    }
+                    throw error;
                 }
                 response.writeHead(200, {
                     'Content-Type': 'application/zip',
@@ -1821,7 +1843,7 @@ function createTrainingControlHandler(store, token, adminToken = null) {
                     'X-Bees-Archive-Sha256': record.archive_sha256,
                     'Cache-Control': 'no-store',
                 });
-                fs.createReadStream(record.archive_path)
+                fs.createReadStream(null, { fd: artifactFd, autoClose: true })
                     .on('error', error => response.destroy(error))
                     .pipe(response);
                 return;
