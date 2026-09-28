@@ -1628,3 +1628,12 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** live policy now registers a pending participant, waits for `IsReadyToWarp`, records the capability at completion, and cancels pending state when the ship binding is released. `RlPolicySchemaContractTests.LivePolicyWarpWaitsForGateReadinessLikeTraining` protects the readiness-before-capture/removal ordering.
 **Verification:** changed source and regression source were read back and reviewed statically. The test was not run under the code-analysis-only instruction.
 **Invariant/knowledge:** deployed RL actions must preserve the timing and completion conditions used during training and the corresponding gameplay mechanic.
+
+
+### REG-192 — WAN continual wrapper preserves fresh retries and runtime selection
+**Area:** `Training/bees_continual_wan_service.py`, continual-service training callback contract  
+**Symptom:** when a first WAN training attempt created a run directory but no checkpoint, the supervisor's fresh retry passed `force_fresh` to the wrapper callback and failed before launching training. A separately configured `--runtime-training-root` was also ignored when choosing the WAN trainer script.  
+**Root cause:** the WAN wrapper callback did not match the base service's `training_command` signature and selected its script from `assets_root` instead of the configured runtime root.  
+**Permanent protection:** `ContinualElasticWanServiceTests.WanWrapperForwardsFreshRetryAndUsesPinnedRuntimeRoot` exercises the WAN entrypoint with a separate runtime folder and a forced fresh retry, checking the forwarded flag and selected script path.  
+**Verification:** production and regression sources were read back and reviewed statically. The test was not run under the code-analysis-only instruction.  
+**Invariant/knowledge:** continual-service mode wrappers must preserve the base training-command options and use the explicitly configured runtime training root.
