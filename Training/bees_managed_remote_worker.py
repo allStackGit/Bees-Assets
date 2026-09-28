@@ -1460,32 +1460,19 @@ def _wait_for_private_transport(
     process: subprocess.Popen,
     stop: list[bool],
     timeout: float = 30.0,
-    required_successes: int = 2,
 ) -> bool:
-    if required_successes < 1:
-        raise ValueError("required_successes must be positive")
+    """Wait only for the local forwarder, not for the central services behind it.
 
-    if not _wait_for_ports(
+    forward-multi binds these listeners only after tsnet itself is up. Central control, broker,
+    bootstrap, and gameplay targets have independent lifecycles and may legitimately be down
+    during a runtime/server cutover; their availability must not decide whether tsnet is healthy.
+    """
+    return _wait_for_ports(
         (args.control_port, args.broker_port, args.bootstrap_port, args.gameplay_port),
         process,
         stop,
         timeout=min(timeout, 20.0),
-    ):
-        return False
-
-    consecutive = 0
-    deadline = time.monotonic() + timeout
-    while not stop[0] and time.monotonic() < deadline:
-        if process.poll() is not None:
-            return False
-        if isinstance(_control_status(args), Mapping):
-            consecutive += 1
-            if consecutive >= required_successes:
-                return True
-        else:
-            consecutive = 0
-        time.sleep(0.5)
-    return False
+    )
 
 
 _STATUS_UNSET = object()
