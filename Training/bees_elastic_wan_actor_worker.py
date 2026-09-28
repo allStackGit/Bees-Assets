@@ -59,6 +59,8 @@ class _StartupHealthHeartbeat:
         self.env_count = int(env_count)
         self.interval_seconds = max(1.0, float(interval_seconds))
         self._phase = "starting-session"
+        self._state = "starting"
+        self._error = ""
         self._lock = threading.Lock()
         self._stop = threading.Event()
         self._thread = threading.Thread(
@@ -70,15 +72,17 @@ class _StartupHealthHeartbeat:
     def _publish(self) -> None:
         with self._lock:
             phase = self._phase
-        write_managed_health(
-            "starting",
-            details={
-                "component": "elastic-wan-actor",
-                "phase": phase,
-                "actor_id": self.actor_id,
-                "env_count": self.env_count,
-            },
-        )
+            state = self._state
+            error = self._error
+            actor_id = self.actor_id
+        details = {
+            "component": "elastic-wan-actor",
+            "phase": phase,
+            "env_count": self.env_count,
+        }
+        if actor_id >= 0:
+            details["actor_id"] = actor_id
+        write_managed_health(state, error=error, details=details)
 
     def start(self) -> None:
         self._publish()
@@ -86,7 +90,25 @@ class _StartupHealthHeartbeat:
 
     def set_phase(self, phase: str) -> None:
         with self._lock:
+            self._state = "starting"
             self._phase = str(phase)
+            self._error = ""
+        self._publish()
+
+    def set_ready(self, phase: str, *, actor_id: Optional[int] = None) -> None:
+        with self._lock:
+            self._state = "ready"
+            self._phase = str(phase)
+            self._error = ""
+            if actor_id is not None:
+                self.actor_id = int(actor_id)
+        self._publish()
+
+    def set_error(self, exc: BaseException) -> None:
+        with self._lock:
+            self._state = "error"
+            self._phase = "session-error"
+            self._error = f"{type(exc).__name__}: {exc}"
         self._publish()
 
     def stop(self) -> None:
@@ -588,29 +610,19 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         while not stop.is_set():
             actor_session = None
             session_started_monotonic: Optional[float] = None
-            startup_health: Optional[_StartupHealthHeartbeat] = None
+            startup_health = _StartupHealthHeartbeat(
+                actor_id=(args.actor_id if args.actor_id is not None else -1),
+                env_count=args.envs,
+            )
+            startup_health.start()
+            startup_health.set_ready("waiting-for-central")
             try:
-                write_managed_health(
-                    "ready",
-                    details={
-                        "component": "elastic-wan-actor",
-                        "phase": "waiting-for-central",
-                        "env_count": int(args.envs),
-                    },
-                )
                 raw_session = worker._wait_for_broker(client, stop, args.reconnect_seconds)
                 session_id = raw_session.get("session_id")
                 if not isinstance(session_id, str) or not session_id:
                     raise RuntimeError("Elastic WAN session is missing session_id")
                 _validate_session_release_identity(raw_session, release_identity)
-                write_managed_health(
-                    "starting",
-                    details={
-                        "component": "elastic-wan-actor",
-                        "phase": "claiming-session",
-                        "env_count": int(args.envs),
-                    },
-                )
+                startup_health.set_phase("claiming-session")
                 actor_id = client.claim(session_id)
                 print(f"[Bees WAN actor] learner assigned actor slot {actor_id}.")
                 session, worker_offset, _capacity_envs = _elastic_session(
@@ -618,11 +630,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     actor_id=actor_id,
                     env_count=args.envs,
                 )
-                startup_health = _StartupHealthHeartbeat(
-                    actor_id=actor_id,
-                    env_count=args.envs,
-                )
-                startup_health.start()
+                startup_health.set_ready("session-claimed", actor_id=actor_id)
+                startup_health.set_phase("starting-session")
                 actor_session = elastic_session.ElasticActorSession(
                     client,
                     session,
@@ -640,21 +649,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 actor_session._session_failure_telemetry = failure_telemetry
                 try:
                     actor_session.start()
-                    startup_health.stop()
-                    startup_health = None
-                    write_managed_health(
-                        "ready",
-                        details={
-                            "component": "elastic-wan-actor",
-                            "actor_id": int(actor_id),
-                            "env_count": int(args.envs),
-                        },
-                    )
+                    startup_health.set_ready("running", actor_id=actor_id)
                     session_started_monotonic = time.monotonic()
                     actor_session.run()
                 finally:
-                    if startup_health is not None:
-                        startup_health.stop()
                     actor_session.close()
             except worker.BrokerSessionChanged:
                 reconnect_backoff.reset()
@@ -664,7 +662,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 # The central broker is intentionally absent during release/publish phases.
                 # The actor process is healthy and should remain ready to reconnect rather than
                 # advertising a false child failure to the training-control supervisor.
-                _write_waiting_for_central_health(exc)
+                startup_health.set_ready("waiting-for-central")
                 delay = reconnect_backoff.next_delay()
                 print(
                     f"[Bees WAN actor] central trainer unavailable: {exc}; "
@@ -681,11 +679,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 ):
                     reconnect_backoff.reset()
                 failure_telemetry.record(exc)
-                write_managed_health(
-                    "error",
-                    error=f"{type(exc).__name__}: {exc}",
-                    details={"component": "elastic-wan-actor"},
-                )
+                startup_health.set_error(exc)
                 if actor_session is not None:
                     try:
                         actor_session._write_throughput_metrics(force=True)
@@ -693,6 +687,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         pass
                 _report_session_failure(exc, actor_session)
                 stop.wait(reconnect_backoff.next_delay())
+            finally:
+                startup_health.stop()
         return 0
     finally:
         stop.set()
