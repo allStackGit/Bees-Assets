@@ -12,6 +12,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/netip"
 	"os"
 	"os/signal"
 	"os/exec"
@@ -351,6 +352,44 @@ func parsePort(value string) (int, error) {
 	return port, nil
 }
 
+func validateTailnetBackendStatus(backendState string, ips []netip.Addr, expectedIP string) error {
+	if backendState != "Running" {
+		return fmt.Errorf("tailnet backend state is %q, expected Running", backendState)
+	}
+	expected, err := netip.ParseAddr(expectedIP)
+	if err != nil {
+		return fmt.Errorf("invalid expected tailnet IPv4 %q: %w", expectedIP, err)
+	}
+	for _, candidate := range ips {
+		if candidate == expected {
+			return nil
+		}
+	}
+	return fmt.Errorf(
+		"tailnet backend no longer owns expected IP %s (assigned=%v)",
+		expectedIP,
+		ips,
+	)
+}
+
+func checkGatewayTailnetBackend(ctx context.Context, s *tsnet.Server, expectedIP string) error {
+	client, err := s.LocalClient()
+	if err != nil {
+		return fmt.Errorf("open tsnet local client: %w", err)
+	}
+	statusCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	status, err := client.StatusWithoutPeers(statusCtx)
+	if err != nil {
+		return fmt.Errorf("read tsnet backend status: %w", err)
+	}
+	return validateTailnetBackendStatus(
+		status.BackendState,
+		status.TailscaleIPs,
+		expectedIP,
+	)
+}
+
 func writeGatewayHealth(path, ip4 string, controlPort, brokerPort, bootstrapPort, gameplayPort int) error {
 	if strings.TrimSpace(path) == "" {
 		return nil
@@ -495,11 +534,33 @@ func serveGatewaySession(
 			defer close(healthDone)
 			ticker := time.NewTicker(2 * time.Second)
 			defer ticker.Stop()
+			consecutiveBackendFailures := 0
 			for {
 				select {
 				case <-sessionCtx.Done():
 					return
 				case <-ticker.C:
+					if err := checkGatewayTailnetBackend(sessionCtx, s, ip4); err != nil {
+						consecutiveBackendFailures++
+						log.Printf(
+							"[Bees tailnet] gateway backend health check failed (%d/3): %v",
+							consecutiveBackendFailures,
+							err,
+						)
+						if consecutiveBackendFailures >= 3 {
+							fail(fmt.Errorf(
+								"tailnet backend remained unhealthy across %d checks: %w",
+								consecutiveBackendFailures,
+								err,
+							))
+							return
+						}
+						// Do not refresh the health-file mtime while the embedded Tailscale
+						// backend is unhealthy. This lets the outer operator independently
+						// detect a stale gateway even before the child restart completes.
+						continue
+					}
+					consecutiveBackendFailures = 0
 					if err := writeGatewayHealth(
 						healthFile,
 						ip4,
