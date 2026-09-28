@@ -220,12 +220,14 @@ class ElasticActorSession(worker.ActorSession):
                     self.control_epoch,
                     worker.DEFAULT_STATE_WAIT_SECONDS,
                 )
-                remote_control_epoch = int(state.get("control_epoch", -1))
+                remote_control_epoch = worker._validated_state_epoch(state, "control_epoch")
+                policy_epoch = worker._validated_state_epoch(state, "policy_epoch")
+                topology_epoch = worker._validated_state_epoch(state, "topology_epoch")
                 self._apply_central_throughput(state)
                 changed = (
-                    int(state.get("policy_epoch", -1)) != self.policy_epoch
+                    policy_epoch != self.policy_epoch
                     or remote_control_epoch != self.control_epoch
-                    or int(state.get("topology_epoch", -1)) != self.topology_epoch
+                    or topology_epoch != self.topology_epoch
                 )
                 # Repeated authenticated acknowledgements are also the liveness heartbeat. Do not
                 # acknowledge an epoch the main actor loop has not applied yet.
