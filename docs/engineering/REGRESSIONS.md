@@ -1176,3 +1176,11 @@ Manual-only protection is acceptable only when the record explains why determini
 **Fix:** after ending each episode, drain that agent manager's trajectory queue using the queue's correct empty exception.
 **Permanent protection:** `test_policy_sync_discards_completed_old_policy_trajectories` verifies the completed queue is empty after cleanup.
 **Verification:** static source analysis only. Regression tests were added but not run; no training or runtime checks were performed.
+
+### REG-135 — Oversized control-plane lease crashed the worker supervisor
+**Area:** `Training/bees_training_control.py`, heartbeat response validation
+**Symptom:** a syntactically valid response containing an arbitrarily large integer `lease_seconds` passed decoding, then `float(...)` in the supervisor raised `OverflowError` outside its reconciliation error handling and terminated the worker agent.
+**Root cause:** the decoder checked float finiteness only for values already typed as float; Python integers are unbounded and can overflow when converted to float.
+**Fix:** convert validated numeric lease values inside the decoder, reject conversion overflow/non-finite/non-positive values as `ControlRejected`, and return the normalized finite float.
+**Permanent protection:** documented source invariant; no test was added under the static code-analysis-only request.
+**Verification:** reviewed decoder and heartbeat caller statically. No tests, builds, or runtime checks were run.
