@@ -278,10 +278,30 @@ namespace Assets.Scripts.Levels
             ResetRuntimeState(ConfigData.Socket.HandledRequests);
             PruneServerRequestHistoryForReset();
 
+            ReleasePooledObstacleLayoutForReset();
+
             if (Map != null)
             {
                 Stage.Pool.ReturnMapToPool(Map);
             }
+        }
+
+        private void ReleasePooledObstacleLayoutForReset()
+        {
+            if (!_usesPooledStaticObstaclePrefabs || ObstacleMap == null)
+            {
+                return;
+            }
+
+            StaticObstaclePool obstaclePool = GetStaticObstaclePool();
+            for (int i = 0; i < ObstacleMap.Obstacles.Count; i++)
+            {
+                obstaclePool.ReleaseObstacle(ObstacleMap.Obstacles[i]);
+            }
+            obstaclePool.ReleaseBackground(ObstacleMap.ObstacleBackground);
+            ObstacleMap.Obstacles.Clear();
+            ObstacleMap.ObstacleBackground = null;
+            _usesPooledStaticObstaclePrefabs = false;
         }
 
         private void PruneServerRequestHistoryForReset()
