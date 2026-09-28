@@ -24,6 +24,7 @@ class RobustnessQualificationTests(unittest.TestCase):
             "bees_build_contract_tests.py",
             "bees_release_runtime_tests.py",
             "bees_bootstrap_bundle_tests.py",
+            "bees_tailnet_bootstrap_tests.py",
             "bees_run_lifecycle_tests.py",
             "bees_archive_training_run_tests.py",
             "bees_training_control_tests.py",
