@@ -147,6 +147,7 @@ class ElasticActorHealthTests(unittest.TestCase):
             heartbeat.start()
             heartbeat.set_phase("starting-unity")
             heartbeat.set_ready("running", actor_id=3)
+            heartbeat.mark_progress()
             heartbeat.stop()
 
         self.assertGreaterEqual(health.call_count, 3)
@@ -158,6 +159,14 @@ class ElasticActorHealthTests(unittest.TestCase):
         self.assertEqual(latest.kwargs["details"]["phase"], "running")
         self.assertEqual(latest.kwargs["details"]["actor_id"], 3)
         self.assertEqual(latest.kwargs["details"]["env_count"], 2)
+        self.assertIn("phase_started_unix_seconds", latest.kwargs["details"])
+        self.assertIn("progress_unix_seconds", latest.kwargs["details"])
+
+    def test_running_actor_wires_main_rollout_progress_into_managed_health(self):
+        source = Path(actor_worker.__file__).read_text(encoding="utf-8")
+        base_source = Path(actor_worker.worker.__file__).read_text(encoding="utf-8")
+        self.assertIn("runtime_progress=startup_health.mark_progress", source)
+        self.assertIn("self._report_runtime_progress()", base_source)
 
     def test_actor_marks_broker_wait_as_ready_before_session_polling(self):
         source = Path(actor_worker.__file__).read_text(encoding="utf-8")
