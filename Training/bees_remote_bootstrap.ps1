@@ -143,6 +143,7 @@ $Launcher='__LAUNCHER__'
 $InstallRoot='__INSTALL_ROOT__'
 $TorchDevice='__TORCH_DEVICE__'
 $MonitorPidFile='__PID_FILE__'
+$ControlPort=__CONTROL_PORT__
 $Envs=__ENVS__
 
 $existingPid=0
@@ -180,14 +181,66 @@ function Test-SupervisorAlive {
     }
 }
 
+function Test-TrainerFresh {
+    $tokenPath=Join-Path $InstallRoot 'Secrets\training-worker.token'
+    $actorKeyPath=Join-Path $InstallRoot 'actor-key.txt'
+    if(-not(Test-Path -LiteralPath $tokenPath) -or -not(Test-Path -LiteralPath $actorKeyPath)){return $false}
+    $token=(Get-Content -LiteralPath $tokenPath -Raw -ErrorAction SilentlyContinue).Trim()
+    $actorKey=(Get-Content -LiteralPath $actorKeyPath -Raw -ErrorAction SilentlyContinue).Trim().ToLowerInvariant()
+    if([string]::IsNullOrWhiteSpace($token) -or $actorKey -notmatch '^[0-9a-f]{32}$'){return $false}
+    $trainerId='remote-' + $env:COMPUTERNAME.ToLowerInvariant() + '-' + $actorKey.Substring(0,8)
+
+    $response=$null
+    $reader=$null
+    try {
+        $request=[System.Net.HttpWebRequest]::Create("http://127.0.0.1:$ControlPort/v1/status")
+        $request.Method='GET'
+        $request.Timeout=3000
+        $request.ReadWriteTimeout=3000
+        $request.Headers['Authorization']='Bearer ' + $token
+        $response=$request.GetResponse()
+        if([int]$response.StatusCode -ne 200){return $false}
+        $reader=New-Object IO.StreamReader($response.GetResponseStream())
+        $status=($reader.ReadToEnd() | ConvertFrom-Json)
+        $record=@($status.trainers | Where-Object { [string]$_.trainer_id -eq $trainerId }) | Select-Object -First 1
+        if($null -eq $record -or [bool]$record.stale){return $false}
+        if(
+            [bool]$status.desired.training_enabled -and
+            $null -eq $status.desired.pending_release -and
+            [string]$record.process_state -eq 'stopped' -and
+            ([string]$record.last_error).StartsWith('ControlUnavailable:')
+        ){
+            return $false
+        }
+        return $true
+    } catch {
+        return $false
+    } finally {
+        if($null -ne $reader){try {$reader.Dispose()} catch {}}
+        if($null -ne $response){try {$response.Close()} catch {}}
+    }
+}
+
+function Invoke-LauncherRepair {
+    $command='call "' + $Launcher.Replace('"','""') + '" start -InstallRoot "' +
+        $InstallRoot.Replace('"','""') + '" -TorchDevice "' +
+        $TorchDevice.Replace('"','""') + '"'
+    if($Envs -gt 0){$command+=' -Envs ' + [string]$Envs}
+    try {& $env:COMSPEC /d /c $command *> $null} catch {}
+}
+
+$unhealthyCycles=0
 try {
     while(Test-Path -LiteralPath $Marker){
-        if(-not(Test-SupervisorAlive)){
-            $command='call "' + $Launcher.Replace('"','""') + '" start -InstallRoot "' +
-                $InstallRoot.Replace('"','""') + '" -TorchDevice "' +
-                $TorchDevice.Replace('"','""') + '"'
-            if($Envs -gt 0){$command+=' -Envs ' + [string]$Envs}
-            try {& $env:COMSPEC /d /c $command *> $null} catch {}
+        $healthy=(Test-SupervisorAlive) -and (Test-TrainerFresh)
+        if($healthy){
+            $unhealthyCycles=0
+        }else{
+            $unhealthyCycles++
+            if($unhealthyCycles -ge 3 -or -not(Test-SupervisorAlive)){
+                Invoke-LauncherRepair
+                $unhealthyCycles=0
+            }
         }
         Start-Sleep -Seconds 10
     }
@@ -205,6 +258,7 @@ try {
     $monitorBody=$monitorBody.Replace('__INSTALL_ROOT__',(Escape-PowerShellSingleQuoted $InstallRoot))
     $monitorBody=$monitorBody.Replace('__TORCH_DEVICE__',(Escape-PowerShellSingleQuoted $TorchDevice))
     $monitorBody=$monitorBody.Replace('__PID_FILE__',(Escape-PowerShellSingleQuoted $AutostartMonitorPidFile))
+    $monitorBody=$monitorBody.Replace('__CONTROL_PORT__',[string]$ControlPort)
     $monitorBody=$monitorBody.Replace('__ENVS__',[string]$Envs)
     [IO.File]::WriteAllText($AutostartMonitor,$monitorBody,(New-Object Text.UTF8Encoding($false)))
 
@@ -262,15 +316,362 @@ function Get-LiveSupervisorProcess {
     $process
 }
 
+function Get-LocalTrainerId {
+    $actorKeyPath=Join-Path $InstallRoot 'actor-key.txt'
+    if(-not(Test-Path -LiteralPath $actorKeyPath)){return ''}
+    $actorKey=(Get-Content -LiteralPath $actorKeyPath -Raw -ErrorAction SilentlyContinue).Trim().ToLowerInvariant()
+    if($actorKey.Length -ne 32 -or $actorKey -notmatch '^[0-9a-f]{32}
+function Restart-UnhealthySupervisor {
+    param([System.Diagnostics.Process]$Process)
+
+    Write-Warning (
+        "[Bees remote] supervisor PID $($Process.Id) is alive but authenticated learner control " +
+        "is not healthy; recycling it before bootstrap."
+    )
+    'stop' | Set-Content -LiteralPath $ShutdownRequestFile -NoNewline -Encoding ASCII
+    $deadline=[DateTime]::UtcNow.AddSeconds(20)
+    while([DateTime]::UtcNow -lt $deadline){
+        if($null -eq (Get-Process -Id $Process.Id -ErrorAction SilentlyContinue)){
+            Remove-Item -LiteralPath $SupervisorPidFile,$ShutdownRequestFile -Force -ErrorAction SilentlyContinue
+            Write-Host '[Bees remote] unhealthy supervisor stopped cleanly; continuing bootstrap.'
+            return
+        }
+        Start-Sleep -Milliseconds 250
+    }
+
+    # Dedicated remotes do not own the learner checkpoint. A supervisor that cannot honor its
+    # bounded local stop request must not permanently block repair; killing it closes the
+    # kill-on-close child job and the fresh supervisor will rebuild transport/process state.
+    Write-Warning (
+        "[Bees remote] unhealthy supervisor did not stop cleanly within 20 seconds; " +
+        "forcing the stale remote supervisor to terminate."
+    )
+    Stop-Process -Id $Process.Id -Force -ErrorAction SilentlyContinue
+    try {$Process.WaitForExit(10000)} catch {}
+    if($null -ne (Get-Process -Id $Process.Id -ErrorAction SilentlyContinue)){
+        throw "Could not terminate unhealthy remote supervisor PID $($Process.Id)."
+    }
+    Remove-Item -LiteralPath $SupervisorPidFile,$ShutdownRequestFile -Force -ErrorAction SilentlyContinue
+}
+
+if($Command -eq 'stop'){
+    Remove-RemoteAutostart
+    $process=Get-LiveSupervisorProcess
+    if($null -eq $process){
+        Remove-Item -LiteralPath $SupervisorPidFile,$ShutdownRequestFile -Force -ErrorAction SilentlyContinue
+        Write-Host '[Bees remote] worker is not running.'
+        exit 0
+    }
+
+    'stop' | Set-Content -LiteralPath $ShutdownRequestFile -NoNewline -Encoding ASCII
+    Write-Host "[Bees remote] stop requested for worker PID $($process.Id); waiting for managed cleanup..."
+    $deadline=[DateTime]::UtcNow.AddSeconds(45)
+    while([DateTime]::UtcNow -lt $deadline){
+        if($null -eq (Get-Process -Id $process.Id -ErrorAction SilentlyContinue)){
+            Remove-Item -LiteralPath $SupervisorPidFile,$ShutdownRequestFile -Force -ErrorAction SilentlyContinue
+            Write-Host '[Bees remote] worker stopped.'
+            exit 0
+        }
+        Start-Sleep -Milliseconds 250
+    }
+    throw "Remote worker PID $($process.Id) did not stop within 45 seconds. It was not force-killed."
+}
+
+$existingProcess=Get-LiveSupervisorProcess
+if($null -ne $existingProcess){
+    if(Test-SupervisorControlHealthy){
+        Install-RemoteAutostart
+        Write-Host (
+            "[Bees remote] worker is already running and authenticated learner control is healthy " +
+            "(PID $($existingProcess.Id))."
+        )
+        Write-Host '[Bees remote] use bees-remote-worker.cmd stop to stop it.'
+        exit 0
+    }
+    Restart-UnhealthySupervisor -Process $existingProcess
+}
+Remove-Item -LiteralPath $SupervisorPidFile,$ShutdownRequestFile -Force -ErrorAction SilentlyContinue
+
+Write-Host '[Bees remote] Stage 1/5: preparing local worker files...'
+
+$bundledBridgePath=Join-Path $PSScriptRoot $BundledTailnetBridge
+if(-not(Test-Path -LiteralPath $bundledBridgePath)){
+    throw "Bundled tailnet runtime is missing: $bundledBridgePath. Copy the generated Windows remote bundle files together."
+}
+$bundledBridgeSha=(Get-FileHash -LiteralPath $bundledBridgePath -Algorithm SHA256).Hash.ToLowerInvariant()
+if($bundledBridgeSha -ne $TailnetBridgeSha256){ throw 'Bundled tailnet runtime failed SHA-256 verification.' }
+
+$tailnetBridge=Join-Path $TailnetRoot 'bees-tailnet-bridge.exe'
+$writeBridge=$true
+if(Test-Path -LiteralPath $tailnetBridge){
+    $existing=(Get-FileHash -LiteralPath $tailnetBridge -Algorithm SHA256).Hash.ToLowerInvariant()
+    $writeBridge=$existing -ne $TailnetBridgeSha256
+}
+if($writeBridge){
+    Write-Host '[Bees remote] installing bundled private-network runtime...'
+    Copy-Item -LiteralPath $bundledBridgePath -Destination $tailnetBridge -Force
+}
+$actualBridgeSha=(Get-FileHash -LiteralPath $tailnetBridge -Algorithm SHA256).Hash.ToLowerInvariant()
+if($actualBridgeSha -ne $TailnetBridgeSha256){ throw 'Installed tailnet runtime failed SHA-256 verification.' }
+
+$bootstrapTokenPath=Join-Path $TailnetRoot 'bootstrap.token'
+$BootstrapToken | Set-Content -LiteralPath $bootstrapTokenPath -NoNewline -Encoding ASCII
+$workerHostname=("bees-worker-" + $env:COMPUTERNAME.ToLowerInvariant())
+
+Write-Host '[Bees remote] Stage 2/5: checking private-network identity...'
+Write-Host '[Bees remote] on first use, open the Tailscale login URL printed below; no VPN installation is required.'
+& $tailnetBridge auth --state $TailnetState --hostname $workerHostname
+if($LASTEXITCODE -ne 0){ throw "Embedded tailnet authentication failed with exit code $LASTEXITCODE." }
+
+$runtimeZip=Join-Path $DownloadsRoot 'bees-remote-runtime.zip'
+$workerToken=Join-Path $SecretsRoot 'training-worker.token'
+$wanToken=Join-Path $SecretsRoot 'wan.token'
+Write-Host '[Bees remote] Stage 3/5: fetching the current Bees worker runtime over the private tailnet...'
+$fetchArgs=@(
+    'fetch',
+    '--state',$TailnetState,
+    '--hostname',$workerHostname,
+    '--target',($TailnetLearner + ':' + $TailnetBootstrapPort),
+    '--token-file',$bootstrapTokenPath,
+    '--runtime-out',$runtimeZip,
+    '--worker-token-out',$workerToken,
+    '--wan-token-out',$wanToken
+)
+& $tailnetBridge @fetchArgs
+if($LASTEXITCODE -ne 0){ throw "Private bootstrap fetch failed with exit code $LASTEXITCODE." }
+
+if(Test-Path -LiteralPath $RuntimeRoot){Remove-Item -LiteralPath $RuntimeRoot -Recurse -Force}
+$null=New-Item -ItemType Directory -Force -Path $RuntimeRoot
+Expand-Archive -LiteralPath $runtimeZip -DestinationPath $RuntimeRoot -Force
+
+function Test-Python310 {
+    param(
+        [string]$Exe,
+        [string[]]$Prefix=@()
+    )
+
+    if([string]::IsNullOrWhiteSpace($Exe)){return $false}
+    if(-not(Test-Path -LiteralPath $Exe)){return $false}
+
+    $previousErrorAction=$ErrorActionPreference
+    try {
+        # A failed executable, Microsoft Store alias, or wrong Python version is simply not a
+        # usable Python 3.10 installation. Suppress probe errors and fall through to installation.
+        $ErrorActionPreference='SilentlyContinue'
+        & $Exe @Prefix -c 'import sys; raise SystemExit(0 if sys.version_info[:2] == (3,10) else 1)' *> $null
+        return ($LASTEXITCODE -eq 0)
+    } catch {
+        return $false
+    } finally {
+        $ErrorActionPreference=$previousErrorAction
+    }
+}
+
+function Resolve-PythonLauncher {
+    $py=Resolve-Exe 'py'
+    if($py -and (Test-Python310 $py @('-3.10'))){return @($py,'-3.10')}
+    $python=Resolve-Exe 'python'
+    if($python -and (Test-Python310 $python)){return @($python)}
+    foreach($candidate in @(
+        (Join-Path $env:LOCALAPPDATA 'Programs\Python\Python310\python.exe'),
+        'C:\Program Files\Python310\python.exe'
+    )){
+        if(Test-Python310 $candidate){return @($candidate)}
+    }
+    $winget=Resolve-Exe 'winget'
+    if($winget){
+        Write-Host 'Python 3.10 was not found. Installing it with winget...'
+        $wingetArgs=@(
+            'install',
+            '--id','Python.Python.3.10',
+            '-e',
+            '--source','winget',
+            '--accept-package-agreements',
+            '--accept-source-agreements',
+            '--disable-interactivity',
+            '--silent'
+        )
+        $installProcess=Start-Process -FilePath $winget -ArgumentList $wingetArgs -Wait -PassThru -NoNewWindow
+        if($installProcess.ExitCode -ne 0){
+            throw "winget failed to install Python 3.10 (exit code $($installProcess.ExitCode))."
+        }
+
+        foreach($candidate in @(
+            (Join-Path $env:LOCALAPPDATA 'Programs\Python\Python310\python.exe'),
+            'C:\Program Files\Python310\python.exe'
+        )){
+            if(Test-Python310 $candidate){return @($candidate)}
+        }
+        $py=Resolve-Exe 'py'
+        if($py -and (Test-Python310 $py @('-3.10'))){return @($py,'-3.10')}
+    }
+    throw 'Python 3.10 is required and could not be installed automatically.'
+}
+
+Write-Host '[Bees remote] Stage 4/5: preparing Python 3.10 worker environment...'
+if(-not(Test-Path -LiteralPath (Join-Path $VenvRoot 'Scripts\python.exe'))){
+    # PowerShell unrolls a single-item array returned by a function into a scalar.
+    # Normalize explicitly so StrictMode-safe .Count/indexing works for both
+    # python.exe-only launchers and py.exe + -3.10 launchers.
+    $launcher=@(Resolve-PythonLauncher)
+    $launcherExe=$launcher[0]
+    $launcherArgs=@()
+    if($launcher.Count -gt 1){$launcherArgs=@($launcher[1..($launcher.Count-1)])}
+    Write-Host "Creating remote worker Python environment at $VenvRoot"
+    & $launcherExe @launcherArgs -m venv $VenvRoot
+    if($LASTEXITCODE -ne 0){throw 'Failed to create the Python virtual environment.'}
+}
+
+$venvPython=Join-Path $VenvRoot 'Scripts\python.exe'
+$requirements=Join-Path $RuntimeRoot 'bees_remote_requirements.txt'
+$requirementsHash=(Get-FileHash -Algorithm SHA256 -LiteralPath $requirements).Hash.ToLowerInvariant()
+$requirementsStamp=Join-Path $VenvRoot 'bees-requirements.sha256'
+$currentStamp=if(Test-Path -LiteralPath $requirementsStamp){(Get-Content -LiteralPath $requirementsStamp -Raw).Trim()}else{''}
+
+function Test-RemotePythonDependencies {
+    param([string]$PythonExe)
+
+    $previousErrorAction=$ErrorActionPreference
+    try {
+        # Missing imports are an expected probe result before first-time dependency installation.
+        # Windows PowerShell 5.1 can promote native stderr to a terminating NativeCommandError
+        # under ErrorActionPreference=Stop, so suppress the probe and decide from its exit code.
+        $ErrorActionPreference='SilentlyContinue'
+        & $PythonExe -c "import pkg_resources, mlagents, torch, numpy" *> $null
+        return ($LASTEXITCODE -eq 0)
+    } catch {
+        return $false
+    } finally {
+        $ErrorActionPreference=$previousErrorAction
+    }
+}
+
+$dependenciesOk=Test-RemotePythonDependencies -PythonExe $venvPython
+if($currentStamp -ne $requirementsHash -or -not $dependenciesOk){
+    Write-Host 'Installing/updating remote worker Python dependencies...'
+    & $venvPython -m pip install --upgrade pip
+    if($LASTEXITCODE -ne 0){throw 'pip upgrade failed.'}
+    & $venvPython -m pip install -r $requirements
+    if($LASTEXITCODE -ne 0){throw 'Remote worker dependency installation failed.'}
+    if(-not (Test-RemotePythonDependencies -PythonExe $venvPython)){
+        throw 'Remote Python dependency validation failed after installation.'
+    }
+    $requirementsHash | Set-Content -LiteralPath $requirementsStamp -NoNewline -Encoding ASCII
+}
+
+$worker=Join-Path $RuntimeRoot 'bees_managed_remote_worker.py'
+$effectiveLauncherPath=[string]$env:BEES_REMOTE_LAUNCHER_PATH
+if([string]::IsNullOrWhiteSpace($effectiveLauncherPath)){
+    $effectiveLauncherPath=[string]$env:BEES_SELF
+}
+$workerArgs=@(
+    $worker,
+    '--tailnet-bridge',$tailnetBridge,
+    '--tailnet-state',$TailnetState,
+    '--tailnet-hostname',$workerHostname,
+    '--tailnet-target',$TailnetLearner,
+    '--control-port',[string]$ControlPort,
+    '--bootstrap-port',[string]$TailnetBootstrapPort,
+    '--broker-port',[string]$BrokerPort,
+    '--gameplay-port',[string]$GameplayPort,
+    '--install-root',$InstallRoot,
+    '--runtime-archive',$runtimeZip,
+    '--launcher-path',$effectiveLauncherPath,
+    '--bootstrap-token-file',$bootstrapTokenPath,
+    '--worker-token-file',$workerToken,
+    '--wan-token-file',$wanToken,
+    '--torch-device',$TorchDevice
+)
+if($Envs -gt 0){$workerArgs+=@('--envs',[string]$Envs)}
+if($NoAutostart){$workerArgs+='--no-autostart'}
+
+function Quote-ProcessArgument([string]$Value){
+    if($Value -notmatch '[\s"]'){return $Value}
+    '"' + ($Value.Replace('"','\"')) + '"'
+}
+
+Write-Host ''
+Write-Host '[Bees remote] Stage 5/5: starting managed training worker in the background...'
+if($Envs -gt 0){
+    Write-Host "Starting Bees remote worker with $Envs environments."
+}else{
+    Write-Host 'Starting Bees remote worker with BeesServer environment auto-optimization (CPU-derived start, RAM-capped maximum 64).'
+}
+Remove-Item -LiteralPath $ShutdownRequestFile -Force -ErrorAction SilentlyContinue
+$argumentString=(@('-u') + $workerArgs | ForEach-Object { Quote-ProcessArgument ([string]$_) }) -join ' '
+$startupUtc=[DateTime]::UtcNow
+$process=Start-Process -FilePath $venvPython -ArgumentList $argumentString -WorkingDirectory $InstallRoot -WindowStyle Hidden -RedirectStandardOutput $SupervisorOutLog -RedirectStandardError $SupervisorErrLog -PassThru
+$process.Id | Set-Content -LiteralPath $SupervisorPidFile -NoNewline -Encoding ASCII
+
+function Get-FreshSupervisorTail([string]$Path,[DateTime]$SinceUtc){
+    if(-not(Test-Path -LiteralPath $Path)){return @()}
+    $item=Get-Item -LiteralPath $Path -ErrorAction SilentlyContinue
+    if($null -eq $item -or $item.LastWriteTimeUtc -lt $SinceUtc){return @()}
+    @(Get-Content -LiteralPath $Path -Tail 80 -ErrorAction SilentlyContinue)
+}
+
+$startupDeadline=[DateTime]::UtcNow.AddSeconds(10)
+$startupState='supervisor alive; waiting for first connectivity signal'
+while([DateTime]::UtcNow -lt $startupDeadline){
+    $process.Refresh()
+    if($process.HasExited){
+        Remove-Item -LiteralPath $SupervisorPidFile -Force -ErrorAction SilentlyContinue
+        $outTail=(Get-FreshSupervisorTail $SupervisorOutLog $startupUtc) -join [Environment]::NewLine
+        $errTail=(Get-FreshSupervisorTail $SupervisorErrLog $startupUtc) -join [Environment]::NewLine
+        if($outTail){Write-Host $outTail}
+        if($errTail){Write-Warning $errTail}
+        throw "Remote supervisor exited during background startup with code $($process.ExitCode). Check $SupervisorOutLog and $SupervisorErrLog."
+    }
+
+    $outText=(Get-FreshSupervisorTail $SupervisorOutLog $startupUtc) -join [Environment]::NewLine
+    $errText=(Get-FreshSupervisorTail $SupervisorErrLog $startupUtc) -join [Environment]::NewLine
+    $combined=$outText + [Environment]::NewLine + $errText
+
+    if($combined -match 'status: learner=connected'){
+        $startupState='learner connected and trainer registered'
+        break
+    }
+    if($combined -match 'waiting for matching Training runtime before rollout'){
+        $startupState='learner connected; waiting for matching Training runtime'
+        break
+    }
+    if($combined -match 'private transport ready'){
+        $startupState='private transport ready; trainer startup continuing in background'
+        break
+    }
+    if($combined -match 'private transport failed to reach learner control'){
+        $startupState='supervisor running, but learner private transport is not reachable yet'
+        break
+    }
+    Start-Sleep -Milliseconds 250
+}
+
+Install-RemoteAutostart
+Write-Host "[Bees remote] supervisor started in the background (PID $($process.Id))."
+if($startupState -like '*not reachable*'){
+    Write-Warning "[Bees remote] startup state: $startupState"
+}else{
+    Write-Host "[Bees remote] startup state: $startupState"
+}
+Write-Host "[Bees remote] logs: $SupervisorOutLog and $SupervisorErrLog"
+Write-Host '[Bees remote] close this shell freely; use bees-remote-worker.cmd stop to stop the worker.'
+exit 0
+){return ''}
+    'remote-' + $env:COMPUTERNAME.ToLowerInvariant() + '-' + $actorKey.Substring(0,8)
+}
+
 function Test-SupervisorControlHealthy {
     $tokenPath=Join-Path $SecretsRoot 'training-worker.token'
     if(-not(Test-Path -LiteralPath $tokenPath)){return $false}
     $token=(Get-Content -LiteralPath $tokenPath -Raw -ErrorAction SilentlyContinue).Trim()
     if([string]::IsNullOrWhiteSpace($token)){return $false}
+    $trainerId=Get-LocalTrainerId
+    if([string]::IsNullOrWhiteSpace($trainerId)){return $false}
 
     $uri="http://127.0.0.1:$ControlPort/v1/status"
     for($attempt=1;$attempt -le 3;$attempt++){
         $response=$null
+        $reader=$null
         try {
             $request=[System.Net.HttpWebRequest]::Create($uri)
             $request.Method='GET'
@@ -278,11 +679,25 @@ function Test-SupervisorControlHealthy {
             $request.ReadWriteTimeout=3000
             $request.Headers['Authorization']='Bearer ' + $token
             $response=$request.GetResponse()
-            if([int]$response.StatusCode -eq 200){return $true}
+            if([int]$response.StatusCode -ne 200){throw "status $([int]$response.StatusCode)"}
+            $reader=New-Object IO.StreamReader($response.GetResponseStream())
+            $status=($reader.ReadToEnd() | ConvertFrom-Json)
+            $record=@($status.trainers | Where-Object { [string]$_.trainer_id -eq $trainerId }) | Select-Object -First 1
+            if($null -eq $record){return $false}
+            if([bool]$record.stale){return $false}
+
+            $trainingEnabled=[bool]$status.desired.training_enabled
+            $pendingRelease=$null -ne $status.desired.pending_release
+            $stopped=[string]$record.process_state -eq 'stopped'
+            $controlUnavailable=([string]$record.last_error).StartsWith('ControlUnavailable:')
+            if($trainingEnabled -and -not $pendingRelease -and $stopped -and $controlUnavailable){
+                return $false
+            }
+            return $true
         } catch {
-            # A live supervisor with an unhealthy authenticated control path is not healthy.
-            # Retry briefly to avoid recycling for a single transient learner cutover.
+            # Retry briefly so a single cutover/control hiccup does not recycle a healthy remote.
         } finally {
+            if($null -ne $reader){try {$reader.Dispose()} catch {}}
             if($null -ne $response){try {$response.Close()} catch {}}
         }
         if($attempt -lt 3){Start-Sleep -Milliseconds 500}
