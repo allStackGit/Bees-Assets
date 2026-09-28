@@ -104,7 +104,9 @@ namespace Assets.Scripts.Levels
                 CurrentLevelOptions = (LevelOptions)ConfigData.LevelOptions.Clone();
             }
 
-            if (ConfigData.CurrentGameMode == ConfigData.GameModes.Campaign)
+            // Campaign hides player HUD entries here. Dedicated training shortens the UI list,
+            // so training resets must not index those player-only entries.
+            if (ConfigData.CurrentGameMode == ConfigData.GameModes.Campaign && !Stage.IsTraining)
             {
                 Destroy(Stage.UIElements[2]);
                 Stage.UIElements[3].GetComponent<HorizontalLayoutGroup>().padding.left = 0;
@@ -276,10 +278,30 @@ namespace Assets.Scripts.Levels
             ResetRuntimeState(ConfigData.Socket.HandledRequests);
             PruneServerRequestHistoryForReset();
 
+            ReleasePooledObstacleLayoutForReset();
+
             if (Map != null)
             {
                 Stage.Pool.ReturnMapToPool(Map);
             }
+        }
+
+        private void ReleasePooledObstacleLayoutForReset()
+        {
+            if (!_usesPooledStaticObstaclePrefabs || ObstacleMap == null)
+            {
+                return;
+            }
+
+            StaticObstaclePool obstaclePool = GetStaticObstaclePool();
+            for (int i = 0; i < ObstacleMap.Obstacles.Count; i++)
+            {
+                obstaclePool.ReleaseObstacle(ObstacleMap.Obstacles[i]);
+            }
+            obstaclePool.ReleaseBackground(ObstacleMap.ObstacleBackground);
+            ObstacleMap.Obstacles.Clear();
+            ObstacleMap.ObstacleBackground = null;
+            _usesPooledStaticObstaclePrefabs = false;
         }
 
         private void PruneServerRequestHistoryForReset()
