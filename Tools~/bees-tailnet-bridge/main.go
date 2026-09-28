@@ -279,7 +279,7 @@ func parsePort(value string) (int, error) {
 	return port, nil
 }
 
-func writeGatewayHealth(path, ip4 string, controlPort, brokerPort, bootstrapPort int) error {
+func writeGatewayHealth(path, ip4 string, controlPort, brokerPort, bootstrapPort, gameplayPort int) error {
 	if strings.TrimSpace(path) == "" {
 		return nil
 	}
@@ -289,11 +289,12 @@ func writeGatewayHealth(path, ip4 string, controlPort, brokerPort, bootstrapPort
 	now := time.Now()
 	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
 		payload := fmt.Sprintf(
-			"ready ip=%s control=%d broker=%d bootstrap=%d\n",
+			"ready ip=%s control=%d broker=%d bootstrap=%d gameplay=%d\n",
 			ip4,
 			controlPort,
 			brokerPort,
 			bootstrapPort,
+			gameplayPort,
 		)
 		if err := os.WriteFile(path, []byte(payload), 0o600); err != nil {
 			return err
@@ -308,6 +309,7 @@ func serveGatewaySession(
 	controlPort int,
 	brokerPort int,
 	bootstrapPort int,
+	gameplayPort int,
 	bootstrapBundlePath string,
 	token string,
 	healthFile string,
@@ -338,6 +340,11 @@ func serveGatewaySession(
 		return fmt.Errorf("listen bootstrap: %w", err)
 	}
 	defer bootstrapLn.Close()
+	gameplayLn, err := s.Listen("tcp", fmt.Sprintf(":%d", gameplayPort))
+	if err != nil {
+		return fmt.Errorf("listen gameplay: %w", err)
+	}
+	defer gameplayLn.Close()
 
 	sessionCtx, sessionCancel := context.WithCancel(ctx)
 	defer sessionCancel()
@@ -367,6 +374,13 @@ func serveGatewaySession(
 		"broker",
 		fail,
 	)
+	go proxyListener(
+		sessionCtx,
+		gameplayLn,
+		localDial(fmt.Sprintf("127.0.0.1:%d", gameplayPort)),
+		"gameplay",
+		fail,
+	)
 
 	httpServer := &http.Server{Handler: bootstrapHandler(token, bootstrapBundlePath)}
 	go func() {
@@ -384,6 +398,7 @@ func serveGatewaySession(
 		_ = controlLn.Close()
 		_ = brokerLn.Close()
 		_ = bootstrapLn.Close()
+		_ = gameplayLn.Close()
 	}()
 
 	if strings.TrimSpace(healthFile) != "" {
@@ -400,6 +415,7 @@ func serveGatewaySession(
 			controlPort,
 			brokerPort,
 			bootstrapPort,
+			gameplayPort,
 		); err != nil {
 			return fmt.Errorf("write gateway health: %w", err)
 		}
@@ -418,6 +434,7 @@ func serveGatewaySession(
 						controlPort,
 						brokerPort,
 						bootstrapPort,
+						gameplayPort,
 					); err != nil {
 						fail(fmt.Errorf("refresh gateway health: %w", err))
 						return
@@ -428,8 +445,8 @@ func serveGatewaySession(
 	}
 
 	log.Printf(
-		"[Bees tailnet] gateway online ip=%s control=%d broker=%d bootstrap=%d",
-		ip4, controlPort, brokerPort, bootstrapPort,
+		"[Bees tailnet] gateway online ip=%s control=%d broker=%d bootstrap=%d gameplay=%d",
+		ip4, controlPort, brokerPort, bootstrapPort, gameplayPort,
 	)
 	select {
 	case <-ctx.Done():
@@ -545,6 +562,7 @@ func runGateway(args []string) error {
 	controlPort := fs.Int("control-port", 7150, "tailnet port proxying learner control")
 	brokerPort := fs.Int("broker-port", 55051, "tailnet port proxying WAN broker")
 	bootstrapPort := fs.Int("bootstrap-port", 7151, "tailnet bootstrap port")
+	gameplayPort := fs.Int("gameplay-port", 7146, "tailnet port proxying learner gameplay/settings server")
 	bootstrapBundlePath := fs.String("bootstrap-bundle", "", "atomic remote bootstrap bundle path")
 	bootstrapTokenPath := fs.String("bootstrap-token", "", "bootstrap bearer token file")
 	healthFile := fs.String("health-file", "", "optional gateway liveness heartbeat file")
@@ -552,13 +570,18 @@ func runGateway(args []string) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	for _, port := range []int{*controlPort, *brokerPort, *bootstrapPort} {
+	for _, port := range []int{*controlPort, *brokerPort, *bootstrapPort, *gameplayPort} {
 		if port < 1 || port > 65535 {
 			return errors.New("gateway ports must be in 1-65535")
 		}
 	}
-	if *controlPort == *brokerPort || *controlPort == *bootstrapPort || *brokerPort == *bootstrapPort {
-		return errors.New("control, broker, and bootstrap ports must be distinct")
+	if *controlPort == *brokerPort ||
+		*controlPort == *bootstrapPort ||
+		*controlPort == *gameplayPort ||
+		*brokerPort == *bootstrapPort ||
+		*brokerPort == *gameplayPort ||
+		*bootstrapPort == *gameplayPort {
+		return errors.New("control, broker, bootstrap, and gameplay ports must be distinct")
 	}
 	token, err := loadSecret(*bootstrapTokenPath)
 	if err != nil {
@@ -583,6 +606,7 @@ func runGateway(args []string) error {
 			*controlPort,
 			*brokerPort,
 			*bootstrapPort,
+			*gameplayPort,
 			*bootstrapBundlePath,
 			token,
 			*healthFile,
