@@ -234,15 +234,7 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
             mock.patch.object(managed, "_memory_env_limit", return_value=64),
         ):
             self.assertEqual(managed._cpu_env_start_limit(), 6)
-            self.assertEqual(managed._cpu_env_capacity_limit(), 12)
             self.assertEqual(managed._default_envs(), 6)
-
-    def test_cpu_capacity_respects_actor_capacity_cap(self):
-        with mock.patch.object(managed, "_available_cpu_threads", return_value=64):
-            self.assertEqual(
-                managed._cpu_env_capacity_limit(),
-                managed.MAX_ENVS_PER_ACTOR,
-            )
 
     def test_default_envs_are_capped_by_available_memory(self):
         gib = 1024 * 1024 * 1024
@@ -279,35 +271,27 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
         ):
             self.assertEqual(managed._memory_env_limit(), 1)
             self.assertEqual(managed._default_envs(), 1)
-            self.assertEqual(managed._memory_env_capacity_limit(), 30)
 
         source = Path(managed.__file__).read_text(encoding="utf-8")
-        self.assertIn(
-            "args.max_envs = min(requested_max, memory_capacity_cap, cpu_capacity_cap)",
-            source,
-        )
+        self.assertIn("args.max_envs = requested_max", source)
+        self.assertNotIn("memory_capacity_cap", source)
+        self.assertNotIn("cpu_capacity_cap", source)
 
-    def test_four_thread_high_memory_worker_starts_at_four_and_caps_at_eight(self):
+    def test_four_thread_high_memory_worker_starts_at_four_without_cpu_ceiling(self):
         gib = 1024 * 1024 * 1024
         with (
             mock.patch.object(managed, "_available_cpu_threads", return_value=4),
             mock.patch.object(managed, "_available_memory_bytes", return_value=31 * gib),
-            mock.patch.object(managed, "_total_memory_bytes", return_value=32 * gib),
         ):
             self.assertEqual(managed._memory_env_limit(), 60)
-            self.assertEqual(managed._memory_env_capacity_limit(), 62)
             self.assertEqual(managed._cpu_env_start_limit(), 4)
-            self.assertEqual(managed._cpu_env_capacity_limit(), 8)
             self.assertEqual(managed._default_envs(), 4)
 
-    def test_auto_capacity_source_combines_cpu_and_memory_caps(self):
         source = Path(managed.__file__).read_text(encoding="utf-8")
-        self.assertIn(
-            "args.max_envs = min(requested_max, memory_capacity_cap, cpu_capacity_cap)",
-            source,
-        )
-        self.assertIn("cpu_threads={cpu_threads}", source)
-        self.assertIn("cpu_capacity_cap={cpu_capacity_cap}", source)
+        self.assertIn("args.max_envs = requested_max", source)
+        self.assertIn("cpu_start_cap={cpu_start_cap}", source)
+        self.assertNotIn("REMOTE_CPU_MAX_ENVS_PER_THREAD", source)
+        self.assertNotIn("cpu_capacity_cap", source)
 
     def test_atomic_text_publication_retries_transient_sharing_failure(self):
         with tempfile.TemporaryDirectory() as temp:
