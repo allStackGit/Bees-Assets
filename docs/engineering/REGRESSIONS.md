@@ -1151,3 +1151,11 @@ Manual-only protection is acceptable only when the record explains why determini
 **Fix:** accept `starting` only while the token-authenticated child health timestamp is fresh, fail closed when that timestamp goes stale, and periodically publish startup health with the current startup phase until the actor is ready.
 **Permanent protection:** static regression cases cover fresh versus stale `starting` health, continued supervisor `starting` state after the launch grace, periodic phase refresh, and a ready state while waiting for the central broker.
 **Verification:** source-flow review only. Regression tests were added but not run, and no runtime checks were performed.
+
+### REG-132 — Tooltip kept a stale dialogue-manager reference
+**Area:** `Scripts/UI Components/Tooltip.cs`, `KeepBelowActiveDialogue`
+**Symptom:** A tooltip that survived a scene UI transition could remain above a newly active dialogue box after its original sibling dialogue manager was disabled.
+**Root cause:** The tooltip cached the first sibling `DialogueManager`. When that component became inactive, the method returned before clearing the stale reference or searching for an active replacement.
+**Fix:** Invalidate cached managers that are disabled or no longer share the tooltip's parent, then resolve only active sibling managers.
+**Permanent protection:** `TutorialUiPolishContractTests.TooltipTracksReplacementDialogueManagerAfterCachedManagerIsDisabled` exercises the stale-to-replacement transition and verifies the tooltip moves below the active manager.
+**Verification:** Static review confirms the test first invokes the method to populate the old cache, disables that manager, adds an active replacement, and checks sibling ordering. The regression test was not run; no builds or runtime checks were performed.
