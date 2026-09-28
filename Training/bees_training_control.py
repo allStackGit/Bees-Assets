@@ -235,6 +235,10 @@ class TrainingControlClient:
                         expected,
                         digest if isinstance(digest, str) else "",
                     ) from exc
+            if exc.code in (408, 425, 429) or exc.code >= 500:
+                raise ControlUnavailable(
+                    f"training-control HTTP {exc.code}: {raw}"
+                ) from exc
             raise ControlRejected(
                 f"training log upload failed: HTTP {exc.code}: {raw}"
             ) from exc
@@ -305,6 +309,10 @@ class TrainingControlClient:
                     os.fsync(output.fileno())
         except urllib.error.HTTPError as exc:
             raw = exc.read().decode("utf-8", errors="replace")
+            if exc.code in (408, 425, 429) or exc.code >= 500:
+                raise ControlUnavailable(
+                    f"training-control HTTP {exc.code}: {raw}"
+                ) from exc
             raise ControlRejected(
                 f"training-control artifact download failed: HTTP {exc.code}: {raw}"
             ) from exc
