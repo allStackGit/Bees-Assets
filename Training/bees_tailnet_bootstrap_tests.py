@@ -222,6 +222,10 @@ class TailnetBootstrapSourceTests(unittest.TestCase):
     def test_tailnet_bootstrap_fetch_bounds_header_wait_and_reports_progress(self):
         source = TAILNET_MAIN.read_text(encoding="utf-8")
         self.assertIn("ResponseHeaderTimeout: 20 * time.Second", source)
+        self.assertIn("context.WithTimeout(ctx, 15*time.Second)", source)
+        self.assertIn("idle: 30 * time.Second", source)
+        self.assertIn("SetReadDeadline", source)
+        self.assertIn("SetWriteDeadline", source)
         self.assertIn("bootstrap request attempt %d/3...", source)
         self.assertIn("bootstrap response ready; downloading", source)
         self.assertIn("bootstrap download progress", source)
