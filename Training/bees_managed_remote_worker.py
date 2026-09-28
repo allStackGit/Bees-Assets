@@ -39,6 +39,8 @@ DEFAULT_GAMEPLAY_PORT = 7146
 TRAINING_GAMEPLAY_HOST_ENV = "BEES_TRAINING_GAMEPLAY_HOST"
 TRAINING_GAMEPLAY_PORT_ENV = "BEES_TRAINING_GAMEPLAY_PORT"
 MAX_ENVS_PER_ACTOR = 64
+REMOTE_CPU_START_ENVS_PER_THREAD = 1
+REMOTE_CPU_MAX_ENVS_PER_THREAD = 2
 REMOTE_MEMORY_RESERVE_BYTES = 1 * 1024 * 1024 * 1024
 REMOTE_MEMORY_PER_ENV_BYTES = 512 * 1024 * 1024
 REMOTE_PID_FILE = "remote-worker.pid"
@@ -286,9 +288,30 @@ def _memory_env_capacity_limit() -> int:
     return _memory_limit_for_bytes(_total_memory_bytes())
 
 
+def _cpu_env_start_limit() -> int:
+    """Conservative startup count so auto mode cannot saturate a small CPU immediately."""
+    return max(
+        1,
+        min(
+            MAX_ENVS_PER_ACTOR,
+            REMOTE_CPU_START_ENVS_PER_THREAD * _available_cpu_threads(),
+        ),
+    )
+
+
+def _cpu_env_capacity_limit() -> int:
+    """Hard optimizer ceiling derived from available logical CPU threads."""
+    return max(
+        1,
+        min(
+            MAX_ENVS_PER_ACTOR,
+            REMOTE_CPU_MAX_ENVS_PER_THREAD * _available_cpu_threads(),
+        ),
+    )
+
+
 def _default_envs() -> int:
-    cpu_limit = 4 * _available_cpu_threads()
-    return min(MAX_ENVS_PER_ACTOR, cpu_limit, _memory_env_limit())
+    return min(MAX_ENVS_PER_ACTOR, _cpu_env_start_limit(), _memory_env_limit())
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -324,7 +347,7 @@ def _parser() -> argparse.ArgumentParser:
         "--max-envs",
         type=int,
         default=None,
-        help="Maximum environment count for automatic tuning (default RAM-derived cap, at most 64).",
+        help="Maximum environment count for automatic tuning (default CPU/RAM-derived cap, at most 64).",
     )
     parser.add_argument(
         "--gameplay-port",
@@ -1314,27 +1337,37 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     args = _parser().parse_args(raw_argv)
     memory_start_cap = _memory_env_limit()
     memory_capacity_cap = _memory_env_capacity_limit()
+    cpu_threads = _available_cpu_threads()
+    cpu_start_cap = min(
+        MAX_ENVS_PER_ACTOR,
+        REMOTE_CPU_START_ENVS_PER_THREAD * cpu_threads,
+    )
+    cpu_capacity_cap = min(
+        MAX_ENVS_PER_ACTOR,
+        REMOTE_CPU_MAX_ENVS_PER_THREAD * cpu_threads,
+    )
     if args.envs is None:
         args.auto_envs = True
         requested_max = MAX_ENVS_PER_ACTOR if args.max_envs is None else args.max_envs
         if not 1 <= args.min_envs <= requested_max <= MAX_ENVS_PER_ACTOR:
             print("error: automatic env bounds must satisfy 1 <= min <= max <= 64", file=sys.stderr)
             return 2
-        # Free RAM is intentionally only a startup throttle. The advertised ceiling must
-        # reflect stable machine capacity so a transient low-memory moment cannot pin the
-        # server optimizer to one environment for the lifetime of this supervisor.
-        args.max_envs = min(requested_max, memory_capacity_cap)
+        # Free RAM is intentionally only a startup throttle. Auto mode advertises a stable
+        # hardware ceiling using both installed memory and logical CPU threads so the server
+        # optimizer cannot probe a small CPU into an unusable load merely because RAM is ample.
+        args.max_envs = min(requested_max, memory_capacity_cap, cpu_capacity_cap)
         if args.min_envs > args.max_envs:
             print(
-                f"error: --min-envs={args.min_envs} exceeds the RAM-derived cap "
-                f"of {args.max_envs}",
+                f"error: --min-envs={args.min_envs} exceeds the hardware-derived cap "
+                f"of {args.max_envs} (cpu={cpu_capacity_cap}, ram={memory_capacity_cap})",
                 file=sys.stderr,
             )
             return 2
         args.envs = max(args.min_envs, min(_default_envs(), args.max_envs))
         print(
             f"[Bees remote] --envs omitted; auto optimizer enabled at {args.envs} envs "
-            f"(range={args.min_envs}-{args.max_envs} cpu_start={4 * _available_cpu_threads()} "
+            f"(range={args.min_envs}-{args.max_envs} cpu_threads={cpu_threads} "
+            f"cpu_start_cap={cpu_start_cap} cpu_capacity_cap={cpu_capacity_cap} "
             f"memory_start_cap={memory_start_cap} memory_capacity_cap={memory_capacity_cap} "
             f"hard_cap={MAX_ENVS_PER_ACTOR})."
         )
