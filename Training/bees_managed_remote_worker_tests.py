@@ -424,6 +424,41 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
             self.assertEqual(preserved, venv_python.absolute())
             self.assertNotEqual(preserved, venv_python.resolve())
 
+    def test_windows_runtime_handoff_preserves_spaced_paths_as_argv(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "Seagrams Crown" / "BeesTraining"
+            python_executable = root / ".venv" / "Scripts" / "python.exe"
+            script = root / "RuntimeVersions" / ("a" * 64) / "bees_managed_remote_worker.py"
+            working_directory = root
+            process = mock.Mock()
+            process.pid = 8123
+            process.poll.return_value = None
+
+            with (
+                mock.patch.object(managed.os, "name", "nt"),
+                mock.patch.object(managed.os, "execv") as execv,
+                mock.patch.object(managed.subprocess, "Popen", return_value=process) as popen,
+                mock.patch.object(managed.time, "sleep"),
+            ):
+                returned = managed._activate_staged_runtime(
+                    python_executable,
+                    script,
+                    ["--install-root", str(root)],
+                    working_directory=working_directory,
+                )
+
+            self.assertIs(returned, process)
+            execv.assert_not_called()
+            command = popen.call_args.args[0]
+            self.assertEqual(command[0], str(python_executable.absolute()))
+            self.assertEqual(command[1], str(script))
+            self.assertEqual(command[2:], ["--install-root", str(root)])
+            self.assertEqual(
+                popen.call_args.kwargs["cwd"],
+                str(working_directory),
+            )
+            self.assertTrue(popen.call_args.kwargs["close_fds"])
+
     def test_remote_dependency_health_check_requires_successful_imports(self):
         completed = mock.Mock(returncode=0)
         with mock.patch.object(managed.subprocess, "run", return_value=completed) as run:
