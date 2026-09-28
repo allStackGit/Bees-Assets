@@ -137,16 +137,20 @@ def _start_logged_process(
     *,
     environment: Optional[Mapping[str, str]] = None,
 ) -> tuple[subprocess.Popen, threading.Thread]:
+    popen_kwargs = {
+        "env": None if environment is None else dict(environment),
+        "stdout": subprocess.PIPE,
+        "stderr": subprocess.STDOUT,
+        "text": True,
+        "encoding": "utf-8",
+        "errors": "replace",
+        "bufsize": 1,
+    }
+    if os.name != "nt":
+        popen_kwargs["start_new_session"] = True
     process = popen_owned(
         list(command),
-        env=None if environment is None else dict(environment),
-        start_new_session=(os.name != "nt"),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        bufsize=1,
+        **popen_kwargs,
     )
     thread = threading.Thread(
         target=_forward_process_output,
