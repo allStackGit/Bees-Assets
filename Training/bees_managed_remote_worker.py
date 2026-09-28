@@ -32,7 +32,7 @@ import urllib.request
 import uuid
 import zipfile
 
-from bees_process_safety import popen_owned
+from bees_process_safety import close_windows_owned_child_job, popen_owned
 
 
 DEFAULT_RECONNECT_SECONDS = 5.0
@@ -49,6 +49,10 @@ REMOTE_WORKER_AGENT_STOP_REQUEST_FILE = "worker-agent-stop.request"
 MAX_RETAINED_RUNTIME_VERSIONS = 4
 MAX_RETAINED_VENV_VERSIONS = 4
 RUN_ID_PATTERN = re.compile(r"^[A-Za-z0-9._-]+$")
+
+
+class _SupervisorProcessRestartRequired(RuntimeError):
+    """The current process must exit before recovery to avoid overlapping owned state."""
 
 
 class _RunScopedLogSink:
@@ -817,8 +821,9 @@ class RuntimeUpdater:
         if self._started:
             self._thread.join(timeout=12.0)
             if self._thread.is_alive():
-                raise RuntimeError(
-                    "runtime updater did not stop within 12 seconds; refusing unsafe cutover"
+                raise _SupervisorProcessRestartRequired(
+                    "runtime updater did not stop within 12 seconds; "
+                    "replacing the supervisor process"
                 )
 
     def alive(self) -> bool:
@@ -1963,7 +1968,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 if worker_log_thread is not None:
                     worker_log_thread.join(timeout=1.0)
                 if termination_errors:
-                    raise RuntimeError(
+                    raise _SupervisorProcessRestartRequired(
                         "remote supervisor cleanup could not confirm child shutdown: " +
                         "; ".join(termination_errors)
                     )
@@ -2016,12 +2021,49 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         sys.stderr = original_stderr
 
 
+def _spawn_clean_supervisor_replacement() -> subprocess.Popen:
+    command = [
+        sys.executable,
+        str(Path(__file__).resolve()),
+        *[str(value) for value in sys.argv[1:]],
+    ]
+    kwargs: dict[str, object] = {
+        "stdin": subprocess.DEVNULL,
+        "stdout": sys.stdout,
+        "stderr": sys.stderr,
+        "close_fds": True,
+    }
+    if os.name == "nt":
+        # Managed children live in this supervisor's kill-on-close job. Close it before
+        # spawning the replacement so old children die and the replacement is not inherited
+        # into a job that is about to be torn down.
+        close_windows_owned_child_job()
+        kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    else:
+        kwargs["start_new_session"] = True
+    return subprocess.Popen(command, **kwargs)
+
+
 def _run_with_crash_recovery() -> int:
     while True:
         try:
             return main()
         except KeyboardInterrupt:
             return 130
+        except _SupervisorProcessRestartRequired as exc:
+            print(
+                "[Bees remote] supervisor requires a clean process replacement: "
+                f"{exc}",
+                file=sys.stderr,
+                flush=True,
+            )
+            replacement = _spawn_clean_supervisor_replacement()
+            print(
+                f"[Bees remote] replacement supervisor started (PID {replacement.pid}).",
+                file=sys.stderr,
+                flush=True,
+            )
+            return 0
         except Exception as exc:
             print(
                 "[Bees remote] supervisor encountered an unexpected runtime failure: "
