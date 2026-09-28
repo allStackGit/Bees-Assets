@@ -4,6 +4,7 @@ import json
 import os
 import signal
 import tempfile
+import time
 import unittest
 from unittest import mock
 import zipfile
@@ -662,6 +663,39 @@ class TrainingControlClientTests(unittest.TestCase):
                 b"old-data",
             )
             self.assertNotIn(("worker-a", "run-new", "Player-0.log"), client.files)
+
+    def test_log_finalization_keeps_lease_alive_during_blocked_upload(self):
+        class SlowUploadClient:
+            def upload_log_chunk(
+                self,
+                *,
+                trainer_id,
+                run_id,
+                relative_path,
+                offset,
+                data,
+                reset=False,
+            ):
+                time.sleep(0.05)
+                return offset + len(data)
+
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            run = root / "run"
+            run.mkdir()
+            (run / "Player-0.log").write_bytes(b"log-data")
+            uploader = agent.TrainingLogUploader(root)
+            uploader.FINALIZE_KEEPALIVE_SECONDS = 0.01
+            progress = mock.Mock()
+
+            uploader.flush_all(
+                SlowUploadClient(),
+                trainer_id="worker-a",
+                run_id="run",
+                progress_callback=progress,
+            )
+
+            self.assertGreaterEqual(progress.call_count, 2)
 
     def test_training_log_uploader_caps_each_uploaded_file(self):
         class UploadClient:
