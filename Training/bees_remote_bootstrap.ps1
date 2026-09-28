@@ -320,7 +320,54 @@ function Get-LocalTrainerId {
     $actorKeyPath=Join-Path $InstallRoot 'actor-key.txt'
     if(-not(Test-Path -LiteralPath $actorKeyPath)){return ''}
     $actorKey=(Get-Content -LiteralPath $actorKeyPath -Raw -ErrorAction SilentlyContinue).Trim().ToLowerInvariant()
-    if($actorKey.Length -ne 32 -or $actorKey -notmatch '^[0-9a-f]{32}
+    if($actorKey.Length -ne 32 -or $actorKey -notmatch '^[0-9a-f]{32}$'){return ''}
+    'remote-' + $env:COMPUTERNAME.ToLowerInvariant() + '-' + $actorKey.Substring(0,8)
+}
+
+function Test-SupervisorControlHealthy {
+    $tokenPath=Join-Path $SecretsRoot 'training-worker.token'
+    if(-not(Test-Path -LiteralPath $tokenPath)){return $false}
+    $token=(Get-Content -LiteralPath $tokenPath -Raw -ErrorAction SilentlyContinue).Trim()
+    if([string]::IsNullOrWhiteSpace($token)){return $false}
+    $trainerId=Get-LocalTrainerId
+    if([string]::IsNullOrWhiteSpace($trainerId)){return $false}
+
+    $uri="http://127.0.0.1:$ControlPort/v1/status"
+    for($attempt=1;$attempt -le 3;$attempt++){
+        $response=$null
+        $reader=$null
+        try {
+            $request=[System.Net.HttpWebRequest]::Create($uri)
+            $request.Method='GET'
+            $request.Timeout=3000
+            $request.ReadWriteTimeout=3000
+            $request.Headers['Authorization']='Bearer ' + $token
+            $response=$request.GetResponse()
+            if([int]$response.StatusCode -ne 200){throw "status $([int]$response.StatusCode)"}
+            $reader=New-Object IO.StreamReader($response.GetResponseStream())
+            $status=($reader.ReadToEnd() | ConvertFrom-Json)
+            $record=@($status.trainers | Where-Object { [string]$_.trainer_id -eq $trainerId }) | Select-Object -First 1
+            if($null -eq $record){return $false}
+            if([bool]$record.stale){return $false}
+
+            $trainingEnabled=[bool]$status.desired.training_enabled
+            $pendingRelease=$null -ne $status.desired.pending_release
+            $stopped=[string]$record.process_state -eq 'stopped'
+            $controlUnavailable=([string]$record.last_error).StartsWith('ControlUnavailable:')
+            if($trainingEnabled -and -not $pendingRelease -and $stopped -and $controlUnavailable){
+                return $false
+            }
+            return $true
+        } catch {
+            # Retry briefly so a single cutover/control hiccup does not recycle a healthy remote.
+        } finally {
+            if($null -ne $reader){try {$reader.Dispose()} catch {}}
+            if($null -ne $response){try {$response.Close()} catch {}}
+        }
+        if($attempt -lt 3){Start-Sleep -Milliseconds 500}
+    }
+    return $false
+}
 function Restart-UnhealthySupervisor {
     param([System.Diagnostics.Process]$Process)
 
