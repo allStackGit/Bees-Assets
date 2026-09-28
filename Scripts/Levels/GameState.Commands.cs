@@ -136,6 +136,41 @@ namespace Assets.Scripts.Levels
             return true;
         }
 
+        public bool EnterInitialNetworkReplicaMode()
+        {
+            MatchSession matchSession = Stage != null ? Stage.MatchSession : null;
+            if (matchSession == null ||
+                matchSession.IsLocalAuthority ||
+                matchSession.Phase != MatchSessionPhase.Battle)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < Squads.Count; i++)
+            {
+                Squad squad = Squads[i];
+                if (squad == null ||
+                    squad.IsDead ||
+                    !squad.EnterNetworkReplicaMode())
+                {
+                    return false;
+                }
+            }
+
+            for (int i = 0; i < Ships.Count; i++)
+            {
+                Ship ship = Ships[i];
+                if (ship == null ||
+                    ship.IsDead ||
+                    !ship.EnterNetworkReplicaMode())
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
         public bool QueueReceivedBattleStateSnapshot(
             int sourcePeerId,
             BattleStateSnapshot snapshot)

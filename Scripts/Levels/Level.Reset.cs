@@ -172,6 +172,14 @@ namespace Assets.Scripts.Levels
             }
             SetupMapAndCamera();
             SetupShips();
+            if (Stage.MatchSession != null &&
+                Stage.MatchSession.HasRemotePeer &&
+                !Stage.MatchSession.IsLocalAuthority &&
+                !State.EnterInitialNetworkReplicaMode())
+            {
+                throw new InvalidOperationException(
+                    "Could not convert the initial multiplayer client world to replica mode.");
+            }
             if (!Stage.IsTraining)
             {
                 MakeSaveLevel();
