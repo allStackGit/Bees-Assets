@@ -34,6 +34,32 @@ class EpisodeLogMetricsTests(unittest.TestCase):
         self.assertEqual(snapshot["last_episode"], 1)
 
 
+    def test_malformed_or_non_finite_episode_duration_is_ignored(self):
+        valid = (
+            "RL 1v1 episode=2 timeout=False duration=10s "
+            "bee_tsv=100->0 human_tsv=100->0 "
+            "bee_fire_requests=1 bee_shots=1 bee_hits=1 bee_damage=1 "
+            "human_fire_requests=0 human_shots=0 human_hits=0 human_damage=0"
+        )
+        malformed = valid.replace("episode=2", "episode=1").replace(
+            "duration=10s", "duration=1..2s"
+        )
+        non_finite = valid.replace("episode=2", "episode=3").replace(
+            "duration=10s", "duration=" + ("9" * 400) + "s"
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            log_path = Path(directory) / "Player-0.log"
+            log_path.write_text(
+                malformed + "\\n" + non_finite + "\\n" + valid + "\\n",
+                encoding="utf-8",
+            )
+            snapshot = worker.EpisodeLogMetrics(Path(directory)).refresh()
+
+        self.assertEqual(snapshot["window_episodes"], 1)
+        self.assertEqual(snapshot["last_episode"], 2)
+        self.assertEqual(snapshot["avg_duration_s"], 10.0)
+
 class BackgroundBuildPreparerTests(unittest.TestCase):
     def test_retry_clears_stale_prepared_marker(self):
         preparer = worker.BackgroundBuildPreparer.__new__(worker.BackgroundBuildPreparer)
