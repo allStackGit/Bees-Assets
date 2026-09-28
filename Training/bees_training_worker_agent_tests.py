@@ -51,7 +51,7 @@ class EpisodeLogMetricsTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             log_path = Path(directory) / "Player-0.log"
             log_path.write_text(
-                malformed + "\\n" + non_finite + "\\n" + valid + "\\n",
+                malformed + "\n" + non_finite + "\n" + valid + "\n",
                 encoding="utf-8",
             )
             snapshot = worker.EpisodeLogMetrics(Path(directory)).refresh()
