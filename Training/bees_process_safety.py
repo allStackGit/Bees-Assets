@@ -160,6 +160,7 @@ def _owned_child_main(argv: Sequence[str]) -> int:
     child: Optional[subprocess.Popen] = None
     termination_started: Optional[float] = None
     child_group_kill_sent = False
+    interrupt_requested = False
 
     def signal_child_group(signal_number: int) -> None:
         if child is None:
@@ -175,9 +176,17 @@ def _owned_child_main(argv: Sequence[str]) -> int:
             termination_started = time.monotonic()
             signal_child_group(signal.SIGTERM)
 
+    def owner_interrupted(_signum, _frame) -> None:
+        nonlocal interrupt_requested
+        if child is None:
+            interrupt_requested = True
+            return
+        signal_child_group(signal.SIGINT)
+
     # Keep this process as the owner guardian instead of execing the learner. The learner runs in
     # its own process group so its ML-Agents environment workers can be stopped as one unit.
     signal.signal(signal.SIGTERM, owner_terminated)
+    signal.signal(signal.SIGINT, owner_interrupted)
 
     libc = ctypes.CDLL(None, use_errno=True)
     pr_set_pdeathsig = 1
@@ -195,6 +204,8 @@ def _owned_child_main(argv: Sequence[str]) -> int:
     )
     if termination_started is not None:
         signal_child_group(signal.SIGTERM)
+    if interrupt_requested:
+        signal_child_group(signal.SIGINT)
 
     while True:
         try:
