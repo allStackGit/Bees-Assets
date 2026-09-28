@@ -280,6 +280,67 @@ class TrainingControlClientTests(unittest.TestCase):
                 self.assertEqual(managed.state("dedicated"), "starting")
                 self.assertEqual(managed.health_error(), "trainer failed to initialize")
 
+    def test_child_health_distinguishes_heartbeat_from_real_rollout_progress(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            health_path = root / "child-health.json"
+            process = mock.Mock()
+            process.poll.return_value = None
+
+            managed = agent.ManagedProcess()
+            managed.process = process
+            managed.health_required = True
+            managed.health_file = health_path
+            managed.health_token = "health-token"
+            managed.started_monotonic = agent.time.monotonic()
+
+            health_path.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "token": "health-token",
+                        "state": "starting",
+                        "error": "",
+                        "updated_unix_seconds": 2000.0,
+                        "pid": 123,
+                        "details": {
+                            "phase": "starting-unity",
+                            "phase_started_unix_seconds": 1800.0,
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with mock.patch.object(agent.time, "time", return_value=2000.0):
+                self.assertIn(
+                    "made no phase progress",
+                    managed.health_error(),
+                )
+
+            health_path.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "token": "health-token",
+                        "state": "ready",
+                        "error": "",
+                        "updated_unix_seconds": 3000.0,
+                        "pid": 123,
+                        "details": {
+                            "phase": "running",
+                            "phase_started_unix_seconds": 2500.0,
+                            "progress_unix_seconds": 2800.0,
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with mock.patch.object(agent.time, "time", return_value=3000.0):
+                self.assertIn(
+                    "rollout has made no progress",
+                    managed.health_error(),
+                )
+
     def test_managed_process_uses_separate_posix_process_group_and_stops_tree(self):
         fake = mock.Mock()
         fake.pid = 4242
