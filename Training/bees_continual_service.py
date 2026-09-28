@@ -29,7 +29,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Dict, Mapping, Optional, Sequence
 
-from bees_process_safety import popen_owned, write_managed_health
+from bees_process_safety import (
+    OWNED_CHILD_TERMINATION_GRACE_SECONDS,
+    popen_owned,
+    write_managed_health,
+)
 
 
 SERVICE_SCHEMA_VERSION = 2
@@ -39,7 +43,7 @@ DEFAULT_NUM_ENVS = 4
 DEFAULT_RETRY_SECONDS = 30.0
 MANAGED_STOP_FILE_ENV = "BEES_TRAINING_STOP_FILE"
 MANAGED_CHILD_POLL_SECONDS = 0.25
-MANAGED_INTERRUPTIBLE_STOP_SECONDS = 5.0
+MANAGED_INTERRUPTIBLE_STOP_SECONDS = OWNED_CHILD_TERMINATION_GRACE_SECONDS + 5.0
 PLATFORM_BUILD_TARGETS = {
     "WindowsPlayer": "StandaloneWindows64",
     "OSXPlayer": "StandaloneOSX",
