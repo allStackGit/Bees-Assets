@@ -194,6 +194,8 @@ class TailnetBootstrapSourceTests(unittest.TestCase):
         self.assertIn("Remove-RemoteAutostart", windows)
         self.assertIn("GetFolderPath('Startup')", windows)
         self.assertIn("BEES_REMOTE_LAUNCHER_PATH", windows)
+        self.assertIn("$effectiveLauncherPath=[string]$env:BEES_REMOTE_LAUNCHER_PATH", windows)
+        self.assertIn("$effectiveLauncherPath=[string]$env:BEES_SELF", windows)
         self.assertIn("[switch]$NoAutostart", windows)
         self.assertIn("bees-remote-monitor.ps1", windows)
         self.assertIn("remote-autostart.enabled", windows)
