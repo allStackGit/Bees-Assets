@@ -349,6 +349,41 @@ test('unexplained stopped heartbeat is instability even when brief', () => {
     assert.match(state.last_instability_reason, /worker process state stopped/);
 });
 
+test('planned stopping heartbeat during reconciliation is not instability', () => {
+    const optimizer = new TrainingEnvOptimizer({
+        warmupMs: 0,
+        measurementMs: 1_000_000,
+        cooldownMs: 0,
+        instabilityHoldMs: 10_000,
+    });
+
+    const state = update(optimizer, 'remote-a', 8, 100, 1000, {
+        max: 16,
+        processState: 'stopping',
+        reconciliationPhase: 'launching managed actor',
+    });
+
+    assert.notEqual(state.phase, 'stability-hold');
+    assert.equal(state.stability_hold_until_ms, 0);
+});
+
+test('unexplained stopping heartbeat remains immediate instability', () => {
+    const optimizer = new TrainingEnvOptimizer({
+        warmupMs: 0,
+        measurementMs: 1_000_000,
+        cooldownMs: 0,
+        instabilityHoldMs: 10_000,
+    });
+
+    const state = update(optimizer, 'remote-a', 8, 100, 1000, {
+        max: 16,
+        processState: 'stopping',
+    });
+
+    assert.equal(state.phase, 'stability-hold');
+    assert.match(state.last_instability_reason, /worker process state stopping/);
+});
+
 test('active reconciliation keeps planned stopped worker out of stability hold', () => {
     const optimizer = new TrainingEnvOptimizer({
         warmupMs: 0,
