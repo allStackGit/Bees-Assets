@@ -137,8 +137,6 @@ if [[ -n "$PID" ]] && pid_is_supervisor "$PID"; then
     echo "[Bees remote] use 'bash bees-remote-worker.sh stop' to stop it."
     exit 0
 fi
-rm -f "$SUPERVISOR_PID_FILE" "$SHUTDOWN_REQUEST_FILE"
-
 sudo_cmd() {
     if [[ "$(id -u)" -eq 0 ]]; then
         "$@"
@@ -153,29 +151,48 @@ sudo_cmd() {
 install_system_tools() {
     if have apt-get; then
         sudo_cmd apt-get update
-        sudo_cmd apt-get install -y curl ca-certificates coreutils
+        sudo_cmd apt-get install -y curl ca-certificates coreutils util-linux
     elif have dnf; then
-        sudo_cmd dnf install -y curl ca-certificates coreutils
+        sudo_cmd dnf install -y curl ca-certificates coreutils util-linux
     elif have yum; then
-        sudo_cmd yum install -y curl ca-certificates coreutils
+        sudo_cmd yum install -y curl ca-certificates coreutils util-linux
     elif have zypper; then
-        sudo_cmd zypper --non-interactive install curl ca-certificates coreutils
+        sudo_cmd zypper --non-interactive install curl ca-certificates coreutils util-linux
     elif have pacman; then
-        sudo_cmd pacman -Sy --noconfirm curl ca-certificates coreutils
+        sudo_cmd pacman -Sy --noconfirm curl ca-certificates coreutils util-linux
     else
         echo "error: required base utilities are missing and no supported package manager was found." >&2
         return 1
     fi
 }
 
-if ! have base64 || ! have nohup || { ! have sha256sum && ! have shasum; } || { ! have curl && ! have wget; }; then
+if ! have base64 || ! have nohup || ! have flock || { ! have sha256sum && ! have shasum; } || { ! have curl && ! have wget; }; then
     echo "[Bees remote] installing missing base system prerequisites..."
     install_system_tools
 fi
-if ! have base64 || ! have nohup || { ! have sha256sum && ! have shasum; }; then
-    echo "error: base64, nohup, and SHA-256 utilities are required." >&2
+if ! have base64 || ! have nohup || ! have flock || { ! have sha256sum && ! have shasum; }; then
+    echo "error: base64, nohup, flock, and SHA-256 utilities are required." >&2
     exit 2
 fi
+
+# PID-file checks alone race when two launchers start together. Keep this lock in
+# the supervisor process so a second launcher cannot overwrite its runtime or identity.
+exec 9>"$INSTALL_ROOT/remote-worker.start.lock"
+if ! flock -n 9; then
+    PID="$(recorded_pid || true)"
+    if [[ -n "$PID" ]] && pid_is_supervisor "$PID"; then
+        echo "[Bees remote] worker is already running in the background (PID $PID)."
+        exit 0
+    fi
+    echo "[Bees remote] another worker startup is already in progress." >&2
+    exit 1
+fi
+PID="$(recorded_pid || true)"
+if [[ -n "$PID" ]] && pid_is_supervisor "$PID"; then
+    echo "[Bees remote] worker is already running in the background (PID $PID)."
+    exit 0
+fi
+rm -f "$SUPERVISOR_PID_FILE" "$SHUTDOWN_REQUEST_FILE"
 
 echo "[Bees remote] Stage 1/5: preparing local worker files..."
 RUNTIME_ROOT="$INSTALL_ROOT/Runtime"
