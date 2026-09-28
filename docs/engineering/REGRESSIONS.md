@@ -1159,3 +1159,20 @@ Manual-only protection is acceptable only when the record explains why determini
 **Fix:** Invalidate cached managers that are disabled or no longer share the tooltip's parent, then resolve only active sibling managers.
 **Permanent protection:** `TutorialUiPolishContractTests.TooltipTracksReplacementDialogueManagerAfterCachedManagerIsDisabled` exercises the stale-to-replacement transition and verifies the tooltip moves below the active manager.
 **Verification:** Static review confirms the test first invokes the method to populate the old cache, disables that manager, adds an active replacement, and checks sibling ordering. The regression test was not run; no builds or runtime checks were performed.
+
+
+### REG-133 — WAN actor crashed when its ML-Agents trajectory queue emptied
+**Area:** `Training/bees_wan_actor_worker.py`, trajectory collection
+**Symptom:** the actor could fail while draining a behavior's trajectory queue, then reconnect and repeat the failure.
+**Root cause:** the collector handled Python's `queue.Empty`, while the pinned ML-Agents `AgentManagerQueue` raises its own `Empty` exception.
+**Fix:** recognize both standard and queue-specific empty exceptions; re-raise unrelated errors.
+**Permanent protection:** `test_actor_collects_trajectories_until_queue_empty` uses an ML-Agents-style queue with its custom `Empty` exception.
+**Verification:** static source analysis only. Regression tests were added but not run; no training or runtime checks were performed.
+
+### REG-134 — Completed old-policy trajectories survived actor synchronization
+**Area:** `Training/bees_wan_actor_worker.py`, policy/control synchronization
+**Symptom:** a trajectory completed while draining in-flight actions could remain queued and later be labeled with the newly applied policy version, contaminating learner data.
+**Root cause:** synchronization ended each agent episode to clear partial buffers but did not drain completed trajectories emitted while processing the in-flight responses.
+**Fix:** after ending each episode, drain that agent manager's trajectory queue using the queue's correct empty exception.
+**Permanent protection:** `test_policy_sync_discards_completed_old_policy_trajectories` verifies the completed queue is empty after cleanup.
+**Verification:** static source analysis only. Regression tests were added but not run; no training or runtime checks were performed.
