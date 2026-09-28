@@ -35,6 +35,8 @@ internal sealed class RlOneVsOneTrainingOptions
     internal const int DefaultShipsPerSide = 1;
     internal const int DefaultDecisionPeriod = 5;
     internal const float MinimumMapSize = 10f;
+    internal const int MapSizeSamplingStep = 4;
+    internal const int MaximumMapSizeSamplingStepCount = int.MaxValue - 1;
     internal const RlOneVsOneMatchupMode DefaultMatchupMode = RlOneVsOneMatchupMode.Fixed;
 
     private static readonly ConfigData.ShipTypes[] DefaultSampledBeeShipTypes =
@@ -282,6 +284,14 @@ internal sealed class RlOneVsOneTrainingOptions
         if (_mapSizeMaximum < _mapSizeMinimum)
         {
             throw new ArgumentException($"{MapSizeMaximumFlag} must be greater than or equal to {MapSizeMinimumFlag}.");
+        }
+
+        double sampleStepCount = Math.Ceiling(
+            ((double)_mapSizeMaximum - _mapSizeMinimum) / MapSizeSamplingStep);
+        if (sampleStepCount > MaximumMapSizeSamplingStepCount)
+        {
+            throw new ArgumentException(
+                $"{MapSizeMaximumFlag} range is too large for stepped map-size sampling.");
         }
     }
 
