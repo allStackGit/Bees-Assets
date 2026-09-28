@@ -929,6 +929,36 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
                 updater._adopt_managed_launcher(root / "bees-remote-worker.cmd")
             run.assert_not_called()
 
+    def test_managed_launcher_adoption_clears_watchdog_child_suppression(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            args = Namespace(
+                runtime_archive=str(root / "missing.zip"),
+                no_autostart=False,
+                torch_device="cpu",
+                auto_envs=True,
+                envs=4,
+            )
+            updater = managed.RuntimeUpdater(args, root / "install")
+            completed = mock.Mock(returncode=0)
+            with (
+                mock.patch.dict(
+                    managed.os.environ,
+                    {"BEES_AUTOSTART_CHILD": "1", "PATH": "test-path"},
+                    clear=True,
+                ),
+                mock.patch.object(
+                    managed.subprocess,
+                    "run",
+                    return_value=completed,
+                ) as run,
+            ):
+                updater._adopt_managed_launcher(root / "bees-remote-worker.cmd")
+
+            environment = run.call_args.kwargs["env"]
+            self.assertNotIn("BEES_AUTOSTART_CHILD", environment)
+            self.assertEqual(environment["PATH"], "test-path")
+
     def test_runtime_refresh_requests_cannot_bypass_poll_interval(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
