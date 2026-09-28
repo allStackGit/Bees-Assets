@@ -253,11 +253,6 @@ def _memory_env_limit() -> int:
     return _memory_limit_for_bytes(_available_memory_bytes())
 
 
-def _memory_env_capacity_limit() -> int:
-    """Stable auto-tuning ceiling based on installed physical memory."""
-    return _memory_limit_for_bytes(_total_memory_bytes())
-
-
 def _cpu_env_start_limit() -> int:
     """Conservative startup count so auto mode cannot saturate a small CPU immediately."""
     return max(
