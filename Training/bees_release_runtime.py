@@ -317,15 +317,42 @@ def verify_runtime(
 
 
 def _verify_installed(root: Path, manifest: Mapping[str, Any], runtime_version: str) -> None:
-    if not root.is_dir():
+    if root.is_symlink() or not root.is_dir():
         raise ValueError(f"installed runtime root is missing: {root}")
+
+    expected_names = {MANIFEST_NAME, VERSION_NAME}
+    for raw in manifest["files"]:
+        name = str(raw["path"])
+        _validate_member_name(name)
+        expected_names.add(name)
+
+    actual_names: set[str] = set()
+    for child in root.iterdir():
+        if child.is_symlink() or not child.is_file():
+            raise ValueError(f"installed runtime contains an unsafe filesystem entry: {child}")
+        actual_names.add(child.name)
+    if actual_names != expected_names:
+        extras = sorted(actual_names - expected_names)
+        missing = sorted(expected_names - actual_names)
+        raise ValueError(
+            "installed runtime file set differs from manifest "
+            f"(extra={extras}, missing={missing})"
+        )
+
+    manifest_path = root / MANIFEST_NAME
+    expected_manifest = _canonical_json(manifest) + b"\\n"
+    if manifest_path.read_bytes() != expected_manifest:
+        raise ValueError(f"installed runtime manifest is invalid: {root}")
     marker = root / VERSION_NAME
-    if not marker.is_file() or marker.read_text(encoding="ascii").strip().lower() != runtime_version:
+    expected_marker = (runtime_version + "\\n").encode("ascii")
+    if marker.read_bytes() != expected_marker:
         raise ValueError(f"installed runtime version marker is invalid: {root}")
+
     for raw in manifest["files"]:
         path = root / str(raw["path"])
         if (
-            not path.is_file()
+            path.is_symlink()
+            or not path.is_file()
             or path.stat().st_size != int(raw["size"])
             or _sha256_file(path) != str(raw["sha256"]).lower()
         ):
