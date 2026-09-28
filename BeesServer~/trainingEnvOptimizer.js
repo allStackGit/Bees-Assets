@@ -12,7 +12,7 @@ const DEFAULT_MIN_IMPROVEMENT_RATIO = 0.03;
 const DEFAULT_REGRESSION_RATIO = 0.05;
 
 function finiteInteger(value) {
-    return Number.isInteger(value) && !Number.isNaN(value);
+    return Number.isSafeInteger(value);
 }
 
 function normalizeCapacity(value) {
