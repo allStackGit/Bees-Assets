@@ -569,8 +569,8 @@ class _DistributedEnvironmentFactoryInstaller:
                 "Distributed external workers require --env so remote Unity executables share the "
                 "same build as local workers."
             )
-        # Preserve ML-Agents' environment path validation, but discard its locally defined
-        # create_unity_environment closure because Windows spawn cannot pickle that closure.
+        # Verify that the installed ML-Agents factory accepts this version's argument
+        # signature, but discard its locally defined callable because Windows spawn cannot pickle it.
         self.original_factory(
             env_path,
             no_graphics,
