@@ -23,6 +23,7 @@ namespace Assets.Scripts.Levels
         public List<Ship> ShipsToRelease = new List<Ship>();
         public Dictionary<long, Ship> ShipsById = new Dictionary<long, Ship>();
         public Dictionary<long, Ship> ShipsByMatchId = new Dictionary<long, Ship>();
+        public Dictionary<long, Squad> SquadsByMatchId = new Dictionary<long, Squad>();
         public List<Squad> Squads = new List<Squad>();
         public List<Squad> SquadsToRelease = new List<Squad>();
         public Queue<Squad> SquadsAwaitingCommands = new Queue<Squad>();
@@ -206,6 +207,7 @@ namespace Assets.Scripts.Levels
             }
             ShipsById.Clear();
             ShipsByMatchId.Clear();
+            SquadsByMatchId.Clear();
             Squads.Clear();
             ClearSquadsAwaitingHiveMindCommands();
             ClearQueuedPlayerCommands();

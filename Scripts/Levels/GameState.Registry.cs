@@ -63,6 +63,16 @@ namespace Assets.Scripts.Levels
 
         public void AddSquad(Squad squad)
         {
+            if (squad.MatchSquadId > 0)
+            {
+                if (SquadsByMatchId.ContainsKey(squad.MatchSquadId))
+                {
+                    throw new System.InvalidOperationException(
+                        $"Duplicate match squad id #{squad.MatchSquadId} in level #{MatchLevelId}.");
+                }
+                SquadsByMatchId.Add(squad.MatchSquadId, squad);
+            }
+
             if (squad.IsMinionSquad)
             {
                 int maximumSquadNumber = 0;
@@ -114,6 +124,10 @@ namespace Assets.Scripts.Levels
                 }
             }
 
+            if (squad.MatchSquadId > 0)
+            {
+                SquadsByMatchId.Remove(squad.MatchSquadId);
+            }
             squad.IsMinionSquad = false;
             Squads.Remove(squad);
             SquadsToRelease.Add(squad);

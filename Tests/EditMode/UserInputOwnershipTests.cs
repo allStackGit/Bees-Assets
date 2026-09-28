@@ -2220,5 +2220,28 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains("ship.ReplicaDespawn();", source);
             StringAssert.Contains("snapshot.Ships.Count != ShipsByMatchId.Count", source);
         }
+
+        [Test]
+        public void GameStateMaintainsSeparateMatchSquadRegistry()
+        {
+            string statePath = Path.Combine(
+                Application.dataPath,
+                "Scripts",
+                "Levels",
+                "GameState.cs");
+            string registryPath = Path.Combine(
+                Application.dataPath,
+                "Scripts",
+                "Levels",
+                "GameState.Registry.cs");
+            string stateSource = File.ReadAllText(statePath);
+            string registrySource = File.ReadAllText(registryPath);
+
+            StringAssert.Contains("Dictionary<long, Squad> SquadsByMatchId", stateSource);
+            StringAssert.Contains("SquadsByMatchId.Clear();", stateSource);
+            StringAssert.Contains("SquadsByMatchId.Add(squad.MatchSquadId, squad);", registrySource);
+            StringAssert.Contains("SquadsByMatchId.Remove(squad.MatchSquadId);", registrySource);
+            StringAssert.Contains("Duplicate match squad id", registrySource);
+        }
     }
 }
