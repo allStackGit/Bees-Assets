@@ -25,6 +25,7 @@ from bees_continual_learning import (
     ValidationError,
     canonical_json,
     sha256_bytes,
+    sha256_file,
 )
 
 
@@ -105,6 +106,9 @@ def _deployment_manifest(store: ContinualLearningStore, deployment_id: str) -> M
     identity_sha256 = value.get("identity_sha256")
     if (
         not isinstance(identity, dict)
+        or not isinstance(identity.get("schema_version"), int)
+        or isinstance(identity.get("schema_version"), bool)
+        or identity.get("schema_version") != 1
         or not isinstance(identity_sha256, str)
         or not _SHA256.fullmatch(identity_sha256)
         or sha256_bytes(canonical_json(identity).encode("utf-8")) != identity_sha256
