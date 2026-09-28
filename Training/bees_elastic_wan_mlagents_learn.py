@@ -20,11 +20,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             f"{elastic.WAN_ACTORS_FLAG} is required for the elastic WAN learner launcher."
         )
 
-    original_policy_transport = policy_transport.install_portable_policy_transport()
-    original_broker = slot_safety.install_slot_safety()
+    original_policy_transport = None
+    original_broker = None
     patch = None
     original_argv = sys.argv
     try:
+        original_policy_transport = policy_transport.install_portable_policy_transport()
+        original_broker = slot_safety.install_slot_safety()
         patch = zero_local.install_elastic_wan_env_manager(options)
         sys.argv = [original_argv[0], *trainer_args]
         launcher.main()
