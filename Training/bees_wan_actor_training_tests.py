@@ -454,6 +454,24 @@ class BrokerInvariantTests(unittest.TestCase):
         with self.assertRaisesRegex(wan.StaleActorStateError, "control epoch"):
             self.broker.submit_trajectory_batch(payload)
 
+    def test_boolean_control_epoch_is_rejected_for_actor_operations(self):
+        with self.assertRaisesRegex(wan.StaleActorStateError, "control epoch"):
+            self.broker.register_actor(
+                {
+                    "actor_id": 1,
+                    "control_epoch": True,
+                    "behavior_specs": {self.behavior: FakeBehaviorSpec()},
+                }
+            )
+        with self.assertRaisesRegex(wan.StaleActorStateError, "control epoch"):
+            self.broker.acknowledge_reset(
+                {"actor_id": 0, "control_epoch": True}
+            )
+        payload = self._payload(0, "agent_0-7")
+        payload["control_epoch"] = True
+        with self.assertRaisesRegex(wan.StaleActorStateError, "control epoch"):
+            self.broker.submit_trajectory_batch(payload)
+
     def test_actor_cannot_claim_another_actors_worker_ids(self):
         with self.assertRaisesRegex(ValueError, "outside actor 0"):
             self.broker.submit_trajectory_batch(self._payload(0, "agent_4-99"))
@@ -624,6 +642,12 @@ class RemoteActorHelperTests(unittest.TestCase):
         self.assertEqual(envs, 32)
         with self.assertRaisesRegex(RuntimeError, "outside central actor count"):
             actor._validate_session(session, 2)
+        for field in ("actor_count", "envs_per_actor"):
+            malformed = dict(session)
+            malformed[field] = True
+            with self.subTest(field=field):
+                with self.assertRaisesRegex(RuntimeError, "topology is malformed"):
+                    actor._validate_session(malformed, 0)
 
 
 class WanActorSyntheticStepTests(unittest.TestCase):
@@ -728,6 +752,43 @@ class ActorPolicyVersionTests(unittest.TestCase):
         self.assertEqual(applied_version, 8)
         self.assertEqual(session.policy_versions[behavior], 8)
         session.manager.set_policy.assert_called_once_with(behavior, template)
+
+    def test_actor_state_rejects_boolean_or_coerced_epochs_and_versions(self):
+        self.assertEqual(actor._validated_state_epoch({"policy_epoch": 0}, "policy_epoch"), 0)
+        for invalid in (True, "1", -1):
+            with self.subTest(epoch=invalid):
+                with self.assertRaisesRegex(RuntimeError, "invalid policy_epoch"):
+                    actor._validated_state_epoch({"policy_epoch": invalid}, "policy_epoch")
+        for invalid in ({behavior: True}, {behavior: "1"}, {behavior: 0}, {1: 1}, {"": 1}):
+            with self.subTest(versions=invalid):
+                with self.assertRaisesRegex(RuntimeError, "malformed policy_versions"):
+                    actor._validated_policy_versions(invalid)
+
+    def test_actor_rejects_boolean_torch_policy_step(self):
+        behavior = "BeesRL1v1?team=0"
+
+        class FakeTemplate:
+            def load_weights(self, _weights):
+                self.loaded = True
+
+            def set_step(self, _step):
+                self.step_set = True
+
+        session = actor.ActorSession.__new__(actor.ActorSession)
+        session.session_id = "session-a"
+        session.client = SimpleNamespace(
+            policy_with_version=lambda *_args: (
+                {"kind": "torch", "weights": {}, "step": True},
+                1,
+            )
+        )
+        session.templates = {behavior: FakeTemplate()}
+        session.manager = SimpleNamespace(set_policy=mock.Mock())
+        session.policy_versions = {}
+        with self.assertRaisesRegex(RuntimeError, "policy payload is malformed"):
+            session._apply_policy(behavior, 1)
+        self.assertFalse(getattr(session.templates[behavior], "loaded", False))
+        session.manager.set_policy.assert_not_called()
 
 
 if __name__ == "__main__":
