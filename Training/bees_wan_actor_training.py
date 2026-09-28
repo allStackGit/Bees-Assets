@@ -903,12 +903,26 @@ class WanActorBroker:
 
         allowed_workers = set(actor_worker_ids(self.options, actor_id))
         allowed_behaviors = set(self.merged_behavior_specs())
+        from mlagents.trainers.behavior_id_utils import BehaviorIdentifiers
+
+        trainer_settings_by_behavior = self.run_options.behaviors
         for trajectory in trajectories:
             behavior_id = getattr(trajectory, "behavior_id", None)
             agent_id = getattr(trajectory, "agent_id", None)
             steps = getattr(trajectory, "steps", None)
             if behavior_id not in allowed_behaviors:
                 raise ValueError(f"trajectory uses unregistered behavior {behavior_id!r}")
+            identifiers = BehaviorIdentifiers.from_name_behavior_id(behavior_id)
+            trainer_settings = trainer_settings_by_behavior.get(identifiers.brain_name)
+            if trainer_settings is None:
+                raise ValueError(
+                    f"trajectory uses unconfigured behavior {behavior_id!r}"
+                )
+            max_steps = getattr(trainer_settings, "time_horizon", None)
+            if not isinstance(max_steps, int) or isinstance(max_steps, bool) or max_steps <= 0:
+                raise ValueError(
+                    f"behavior {identifiers.brain_name!r} has an invalid configured time_horizon"
+                )
             if not isinstance(agent_id, str) or not agent_id.startswith("agent_"):
                 raise ValueError("trajectory has malformed global agent identity")
             prefix = agent_id[len("agent_") :].split("-", 1)[0]
@@ -918,6 +932,11 @@ class WanActorBroker:
                 )
             if not isinstance(steps, list) or not steps:
                 raise ValueError("trajectory must contain at least one experience step")
+            if len(steps) > max_steps:
+                raise ValueError(
+                    f"WAN actor trajectory length {len(steps)} exceeds configured time_horizon "
+                    f"{max_steps} for {identifiers.brain_name}."
+                )
 
         item = {
             "actor_id": actor_id,
