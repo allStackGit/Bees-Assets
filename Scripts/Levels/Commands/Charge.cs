@@ -194,7 +194,12 @@ namespace Assets.Scripts.Levels.Commands
             List<Ship> ships = GetSquad().GetShips();
             for (int i = 0; i < ships.Count; i++)
             {
-                ((Barge)ships[i]).ResetCharge();
+                Barge barge = (Barge)ships[i];
+                if (barge.Charge is Bomb bomb)
+                {
+                    bomb.ReleaseTargetReservation();
+                }
+                barge.ResetCharge();
             }
 
             base.SetFinalize(cause);
