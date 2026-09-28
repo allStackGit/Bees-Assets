@@ -100,7 +100,7 @@ class TrainingControlClient:
                 f"training control rejected {method} {path}: HTTP {exc.code}: {raw}"
             ) from exc
         except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as exc:
-            raise ControlUnavailable(str(exc)) from exc
+            raise ControlUnavailable(f"{method} {path}: {exc}") from exc
 
     @staticmethod
     def _decode_state(body: bytes) -> Mapping[str, Any]:
