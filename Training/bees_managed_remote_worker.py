@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import ctypes
 import hashlib
+import http.client
 import io
 import json
 import os
@@ -139,6 +140,7 @@ def _start_logged_process(
     process = popen_owned(
         list(command),
         env=None if environment is None else dict(environment),
+        start_new_session=(os.name != "nt"),
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
@@ -365,6 +367,35 @@ def _terminate(process: Optional[subprocess.Popen]) -> None:
             return
         except Exception:
             pass
+    else:
+        # Remote children are launched in their own session. Signal the whole session so a
+        # tailnet/helper descendant or a Unity child cannot survive after its managed parent exits.
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except (ProcessLookupError, PermissionError, OSError):
+            try:
+                process.terminate()
+            except Exception:
+                pass
+        try:
+            process.wait(timeout=10)
+            return
+        except Exception:
+            pass
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError, OSError):
+            try:
+                process.kill()
+            except Exception:
+                pass
+        try:
+            process.wait(timeout=10)
+            return
+        except Exception as exc:
+            raise RuntimeError(
+                f"remote supervisor child process tree {process.pid} did not stop"
+            ) from exc
     try:
         process.terminate()
     except Exception:
@@ -651,7 +682,15 @@ def _prune_version_directories(
 
 
 def _is_transient_transport_error(exc: BaseException) -> bool:
-    if isinstance(exc, (ConnectionResetError, ConnectionAbortedError, TimeoutError)):
+    if isinstance(
+        exc,
+        (
+            ConnectionResetError,
+            ConnectionAbortedError,
+            TimeoutError,
+            http.client.IncompleteRead,
+        ),
+    ):
         return True
     if isinstance(exc, urllib.error.URLError):
         reason = getattr(exc, "reason", None)
@@ -1006,7 +1045,14 @@ class RuntimeUpdater:
         while not self._stop.is_set():
             try:
                 self._stage_once()
-            except (OSError, ValueError, RuntimeError, urllib.error.URLError, zipfile.BadZipFile) as exc:
+            except (
+                OSError,
+                ValueError,
+                RuntimeError,
+                urllib.error.URLError,
+                http.client.HTTPException,
+                zipfile.BadZipFile,
+            ) as exc:
                 with self._lock:
                     self.last_error = f"{type(exc).__name__}: {exc}"
             self._refresh.wait(self.args.runtime_poll_seconds)
