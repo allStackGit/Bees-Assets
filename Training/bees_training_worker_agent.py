@@ -1013,6 +1013,7 @@ class ManagedProcess:
         environment[COMPATIBILITY_KEY_ENV] = compatibility_key
         environment[ENVIRONMENT_ID_ENV] = environment_args_identity(environment_args)
         environment["PYTHONUNBUFFERED"] = "1"
+        environment["PYTHONDONTWRITEBYTECODE"] = "1"
         health_file = state_file.parent / "child-health.json"
         health_token = ""
         if require_child_health:
