@@ -672,28 +672,54 @@ namespace Assets.Scripts.UIComponents
         }
         public void DropBeacon()
         {
-            if (HasSquad())
+            if (!HasSquad())
+            {
+                return;
+            }
+
+            if (Level.Stage.MatchSession == null)
             {
                 Level.State.GetSelectedSquads().ForEach((squad) =>
                 {
-                    foreach (Ship ship in squad.GetShips().Where((s) => s.ShipType == ConfigData.ShipTypes.Scout))
+                    foreach (Ship ship in squad.GetShips().Where(
+                        candidate => candidate.ShipType == ConfigData.ShipTypes.Scout))
                     {
                         ((Scout)ship).DropBeacon();
                     }
                 });
+                return;
             }
 
+            int playerId = Level.State.GetPrimaryInputPlayerId();
+            Level.State.GetSelectedSquadsForPlayer(playerId).ForEach((squad) =>
+            {
+                foreach (Ship ship in squad.GetShips().Where(
+                    candidate => candidate.ShipType == ConfigData.ShipTypes.Scout))
+                {
+                    Level.State.TryIssuePlayerCommand(
+                        playerId,
+                        PlayerCommandKind.ScoutDropBeacon,
+                        squad.CommandSquadId,
+                        matchShipId: ship.MatchShipId);
+                }
+            });
         }
+
         public void Charge()
         {
-            if (HasSquad())
+            if (!HasSquad())
+            {
+                return;
+            }
+
+            if (Level.Stage.MatchSession == null)
             {
                 Level.State.GetSelectedSquads().ForEach((squad) =>
                 {
-                    Barge barge = null;
-                    foreach (Ship ship in squad.GetShips().Where((s) => s.ShipType == ConfigData.ShipTypes.Barge))
+                    foreach (Ship ship in squad.GetShips().Where(
+                        candidate => candidate.ShipType == ConfigData.ShipTypes.Barge))
                     {
-                        barge = ((Barge)ship);
+                        Barge barge = (Barge)ship;
                         if (!ship.CannotChangeMovementOrders)
                         {
                             barge.StartCoroutine(barge.ChargeForward());
@@ -704,23 +730,63 @@ namespace Assets.Scripts.UIComponents
                         }
                     }
                 });
+                return;
             }
 
+            int playerId = Level.State.GetPrimaryInputPlayerId();
+            Level.State.GetSelectedSquadsForPlayer(playerId).ForEach((squad) =>
+            {
+                foreach (Ship ship in squad.GetShips().Where(
+                    candidate => candidate.ShipType == ConfigData.ShipTypes.Barge))
+                {
+                    Level.State.TryIssuePlayerCommand(
+                        playerId,
+                        PlayerCommandKind.BargeCharge,
+                        squad.CommandSquadId,
+                        matchShipId: ship.MatchShipId);
+                }
+            });
         }
+
         public void Detonate()
         {
-            if (HasSquad())
+            if (!HasSquad())
+            {
+                return;
+            }
+
+            if (Level.Stage.MatchSession == null)
             {
                 Level.State.GetSelectedSquads().ForEach((squad) =>
                 {
-                    squad.GetShips().Where((s) => s.ShipType == ConfigData.ShipTypes.FireBarge).ToList().ForEach((ship) =>
-                    {
-                        Level.Stage.Audio.BargeDetonationClick.Play();
-                        ((FireBarge)ship).Detonate();
-                    });
+                    squad.GetShips().Where(
+                        candidate => candidate.ShipType == ConfigData.ShipTypes.FireBarge)
+                        .ToList()
+                        .ForEach((ship) =>
+                        {
+                            Level.Stage.Audio.BargeDetonationClick.Play();
+                            ((FireBarge)ship).Detonate();
+                        });
                 });
+                return;
             }
 
+            int playerId = Level.State.GetPrimaryInputPlayerId();
+            Level.State.GetSelectedSquadsForPlayer(playerId).ForEach((squad) =>
+            {
+                foreach (Ship ship in squad.GetShips().Where(
+                    candidate => candidate.ShipType == ConfigData.ShipTypes.FireBarge))
+                {
+                    if (Level.State.TryIssuePlayerCommand(
+                            playerId,
+                            PlayerCommandKind.FireBargeDetonate,
+                            squad.CommandSquadId,
+                            matchShipId: ship.MatchShipId))
+                    {
+                        Level.Stage.Audio.BargeDetonationClick.Play();
+                    }
+                }
+            });
         }
         public void Hold()
         {

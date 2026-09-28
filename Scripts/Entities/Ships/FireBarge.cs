@@ -38,7 +38,7 @@ namespace Assets.Scripts.Entities.Ships
 
         public void Detonate()
         {
-            if (IsDead)
+            if (IsNetworkReplica || IsDead)
             {
                 return;
             }

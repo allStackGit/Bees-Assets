@@ -84,7 +84,7 @@ namespace Assets.Scripts.Entities.Ships
 
         public void DropBeacon()
         {
-            if (!IsBeaconReady)
+            if (IsNetworkReplica || !IsBeaconReady)
             {
                 return;
             }
