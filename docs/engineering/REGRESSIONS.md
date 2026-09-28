@@ -1518,6 +1518,7 @@ Manual-only protection is acceptable only when the record explains why determini
 **Fix:** Skip duration records that fail conversion or are not finite; non-finite optional numeric fields are reported as unavailable.
 **Permanent protection:** Diagnostic log parsing must treat malformed or non-finite metric values as invalid records and must not terminate the supervisor.
 **Verification:** Added focused regression coverage for malformed and overflowed durations followed by a valid record; it was not run. Static review confirms invalid durations are discarded before metrics are appended. No builds or training runs were executed. Post-fix clean-pass count remains **0 / 2**.
+
 ### REG-177 — Rotate bounded training-log uploads fairly
 **Area:** Training/bees_training_worker_agent.py, TrainingLogUploader.flush_once
 **Symptom:** Each upload pass started at the lexicographically first log and stopped after a fixed 1 MiB budget. If an early log continuously produced data faster than that budget, later logs could be postponed indefinitely.
