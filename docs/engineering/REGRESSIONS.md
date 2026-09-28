@@ -1448,3 +1448,10 @@ Manual-only protection is acceptable only when the record explains why determini
 **Fix:** Require a non-empty behavior name and exact positive integer version fields; reject non-object JSON roots with a clear configuration error.
 **Permanent protection:** Model, experience, and telemetry compatibility identities must come from explicit typed configuration values and cannot be formed by lossy coercion.
 **Verification:** Static review traced `Compatibility.from_config` through continual-store initialization and compatibility checks; `load_config` now checks the top-level JSON type before reading required keys. The checked-in configuration uses the required JSON types. No tests, builds, Unity, simulations, or runtime checks were run. Post-fix clean-pass count remains **0 / 2**.
+
+### REG-167 — Reject excessively nested telemetry JSON as invalid input
+**Area:** `Training/bees_continual_learning.py`, `bees_continual_public_telemetry.py`, and `bees_continual_telemetry_curation.py`
+**Symptom:** Deeply nested JSON could raise uncaught `RecursionError` while parsing quarantine files, serializing payloads canonically, or recursively checking numeric values. The automatic wrapper's expected invalid-upload handling did not consistently catch that exception.
+**Fix:** Convert recursion and serialization failures into the existing `ValidationError` path and reject deeply nested numeric structures deterministically.
+**Permanent protection:** Malformed payload depth is handled as rejected data at parse, canonicalization, and validation boundaries rather than as an unhandled service failure.
+**Verification:** Static review traced incoming quarantine metadata/payload parsing, canonical archive serialization, curation JSON reads, and finite-number traversal. No tests, builds, Unity, simulations, or runtime checks were run. Post-fix clean-pass count remains **0 / 2**.
