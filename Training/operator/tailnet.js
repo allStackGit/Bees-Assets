@@ -8,6 +8,7 @@ const { spawn } = require('node:child_process');
 const {
     atomicReplace,
     ensureDir,
+    GAMEPLAY_SERVER_PORT,
     ensureTokenFile,
     exists,
     findManagedProcessByOwnerToken,
@@ -515,13 +516,15 @@ function prepareRemoteBootstrap(config, python, release) {
     const controlPort = Number(config.controlPort);
     const brokerPort = Number(config.brokerPort);
     const bootstrapPort = Number(config.tailnetBootstrapPort || 7151);
-    for (const port of [controlPort, brokerPort, bootstrapPort]) {
+    const gameplayPort = GAMEPLAY_SERVER_PORT;
+    for (const port of [controlPort, brokerPort, bootstrapPort, gameplayPort]) {
         if (!Number.isInteger(port) || port < 1 || port > 65535) {
             throw new Error('Configured Bees ports must be in 1-65535.');
         }
     }
-    if (new Set([controlPort, brokerPort, bootstrapPort]).size !== 3) {
-        throw new Error('controlPort, brokerPort, and tailnetBootstrapPort must be distinct.');
+    if (new Set([controlPort, brokerPort, bootstrapPort, gameplayPort]).size !== 4) {
+        throw new Error(
+            'controlPort, brokerPort, tailnetBootstrapPort, and gameplay port must be distinct.');
     }
 
     if (!exists(paths.tailnetAddressPath)) {
@@ -587,6 +590,7 @@ function prepareRemoteBootstrap(config, python, release) {
         '__BEES_TAILNET_BOOTSTRAP_PORT__': String(bootstrapPort),
         '__BEES_CONTROL_PORT__': String(controlPort),
         '__BEES_BROKER_PORT__': String(brokerPort),
+        '__BEES_GAMEPLAY_PORT__': String(gameplayPort),
         '__BEES_TAILNET_BRIDGE_FILE__': windowsBridgeName,
         '__BEES_TAILNET_BRIDGE_SHA256__': sha256File(windowsBridge),
         '__BEES_BOOTSTRAP_TOKEN__': escapePowerShellSingleQuoted(bootstrapToken),
@@ -645,6 +649,7 @@ ${windowsPayload}
         '__BEES_TAILNET_BOOTSTRAP_PORT__': String(bootstrapPort),
         '__BEES_CONTROL_PORT__': String(controlPort),
         '__BEES_BROKER_PORT__': String(brokerPort),
+        '__BEES_GAMEPLAY_PORT__': String(gameplayPort),
         '__BEES_TAILNET_BRIDGE_FILE__': linuxBridgeName,
         '__BEES_TAILNET_BRIDGE_SHA256__': sha256File(linuxBridge),
         '__BEES_BOOTSTRAP_TOKEN__': escapeBashDoubleQuoted(bootstrapToken),
