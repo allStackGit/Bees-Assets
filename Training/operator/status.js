@@ -194,6 +194,9 @@ function statusError(record) {
         const count = Number(throughput.session_failures_total);
         const ageSeconds = Number(throughput.seconds_since_last_session_failure);
         const failureType = String(throughput.last_session_failure_type || '').trim();
+        const failureMessage = String(
+            throughput.last_session_failure_message || ''
+        ).trim();
         if (
             Number.isInteger(count) &&
             count > 0 &&
@@ -205,7 +208,8 @@ function statusError(record) {
             historical.push({
                 ageSeconds,
                 text: 'WAN session x' + count + ', ' + ageLabel(ageSeconds) +
-                    ' ago: ' + failureType,
+                    ' ago: ' + failureType +
+                    (failureMessage ? ': ' + failureMessage : ''),
             });
         }
     }
