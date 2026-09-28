@@ -530,7 +530,7 @@ def _request_graceful_training_child_stop(process: subprocess.Popen) -> None:
     if stop_file is not None:
         try:
             stop_file.parent.mkdir(parents=True, exist_ok=True)
-            stop_file.write_text("stop\\n", encoding="ascii")
+            stop_file.write_text("stop\n", encoding="ascii")
             stop_requested = True
         except OSError as exc:
             print(
