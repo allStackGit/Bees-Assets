@@ -891,9 +891,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         launcher.main()
     finally:
         sys.argv = original_argv
-        if historical_patch is not None:
-            historical_patch.restore()
-        monitor.stop()
+        try:
+            if historical_patch is not None:
+                historical_patch.restore()
+        finally:
+            # Always drain/register final exports even if restoring the launcher patch fails.
+            monitor.stop()
 
     if monitor.errors:
         print(
