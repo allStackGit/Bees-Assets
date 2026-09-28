@@ -511,17 +511,29 @@ def _drain_inflight_without_training(manager: Any, worker_offset: int, timeout_s
         _remap_completed_steps(manager, completed, worker_offset)
 
 
+def _is_queue_empty_exception(q: Any, exception: BaseException) -> bool:
+    if isinstance(exception, queue.Empty):
+        return True
+    custom_empty = getattr(type(q), "Empty", None)
+    return isinstance(custom_empty, type) and isinstance(exception, custom_empty)
+
+
 def _clear_partial_trajectories(manager: Any) -> None:
     for agent_manager in manager.agent_managers.values():
         agent_manager.end_episode()
+        # Draining in-flight old-policy steps can finish trajectories before the policy swap.
+        # Discard those completed pieces too, so none are uploaded under the new policy version.
+        _drain_queue(agent_manager.trajectory_queue)
 
 
-def _drain_queue(q: queue.Queue) -> None:
+def _drain_queue(q: Any) -> None:
     while True:
         try:
             q.get_nowait()
-        except queue.Empty:
-            return
+        except Exception as exc:
+            if _is_queue_empty_exception(q, exc):
+                return
+            raise
 
 
 class ActorSession:
@@ -1068,8 +1080,10 @@ class ActorSession:
             while True:
                 try:
                     trajectories.append(manager.trajectory_queue.get_nowait())
-                except queue.Empty:
-                    break
+                except Exception as exc:
+                    if _is_queue_empty_exception(manager.trajectory_queue, exc):
+                        break
+                    raise
         return trajectories
 
     def run(self) -> None:
