@@ -1497,18 +1497,21 @@ Manual-only protection is acceptable only when the record explains why determini
 **Fix:** Require built-in numeric ratio values in `[0,1]`, exact positive integer cache sizes, integer seeds, and a non-empty provider string or null. Validate before ONNX runtime preflight or monkeypatch installation.
 **Permanent protection:** Public training integration APIs independently enforce their own input contracts instead of relying on one caller to sanitize arguments.
 **Verification:** Static review traced validation through both direct `HistoricalOpponentScheduler` construction and `install_historical_opponents`; installation now validates all values before preflight and GhostTrainer mutation. No tests or training runs were executed. Post-fix clean-pass count remains **0 / 2**.
+
 ### REG-174 — Stop partially started external-worker gRPC servers
 **Area:** Training/bees_distributed_training.py, loopback external-worker communicator startup
 **Symptom:** If gRPC server creation succeeded but service registration, port binding, or server startup failed, the communicator raised the normal worker-in-use error without stopping the partially initialized server. A failed distributed worker launch could leave a listener or server thread alive and interfere with retries or later training startup.
 **Fix:** Retain the server instance locally and stop it with zero grace on every startup exception; clear the communicator's server/open state before re-raising the ML-Agents worker error. Cleanup failures do not mask the original startup cause.
 **Permanent protection:** Every failure after server allocation must attempt to stop that server and reset communicator state before translating the error.
 **Verification:** Static control-flow review confirms each exception after server allocation reaches stop(0), resets self.server and self.is_open, and preserves the original exception as the cause. Added focused tests for registration, bind, and startup failures, including cleanup throwing; tests were not run. No builds or training runs were executed. Post-fix clean-pass count remains **0 / 2**.
+
 ### REG-175 — Restore ML-Agents factory on distributed setup failures
 **Area:** Training/bees_continual_distributed_train.py, distributed wrapper setup and patch lifetime
 **Symptom:** The continual-distributed wrapper installed a process-wide ML-Agents environment-factory patch, then printed topology/session details before entering its try/finally. An output or formatting failure in that interval could leave the patch active in an embedded caller that catches the exception.
 **Fix:** Start the try/finally before writing the remote spec, installing the patch, or printing setup details so every post-install failure restores the original factory.
 **Permanent protection:** Process-wide worker-factory patches remain under one cleanup boundary spanning all setup and training operations after installation.
 **Verification:** Static control-flow review confirms the only return and all exceptions after patch installation pass through restoration. Added a focused wrapper test that makes setup logging fail and checks restoration; it was not run. No builds or training runs were executed. Post-fix clean-pass count remains **0 / 2**.
+
 ### REG-176 — Ignore malformed and non-finite episode durations
 **Area:** Training/bees_training_worker_agent.py, EpisodeLogMetrics parsing
 **Symptom:** A complete episode log line with a malformed duration such as 1..2 matched the permissive numeric pattern, then float conversion raised ValueError. Metric collection occurs before the heartbeat reconciliation handler, so the exception could terminate the worker supervisor and its managed trainer. Extremely large duration strings could also parse as infinity and poison heartbeat metrics.
