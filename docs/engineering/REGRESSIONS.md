@@ -1531,6 +1531,7 @@ Manual-only protection is acceptable only when the record explains why determini
 **Fix:** Classify 408, 425, 429, and 5xx responses as ControlUnavailable; keep other HTTP errors as ControlRejected so malformed/unauthorized requests remain fail-closed.
 **Permanent protection:** Transport/service availability failures must use the lease-aware retry path; explicit client rejections retain fail-closed behavior.
 **Verification:** Added focused client coverage for transient statuses and a permanent 400 rejection; tests were not run. Static call-path review confirms preparation heartbeats now handle these transient responses within the lease, while rejected responses still propagate. No builds or training runs were executed. Post-fix clean-pass count remains **0 / 2**.
+
 ### REG-179 — Surface unexpected background build preparation failures
 **Area:** Training/bees_training_worker_agent.py, BackgroundBuildPreparer._prepare
 **Symptom:** The daemon preparation thread caught only selected operational exceptions. Other ordinary failures from ZIP parsing or unsupported archive features could terminate the thread without updating last_error, leaving the supervisor to retry without a useful preparation diagnostic.
