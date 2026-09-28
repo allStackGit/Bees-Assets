@@ -1698,6 +1698,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                             raise RuntimeError(
                                 "staged runtime contents could not be restored before activation"
                             )
+                next_script = next_root / "bees_managed_remote_worker.py"
+                if not next_script.is_file():
+                    raise RuntimeError(f"staged runtime is missing {next_script}")
                 if staged_bridge is not None:
                     active_bridge = Path(args.tailnet_bridge).expanduser().resolve()
                     os.replace(staged_bridge, active_bridge)
@@ -1705,9 +1708,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         os.chmod(active_bridge, 0o700)
                     except OSError:
                         pass
-                next_script = next_root / "bees_managed_remote_worker.py"
-                if not next_script.is_file():
-                    raise RuntimeError(f"staged runtime is missing {next_script}")
                 next_python = str(staged_python or _python_executable_path(sys.executable))
                 os.execv(
                     next_python,
