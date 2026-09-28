@@ -9,7 +9,13 @@ import tempfile
 import unittest
 
 from bees_continual_bootstrap import bootstrap_champion
-from bees_continual_learning import CompatibilityError, ContinualLearningStore, ValidationError
+from bees_continual_learning import (
+    CompatibilityError,
+    ContinualLearningStore,
+    ValidationError,
+    canonical_json,
+    sha256_bytes,
+)
 from bees_continual_live_telemetry import validate_live_telemetry_payload
 
 
@@ -68,19 +74,33 @@ class LiveTelemetryValidationTests(unittest.TestCase):
         )
         bootstrap_champion(self.store, model["model_id"], reason="telemetry test baseline")
         self.model = self.store.get_model(model["model_id"])
-        self.deployment_id = "deploy-" + "a" * 24
+        model_bytes = Path(self.model["artifact_path"]).read_bytes()
+        identity = {
+            "schema_version": 1,
+            "model_id": self.model["model_id"],
+            "model_sha256": self.model["artifact_sha256"],
+            "model_size_bytes": len(model_bytes),
+            "behavior_name": self.store.compatibility.behavior_name,
+            "policy_signature": TEST_CONFIG["policy_signature"],
+            "compatibility": self.store.compatibility.to_dict(),
+            "game_build_version": self.model["game_build_version"],
+            "training_run_id": self.model["training_run_id"],
+            "training_step": self.model["training_step"],
+            "promotion_evidence": {"type": "test"},
+        }
+        identity_sha256 = sha256_bytes(canonical_json(identity).encode("utf-8"))
+        self.deployment_id = "deploy-" + identity_sha256[:24]
         package = self.root / "deployment" / "packages" / self.deployment_id
         package.mkdir(parents=True)
+        (package / "model.onnx").write_bytes(model_bytes)
         (package / "manifest.json").write_text(
             json.dumps(
                 {
                     "schema_version": 1,
                     "deployment_id": self.deployment_id,
-                    "identity": {
-                        "model_id": self.model["model_id"],
-                        "model_sha256": self.model["artifact_sha256"],
-                        "policy_signature": TEST_CONFIG["policy_signature"],
-                    },
+                    "identity_sha256": identity_sha256,
+                    "identity": identity,
+                    "model_file": "model.onnx",
                 }
             ),
             encoding="utf-8",
