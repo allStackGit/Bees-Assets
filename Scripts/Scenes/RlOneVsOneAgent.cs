@@ -97,6 +97,7 @@ internal sealed class RlOneVsOneAgent : Agent
     private bool _hasParticipatedThisEpisode;
     private long _boundRuntimeShipId;
     private Squad _boundSquad;
+    private int _boundSquadItemId;
     private bool _previousSquadUserControlled;
     private bool _previousSquadHiveMindControlled;
     private bool _previousCanAcceptUserInput;
@@ -1013,6 +1014,7 @@ internal sealed class RlOneVsOneAgent : Agent
         _nextHealingActionTime = 0f;
         ResetWeaponAimDirections();
         _boundSquad = _ship.Squad;
+        _boundSquadItemId = _boundSquad != null ? _boundSquad.ItemId : 0;
         if (_boundSquad != null)
         {
             _previousSquadUserControlled = _boundSquad.IsUserControlled;
@@ -1119,25 +1121,29 @@ internal sealed class RlOneVsOneAgent : Agent
     {
         CancelPendingWarpAction();
         ReleaseHealingReservation();
-        if (!object.ReferenceEquals(_ship, null))
+        // Pooled Ships and Squads retain their component references across lifecycles. Only
+        // restore control state when each object still has the runtime identity this agent bound.
+        bool ownsBoundShip = !object.ReferenceEquals(_ship, null) &&
+                             _ship != null &&
+                             _ship.Id == _boundRuntimeShipId;
+        if (ownsBoundShip)
         {
             ClearCommunication(_ship);
-            if (_ship != null)
+            _ship.IsRlPolicyControlled = false;
+            for (int i = 0; i < _ship.Turrets.Count; i++)
             {
-                _ship.IsRlPolicyControlled = false;
-                for (int i = 0; i < _ship.Turrets.Count; i++)
-                {
-                    _ship.Turrets[i].ClearRlControl();
-                }
+                _ship.Turrets[i].ClearRlControl();
             }
         }
-        if (_hasStoredSquadControlState && _boundSquad != null)
+        if (_hasStoredSquadControlState && _boundSquad != null &&
+            !_boundSquad.IsDead && _boundSquad.ItemId == _boundSquadItemId)
         {
             _boundSquad.IsUserControlled = _previousSquadUserControlled;
             _boundSquad.IsHiveMindControlled = _previousSquadHiveMindControlled;
             _boundSquad.CanAcceptUserInput = _previousCanAcceptUserInput;
         }
         _boundSquad = null;
+        _boundSquadItemId = 0;
         _hasStoredSquadControlState = false;
         _ship = null;
     }
