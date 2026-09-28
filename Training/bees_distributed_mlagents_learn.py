@@ -21,30 +21,30 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         trainer_args, options
     )
 
-    original_factory = None
-    if options.enabled:
-        spec_path = distributed.write_remote_worker_spec(
-            options.remote_spec,
-            trainer_args,
-            base_port=base_port,
-            worker_ids=external_worker_ids,
-        )
-        original_factory = distributed.install_external_worker_factory(
-            total_envs=total_envs,
-            external_worker_ids=external_worker_ids,
-        )
-        print(
-            "[Bees distributed] "
-            + distributed.describe_topology(base_port, total_envs, external_worker_ids)
-        )
-        print(f"[Bees distributed] remote_session_spec={spec_path}")
-        print(
-            "[Bees distributed] External ML-Agents ports bind to 127.0.0.1 only; "
-            "connect remote machines through SSH forwarding and the generated session spec."
-        )
-
     original_argv = sys.argv
+    original_factory = None
     try:
+        if options.enabled:
+            spec_path = distributed.write_remote_worker_spec(
+                options.remote_spec,
+                trainer_args,
+                base_port=base_port,
+                worker_ids=external_worker_ids,
+            )
+            original_factory = distributed.install_external_worker_factory(
+                total_envs=total_envs,
+                external_worker_ids=external_worker_ids,
+            )
+            print(
+                "[Bees distributed] "
+                + distributed.describe_topology(base_port, total_envs, external_worker_ids)
+            )
+            print(f"[Bees distributed] remote_session_spec={spec_path}")
+            print(
+                "[Bees distributed] External ML-Agents ports bind to 127.0.0.1 only; "
+                "connect remote machines through SSH forwarding and the generated session spec."
+            )
+
         sys.argv = [original_argv[0], *trainer_args]
         launcher.main()
         return 0
