@@ -74,7 +74,7 @@ func TestBootstrapHandlerFailsClosedWhenBundleIsMissing(t *testing.T) {
 func TestWriteGatewayHealthCreatesAndRefreshesHeartbeat(t *testing.T) {
 	root := t.TempDir()
 	healthPath := filepath.Join(root, "gateway-health.txt")
-	if err := writeGatewayHealth(healthPath, "100.64.0.1", 7150, 55051, 7151); err != nil {
+	if err := writeGatewayHealth(healthPath, "100.64.0.1", 7150, 55051, 7151, 7146); err != nil {
 		t.Fatal(err)
 	}
 	first, err := os.Stat(healthPath)
@@ -85,7 +85,8 @@ func TestWriteGatewayHealthCreatesAndRefreshesHeartbeat(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(payload), "ready ip=100.64.0.1") {
+	if !strings.Contains(string(payload), "ready ip=100.64.0.1") ||
+		!strings.Contains(string(payload), "gameplay=7146") {
 		t.Fatalf("unexpected health payload %q", string(payload))
 	}
 
