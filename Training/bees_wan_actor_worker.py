@@ -975,7 +975,10 @@ class ActorSession:
 
         if control_changed:
             record = self.client.control(self.session_id, self.control_epoch)
-            if record is None or int(record.get("epoch", -1)) != new_control:
+            if (
+                not isinstance(record, Mapping)
+                or _validated_state_epoch(record, "epoch") != new_control
+            ):
                 raise RuntimeError("WAN actor could not obtain the new central control record")
             kind = record.get("kind")
             config = record.get("config")
