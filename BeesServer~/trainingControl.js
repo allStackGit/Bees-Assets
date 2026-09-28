@@ -1539,6 +1539,16 @@ class TrainingControlStore {
         const role = requireRole(payload.role);
         const platform = requireString(payload.platform, 'platform', 64);
         const now = this.now();
+        const previousTrainerRecord = this.trainers.get(trainerId);
+        if (previousTrainerRecord &&
+            previousTrainerRecord.role !== role &&
+            previousTrainerRecord.last_seen_ms >= now - this.leaseSeconds * 1000) {
+            throw Object.assign(
+                new Error(
+                    'trainer ' + trainerId + ' is already active as role ' +
+                    previousTrainerRecord.role + '; wait for its lease to expire before reusing the id'),
+                { statusCode: 409 });
+        }
         const record = {
             trainer_id: trainerId,
             role,
@@ -1567,7 +1577,6 @@ class TrainingControlStore {
             last_seen_ms: now,
         };
         const previousState = this.state;
-        const previousTrainerRecord = this.trainers.get(trainerId);
         if (role === 'dedicated') {
             this.state = {
                 ...previousState,
