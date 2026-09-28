@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"net/http"
+	"net/netip"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -11,6 +12,27 @@ import (
 	"testing"
 	"time"
 )
+
+func TestValidateTailnetBackendStatusRequiresRunningExpectedIP(t *testing.T) {
+	expected := "100.80.169.87"
+	assigned := []netip.Addr{
+		netip.MustParseAddr(expected),
+		netip.MustParseAddr("fd7a:115c:a1e0::1"),
+	}
+	if err := validateTailnetBackendStatus("Running", assigned, expected); err != nil {
+		t.Fatalf("healthy backend rejected: %v", err)
+	}
+	if err := validateTailnetBackendStatus("Starting", assigned, expected); err == nil {
+		t.Fatal("non-running backend was accepted")
+	}
+	if err := validateTailnetBackendStatus(
+		"Running",
+		[]netip.Addr{netip.MustParseAddr("100.64.0.2")},
+		expected,
+	); err == nil {
+		t.Fatal("backend without expected learner IP was accepted")
+	}
+}
 
 func TestBootstrapHandlerServesExactPublishedBundle(t *testing.T) {
 	root := t.TempDir()
