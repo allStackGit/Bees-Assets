@@ -238,6 +238,30 @@ class TrainingControlClientTests(unittest.TestCase):
         self.assertEqual(heartbeat["prepared_build_id"], "")
         self.assertEqual(heartbeat["environment_id"], "e" * 64)
 
+    def test_background_build_preparer_checks_verified_identity_once(self):
+        class PreparedBuilds:
+            def __init__(self):
+                self.checks = 0
+
+            def is_prepared(self, _descriptor):
+                self.checks += 1
+                return True
+
+        builds = PreparedBuilds()
+        preparer = agent.BackgroundBuildPreparer(builds, client=object())
+        descriptor = {
+            "role": "dedicated",
+            "platform": "LinuxPlayer",
+            "build_id": "build-a",
+            "archive_sha256": "a" * 64,
+        }
+
+        preparer.request(descriptor)
+        preparer.request(descriptor)
+
+        self.assertEqual(builds.checks, 1)
+        self.assertEqual(preparer.prepared_build_id, "build-a")
+
     def test_worker_control_requests_fail_fast_inside_server_lease(self):
         self.assertEqual(
             agent._parser().get_default("request_timeout_seconds"),
