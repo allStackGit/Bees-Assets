@@ -192,6 +192,10 @@ class ElasticActorFailureTelemetryTests(unittest.TestCase):
             self.assertEqual(snapshot["session_failures_total"], 1)
             self.assertEqual(snapshot["seconds_since_last_session_failure"], 6.0)
             self.assertEqual(snapshot["last_session_failure_type"], "RuntimeError")
+            self.assertEqual(
+                snapshot["last_session_failure_message"],
+                "simulated failure",
+            )
 
             next_run = actor_worker._SessionFailureTelemetry(
                 state_path=state_path,
@@ -199,9 +203,22 @@ class ElasticActorFailureTelemetryTests(unittest.TestCase):
             )
             self.assertEqual(next_run.snapshot()["session_failures_total"], 0)
             self.assertEqual(next_run.snapshot()["last_session_failure_type"], "")
+            self.assertEqual(next_run.snapshot()["last_session_failure_message"], "")
 
 
 class ElasticActorHealthTests(unittest.TestCase):
+    def test_session_failure_message_is_bounded_and_single_line(self):
+        telemetry = actor_worker._SessionFailureTelemetry()
+        telemetry.record(TimeoutError("first line\n" + ("x" * 400)))
+        snapshot = telemetry.snapshot()
+
+        self.assertEqual(snapshot["last_session_failure_type"], "TimeoutError")
+        self.assertNotIn("\n", snapshot["last_session_failure_message"])
+        self.assertLessEqual(len(snapshot["last_session_failure_message"]), 240)
+        self.assertTrue(
+            snapshot["last_session_failure_message"].startswith("first line ")
+        )
+
     def test_broker_absence_is_healthy_wait_not_child_error(self):
         exc = actor_worker.worker.BrokerUnavailable("central release phase")
         with mock.patch.object(actor_worker, "write_managed_health") as health:
