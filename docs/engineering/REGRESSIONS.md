@@ -1406,3 +1406,10 @@ Manual-only protection is acceptable only when the record explains why determini
 **Fix:** `_run_managed_subprocess` now stops and waits for the managed child before re-raising an ordinary supervision error. If the normal owned-child cleanup fails, it force-kills the root and clears the Windows Job Object as a fallback.
 **Permanent protection:** Any phase error handled by the long-lived retry loop must retire its currently supervised child first. Owner-process exit remains the final guardian fallback when the service itself terminates.
 **Verification:** Static control-flow review traced post-launch errors into `run_service`'s exception-and-retry path and confirmed cleanup runs before propagation. No tests, builds, Unity, simulations, or runtime checks were run. Post-fix clean-pass count remains **0 / 2**.
+
+### REG-161 — Reject coerced model training steps
+**Area:** `Training/bees_continual_learning.py`, `ContinualLearningStore.register_model`
+**Symptom:** The public registry API accepted booleans and fractional numeric values for `training_step` because it validated and persisted `int(training_step)`. This silently changed artifact provenance (for example, `True` became step 1 and 2.7 became step 2).
+**Fix:** Require `training_step` to be an integer, explicitly reject booleans, and require a nonnegative value before hashing or registering the model.
+**Permanent protection:** Model lineage fields must be validated in their original types before coercion or persistence.
+**Verification:** Static call-path review confirms validation precedes artifact hashing, copy, and the SQLite insert. CLI input already parses as an integer; direct API callers now receive the same strict contract. No tests, builds, Unity, simulations, or runtime checks were run. Post-fix clean-pass count remains **0 / 2**.
