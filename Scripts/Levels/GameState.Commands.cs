@@ -152,8 +152,40 @@ namespace Assets.Scripts.Levels
                 snapshot == null ||
                 snapshot.MatchLevelId != MatchLevelId ||
                 snapshot.Sequence <= _lastAppliedBattleStateSequence ||
-                snapshot.Ships == null ||
-                snapshot.Ships.Count != ShipsByMatchId.Count)
+                snapshot.Ships == null)
+            {
+                return false;
+            }
+
+            HashSet<long> authoritativeShipIds = new HashSet<long>();
+            for (int i = 0; i < snapshot.Ships.Count; i++)
+            {
+                authoritativeShipIds.Add(snapshot.Ships[i].MatchShipId);
+            }
+
+            List<Ship> shipsToDespawn = null;
+            foreach (KeyValuePair<long, Ship> localShip in ShipsByMatchId)
+            {
+                if (!authoritativeShipIds.Contains(localShip.Key))
+                {
+                    shipsToDespawn ??= new List<Ship>();
+                    shipsToDespawn.Add(localShip.Value);
+                }
+            }
+
+            if (shipsToDespawn != null)
+            {
+                for (int i = 0; i < shipsToDespawn.Count; i++)
+                {
+                    Ship ship = shipsToDespawn[i];
+                    if (ship != null && !ship.IsDead)
+                    {
+                        ship.ReplicaDespawn();
+                    }
+                }
+            }
+
+            if (snapshot.Ships.Count != ShipsByMatchId.Count)
             {
                 return false;
             }

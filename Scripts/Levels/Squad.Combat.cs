@@ -20,6 +20,44 @@ namespace Assets.Scripts.Levels
             }
         }
 
+        public void ReplicaDespawn()
+        {
+            if (IsDead)
+            {
+                return;
+            }
+
+            MatchSession matchSession = Level != null && Level.Stage != null
+                ? Level.Stage.MatchSession
+                : null;
+            if (matchSession == null || matchSession.IsLocalAuthority)
+            {
+                throw new InvalidOperationException(
+                    "ReplicaDespawn may only run on a non-authoritative multiplayer replica.");
+            }
+
+            IsDead = true;
+            CancelScriptedCommandQueue();
+            SetCommandNull();
+
+            if (IsUserControlled)
+            {
+                if (HasSquadTab)
+                {
+                    SquadTab.DisableTab();
+                }
+                if (HasSquadBox && SquadBox != null)
+                {
+                    SquadBox.SetActive(false);
+                }
+                Level.State.DeselectSquad(this);
+            }
+
+            Level.CancelTimer(_checkChaseTimer);
+            Level.State.RemoveSquad(this);
+            enabled = false;
+        }
+
         public void Kill(bool endKill = false)
         {
             if (IsDead)

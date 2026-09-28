@@ -294,6 +294,63 @@ namespace Assets.Scripts.Entities.Ships
             }
         }
 
+        public void ReplicaDespawn()
+        {
+            if (IsDead)
+            {
+                return;
+            }
+
+            MatchSession matchSession = Level != null && Level.Stage != null
+                ? Level.Stage.MatchSession
+                : null;
+            if (matchSession == null || matchSession.IsLocalAuthority)
+            {
+                throw new InvalidOperationException(
+                    "ReplicaDespawn may only run on a non-authoritative multiplayer replica.");
+            }
+
+            IsDead = true;
+            if (HasUserFogOfWarVision && FogOfWarVision != null)
+            {
+                FogOfWarVision.Kill(0, false);
+            }
+
+            if (WeaponsThatHaveUsWithinRange.Count > 0)
+            {
+                foreach (Weapon weapon in WeaponsThatHaveUsWithinRange)
+                {
+                    weapon?.ShipsWithinRange.Remove(Id);
+                }
+                WeaponsThatHaveUsWithinRange.Clear();
+            }
+
+            foreach (Projectile projectile in ProjectilesInFlight)
+            {
+                if (projectile != null)
+                {
+                    projectile.ShipIsDead = true;
+                }
+            }
+
+            Squad owningSquad = Squad;
+            Level.State.RemoveShip(this);
+            owningSquad?.RemoveShip(this);
+
+            if (owningSquad != null && owningSquad.GetShips().Count == 0)
+            {
+                owningSquad.ReplicaDespawn();
+            }
+            else if (owningSquad != null)
+            {
+                owningSquad.SetOffsets();
+                owningSquad.HasMovedBox = false;
+            }
+
+            CancelOwnedTimers();
+            Deactivate();
+        }
+
         public virtual void Kill(Ship killer, FleetShip killerFleetShip, SavedSquad killerSavedSquad, bool endKill = false)
         {
             if (IsDead) return;

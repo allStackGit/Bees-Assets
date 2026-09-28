@@ -2157,5 +2157,68 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains("private const int CommandChannel = 47;", source);
             StringAssert.Contains("private const int StateChannel = 48;", source);
         }
+
+        [Test]
+        public void ReplicaShipDespawnSkipsAuthoritativeKillSideEffects()
+        {
+            string path = Path.Combine(
+                Application.dataPath,
+                "Scripts",
+                "Entities",
+                "Ships",
+                "Ship.Combat.cs");
+            string source = File.ReadAllText(path);
+            int start = source.IndexOf("public void ReplicaDespawn()");
+            int end = source.IndexOf("public virtual void Kill(", start);
+            Assert.That(start, Is.GreaterThanOrEqualTo(0));
+            Assert.That(end, Is.GreaterThan(start));
+            string replicaSource = source.Substring(start, end - start);
+
+            StringAssert.Contains("Level.State.RemoveShip(this);", replicaSource);
+            StringAssert.Contains("CancelOwnedTimers();", replicaSource);
+            StringAssert.Contains("Deactivate();", replicaSource);
+            StringAssert.DoesNotContain("LogKilledStats(", replicaSource);
+            StringAssert.DoesNotContain("LogKillerStats(", replicaSource);
+            StringAssert.DoesNotContain("RecordShipDeath(", replicaSource);
+            StringAssert.DoesNotContain("DropExplosionAnimation(", replicaSource);
+            StringAssert.DoesNotContain("PlayerScore", replicaSource);
+        }
+
+        [Test]
+        public void ReplicaSquadDespawnSkipsGameOverAndNormalKillPath()
+        {
+            string path = Path.Combine(
+                Application.dataPath,
+                "Scripts",
+                "Levels",
+                "Squad.Combat.cs");
+            string source = File.ReadAllText(path);
+            int start = source.IndexOf("public void ReplicaDespawn()");
+            int end = source.IndexOf("public void Kill(bool", start);
+            Assert.That(start, Is.GreaterThanOrEqualTo(0));
+            Assert.That(end, Is.GreaterThan(start));
+            string replicaSource = source.Substring(start, end - start);
+
+            StringAssert.Contains("Level.State.RemoveSquad(this);", replicaSource);
+            StringAssert.Contains("SetCommandNull();", replicaSource);
+            StringAssert.DoesNotContain("GameOver", replicaSource);
+            StringAssert.DoesNotContain("IsSideKilled", replicaSource);
+        }
+
+        [Test]
+        public void AuthoritySnapshotRemovesReplicaShipsMissingFromWorld()
+        {
+            string path = Path.Combine(
+                Application.dataPath,
+                "Scripts",
+                "Levels",
+                "GameState.Commands.cs");
+            string source = File.ReadAllText(path);
+
+            StringAssert.Contains("HashSet<long> authoritativeShipIds", source);
+            StringAssert.Contains("shipsToDespawn", source);
+            StringAssert.Contains("ship.ReplicaDespawn();", source);
+            StringAssert.Contains("snapshot.Ships.Count != ShipsByMatchId.Count", source);
+        }
     }
 }
