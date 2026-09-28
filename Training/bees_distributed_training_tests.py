@@ -15,8 +15,11 @@ import bees_remote_worker as remote
 import bees_continual_distributed_train as continual_distributed
 
 
-def _fake_local_environment(worker_id, side_channels):
-    return worker_id, side_channels
+def _factory_returning_nested_callable(*_args):
+    def nested_environment_factory(worker_id, side_channels):
+        return worker_id, side_channels
+
+    return nested_environment_factory
 
 
 class DistributedOptionTests(unittest.TestCase):
@@ -166,21 +169,42 @@ class DistributedOptionTests(unittest.TestCase):
 
 class ExternalWorkerFactoryTests(unittest.TestCase):
     def test_worker_factory_is_picklable_for_spawned_ml_agents_workers(self):
-        factory = distributed._DistributedEnvironmentFactory(
-            _fake_local_environment,
+        installer = distributed._DistributedEnvironmentFactoryInstaller(
+            _factory_returning_nested_callable,
             (2, 3),
+        )
+        factory = installer(
+            "bees.exe",
+            True,
+            False,
+            17,
+            1,
+            60,
+            5005,
+            ["--rl-map-size=96"],
+            "logs",
+        )
+
+        restored = pickle.loads(pickle.dumps(factory))
+        with patch.object(
+            distributed,
+            "_create_local_environment",
+            return_value=(1, "local-channel"),
+        ) as create_local:
+            self.assertEqual(restored(1, "local-channel"), (1, "local-channel"))
+        create_local.assert_called_once_with(
             env_path="bees.exe",
+            worker_id=1,
             seed=17,
             num_areas=1,
             no_graphics=True,
             no_graphics_monitor=False,
             base_port=5005,
             env_args=["--rl-map-size=96"],
+            log_folder="logs",
+            side_channels="local-channel",
             timeout_wait=60,
         )
-
-        restored = pickle.loads(pickle.dumps(factory))
-        self.assertEqual(restored(1, "local-channel"), (1, "local-channel"))
         self.assertEqual(restored.external_worker_ids, frozenset({2, 3}))
 
 
