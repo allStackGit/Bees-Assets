@@ -314,6 +314,7 @@ internal sealed class RlLivePolicyModelUpdater : MonoBehaviour
                         response,
                         descriptor,
                         offset,
+                        chunk.Length,
                         out byte[] bytes,
                         out string chunkError))
                 {
@@ -669,6 +670,7 @@ internal sealed class RlLivePolicyModelUpdater : MonoBehaviour
         ModelResponse response,
         ModelResponse descriptor,
         long expectedOffset,
+        int requestedLength,
         out byte[] bytes,
         out string error)
     {
@@ -679,7 +681,10 @@ internal sealed class RlLivePolicyModelUpdater : MonoBehaviour
             !string.Equals(response.DeploymentId, descriptor.DeploymentId, StringComparison.Ordinal) ||
             !string.Equals(response.BundleSha256, descriptor.BundleSha256, StringComparison.Ordinal) ||
             response.Offset != expectedOffset || response.NextOffset <= expectedOffset ||
-            response.NextOffset > descriptor.BundleSizeBytes || string.IsNullOrEmpty(response.Data))
+            response.NextOffset > descriptor.BundleSizeBytes ||
+            requestedLength <= 0 ||
+            response.NextOffset - expectedOffset > requestedLength ||
+            string.IsNullOrEmpty(response.Data))
         {
             error = "chunk identity or byte range does not match the pinned deployment";
             return false;
