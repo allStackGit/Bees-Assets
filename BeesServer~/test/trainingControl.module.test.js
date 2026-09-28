@@ -845,6 +845,56 @@ test('compatible release prestages everywhere and rolls one dedicated trainer at
     });
 });
 
+test('compatible rollout keeps a stale central learner in the preparation barrier', () => {
+    withTempDir(root => {
+        let now = 1000;
+        const store = new TrainingControlStore({
+            statePath: path.join(root, 'state.json'),
+            artifactRoot: path.join(root, 'artifacts'),
+            leaseSeconds: 10,
+            now: () => now,
+        });
+        const oldSha = publishDedicatedBuild(store, root, 'central-stale-old');
+        publishDedicatedBuild(store, root, 'central-stale-new');
+        store.stageRelease({
+            buildId: 'central-stale-old',
+            runId: 'central-stale-run',
+            compatibilityKey: 'c'.repeat(64),
+            incompatible: false,
+        });
+        store.setDesiredState({ training_enabled: true });
+        heartbeatDedicated(store, 'remote-a', 'central-stale-old', oldSha);
+        heartbeatDedicated(store, 'central-learner', 'central-stale-old', oldSha);
+
+        store.stageRelease({
+            buildId: 'central-stale-new',
+            runId: 'central-stale-run',
+            compatibilityKey: 'c'.repeat(64),
+            incompatible: false,
+        });
+        now = 9000;
+        heartbeatDedicated(
+            store,
+            'remote-a',
+            'central-stale-old',
+            oldSha,
+            { preparedBuildId: 'central-stale-new' },
+        );
+
+        // The remote lease is renewed, while the central learner's lease expires.
+        // The learner must remain a required acknowledgement for the release.
+        now = 11001;
+        const desired = store.status().desired;
+
+        assert.equal(desired.canonical_build_id, 'central-stale-old');
+        assert.equal(desired.pending_release.phase, 'preparing');
+        assert.deepEqual(
+            desired.pending_release.required_trainers.map(item => item.trainer_id),
+            ['remote-a', 'central-learner'],
+        );
+    });
+});
+
 test('compatible preparing drops a trainer after its dedicated lease expires', () => {
     withTempDir(root => {
         let now = 1000;
