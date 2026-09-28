@@ -48,7 +48,22 @@ class BootstrapBundleTests(unittest.TestCase):
         windows.write_bytes(b"windows-bridge")
         linux = root / "bridge-linux"
         linux.write_bytes(b"linux-bridge")
-        return runtime, worker, wan, release, windows, linux, runtime_sha, version
+        windows_launcher = root / "bees-remote-worker.cmd"
+        windows_launcher.write_bytes(b"@echo off\r\necho windows launcher\r\n")
+        linux_launcher = root / "bees-remote-worker.sh"
+        linux_launcher.write_bytes(b"#!/usr/bin/env bash\necho linux launcher\n")
+        return (
+            runtime,
+            worker,
+            wan,
+            release,
+            windows,
+            linux,
+            windows_launcher,
+            linux_launcher,
+            runtime_sha,
+            version,
+        )
 
     def test_atomic_replace_retries_transient_windows_sharing_violation(self):
         with (
@@ -79,6 +94,8 @@ class BootstrapBundleTests(unittest.TestCase):
                 release,
                 windows,
                 linux,
+                windows_launcher,
+                linux_launcher,
                 runtime_sha,
                 version,
             ) = self._inputs(root)
@@ -92,6 +109,8 @@ class BootstrapBundleTests(unittest.TestCase):
                 release=release,
                 windows_bridge=windows,
                 linux_bridge=linux,
+                windows_launcher=windows_launcher,
+                linux_launcher=linux_launcher,
             )
 
             self.assertEqual(result["build_id"], "build-123")
@@ -108,6 +127,14 @@ class BootstrapBundleTests(unittest.TestCase):
                 )
                 self.assertEqual(bundle.read("bees-remote-runtime.zip"), runtime.read_bytes())
                 self.assertEqual(
+                    bundle.read("bees-remote-worker.cmd"),
+                    windows_launcher.read_bytes(),
+                )
+                self.assertEqual(
+                    bundle.read("bees-remote-worker.sh"),
+                    linux_launcher.read_bytes(),
+                )
+                self.assertEqual(
                     json.loads(bundle.read("latest-training-release.json")),
                     json.loads(release.read_text(encoding="utf-8")),
                 )
@@ -115,7 +142,18 @@ class BootstrapBundleTests(unittest.TestCase):
     def test_mismatched_runtime_is_rejected_without_replacing_published_bundle(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
-            runtime, worker, wan, release, windows, linux, _sha, _version = self._inputs(
+            (
+                runtime,
+                worker,
+                wan,
+                release,
+                windows,
+                linux,
+                windows_launcher,
+                linux_launcher,
+                _sha,
+                _version,
+            ) = self._inputs(
                 root,
                 release_sha_override="0" * 64,
             )
@@ -131,6 +169,8 @@ class BootstrapBundleTests(unittest.TestCase):
                     release=release,
                     windows_bridge=windows,
                     linux_bridge=linux,
+                    windows_launcher=windows_launcher,
+                    linux_launcher=linux_launcher,
                 )
 
             self.assertEqual(output.read_bytes(), b"previous-good-bundle")
@@ -138,7 +178,18 @@ class BootstrapBundleTests(unittest.TestCase):
     def test_missing_or_empty_secret_fails_closed(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
-            runtime, worker, wan, release, windows, linux, _sha, _version = self._inputs(root)
+            (
+                runtime,
+                worker,
+                wan,
+                release,
+                windows,
+                linux,
+                windows_launcher,
+                linux_launcher,
+                _sha,
+                _version,
+            ) = self._inputs(root)
             wan.write_bytes(b"")
             output = root / "bundle.zip"
 
@@ -151,6 +202,8 @@ class BootstrapBundleTests(unittest.TestCase):
                     release=release,
                     windows_bridge=windows,
                     linux_bridge=linux,
+                    windows_launcher=windows_launcher,
+                    linux_launcher=linux_launcher,
                 )
 
             self.assertFalse(output.exists())
