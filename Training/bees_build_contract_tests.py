@@ -668,6 +668,8 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         self.assertIn("session_failures_total", status)
         self.assertIn("seconds_since_last_session_failure", status)
         self.assertIn("last_session_failure_type", status)
+        self.assertIn("failureType !== 'BrokerStaleActor'", status)
+        self.assertIn("staleActorResync", status)
         self.assertIn("metrics.control", status)
         self.assertIn("Control x", status)
         self.assertIn("last_instability_ms", status)
@@ -676,6 +678,28 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         self.assertIn("centralWithoutLocalEnvs", status)
         self.assertIn("Number(config.numLocalEnvs) === 0", status)
         self.assertIn("Error: statusError(record)", status)
+
+    def test_stale_actor_protocol_races_resynchronize_without_session_failure(self):
+        base = (ROOT / "Training" / "bees_wan_actor_worker.py").read_text(
+            encoding="utf-8"
+        )
+        elastic = (ROOT / "Training" / "bees_elastic_wan_actor_session.py").read_text(
+            encoding="utf-8"
+        )
+        worker = (ROOT / "Training" / "bees_elastic_wan_actor_worker.py").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("except BrokerStaleActor:", base)
+        self.assertIn("self._stale.set()", base)
+        self.assertIn("self._state_changed.set()", base)
+        self.assertIn("except worker.BrokerStaleActor:", elastic)
+        self.assertIn("if not self._heartbeat():", elastic)
+        stale_handler = worker.index("except worker.BrokerStaleActor:")
+        generic_handler = worker.index("except Exception as exc:", stale_handler)
+        telemetry = worker.index("failure_telemetry.record(exc)", generic_handler)
+        self.assertLess(stale_handler, generic_handler)
+        self.assertLess(generic_handler, telemetry)
 
     def test_running_remote_heartbeat_publishes_environment_identity_and_throughput(self):
         source = (ROOT / "Training" / "bees_training_worker_agent.py").read_text(
