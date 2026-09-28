@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
+using System.Reflection;
 using NUnit.Framework;
 using UnityEngine;
 
@@ -51,6 +52,78 @@ namespace Bees.Tests.EditMode
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "MiningAction"), Is.EqualTo(2));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "HealingAction"), Is.EqualTo(3));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "WarpAction"), Is.EqualTo(4));
+        }
+
+        [Test]
+        public void NonTurretSelfWeaponObservationMatchesFrozenSlotWidth()
+        {
+            Type shipType = RuntimeAssembly.GetType("Assets.Scripts.Entities.Ships.Ship");
+            Type bombType = RuntimeAssembly.GetType("Assets.Scripts.Entities.Ships.Weapons.Bomb");
+            Type sensorType = RuntimeAssembly.GetType("Unity.MLAgents.Sensors.VectorSensor");
+            Type perceptionType = RuntimeAssembly.GetType("RlCombatPerception");
+            GameObject ownerObject = new GameObject("RL Non-Turret Observation Owner");
+            GameObject weaponObject = new GameObject("RL Non-Turret Observation Weapon");
+            object sensor = null;
+            try
+            {
+                Component owner = ownerObject.AddComponent(shipType);
+                Component bomb = weaponObject.AddComponent(bombType);
+                RuntimeAssembly.SetField(bomb, "Ship", owner);
+
+                ConstructorInfo[] constructors = sensorType.GetConstructors(
+                    BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                ConstructorInfo sensorConstructor = null;
+                for (int i = 0; i < constructors.Length; i++)
+                {
+                    ParameterInfo[] parameters = constructors[i].GetParameters();
+                    if (parameters.Length >= 2 &&
+                        parameters[0].ParameterType == typeof(int) &&
+                        parameters[1].ParameterType == typeof(string))
+                    {
+                        sensorConstructor = constructors[i];
+                        break;
+                    }
+                }
+                Assert.That(sensorConstructor, Is.Not.Null, "Expected the ML-Agents VectorSensor constructor.");
+
+                ParameterInfo[] sensorParameters = sensorConstructor.GetParameters();
+                object[] sensorArguments = new object[sensorParameters.Length];
+                sensorArguments[0] = 15;
+                sensorArguments[1] = "non-turret-slot";
+                for (int i = 2; i < sensorParameters.Length; i++)
+                {
+                    sensorArguments[i] = sensorParameters[i].HasDefaultValue
+                        ? sensorParameters[i].DefaultValue
+                        : (sensorParameters[i].ParameterType.IsValueType
+                            ? Activator.CreateInstance(sensorParameters[i].ParameterType)
+                            : null);
+                }
+                sensor = sensorConstructor.Invoke(sensorArguments);
+
+                MethodInfo addObservation = perceptionType.GetMethod(
+                    "AddSelfWeaponObservation",
+                    BindingFlags.Static | BindingFlags.NonPublic);
+                Assert.That(addObservation, Is.Not.Null);
+                addObservation.Invoke(null, new[] { owner, bomb, sensor, (object)0 });
+
+                MethodInfo getObservations = sensorType.GetMethod(
+                    "GetObservations",
+                    BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                Assert.That(getObservations, Is.Not.Null);
+                object observations = getObservations.Invoke(sensor, null);
+                PropertyInfo count = observations.GetType().GetProperty("Count");
+                Assert.That(count, Is.Not.Null);
+                Assert.That(count.GetValue(observations), Is.EqualTo(15));
+            }
+            finally
+            {
+                if (sensor is IDisposable disposable)
+                {
+                    disposable.Dispose();
+                }
+                UnityEngine.Object.DestroyImmediate(weaponObject);
+                UnityEngine.Object.DestroyImmediate(ownerObject);
+            }
         }
 
         [Test]
