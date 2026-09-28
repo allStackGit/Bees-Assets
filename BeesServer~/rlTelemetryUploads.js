@@ -417,12 +417,6 @@ class RlTelemetryUploadManager {
             const active = this.sessions.get(activeId);
             if (!active) {
                 this.logicalUploads.delete(logicalKey);
-            } else if (active.connectionId !== connectionId) {
-                throw new RlTelemetryUploadError(
-                    409,
-                    'match-id-conflict',
-                    'Active MatchId is already owned by another authenticated connection.',
-                );
             } else if (
                 active.payloadSha256 === payloadSha256 &&
                 active.totalBytes === totalBytes &&
@@ -431,7 +425,21 @@ class RlTelemetryUploadManager {
                 active.modelSha256 === modelSha256 &&
                 active.deploymentId === deploymentId
             ) {
-                return this._progress(active, false);
+                if (active.connectionId !== connectionId) {
+                    if (active.inFlight > 0) {
+                        throw new RlTelemetryUploadError(
+                            409,
+                            'upload-busy',
+                            'Matching telemetry upload has an in-flight operation on another connection.',
+                        );
+                    }
+                    // The authenticated uploader may reconnect after a transport failure. Transfer
+                    // only an exact declaration and only when the previous connection has no queued
+                    // work, so the new socket can resume from the server's durable byte offset.
+                    active.connectionId = connectionId;
+                    active.updatedAt = this.now();
+                }
+                return this._progress(active, active.nextOffset > 0);
             } else {
                 throw new RlTelemetryUploadError(409, 'match-id-conflict', 'Active MatchId is already bound to different telemetry content.');
             }
