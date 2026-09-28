@@ -120,8 +120,25 @@ if($Command -eq 'stop'){
     throw "Remote worker PID $($process.Id) did not stop within 45 seconds. It was not force-killed."
 }
 
+$StartupLockPath=Join-Path $InstallRoot 'remote-worker.start.lock'
+try {
+    $StartupLock=[IO.File]::Open(
+        $StartupLockPath,
+        [IO.FileMode]::OpenOrCreate,
+        [IO.FileAccess]::ReadWrite,
+        [IO.FileShare]::None
+    )
+} catch [IO.IOException] {
+    $existingProcess=Get-LiveSupervisorProcess
+    if($null -ne $existingProcess){
+        Write-Host "[Bees remote] worker is already running in the background (PID $($existingProcess.Id))."
+        exit 0
+    }
+    throw 'Another remote worker startup is already in progress.'
+}
 $existingProcess=Get-LiveSupervisorProcess
 if($null -ne $existingProcess){
+    $StartupLock.Dispose()
     Write-Host "[Bees remote] worker is already running in the background (PID $($existingProcess.Id))."
     Write-Host '[Bees remote] use bees-remote-worker.cmd stop to stop it.'
     exit 0
@@ -316,6 +333,7 @@ if($process.HasExited){
     Remove-Item -LiteralPath $SupervisorPidFile -Force -ErrorAction SilentlyContinue
     throw "Remote worker exited during background startup with code $($process.ExitCode). Check $SupervisorOutLog and $SupervisorErrLog."
 }
+$StartupLock.Dispose()
 Write-Host "[Bees remote] worker started in the background (PID $($process.Id))."
 Write-Host "[Bees remote] logs: $SupervisorOutLog and $SupervisorErrLog"
 Write-Host '[Bees remote] close this shell freely; use bees-remote-worker.cmd stop to stop the worker.'
