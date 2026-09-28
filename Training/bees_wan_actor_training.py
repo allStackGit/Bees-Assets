@@ -1063,9 +1063,12 @@ class WanActorBroker:
                     batch = self._trajectory_batches.get_nowait()
                 except queue.Empty:
                     now = time.monotonic()
+                    lease_seconds = float(
+                        getattr(self.options, "actor_lease_seconds", DEFAULT_ACTOR_LEASE_SECONDS)
+                    )
                     lease_deadlines = [
                         float(record.get("last_seen", record.get("registered_at", now)))
-                        + DEFAULT_ACTOR_LEASE_SECONDS
+                        + lease_seconds
                         for record in self._registrations.values()
                     ]
                     future_expiries = [value for value in lease_deadlines if value > now]
