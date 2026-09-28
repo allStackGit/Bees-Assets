@@ -1192,3 +1192,11 @@ Manual-only protection is acceptable only when the record explains why determini
 **Fix:** canonical-artifact loading uses `lstatSync` and rejects symlinks/non-files/size mismatches. The download route opens once with `O_NOFOLLOW` when supported, checks the open descriptor's type/size and its device/inode against the current non-symlink path, then streams from that same descriptor. Worker-side SHA-256 verification remains in place.
 **Test classification:** existing `reloading control state rejects a tampered canonical artifact` remains valid; a dedicated symlink/replacement case is missing and was not added under the static code-analysis-only request.
 **Verification:** statically reviewed startup validation, publish-time ownership, descriptor-backed artifact routing, and the worker's hash-verifying download. Existing tamper-on-reload coverage remains valid; the targeted symlink/replacement case is missing and was not added under the static-only request. No tests or runtime checks were run.
+
+### REG-137 — Trainer log endpoint accepted unbounded per-file uploads
+**Area:** `BeesServer~/trainingControl.js`, trainer log append endpoint
+**Symptom:** authenticated clients could append consecutive 1 MiB chunks indefinitely to one log file, bypassing the worker uploader's 64 MiB per-file cap and consuming unbounded server storage.
+**Root cause:** the server bounded each request body but did not bound the accumulated destination size.
+**Fix:** enforce the same 64 MiB per-file limit as the worker uploader; clients may reset an oversized legacy file at offset zero, but appends beyond the cap are rejected with HTTP 413.
+**Test classification:** existing verified-offset append/reset coverage remains valid; a boundary/overflow case is missing and was not added under the static code-analysis-only request.
+**Verification:** statically traced the server's 1 MiB chunk bound, accumulated-size check, offset/reset branches, and the worker's 64 MiB upload limit. No tests or runtime checks were run.
