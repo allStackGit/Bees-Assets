@@ -1874,28 +1874,32 @@ server.listen(0,'127.0.0.1',async()=>{
         self.assertNotIn("catch (_) {\n            canonicalBuild = ''", block)
 
 
-    def test_operator_script_parses_when_powershell_is_available(self):
+    def test_operator_and_remote_bootstrap_parse_when_powershell_is_available(self):
         powershell = shutil.which("powershell") or shutil.which("pwsh")
         if not powershell:
             self.skipTest("PowerShell is not available")
-        command = (
-            "$e=$null;"
-            f"$null=[System.Management.Automation.Language.Parser]::ParseFile('{str(OPERATOR_SCRIPT).replace(chr(39), chr(39)*2)}',[ref]$null,[ref]$e);"
-            "if($e.Count){$e|ForEach-Object{Write-Error $_.Message};exit 2}"
-        )
-        completed = subprocess.run(
-            [powershell, "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command],
-            cwd=ROOT,
-            capture_output=True,
-            text=True,
-            timeout=30,
-            check=False,
-        )
-        self.assertEqual(
-            completed.returncode,
-            0,
-            msg=completed.stdout + completed.stderr,
-        )
+        for script in (OPERATOR_SCRIPT, REMOTE_BOOTSTRAP_SCRIPT):
+            escaped = str(script).replace(chr(39), chr(39) * 2)
+            command = (
+                "$e=$null;"
+                f"$null=[System.Management.Automation.Language.Parser]::ParseFile('{escaped}',[ref]$null,[ref]$e);"
+                "if($e.Count){$e|ForEach-Object{Write-Error "
+                "('line {0}, column {1}: {2} :: {3}' -f "
+                "$_.Extent.StartLineNumber,$_.Extent.StartColumnNumber,$_.Message,$_.Extent.Text)};exit 2}"
+            )
+            completed = subprocess.run(
+                [powershell, "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command],
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=False,
+            )
+            self.assertEqual(
+                completed.returncode,
+                0,
+                msg=f"{script} failed PowerShell parse:\n{completed.stdout}{completed.stderr}",
+            )
 
 
 if __name__ == "__main__":
