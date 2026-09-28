@@ -1509,3 +1509,9 @@ Manual-only protection is acceptable only when the record explains why determini
 **Fix:** Start the try/finally before writing the remote spec, installing the patch, or printing setup details so every post-install failure restores the original factory.
 **Permanent protection:** Process-wide worker-factory patches remain under one cleanup boundary spanning all setup and training operations after installation.
 **Verification:** Static control-flow review confirms the only return and all exceptions after patch installation pass through restoration. Added a focused wrapper test that makes setup logging fail and checks restoration; it was not run. No builds or training runs were executed. Post-fix clean-pass count remains **0 / 2**.
+### REG-176 — Ignore malformed and non-finite episode durations
+**Area:** Training/bees_training_worker_agent.py, EpisodeLogMetrics parsing
+**Symptom:** A complete episode log line with a malformed duration such as 1..2 matched the permissive numeric pattern, then float conversion raised ValueError. Metric collection occurs before the heartbeat reconciliation handler, so the exception could terminate the worker supervisor and its managed trainer. Extremely large duration strings could also parse as infinity and poison heartbeat metrics.
+**Fix:** Skip duration records that fail conversion or are not finite; non-finite optional numeric fields are reported as unavailable.
+**Permanent protection:** Diagnostic log parsing must treat malformed or non-finite metric values as invalid records and must not terminate the supervisor.
+**Verification:** Added focused regression coverage for malformed and overflowed durations followed by a valid record; it was not run. Static review confirms invalid durations are discarded before metrics are appended. No builds or training runs were executed. Post-fix clean-pass count remains **0 / 2**.
