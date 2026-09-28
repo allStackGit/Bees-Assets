@@ -1236,3 +1236,12 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** Replacing a same-path log generation must change file identity; readers must reset offsets and pending partial lines when that identity changes. A static test for the writer's move/create/restore order and consumer cursor reset was not added under the static-analysis-only request.
 **Verification:** Statically traced the 8 MiB rotation path, concurrent read/upload path, inode identity handling, server offset reset protocol, and metrics cursor reset. No tests, builds, Unity, or runtime checks were performed.
 **Invariant/knowledge:** Truncate-and-regrow is not reliably detectable by size checks alone; log generation replacement should change file identity so append-only readers can detect it.
+
+### REG-142 — Shared weapon validation did not reject friendly target candidates
+**Area:** `Scripts/Entities/Ships/Weapons/Weapon.cs`, `IsShipValidTarget`
+**Symptom:** The range collider and target-list builders currently filter to enemies, but the final shared target validator accepted any live ship in its range cache, including a friendly if a caller supplied one or cache ownership regressed.
+**Root cause:** Target validity trusted candidate-source filtering and checked only liveness, range membership, and line of fire; it did not enforce the weapon's side at the final firing boundary.
+**Fix:** Require the candidate ship's side to differ from the weapon side in `IsShipValidTarget`. Both ordinary weapons and Turret's `ShouldFire` use this shared validator.
+**Permanent protection:** Final target validation must enforce enemy-side ownership independently of upstream candidate filtering. A focused friendly-candidate regression case was not added under the static-analysis-only request.
+**Verification:** Statically traced the range collider's enemy-only insertion, target-list construction, `DetermineTargetShip`, and Turret's firing predicate into the shared validator. No tests, builds, Unity, or runtime checks were performed.
+**Invariant/knowledge:** Candidate selection and actual weapon firing both enforce enemy ownership; downstream firing must not depend on the source of its candidate list.
