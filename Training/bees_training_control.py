@@ -221,8 +221,14 @@ class TrainingControlClient:
                     value = json.loads(raw)
                 except json.JSONDecodeError:
                     value = {}
+                if not isinstance(value, Mapping):
+                    value = {}
                 expected = value.get("expected_offset")
-                if isinstance(expected, int) and expected >= 0:
+                if (
+                    isinstance(expected, int)
+                    and not isinstance(expected, bool)
+                    and expected >= 0
+                ):
                     digest = value.get("expected_sha256")
                     raise TrainingLogOffsetMismatch(
                         expected,
@@ -234,7 +240,11 @@ class TrainingControlClient:
         except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as exc:
             raise ControlUnavailable(str(exc)) from exc
         next_offset = value.get("next_offset") if isinstance(value, Mapping) else None
-        if not isinstance(next_offset, int) or next_offset < 0:
+        if (
+            not isinstance(next_offset, int)
+            or isinstance(next_offset, bool)
+            or next_offset < 0
+        ):
             raise ControlRejected("training log upload returned invalid next_offset")
         return next_offset
 
