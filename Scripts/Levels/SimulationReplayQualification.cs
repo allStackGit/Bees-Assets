@@ -96,7 +96,9 @@ namespace Assets.Scripts.Levels
             string[] parts = replayEvent.Payload.Split('|');
             if (parts.Length != 3 ||
                 !float.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out float x) ||
-                !float.TryParse(parts[2], NumberStyles.Float, CultureInfo.InvariantCulture, out float y))
+                !float.TryParse(parts[2], NumberStyles.Float, CultureInfo.InvariantCulture, out float y) ||
+                float.IsNaN(x) || float.IsInfinity(x) ||
+                float.IsNaN(y) || float.IsInfinity(y))
             {
                 throw new FormatException($"Invalid {SimulationReplayKinds.UserMove} replay payload: {replayEvent.Payload}");
             }
