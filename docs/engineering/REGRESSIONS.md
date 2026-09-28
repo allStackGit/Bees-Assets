@@ -1490,3 +1490,10 @@ Manual-only protection is acceptable only when the record explains why determini
 **Fix:** Catch monitor startup failures, attempt to restore the historical patch, report restoration errors, and re-raise the original startup failure.
 **Permanent protection:** Process-wide trainer monkeypatches must be restored on every failure path after installation, including failures before the main launcher `try/finally` begins.
 **Verification:** Static control-flow review confirms restoration is attempted for all `BaseException` paths from monitor startup while the original exception is re-raised. No tests or training runs were executed. Post-fix clean-pass count remains **0 / 2**.
+
+### REG-173 — Validate direct historical-opponent API parameters strictly
+**Area:** `Training/bees_continual_historical.py`, installer and scheduler boundaries
+**Symptom:** The trainer config reader was strict, but direct callers of the historical-opponent installer/scheduler could still pass numeric strings or fractional values that were coerced for ratio/cache settings, as well as invalid seed/provider types.
+**Fix:** Require built-in numeric ratio values in `[0,1]`, exact positive integer cache sizes, integer seeds, and a non-empty provider string or null. Validate before ONNX runtime preflight or monkeypatch installation.
+**Permanent protection:** Public training integration APIs independently enforce their own input contracts instead of relying on one caller to sanitize arguments.
+**Verification:** Static review traced validation through both direct `HistoricalOpponentScheduler` construction and `install_historical_opponents`; installation now validates all values before preflight and GhostTrainer mutation. No tests or training runs were executed. Post-fix clean-pass count remains **0 / 2**.
