@@ -1538,3 +1538,11 @@ Manual-only protection is acceptable only when the record explains why determini
 **Fix:** Record all ordinary Exception failures from build preparation under the existing lock; process-level BaseException interrupts still propagate.
 **Permanent protection:** Background preparation threads must publish every ordinary failure to their shared status so reconciliation can report and retry accurately.
 **Verification:** Added focused coverage using a BadZipFile failure and verified statically that the shared error is populated without marking the build prepared; the test was not run. No builds or training runs were executed. Post-fix clean-pass count remains **0 / 2**.
+
+### REG-180 — Bomb target validation accepts null candidates safely
+**Area:** `Scripts/Entities/Ships/Weapons/Bomb.cs`, shared ship range queries  
+**Symptom:** a null candidate passed through a ship's public range query could throw only when its weapon list included a Bomb.  
+**Root cause:** `Bomb.IsShipValidTarget` overrode the base validator but dereferenced its argument without retaining the base method's null rejection.  
+**Permanent protection:** `BombReservationLifecycleTests.BombRejectsNullTargetsLikeOtherWeaponValidators` calls the override with null and requires a false result.  
+**Verification:** regression source was added and reviewed statically; it was not run under the static-only audit instruction.  
+**Invariant/knowledge:** weapon target validators must reject missing candidates before reading target state.
