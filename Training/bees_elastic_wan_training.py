@@ -872,7 +872,6 @@ class ElasticWanBroker(base.WanActorBroker):
             if actor_id not in active:
                 raise ValueError("actor lease expired; re-register before uploading trajectories")
             self._validate_dynamic_owner_locked(actor_id, payload)
-            self._registrations[actor_id]["last_seen"] = time.monotonic()
             env_count = int(self._registrations[actor_id]["env_count"])
             batch_id = payload.get("batch_id")
             if batch_id is not None and (
@@ -887,6 +886,7 @@ class ElasticWanBroker(base.WanActorBroker):
             self._validate_policy_versions(payload.get("policy_versions"))
             duplicate_count = self._accepted_batch_count_locked(actor_id, batch_id)
             if duplicate_count is not None:
+                self._registrations[actor_id]["last_seen"] = time.monotonic()
                 return duplicate_count
         trajectories = payload.get("trajectories")
         if not isinstance(trajectories, list) or not trajectories:
@@ -937,9 +937,10 @@ class ElasticWanBroker(base.WanActorBroker):
                 self._validate_policy_versions(payload.get("policy_versions"))
                 duplicate_count = self._accepted_batch_count_locked(actor_id, batch_id)
                 if duplicate_count is not None:
+                    self._registrations[actor_id]["last_seen"] = time.monotonic()
                     return duplicate_count
-                self._registrations[actor_id]["last_seen"] = time.monotonic()
                 self._trajectory_batches.put_nowait(item)
+                self._registrations[actor_id]["last_seen"] = time.monotonic()
                 self._remember_accepted_batch_locked(
                     actor_id, batch_id, len(trajectories))
         except queue.Full:
