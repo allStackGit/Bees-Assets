@@ -148,6 +148,21 @@ class WorkerTrafficMetricsTests(unittest.TestCase):
             "run-managed",
         )
 
+    def test_status_surfaces_active_reconciliation_before_historical_errors(self):
+        root = Path(__file__).resolve().parents[1]
+        status = (root / "Training" / "operator" / "status.js").read_text(
+            encoding="utf-8"
+        )
+        worker = (root / "Training" / "bees_training_worker_agent.py").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("const reconciliation = metrics.reconciliation;", status)
+        self.assertIn("'Reconcile, ' + ageLabel(seconds) + ': ' + phase", status)
+        self.assertIn('set_reconciliation_phase("ensuring canonical build")', worker)
+        self.assertIn('set_reconciliation_phase("launching managed actor")', worker)
+        self.assertIn("metrics=current_metrics(metrics_run_id())", worker)
+
     def test_persisted_network_totals_fill_session_gap_for_same_run(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
