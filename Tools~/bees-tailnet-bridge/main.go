@@ -195,8 +195,12 @@ func bearerMatches(header, expected string) bool {
 	return subtle.ConstantTimeCompare([]byte(actual), []byte(expected)) == 1
 }
 
-func bootstrapFileETag(info os.FileInfo) string {
-	return fmt.Sprintf("\"%x-%x\"", info.Size(), info.ModTime().UnixNano())
+func bootstrapContentETag(reader io.Reader) (string, error) {
+	hash := sha256.New()
+	if _, err := io.Copy(hash, reader); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("\"sha256-%x\"", hash.Sum(nil)), nil
 }
 
 func bootstrapRegularFileMetadata(path string) (int64, string, error) {
@@ -212,7 +216,11 @@ func bootstrapRegularFileMetadata(path string) (int64, string, error) {
 	if !info.Mode().IsRegular() {
 		return 0, "", fmt.Errorf("bootstrap source is not a regular file: %s", path)
 	}
-	return info.Size(), bootstrapFileETag(info), nil
+	etag, err := bootstrapContentETag(source)
+	if err != nil {
+		return 0, "", err
+	}
+	return info.Size(), etag, nil
 }
 
 func snapshotRegularFile(path string) (*os.File, int64, string, func(), error) {
@@ -232,7 +240,7 @@ func snapshotRegularFile(path string) (*os.File, int64, string, func(), error) {
 		_ = source.Close()
 		return nil, 0, "", nil, fmt.Errorf("bootstrap source is not a regular file: %s", path)
 	}
-	etag := bootstrapFileETag(sourceInfo)
+	hash := sha256.New()
 	snapshot, err := os.CreateTemp("", "bees-bootstrap-snapshot-*")
 	if err != nil {
 		_ = source.Close()
@@ -243,11 +251,12 @@ func snapshotRegularFile(path string) (*os.File, int64, string, func(), error) {
 		_ = snapshot.Close()
 		_ = os.Remove(snapshotPath)
 	}
-	if _, err = io.Copy(snapshot, source); err != nil {
+	if _, err = io.Copy(io.MultiWriter(snapshot, hash), source); err != nil {
 		_ = source.Close()
 		cleanup()
 		return nil, 0, "", nil, err
 	}
+	etag := fmt.Sprintf("\"sha256-%x\"", hash.Sum(nil))
 	if err = source.Close(); err != nil {
 		cleanup()
 		return nil, 0, "", nil, err
