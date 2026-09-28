@@ -1441,3 +1441,10 @@ Manual-only protection is acceptable only when the record explains why determini
 **Fix:** Treat overflow during numeric finiteness checks as invalid input and report it through the existing validation path.
 **Permanent protection:** Numeric validation must turn unrepresentable values into a deterministic rejection rather than leaking conversion exceptions into ingestion or evaluation control flow.
 **Verification:** Static review traced these helpers through live telemetry ingestion and evaluation report assessment. The overflow is now caught in both boolean and raising validation paths. No tests, builds, Unity, simulations, or runtime checks were run. Post-fix clean-pass count remains **0 / 2**.
+
+### REG-166 — Validate compatibility versions without coercion
+**Area:** `Training/bees_continual_learning.py`, `Compatibility.from_config` and `load_config`
+**Symptom:** Compatibility version fields were coerced with `int()`, allowing booleans and fractional or string values to map onto a valid policy ABI/schema version. A non-object JSON root also failed later with incidental errors instead of a configuration validation error.
+**Fix:** Require a non-empty behavior name and exact positive integer version fields; reject non-object JSON roots with a clear configuration error.
+**Permanent protection:** Model, experience, and telemetry compatibility identities must come from explicit typed configuration values and cannot be formed by lossy coercion.
+**Verification:** Static review traced `Compatibility.from_config` through continual-store initialization and compatibility checks; `load_config` now checks the top-level JSON type before reading required keys. The checked-in configuration uses the required JSON types. No tests, builds, Unity, simulations, or runtime checks were run. Post-fix clean-pass count remains **0 / 2**.
