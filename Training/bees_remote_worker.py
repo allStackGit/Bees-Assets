@@ -58,7 +58,11 @@ def controlled_environment_args(spec_args: Sequence[str]) -> Tuple[str, ...]:
 
 
 
-def parse_worker_ids(value: str) -> Tuple[int, ...]:
+def parse_worker_ids(
+    value: str,
+    *,
+    maximum_worker_id: int | None = None,
+) -> Tuple[int, ...]:
     if not isinstance(value, str) or not value.strip():
         raise ValueError("worker ID list must not be empty")
     result = []
@@ -74,11 +78,18 @@ def parse_worker_ids(value: str) -> Tuple[int, ...]:
             start, end = int(parts[0]), int(parts[1])
             if end < start:
                 raise ValueError(f"worker range must ascend: {token!r}")
+            if maximum_worker_id is not None and end > maximum_worker_id:
+                raise ValueError(
+                    f"worker range exceeds the assigned worker IDs: {token!r}"
+                )
             values: Iterable[int] = range(start, end + 1)
         else:
             if not token.isdigit():
                 raise ValueError(f"invalid worker ID {token!r}")
-            values = (int(token),)
+            worker_id = int(token)
+            if maximum_worker_id is not None and worker_id > maximum_worker_id:
+                raise ValueError(f"worker ID is not assigned: {worker_id}")
+            values = (worker_id,)
         for worker_id in values:
             if worker_id < 0:
                 raise ValueError("worker IDs must be non-negative")
@@ -93,7 +104,10 @@ def select_worker_ids(spec: Mapping[str, object], requested: str | None) -> Tupl
     assigned = tuple(int(value) for value in spec["worker_ids"])
     if requested is None:
         return assigned
-    selected = parse_worker_ids(requested)
+    selected = parse_worker_ids(
+        requested,
+        maximum_worker_id=max(assigned),
+    )
     unknown = sorted(set(selected) - set(assigned))
     if unknown:
         raise ValueError(
