@@ -103,7 +103,10 @@ namespace Assets.Scripts.Levels
                 CurrentLevelOptions = (LevelOptions)ConfigData.LevelOptions.Clone();
             }
 
-            if (ConfigData.CurrentGameMode == ConfigData.GameModes.Campaign)
+            // Campaign hides two player HUD elements here. Dedicated training removes those
+            // objects from UIElements before level setup, so this player-only layout adjustment
+            // must not index the shortened training list.
+            if (ConfigData.CurrentGameMode == ConfigData.GameModes.Campaign && !Stage.IsTraining)
             {
                 Destroy(Stage.UIElements[2]);
                 Stage.UIElements[3].GetComponent<HorizontalLayoutGroup>().padding.left = 0;
