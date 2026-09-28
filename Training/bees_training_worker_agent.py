@@ -55,6 +55,8 @@ ENVIRONMENT_ID_ENV = "BEES_TRAINING_ENVIRONMENT_ID"
 GRACEFUL_CHECKPOINT_STOP_SECONDS = 120.0
 CHILD_HEALTH_STARTUP_GRACE_SECONDS = 30.0
 CHILD_HEALTH_STALE_SECONDS = 30.0
+CHILD_HEALTH_STARTUP_PHASE_TIMEOUT_SECONDS = 180.0
+CHILD_HEALTH_PROGRESS_STALE_SECONDS = 120.0
 GRACEFUL_REMOTE_STOP_SECONDS = 20.0
 MANAGED_RESTART_STABLE_SECONDS = 60.0
 MANAGED_RESTART_BACKOFF_SECONDS = (1.0, 2.0, 5.0, 10.0, 30.0, 60.0, 120.0)
@@ -810,14 +812,41 @@ class ManagedProcess:
         state = str(health.get("state", ""))
         if state == "error":
             return str(health.get("error") or "managed child reported an internal failure")
+        now = time.time()
         updated = health.get("updated_unix_seconds")
         if isinstance(updated, (int, float)) and not isinstance(updated, bool):
-            age = max(0.0, time.time() - float(updated))
+            age = max(0.0, now - float(updated))
             if age >= CHILD_HEALTH_STALE_SECONDS:
                 phase = "startup" if state == "starting" else state or "unknown"
                 return (
                     f"managed child {phase} health has not refreshed for "
                     f"{age:.1f} seconds"
+                )
+
+        details = health.get("details")
+        details_map = details if isinstance(details, Mapping) else {}
+        phase = str(details_map.get("phase", "") or "")
+        phase_started = details_map.get("phase_started_unix_seconds")
+        if state == "starting" and isinstance(
+            phase_started, (int, float)
+        ) and not isinstance(phase_started, bool):
+            phase_age = max(0.0, now - float(phase_started))
+            if phase_age >= CHILD_HEALTH_STARTUP_PHASE_TIMEOUT_SECONDS:
+                return (
+                    "managed child startup phase "
+                    f"{phase or '(unknown)'} made no phase progress for "
+                    f"{phase_age:.1f} seconds"
+                )
+
+        if state == "ready" and phase == "running":
+            progress = details_map.get("progress_unix_seconds")
+            if not isinstance(progress, (int, float)) or isinstance(progress, bool):
+                return "managed child running health has no rollout progress timestamp"
+            progress_age = max(0.0, now - float(progress))
+            if progress_age >= CHILD_HEALTH_PROGRESS_STALE_SECONDS:
+                return (
+                    "managed child rollout has made no progress for "
+                    f"{progress_age:.1f} seconds"
                 )
         return ""
 
