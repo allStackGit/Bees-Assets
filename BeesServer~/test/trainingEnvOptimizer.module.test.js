@@ -348,6 +348,89 @@ test('recent internal WAN actor failure holds probes without extending the hold 
     assert.match(state.decision, /collecting fresh baseline/);
 });
 
+test('repeated WAN failures at an accepted baseline back off the environment count', () => {
+    const optimizer = new TrainingEnvOptimizer({
+        warmupMs: 0,
+        measurementMs: 1000,
+        cooldownMs: 0,
+        instabilityHoldMs: 10_000,
+    });
+
+    update(optimizer, 'remote-a', 5, 0, 0, { max: 8 });
+    const internal = optimizer.states.get('remote-a');
+    Object.assign(internal, {
+        baseline_envs: 5,
+        baseline_sps: 200,
+        desired_envs: 5,
+        phase: 'stable',
+        last_session_failures_total: 0,
+        consecutive_baseline_session_failures: 0,
+    });
+
+    let state = update(
+        optimizer,
+        'remote-a',
+        5,
+        100,
+        1000,
+        {
+            max: 8,
+            sessionFailures: 1,
+            failureAgeSeconds: 0,
+        },
+    );
+    assert.equal(state.phase, 'stability-hold');
+    assert.equal(state.desired_envs, 5);
+    assert.equal(internal.consecutive_baseline_session_failures, 1);
+
+    state = update(
+        optimizer,
+        'remote-a',
+        5,
+        100,
+        2000,
+        {
+            max: 8,
+            sessionFailures: 2,
+            failureAgeSeconds: 0,
+        },
+    );
+    assert.equal(state.phase, 'awaiting-restart');
+    assert.equal(state.desired_envs, 4);
+    assert.equal(state.baseline_envs, 4);
+    assert.match(state.decision, /repeated WAN actor session failures at 5 envs/);
+
+    // Repeated heartbeats for the same recorded failure must not ratchet the count downward.
+    state = update(
+        optimizer,
+        'remote-a',
+        5,
+        100,
+        2100,
+        {
+            max: 8,
+            sessionFailures: 2,
+            failureAgeSeconds: 0.1,
+        },
+    );
+    assert.equal(state.desired_envs, 4);
+
+    state = update(
+        optimizer,
+        'remote-a',
+        4,
+        0,
+        2200,
+        {
+            max: 8,
+            processState: 'starting',
+            sessionFailures: 2,
+            failureAgeSeconds: 0.2,
+        },
+    );
+    assert.equal(state.desired_envs, 4);
+});
+
 test('recent WAN failure aborts a probe with the correct reason', () => {
     const optimizer = new TrainingEnvOptimizer({
         warmupMs: 0,
