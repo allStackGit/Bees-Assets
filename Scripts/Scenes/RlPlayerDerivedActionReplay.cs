@@ -624,6 +624,8 @@ internal sealed class RlPlayerDerivedActionReplayController : MonoBehaviour
     private float _rotationSin;
     private float _nextMiningActionTime;
     private float _nextHealingActionTime;
+    private WarpGate _pendingWarpGate;
+    private long _pendingWarpShipId;
 
     internal void Prepare(Level level, RlPlayerDerivedActionReplay.ReplayData replay)
     {
@@ -661,7 +663,16 @@ internal sealed class RlPlayerDerivedActionReplayController : MonoBehaviour
         if (_replay == null || _level == null || _level.Stage == null ||
             !RlOneVsOneTrainingBootstrap.IsActiveFor(_level.Stage) || !TryBindShip())
         {
+            CancelPendingWarpAction();
             return;
+        }
+
+        if (_pendingWarpGate != null)
+        {
+            if (TryCompletePendingWarpAction() || _pendingWarpGate != null)
+            {
+                return;
+            }
         }
 
         _fixedStepCounter++;
@@ -946,15 +957,82 @@ internal sealed class RlPlayerDerivedActionReplayController : MonoBehaviour
         }
 
         WarpGate warpGate = FindTouchingWarpGate();
-        if (warpGate == null)
+        if (warpGate == null || warpGate.ShipAnimationController == null ||
+            warpGate.ShipAnimationController.Animator == null)
         {
             return;
         }
+
+        _pendingWarpGate = warpGate;
+        _pendingWarpShipId = _ship.Id;
+        warpGate.ShipsWarpingHere.Add(_pendingWarpShipId);
+
+        // Recorded actions follow the same gate warmup as live policy actions and normal retreat.
+        if (!warpGate.ShipAnimationController.IsReadyToWarp &&
+            !warpGate.ShipAnimationController.Animator.enabled)
+        {
+            warpGate.ShipAnimationController.Activate();
+        }
+
+        TryCompletePendingWarpAction();
+    }
+
+    private bool TryCompletePendingWarpAction()
+    {
+        if (_pendingWarpGate == null)
+        {
+            return false;
+        }
+
+        WarpGate warpGate = _pendingWarpGate;
+        if (_ship == null || _ship.IsDead || _ship.Id != _pendingWarpShipId ||
+            warpGate.IsDead || warpGate.WarpCollider == null || _ship.Collider == null ||
+            !warpGate.WarpCollider.IsTouching(_ship.Collider) ||
+            warpGate.ShipAnimationController == null)
+        {
+            CancelPendingWarpAction();
+            return false;
+        }
+
+        if (!warpGate.ShipAnimationController.IsReadyToWarp)
+        {
+            return false;
+        }
+
+        Ship ship = _ship;
+        int preservedTsv = Mathf.Max(0, ship.Tsv);
+        RlGameplayDemonstrationCapabilityCapture.Record(ship, RlOneVsOneAgent.WarpAction);
         if (warpGate.IsUserControlled && warpGate.EnteringWarpGateSound != null)
         {
             warpGate.EnteringWarpGateSound.Play();
         }
-        _ship.EndKill();
+
+        CancelPendingWarpAction();
+        RlOneVsOneEpisodeCoordinator.RecordSuccessfulCapabilityOutcome(ship, preservedTsv);
+        ship.EndKill();
+        return true;
+    }
+
+    private void CancelPendingWarpAction()
+    {
+        WarpGate warpGate = _pendingWarpGate;
+        long shipId = _pendingWarpShipId;
+        _pendingWarpGate = null;
+        _pendingWarpShipId = 0;
+
+        if (warpGate == null)
+        {
+            return;
+        }
+
+        warpGate.ShipsWarpingHere.Remove(shipId);
+        if (!warpGate.IsDead && warpGate.ShipsWarpingHere.Count == 0 && warpGate.ShipAnimationController != null)
+        {
+            warpGate.ShipAnimationController.Deactivate();
+            warpGate.ShipAnimationController.UseSecondaryLoop = false;
+            warpGate.ShipAnimationController.IsReadyToWarp = false;
+            warpGate.ShipAnimationController.SpriteIndex = 0;
+        }
     }
 
     private WarpGate FindTouchingWarpGate()
@@ -1035,6 +1113,7 @@ internal sealed class RlPlayerDerivedActionReplayController : MonoBehaviour
 
     private void ReleaseShip()
     {
+        CancelPendingWarpAction();
         if (_ship != null)
         {
             _ship.IsRlPolicyControlled = false;
