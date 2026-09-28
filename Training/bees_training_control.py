@@ -101,9 +101,10 @@ class TrainingControlClient:
                 return dict(response.headers.items()), response.read()
         except urllib.error.HTTPError as exc:
             raw = exc.read().decode("utf-8", errors="replace")
-            raise ControlRejected(
-                f"training control rejected {method} {path}: HTTP {exc.code}: {raw}"
-            ) from exc
+            message = f"training control HTTP {exc.code} for {method} {path}: {raw}"
+            if exc.code in (408, 425, 429) or exc.code >= 500:
+                raise ControlUnavailable(message) from exc
+            raise ControlRejected(message) from exc
         except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as exc:
             raise ControlUnavailable(str(exc)) from exc
 
