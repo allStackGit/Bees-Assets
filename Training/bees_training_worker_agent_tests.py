@@ -47,11 +47,12 @@ class EpisodeLogMetricsTests(unittest.TestCase):
         non_finite = valid.replace("episode=2", "episode=3").replace(
             "duration=10s", "duration=" + ("9" * 400) + "s"
         )
+        oversized_integer = valid.replace("episode=2", "episode=" + ("1" * 5000))
 
         with tempfile.TemporaryDirectory() as directory:
             log_path = Path(directory) / "Player-0.log"
             log_path.write_text(
-                malformed + "\n" + non_finite + "\n" + valid + "\n",
+                malformed + "\n" + non_finite + "\n" + oversized_integer + "\n" + valid + "\n",
                 encoding="utf-8",
             )
             snapshot = worker.EpisodeLogMetrics(Path(directory)).refresh()
