@@ -857,6 +857,7 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
             args = Namespace(
                 runtime_archive=str(runtime_archive),
                 launcher_path=str(launcher),
+                no_autostart=True,
                 tailnet_bridge=str(bridge),
                 worker_token_file=str(root / "worker.token"),
                 wan_token_file=str(root / "wan.token"),
@@ -894,7 +895,39 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
                 updater._stage_once()
 
             self.assertEqual(launcher.read_bytes(), b"new launcher")
+            self.assertEqual(
+                updater._managed_launcher_path().read_bytes(),
+                b"new launcher",
+            )
             self.assertEqual(updater.bootstrap_identity, '"bundle-launcher"')
+
+    def test_legacy_windows_launcher_path_is_discovered_from_bees_self(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            args = Namespace(runtime_archive=str(root / "missing.zip"), launcher_path="")
+            updater = managed.RuntimeUpdater(args, root / "install")
+            legacy = root / "Seagrams Crown" / "bees-remote-worker.cmd"
+            with mock.patch.dict(
+                managed.os.environ,
+                {"BEES_SELF": str(legacy)},
+                clear=True,
+            ):
+                self.assertEqual(updater._external_launcher_path(), legacy.resolve())
+
+    def test_no_autostart_prevents_managed_launcher_registration(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            args = Namespace(
+                runtime_archive=str(root / "missing.zip"),
+                no_autostart=True,
+                torch_device="cpu",
+                auto_envs=True,
+                envs=4,
+            )
+            updater = managed.RuntimeUpdater(args, root / "install")
+            with mock.patch.object(managed.subprocess, "run") as run:
+                updater._adopt_managed_launcher(root / "bees-remote-worker.cmd")
+            run.assert_not_called()
 
     def test_runtime_refresh_requests_cannot_bypass_poll_interval(self):
         with tempfile.TemporaryDirectory() as temp:
