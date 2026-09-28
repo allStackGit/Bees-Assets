@@ -427,7 +427,7 @@ class BrokerInvariantTests(unittest.TestCase):
         self.broker = wan.WanActorBroker(self.options, fake_run_options(), "x" * 32)
         self.broker.initialize_control({"difficulty": 1})
         self.behavior = "BeesRL1v1?team=0"
-        self.broker.register_actor(
+        self.actor_token = self.broker.register_actor(
             {
                 "actor_id": 0,
                 "control_epoch": 1,
@@ -440,6 +440,7 @@ class BrokerInvariantTests(unittest.TestCase):
     def _payload(self, actor_id: int, agent_id: str, version: int = 1):
         return {
             "actor_id": actor_id,
+            "actor_token": self.actor_token,
             "control_epoch": 1,
             "policy_versions": {self.behavior: version},
             "trajectories": [FakeTrajectory(self.behavior, agent_id)],
@@ -448,6 +449,34 @@ class BrokerInvariantTests(unittest.TestCase):
     def test_stale_policy_version_is_rejected(self):
         with self.assertRaisesRegex(wan.StaleActorStateError, "policy versions"):
             self.broker.submit_trajectory_batch(self._payload(0, "agent_0-7", version=0))
+
+    def test_replaced_actor_registration_fences_old_process(self):
+        old_token = self.actor_token
+        self.actor_token = self.broker.register_actor(
+            {
+                "actor_id": 0,
+                "control_epoch": 1,
+                "behavior_specs": {self.behavior: FakeBehaviorSpec()},
+            }
+        )
+
+        stale_payload = self._payload(0, "agent_0-7")
+        stale_payload["actor_token"] = old_token
+        with self.assertRaisesRegex(wan.StaleActorStateError, "registration was replaced"):
+            self.broker.submit_trajectory_batch(stale_payload)
+        with self.assertRaisesRegex(wan.StaleActorStateError, "registration was replaced"):
+            self.broker.wait_state(
+                1,
+                1,
+                0.0,
+                actor_id=0,
+                actor_token=old_token,
+            )
+
+        self.assertEqual(
+            self.broker.submit_trajectory_batch(self._payload(0, "agent_0-7")),
+            1,
+        )
 
     def test_stale_control_epoch_is_rejected(self):
         payload = self._payload(0, "agent_0-7")
