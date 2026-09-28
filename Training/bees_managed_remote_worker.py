@@ -1989,13 +1989,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         worker_started_monotonic = time.monotonic()
 
                     next_status = 0.0
-                    transport_watchdog = _TransportWatchdog(
-                        args.transport_watchdog_seconds
-                    )
-                    broker_watchdog = _TransportWatchdog(
-                        max(60.0, args.transport_watchdog_seconds * 2.0)
-                    )
-                    session_failure_watchdog = _SessionFailureWatchdog()
                     # The inner worker can lose heartbeat POST responses even while this outer
                     # supervisor's independent GET /v1/status probe still succeeds. Watch the
                     # worker's cumulative control failures so that asymmetric/wedged forwarding
@@ -2021,44 +2014,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         if now >= next_status:
                             status = _control_status(args)
                             control_healthy = isinstance(status, Mapping)
-                            if transport_watchdog.observe(control_healthy, now):
-                                failure_since = transport_watchdog.failure_since
-                                outage = now - (
-                                    failure_since
-                                    if failure_since is not None
-                                    else now
-                                )
-                                print(
-                                    "[Bees remote] authenticated learner control has been "
-                                    f"unreachable for {outage:.1f}s while the tailnet process "
-                                    "is still alive; recycling private transport.",
-                                    file=sys.stderr,
-                                    flush=True,
-                                )
-                                transport_watchdog_restart = True
-                                break
-                            if _training_desired(status):
-                                broker_healthy = _broker_session_available(args)
-                                if broker_watchdog.observe(broker_healthy, now):
-                                    failure_since = broker_watchdog.failure_since
-                                    outage = now - (
-                                        failure_since
-                                        if failure_since is not None
-                                        else now
-                                    )
-                                    print(
-                                        "[Bees remote] authenticated WAN broker has been "
-                                        f"unreachable for {outage:.1f}s while learner control "
-                                        "remains healthy; recycling private transport.",
-                                        file=sys.stderr,
-                                        flush=True,
-                                    )
-                                    transport_watchdog_restart = True
-                                    break
-                            else:
-                                broker_watchdog.observe(True, now)
-
                             record = _trainer_record(status, trainer_id)
+
+                            # Do not tear down a healthy private network merely because the central
+                            # control service is restarting. The worker lease handles a genuine
+                            # control outage fail-closed and will reconcile when control returns.
+                            # Clear asymmetric-failure history across a global outage so old failed
+                            # POSTs cannot trigger a transport recycle after recovery.
+                            if not control_healthy:
+                                inner_control_stall_watchdog.observe(True, now)
+                                control_failure_watchdog.reset()
                             if inner_control_stall_watchdog.observe(
                                 not _inner_control_stalled(status, record),
                                 now,
