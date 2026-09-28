@@ -177,13 +177,28 @@ namespace Assets.Scripts.UIComponents
                 return new Vector2(width, maxHeight);
             }
 
-            for (int i = 0; i < pages.Count; i++)
+            // TMP_Text.GetPreferredValues(string, ...) replaces its internal parsing buffers.
+            // Measure through an inactive clone so sizing every page cannot leave the visible
+            // tooltip's text component holding glyph data from a different page.
+            TMP_Text measurementText = Instantiate(
+                tooltip.TooltipText,
+                tooltip.TooltipText.transform.parent);
+            measurementText.gameObject.name = "Tutorial Sequence Measurement";
+            measurementText.gameObject.SetActive(false);
+            try
             {
-                string page = TutorialFeedbackPolishGuard.PutSentencesOnSeparateLines(pages[i] ?? string.Empty);
-                float preferredHeight = tooltip.TooltipText.GetPreferredValues(page, contentWidth, 0f).y;
-                maxHeight = Mathf.Max(
-                    maxHeight,
-                    preferredHeight + TutorialVerticalPadding * 2f + TutorialSequenceFooterHeight);
+                for (int i = 0; i < pages.Count; i++)
+                {
+                    string page = TutorialFeedbackPolishGuard.PutSentencesOnSeparateLines(pages[i] ?? string.Empty);
+                    float preferredHeight = measurementText.GetPreferredValues(page, contentWidth, 0f).y;
+                    maxHeight = Mathf.Max(
+                        maxHeight,
+                        preferredHeight + TutorialVerticalPadding * 2f + TutorialSequenceFooterHeight);
+                }
+            }
+            finally
+            {
+                Destroy(measurementText.gameObject);
             }
 
             return new Vector2(width, maxHeight);
