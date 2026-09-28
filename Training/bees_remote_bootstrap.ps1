@@ -262,6 +262,67 @@ function Get-LiveSupervisorProcess {
     $process
 }
 
+function Test-SupervisorControlHealthy {
+    $tokenPath=Join-Path $SecretsRoot 'training-worker.token'
+    if(-not(Test-Path -LiteralPath $tokenPath)){return $false}
+    $token=(Get-Content -LiteralPath $tokenPath -Raw -ErrorAction SilentlyContinue).Trim()
+    if([string]::IsNullOrWhiteSpace($token)){return $false}
+
+    $uri="http://127.0.0.1:$ControlPort/v1/status"
+    for($attempt=1;$attempt -le 3;$attempt++){
+        $response=$null
+        try {
+            $request=[System.Net.HttpWebRequest]::Create($uri)
+            $request.Method='GET'
+            $request.Timeout=3000
+            $request.ReadWriteTimeout=3000
+            $request.Headers['Authorization']='Bearer ' + $token
+            $response=$request.GetResponse()
+            if([int]$response.StatusCode -eq 200){return $true}
+        } catch {
+            # A live supervisor with an unhealthy authenticated control path is not healthy.
+            # Retry briefly to avoid recycling for a single transient learner cutover.
+        } finally {
+            if($null -ne $response){try {$response.Close()} catch {}}
+        }
+        if($attempt -lt 3){Start-Sleep -Milliseconds 500}
+    }
+    return $false
+}
+
+function Restart-UnhealthySupervisor {
+    param([System.Diagnostics.Process]$Process)
+
+    Write-Warning (
+        "[Bees remote] supervisor PID $($Process.Id) is alive but authenticated learner control " +
+        "is not healthy; recycling it before bootstrap."
+    )
+    'stop' | Set-Content -LiteralPath $ShutdownRequestFile -NoNewline -Encoding ASCII
+    $deadline=[DateTime]::UtcNow.AddSeconds(20)
+    while([DateTime]::UtcNow -lt $deadline){
+        if($null -eq (Get-Process -Id $Process.Id -ErrorAction SilentlyContinue)){
+            Remove-Item -LiteralPath $SupervisorPidFile,$ShutdownRequestFile -Force -ErrorAction SilentlyContinue
+            Write-Host '[Bees remote] unhealthy supervisor stopped cleanly; continuing bootstrap.'
+            return
+        }
+        Start-Sleep -Milliseconds 250
+    }
+
+    # Dedicated remotes do not own the learner checkpoint. A supervisor that cannot honor its
+    # bounded local stop request must not permanently block repair; killing it closes the
+    # kill-on-close child job and the fresh supervisor will rebuild transport/process state.
+    Write-Warning (
+        "[Bees remote] unhealthy supervisor did not stop cleanly within 20 seconds; " +
+        "forcing the stale remote supervisor to terminate."
+    )
+    Stop-Process -Id $Process.Id -Force -ErrorAction SilentlyContinue
+    try {$Process.WaitForExit(10000)} catch {}
+    if($null -ne (Get-Process -Id $Process.Id -ErrorAction SilentlyContinue)){
+        throw "Could not terminate unhealthy remote supervisor PID $($Process.Id)."
+    }
+    Remove-Item -LiteralPath $SupervisorPidFile,$ShutdownRequestFile -Force -ErrorAction SilentlyContinue
+}
+
 if($Command -eq 'stop'){
     Remove-RemoteAutostart
     $process=Get-LiveSupervisorProcess
@@ -287,10 +348,16 @@ if($Command -eq 'stop'){
 
 $existingProcess=Get-LiveSupervisorProcess
 if($null -ne $existingProcess){
-    Install-RemoteAutostart
-    Write-Host "[Bees remote] worker is already running in the background (PID $($existingProcess.Id))."
-    Write-Host '[Bees remote] use bees-remote-worker.cmd stop to stop it.'
-    exit 0
+    if(Test-SupervisorControlHealthy){
+        Install-RemoteAutostart
+        Write-Host (
+            "[Bees remote] worker is already running and authenticated learner control is healthy " +
+            "(PID $($existingProcess.Id))."
+        )
+        Write-Host '[Bees remote] use bees-remote-worker.cmd stop to stop it.'
+        exit 0
+    }
+    Restart-UnhealthySupervisor -Process $existingProcess
 }
 Remove-Item -LiteralPath $SupervisorPidFile,$ShutdownRequestFile -Force -ErrorAction SilentlyContinue
 
