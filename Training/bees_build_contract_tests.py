@@ -668,6 +668,7 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         self.assertIn("session_failures_total", status)
         self.assertIn("seconds_since_last_session_failure", status)
         self.assertIn("last_session_failure_type", status)
+        self.assertIn("last_session_failure_message", status)
         self.assertIn("failureType !== 'BrokerStaleActor'", status)
         self.assertIn("staleActorResync", status)
         self.assertIn("metrics.control", status)
