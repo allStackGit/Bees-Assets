@@ -743,7 +743,8 @@ class TrainingControlStore {
                         item.platform === spec.platform);
                 if (known) lastSeen = known.last_seen_ms;
             }
-            if (lastSeen !== null && lastSeen < cutoff) {
+            if (spec.trainer_id !== 'central-learner' &&
+                lastSeen !== null && lastSeen < cutoff) {
                 changed = true;
                 continue;
             }
