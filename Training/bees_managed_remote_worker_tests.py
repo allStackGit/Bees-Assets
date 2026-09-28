@@ -458,6 +458,8 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
                 str(working_directory),
             )
             self.assertTrue(popen.call_args.kwargs["close_fds"])
+            self.assertIs(popen.call_args.kwargs["stdout"], managed.sys.stdout)
+            self.assertIs(popen.call_args.kwargs["stderr"], managed.sys.stderr)
 
     def test_remote_dependency_health_check_requires_successful_imports(self):
         completed = mock.Mock(returncode=0)
