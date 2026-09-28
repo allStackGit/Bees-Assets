@@ -109,7 +109,7 @@ class ContinualServiceTests(unittest.TestCase):
             killpg.call_args_list,
             [
                 mock.call(fake.pid, service.signal.SIGTERM),
-                mock.call(fake.pid, service.signal.SIGKILL),
+                mock.call(fake.pid, getattr(service.signal, "SIGKILL", 9)),
             ],
         )
 
