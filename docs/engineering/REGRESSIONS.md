@@ -1176,13 +1176,3 @@ Manual-only protection is acceptable only when the record explains why determini
 **Fix:** after ending each episode, drain that agent manager's trajectory queue using the queue's correct empty exception.
 **Permanent protection:** `test_policy_sync_discards_completed_old_policy_trajectories` verifies the completed queue is empty after cleanup.
 **Verification:** static source analysis only. Regression tests were added but not run; no training or runtime checks were performed.
-
-
-### REG-135 — Non-turret RL weapons emitted an extra observation
-**Area:** `Scripts/Scenes/RlCombatPerception.cs`, fixed-width self-weapon observation
-**Symptom:** policy-controlled ships with non-turret weapons, such as Bomb-class weapons, appended 16 values for a self-weapon slot whose frozen width is 15. This could shift later observation channels or violate the configured vector shape.
-**Root cause:** the non-turret branch emitted one extra zero after its target-state channel.
-**Fix:** emit only the four post-presence/type values shared by the slot layout.
-**Permanent protection:** `RlCombatPolicySchemaTests.NonTurretSelfWeaponObservationMatchesFrozenSlotWidth` invokes the production serializer with a Bomb and checks that the VectorSensor receives exactly 15 values.
-**Verification:** source-flow and value-count analysis only. The new regression test was not run; no Unity or training checks were performed.
-**Invariant/knowledge:** all self-weapon subtypes must emit exactly `SelfWeaponObservationSize` values, including absent and non-turret entries.
