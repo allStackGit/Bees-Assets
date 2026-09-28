@@ -653,7 +653,7 @@ class ContinualLearningStore:
             raise ValidationError(f"Model artifact is empty: {source}")
         if not training_run_id.strip():
             raise ValidationError("training_run_id is required.")
-        if not isinstance(training_step, int) or isinstance(training_step, bool) or training_step < 0:
+        if type(training_step) is not int or training_step < 0:
             raise ValidationError("training_step must be a nonnegative integer.")
         if not game_build_version.strip():
             raise ValidationError("game_build_version is required.")
@@ -682,7 +682,7 @@ class ContinualLearningStore:
                 self._assert_registration_compatible(
                     existing,
                     training_run_id=training_run_id,
-                    training_step=int(training_step),
+                    training_step=training_step,
                     game_build_version=game_build_version,
                     parent_model_id=parent_model_id,
                     training_config_hash=cfg_hash,
@@ -715,7 +715,7 @@ class ContinualLearningStore:
                         str(destination),
                         parent_model_id,
                         training_run_id,
-                        int(training_step),
+                        training_step,
                         created_at,
                         game_build_version,
                         self.compatibility.behavior_name,
