@@ -231,6 +231,55 @@ class TrainingControlClientTests(unittest.TestCase):
             5.0,
         )
 
+    def test_worker_retries_one_transient_heartbeat_transport_failure(self):
+        client = mock.Mock()
+        client.heartbeat.side_effect = [
+            control.ControlUnavailable("POST /v1/heartbeat: timed out"),
+            {"desired_mode": "training"},
+        ]
+        payload = {"trainer_id": "remote-lancaster"}
+
+        with mock.patch.object(agent.time, "sleep") as sleep:
+            result = agent.heartbeat_with_transport_retry(client, payload)
+
+        self.assertEqual(result["desired_mode"], "training")
+        self.assertEqual(client.heartbeat.call_count, 2)
+        sleep.assert_called_once_with(0.25)
+
+    def test_worker_surfaces_heartbeat_failure_after_retry_budget(self):
+        client = mock.Mock()
+        client.heartbeat.side_effect = control.ControlUnavailable(
+            "POST /v1/heartbeat: timed out"
+        )
+
+        with mock.patch.object(agent.time, "sleep"):
+            with self.assertRaises(control.ControlUnavailable):
+                agent.heartbeat_with_transport_retry(
+                    client,
+                    {"trainer_id": "remote-lancaster"},
+                )
+
+        self.assertEqual(client.heartbeat.call_count, 2)
+
+    def test_control_unavailable_does_not_become_worker_process_last_error(self):
+        existing = "prior worker error"
+        self.assertEqual(
+            agent.worker_health_error_after_exception(
+                existing,
+                control.ControlUnavailable("POST /v1/heartbeat: timed out"),
+                "ControlUnavailable: POST /v1/heartbeat: timed out",
+            ),
+            existing,
+        )
+        self.assertEqual(
+            agent.worker_health_error_after_exception(
+                "",
+                RuntimeError("child failed"),
+                "RuntimeError: child failed",
+            ),
+            "RuntimeError: child failed",
+        )
+
     def test_environment_args_identity_is_ordered_and_deterministic(self):
         first = agent.environment_args_identity(("--rl-map-size=32", "--rl-health-ratio=.25"))
         second = agent.environment_args_identity(("--rl-map-size=32", "--rl-health-ratio=.25"))
