@@ -36,6 +36,7 @@ from bees_process_safety import close_windows_owned_child_job, popen_owned
 
 
 DEFAULT_RECONNECT_SECONDS = 5.0
+WORKER_REGISTRATION_GRACE_SECONDS = 30.0
 DEFAULT_GAMEPLAY_PORT = 7146
 TRAINING_GAMEPLAY_HOST_ENV = "BEES_TRAINING_GAMEPLAY_HOST"
 TRAINING_GAMEPLAY_PORT_ENV = "BEES_TRAINING_GAMEPLAY_PORT"
@@ -1531,6 +1532,19 @@ def _control_failure_total(record: Optional[Mapping[str, object]]) -> Optional[i
     return None
 
 
+def stale_trainer_requires_recycle(
+    record: Optional[Mapping[str, object]],
+    *,
+    worker_started_monotonic: float,
+    now: float,
+    grace_seconds: float = WORKER_REGISTRATION_GRACE_SECONDS,
+) -> bool:
+    """Ignore a previous stale server record while a fresh worker registers its first heartbeat."""
+    if not isinstance(record, Mapping) or not bool(record.get("stale", False)):
+        return False
+    return now - float(worker_started_monotonic) >= max(0.0, float(grace_seconds))
+
+
 def _inner_control_stalled(
     status: object,
     record: Optional[Mapping[str, object]],
@@ -1569,6 +1583,11 @@ class _SessionFailureWatchdog:
         self.window_seconds = max(1.0, float(window_seconds))
         self.last_total: Optional[int] = None
         self.window_started: Optional[float] = None
+        self.failures_in_window = 0
+
+    def reset(self) -> None:
+        self.last_total = None
+        self.window_started = None
         self.failures_in_window = 0
 
     def observe(self, total: Optional[int], now: float) -> bool:
