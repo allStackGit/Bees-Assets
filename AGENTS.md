@@ -37,6 +37,24 @@ Once the affected contract, current symbols/assets, important dependency/owner b
 
 Read `PROJECT_CONSTITUTION.md` only for possible gameplay/product meaning, persistence/network contract, lifecycle/ownership, evidence-rule, or project-definition changes. Read relevant `SYSTEM_MAP.md` / `INVARIANTS.md` sections only for high-risk/cross-boundary work or a concrete routed need. Documentation is navigation, not authority; verify material facts against current source/assets/tests.
 
+
+## Engineering contract
+
+Optimize for a working, understandable system rather than for documentation volume, test count, or process ceremony.
+
+- Reproduce the reported failure before changing code when practical, and trace the causal chain before patching symptoms.
+- Exercise the changed executable path whenever practical. Static/source-text/contract tests are supporting evidence, not proof that runtime behavior works.
+- If a test cannot be run in the available environment, do not spend substantial effort adding it unless it protects a clear durable contract or known regression.
+- Prefer simplifying states, components, ownership, and recovery paths over adding another watchdog, retry loop, flag, compatibility layer, or special case.
+- When a subsystem repeatedly survives one patch only to fail elsewhere, stop patching locally and reassess the design/root cause.
+- Make coherent changes small enough to reason about and validate, but do not add artificial ceremony or slow work merely to appear cautious.
+- Write or expand documentation only when it has a concrete maintainer/user purpose, prevents a demonstrated recurring mistake, or is explicitly requested. Keep it short and current.
+- Maintain independent technical judgment. A user challenge is a reason to re-check evidence, not a reason by itself to reverse a conclusion. If a conclusion changes, identify the new evidence or reasoning that changed it.
+- On "continue where you left off" or equivalent requests, first reconcile the current branch/head and relevant intervening changes instead of relying on remembered repository state.
+- A passing qualification/unit/static suite proves only the scope it actually exercises. Do not infer live-system stability, autonomous recovery, deployment readiness, or multi-machine correctness from narrower evidence.
+- Keep normal user-facing responses concise. Do not bury weak evidence or unresolved uncertainty in long explanations.
+- For substantive coding completion, report briefly: **Changed**, **Verified by**, **Observed result**, and **Not verified**. Omit a field only when genuinely inapplicable.
+
 ## Change rules
 
 Respect an explicitly named branch; otherwise do not make ordinary development changes directly on `main`.
