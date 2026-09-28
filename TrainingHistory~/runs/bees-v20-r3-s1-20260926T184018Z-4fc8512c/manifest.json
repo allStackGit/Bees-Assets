@@ -70,14 +70,14 @@
       "destination": "trainer-logs\\central-learner\\learner-live.log",
       "parts": [
         {
-          "bytes": 944222,
+          "bytes": 952070,
           "file": "learner-live.log.part0001",
-          "sha256": "55970615f7a41e9c2e85215eadc21b664c88038830f1d84ce0e8c62062571a15"
+          "sha256": "a476b85dba19e62d969a5875c1f6f4ecc0c73ee7eccddda3752b644f8217523c"
         }
       ],
       "source": "B:\\Bees\\Training\\TrainerLogs\\bees-v20-r3-s1-20260926T184018Z-4fc8512c\\central-learner\\learner-live.log",
-      "source_bytes": 944222,
-      "source_sha256": "55970615f7a41e9c2e85215eadc21b664c88038830f1d84ce0e8c62062571a15"
+      "source_bytes": 952070,
+      "source_sha256": "a476b85dba19e62d969a5875c1f6f4ecc0c73ee7eccddda3752b644f8217523c"
     },
     {
       "destination": "trainer-logs\\remote-lancaster-8533f4bd\\BeesEpisode-10008.log",
@@ -14273,6 +14273,19 @@
       "source_sha256": "cf4d83942f11ea81bfd1683233f6b7542d9f9cfe92f9bf1e061349f9b7a15429"
     },
     {
+      "destination": "central-training-logs\\rl-environment-validation-2e90ca88a7d3.log",
+      "parts": [
+        {
+          "bytes": 3165,
+          "file": "rl-environment-validation-2e90ca88a7d3.log.part0001",
+          "sha256": "397785a4ade87180a9fe9d45493557bbac4f34217946ea9813f26ea74de35b15"
+        }
+      ],
+      "source": "B:\\Bees\\Logs\\Training\\rl-environment-validation-2e90ca88a7d3.log",
+      "source_bytes": 3165,
+      "source_sha256": "397785a4ade87180a9fe9d45493557bbac4f34217946ea9813f26ea74de35b15"
+    },
+    {
       "destination": "central-training-logs\\rl-environment-validation-47beaea6ede1.log",
       "parts": [
         {
@@ -14434,19 +14447,19 @@
       "bytes": 2287,
       "destination": "metadata\\run-lifecycle.json",
       "file": "run-lifecycle.json",
-      "sha256": "2d7e0c7e1aeb90364e12025624597f196bd3f195a027c7d676a90e0c419c001e",
+      "sha256": "b79ba44d57870813f49b70381589006d2e8c731b380c0d4c25c205244bb27331",
       "source": "B:\\Bees\\Training\\RunLifecycle\\current.json"
     },
     {
-      "bytes": 3522,
+      "bytes": 3412,
       "destination": "metadata\\latest-training-release.json",
       "file": "latest-training-release.json",
-      "sha256": "fd9db8aa1133ada22eb123ce7e5d7cb1c0df80b45f571556a048ff7a541cb7ae",
+      "sha256": "0e17e50d7c96cdc2551f1b33173134e0179459c3a152bacffd2bdd2587048ce9",
       "source": "B:\\Bees\\Builds\\latest-training-release.json"
     }
   ],
-  "reason": "pre-build",
+  "reason": "incompatible-run-final",
   "run_id": "bees-v20-r3-s1-20260926T184018Z-4fc8512c",
   "schema_version": 1,
-  "snapshot_utc": "2026-09-28T23:17:49.507008+00:00"
+  "snapshot_utc": "2026-09-28T23:28:14.213034+00:00"
 }
