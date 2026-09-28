@@ -1803,7 +1803,8 @@ namespace Assets.Scripts.Levels
                 command.PointA,
                 command.PointB,
                 command.MatchShipId,
-                command.Value);
+                command.Value,
+                command.MatchMiningAsteroidId);
 
             lock (_outgoingPlayerCommandsLock)
             {
@@ -1843,7 +1844,8 @@ namespace Assets.Scripts.Levels
                             source.PointA,
                             source.PointB,
                             source.MatchShipId,
-                            source.Value)));
+                            source.Value,
+                            source.MatchMiningAsteroidId)));
                     if (destination.Count >= maxCommands)
                     {
                         break;

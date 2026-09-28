@@ -1,4 +1,5 @@
 using Assets.Scripts.Data;
+using Assets.Scripts.Entities;
 using System;
 using System.Collections.Generic;
 using System.Text;
@@ -882,7 +883,8 @@ namespace Assets.Scripts.Levels
                 command.PointA,
                 command.PointB,
                 command.MatchShipId,
-                command.Value);
+                command.Value,
+                command.MatchMiningAsteroidId);
 
             lock (_queuedPlayerCommandsLock)
             {
@@ -981,7 +983,8 @@ namespace Assets.Scripts.Levels
             Vector2 pointA = default,
             Vector2 pointB = default,
             long matchShipId = 0,
-            int value = 0)
+            int value = 0,
+            long matchMiningAsteroidId = 0)
         {
             MatchSession matchSession = Stage != null ? Stage.MatchSession : null;
             long sequence = 0;
@@ -1012,7 +1015,8 @@ namespace Assets.Scripts.Levels
                 pointA,
                 pointB,
                 matchShipId,
-                value);
+                value,
+                matchMiningAsteroidId);
 
             if (matchSession != null && !matchSession.IsLocalAuthority)
             {
@@ -1116,6 +1120,11 @@ namespace Assets.Scripts.Levels
                         command.PlayerId,
                         command.SquadCommandId,
                         command.Value != 0);
+                case PlayerCommandKind.Mine:
+                    return TryPlayerMineSquad(
+                        command.PlayerId,
+                        command.SquadCommandId,
+                        command.MatchMiningAsteroidId);
                 default:
                     return false;
             }
@@ -1309,6 +1318,27 @@ namespace Assets.Scripts.Levels
             }
 
             fireBarge.Detonate();
+            return true;
+        }
+
+        public bool TryPlayerMineSquad(
+            int playerId,
+            long squadCommandId,
+            long matchMiningAsteroidId)
+        {
+            Squad squad = GetPlayerCommandSquad(squadCommandId);
+            if (!CanPlayerCommandSquad(playerId, squad) ||
+                matchMiningAsteroidId <= 0 ||
+                !MiningAsteroidsByMatchId.TryGetValue(
+                    matchMiningAsteroidId,
+                    out MiningAsteroid asteroid) ||
+                asteroid == null ||
+                asteroid.IsDead)
+            {
+                return false;
+            }
+
+            squad.UserMining(asteroid);
             return true;
         }
 
@@ -1701,7 +1731,8 @@ namespace Assets.Scripts.Levels
         SetCeaseFire,
         SetMatchSpeed,
         SetShootingStrategy,
-        SetLockOn
+        SetLockOn,
+        Mine
     }
 
     /// <summary>
@@ -1717,6 +1748,7 @@ namespace Assets.Scripts.Levels
         public long SquadCommandId;
         public long TargetSquadCommandId;
         public long MatchShipId;
+        public long MatchMiningAsteroidId;
         public int Value;
         public Vector2 PointA;
         public Vector2 PointB;
@@ -1734,7 +1766,8 @@ namespace Assets.Scripts.Levels
             Vector2 pointA = default,
             Vector2 pointB = default,
             long matchShipId = 0,
-            int value = 0)
+            int value = 0,
+            long matchMiningAsteroidId = 0)
         {
             PlayerId = playerId;
             Sequence = sequence;
@@ -1742,6 +1775,7 @@ namespace Assets.Scripts.Levels
             SquadCommandId = squadCommandId;
             TargetSquadCommandId = targetSquadCommandId;
             MatchShipId = matchShipId;
+            MatchMiningAsteroidId = matchMiningAsteroidId;
             Value = value;
             PointA = pointA;
             PointB = pointB;
@@ -1751,7 +1785,7 @@ namespace Assets.Scripts.Levels
 
     public static class MultiplayerProtocol
     {
-        public const int Version = 5;
+        public const int Version = 6;
         public const int MaxPacketBytes = 4096;
         public const int MaxLobbyPacketBytes = 65536;
         public const int MaxBattleStatePacketBytes = 262144;
@@ -1765,7 +1799,7 @@ namespace Assets.Scripts.Levels
         private static readonly HashSet<string> CommandFields = new HashSet<string>
         {
             "v", "match", "type", "level", "player", "seq", "kind", "squad", "target",
-            "ship", "value", "ax", "ay", "bx", "by"
+            "ship", "asteroid", "value", "ax", "ay", "bx", "by"
         };
         private static readonly HashSet<string> AcknowledgementFields = new HashSet<string>
         {
@@ -2259,6 +2293,7 @@ namespace Assets.Scripts.Levels
                 ["squad"] = command.SquadCommandId,
                 ["target"] = command.TargetSquadCommandId,
                 ["ship"] = command.MatchShipId,
+                ["asteroid"] = command.MatchMiningAsteroidId,
                 ["value"] = command.Value,
                 ["ax"] = command.PointA.x,
                 ["ay"] = command.PointA.y,
@@ -2876,6 +2911,7 @@ namespace Assets.Scripts.Levels
                 !TryReadInt64(json, "squad", out long squadCommandId) || squadCommandId <= 0 ||
                 !TryReadInt64(json, "target", out long targetSquadCommandId) || targetSquadCommandId < 0 ||
                 !TryReadInt64(json, "ship", out long matchShipId) || matchShipId < 0 ||
+                !TryReadInt64(json, "asteroid", out long matchMiningAsteroidId) || matchMiningAsteroidId < 0 ||
                 !TryReadInt64(json, "value", out long value) ||
                 value < int.MinValue || value > int.MaxValue ||
                 !TryReadFloat(json, "ax", out float ax) ||
@@ -2895,7 +2931,8 @@ namespace Assets.Scripts.Levels
                 new Vector2(ax, ay),
                 new Vector2(bx, by),
                 matchShipId,
-                (int)value);
+                (int)value,
+                matchMiningAsteroidId);
 
             if (!IsValidCommand(parsed))
             {
@@ -2915,6 +2952,7 @@ namespace Assets.Scripts.Levels
                 command.SquadCommandId <= 0 ||
                 command.TargetSquadCommandId < 0 ||
                 command.MatchShipId < 0 ||
+                command.MatchMiningAsteroidId < 0 ||
                 !Enum.IsDefined(typeof(PlayerCommandKind), command.Kind) ||
                 !IsFinite(command.PointA) ||
                 !IsFinite(command.PointB))
@@ -2937,6 +2975,12 @@ namespace Assets.Scripts.Levels
                 command.Kind == PlayerCommandKind.BargeCharge ||
                 command.Kind == PlayerCommandKind.FireBargeDetonate;
             if (requiresShip != (command.MatchShipId > 0))
+            {
+                return false;
+            }
+
+            bool requiresMiningAsteroid = command.Kind == PlayerCommandKind.Mine;
+            if (requiresMiningAsteroid != (command.MatchMiningAsteroidId > 0))
             {
                 return false;
             }

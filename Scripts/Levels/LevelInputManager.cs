@@ -642,7 +642,17 @@ namespace Assets.Scripts.Levels
 
         private void SetSquadsToMine(MiningAsteroid asteroid)
         {
-            Level.State.GetSelectedSquadsForPlayer(PlayerId).ForEach(squad => squad.UserMining(asteroid));
+            if (asteroid == null || asteroid.MatchMiningAsteroidId <= 0)
+            {
+                return;
+            }
+
+            Level.State.GetSelectedSquadsForPlayer(PlayerId).ForEach(squad =>
+                Level.State.TryIssuePlayerCommand(
+                    PlayerId,
+                    PlayerCommandKind.Mine,
+                    squad.CommandSquadId,
+                    matchMiningAsteroidId: asteroid.MatchMiningAsteroidId));
         }
 
         private void SetSquadsToFullRetreat(WarpGate warpGate)
