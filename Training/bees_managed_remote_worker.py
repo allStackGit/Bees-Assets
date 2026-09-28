@@ -538,6 +538,9 @@ def _activate_staged_runtime(
         command,
         cwd=str(working_directory),
         creationflags=creation_flags,
+        stdin=subprocess.DEVNULL,
+        stdout=sys.stdout,
+        stderr=sys.stderr,
         close_fds=True,
     )
     time.sleep(0.25)
