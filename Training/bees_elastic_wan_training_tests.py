@@ -147,7 +147,9 @@ class ElasticActorHealthTests(unittest.TestCase):
             heartbeat.start()
             heartbeat.set_phase("starting-unity")
             heartbeat.set_ready("running", actor_id=3)
+            writes_before_progress = health.call_count
             heartbeat.mark_progress()
+            self.assertEqual(health.call_count, writes_before_progress)
             heartbeat.stop()
 
         self.assertGreaterEqual(health.call_count, 3)
