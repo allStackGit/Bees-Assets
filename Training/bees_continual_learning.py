@@ -152,7 +152,10 @@ def load_config(path: Optional[os.PathLike[str] | str] = None) -> Dict[str, Any]
 
 
 def canonical_json(value: Any) -> str:
-    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    try:
+        return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    except (TypeError, ValueError, RecursionError, OverflowError) as exc:
+        raise ValidationError("Value cannot be represented as canonical JSON.") from exc
 
 
 def sha256_file(path: Path, chunk_size: int = 1024 * 1024) -> str:
@@ -189,23 +192,26 @@ def _finite_number(value: Any) -> bool:
 
 
 def _walk_finite_numbers(value: Any, *, path: str = "$") -> None:
-    if isinstance(value, bool) or value is None or isinstance(value, str):
-        return
-    if isinstance(value, (int, float)):
-        try:
-            finite = math.isfinite(float(value))
-        except (OverflowError, ValueError):
-            finite = False
-        if not finite:
-            raise ValidationError(f"Non-finite or out-of-range numeric value at {path}.")
-        return
-    if isinstance(value, list):
-        for index, child in enumerate(value):
-            _walk_finite_numbers(child, path=f"{path}[{index}]")
-        return
-    if isinstance(value, dict):
-        for key, child in value.items():
-            _walk_finite_numbers(child, path=f"{path}.{key}")
+    try:
+        if isinstance(value, bool) or value is None or isinstance(value, str):
+            return
+        if isinstance(value, (int, float)):
+            try:
+                finite = math.isfinite(float(value))
+            except (OverflowError, ValueError):
+                finite = False
+            if not finite:
+                raise ValidationError(f"Non-finite or out-of-range numeric value at {path}.")
+            return
+        if isinstance(value, list):
+            for index, child in enumerate(value):
+                _walk_finite_numbers(child, path=f"{path}[{index}]")
+            return
+        if isinstance(value, dict):
+            for key, child in value.items():
+                _walk_finite_numbers(child, path=f"{path}.{key}")
+    except RecursionError as exc:
+        raise ValidationError(f"Numeric structure is too deeply nested at {path}.") from exc
         return
     raise ValidationError(f"Unsupported value type at {path}: {type(value).__name__}.")
 
