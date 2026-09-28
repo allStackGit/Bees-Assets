@@ -1562,3 +1562,11 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** compatible lease pruning now expires only non-central trainers. `trainingControl.module.test.js` adds a source regression case with a recently renewed remote and an expired central lease; it asserts that the canonical build stays old and the central learner remains required in `preparing`.  
 **Verification:** implementation and focused regression source were read back and reviewed statically. The test was not run, as required by the static-only audit instruction.  
 **Invariant/knowledge:** `BeesServer~/docs/TRAINING_CONTROL.md` requires the central learner to remain in the compatible barrier; a stale central lease must stall promotion until the learner recovers and acknowledges the release.
+
+### REG-183 — Unsafe heartbeat revision could acknowledge a rollout
+**Area:** `BeesServer~/trainingControl.js`, dedicated-trainer heartbeat revision validation  
+**Symptom:** a heartbeat could submit an integer beyond JavaScript's exact integer range and have it accepted as a revision newer than any pending rollout phase, potentially satisfying a rollout acknowledgement prematurely.  
+**Root cause:** heartbeat normalization used `Number.isInteger`, which accepts representable integer-valued numbers outside the safe integer range.  
+**Permanent protection:** heartbeat normalization now accepts `applied_revision` only when `Number.isSafeInteger` succeeds; malformed or unsafe revisions become `-1`, which cannot satisfy a pending phase. `trainingControl.module.test.js` adds a focused unsafe-revision case.  
+**Verification:** source and regression coverage were read back and reviewed statically. The test was not run under the static-only audit instruction.  
+**Invariant/knowledge:** rollout acknowledgement revisions must be exact monotonic control revisions; lossy numeric values must fail closed.
