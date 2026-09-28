@@ -95,6 +95,39 @@ class ReleaseRuntimeTests(unittest.TestCase):
             )
             self.assertEqual(again["installed_root"], installed["installed_root"])
 
+    def test_reinstall_rejects_unmanifested_files_in_cached_runtime(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            self._training_root(root)
+            archive = root / "runtime.zip"
+            packaged = runtime.package_runtime(
+                assets_root=root / "Assets",
+                output=archive,
+                build_id="build-extra-file",
+                source_commit="extra-file",
+            )
+            installed = runtime.install_runtime(
+                archive,
+                destination_root=root / "installed",
+                expected_sha256=packaged["archive_sha256"],
+                expected_version=packaged["runtime_version"],
+                expected_build_id="build-extra-file",
+            )
+            installed_root = Path(installed["installed_root"])
+            (installed_root / "sitecustomize.py").write_text(
+                "import os\\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "file set differs"):
+                runtime.install_runtime(
+                    archive,
+                    destination_root=root / "installed",
+                    expected_sha256=packaged["archive_sha256"],
+                    expected_version=packaged["runtime_version"],
+                    expected_build_id="build-extra-file",
+                )
+
     def test_test_only_python_changes_do_not_change_runtime_version(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
