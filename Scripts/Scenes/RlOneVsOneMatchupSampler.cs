@@ -319,6 +319,7 @@ internal sealed class RlOneVsOneEpisodeMatchupSelector
     internal const double DefaultPriorityWeightScale = 1.0;
     internal const int DefaultPriorityOutcomeWindow = 32;
     internal const int DefaultPriorityMinimumSamples = 4;
+    internal const long MaximumPrioritizedMatchupPairs = 100_000;
 
     private const int BeeCompositionSeedOffset = 48611;
     private const int HumanCompositionSeedOffset = 104729;
@@ -483,6 +484,28 @@ internal sealed class RlOneVsOneEpisodeMatchupSelector
             options.ShipsPerSide,
             _humanSide,
             unchecked(seed * 31 + HumanCompositionSeedOffset));
+        long prioritizedMatchupPairs;
+        try
+        {
+            prioritizedMatchupPairs = checked(
+                _beeCompositionSampler.ValidCombinationCount *
+                _humanCompositionSampler.ValidCombinationCount);
+        }
+        catch (OverflowException exc)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(options),
+                "Sampled multi-ship matchup space exceeds the supported priority-sampling size.",
+                exc);
+        }
+        if (prioritizedMatchupPairs > MaximumPrioritizedMatchupPairs)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(options),
+                $"Sampled multi-ship roster expands to {prioritizedMatchupPairs} valid matchup pairs; " +
+                $"priority sampling supports at most {MaximumPrioritizedMatchupPairs} to keep each Unity worker within its memory budget.");
+        }
+
         _currentBeeComposition = new ConfigData.ShipTypes[_options.ShipsPerSide];
         _currentHumanComposition = new ConfigData.ShipTypes[_options.ShipsPerSide];
         _validBeeCompositions = BuildValidCompositionList(_beeCompositionSampler);
