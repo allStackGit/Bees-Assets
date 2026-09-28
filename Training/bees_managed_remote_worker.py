@@ -1297,6 +1297,63 @@ def _wait_for_private_transport(
 _STATUS_UNSET = object()
 
 
+def _trainer_record(
+    status: object,
+    trainer_id: str,
+) -> Optional[Mapping[str, object]]:
+    if not isinstance(status, Mapping):
+        return None
+    trainers = status.get("trainers")
+    if not isinstance(trainers, list):
+        return None
+    for candidate in trainers:
+        if isinstance(candidate, Mapping) and candidate.get("trainer_id") == trainer_id:
+            return candidate
+    return None
+
+
+def _session_failure_total(record: Optional[Mapping[str, object]]) -> Optional[int]:
+    if not isinstance(record, Mapping):
+        return None
+    metrics = record.get("metrics")
+    metrics_map = metrics if isinstance(metrics, Mapping) else {}
+    throughput = metrics_map.get("throughput")
+    throughput_map = throughput if isinstance(throughput, Mapping) else {}
+    value = throughput_map.get("session_failures_total")
+    if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+        return value
+    return None
+
+
+class _SessionFailureWatchdog:
+    def __init__(self, *, threshold: int = 3, window_seconds: float = 120.0) -> None:
+        self.threshold = max(1, int(threshold))
+        self.window_seconds = max(1.0, float(window_seconds))
+        self.last_total: Optional[int] = None
+        self.window_started: Optional[float] = None
+        self.failures_in_window = 0
+
+    def observe(self, total: Optional[int], now: float) -> bool:
+        if total is None:
+            return False
+        if self.last_total is None or total < self.last_total:
+            self.last_total = total
+            self.window_started = None
+            self.failures_in_window = 0
+            return False
+        delta = total - self.last_total
+        self.last_total = total
+        if self.window_started is not None and now - self.window_started > self.window_seconds:
+            self.window_started = None
+            self.failures_in_window = 0
+        if delta <= 0:
+            return False
+        if self.window_started is None:
+            self.window_started = now
+        self.failures_in_window += delta
+        return self.failures_in_window >= self.threshold
+
+
 def _remote_status_summary(
     args: argparse.Namespace,
     trainer_id: str,
@@ -1316,13 +1373,7 @@ def _remote_status_summary(
     desired_map = desired if isinstance(desired, Mapping) else {}
     if log_sink is not None:
         log_sink.set_run_id(str(desired_map.get("run_id", "") or ""))
-    trainers = status.get("trainers")
-    record: Optional[Mapping[str, object]] = None
-    if isinstance(trainers, list):
-        for candidate in trainers:
-            if isinstance(candidate, Mapping) and candidate.get("trainer_id") == trainer_id:
-                record = candidate
-                break
+    record = _trainer_record(status, trainer_id)
 
     if record is None:
         build_id = str(desired_map.get("canonical_build_id", "") or "-")
@@ -1689,6 +1740,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     transport_watchdog = _TransportWatchdog(
                         args.transport_watchdog_seconds
                     )
+                    session_failure_watchdog = _SessionFailureWatchdog()
                     transport_watchdog_restart = False
                     while (
                         runtime_cutover is None
@@ -1712,6 +1764,39 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                                     "[Bees remote] authenticated learner control has been "
                                     f"unreachable for {outage:.1f}s while the tailnet process "
                                     "is still alive; recycling private transport.",
+                                    file=sys.stderr,
+                                    flush=True,
+                                )
+                                transport_watchdog_restart = True
+                                break
+                            record = _trainer_record(status, trainer_id)
+                            if isinstance(record, Mapping) and bool(record.get("stale", False)):
+                                print(
+                                    "[Bees remote] trainer heartbeat is STALE while the "
+                                    "supervisor process is still alive; recycling the managed "
+                                    "worker and private transport.",
+                                    file=sys.stderr,
+                                    flush=True,
+                                )
+                                transport_watchdog_restart = True
+                                break
+                            if session_failure_watchdog.observe(
+                                _session_failure_total(record),
+                                now,
+                            ):
+                                print(
+                                    "[Bees remote] repeated WAN actor session failures indicate "
+                                    "a broker/gameplay path that is not healing; recycling private "
+                                    "transport.",
+                                    file=sys.stderr,
+                                    flush=True,
+                                )
+                                transport_watchdog_restart = True
+                                break
+                            if not updater.alive():
+                                print(
+                                    "[Bees remote] runtime updater thread stopped unexpectedly; "
+                                    "restarting supervisor state.",
                                     file=sys.stderr,
                                     flush=True,
                                 )
