@@ -78,13 +78,27 @@ class Compatibility:
 
     @classmethod
     def from_config(cls, config: Mapping[str, Any]) -> "Compatibility":
+        behavior_name = config.get("behavior_name")
+        if not isinstance(behavior_name, str) or not behavior_name.strip():
+            raise ValidationError("behavior_name must be a non-empty string.")
+
+        version_fields = (
+            "policy_abi_version",
+            "observation_schema_version",
+            "action_schema_version",
+            "reward_schema_version",
+            "scenario_schema_version",
+        )
+        versions: Dict[str, int] = {}
+        for field in version_fields:
+            value = config.get(field)
+            if type(value) is not int or value <= 0:
+                raise ValidationError(f"{field} must be a positive integer.")
+            versions[field] = value
+
         return cls(
-            behavior_name=str(config["behavior_name"]),
-            policy_abi_version=int(config["policy_abi_version"]),
-            observation_schema_version=int(config["observation_schema_version"]),
-            action_schema_version=int(config["action_schema_version"]),
-            reward_schema_version=int(config["reward_schema_version"]),
-            scenario_schema_version=int(config["scenario_schema_version"]),
+            behavior_name=behavior_name.strip(),
+            **versions,
         )
 
     def to_dict(self) -> Dict[str, Any]:
@@ -112,6 +126,11 @@ def load_config(path: Optional[os.PathLike[str] | str] = None) -> Dict[str, Any]
         raise ContinualLearningError(f"Continual-learning config not found: {config_path}") from exc
     except json.JSONDecodeError as exc:
         raise ContinualLearningError(f"Invalid JSON in continual-learning config {config_path}: {exc}") from exc
+
+    if not isinstance(raw, dict):
+        raise ContinualLearningError(
+            f"Continual-learning config must contain a JSON object: {config_path}"
+        )
 
     required = {
         "behavior_name",
