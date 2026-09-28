@@ -610,6 +610,7 @@ setlocal EnableExtensions
 echo [Bees remote] launching Windows training worker...
 set "BEES_BOOTSTRAP_DIR=%TEMP%\\BeesTrainingBootstrap"
 set "BEES_SELF=%~f0"
+set "BEES_REMOTE_LAUNCHER_PATH=%~f0"
 set "BEES_PAYLOAD_ZIP=%BEES_BOOTSTRAP_DIR%\\payload.zip"
 if exist "%BEES_BOOTSTRAP_DIR%" rd /s /q "%BEES_BOOTSTRAP_DIR%"
 mkdir "%BEES_BOOTSTRAP_DIR%" >nul 2>&1
