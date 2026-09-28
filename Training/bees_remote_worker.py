@@ -247,16 +247,25 @@ def main(argv: Sequence[str] | None = None) -> int:
                     file=sys.stderr,
                 )
                 return 4
-            failed = [
+            exited = [
                 (worker_id, process.returncode)
                 for worker_id, process in zip(worker_ids, workers)
-                if process.poll() is not None and process.returncode != 0
+                if process.poll() is not None
             ]
-            if failed:
-                print(f"error: Unity rollout worker exited unexpectedly: {failed}", file=sys.stderr)
+            if exited:
+                all_workers_exited = len(exited) == len(workers)
+                clean_cohort_exit = all_workers_exited and all(
+                    return_code == 0 for _, return_code in exited
+                )
+                if clean_cohort_exit:
+                    return 0
+                # A zero exit is still unexpected while peers remain active: ML-Agents
+                # expects every assigned Unity worker for the lifetime of this session.
+                print(
+                    f"error: Unity rollout worker exited before the full cohort completed: {exited}",
+                    file=sys.stderr,
+                )
                 return 5
-            if workers and all(process.poll() is not None for process in workers):
-                return 0
             time.sleep(0.25)
         return 0
     finally:
