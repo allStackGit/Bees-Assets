@@ -212,14 +212,18 @@ def unity_environment_args(argv: Sequence[str]) -> Tuple[str, ...]:
     if marker_index is None:
         return ()
     unity_args = tuple(str(value) for value in argv[marker_index + 1 :])
-    if any(
-        argument == "--mlagents-port" or argument.startswith("--mlagents-port=")
-        for argument in unity_args
-    ):
+    if _overrides_managed_worker_port(unity_args):
         raise SystemExit(
             "--env-args must not override ML-Agents' managed --mlagents-port."
         )
     return unity_args
+
+
+def _overrides_managed_worker_port(unity_args: Sequence[str]) -> bool:
+    return any(
+        argument == "--mlagents-port" or argument.startswith("--mlagents-port=")
+        for argument in unity_args
+    )
 
 
 def _canonical_json(value: Mapping[str, object]) -> str:
@@ -338,6 +342,8 @@ def load_remote_worker_spec(path: str | os.PathLike[str]) -> Mapping[str, object
     external_worker_ports(base_port, worker_ids)
     if not isinstance(unity_args, list) or any(not isinstance(item, str) for item in unity_args):
         raise ValueError("remote worker spec unity_args must be a string list")
+    if _overrides_managed_worker_port(unity_args):
+        raise ValueError("remote worker spec unity_args must not override ML-Agents' managed --mlagents-port")
     if not isinstance(run_id, str):
         raise ValueError("remote worker spec run_id must be a string")
     if not isinstance(build_id, str) or not build_id.strip():
