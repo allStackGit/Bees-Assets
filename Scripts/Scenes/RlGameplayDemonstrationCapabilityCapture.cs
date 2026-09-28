@@ -164,15 +164,17 @@ internal static class RlGameplayDemonstrationCapabilityCapture
         continuousSnapshot = null;
         discreteSnapshot = null;
 
+        int frameQuarterTurns = RlOneVsOneAgent.GetPolicyFrameQuarterTurns(ship.Level, ship.Side);
         VectorSensor sensor = new VectorSensor(RlOneVsOneAgent.ObservationSize);
         RlCombatPerception perception = new RlCombatPerception();
-        RlOneVsOneAgent.CollectPolicyObservations(perception, ship, ship.Side, sensor, 0);
+        RlOneVsOneAgent.CollectPolicyObservations(
+            perception, ship, ship.Side, sensor, frameQuarterTurns);
         if (!(VectorObservationsField.GetValue(sensor) is List<float> observations))
         {
             return false;
         }
 
-        ActionBuffers actions = EncodeCurrentAction(ship, specialAction);
+        ActionBuffers actions = EncodeCurrentAction(ship, specialAction, frameQuarterTurns);
         return TryCreateSample(
             observations,
             actions,
@@ -182,12 +184,17 @@ internal static class RlGameplayDemonstrationCapabilityCapture
             out discreteSnapshot);
     }
 
-    private static ActionBuffers EncodeCurrentAction(Ship ship, int specialAction)
+    private static ActionBuffers EncodeCurrentAction(
+        Ship ship,
+        int specialAction,
+        int frameQuarterTurns)
     {
         float[] continuous = new float[RlOneVsOneAgent.ContinuousActionCount];
         int[] discrete = new int[RlOneVsOneAgent.DiscreteBranchCount];
 
-        Vector2 movement = RlGameplayDemonstrationAgent.EncodeCurrentMovement(ship);
+        Vector2 movement = RlPolicyCoordinateFrame.WorldToPolicy(
+            RlGameplayDemonstrationAgent.EncodeCurrentMovement(ship),
+            frameQuarterTurns);
         continuous[0] = movement.x;
         continuous[1] = movement.y;
 
@@ -204,6 +211,7 @@ internal static class RlGameplayDemonstrationCapabilityCapture
             if (aim.sqrMagnitude > 0.0001f)
             {
                 aim.Normalize();
+                aim = RlPolicyCoordinateFrame.WorldToPolicy(aim, frameQuarterTurns);
                 continuous[aimStart] = aim.x;
                 continuous[aimStart + 1] = aim.y;
             }
