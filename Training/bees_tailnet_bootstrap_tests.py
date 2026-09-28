@@ -212,6 +212,20 @@ class TailnetBootstrapSourceTests(unittest.TestCase):
         self.assertIn("loginctl enable-linger", linux)
         self.assertIn("--no-autostart", linux)
 
+    def test_linux_launcher_repairs_known_unity_gtk_runtime_dependency(self):
+        linux = LINUX_TEMPLATE.read_text(encoding="utf-8")
+
+        self.assertIn("have_libgtk3", linux)
+        self.assertIn("/sbin/ldconfig", linux)
+        self.assertIn("/usr/sbin/ldconfig", linux)
+        self.assertIn("libgtk-3.so.0", linux)
+        self.assertIn("libgtk-3-0", linux)
+        self.assertIn("gtk3", linux)
+        self.assertIn(
+            "Unity server training will continue, but AppUI native loading may report errors",
+            linux,
+        )
+
     def test_tailnet_helper_exposes_private_gateway_bootstrap_and_multi_forward(self):
         source = TAILNET_MAIN.read_text(encoding="utf-8")
         for command in ('case "auth":', 'case "gateway":', 'case "fetch":', 'case "forward-multi":'):
