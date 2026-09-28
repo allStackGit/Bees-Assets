@@ -531,6 +531,12 @@ class ElasticWanBroker(base.WanActorBroker):
             for actor_id, record in self._registrations.items()
         }
 
+    def _active_actor_ids_locked(self, now: Optional[float] = None) -> Tuple[int, ...]:
+        # The base broker uses its fixed 120-second lease when checking actor liveness.
+        # Elastic actors may configure a different lease, so route inherited cohort and
+        # trajectory checks through the same expiry policy as registration and state polling.
+        return tuple(sorted(self._active_snapshot_locked(now=now)))
+
     def active_actor_snapshot(self) -> Dict[int, int]:
         with self._condition:
             return self._active_snapshot_locked()
