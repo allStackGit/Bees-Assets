@@ -520,6 +520,7 @@ def _run_managed_subprocess(
         kwargs["start_new_session"] = True
 
     process = popen_owned(list(command), **kwargs)
+    child_tree_retired = False
     try:
         stop_requested = False
         while process.poll() is None:
@@ -532,6 +533,7 @@ def _run_managed_subprocess(
                         flush=True,
                     )
                     _stop_interruptible_managed_child(process)
+                    child_tree_retired = True
                     break
                 print(
                     "[Bees continuous] managed shutdown requested during training; "
@@ -543,16 +545,19 @@ def _run_managed_subprocess(
         return_code = int(process.wait())
         if os.name == "nt":
             close_windows_owned_child_job()
+        child_tree_retired = True
         if stop_requested or _managed_stop_requested():
             raise KeyboardInterrupt
         return return_code
     except BaseException:
         # The service retries ordinary phase failures while this owner stays alive. Never let
-        # the just-launched phase become an unsupervised sibling of the retry.
-        if interruptible_on_stop:
-            _stop_interruptible_managed_child(process)
-        else:
-            _request_graceful_training_child_stop(process)
+        # the just-launched phase become an unsupervised sibling of the retry. A managed stop
+        # may already have retired the tree before KeyboardInterrupt is raised.
+        if not child_tree_retired:
+            if interruptible_on_stop:
+                _stop_interruptible_managed_child(process)
+            else:
+                _request_graceful_training_child_stop(process)
         raise
 
 
