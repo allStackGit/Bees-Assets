@@ -514,6 +514,35 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
             windows,
         )
 
+    def test_linux_launcher_and_systemd_watchdog_repair_unhealthy_supervisor(self):
+        root = Path(__file__).resolve().parents[1]
+        linux = (root / "Training" / "bees_remote_bootstrap.sh").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("supervisor_control_probe_once()", linux)
+        self.assertIn("supervisor_control_healthy()", linux)
+        self.assertIn('f"http://127.0.0.1:{port}/v1/status"', linux)
+        self.assertIn("timeout=3.0", linux)
+        self.assertIn("restart_unhealthy_supervisor()", linux)
+        self.assertIn("unhealthy supervisor stopped cleanly; continuing bootstrap", linux)
+        self.assertIn("forcing the stale remote supervisor to terminate", linux)
+        self.assertIn("if supervisor_control_healthy; then", linux)
+        self.assertIn(
+            "worker is already running and authenticated learner control is healthy",
+            linux,
+        )
+        self.assertIn("CONTROL_FAILURES=0", linux)
+        self.assertIn("CONTROL_FAILURES >= 3", linux)
+        self.assertIn(
+            "watchdog observed repeated authenticated control failures; invoking launcher repair",
+            linux,
+        )
+        self.assertNotIn(
+            'worker is already running in the background (PID $PID).',
+            linux,
+        )
+
     def test_generated_remote_launchers_and_learner_gateway_share_gameplay_port(self):
         root = Path(__file__).resolve().parents[1]
         windows = (root / "Training" / "bees_remote_bootstrap.ps1").read_text(
