@@ -269,6 +269,7 @@ class ElasticBrokerClient(worker.BrokerClient):
             "environment_id": str(environment_id).lower(),
         }
         self.actor_instance_id = secrets.token_hex(16)
+        self.actor_token: Optional[str] = None
 
     def claim(self, session_id: str) -> int:
         if self.requested_actor_id is not None:
@@ -302,15 +303,18 @@ class ElasticBrokerClient(worker.BrokerClient):
         enriched = dict(payload)
         enriched["actor_id"] = self.actor_id
         enriched["actor_instance_id"] = self.actor_instance_id
+        if self.actor_token is not None:
+            enriched["actor_token"] = self.actor_token
         enriched.update(self.release_identity)
         if self.actor_key:
             enriched["actor_key"] = self.actor_key
         return enriched
 
-    def register(self, payload: Mapping[str, Any]) -> None:
+    def register(self, payload: Mapping[str, Any]) -> str:
         enriched = self._owned_payload(payload)
         enriched["env_count"] = self.env_count
-        super().register(enriched)
+        self.actor_token = super().register(enriched)
+        return self.actor_token
 
     def trajectories(self, payload: Mapping[str, Any]) -> None:
         super().trajectories(self._owned_payload(payload))
