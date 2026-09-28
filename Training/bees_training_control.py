@@ -15,12 +15,13 @@ import shutil
 import socket
 import stat
 import tempfile
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
 import zipfile
 from pathlib import Path
-from typing import Any, Mapping, Optional
+from typing import Any, Callable, Mapping, Optional
 
 from bees_process_safety import atomic_write_text
 
@@ -219,7 +220,13 @@ class TrainingControlClient:
         )
         return self._decode_state(body)
 
-    def download_artifact(self, artifact_url: str, destination: Path) -> None:
+    def download_artifact(
+        self,
+        artifact_url: str,
+        destination: Path,
+        *,
+        progress_callback: Optional[Callable[[], None]] = None,
+    ) -> None:
         request = urllib.request.Request(
             self.base_url + artifact_url,
             method="GET",
@@ -228,7 +235,18 @@ class TrainingControlClient:
         try:
             with urllib.request.urlopen(request, timeout=max(self.timeout, 60.0)) as response:
                 with destination.open("wb") as output:
-                    shutil.copyfileobj(response, output, length=1024 * 1024)
+                    next_progress = time.monotonic() + 2.0
+                    while True:
+                        chunk = response.read(1024 * 1024)
+                        if not chunk:
+                            break
+                        output.write(chunk)
+                        if (
+                            progress_callback is not None
+                            and time.monotonic() >= next_progress
+                        ):
+                            progress_callback()
+                            next_progress = time.monotonic() + 2.0
                     output.flush()
                     os.fsync(output.fileno())
         except urllib.error.HTTPError as exc:
@@ -293,11 +311,22 @@ class ManagedBuildStore:
         result["archive_sha256"] = sha
         return result
 
-    def ensure(self, client: TrainingControlClient, descriptor: Mapping[str, Any]) -> tuple[Path, Mapping[str, Any]]:
-        return self._materialize(client, descriptor, activate=True)
+    def ensure(
+        self,
+        client: TrainingControlClient,
+        descriptor: Mapping[str, Any],
+        *,
+        progress_callback: Optional[Callable[[], None]] = None,
+    ) -> tuple[Path, Mapping[str, Any]]:
+        return self._materialize(
+            client,
+            descriptor,
+            activate=True,
+            progress_callback=progress_callback,
+        )
 
     def prepare(self, client: TrainingControlClient, descriptor: Mapping[str, Any]) -> tuple[Path, Mapping[str, Any]]:
-        return self._materialize(client, descriptor, activate=False)
+        return self._materialize(client, descriptor, activate=False, progress_callback=None)
 
     def is_prepared(self, descriptor: Mapping[str, Any]) -> bool:
         descriptor = self._validated_descriptor(descriptor)
@@ -329,6 +358,7 @@ class ManagedBuildStore:
         descriptor: Mapping[str, Any],
         *,
         activate: bool,
+        progress_callback: Optional[Callable[[], None]],
     ) -> tuple[Path, Mapping[str, Any]]:
         descriptor = self._validated_descriptor(descriptor)
         identity = (
@@ -362,7 +392,11 @@ class ManagedBuildStore:
         extracted = temp_parent / "content"
         extracted.mkdir()
         try:
-            client.download_artifact(descriptor["artifact_url"], archive)
+            client.download_artifact(
+                descriptor["artifact_url"],
+                archive,
+                progress_callback=progress_callback,
+            )
             if archive.stat().st_size != descriptor["archive_size_bytes"]:
                 raise ValueError("downloaded build archive size does not match server descriptor")
             actual_sha = file_sha256(archive)
