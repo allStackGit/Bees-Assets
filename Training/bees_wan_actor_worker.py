@@ -933,6 +933,11 @@ class ActorSession:
         policy_changed = remote_versions != self.policy_versions
         if not control_changed and not policy_changed:
             self.policy_epoch = int(state.get("policy_epoch", self.policy_epoch))
+            # A stale upload can finish after another thread already synchronized this state.
+            # If the snapshot confirms the local epochs are current, release both wait signals
+            # even though there is no additional policy/control work to apply.
+            self._state_changed.clear()
+            self._stale.clear()
             return
 
         # Finish already-issued old-policy environment actions so local Unity state is current, but do
