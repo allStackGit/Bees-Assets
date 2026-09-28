@@ -384,6 +384,7 @@ def _terminate(process: Optional[subprocess.Popen]) -> None:
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 check=False,
+                timeout=10,
             )
         except Exception:
             pass
