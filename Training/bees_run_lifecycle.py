@@ -158,6 +158,15 @@ def contract_payload(assets_root: Path) -> dict[str, Any]:
         "episode_coordinator_source_sha256": scenes_root / "RlOneVsOneEpisodeCoordinator.cs",
         "team_exploration_source_sha256": scenes_root / "RlTeamExplorationGrid.cs",
         "episode_identity_source_sha256": scenes_root / "RlEpisodeShipIdentity.cs",
+        "training_bootstrap_source_sha256": scenes_root / "RlOneVsOneTrainingBootstrap.cs",
+        "training_options_source_sha256": scenes_root / "RlOneVsOneTrainingOptions.cs",
+        "multi_arena_bootstrap_source_sha256": scenes_root / "RlOneVsOneMultiArenaBootstrap.cs",
+        "arena_matchups_source_sha256": scenes_root / "RlOneVsOnePerArenaMatchups.cs",
+        "matchup_sampler_source_sha256": scenes_root / "RlOneVsOneMatchupSampler.cs",
+        "scenario_seed_source_sha256": scenes_root / "RlOneVsOneScenarioSeed.cs",
+        "player_replay_source_sha256": scenes_root / "RlPlayerDerivedActionReplay.cs",
+        "adversarial_pressure_source_sha256": scenes_root / "RlPlayerDerivedAdversarialPressure.cs",
+        "tactical_geometry_source_sha256": scenes_root / "RlPlayerDerivedTacticalGeometry.cs",
     }
     for path in (
         continual_path,
