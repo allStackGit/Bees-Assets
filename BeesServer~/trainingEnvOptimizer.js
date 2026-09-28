@@ -477,6 +477,13 @@ class TrainingEnvOptimizer {
                     return this.snapshot(record.trainer_id);
                 }
             }
+            if (expectedStarting) {
+                // Keep the restart phase while child health is still starting. Resetting to
+                // warmup here makes the next startup heartbeat look like an unexpected stop,
+                // which can roll back a healthy env-count probe before the worker becomes ready.
+                state.last_decision = 'waiting for worker startup before throughput metrics';
+                return this.snapshot(record.trainer_id);
+            }
             this._resetMeasurement(state, timestamp, null, 'waiting for learner-consumed-step metrics');
             return this.snapshot(record.trainer_id);
         }
