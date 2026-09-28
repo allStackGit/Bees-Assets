@@ -1501,11 +1501,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         if str(args.shutdown_request_file).strip()
         else None
     )
-    if shutdown_request_file is not None:
-        try:
-            shutdown_request_file.unlink()
-        except FileNotFoundError:
-            pass
+    # The supervisor clears stale markers before launch. Do not unlink here: a
+    # stop request can arrive after process creation but before this startup path runs.
     builds = ManagedBuildStore(install_root)
     state_file = install_root / "control-state.json"
     episode_metrics = EpisodeLogMetrics(install_root / "logs")
