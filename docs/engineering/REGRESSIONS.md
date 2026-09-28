@@ -1390,3 +1390,12 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** `Training/bees_wan_actor_training_tests.py` covers stop arriving after trajectory collection and verifies that the completed batch enters the queue with a drain deadline. The test was added but not executed under the static-only scope.
 **Verification:** Static review confirmed stop-triggered queueing uses the same `ACTOR_SHUTDOWN_UPLOAD_DRAIN_SECONDS` budget and preserves session-change/stale-actor exits. No tests, builds, Unity, or runtime checks were run.
 **Invariant/knowledge:** Graceful shutdown should preserve completed trajectories already collected by the actor, while bounding time spent waiting for upload queue capacity.
+
+### REG-159 — Keep the canonical RL design guide aligned with ABI v20
+**Area:** `RL_DESIGN.md`; neural-policy compatibility documentation
+**Symptom:** The guide described ABI v6, 4,685 observations, 34 continuous actions, sixteen weapon slots, reserved target branches, and a 512x3 network, while the executable frozen schema and active trainer configuration use ABI v20, 7,614 observations, 16 continuous actions, five weapon slots, six discrete branches, and a 128x3 network.
+**Root cause:** The design guide had not been updated as the executable observation/action contract evolved.
+**Fix:** Replace the obsolete interface description with the current schema, observation-block capacities, communication/weapon/special-action layout, and trainer architecture. Retain the executable schema as the authoritative detailed field contract.
+**Permanent protection:** The guide now names `RlPolicySchema` and `RlCombatPerception` as the executable sources of truth. Documentation was checked against the v20 signature and `Training/rl_1v1_config.yaml`; no tests were run under the static-only audit scope.
+**Verification:** Read back the rewritten ABI sections and searched the guide for stale v6 dimensions, target-branch claims, 16-weapon limits, and the old 512-unit network. No stale claims remain.
+**Invariant/knowledge:** User-facing training documentation must match the active executable ABI; incorrect interface dimensions can cause checkpoint/configuration errors.
