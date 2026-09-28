@@ -645,8 +645,27 @@ def _handle_model_snapshot_request(trainer, request_path: Path, response_path: P
 
     if not request_path.is_file():
         return False
+
+    # Claim this exact request before reading it. A supervisor may atomically publish
+    # the next request to request_path while export is running; cleanup must never
+    # unlink that newer request.
+    claimed_path = request_path.with_name(
+        f"{request_path.name}.{os.getpid()}.{threading.get_ident()}.{time.time_ns()}.processing"
+    )
     try:
-        request = json.loads(request_path.read_text(encoding="utf-8-sig"))
+        os.replace(request_path, claimed_path)
+    except FileNotFoundError:
+        return False
+    except OSError as exc:
+        print(
+            f"[Bees RL] Could not claim diagnostic model snapshot request: {type(exc).__name__}: {exc}",
+            file=sys.stderr,
+            flush=True,
+        )
+        return False
+
+    try:
+        request = json.loads(claimed_path.read_text(encoding="utf-8-sig"))
         if not isinstance(request, dict):
             raise ValueError("snapshot request must be a JSON object")
         request_id = str(request.get("request_id", "")).strip()
@@ -700,7 +719,7 @@ def _handle_model_snapshot_request(trainer, request_path: Path, response_path: P
     except Exception as exc:
         request_id = ""
         try:
-            raw = json.loads(request_path.read_text(encoding="utf-8-sig"))
+            raw = json.loads(claimed_path.read_text(encoding="utf-8-sig"))
             if isinstance(raw, dict):
                 request_id = str(raw.get("request_id", ""))
         except Exception:
@@ -726,7 +745,7 @@ def _handle_model_snapshot_request(trainer, request_path: Path, response_path: P
         )
     finally:
         try:
-            request_path.unlink()
+            claimed_path.unlink()
         except FileNotFoundError:
             pass
         except OSError:
