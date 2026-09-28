@@ -448,24 +448,55 @@ def _create_external_environment(
         )
 
 
+def _create_local_environment(
+    *,
+    env_path: Optional[str],
+    worker_id: int,
+    seed: int,
+    num_areas: int,
+    no_graphics: bool,
+    no_graphics_monitor: bool,
+    base_port: Optional[int],
+    env_args: Optional[List[str]],
+    log_folder: str,
+    side_channels,
+    timeout_wait: int,
+):
+    """Construct one local player without retaining ML-Agents' nested factory closure."""
+    from mlagents_envs.environment import UnityEnvironment
+
+    return UnityEnvironment(
+        file_name=env_path,
+        worker_id=worker_id,
+        seed=seed + worker_id,
+        num_areas=num_areas,
+        no_graphics=no_graphics,
+        no_graphics_monitor=no_graphics_monitor,
+        base_port=base_port,
+        additional_args=env_args,
+        side_channels=side_channels,
+        log_folder=log_folder,
+        timeout_wait=timeout_wait,
+    )
+
+
 class _DistributedEnvironmentFactory:
     """Picklable ML-Agents worker factory for local and externally launched Unity players."""
 
     def __init__(
         self,
-        local_factory: Callable,
         external_worker_ids: Sequence[int],
         *,
-        env_path: str,
+        env_path: Optional[str],
         seed: int,
         num_areas: int,
         no_graphics: bool,
         no_graphics_monitor: bool,
-        base_port: int,
+        base_port: Optional[int],
         env_args: Optional[List[str]],
+        log_folder: str,
         timeout_wait: int,
     ) -> None:
-        self.local_factory = local_factory
         self.external_worker_ids = frozenset(external_worker_ids)
         self.env_path = env_path
         self.seed = seed
@@ -474,11 +505,24 @@ class _DistributedEnvironmentFactory:
         self.no_graphics_monitor = no_graphics_monitor
         self.base_port = base_port
         self.env_args = env_args
+        self.log_folder = log_folder
         self.timeout_wait = timeout_wait
 
     def __call__(self, worker_id, side_channels):
         if worker_id not in self.external_worker_ids:
-            return self.local_factory(worker_id, side_channels)
+            return _create_local_environment(
+                env_path=self.env_path,
+                worker_id=worker_id,
+                seed=self.seed,
+                num_areas=self.num_areas,
+                no_graphics=self.no_graphics,
+                no_graphics_monitor=self.no_graphics_monitor,
+                base_port=self.base_port,
+                env_args=self.env_args,
+                log_folder=self.log_folder,
+                side_channels=side_channels,
+                timeout_wait=self.timeout_wait,
+            )
         return _create_external_environment(
             env_path=self.env_path,
             worker_id=worker_id,
@@ -517,7 +561,9 @@ class _DistributedEnvironmentFactoryInstaller:
                 "Distributed external workers require --env so remote Unity executables share the "
                 "same build as local workers."
             )
-        local_factory = self.original_factory(
+        # Preserve ML-Agents' environment path validation, but discard its locally defined
+        # create_unity_environment closure because Windows spawn cannot pickle that closure.
+        self.original_factory(
             env_path,
             no_graphics,
             no_graphics_monitor,
@@ -529,7 +575,6 @@ class _DistributedEnvironmentFactoryInstaller:
             log_folder,
         )
         return _DistributedEnvironmentFactory(
-            local_factory,
             self.external_worker_ids,
             env_path=env_path,
             seed=seed,
@@ -538,6 +583,7 @@ class _DistributedEnvironmentFactoryInstaller:
             no_graphics_monitor=no_graphics_monitor,
             base_port=start_port,
             env_args=env_args,
+            log_folder=log_folder,
             timeout_wait=timeout_wait,
         )
 
