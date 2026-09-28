@@ -1351,12 +1351,25 @@ def _wait_for_runtime_alignment(
 
     updater.start()
     next_status = 0.0
+    transport_watchdog = _TransportWatchdog(args.transport_watchdog_seconds)
     while not stop[0] and tailnet.poll() is None:
         runtime_cutover = _runtime_cutover_selected(args, trainer_id, updater)
         if runtime_cutover is not None:
             return True, runtime_cutover
 
         status = _control_status(args)
+        now = time.monotonic()
+        control_healthy = isinstance(status, Mapping)
+        if transport_watchdog.observe(control_healthy, now):
+            outage = now - float(transport_watchdog.failure_since or now)
+            print(
+                "[Bees remote] authenticated learner control has been unreachable "
+                f"for {outage:.1f}s during runtime alignment; recycling private transport.",
+                file=sys.stderr,
+                flush=True,
+            )
+            return False, None
+
         desired = status.get("desired") if isinstance(status, Mapping) else None
         canonical_build = (
             str(desired.get("canonical_build_id", "") or "")
@@ -1373,7 +1386,6 @@ def _wait_for_runtime_alignment(
             return True, None
 
         updater.request_refresh()
-        now = time.monotonic()
         if now >= next_status:
             waiting_for = canonical_build or "(canonical build unavailable)"
             suffix = f" error={update_error}" if update_error else ""
