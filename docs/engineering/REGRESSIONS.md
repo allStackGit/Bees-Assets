@@ -1326,3 +1326,12 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** Persisted scenario arguments are fail-closed: absence may use the legacy default, while explicit malformed values must stop state loading. A focused malformed-state test was not added under the static-analysis-only request.  
 **Verification:** Statically traced schema migration, the absent-field fallback, and `normalizeEnvironmentArgs`; malformed present values now reach its rejection path instead of becoming `[]`. No tests, builds, Unity, or runtime checks were performed.  
 **Invariant/knowledge:** Persistence defaults apply to missing fields, not malformed values that happen to be falsy.
+
+### REG-152 — Runtime updater shutdown could wait on uncancellable dependency work
+**Area:** `Training/bees_managed_remote_worker.py`, `RuntimeUpdater.stop`, staged Python environment preparation  
+**Symptom:** Runtime cutover or supervisor shutdown could wait indefinitely for dependency inspection, virtual-environment creation, or package installation because the updater thread joined while those commands ran without stop handling.  
+**Root cause:** Staging used blocking `subprocess.run` calls that did not observe the updater stop event. On POSIX, the remote supervisor's termination wait also matched the owned-child guardian's full 10-second escalation window, so it could kill the guardian before it stopped its process tree.  
+**Fix:** Run staging commands as owned processes that poll the updater stop event, terminate and verify the command tree before returning, and give the POSIX guardian more than its full escalation interval before force-killing it. The updater does not proceed with runtime activation until its staging thread exits.  
+**Permanent protection:** Every dependency/runtime preparation command must remain cancellable as an owned process tree, and cutover must wait for confirmed staging completion. A focused stop-during-staging test was not added under the static-analysis-only request.  
+**Verification:** Statically traced dependency probes, venv creation/install/validation, updater stop/cutover ordering, and POSIX owner escalation. Stop now signals a running staging command and verifies its exit before cutover can proceed. No tests, builds, Unity, or runtime checks were performed.  
+**Invariant/knowledge:** Runtime staging subprocesses are subordinate to the updater lifecycle and must not outlive cancellation or cutover.
