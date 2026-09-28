@@ -910,9 +910,15 @@ class RuntimeUpdater:
             ]
             if not bool(getattr(self.args, "auto_envs", False)):
                 command.extend(["--envs", str(self.args.envs)])
+        environment = os.environ.copy()
+        # A supervisor relaunched by the OS watchdog inherits this marker so the watchdog
+        # child does not recursively re-register itself. Managed-launcher adoption is a
+        # deliberate persistence migration and must not inherit that suppression.
+        environment.pop("BEES_AUTOSTART_CHILD", None)
         completed = subprocess.run(
             command,
             cwd=str(self.install_root),
+            env=environment,
             check=False,
             timeout=30.0,
         )
