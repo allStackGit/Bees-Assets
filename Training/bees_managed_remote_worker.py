@@ -324,6 +324,12 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--worker-token-file", required=True)
     parser.add_argument("--wan-token-file", required=True)
     parser.add_argument("--runtime-poll-seconds", type=float, default=20.0)
+    parser.add_argument(
+        "--transport-watchdog-seconds",
+        type=float,
+        default=30.0,
+        help=argparse.SUPPRESS,
+    )
     parser.add_argument("--torch-device", default="cpu")
     parser.add_argument("--reconnect-seconds", type=float, default=DEFAULT_RECONNECT_SECONDS)
     return parser
@@ -1173,6 +1179,23 @@ def _control_status(args: argparse.Namespace) -> Optional[Mapping[str, object]]:
         return None
 
 
+class _TransportWatchdog:
+    def __init__(self, timeout_seconds: float) -> None:
+        if timeout_seconds <= 0:
+            raise ValueError("transport watchdog timeout must be positive")
+        self.timeout_seconds = float(timeout_seconds)
+        self.failure_since: Optional[float] = None
+
+    def observe(self, healthy: bool, now: float) -> bool:
+        if healthy:
+            self.failure_since = None
+            return False
+        if self.failure_since is None:
+            self.failure_since = now
+            return False
+        return now - self.failure_since >= self.timeout_seconds
+
+
 def _wait_for_private_transport(
     args: argparse.Namespace,
     process: subprocess.Popen,
@@ -1206,13 +1229,18 @@ def _wait_for_private_transport(
     return False
 
 
+_STATUS_UNSET = object()
+
+
 def _remote_status_summary(
     args: argparse.Namespace,
     trainer_id: str,
     updater: Optional[RuntimeUpdater] = None,
     log_sink: Optional[_RunScopedLogSink] = None,
+    status: object = _STATUS_UNSET,
 ) -> str:
-    status = _control_status(args)
+    if status is _STATUS_UNSET:
+        status = _control_status(args)
     if not isinstance(status, Mapping):
         return (
             f"[Bees remote] status: connecting to learner; trainer={trainer_id} "
@@ -1462,8 +1490,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     }) != 4:
         print("error: control/bootstrap/broker/gameplay ports must be distinct", file=sys.stderr)
         return 2
-    if args.reconnect_seconds <= 0 or args.runtime_poll_seconds <= 0:
-        print("error: reconnect/runtime-poll seconds must be positive", file=sys.stderr)
+    if (
+        args.reconnect_seconds <= 0
+        or args.runtime_poll_seconds <= 0
+        or args.transport_watchdog_seconds <= 0
+    ):
+        print(
+            "error: reconnect/runtime-poll/transport-watchdog seconds must be positive",
+            file=sys.stderr,
+        )
         return 2
     if not str(args.tailnet_target).strip():
         print("error: --tailnet-target is required", file=sys.stderr)
@@ -1571,6 +1606,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         )
 
                     next_status = 0.0
+                    transport_watchdog = _TransportWatchdog(
+                        args.transport_watchdog_seconds
+                    )
+                    transport_watchdog_restart = False
                     while (
                         runtime_cutover is None
                         and worker is not None
@@ -1580,8 +1619,29 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     ):
                         now = time.monotonic()
                         if now >= next_status:
+                            status = _control_status(args)
+                            control_healthy = isinstance(status, Mapping)
+                            if transport_watchdog.observe(control_healthy, now):
+                                outage = now - float(
+                                    transport_watchdog.failure_since or now
+                                )
+                                print(
+                                    "[Bees remote] authenticated learner control has been "
+                                    f"unreachable for {outage:.1f}s while the tailnet process "
+                                    "is still alive; recycling private transport.",
+                                    file=sys.stderr,
+                                    flush=True,
+                                )
+                                transport_watchdog_restart = True
+                                break
                             print(
-                                _remote_status_summary(args, trainer_id, updater, log_sink),
+                                _remote_status_summary(
+                                    args,
+                                    trainer_id,
+                                    updater,
+                                    log_sink,
+                                    status=status,
+                                ),
                                 flush=True,
                             )
                             next_status = now + 5.0
@@ -1598,7 +1658,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                             break
                         time.sleep(0.5)
                     if not stop[0] and runtime_cutover is None:
-                        if tailnet.poll() is not None:
+                        if transport_watchdog_restart:
+                            print(
+                                "[Bees remote] restarting managed worker after private "
+                                "transport watchdog trip.",
+                                file=sys.stderr,
+                                flush=True,
+                            )
+                        elif tailnet.poll() is not None:
                             print(
                                 f"[Bees remote] tailnet transport exited ({tailnet.returncode}); restarting.",
                                 file=sys.stderr,
