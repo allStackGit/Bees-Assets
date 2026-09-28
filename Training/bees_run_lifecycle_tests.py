@@ -15,8 +15,19 @@ class RunLifecycleTests(unittest.TestCase):
         assets = root / "Assets"
         training = assets / "Training"
         scenes = assets / "Scripts" / "Scenes"
+        entities = assets / "Scripts" / "Entities"
+        weapon_dir = entities / "Ships" / "Weapons"
         training.mkdir(parents=True)
         scenes.mkdir(parents=True)
+        weapon_dir.mkdir(parents=True)
+        (weapon_dir / "Weapon.cs").write_text(
+            "public class Weapon { public float Power = 1f; }\\n",
+            encoding="utf-8",
+        )
+        (entities / "Ships" / "Ship.Movement.cs").write_text(
+            "public partial class Ship { public float Speed = 1f; }\\n",
+            encoding="utf-8",
+        )
         (training / "continual_learning_config.json").write_text(
             json.dumps({
                 "behavior_name": "BeesRL1v1",
@@ -69,6 +80,33 @@ class RunLifecycleTests(unittest.TestCase):
                 changed["compatibility_key"],
                 first["compatibility_key"],
             )
+
+    def test_shared_gameplay_mechanics_change_creates_new_run(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            assets = self._assets(root)
+            state = root / "current.json"
+            first = lifecycle.plan_run(assets, state)
+            lifecycle.commit_plan(state, first)
+
+            weapon = assets / "Scripts" / "Entities" / "Ships" / "Weapons" / "Weapon.cs"
+            weapon.write_text(
+                "public class Weapon { public float Power = 2f; }\\n",
+                encoding="utf-8",
+            )
+            changed_weapon = lifecycle.plan_run(assets, state)
+            self.assertTrue(changed_weapon["incompatible"])
+            self.assertNotEqual(changed_weapon["run_id"], first["run_id"])
+
+            lifecycle.commit_plan(state, changed_weapon)
+            movement = assets / "Scripts" / "Entities" / "Ships" / "Ship.Movement.cs"
+            movement.write_text(
+                "public partial class Ship { public float Speed = 2f; }\\n",
+                encoding="utf-8",
+            )
+            changed_movement = lifecycle.plan_run(assets, state)
+            self.assertTrue(changed_movement["incompatible"])
+            self.assertNotEqual(changed_movement["run_id"], changed_weapon["run_id"])
 
     def test_compatible_build_keeps_same_run(self):
         with tempfile.TemporaryDirectory() as temp:
