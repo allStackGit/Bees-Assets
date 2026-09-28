@@ -1604,3 +1604,11 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** reset now releases pooled layout obstacles and their background, clears the map references, then returns the map. `TrainingObstacleMapReuseInvariantTests` checks cleanup ordering and both pool releases.
 **Verification:** changed source and focused regression source were read back and reviewed statically. The test was not run under the code-analysis-only instruction.
 **Invariant/knowledge:** map retirement must release pooled generated layout objects at the reset boundary rather than depend on a separate end-of-episode callback.
+
+### REG-188 — Compatible rollout pruning partially survived persistence failure
+**Area:** `BeesServer~/trainingControl.js`, compatible rollout barrier lease pruning and persistence rollback  
+**Symptom:** if persisting a pruned compatible rollout failed after a remote platform expired, rollback could restore the prior trainer requirements while leaving the platform requirement list already trimmed in memory. The barrier then represented mixed pre- and post-prune state.  
+**Root cause:** `required_remote_platforms` was mutated before the lazy rollback snapshot was captured. The trainer-list mutation used the snapshot, but the earlier platform-list write escaped rollback.  
+**Permanent protection:** the rollback snapshot is now captured immediately before changing `required_remote_platforms`. `BeesServer~/trainingControl.rollback.test.js` injects a persistence failure after both trainer and platform pruning and asserts the entire in-memory state matches its pre-prune snapshot.  
+**Verification:** implementation and focused regression source were read back and reviewed statically. The test was not run under the code-analysis-only instruction.  
+**Invariant/knowledge:** every mutation included in a persistence transaction must follow the rollback snapshot; rollback restores the complete control state, not only the most recently changed field.
