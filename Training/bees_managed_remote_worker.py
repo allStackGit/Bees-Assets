@@ -769,6 +769,7 @@ class RuntimeUpdater:
         self.staged_python: Optional[Path] = None
         self.staged_build_id = ""
         self.verified_build_id = ""
+        self.bootstrap_identity = ""
         self.last_error = ""
 
     def start(self) -> None:
@@ -810,7 +811,23 @@ class RuntimeUpdater:
             raise ValueError("bootstrap token is empty")
         return value
 
-    def _fetch_bootstrap(self) -> tuple[bytes, bytes, bytes, bytes, bytes]:
+    def _fetch_bootstrap_identity(self) -> str:
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{self.args.bootstrap_port}/bootstrap",
+            method="HEAD",
+            headers={"Authorization": "Bearer " + self._bootstrap_token()},
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=10.0) as response:
+                return str(response.headers.get("ETag", "") or "").strip()
+        except urllib.error.HTTPError as exc:
+            # Older gateways only support GET. Fall back to the full bundle until the
+            # staged bridge rolls forward, rather than deadlocking the bridge update.
+            if exc.code in {404, 405, 501}:
+                return ""
+            raise
+
+    def _fetch_bootstrap(self) -> tuple[bytes, bytes, bytes, bytes, bytes, str]:
         maximum_attempts = 4
         last_error: Optional[Exception] = None
         for attempt in range(1, maximum_attempts + 1):
@@ -821,6 +838,7 @@ class RuntimeUpdater:
             )
             try:
                 with urllib.request.urlopen(request, timeout=120.0) as response:
+                    identity = str(response.headers.get("ETag", "") or "").strip()
                     outer = response.read()
                 with zipfile.ZipFile(io.BytesIO(outer), "r") as bundle:
                     bridge_name = (
@@ -834,6 +852,7 @@ class RuntimeUpdater:
                         bundle.read("wan.token"),
                         bundle.read(bridge_name),
                         bundle.read("latest-training-release.json"),
+                        identity,
                     )
             except Exception as exc:
                 if not _is_transient_transport_error(exc) or attempt >= maximum_attempts:
@@ -966,7 +985,21 @@ class RuntimeUpdater:
         return _python_executable_path(python_path)
 
     def _stage_once(self) -> None:
-        runtime_zip, worker_token, wan_token, bridge_bytes, release_bytes = self._fetch_bootstrap()
+        identity = self._fetch_bootstrap_identity()
+        with self._lock:
+            if identity and identity == self.bootstrap_identity:
+                self.last_error = ""
+                return
+
+        (
+            runtime_zip,
+            worker_token,
+            wan_token,
+            bridge_bytes,
+            release_bytes,
+            downloaded_identity,
+        ) = self._fetch_bootstrap()
+        bootstrap_identity = downloaded_identity or identity
         runtime_sha = hashlib.sha256(runtime_zip).hexdigest()
         runtime_version = _runtime_version_from_zip(runtime_zip)
         release = _decode_release_metadata(release_bytes)
@@ -1027,6 +1060,7 @@ class RuntimeUpdater:
                 self.staged_python = None
                 self.staged_build_id = ""
                 self.verified_build_id = staged_build_id
+                self.bootstrap_identity = bootstrap_identity
                 self.last_error = ""
                 _atomic_bytes(
                     self.ready_build_path,
@@ -1039,6 +1073,8 @@ class RuntimeUpdater:
                 and self.staged_root is not None
                 and (not bridge_changed or self.staged_bridge is not None)
             ):
+                self.bootstrap_identity = bootstrap_identity
+                self.last_error = ""
                 return
 
         destination = self.versions_root / runtime_sha
@@ -1064,6 +1100,7 @@ class RuntimeUpdater:
             self.staged_python = staged_python
             self.staged_build_id = staged_build_id
             self.verified_build_id = staged_build_id
+            self.bootstrap_identity = bootstrap_identity
             self.last_error = ""
         _atomic_bytes(
             self.ready_build_path,
