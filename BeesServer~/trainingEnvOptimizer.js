@@ -467,13 +467,34 @@ class TrainingEnvOptimizer {
             ? record.last_error.trim()
             : '';
 
+        const controlTransportError =
+            reportedError.startsWith('ControlUnavailable:');
+        const optimizerError = controlTransportError ? '' : reportedError;
+
+        // A recovered control-plane transport interruption is not evidence that the Unity
+        // worker itself is unstable. Older worker runtimes could echo ControlUnavailable back
+        // through last_error on their recovery heartbeat, which otherwise creates a 15-minute
+        // optimizer stability hold after connectivity has already recovered.
+        if (
+            processState === 'running' &&
+            controlTransportError &&
+            typeof state.last_instability_reason === 'string' &&
+            state.last_instability_reason.startsWith(
+                'worker-reported error: ControlUnavailable:')
+        ) {
+            state.instability_hold_until_ms = Math.min(
+                state.instability_hold_until_ms,
+                timestamp,
+            );
+        }
+
         // Reaching the requested env count does not mean the restarted worker is ready yet.
         // Keep a planned env-count transition in awaiting-restart while child health still
         // reports "starting"; begin warmup only after the process reports "running".
         if (
             state.phase === 'awaiting-restart' &&
             processState === 'starting' &&
-            !reportedError
+            !optimizerError
         ) {
             state.last_decision = 'waiting for planned worker restart to become running';
             return this.snapshot(record.trainer_id);
@@ -483,7 +504,7 @@ class TrainingEnvOptimizer {
             sessionFailureAgeSeconds * 1000 < this.instabilityHoldMs;
         const expectedStarting =
             processState === 'starting' &&
-            !reportedError &&
+            !optimizerError &&
             (
                 state.phase === 'awaiting-restart' ||
                 state.baseline_envs === null
@@ -492,7 +513,7 @@ class TrainingEnvOptimizer {
             (processState &&
                 processState !== 'running' &&
                 !expectedStarting) ||
-            Boolean(reportedError);
+            Boolean(optimizerError);
         const workerUnstable = currentProcessFailure || recentSessionFailure;
         if (workerUnstable) {
             if (recentSessionFailure && newSessionFailure && !probingAwayFromBaseline) {
@@ -519,8 +540,8 @@ class TrainingEnvOptimizer {
             const holdUntil = useSessionFailureTime
                 ? timestamp + Math.max(0, this.instabilityHoldMs - sessionFailureAgeMs)
                 : timestamp + this.instabilityHoldMs;
-            const instabilityReason = reportedError
-                ? 'worker-reported error: ' + reportedError
+            const instabilityReason = optimizerError
+                ? 'worker-reported error: ' + optimizerError
                 : recentSessionFailure
                     ? 'WAN actor session failure'
                     : 'worker process state ' + (processState || 'unknown');
@@ -543,7 +564,7 @@ class TrainingEnvOptimizer {
                     state,
                     capacity,
                     timestamp,
-                    reportedError
+                    optimizerError
                         ? 'probe worker reported an error'
                         : recentSessionFailure
                             ? 'probe WAN actor session failed'
@@ -559,7 +580,7 @@ class TrainingEnvOptimizer {
             state.measurement_start_steps = null;
             state.measurement_start_produced_steps = null;
             state.source_steps = totalSteps;
-            state.last_decision = reportedError
+            state.last_decision = optimizerError
                 ? 'holding env count after worker-reported error'
                 : recentSessionFailure
                     ? 'holding env count after WAN actor session failure'
