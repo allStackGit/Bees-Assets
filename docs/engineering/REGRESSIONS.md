@@ -1434,3 +1434,10 @@ Manual-only protection is acceptable only when the record explains why determini
 **Fix:** Require an exact positive integer at the curation boundary, rejecting booleans and coercible substitutes.
 **Permanent protection:** Contributor caps are checked using the exact configured integer before approved telemetry can enter a scenario selection.
 **Verification:** Static review traced `_positive_integer` through the per-contributor cap loaded from store configuration and into selection validation. No tests, builds, Unity, simulations, or runtime checks were run. Post-fix clean-pass count remains **0 / 2**.
+
+### REG-165 — Reject oversized integer telemetry without conversion overflow
+**Area:** `Training/bees_continual_learning.py`, `_finite_number` and `_walk_finite_numbers`
+**Symptom:** JSON can represent integers too large for a float. Finite-number checks converted such values with `float(value)` without catching `OverflowError`, allowing malformed untrusted telemetry/evaluation payloads to escape validation as an unexpected exception.
+**Fix:** Treat overflow during numeric finiteness checks as invalid input and report it through the existing validation path.
+**Permanent protection:** Numeric validation must turn unrepresentable values into a deterministic rejection rather than leaking conversion exceptions into ingestion or evaluation control flow.
+**Verification:** Static review traced these helpers through live telemetry ingestion and evaluation report assessment. The overflow is now caught in both boolean and raising validation paths. No tests, builds, Unity, simulations, or runtime checks were run. Post-fix clean-pass count remains **0 / 2**.
