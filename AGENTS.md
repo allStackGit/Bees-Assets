@@ -1,83 +1,47 @@
 # AGENTS.md
 
-Mandatory rules for every coding/development task in this repository.
+Mandatory rules for coding/development work in this repository.
 
-## Bootstrap
+## Start here
 
-1. Follow the user's request and branch target.
-2. This root `AGENTS.md` is the only unconditional repository read. After this file, no other repository document is unconditional.
-3. Focused task: inspect the exact named/current source, asset, config, or focused test first. Routes are hints, not required reads.
-4. Read `docs/engineering/CONTEXT_INDEX.md` only when the subsystem is unclear, boundaries cross, direct lookup misses, or the task is a broad audit/architecture review.
-5. `PROJECT_PRIMER.md` is opt-in for explicit cold-start onboarding/re-orientation only.
+- Follow the user's request and explicit branch target. Otherwise, do not make ordinary development changes directly on `main`.
+- This root `AGENTS.md` is the only unconditional repository read. Inspect the exact relevant source/config/test next; load additional docs or history only when a concrete dependency, ambiguity, failed hypothesis, or cross-boundary risk requires them.
+- For work under `BeesServer~/`, read and follow `BeesServer~/AGENTS.md` before changing that subtree.
+- Reconcile the current branch/head and relevant intervening changes before continuing prior work. Do not rely on remembered repository state.
+- Stop loading context once the affected contract, root cause/intent, important dependencies, and useful validation evidence are understood.
 
 ### Protected paths
 
-- **Never read or ingest `results/`, `.results/`, or `Demonstrations/` unless the user explicitly requests access to that protected path or to a specific file within it.** Keeping any protected path tracked in Git/GitHub does not grant permission to inspect it.
-- Without that explicit request, do not open, fetch, search, grep, glob through, index, summarize, parse, diff, inspect, or otherwise retrieve file contents from protected paths, including through repository-wide searches or tooling that could return excerpts from them.
-- Avoid broad content-search operations that cannot reliably exclude protected paths. If a tool may surface protected-path content incidentally, use a narrower path/file lookup instead.
-- References to protected-path filenames or paths that appear incidentally in Git metadata are not permission to retrieve their contents. The restriction applies across branches, commits, diffs, history, and local/worktree copies.
-- Only the user's explicit request overrides this protection for the scope they requested; do not treat a previous request to inspect one protected file or path as ongoing permission for later tasks.
-
-### Direct routes
-
-- RL/training → `RlOneVsOne*`, `Training/`, focused tests; optional `docs/engineering/context/RL.md`. Unified/continual design → `Training/bees_continual_learning_rl_implementation.md`.
-- Tests → affected source/test; `docs/TESTING.md` only for runner/gate mechanics.
-- Runtime/persistence/pooling → `Level`, `GameState`, `ConfigData`, `Ships`, `DataFile`; optional `context/RUNTIME.md`.
-- Pathfinding/performance → `Pathfinder*`, movement/obstacles; optional `context/PATHFINDING.md`.
-- Combat/targeting → `Ship`, `Weapon`, `RangeCollider`; optional `context/COMBAT.md`.
-- Network/WebGL → socket/request/bridge code; optional `context/NETWORKING.md`; inspect `BeesServer~/` before shared-contract changes.
-- BeesServer/backend/training control → `BeesServer~/AGENTS.md` first, then the exact server source/test; server subtree rules apply in addition to this root file.
-- UI → exact guard/controller/prefab/scene; optional `context/UI.md`.
-- Campaign/assets → exact mission/asset; optional `context/CAMPAIGN_ASSETS.md`.
-- Replay/agent workflow → exact implementation/test/skill; optional `context/ENGINEERING.md`.
-
-### Retrieval stop rule
-
-Once the affected contract, current symbols/assets, important dependency/owner boundary, and validation evidence are known, **stop loading context**. If a safe requested change is sufficiently understood, do not delay the first write for optional documents, history, broad searches, unrelated tests, or generic skills. Expand only for a concrete unresolved dependency, contradiction, retrieval miss, failed hypothesis, or evidence produced by the change. Do not preload broad architecture, memory, regression history, or generic skills.
-
-Read `PROJECT_CONSTITUTION.md` only for possible gameplay/product meaning, persistence/network contract, lifecycle/ownership, evidence-rule, or project-definition changes. Read relevant `SYSTEM_MAP.md` / `INVARIANTS.md` sections only for high-risk/cross-boundary work or a concrete routed need. Documentation is navigation, not authority; verify material facts against current source/assets/tests.
-
+- Never read or ingest `results/`, `.results/`, or `Demonstrations/` unless the user explicitly requests that protected path or a specific file within it.
+- Without that explicit request, do not retrieve their contents directly or indirectly through broad search, history, diffs, indexing, or tooling that may surface excerpts.
 
 ## Engineering contract
 
-Optimize for a working, understandable system rather than for documentation volume, test count, or process ceremony.
+Optimize for a working, understandable system rather than documentation volume, test count, or process ceremony.
 
-- Reproduce the reported failure before changing code when practical, and trace the causal chain before patching symptoms.
+- Reproduce reported failures before changing code when practical, and trace the causal chain before patching symptoms.
 - Exercise the changed executable path whenever practical. Static/source-text/contract tests are supporting evidence, not proof that runtime behavior works.
 - If a test cannot be run in the available environment, do not spend substantial effort adding it unless it protects a clear durable contract or known regression.
 - Prefer simplifying states, components, ownership, and recovery paths over adding another watchdog, retry loop, flag, compatibility layer, or special case.
-- When a subsystem repeatedly survives one patch only to fail elsewhere, stop patching locally and reassess the design/root cause.
-- Make coherent changes small enough to reason about and validate, but do not add artificial ceremony or slow work merely to appear cautious.
-- Write or expand documentation only when it has a concrete maintainer/user purpose, prevents a demonstrated recurring mistake, or is explicitly requested. Keep it short and current.
-- Maintain independent technical judgment. A user challenge is a reason to re-check evidence, not a reason by itself to reverse a conclusion. If a conclusion changes, identify the new evidence or reasoning that changed it.
-- On "continue where you left off" or equivalent requests, first reconcile the current branch/head and relevant intervening changes instead of relying on remembered repository state.
-- A passing qualification/unit/static suite proves only the scope it actually exercises. Do not infer live-system stability, autonomous recovery, deployment readiness, or multi-machine correctness from narrower evidence.
+- When repeated local patches expose new failures, stop patching locally and reassess the design/root cause.
+- Make coherent changes small enough to reason about and validate, without adding artificial ceremony or unnecessary delay.
+- Write or expand documentation only for a concrete maintainer/user purpose, a demonstrated recurring mistake, or an explicit request. Keep it short and current.
+- Maintain independent technical judgment. Re-check evidence when challenged; do not reverse a conclusion merely because the user disagrees. If it changes, identify what evidence or reasoning changed it.
+- A passing qualification/unit/static suite proves only what it actually exercises. Do not infer live-system stability, autonomous recovery, deployment readiness, or multi-machine correctness from narrower evidence.
 - Keep normal user-facing responses concise. Do not bury weak evidence or unresolved uncertainty in long explanations.
-- For substantive coding completion, report briefly: **Changed**, **Verified by**, **Observed result**, and **Not verified**. Omit a field only when genuinely inapplicable.
 
-## Change rules
+## Change and validation rules
 
-Respect an explicitly named branch; otherwise do not make ordinary development changes directly on `main`.
+- Before behavior changes, understand the relevant contracts, dependencies, ownership/lifecycle, and any persistence/network/UI/physics/performance implications that actually apply.
+- Once the change is sufficiently understood, make it promptly. For multi-part work, preserve coherent completed changes rather than delaying everything for unrelated investigation.
+- After each coherent edit, inspect the touched code/diff and run the strongest practical focused validation. Broaden only when risk or evidence warrants it.
+- Never weaken, delete, or skip a valid test merely to pass. Add focused regression protection when it is useful and executable.
+- Never claim old logs/results validate changed source. Do not use GitHub Actions for development, testing, patching, builds, qualification, or verification.
+- If important validation cannot be executed, keep safe completed work, run what is available, and state exactly what remains unverified.
 
-Before behavior changes, trace only relevant contracts, dependencies, ownership/lifecycle, serialized/persistence/network boundaries, UI/frame/physics behavior, and performance implications. Do not turn this into an unrelated scan.
+For substantive coding completion, report briefly:
 
-### Execution and write priority
-
-For requested repository changes, once the affected contract, root cause or intent, important dependencies, and a safe edit are sufficiently understood, **perform the edit promptly**. Do not postpone all writes until optional investigation, broad validation, or unrelated review is complete.
-
-For multi-part work, complete and preserve coherent changes before moving to independent later parts when practical. Prefer durable partial completion over an all-or-nothing workflow that leaves understood work unwritten if the execution or tool session ends.
-
-After each coherent edit, inspect the touched diff/code and run the strongest practical focused validation. Broaden validation only when risk or evidence warrants it. If a runner, build, environment, or other validation is unavailable, keep the safe completed change, perform the validation that is available, and disclose what remains unexecuted; do not spend the work window repeatedly chasing unavailable validation or leave an understood safe edit unwritten solely because broader validation cannot run.
-
-Classify affected tests as **still valid**, **update required**, **obsolete and replaced**, or **missing**. Never weaken/delete/skip a test merely to pass. Add focused regression protection when practical; otherwise use `docs/engineering/REGRESSIONS.md`.
-
-Widen evidence proportionally:
-`focused reproducer -> affected subsystem/category -> broader correctness suite -> full local release gate -> representative PlayMode/play/system validation when warranted`
-
-Never claim old XML/logs validate changed source. **Do not use GitHub Actions for development, testing, patching, builds, qualification, or verification.**
-
-## Learning and completion
-
-Use `.agents/skills/search-index/SKILL.md`, `.agents/skills/repo-learning/SKILL.md`, `.agents/skills/continuous-learning/SKILL.md`, `.agents/skills/code-quality/SKILL.md`, and specialist skills only when needed. Persist only verified knowledge that prevents repeated mistakes or reduces future retrieval; prefer repairing routes/owner statements over mandatory reads. New durable guidance needs positive context ROI.
-
-For behavior changes, require understood intent/root cause and important dependencies, test classification, strongest practical validation, no weakened safety/test contract, proportionate touched-code review, and disclosure of remaining uncertainty/unexecuted validation.
+**Changed:** what changed and why  
+**Verified by:** what was actually executed or inspected  
+**Observed result:** what the evidence showed  
+**Not verified:** material validation not performed, if any
