@@ -1184,3 +1184,11 @@ Manual-only protection is acceptable only when the record explains why determini
 **Fix:** convert validated numeric lease values inside the decoder, reject conversion overflow/non-finite/non-positive values as `ControlRejected`, and return the normalized finite float.
 **Permanent protection:** documented source invariant; no test was added under the static code-analysis-only request.
 **Verification:** reviewed decoder and heartbeat caller statically. No tests, builds, or runtime checks were run.
+
+### REG-136 — Training artifact path could be replaced by a symlink after startup
+**Area:** `BeesServer~/trainingControl.js`, canonical artifact validation and download route
+**Symptom:** canonical artifacts were hash-checked at service startup, but later artifact requests followed the catalog path without checking for a symlink or changed file size. Replacing the owned archive path could make the server stream an unintended local file or serve bytes that no longer matched the catalog size.
+**Root cause:** startup used `statSync` (which follows symlinks), and the download route used `existsSync` before opening the path.
+**Fix:** canonical-artifact loading now uses `lstatSync` and rejects symlinks/non-files/size mismatches; the download route repeats the no-symlink, regular-file, exact-size check immediately before streaming. Worker-side SHA-256 verification remains in place.
+**Test classification:** existing `reloading control state rejects a tampered canonical artifact` remains valid; a dedicated symlink/replacement case is missing and was not added under the static code-analysis-only request.
+**Verification:** statically reviewed startup validation, publish-time ownership, artifact routing, and the worker's hash-verifying download. No tests or runtime checks were run. A local filesystem race between the preflight check and stream open is not eliminated by this path-based check.
