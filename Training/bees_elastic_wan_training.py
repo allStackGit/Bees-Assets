@@ -14,6 +14,7 @@ collection, stale-actor leases, and capacity diagnostics.
 from __future__ import annotations
 
 import collections
+import logging
 import os
 import queue
 import time
@@ -1068,18 +1069,39 @@ class ElasticWanEnvManagerMixin:
                 "Elastic WAN training requires at least one local Exeter environment so training "
                 "continues normally when zero remote actors are online."
             )
-        self._bees_local_manager = local_manager_class(env_factory, run_options, n_env)
         self._bees_local_envs = n_env
         self._bees_wan_options = options
         self._bees_wan_timeout = max(1.0, float(run_options.env_settings.timeout_wait))
         self._bees_wan_initial_reset = False
-        self._bees_wan_broker = ElasticWanBroker(
+        # Validate the managed release contract before constructing SubprocessEnvManager,
+        # whose constructor starts Unity worker processes.
+        broker = ElasticWanBroker(
             options,
             run_options,
             base.load_auth_token(options.auth_token_file or ""),
             n_env,
         )
-        self._bees_wan_broker.start()
+        local_manager = None
+        try:
+            local_manager = local_manager_class(env_factory, run_options, n_env)
+            broker.start()
+        except BaseException:
+            try:
+                broker.close()
+            except Exception:
+                logging.getLogger(__name__).exception(
+                    "Failed to close elastic WAN broker after initialization failed."
+                )
+            if local_manager is not None:
+                try:
+                    local_manager.close()
+                except Exception:
+                    logging.getLogger(__name__).exception(
+                        "Failed to close local Unity workers after elastic WAN initialization failed."
+                    )
+            raise
+        self._bees_local_manager = local_manager
+        self._bees_wan_broker = broker
         write_managed_health(
             "ready",
             details={
