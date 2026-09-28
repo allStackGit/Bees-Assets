@@ -1819,14 +1819,26 @@ function createTrainingControlHandler(store, token, adminToken = null) {
                 return;
             }
             if (request.method === 'POST' && url.pathname === '/v1/log') {
-                const offset = Number(url.searchParams.get('offset'));
+                const data = await readRawBody(request);
+                const rawOffset = url.searchParams.get('offset');
+                if (rawOffset === null || !/^\\d+$/.test(rawOffset)) {
+                    throw Object.assign(
+                        new Error('log offset must be an explicit non-negative integer'),
+                        { statusCode: 400 });
+                }
+                const offset = Number(rawOffset);
+                if (!Number.isSafeInteger(offset)) {
+                    throw Object.assign(
+                        new Error('log offset must be a safe non-negative integer'),
+                        { statusCode: 400 });
+                }
                 const result = store.appendTrainerLog({
                     trainerId: url.searchParams.get('trainer_id'),
                     runId: url.searchParams.get('run_id'),
                     relativePath: url.searchParams.get('path'),
                     offset,
                     reset: url.searchParams.get('reset') === '1',
-                    data: await readRawBody(request),
+                    data,
                 });
                 sendJson(response, 200, result);
                 return;
