@@ -28,6 +28,8 @@ Static-only repository audit on `rl/initial-design-work`. This ledger is the cur
 
 - REG-168 prevents string/fraction coercion and conversion overflow in continual trainer policy settings for historical sampling, inference caching, and human imitation. Settings are validated before training or demo processing. Static review only; no tests or runtime checks were run. Post-fix clean-pass count remains **0 / 2**.
 
+- REG-169 prevents unversioned ONNX outputs from inheriting a false `training_step` from numeric run IDs, dates, or unrelated ancestor directories. Step inference now uses only the filename and immediate parent. Static review only; no tests or training runs were run. Post-fix clean-pass count remains **0 / 2**.
+
 - REG-159 aligns `RL_DESIGN.md` with executable ABI v20 and the current trainer YAML: 7,614 observations, 16 continuous actions, five weapon-fire branches plus one special branch, five weapon slots, and a 128x3 network. Static read-back found no stale ABI v6 dimensions or target branches. No tests run.
 
 - REG-158 prevents an orderly stop from dropping already-collected base WAN actor trajectories before they enter the bounded upload drain. The actor now admits those batches only until the existing shutdown deadline. Regression coverage was added but not run. Static source review only; clean post-fix pass count remains **0 / 2**.
