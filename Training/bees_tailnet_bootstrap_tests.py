@@ -184,6 +184,7 @@ class TailnetBootstrapSourceTests(unittest.TestCase):
         self.assertIn("'--windows-launcher', windowsCandidate", operator_node)
         self.assertIn("'--linux-launcher', linuxCandidate", operator_node)
         self.assertIn("BEES_REMOTE_LAUNCHER_PATH", operator_node)
+        self.assertIn('set "BEES_REMOTE_LAUNCHER_PATH=%~f0"', operator_node)
 
     def test_remote_start_registers_reboot_persistence_and_stop_removes_it(self):
         windows = WINDOWS_TEMPLATE.read_text(encoding="utf-8")
