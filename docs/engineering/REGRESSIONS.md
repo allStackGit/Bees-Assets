@@ -761,7 +761,7 @@ Manual-only protection is acceptable only when the record explains why determini
 **Symptom:** stale reset acknowledgments and trajectory uploads could refresh an actor registration lease before the control-epoch check rejected them. A disconnected or out-of-date fixed-slot actor could therefore remain in the active cohort count longer than its valid control state.  
 **Root cause:** the elastic broker refreshed `last_seen` before validating trajectory upload epochs, and its reset-ack/registration/upload overrides bypassed the strict base control-epoch validator.  
 **Fix:** elastic actor operations now validate non-boolean integer epochs under the broker condition before renewing liveness. Valid duplicate acknowledgements and accepted batches still refresh the lease; rejected stale operations do not.  
-**Permanent protection:** `ElasticBrokerTests.test_stale_reset_ack_does_not_refresh_actor_lease` checks that stale reset acknowledgements and stale/bool-epoch uploads raise and leave `last_seen` unchanged. The test was not run, per the static-only audit scope.  
+**Permanent protection:** `ElasticBrokerTests.test_invalid_control_epochs_do_not_renew_or_register_actor` checks that stale reset acknowledgements and stale/bool-epoch uploads raise and leave `last_seen` unchanged. The test was not run, per the static-only audit scope.  
 **Verification:** statically traced elastic registration, reset-acknowledgement, and trajectory-admission paths and reread the updated regression case. No tests, builds, Unity, simulations, or runtime checks were run.  
 **Invariant/knowledge:** only current, well-typed control-epoch operations may renew an actor registration lease.
 
