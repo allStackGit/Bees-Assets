@@ -823,6 +823,20 @@ class RuntimeUpdater:
     def alive(self) -> bool:
         return not self._started or self._thread.is_alive()
 
+    def revive(self) -> bool:
+        if self._stop.is_set():
+            return False
+        if self._thread.is_alive():
+            return True
+        self._thread = threading.Thread(
+            target=self._run,
+            name="bees-runtime-updater",
+            daemon=True,
+        )
+        self._started = True
+        self._thread.start()
+        return True
+
     def verified(self) -> tuple[str, str]:
         with self._lock:
             return self.verified_build_id, self.last_error
@@ -1794,14 +1808,22 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                                 transport_watchdog_restart = True
                                 break
                             if not updater.alive():
-                                print(
-                                    "[Bees remote] runtime updater thread stopped unexpectedly; "
-                                    "restarting supervisor state.",
-                                    file=sys.stderr,
-                                    flush=True,
-                                )
-                                transport_watchdog_restart = True
-                                break
+                                if updater.revive():
+                                    print(
+                                        "[Bees remote] runtime updater thread stopped unexpectedly; "
+                                        "restarted updater in place.",
+                                        file=sys.stderr,
+                                        flush=True,
+                                    )
+                                else:
+                                    print(
+                                        "[Bees remote] runtime updater stopped and could not be "
+                                        "restarted; recycling supervisor state.",
+                                        file=sys.stderr,
+                                        flush=True,
+                                    )
+                                    transport_watchdog_restart = True
+                                    break
                             print(
                                 _remote_status_summary(
                                     args,
