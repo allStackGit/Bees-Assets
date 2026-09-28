@@ -189,7 +189,7 @@ class TrainingControlStore {
         if (!Number.isInteger(this.artifactRetentionBuilds) || this.artifactRetentionBuilds < 1) {
             throw new Error('training-control artifactRetentionBuilds must be a positive integer');
         }
-        this.leaseSeconds = Number(options.leaseSeconds || DEFAULT_LEASE_SECONDS);
+        this.leaseSeconds = Number(options.leaseSeconds ?? DEFAULT_LEASE_SECONDS);
         if (!Number.isFinite(this.leaseSeconds) || this.leaseSeconds <= 0) {
             throw new Error('training-control leaseSeconds must be positive');
         }
