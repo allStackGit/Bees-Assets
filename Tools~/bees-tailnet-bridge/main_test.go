@@ -72,6 +72,44 @@ func TestBootstrapHandlerHeadReturnsIdentityWithoutBundleBody(t *testing.T) {
 	}
 }
 
+func TestBootstrapMetadataCacheDetectsAtomicSameSizeReplacement(t *testing.T) {
+	root := t.TempDir()
+	bundlePath := filepath.Join(root, "bootstrap.zip")
+	if err := os.WriteFile(bundlePath, []byte("first-bundle"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cache := &bootstrapMetadataCache{}
+	size1, etag1, err := cache.metadata(bundlePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sizeCached, etagCached, err := cache.metadata(bundlePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sizeCached != size1 || etagCached != etag1 {
+		t.Fatalf("unchanged bootstrap metadata changed: %d/%q -> %d/%q", size1, etag1, sizeCached, etagCached)
+	}
+
+	replacement := bundlePath + ".new"
+	if err := os.WriteFile(replacement, []byte("other-bundle"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(replacement, bundlePath); err != nil {
+		t.Fatal(err)
+	}
+	size2, etag2, err := cache.metadata(bundlePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if size2 != size1 {
+		t.Fatalf("test requires same-size replacement: %d != %d", size2, size1)
+	}
+	if etag2 == etag1 {
+		t.Fatalf("atomic same-size replacement kept stale ETag %q", etag2)
+	}
+}
+
 func TestBootstrapHandlerRequiresBearerToken(t *testing.T) {
 	root := t.TempDir()
 	bundlePath := filepath.Join(root, "bootstrap.zip")
