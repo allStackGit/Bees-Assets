@@ -586,7 +586,9 @@ class BackgroundBuildPreparer:
             with self._lock:
                 self.prepared_build_id = build_id
                 self.last_error = ""
-        except (ControlUnavailable, ControlRejected, OSError, ValueError, RuntimeError) as exc:
+        except Exception as exc:
+            # Build preparation runs in a daemon thread; record unexpected archive/runtime
+            # failures so the supervisor can report them instead of losing the thread error.
             with self._lock:
                 self.last_error = f"{type(exc).__name__}: {exc}"
 
