@@ -16,6 +16,7 @@ COMMAND="start"
 ENVS=""
 INSTALL_ROOT="$DEFAULT_INSTALL_ROOT"
 TORCH_DEVICE="$DEFAULT_TORCH_DEVICE"
+NO_AUTOSTART=0
 
 usage() {
     cat <<'EOF'
@@ -29,6 +30,7 @@ Options:
   --envs N               Pin a fixed Unity environment count (1-64); omission auto-tunes.
   --install-root PATH    Local Linux worker installation directory.
   --torch-device DEVICE  Local inference device, normally cpu or cuda.
+  --no-autostart          Do not register this worker to restart after reboot/login.
   -h, --help             Show this help.
 EOF
 }
@@ -43,6 +45,7 @@ while [[ $# -gt 0 ]]; do
         --envs) ENVS="$2"; shift 2 ;;
         --install-root) INSTALL_ROOT="$2"; shift 2 ;;
         --torch-device) TORCH_DEVICE="$2"; shift 2 ;;
+        --no-autostart) NO_AUTOSTART=1; shift ;;
         -h|--help) usage; exit 0 ;;
         *) echo "error: unknown argument: $1" >&2; usage >&2; exit 2 ;;
     esac
@@ -77,6 +80,86 @@ fi
 
 have() { command -v "$1" >/dev/null 2>&1; }
 
+AUTOSTART_UNIT="$HOME/.config/systemd/user/bees-training-worker.service"
+
+systemd_quote() {
+    local value="$1"
+    value="${value//\\/\\\\}"
+    value="${value//\"/\\\"}"
+    printf '"%s"' "$value"
+}
+
+remove_remote_autostart() {
+    if have systemctl; then
+        systemctl --user disable bees-training-worker.service >/dev/null 2>&1 || true
+        systemctl --user stop bees-training-worker.service >/dev/null 2>&1 || true
+    fi
+    rm -f "$AUTOSTART_UNIT"
+    if have systemctl; then
+        systemctl --user daemon-reload >/dev/null 2>&1 || true
+    fi
+}
+
+install_remote_autostart() {
+    if (( NO_AUTOSTART )); then
+        remove_remote_autostart
+        return
+    fi
+    local launcher="${BEES_REMOTE_LAUNCHER_PATH:-}"
+    if [[ -z "$launcher" || ! -f "$launcher" ]]; then
+        echo "warning: copied launcher path is unavailable; reboot autostart could not be registered." >&2
+        return
+    fi
+    if ! have systemctl; then
+        echo "warning: systemd user services are unavailable; reboot autostart could not be registered." >&2
+        return
+    fi
+    mkdir -p "$(dirname "$AUTOSTART_UNIT")"
+    local exec_line
+    exec_line="/bin/bash $(systemd_quote "$launcher") start --install-root $(systemd_quote "$INSTALL_ROOT") --torch-device $(systemd_quote "$TORCH_DEVICE")"
+    if [[ -n "$ENVS" ]]; then
+        exec_line+=" --envs $ENVS"
+    fi
+    cat > "$AUTOSTART_UNIT" <<EOF
+[Unit]
+Description=Bees remote training worker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=$exec_line
+RemainAfterExit=yes
+
+[Install]
+WantedBy=default.target
+EOF
+    systemctl --user daemon-reload >/dev/null 2>&1 || {
+        echo "warning: systemd user manager is unavailable; reboot autostart could not be enabled." >&2
+        return
+    }
+    systemctl --user enable bees-training-worker.service >/dev/null 2>&1 || {
+        echo "warning: could not enable Bees user autostart service." >&2
+        return
+    }
+
+    if have loginctl; then
+        local linger=""
+        linger="$(loginctl show-user "$(id -un)" -p Linger --value 2>/dev/null || true)"
+        if [[ "$linger" != "yes" ]]; then
+            if [[ "$(id -u)" -eq 0 ]]; then
+                loginctl enable-linger "$(id -un)" >/dev/null 2>&1 || true
+            elif have sudo && sudo -n true >/dev/null 2>&1; then
+                sudo -n loginctl enable-linger "$(id -un)" >/dev/null 2>&1 || true
+            fi
+            linger="$(loginctl show-user "$(id -un)" -p Linger --value 2>/dev/null || true)"
+            if [[ "$linger" != "yes" ]]; then
+                echo "warning: Bees autostart is enabled for login, but unattended boot requires: sudo loginctl enable-linger $(id -un)" >&2
+            fi
+        fi
+    fi
+}
+
 mkdir -p "$INSTALL_ROOT"
 SUPERVISOR_PID_FILE="$INSTALL_ROOT/remote-worker.pid"
 SHUTDOWN_REQUEST_FILE="$INSTALL_ROOT/remote-worker.stop"
@@ -109,6 +192,7 @@ pid_is_supervisor() {
 }
 
 if [[ "$COMMAND" == "stop" ]]; then
+    remove_remote_autostart
     PID="$(recorded_pid || true)"
     if [[ -z "$PID" ]] || ! pid_is_supervisor "$PID"; then
         rm -f "$SUPERVISOR_PID_FILE" "$SHUTDOWN_REQUEST_FILE"
@@ -134,6 +218,7 @@ fi
 
 PID="$(recorded_pid || true)"
 if [[ -n "$PID" ]] && pid_is_supervisor "$PID"; then
+    install_remote_autostart
     echo "[Bees remote] worker is already running in the background (PID $PID)."
     echo "[Bees remote] use 'bash bees-remote-worker.sh stop' to stop it."
     exit 0
@@ -346,6 +431,7 @@ if ! kill -0 "$WORKER_PID" 2>/dev/null; then
     echo "error: remote worker exited during background startup. Check $SUPERVISOR_LOG." >&2
     exit 1
 fi
+install_remote_autostart
 echo "[Bees remote] worker started in the background (PID $WORKER_PID)."
 echo "[Bees remote] log: $SUPERVISOR_LOG"
 echo "[Bees remote] close this shell freely; use 'bash bees-remote-worker.sh stop' to stop the worker."
