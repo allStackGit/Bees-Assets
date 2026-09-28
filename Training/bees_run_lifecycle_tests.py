@@ -177,7 +177,7 @@ class RunLifecycleTests(unittest.TestCase):
 
             config_data = assets / "Scripts" / "ConfigData.cs"
             config_data.write_text(
-                "public static class ConfigData { public const int Version = 6; }\\n",
+                "public static class ConfigData { public const int Version = 6; }\n",
                 encoding="utf-8",
             )
             changed = lifecycle.plan_run(assets, state)
@@ -194,7 +194,7 @@ class RunLifecycleTests(unittest.TestCase):
 
             setup = assets / "Scripts" / "Levels" / "Level.RandomSquadSetup.cs"
             setup.write_text(
-                "public partial class Level { const int SpawnRadius = 2; }\\n",
+                "public partial class Level { const int SpawnRadius = 2; }\n",
                 encoding="utf-8",
             )
             changed = lifecycle.plan_run(assets, state)
