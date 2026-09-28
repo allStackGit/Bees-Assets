@@ -443,6 +443,15 @@ function commandIdentity(
     );
 }
 
+function centralSupervisorLaunchContractMatches(state, commandHash) {
+    return Boolean(
+        state &&
+        String(state.command_hash || '') === String(commandHash || '') &&
+        Boolean(state.runtime_cutover_capable) &&
+        String(state.argv_transport || '') === 'node-spawn-array-v1'
+    );
+}
+
 async function startCentralAgentIfNeeded(
     config,
     bootstrapPython,
@@ -516,8 +525,7 @@ async function startCentralAgentIfNeeded(
             if (testManagedProcessIdentity(existing)) {
                 if (
                     testManagedProcessIdentity(existing, bootstrapPython) &&
-                    String(existing.command_hash || '') === commandHash &&
-                    Boolean(existing.runtime_cutover_capable)
+                    centralSupervisorLaunchContractMatches(existing, commandHash)
                 ) {
                     return;
                 }
@@ -625,6 +633,7 @@ async function startCentralAgentIfNeeded(
 module.exports = {
     assertCentralAgentCheckpointSafe,
     buildCentralLearnerArgv,
+    centralSupervisorLaunchContractMatches,
     getCentralFallbackLaunchCommand,
     getRunningCentralAgentPid,
     newCentralLearnerLaunchCommand,
