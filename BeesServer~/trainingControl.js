@@ -458,10 +458,25 @@ class TrainingControlStore {
         return staleArtifactPaths;
     }
 
+    _isArtifactReferenced(archivePath) {
+        if (!archivePath) return false;
+        for (const catalog of [this.state.builds, this.state.full_game_builds]) {
+            for (const versions of Object.values(catalog || {})) {
+                for (const record of Object.values(versions || {})) {
+                    if (record && record.archive_path === archivePath) return true;
+                }
+            }
+        }
+        return false;
+    }
+
     _deletePrunedArtifacts(paths) {
         for (const archivePath of paths) {
             try {
-                if (archivePath && fs.existsSync(archivePath)) {
+                // Several build IDs can intentionally share one content-addressed archive.
+                // Pruning one catalog entry must not delete an artifact another entry needs.
+                if (archivePath && !this._isArtifactReferenced(archivePath) &&
+                    fs.existsSync(archivePath)) {
                     fs.unlinkSync(archivePath);
                 }
             } catch (_) {
@@ -1407,7 +1422,8 @@ class TrainingControlStore {
                 const error = Object.assign(
                     new Error('published role/platform/build identity is immutable; use a new build_id'),
                     { statusCode: 409 });
-                if (previous.archive_path !== destination) {
+                if (previous.archive_path !== destination &&
+                    !this._isArtifactReferenced(destination)) {
                     try {
                         fs.unlinkSync(destination);
                     } catch (cleanupError) {
@@ -1428,7 +1444,7 @@ class TrainingControlStore {
         } catch (error) {
             // The new copy has no durable catalog owner when persistence fails. Remove it only
             // when this call introduced an unreferenced build identity; retain existing artifacts.
-            if (!previous) {
+            if (!previous && !this._isArtifactReferenced(destination)) {
                 try {
                     fs.unlinkSync(destination);
                 } catch (cleanupError) {
