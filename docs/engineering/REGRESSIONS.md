@@ -756,14 +756,14 @@ Manual-only protection is acceptable only when the record explains why determini
 **Invariant/knowledge:** launcher-specific arguments must never consume tokens owned by Unity after `--env-args`.
 
 
-### REG-087 — stale elastic WAN reset acknowledgments renewed actor leases
+### REG-087 — stale elastic WAN operations renewed actor leases
 **Area:** `Training/bees_elastic_wan_training.py`, elastic actor lease lifecycle  
-**Symptom:** a reset acknowledgment with an old control epoch could refresh the actor registration lease immediately before the shared broker validation rejected that stale epoch. This could retain a disconnected fixed-slot actor registration longer than its valid control state.  
-**Root cause:** the elastic override updated `last_seen` before delegating the control-epoch check to the base broker.  
-**Fix:** owner validation, control-epoch validation, and lease refresh now occur atomically under the broker condition lock. A stale acknowledgment is rejected without changing lease time.  
-**Permanent protection:** `ElasticBrokerTests.test_stale_reset_ack_does_not_refresh_actor_lease` checks that stale control state raises and leaves `last_seen` unchanged. The test was not run, per the static-only audit scope.  
-**Verification:** traced the elastic override and base acknowledgment contract, then reread the atomic check and regression case. No tests, builds, Unity, simulations, or runtime checks were run.  
-**Invariant/knowledge:** only an acknowledgment for the current control epoch may renew an actor registration lease.
+**Symptom:** stale reset acknowledgments and trajectory uploads could refresh an actor registration lease before the control-epoch check rejected them. A disconnected or out-of-date fixed-slot actor could therefore remain in the active cohort count longer than its valid control state.  
+**Root cause:** the elastic broker refreshed `last_seen` before validating trajectory upload epochs, and its reset-ack/registration/upload overrides bypassed the strict base control-epoch validator.  
+**Fix:** elastic actor operations now validate non-boolean integer epochs under the broker condition before renewing liveness. Valid duplicate acknowledgements and accepted batches still refresh the lease; rejected stale operations do not.  
+**Permanent protection:** `ElasticBrokerTests.test_stale_reset_ack_does_not_refresh_actor_lease` checks that stale reset acknowledgements and stale/bool-epoch uploads raise and leave `last_seen` unchanged. The test was not run, per the static-only audit scope.  
+**Verification:** statically traced elastic registration, reset-acknowledgement, and trajectory-admission paths and reread the updated regression case. No tests, builds, Unity, simulations, or runtime checks were run.  
+**Invariant/knowledge:** only current, well-typed control-epoch operations may renew an actor registration lease.
 
 
 ### REG-088 — Delayed squad strategy responses dereferenced retired levels
@@ -1340,8 +1340,8 @@ Manual-only protection is acceptable only when the record explains why determini
 ### REG-153 — WAN actor accepted boolean-shaped session and epoch metadata
 **Area:** `Training/bees_elastic_wan_actor_worker.py`, `Training/bees_wan_actor_worker.py`, `Training/bees_elastic_wan_actor_session.py`, `Training/bees_wan_actor_training.py`; WAN actor/broker protocol
 **Symptom:** Malformed broker values such as `true` could pass integer checks or equality comparisons as epoch 1; coercive state parsing could also turn numeric strings or booleans into policy/control versions. A boolean worker base could shift an actor's global worker assignment.
-**Root cause:** In Python, `bool` is a subclass of `int`; several network-boundary checks also used `int(...)` or direct equality before validating the JSON type.
+**Root cause:** In Python, `bool` is a subclass of `int`; several network-boundary checks also used `int(...)` or direct equality before validating the JSON type. The elastic broker overrides actor registration and batch admission, so base-broker validation alone did not cover its protocol path.
 **Fix:** Reject booleans for elastic capacity/offset fields, WAN topology counts, policy steps/versions, and control/policy/topology epochs. Preserve only validated integer epochs when admitting broker operations.
-**Permanent protection:** `Training/bees_elastic_wan_training_tests.py` covers boolean elastic session dimensions. `Training/bees_wan_actor_training_tests.py` covers boolean actor topology/control epochs, strict state epoch and policy-version parsing, and boolean Torch policy steps. These tests were added but not executed under the static-only request.
+**Permanent protection:** `Training/bees_elastic_wan_training_tests.py` covers boolean elastic session dimensions and ensures stale/bool-epoch trajectory uploads do not renew actor leases. `Training/bees_wan_actor_training_tests.py` covers boolean actor topology/control epochs, strict state epoch and policy-version parsing, and boolean Torch policy steps. These tests were added but not executed under the static-only request.
 **Verification:** Re-read the updated actor, broker, and regression-test source through GitHub. The malformed values now fail validation before changing worker offsets, registering actors, accepting trajectory batches, or applying a policy step. No tests, builds, Unity, or runtime checks were run.
 **Invariant/knowledge:** Treat JSON integers as integers only after explicitly rejecting booleans and coercive conversions at distributed protocol boundaries.
