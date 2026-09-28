@@ -81,6 +81,13 @@ namespace Assets.Scripts.Levels
                     IsImmobile = squad.IsImmobile,
                     IsMinionSquad = squad.IsMinionSquad,
                     IsCarrierSquad = squad.IsCarrierSquad,
+                    ParentCarrierMatchShipId =
+                        squad is CarrierSquad carrierSquad && carrierSquad.Carrier != null
+                            ? carrierSquad.Carrier.MatchShipId
+                            : 0,
+                    CarrierSquadType = squad is CarrierSquad typedCarrierSquad
+                        ? (int)typedCarrierSquad.CarrierSquadType
+                        : -1,
                     ShootingStrategy = (int)squad.GetShootingStrategy()
                 });
             }
@@ -117,7 +124,11 @@ namespace Assets.Scripts.Levels
                     OffsetX = ship.OffsetFromCenter.x,
                     OffsetY = ship.OffsetFromCenter.y,
                     IsMinionShip = ship.IsMinionShip,
-                    IsCarrierShip = ship.IsCarrierShip
+                    IsCarrierShip = ship.IsCarrierShip,
+                    ParentCarrierMatchShipId =
+                        ship is CarrierShip carrierShip && carrierShip.Carrier != null
+                            ? carrierShip.Carrier.MatchShipId
+                            : 0
                 });
             }
 
@@ -596,6 +607,8 @@ namespace Assets.Scripts.Levels
                     IsImmobile = squad.IsImmobile,
                     IsMinionSquad = squad.IsMinionSquad,
                     IsCarrierSquad = squad.IsCarrierSquad,
+                    ParentCarrierMatchShipId = squad.ParentCarrierMatchShipId,
+                    CarrierSquadType = squad.CarrierSquadType,
                     ShootingStrategy = squad.ShootingStrategy
                 });
             }
@@ -619,7 +632,8 @@ namespace Assets.Scripts.Levels
                     OffsetX = ship.OffsetX,
                     OffsetY = ship.OffsetY,
                     IsMinionShip = ship.IsMinionShip,
-                    IsCarrierShip = ship.IsCarrierShip
+                    IsCarrierShip = ship.IsCarrierShip,
+                    ParentCarrierMatchShipId = ship.ParentCarrierMatchShipId
                 });
             }
 
@@ -1198,6 +1212,8 @@ namespace Assets.Scripts.Levels
         public bool IsImmobile;
         public bool IsMinionSquad;
         public bool IsCarrierSquad;
+        public long ParentCarrierMatchShipId;
+        public int CarrierSquadType = -1;
         public int ShootingStrategy;
     }
 
@@ -1219,6 +1235,7 @@ namespace Assets.Scripts.Levels
         public float OffsetY;
         public bool IsMinionShip;
         public bool IsCarrierShip;
+        public long ParentCarrierMatchShipId;
     }
 
     [Serializable]
@@ -1281,7 +1298,7 @@ namespace Assets.Scripts.Levels
 
     public static class MultiplayerProtocol
     {
-        public const int Version = 1;
+        public const int Version = 2;
         public const int MaxPacketBytes = 4096;
         public const int MaxLobbyPacketBytes = 65536;
         public const int MaxBattleStatePacketBytes = 262144;
@@ -1341,12 +1358,13 @@ namespace Assets.Scripts.Levels
         private static readonly HashSet<string> BattleSquadStateFields = new HashSet<string>
         {
             "id", "owner", "side", "number", "name", "r", "g", "b", "a",
-            "cease", "matching", "chase", "immobile", "minion", "carrier", "strategy"
+            "cease", "matching", "chase", "immobile", "minion", "carrier",
+            "parentCarrier", "carrierType", "strategy"
         };
         private static readonly HashSet<string> BattleShipStateFields = new HashSet<string>
         {
             "id", "squad", "side", "shipType", "x", "y", "rot", "vx", "vy",
-            "health", "dead", "ox", "oy", "minion", "carrier"
+            "health", "dead", "ox", "oy", "minion", "carrier", "parentCarrier"
         };
 
         public static bool TrySerializeBattleState(
@@ -1382,6 +1400,8 @@ namespace Assets.Scripts.Levels
                     ["immobile"] = squad.IsImmobile,
                     ["minion"] = squad.IsMinionSquad,
                     ["carrier"] = squad.IsCarrierSquad,
+                    ["parentCarrier"] = squad.ParentCarrierMatchShipId,
+                    ["carrierType"] = squad.CarrierSquadType,
                     ["strategy"] = squad.ShootingStrategy
                 });
             }
@@ -1406,7 +1426,8 @@ namespace Assets.Scripts.Levels
                     ["ox"] = ship.OffsetX,
                     ["oy"] = ship.OffsetY,
                     ["minion"] = ship.IsMinionShip,
-                    ["carrier"] = ship.IsCarrierShip
+                    ["carrier"] = ship.IsCarrierShip,
+                    ["parentCarrier"] = ship.ParentCarrierMatchShipId
                 });
             }
 
@@ -1512,6 +1533,11 @@ namespace Assets.Scripts.Levels
                     !TryReadBool(squadJson, "immobile", out bool isImmobile) ||
                     !TryReadBool(squadJson, "minion", out bool isMinionSquad) ||
                     !TryReadBool(squadJson, "carrier", out bool isCarrierSquad) ||
+                    !TryReadInt64(squadJson, "parentCarrier", out long parentCarrierMatchShipId) ||
+                    parentCarrierMatchShipId < 0 ||
+                    !TryReadInt64(squadJson, "carrierType", out long carrierSquadType) ||
+                    carrierSquadType < int.MinValue ||
+                    carrierSquadType > int.MaxValue ||
                     !TryReadInt64(squadJson, "strategy", out long shootingStrategy) ||
                     shootingStrategy < int.MinValue ||
                     shootingStrategy > int.MaxValue)
@@ -1536,6 +1562,8 @@ namespace Assets.Scripts.Levels
                     IsImmobile = isImmobile,
                     IsMinionSquad = isMinionSquad,
                     IsCarrierSquad = isCarrierSquad,
+                    ParentCarrierMatchShipId = parentCarrierMatchShipId,
+                    CarrierSquadType = (int)carrierSquadType,
                     ShootingStrategy = (int)shootingStrategy
                 });
             }
@@ -1569,7 +1597,9 @@ namespace Assets.Scripts.Levels
                     !TryReadFloat(shipJson, "ox", out float offsetX) ||
                     !TryReadFloat(shipJson, "oy", out float offsetY) ||
                     !TryReadBool(shipJson, "minion", out bool isMinionShip) ||
-                    !TryReadBool(shipJson, "carrier", out bool isCarrierShip))
+                    !TryReadBool(shipJson, "carrier", out bool isCarrierShip) ||
+                    !TryReadInt64(shipJson, "parentCarrier", out long parentCarrierMatchShipId) ||
+                    parentCarrierMatchShipId < 0)
                 {
                     return false;
                 }
@@ -1590,7 +1620,8 @@ namespace Assets.Scripts.Levels
                     OffsetX = offsetX,
                     OffsetY = offsetY,
                     IsMinionShip = isMinionShip,
-                    IsCarrierShip = isCarrierShip
+                    IsCarrierShip = isCarrierShip,
+                    ParentCarrierMatchShipId = parentCarrierMatchShipId
                 });
             }
 
@@ -1633,7 +1664,14 @@ namespace Assets.Scripts.Levels
                     !IsFinite(new Vector2(squad.ColorB, squad.ColorA)) ||
                     !Enum.IsDefined(
                         typeof(ConfigData.ShootingStrategyTypes),
-                        squad.ShootingStrategy))
+                        squad.ShootingStrategy) ||
+                    (squad.IsCarrierSquad &&
+                     (!squad.IsMinionSquad ||
+                      (squad.CarrierSquadType != (int)ConfigData.ShipTypes.Drone &&
+                       squad.CarrierSquadType != (int)ConfigData.ShipTypes.Striker))) ||
+                    (!squad.IsCarrierSquad &&
+                     (squad.ParentCarrierMatchShipId != 0 ||
+                      squad.CarrierSquadType != -1)))
                 {
                     return false;
                 }
@@ -1641,13 +1679,14 @@ namespace Assets.Scripts.Levels
                 squads.Add(squad.MatchSquadId, squad);
             }
 
-            HashSet<long> ids = new HashSet<long>();
+            Dictionary<long, BattleShipStateSnapshot> ships =
+                new Dictionary<long, BattleShipStateSnapshot>();
             for (int i = 0; i < snapshot.Ships.Count; i++)
             {
                 BattleShipStateSnapshot ship = snapshot.Ships[i];
                 if (ship == null ||
                     ship.MatchShipId <= 0 ||
-                    !ids.Add(ship.MatchShipId) ||
+                    ships.ContainsKey(ship.MatchShipId) ||
                     ship.MatchSquadId <= 0 ||
                     !squads.TryGetValue(
                         ship.MatchSquadId,
@@ -1656,12 +1695,70 @@ namespace Assets.Scripts.Levels
                     (ship.Side != ConfigData.Configuration.BeeSide &&
                      ship.Side != ConfigData.Configuration.HumanSide) ||
                     !Enum.IsDefined(typeof(ConfigData.ShipTypes), ship.ShipType) ||
+                    !Utilities.ConvertShipTypeToSide.TryGetValue(
+                        (ConfigData.ShipTypes)ship.ShipType,
+                        out int shipTypeSide) ||
+                    shipTypeSide != ship.Side ||
                     !IsFinite(new Vector2(ship.X, ship.Y)) ||
                     (float.IsNaN(ship.Rotation) || float.IsInfinity(ship.Rotation)) ||
                     !IsFinite(new Vector2(ship.VelocityX, ship.VelocityY)) ||
                     !IsFinite(new Vector2(ship.OffsetX, ship.OffsetY)) ||
                     ship.Health < 0 ||
-                    ship.IsDead)
+                    ship.IsDead ||
+                    (ship.IsCarrierShip &&
+                     (ship.ShipType != (int)ConfigData.ShipTypes.Drone &&
+                      ship.ShipType != (int)ConfigData.ShipTypes.Striker)) ||
+                    (!ship.IsCarrierShip && ship.ParentCarrierMatchShipId != 0))
+                {
+                    return false;
+                }
+
+                ships.Add(ship.MatchShipId, ship);
+            }
+
+            foreach (BattleSquadStateSnapshot squad in squads.Values)
+            {
+                if (!squad.IsCarrierSquad ||
+                    squad.ParentCarrierMatchShipId == 0)
+                {
+                    continue;
+                }
+
+                if (!ships.TryGetValue(
+                        squad.ParentCarrierMatchShipId,
+                        out BattleShipStateSnapshot parent) ||
+                    parent.ShipType != (int)ConfigData.ShipTypes.Carrier ||
+                    parent.Side != squad.Side ||
+                    parent.IsCarrierShip)
+                {
+                    return false;
+                }
+            }
+
+            foreach (BattleShipStateSnapshot ship in ships.Values)
+            {
+                if (!ship.IsCarrierShip)
+                {
+                    continue;
+                }
+
+                if (!squads.TryGetValue(
+                        ship.MatchSquadId,
+                        out BattleSquadStateSnapshot squad) ||
+                    !squad.IsCarrierSquad ||
+                    squad.CarrierSquadType != ship.ShipType ||
+                    squad.ParentCarrierMatchShipId != ship.ParentCarrierMatchShipId)
+                {
+                    return false;
+                }
+
+                if (ship.ParentCarrierMatchShipId > 0 &&
+                    (!ships.TryGetValue(
+                         ship.ParentCarrierMatchShipId,
+                         out BattleShipStateSnapshot parent) ||
+                     parent.ShipType != (int)ConfigData.ShipTypes.Carrier ||
+                     parent.Side != ship.Side ||
+                     parent.IsCarrierShip))
                 {
                     return false;
                 }

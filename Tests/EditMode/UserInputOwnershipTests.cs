@@ -2255,7 +2255,7 @@ namespace Bees.Tests.EditMode
                 "Ship.Lifecycle.cs");
             string source = File.ReadAllText(path);
 
-            StringAssert.Contains("public void SetupReplica(", source);
+            StringAssert.Contains("public bool SetupReplica(", source);
             StringAssert.Contains("SetupCore(", source);
             StringAssert.Contains("authoritativeMatchShipId", source);
             StringAssert.Contains("ReserveReplicaMatchShipId(authoritativeMatchShipId)", source);
@@ -2283,7 +2283,7 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains("Weapons[i].Deactivate();", replicaMode);
             StringAssert.Contains("ProximityCollider.Deactivate();", replicaMode);
             StringAssert.Contains("enabled = false;", replicaMode);
-            StringAssert.DoesNotContain("Deactivate();", replicaMode);
+            StringAssert.DoesNotContain("\n            Deactivate();", replicaMode);
         }
 
         [Test]
@@ -2436,6 +2436,25 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains("else if (state.IsCarrierShip)", preflightSource);
             StringAssert.DoesNotContain("ReplicaDespawn();", preflightSource);
             StringAssert.DoesNotContain("SetupReplica(", preflightSource);
+        }
+
+        [Test]
+        public void BattleStateCarrierMetadataIsVersionedAndStrictlyValidated()
+        {
+            string path = Path.Combine(
+                Application.dataPath,
+                "Scripts",
+                "Levels",
+                "GameState.Commands.cs");
+            string source = File.ReadAllText(path);
+
+            StringAssert.Contains("public const int Version = 2;", source);
+            StringAssert.Contains("ParentCarrierMatchShipId", source);
+            StringAssert.Contains("CarrierSquadType", source);
+            StringAssert.Contains("Utilities.ConvertShipTypeToSide.TryGetValue(", source);
+            StringAssert.Contains("shipTypeSide != ship.Side", source);
+            StringAssert.Contains("squad.ParentCarrierMatchShipId != ship.ParentCarrierMatchShipId", source);
+            StringAssert.Contains("parent.ShipType != (int)ConfigData.ShipTypes.Carrier", source);
         }
     }
 }
