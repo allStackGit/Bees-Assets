@@ -184,10 +184,14 @@ class ExternalWorkerServerTests(unittest.TestCase):
         worker_in_use = type("UnityWorkerInUseException", (Exception,), {})
         exception_module.UnityWorkerInUseException = worker_in_use
 
+        envs_package = ModuleType("mlagents_envs")
+        envs_package.__path__ = []
+        communicator_objects_package = ModuleType("mlagents_envs.communicator_objects")
+        communicator_objects_package.__path__ = []
         modules = {
             "grpc": grpc_module,
-            "mlagents_envs": ModuleType("mlagents_envs"),
-            "mlagents_envs.communicator_objects": ModuleType("mlagents_envs.communicator_objects"),
+            "mlagents_envs": envs_package,
+            "mlagents_envs.communicator_objects": communicator_objects_package,
             "mlagents_envs.communicator_objects.unity_to_external_pb2_grpc": proto_module,
             "mlagents_envs.rpc_communicator": rpc_module,
             "mlagents_envs.exception": exception_module,
