@@ -10,6 +10,8 @@ Static-only repository audit on `rl/initial-design-work`. This ledger is the cur
 
 ## Audit status
 
+- REG-183 makes unsafe heartbeat revisions fail closed as `-1`, preventing them from falsely satisfying a rollout phase revision. Focused regression source was added but not run. Static review only; post-fix clean-pass count remains **0 / 2**.
+
 - REG-182 preserves the central learner in every compatible-release barrier through lease expiry, preventing canonical promotion without its acknowledgement. Focused regression source was added but not run. Static review only; post-fix clean-pass count remains **0 / 2**.
 
 - REG-181 makes the trainer-log route reject absent, malformed, or unsafe offsets before they can be interpreted as reset offset zero. Focused route coverage was added but not run. Static review only; post-fix clean-pass count remains **0 / 2**.
