@@ -29,6 +29,7 @@ namespace Assets.Scripts.Entities.Projectiles
         public bool HasNecessaryAnimation;
         public Animator Animator;
         public bool IsDead;
+        public long MatchProjectileId;
         public long CommandOutcomeId;
         private ShipDamageStatus _damageReservation;
         private int _reservedDamageAmount;
@@ -58,6 +59,10 @@ namespace Assets.Scripts.Entities.Projectiles
             ClearData();
             Level = level;
             Id = Level.State.GetId();
+            MatchSession matchSession = Level.Stage.MatchSession;
+            MatchProjectileId = matchSession == null
+                ? 0
+                : matchSession.AllocateMatchProjectileId();
             Weapon = weapon;
             Shooter = shooter;
             Target = target;
@@ -97,6 +102,7 @@ namespace Assets.Scripts.Entities.Projectiles
 
         public virtual void ClearData()
         {
+            MatchProjectileId = 0;
             ShipsToIgnore.Clear();
             CollidingQueue.Clear();
             CollidingObstacleQueue.Clear();

@@ -135,11 +135,24 @@ namespace Assets.Scripts.Levels
 
         public void AddProjectile(Projectile projectile)
         {
+            if (projectile.MatchProjectileId > 0)
+            {
+                if (ProjectilesByMatchId.ContainsKey(projectile.MatchProjectileId))
+                {
+                    throw new System.InvalidOperationException(
+                        $"Duplicate match projectile id #{projectile.MatchProjectileId} in level #{MatchLevelId}.");
+                }
+                ProjectilesByMatchId.Add(projectile.MatchProjectileId, projectile);
+            }
             Projectiles.Add(projectile);
         }
 
         public void RemoveProjectile(Projectile projectile)
         {
+            if (projectile != null && projectile.MatchProjectileId > 0)
+            {
+                ProjectilesByMatchId.Remove(projectile.MatchProjectileId);
+            }
             Projectiles.Remove(projectile);
         }
 

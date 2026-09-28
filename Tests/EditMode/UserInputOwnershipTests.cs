@@ -2929,5 +2929,39 @@ namespace Bees.Tests.EditMode
                 ": Stage.InputManager.GetMousePosition();",
                 aimingSource);
         }
+
+        [Test]
+        public void ProjectilesUseDedicatedMatchScopedIdentityAndRegistry()
+        {
+            string statePath = Path.Combine(
+                Application.dataPath,
+                "Scripts",
+                "Levels",
+                "GameState.cs");
+            string registryPath = Path.Combine(
+                Application.dataPath,
+                "Scripts",
+                "Levels",
+                "GameState.Registry.cs");
+            string projectilePath = Path.Combine(
+                Application.dataPath,
+                "Scripts",
+                "Entities",
+                "Projectiles",
+                "Projectile.cs");
+            string stateSource = File.ReadAllText(statePath);
+            string registrySource = File.ReadAllText(registryPath);
+            string projectileSource = File.ReadAllText(projectilePath);
+
+            StringAssert.Contains("Dictionary<long, Projectile> ProjectilesByMatchId", stateSource);
+            StringAssert.Contains("_nextMatchProjectileId = 1;", stateSource);
+            StringAssert.Contains("AllocateMatchProjectileId()", stateSource);
+            StringAssert.Contains("ReserveReplicaMatchProjectileId", stateSource);
+            StringAssert.Contains("Duplicate match projectile id", registrySource);
+            StringAssert.Contains("ProjectilesByMatchId.Remove", registrySource);
+            StringAssert.Contains("public long MatchProjectileId;", projectileSource);
+            StringAssert.Contains("matchSession.AllocateMatchProjectileId()", projectileSource);
+            StringAssert.Contains("MatchProjectileId = 0;", projectileSource);
+        }
     }
 }

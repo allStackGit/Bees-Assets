@@ -14,6 +14,8 @@ namespace Assets.Scripts.Levels
     public partial class GameState : MonoBehaviour
     {
         public HashSet<Projectile> Projectiles = new HashSet<Projectile>(ReferenceIdentityComparer<Projectile>.Instance);
+        public Dictionary<long, Projectile> ProjectilesByMatchId =
+            new Dictionary<long, Projectile>();
         public List<Ship> Ships = new List<Ship>();
         public readonly List<Ship>[] ShipsBySide =
         {
@@ -203,6 +205,7 @@ namespace Assets.Scripts.Levels
                 Level.Pathfinder = null;
             }
 
+            ProjectilesByMatchId.Clear();
             Ships.Clear();
             for (int side = 0; side < ShipsBySide.Length; side++)
             {
@@ -544,6 +547,7 @@ namespace Assets.Scripts.Levels
         private readonly List<MatchPlayer> _players = new List<MatchPlayer>();
         private long _nextMatchSquadId = 1;
         private long _nextMatchShipId = 1;
+        private long _nextMatchProjectileId = 1;
         private readonly Dictionary<int, long> _nextPlayerCommandSequences = new Dictionary<int, long>();
         private readonly Dictionary<int, long> _lastAcceptedPlayerCommandSequences = new Dictionary<int, long>();
         private readonly Queue<(int MatchLevelId, PlayerCommandEnvelope Command)> _outgoingPlayerCommands =
@@ -1729,6 +1733,27 @@ namespace Assets.Scripts.Levels
         public long AllocateMatchShipId()
         {
             return _nextMatchShipId++;
+        }
+
+        public long AllocateMatchProjectileId()
+        {
+            return _nextMatchProjectileId++;
+        }
+
+        public bool ReserveReplicaMatchProjectileId(long matchProjectileId)
+        {
+            if (IsLocalAuthority ||
+                Phase != MatchSessionPhase.Battle ||
+                matchProjectileId <= 0 ||
+                matchProjectileId == long.MaxValue)
+            {
+                return false;
+            }
+
+            _nextMatchProjectileId = Math.Max(
+                _nextMatchProjectileId,
+                matchProjectileId + 1);
+            return true;
         }
 
         public bool ReserveReplicaMatchSquadId(long matchSquadId)
