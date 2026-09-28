@@ -1554,3 +1554,11 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** `trainingControl.module.test.js` sends an authenticated reset without an offset and verifies HTTP 400 plus preservation of the existing file.  
 **Verification:** source and regression coverage were reviewed statically; the test was not run per the static-only audit instruction.  
 **Invariant/knowledge:** destructive log resets require an explicitly supplied, safe integer offset.
+
+### REG-182 — Compatible release pruning bypassed the central learner
+**Area:** `BeesServer~/trainingControl.js`, compatible rollout lease pruning and release barrier  
+**Symptom:** if the central learner's dedicated lease expired during a compatible rollout, the server could remove it from the required-trainer barrier and continue toward promotion without the learner acknowledging the release.  
+**Root cause:** the compatible lease-pruning branch removed every stale trainer before applying its special failure-grace logic. That accidentally included `central-learner`, even though both the rollout contract and the incompatible-rollout pruning path preserve it as the owner of optimizer/checkpoint lineage.  
+**Permanent protection:** compatible lease pruning now expires only non-central trainers. `trainingControl.module.test.js` adds a source regression case with a recently renewed remote and an expired central lease; it asserts that the canonical build stays old and the central learner remains required in `preparing`.  
+**Verification:** implementation and focused regression source were read back and reviewed statically. The test was not run, as required by the static-only audit instruction.  
+**Invariant/knowledge:** `BeesServer~/docs/TRAINING_CONTROL.md` requires the central learner to remain in the compatible barrier; a stale central lease must stall promotion until the learner recovers and acknowledges the release.
