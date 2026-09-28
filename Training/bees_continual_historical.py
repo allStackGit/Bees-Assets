@@ -55,31 +55,29 @@ class HistoricalOverride:
 
 
 def _validate_ratio(value: Any) -> float:
-    if isinstance(value, bool):
+    if type(value) not in (int, float) or not 0.0 <= value <= 1.0:
         raise HistoricalOpponentError("Historical training ratio must be a number in [0,1].")
-    try:
-        ratio = float(value)
-    except (TypeError, ValueError) as exc:
-        raise HistoricalOpponentError(
-            "Historical training ratio must be a number in [0,1]."
-        ) from exc
-    if not math.isfinite(ratio) or ratio < 0.0 or ratio > 1.0:
-        raise HistoricalOpponentError("Historical training ratio must be in [0,1].")
-    return ratio
+    return float(value)
 
 
 def _validate_cache_size(value: Any) -> int:
-    if isinstance(value, bool):
+    if type(value) is not int or value <= 0:
         raise HistoricalOpponentError("Historical policy cache size must be a positive integer.")
-    try:
-        cache_size = int(value)
-    except (TypeError, ValueError) as exc:
-        raise HistoricalOpponentError(
-            "Historical policy cache size must be a positive integer."
-        ) from exc
-    if cache_size <= 0 or isinstance(value, float) and not value.is_integer():
-        raise HistoricalOpponentError("Historical policy cache size must be a positive integer.")
-    return cache_size
+    return value
+
+
+def _validate_seed(value: Any) -> int:
+    if type(value) is not int:
+        raise HistoricalOpponentError("Historical sampling seed must be an integer.")
+    return value
+
+
+def _validate_provider(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value.strip():
+        raise HistoricalOpponentError("Historical ONNX provider must be a non-empty string or null.")
+    return value.strip()
 
 
 def _preflight_onnx_runtime(provider: Optional[str]) -> None:
@@ -428,9 +426,9 @@ class HistoricalOpponentScheduler:
     ) -> None:
         self.store = store
         self.ratio = _validate_ratio(ratio)
-        self.provider = provider
+        self.provider = _validate_provider(provider)
         self.cache_size = _validate_cache_size(cache_size)
-        self.rng = random.Random(seed)
+        self.rng = random.Random(_validate_seed(seed))
         self.policy_factory = policy_factory or _build_frozen_onnx_policy
         self._policy_cache: OrderedDict[Tuple[Any, ...], Any] = OrderedDict()
         # Once an external opponent participates, ML-Agents' built-in ELO can no
@@ -611,8 +609,10 @@ def install_historical_opponents(
     """Patch ML-Agents 1.1.0 GhostTrainer for persistent ONNX league opponents."""
     validated_ratio = _validate_ratio(ratio)
     validated_cache_size = _validate_cache_size(cache_size)
+    validated_seed = _validate_seed(seed)
+    validated_provider = _validate_provider(provider)
     if validated_ratio > 0.0 and policy_factory is None:
-        _preflight_onnx_runtime(provider)
+        _preflight_onnx_runtime(validated_provider)
 
     if ghost_trainer_cls is None:
         try:
@@ -639,8 +639,8 @@ def install_historical_opponents(
     scheduler = HistoricalOpponentScheduler(
         store,
         ratio=validated_ratio,
-        seed=seed,
-        provider=provider,
+        seed=validated_seed,
+        provider=validated_provider,
         cache_size=validated_cache_size,
         policy_factory=policy_factory,
     )
