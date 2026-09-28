@@ -690,6 +690,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 reconnect_backoff.reset()
                 print("[Bees WAN actor] central generation changed; reconnecting to the next trainer session.")
                 stop.wait(0.25)
+            except worker.BrokerStaleActor:
+                # Fallback for a freshness race that escaped the in-session resynchronizer.
+                # Do not count this as a session failure; central state simply advanced while
+                # an old-epoch request was in flight.
+                reconnect_backoff.reset()
+                startup_health.set_ready("resynchronizing")
+                print("[Bees WAN actor] central actor state advanced; resynchronizing.")
+                stop.wait(0.1)
             except worker.BrokerUnavailable as exc:
                 # The central broker is intentionally absent during release/publish phases.
                 # The actor process is healthy and should remain ready to reconnect rather than
