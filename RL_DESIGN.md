@@ -71,212 +71,103 @@ The preservation objective is therefore not simply "lose the fewest hulls." Losi
 
 Some ships can spawn additional ships for free during a battle. Those spawned units are real tactical assets and are dynamically assigned shared-policy agents when they require policy control, but temporary spawning must not manufacture persistent fleet-value reward.
 
-## 4. Canonical Policy ABI v6
+## 4. Canonical Policy ABI v20
 
-`Scripts/Scenes/RlPolicySchema.cs` is the executable policy contract. Training startup validates it before agents are created. `Tests/EditMode/RlPolicySchemaContractTests.cs` guards the same contract against accidental drift.
+`Scripts/Scenes/RlPolicySchema.cs` is the executable checkpoint contract. Training startup validates it before agents are created, and the complete signature is emitted at startup. Resume a checkpoint only when its ABI signature matches.
 
 Current identity:
 
-- ABI version: `6`
+- ABI version: `20`
 - behavior name: `BeesRL1v1`
-- vector observations: `4685`
-- continuous actions: `34`
-- discrete branches: `16 x [2]`, then `[5, 65, 65, 65]`
-- network: feed-forward, `512` hidden units, `3` hidden layers, observation normalization enabled
+- vector observations: `7614`
+- continuous actions: `16`
+- discrete branches: five weapon-fire branches of `[2]`, followed by one special-action branch of `[5]`
+- network: feed-forward, `128` hidden units, `3` layers, observation normalization enabled
 - recurrent memory: none
 
-The 34 continuous actions are two movement values plus two independent aim values for each of the 16 authored weapon slots. The first 16 discrete branches independently cease/fire those same weapon slots. ABI v6 is the frozen canonical interface for long-term training; any observation/action/network change requires a new incompatible policy generation.
-
-ABI v6 also freezes two control semantics represented in the executable schema signature. Each self-play team receives a distinct random quarter-turn coordinate frame for each Level episode, and that frame is applied consistently to directional observations and actions so absolute world directions cannot become a team shortcut. RL weapon readiness is latched once a weapon's normal cadence has matured and remains ready until a requested shot is accepted and fired, so a policy decision arriving between cadence ticks does not lose an otherwise valid firing opportunity.
-
-The complete schema signature is emitted at training startup. A checkpoint should be resumed only when its ABI signature matches.
+ABI v20 freezes observation and action meaning, ordering, normalization, capacities, behavior identity, and network architecture. It also includes team-specific episode coordinate frames, per-slot weapon aim and fire, private allied communication, weapon-readiness latching, and healing's weapon-exclusive action rule. Changes to these semantics require an intentional incompatible policy generation.
 
 ### 4.1 What is frozen
 
-The following are checkpoint-sensitive and must not change for ABI v6:
+The following are checkpoint-sensitive:
 
-- observation count, order, meaning, and normalization semantics;
-- entity ordering semantics;
-- action count, branch order, branch sizes, and action meanings;
-- ship/weapon/map-object identifier encodings;
+- observation count, order, meaning, and normalization;
+- entity ordering and identifier encodings;
 - fixed observation capacities;
+- action count, branch order, branch sizes, and meanings;
 - behavior name;
 - network architecture and recurrence choice;
-- coordinate-frame semantics;
-- RL weapon-readiness semantics.
+- coordinate-frame, weapon-readiness, communication, and special-action semantics.
 
-Changing any of these requires an intentional new ABI version and should be treated as incompatible with existing canonical checkpoints.
+Changing any of these requires a new ABI version and must be treated as incompatible with existing checkpoints.
 
 ### 4.2 What remains tunable
 
-The following may be changed while continuing an ABI-v6 network:
+These may change while continuing a compatible ABI-v20 network:
 
-- reward magnitudes and reward balancing;
+- reward magnitudes and balancing;
 - curriculum and matchup distributions;
-- ships per side, provided observation semantics remain top-K and individual ships fit the fixed weapon schema;
+- ships per side, provided fixed observation and weapon-slot limits are respected;
 - map size and environment generation;
-- episode duration/timeouts;
+- episode duration and timeouts;
 - PPO optimization hyperparameters that do not alter network architecture;
-- self-play scheduling and opponent-window settings;
-- evaluation/qualification criteria.
+- self-play scheduling and evaluation criteria.
 
 ## 5. Observation Layout
 
-The policy receives one fixed vector. Unused slots are zero-filled so curriculum expansion does not change shape.
+The policy receives one fixed vector of `7614` values. The executable block sizes in `RlCombatPerception` total `7593`; the agent then appends one episode-progress value and twenty reserved values. Unused fixed-capacity slots are zero-filled.
 
-### 5.1 Identifier capacity
+| Observation block | Capacity and size |
+| --- | ---: |
+| Self state | 25 |
+| Capability state | 12 |
+| Parent carrier | 40 |
+| Allies | 64 x 44 |
+| Enemies | 64 x 40 |
+| Own weapons | 5 x 15 |
+| Mining asteroids | 8 x 7 |
+| Map objects | 64 x 12 |
+| Moving collision asteroids | 48 x 11 |
+| Objective reservation | 16 |
+| Local navigation grid | 21 x 21 |
+| Team exploration grid | 16 x 16 |
+| Episode progress | 1 |
+| Reserved tail | 20 |
 
-- ship type: 6 bits (`0-63`)
-- weapon type: 6 bits (`0-63`)
-- map-object type: 4 bits (`0-15`)
+Ship observations use deterministic ordering by distance, type, fleet ID, and runtime ID. Relative directions and grids use the team-specific quarter-turn policy frame. Ship and weapon type values use the frozen scrambled scalar maps; map-object type uses four bits. The exact normalization and field order are defined in `RlCombatPerception` and `RlPolicySchema.Signature`.
 
-Current enum values are validated at training startup so an out-of-range new type cannot silently alias an existing identity.
+Each ally slot includes a four-value private communication vector. Carrier children receive a dedicated observation of their live parent carrier even when it is outside the nearest-ally capacity. The objective block is currently reserved and zero-filled. The policy has no enemy weapon-mount slots in this ABI.
 
-### 5.2 Self state — 29 values
-
-Self state includes:
-
-- ship type;
-- normalized absolute position and map dimensions;
-- heading;
-- health;
-- movement/rotation values;
-- physical size;
-- sight, range, and firepower;
-- mobility/bomber/carrier/weapon/turret flags;
-- special-action presence/readiness;
-- normalized friendly and Hive Mind-known ship counts.
-
-### 5.3 General capability state — 12 values
-
-A permanent generalized capability block exposes:
-
-- ship-specific special-action presence;
-- immediate readiness;
-- remaining resource/charges;
-- normalized time until ready;
-- current ability phase;
-- mining eligibility;
-- healing eligibility;
-- warp/extraction eligibility;
-- carrier-child identity;
-- whether a live parent carrier exists;
-- two reserved capability channels.
-
-This block is intentionally generalized so additional state for existing capability classes can be mapped without changing tensor size.
-
-### 5.4 Parent carrier — 19 values
-
-Carrier children receive a dedicated full entity observation for their live parent carrier. Other ships receive zeros.
-
-This is required especially for Strikers, which must return to their specific carrier to reload. The relationship must not disappear merely because that carrier falls outside the generic nearest-allies list.
-
-### 5.5 Friendly and enemy ships — 64 + 64 slots
-
-Each entity slot contains 19 values including:
-
-- presence;
-- relative position;
-- heading;
-- health;
-- movement/size/range/firepower state;
-- mobility/bomber flags;
-- 6-bit ship type.
-
-Candidates are sorted deterministically by:
-
-1. distance from the controlled ship;
-2. ship type;
-3. fleet ID;
-4. runtime ID.
-
-The permanent policy semantic is **nearest/relevant bounded state**, not "observe every ship no matter how large a battle becomes." Hive Mind may remember more entities than fit in the vector.
-
-### 5.6 Own weapons — 16 slots
-
-Each authored weapon slot receives 19 values including weapon identity, local position, combat characteristics, turret heading/readiness, and target/aim state where applicable.
-
-Weapon list order is the stable slot identity. Continuous aim pair N and discrete fire branch N control exactly authored weapon N.
-
-Excess weapons are never collapsed onto the final action. If a policy-controlled ship has more than 16 authored weapon slots, training is rejected by `RlPolicySchema.TryValidateShip` so the incompatibility is discovered before silently training the wrong control mapping.
-
-### 5.7 Enemy weapon mounts — 16 slots
-
-The policy has 16 detailed enemy weapon-mount observations. They expose owner ship type, weapon type, relative mount position, range/power/rotation characteristics, and turret heading/readiness where relevant. These supplement the aggregate range/firepower state already carried by every observed enemy ship.
-
-### 5.8 Mining asteroids — 8 slots
-
-Mining asteroid observations include relative position, resource fraction, geometry, and mining activity. Mining asteroids are resources rather than ship collision hazards.
-
-### 5.9 Map objects — 64 slots
-
-Map objects use fixed typed slots with relative geometry, health/activity, and targetability state.
-
-### 5.10 Moving collision asteroids — 48 slots
-
-Collision asteroid observations include geometry, heading, velocity, health, and destructibility.
-
-### 5.11 Static navigation grid — 13 x 13
-
-Persistent static collision geometry and map boundaries are represented in a local `13 x 13` occupancy grid with 10-unit cells.
-
-### 5.12 Reserved objective state — 16 values
-
-Sixteen values are permanently reserved for explicit future objective state such as defend/capture/escort/reach-location summaries. They are currently zero-filled.
-
-Future objective mechanics must populate this reserved block or use the already-reserved entity-target branches rather than increasing observation shape.
-
-### 5.13 Projectiles
-
-Individual projectiles are intentionally not observed for projectile dodging. Dodging individual shots is outside the intended policy behavior and would add large unnecessary state.
+The policy supports five authored weapon slots. Training rejects a controlled ship with more than five authored weapons instead of aliasing excess weapons onto an existing action. Weapon list order is the stable slot identity.
 
 ## 6. Action Layout
 
-### 6.1 Continuous actions — 34
+### 6.1 Continuous actions — 16
 
-- movement X
-- movement Y
-- weapon slot 0 aim X/Y
-- weapon slot 1 aim X/Y
-- ...
-- weapon slot 15 aim X/Y
+- movement X and Y;
+- one aim X/Y pair for each of the five authored weapon slots;
+- four private communication values.
 
-Movement controls the real ship movement primitive. Every authored weapon slot has its own retained aim direction. A non-dead-zone aim pair updates only that slot's direction, so all turrets can hold different targets and can be updated independently in the same policy decision.
+Each weapon retains its own aim direction. A non-dead-zone aim pair updates only that weapon slot.
 
-### 6.2 Weapon fire branches — 16 branches x 2 choices
+### 6.2 Weapon-fire branches — five branches of two choices
 
-For each authored weapon slot N:
+For each authored weapon slot:
 
-- `0`: cease fire for slot N
-- `1`: fire slot N
+- `0`: cease fire for that slot;
+- `1`: fire that slot.
 
-All 16 branches are read every decision. A slot's fire command is paired with that slot's independent continuous aim direction. Missing/non-turret authored slots ignore the command and their fire action is masked when the agent is bound.
+A branch controls only its matching weapon. Missing or unsupported slots are masked or ignored according to the binding code.
 
-### 6.3 Special-action branch — 5 choices
+### 6.3 Special-action branch — five choices
 
-- no special action
-- ship-specific special action
-- mine
-- heal
-- warp/extract
+The choices are no action, ship-specific special action, mine, heal, and warp/extract. The exact eligibility masks and ship-specific behavior are maintained by `RlOneVsOneAgent`. Healing is exclusive with weapon fire for that decision.
 
-Ship-specific handling currently covers mechanics such as Yellow Jacket detonation, Striker bombing, Fire Barge detonation, Barge charging, and Scout beacon deployment. Mining, Beehive healing, and Warp Gate extraction are primitive spatial capabilities exposed separately.
-
-Queen/Carrier spawning behavior that is automatic game logic is intentionally not converted into an artificial policy button. Spawned units that need control are provisioned shared-policy agents dynamically.
-
-### 6.4 Reserved entity-target branches
-
-Three target-selection branches are permanently reserved:
-
-- ally target: 65 choices (`none + 64 slots`)
-- enemy target: 65 choices (`none + 64 slots`)
-- map-object target: 65 choices (`none + 64 slots`)
-
-They are currently masked except for `none`. A future mechanic that genuinely requires explicit entity selection can use them without changing action shape.
+The current ABI has no discrete ally, enemy, or map-object target branches. Future objective or targeting changes must use compatible reserved observation capacity only when their semantics can be added without changing the frozen checkpoint interface; otherwise they require a new ABI version.
 
 ## 7. Special Mechanics and Temporal State
 
-ABI v6 deliberately remains feed-forward. Bees already supplies persistent Hive Mind knowledge for discovered living enemies, and important ability timing is represented explicitly rather than forcing the network to infer it through recurrence.
+ABI v20 deliberately remains feed-forward. Bees already supplies persistent Hive Mind knowledge for discovered living enemies, and important ability timing is represented explicitly rather than forcing the network to infer it through recurrence.
 
 Examples:
 
@@ -285,7 +176,7 @@ Examples:
 - Striker exposes bomb readiness and its dedicated live parent-carrier state.
 - mining/healing/warp eligibility is explicit.
 
-If a later mechanic needs history, prefer adding semantics to already-reserved fields where valid. Adding recurrent memory to ABI v6 is not checkpoint-compatible.
+If a later mechanic needs history, prefer adding semantics to already-reserved fields where valid. Adding recurrent memory to ABI v20 is not checkpoint-compatible.
 
 ## 8. Barge Charge Lifecycle
 
@@ -310,10 +201,10 @@ Releasing a ship clears direct RL turret control. Ship-specific pooled lifecycle
 
 ## 10. Trainer Architecture
 
-The canonical ABI-v6 network is the current ML-Agents PPO network:
+The canonical ABI-v20 network is the current ML-Agents PPO network:
 
 - `normalize: true`
-- `hidden_units: 512`
+- `hidden_units: 128`
 - `num_layers: 3`
 - no recurrent `memory` block
 
@@ -321,7 +212,7 @@ The optimizer, reward, horizon, checkpoint, and self-play settings in `Training/
 
 ## 11. Training Progression
 
-The original small 1v1 experiment remains useful as the first curriculum stage, but it is no longer the definition of the policy interface. The same ABI-v6 network should be retained while training complexity expands.
+The original small 1v1 experiment remains useful as the first curriculum stage, but it is no longer the definition of the policy interface. The same ABI-v20 network should be retained while training complexity expands.
 
 Recommended progression:
 
@@ -344,11 +235,11 @@ Before treating a long run as a keep-forever canonical checkpoint series:
 - Unity must compile the branch;
 - `RlPolicySchemaContractTests` and the relevant EditMode/Foundation tests must pass;
 - the real training-scene PlayMode smoke must instantiate and bind the directly trainable roster through the shared policy path;
-- the training scene must start and print ABI v6 with `observations=4685`, `continuous_actions=34`, `weapon_fire_branches=16x2`, `special_branch=5`, and 65-choice ally/enemy/map-object target branches;
+- the training scene must start and print ABI v20 with `observations=7614`, `continuous_actions=16`, `weapon_fire_branches=5x2`, and `special_branch=5`;
 - every ship type intended for the curriculum must successfully bind without a schema overflow error;
 - a short multi-episode smoke run must demonstrate clean resets and dynamic agent provisioning.
 
-Once that gate passes, subsequent curriculum/reward tuning should not require discarding ABI-v6 checkpoints.
+Once that gate passes, subsequent curriculum/reward tuning should not require discarding ABI-v20 checkpoints.
 
 ## 13. Lessons Carried Forward From Ants
 
