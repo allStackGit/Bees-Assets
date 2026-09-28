@@ -1714,9 +1714,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     if managed.alive()
                     else ""
                 ),
-                metrics=current_metrics(
-                    str(desired.get("run_id", "")) if desired else managed.run_id
-                ),
+                metrics=current_metrics(metrics_run_id()),
                 worker_capacity=worker_capacity(),
             )
             desired_process_safe = False
@@ -1779,6 +1777,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     return _restart_worker_agent(raw_argv)
 
                 if mode == "stopped":
+                    set_reconciliation_phase("")
                     managed.stop(progress_callback=stopping_keepalive)
                     pending_release = desired.get("pending_release")
                     if (
@@ -1842,6 +1841,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                             command=command,
                         )
                         applied_revision = revision
+                        set_reconciliation_phase("")
                     elif descriptor and full_game_update_requires_deferred_restart(
                         managed,
                         str(descriptor.get("archive_sha256", "")),
@@ -1879,12 +1879,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                             last_error="canonical build/config pending next game launch",
                         )
                     else:
+                        set_reconciliation_phase("ensuring canonical build")
                         entrypoint, active_build = builds.ensure(
                             client,
                             descriptor,
                             progress_callback=blocking_keepalive,
                         )
                         desired_sha = str(active_build["archive_sha256"])
+                        set_reconciliation_phase("resolving managed runtime")
                         runtime_command_template = _runtime_launch_template(
                             args.runtime_cutover_pointer,
                             str(active_build["build_id"]),
