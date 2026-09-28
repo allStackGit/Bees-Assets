@@ -437,6 +437,22 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
         with mock.patch.object(managed.subprocess, "run", return_value=completed):
             self.assertFalse(managed._python_remote_dependencies_ok(Path("/tmp/python")))
 
+    def test_windows_launcher_does_not_equate_alive_supervisor_with_connected_worker(self):
+        root = Path(__file__).resolve().parents[1]
+        windows = (root / "Training" / "bees_remote_bootstrap.ps1").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("Get-FreshSupervisorTail", windows)
+        self.assertIn("waiting for matching Training runtime before rollout", windows)
+        self.assertIn("private transport failed to reach learner control", windows)
+        self.assertIn("startup state:", windows)
+        self.assertIn("supervisor started in the background", windows)
+        self.assertNotIn(
+            'worker started in the background (PID $($process.Id))',
+            windows,
+        )
+
     def test_generated_remote_launchers_and_learner_gateway_share_gameplay_port(self):
         root = Path(__file__).resolve().parents[1]
         windows = (root / "Training" / "bees_remote_bootstrap.ps1").read_text(
