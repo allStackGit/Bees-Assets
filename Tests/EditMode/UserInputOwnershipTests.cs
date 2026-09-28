@@ -2839,5 +2839,95 @@ namespace Bees.Tests.EditMode
                 asteroidSource);
             StringAssert.Contains("Kill(true);", asteroidSource);
         }
+
+        [Test]
+        public void MultiplayerManualFireCarriesPlayerTargetThroughAuthority()
+        {
+            string commandPath = Path.Combine(
+                Application.dataPath,
+                "Scripts",
+                "Levels",
+                "GameState.Commands.cs");
+            string inputPath = Path.Combine(
+                Application.dataPath,
+                "Scripts",
+                "Levels",
+                "LevelInputManager.cs");
+            string turretPath = Path.Combine(
+                Application.dataPath,
+                "Scripts",
+                "Entities",
+                "Ships",
+                "Weapons",
+                "Turret.cs");
+            string aimingPath = Path.Combine(
+                Application.dataPath,
+                "Scripts",
+                "Entities",
+                "Ships",
+                "Weapons",
+                "Turret.Aiming.cs");
+            string commandSource = File.ReadAllText(commandPath);
+            string inputSource = File.ReadAllText(inputPath);
+            string turretSource = File.ReadAllText(turretPath);
+            string aimingSource = File.ReadAllText(aimingPath);
+
+            StringAssert.Contains("PlayerCommandKind.SetManualFire", commandSource);
+            StringAssert.Contains("TryPlayerSetManualFire(", commandSource);
+            StringAssert.Contains("turret.SetManualFire(", commandSource);
+            StringAssert.Contains("useExplicitTarget: true", commandSource);
+            StringAssert.Contains("float.IsNaN(targetPoint.x)", commandSource);
+
+            StringAssert.Contains(
+                "Stage.MatchSession != null && Stage.MatchSession.IsMultiplayer",
+                inputSource);
+            StringAssert.Contains(
+                "private readonly List<long> _multiplayerManualFireSquadIds",
+                inputSource);
+            StringAssert.Contains(
+                "MultiplayerManualFireUpdateInterval = 0.1f",
+                inputSource);
+            StringAssert.Contains(
+                "return _mousePosition - Level.GetPosition();",
+                inputSource);
+            StringAssert.Contains(
+                "PlayerCommandKind.SetManualFire",
+                inputSource);
+            StringAssert.Contains(
+                "_multiplayerManualFireSquadIds[i]",
+                inputSource);
+
+            StringAssert.Contains("HasExplicitManualFireTarget", turretSource);
+            StringAssert.Contains("ManualFireTargetPoint", turretSource);
+            StringAssert.Contains("IsFiringManually = false;", turretSource);
+            StringAssert.Contains(
+                "HasExplicitManualFireTarget\n                    ? ManualFireTargetPoint",
+                aimingSource);
+        }
+
+        [Test]
+        public void SoloManualFireRetainsLegacyPerFrameMouseAiming()
+        {
+            string inputPath = Path.Combine(
+                Application.dataPath,
+                "Scripts",
+                "Levels",
+                "LevelInputManager.cs");
+            string aimingPath = Path.Combine(
+                Application.dataPath,
+                "Scripts",
+                "Entities",
+                "Ships",
+                "Weapons",
+                "Turret.Aiming.cs");
+            string inputSource = File.ReadAllText(inputPath);
+            string aimingSource = File.ReadAllText(aimingPath);
+
+            StringAssert.Contains("BeginLegacyManualFire();", inputSource);
+            StringAssert.Contains("EndLegacyManualFire();", inputSource);
+            StringAssert.Contains(
+                ": Stage.InputManager.GetMousePosition();",
+                aimingSource);
+        }
     }
 }

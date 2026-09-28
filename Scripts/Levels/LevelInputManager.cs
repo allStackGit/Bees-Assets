@@ -311,16 +311,17 @@ namespace Assets.Scripts.Levels
                 }
             }
 
-            _lastMultiplayerManualFireTarget = _mousePosition;
+            Vector2 targetPoint = GetMultiplayerManualFireTarget();
+            _lastMultiplayerManualFireTarget = targetPoint;
             _nextMultiplayerManualFireUpdateTime =
                 Time.realtimeSinceStartup + MultiplayerManualFireUpdateInterval;
             _isMultiplayerManualFireSession = true;
-            SendMultiplayerManualFire(enabled: true, _mousePosition);
+            SendMultiplayerManualFire(true, targetPoint);
         }
 
         private void EndMultiplayerManualFire()
         {
-            SendMultiplayerManualFire(enabled: false, _mousePosition);
+            SendMultiplayerManualFire(false, GetMultiplayerManualFireTarget());
             _multiplayerManualFireSquadIds.Clear();
             _isMultiplayerManualFireSession = false;
         }
@@ -334,17 +335,23 @@ namespace Assets.Scripts.Levels
                 return;
             }
 
-            Vector2 delta = _mousePosition - _lastMultiplayerManualFireTarget;
+            Vector2 targetPoint = GetMultiplayerManualFireTarget();
+            Vector2 delta = targetPoint - _lastMultiplayerManualFireTarget;
             if (delta.sqrMagnitude <
                 MultiplayerManualFireTargetDistance * MultiplayerManualFireTargetDistance)
             {
                 return;
             }
 
-            SendMultiplayerManualFire(enabled: true, _mousePosition);
-            _lastMultiplayerManualFireTarget = _mousePosition;
+            SendMultiplayerManualFire(true, targetPoint);
+            _lastMultiplayerManualFireTarget = targetPoint;
             _nextMultiplayerManualFireUpdateTime =
                 Time.realtimeSinceStartup + MultiplayerManualFireUpdateInterval;
+        }
+
+        private Vector2 GetMultiplayerManualFireTarget()
+        {
+            return _mousePosition - Level.GetPosition();
         }
 
         private void SendMultiplayerManualFire(bool enabled, Vector2 targetPoint)

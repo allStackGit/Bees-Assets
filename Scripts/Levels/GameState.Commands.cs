@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 using Assets.Scripts.Entities.Ships;
+using Assets.Scripts.Entities.Ships.Weapons;
 using Assets.Scripts.Levels.Commands;
 using Assets.Scripts.Server;
 using Newtonsoft.Json;
@@ -1448,7 +1449,11 @@ namespace Assets.Scripts.Levels
             Vector2 targetPoint)
         {
             Squad squad = GetPlayerCommandSquad(squadCommandId);
-            if (!CanPlayerCommandSquad(playerId, squad))
+            if (!CanPlayerCommandSquad(playerId, squad) ||
+                float.IsNaN(targetPoint.x) ||
+                float.IsInfinity(targetPoint.x) ||
+                float.IsNaN(targetPoint.y) ||
+                float.IsInfinity(targetPoint.y))
             {
                 return false;
             }
