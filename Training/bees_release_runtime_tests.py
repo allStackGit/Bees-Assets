@@ -115,7 +115,7 @@ class ReleaseRuntimeTests(unittest.TestCase):
             )
             installed_root = Path(installed["installed_root"])
             (installed_root / "sitecustomize.py").write_text(
-                "import os\\n",
+                "import os\n",
                 encoding="utf-8",
             )
 
