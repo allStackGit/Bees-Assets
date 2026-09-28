@@ -102,9 +102,9 @@ namespace Bees.Tests.EditMode
                         ("Complete", nextOffset == payload.Length),
                         ("Data", Convert.ToBase64String(chunkBytes)));
 
-                    object[] args = { chunk, descriptor, offset, null, null };
-                    Assert.That((bool)validate.Invoke(null, args), Is.True, args[4] as string);
-                    byte[] validatedBytes = (byte[])args[3];
+                    object[] args = { chunk, descriptor, offset, length, null, null };
+                    Assert.That((bool)validate.Invoke(null, args), Is.True, args[5] as string);
+                    byte[] validatedBytes = (byte[])args[4];
                     reconstructed.Write(validatedBytes, 0, validatedBytes.Length);
                     offset = nextOffset;
                 }
@@ -136,10 +136,10 @@ namespace Bees.Tests.EditMode
                 ("Complete", true),
                 ("Data", Convert.ToBase64String(new byte[] { 1, 2, 3, 4 })));
 
-            object[] args = { staleChunk, descriptor, 0L, null, null };
+            object[] args = { staleChunk, descriptor, 0L, 4, null, null };
             Assert.That((bool)validate.Invoke(null, args), Is.False);
-            Assert.That(args[3], Is.Null);
-            Assert.That(args[4] as string, Does.Contain("deployment"));
+            Assert.That(args[4], Is.Null);
+            Assert.That(args[5] as string, Does.Contain("deployment"));
         }
 
         [Test]
