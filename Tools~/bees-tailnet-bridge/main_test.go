@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/sha256"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -60,8 +62,10 @@ func TestBootstrapHandlerHeadReturnsIdentityWithoutBundleBody(t *testing.T) {
 	if response.Body.Len() != 0 {
 		t.Fatalf("HEAD bootstrap response unexpectedly returned %d body bytes", response.Body.Len())
 	}
-	if got := response.Header().Get("ETag"); got == "" {
-		t.Fatal("HEAD bootstrap response is missing ETag")
+	digest := sha256.Sum256(expected)
+	expectedETag := fmt.Sprintf("\"sha256-%x\"", digest[:])
+	if got := response.Header().Get("ETag"); got != expectedETag {
+		t.Fatalf("unexpected bootstrap ETag %q; expected %q", got, expectedETag)
 	}
 	if got := response.Header().Get("Content-Length"); got != "32" {
 		t.Fatalf("unexpected content length %q", got)
