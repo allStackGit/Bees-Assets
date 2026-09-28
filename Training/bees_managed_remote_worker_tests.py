@@ -915,6 +915,41 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
             ):
                 self.assertEqual(updater._external_launcher_path(), legacy.resolve())
 
+    def test_external_launcher_origin_survives_managed_launcher_takeover(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            install = root / "install"
+            external = root / "Seagrams Crown" / "bees-remote-worker.cmd"
+            external.parent.mkdir(parents=True)
+            external.write_text("@echo off\n", encoding="utf-8")
+
+            first = managed.RuntimeUpdater(
+                Namespace(runtime_archive=str(root / "missing.zip"), launcher_path=""),
+                install,
+            )
+            with mock.patch.dict(
+                managed.os.environ,
+                {"BEES_SELF": str(external)},
+                clear=True,
+            ):
+                self.assertEqual(first._external_launcher_path(), external.resolve())
+
+            managed_launcher = first._managed_launcher_path()
+            managed_launcher.parent.mkdir(parents=True, exist_ok=True)
+            managed_launcher.write_text("@echo off\n", encoding="utf-8")
+            restarted = managed.RuntimeUpdater(
+                Namespace(
+                    runtime_archive=str(root / "missing.zip"),
+                    launcher_path=str(managed_launcher),
+                ),
+                install,
+            )
+            with mock.patch.dict(managed.os.environ, {}, clear=True):
+                self.assertEqual(
+                    restarted._external_launcher_path(),
+                    external.resolve(),
+                )
+
     def test_no_autostart_prevents_managed_launcher_registration(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
