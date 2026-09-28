@@ -24,6 +24,7 @@ import bees_distributed_training as distributed
 
 
 DEFAULT_BASE_PORT = distributed.DEFAULT_BASE_PORT
+MAX_WORKER_ID = 65534  # Base ports start at 1 and worker ports are capped at 65535.
 
 CONTROL_ENV_ARGS_VARIABLE = "BEES_TRAINING_ENV_ARGS_JSON"
 
@@ -65,6 +66,10 @@ def parse_worker_ids(
 ) -> Tuple[int, ...]:
     if not isinstance(value, str) or not value.strip():
         raise ValueError("worker ID list must not be empty")
+    worker_id_limit = min(
+        MAX_WORKER_ID,
+        maximum_worker_id if maximum_worker_id is not None else MAX_WORKER_ID,
+    )
     result = []
     seen = set()
     for token in value.split(","):
@@ -78,17 +83,21 @@ def parse_worker_ids(
             start, end = int(parts[0]), int(parts[1])
             if end < start:
                 raise ValueError(f"worker range must ascend: {token!r}")
-            if maximum_worker_id is not None and end > maximum_worker_id:
+            if end > worker_id_limit:
                 raise ValueError(
-                    f"worker range exceeds the assigned worker IDs: {token!r}"
+                    f"worker range exceeds the maximum allowed worker ID "
+                    f"{worker_id_limit}: {token!r}"
                 )
             values: Iterable[int] = range(start, end + 1)
         else:
             if not token.isdigit():
                 raise ValueError(f"invalid worker ID {token!r}")
             worker_id = int(token)
-            if maximum_worker_id is not None and worker_id > maximum_worker_id:
-                raise ValueError(f"worker ID is not assigned: {worker_id}")
+            if worker_id > worker_id_limit:
+                raise ValueError(
+                    f"worker ID exceeds the maximum allowed worker ID {worker_id_limit}: "
+                    f"{worker_id}"
+                )
             values = (worker_id,)
         for worker_id in values:
             if worker_id < 0:
