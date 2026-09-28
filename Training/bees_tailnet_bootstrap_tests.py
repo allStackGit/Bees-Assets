@@ -227,6 +227,8 @@ class TailnetBootstrapSourceTests(unittest.TestCase):
         self.assertIn("libgtk-3.so.0", linux)
         self.assertIn("libgtk-3-0", linux)
         self.assertIn("gtk3", linux)
+        self.assertIn("optional_root_cmd", linux)
+        self.assertIn("sudo -n true", linux)
         self.assertIn(
             "Unity server training will continue, but AppUI native loading may report errors",
             linux,
