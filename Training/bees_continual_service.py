@@ -27,7 +27,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Dict, Mapping, Optional, Sequence
 
-from bees_process_safety import popen_owned, write_managed_health
+from bees_process_safety import (
+    OWNED_CHILD_TERMINATION_GRACE_SECONDS,
+    close_windows_owned_child_job,
+    popen_owned,
+    write_managed_health,
+)
 
 
 SERVICE_SCHEMA_VERSION = 1
@@ -37,7 +42,7 @@ DEFAULT_NUM_ENVS = 4
 DEFAULT_RETRY_SECONDS = 30.0
 MANAGED_STOP_FILE_ENV = "BEES_TRAINING_STOP_FILE"
 MANAGED_CHILD_POLL_SECONDS = 0.25
-MANAGED_INTERRUPTIBLE_STOP_SECONDS = 5.0
+MANAGED_INTERRUPTIBLE_STOP_SECONDS = OWNED_CHILD_TERMINATION_GRACE_SECONDS + 5.0
 PLATFORM_BUILD_TARGETS = {
     "WindowsPlayer": "StandaloneWindows64",
     "OSXPlayer": "StandaloneOSX",
@@ -397,15 +402,33 @@ def _managed_stop_requested() -> bool:
 def _stop_interruptible_managed_child(process: subprocess.Popen) -> None:
     """Stop non-training phase work that cannot contain newer optimizer state."""
     if process.poll() is not None:
+        if os.name == "nt":
+            close_windows_owned_child_job()
         return
 
     if os.name == "nt":
-        process.terminate()
-    else:
         try:
-            os.killpg(process.pid, signal.SIGTERM)
-        except ProcessLookupError:
-            return
+            process.terminate()
+            try:
+                process.wait(timeout=MANAGED_INTERRUPTIBLE_STOP_SECONDS)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                try:
+                    process.wait(timeout=MANAGED_INTERRUPTIBLE_STOP_SECONDS)
+                except subprocess.TimeoutExpired as exc:
+                    raise RuntimeError(
+                        "interruptible continual-learning phase did not stop after termination"
+                    ) from exc
+        finally:
+            # The root process can exit while descendants remain in the owner's Job Object.
+            # Closing the job retires that complete phase tree before a retry starts.
+            close_windows_owned_child_job()
+        return
+
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        return
 
     try:
         process.wait(timeout=MANAGED_INTERRUPTIBLE_STOP_SECONDS)
@@ -413,13 +436,10 @@ def _stop_interruptible_managed_child(process: subprocess.Popen) -> None:
     except subprocess.TimeoutExpired:
         pass
 
-    if os.name == "nt":
-        process.kill()
-    else:
-        try:
-            os.killpg(process.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            return
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        return
 
     try:
         process.wait(timeout=MANAGED_INTERRUPTIBLE_STOP_SECONDS)
@@ -427,6 +447,59 @@ def _stop_interruptible_managed_child(process: subprocess.Popen) -> None:
         raise RuntimeError(
             "interruptible continual-learning phase did not stop after termination"
         ) from exc
+
+
+def _request_graceful_training_child_stop(process: subprocess.Popen) -> None:
+    """Ask an active trainer to save its checkpoint before abandoning supervision."""
+    if process.poll() is not None:
+        process.wait()
+        if os.name == "nt":
+            close_windows_owned_child_job()
+        return
+
+    stop_file = _managed_stop_file()
+    stop_requested = False
+    if stop_file is not None:
+        try:
+            stop_file.parent.mkdir(parents=True, exist_ok=True)
+            stop_file.write_text("stop\n", encoding="ascii")
+            stop_requested = True
+        except OSError as exc:
+            print(
+                "[Bees continuous] could not write the managed stop file; "
+                f"falling back to a graceful interrupt: {exc}",
+                file=sys.stderr,
+                flush=True,
+            )
+    if not stop_requested:
+        try:
+            if os.name == "nt" and hasattr(signal, "CTRL_BREAK_EVENT"):
+                process.send_signal(signal.CTRL_BREAK_EVENT)
+            else:
+                # POSIX popen_owned is a guardian that forwards SIGINT to the trainer group.
+                process.send_signal(signal.SIGINT)
+        except ProcessLookupError:
+            pass
+        except OSError as exc:
+            print(
+                "[Bees continuous] could not deliver a graceful trainer interrupt; "
+                f"continuing to wait for the owned trainer: {exc}",
+                file=sys.stderr,
+                flush=True,
+            )
+
+    print(
+        "[Bees continuous] waiting for the trainer to finalize checkpoint/model output.",
+        flush=True,
+    )
+    while process.poll() is None:
+        try:
+            time.sleep(MANAGED_CHILD_POLL_SECONDS)
+        except KeyboardInterrupt:
+            continue
+    process.wait()
+    if os.name == "nt":
+        close_windows_owned_child_job()
 
 
 def _run_managed_subprocess(
@@ -447,29 +520,40 @@ def _run_managed_subprocess(
         kwargs["start_new_session"] = True
 
     process = popen_owned(list(command), **kwargs)
-    stop_requested = False
-    while process.poll() is None:
-        if _managed_stop_requested() and not stop_requested:
-            stop_requested = True
-            if interruptible_on_stop:
+    try:
+        stop_requested = False
+        while process.poll() is None:
+            if _managed_stop_requested() and not stop_requested:
+                stop_requested = True
+                if interruptible_on_stop:
+                    print(
+                        "[Bees continuous] managed shutdown requested during durable "
+                        "release/publish work; stopping the active phase.",
+                        flush=True,
+                    )
+                    _stop_interruptible_managed_child(process)
+                    break
                 print(
-                    "[Bees continuous] managed shutdown requested during durable "
-                    "release/publish work; stopping the active phase.",
+                    "[Bees continuous] managed shutdown requested during training; "
+                    "waiting for the trainer to finalize checkpoint/model output.",
                     flush=True,
                 )
-                _stop_interruptible_managed_child(process)
-                break
-            print(
-                "[Bees continuous] managed shutdown requested during training; "
-                "waiting for the trainer to finalize checkpoint/model output.",
-                flush=True,
-            )
-        time.sleep(MANAGED_CHILD_POLL_SECONDS)
+            time.sleep(MANAGED_CHILD_POLL_SECONDS)
 
-    return_code = int(process.wait())
-    if stop_requested or _managed_stop_requested():
-        raise KeyboardInterrupt
-    return return_code
+        return_code = int(process.wait())
+        if os.name == "nt":
+            close_windows_owned_child_job()
+        if stop_requested or _managed_stop_requested():
+            raise KeyboardInterrupt
+        return return_code
+    except BaseException:
+        # The service retries ordinary phase failures while this owner stays alive. Never let
+        # the just-launched phase become an unsupervised sibling of the retry.
+        if interruptible_on_stop:
+            _stop_interruptible_managed_child(process)
+        else:
+            _request_graceful_training_child_stop(process)
+        raise
 
 
 def _run(
