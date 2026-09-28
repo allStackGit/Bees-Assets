@@ -53,6 +53,23 @@ class TrainingControlClientTests(unittest.TestCase):
         ]
         return runtime_root, python_executable, command
 
+    def test_control_transport_error_names_failed_operation(self):
+        client = control.TrainingControlClient(
+            "http://127.0.0.1:7150",
+            "worker-token",
+            timeout=0.01,
+        )
+        with mock.patch.object(
+            control.urllib.request,
+            "urlopen",
+            side_effect=TimeoutError("timed out"),
+        ):
+            with self.assertRaisesRegex(
+                control.ControlUnavailable,
+                r"POST /v1/heartbeat: timed out",
+            ):
+                client.heartbeat({"trainer_id": "remote-seagrams"})
+
     def test_central_runtime_pointer_requires_verified_runtime_and_service(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
