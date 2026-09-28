@@ -462,6 +462,10 @@ if($currentStamp -ne $requirementsHash -or -not $dependenciesOk){
 }
 
 $worker=Join-Path $RuntimeRoot 'bees_managed_remote_worker.py'
+$effectiveLauncherPath=[string]$env:BEES_REMOTE_LAUNCHER_PATH
+if([string]::IsNullOrWhiteSpace($effectiveLauncherPath)){
+    $effectiveLauncherPath=[string]$env:BEES_SELF
+}
 $workerArgs=@(
     $worker,
     '--tailnet-bridge',$tailnetBridge,
@@ -474,7 +478,7 @@ $workerArgs=@(
     '--gameplay-port',[string]$GameplayPort,
     '--install-root',$InstallRoot,
     '--runtime-archive',$runtimeZip,
-    '--launcher-path',$env:BEES_REMOTE_LAUNCHER_PATH,
+    '--launcher-path',$effectiveLauncherPath,
     '--bootstrap-token-file',$bootstrapTokenPath,
     '--worker-token-file',$workerToken,
     '--wan-token-file',$wanToken,
