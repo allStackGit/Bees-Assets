@@ -1,6 +1,5 @@
 using System;
 using System.IO;
-using Assets.Scripts.Entities.Ships.Weapons;
 using NUnit.Framework;
 using UnityEngine;
 
@@ -15,11 +14,19 @@ namespace Bees.Tests.EditMode
         [Test]
         public void BombRejectsNullTargetsLikeOtherWeaponValidators()
         {
+            Type bombType = Type.GetType(
+                "Assets.Scripts.Entities.Ships.Weapons.Bomb, Assembly-CSharp");
+            Assert.That(bombType, Is.Not.Null);
+
             GameObject host = new GameObject("Bomb target validation test");
             try
             {
-                Bomb bomb = host.AddComponent<Bomb>();
-                Assert.That(bomb.IsShipValidTarget(null), Is.False);
+                Component bomb = host.AddComponent(bombType);
+                System.Reflection.MethodInfo validator = bombType.GetMethod(
+                    "IsShipValidTarget",
+                    System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public);
+                Assert.That(validator, Is.Not.Null);
+                Assert.That(validator.Invoke(bomb, new object[] { null }), Is.EqualTo(false));
             }
             finally
             {
