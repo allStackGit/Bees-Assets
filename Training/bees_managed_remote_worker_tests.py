@@ -428,6 +428,27 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
         with mock.patch.object(managed.subprocess, "run", return_value=completed):
             self.assertFalse(managed._python_remote_dependencies_ok(Path("/tmp/python")))
 
+    def test_generated_remote_launchers_pass_the_gameplay_forward_port(self):
+        root = Path(__file__).resolve().parents[1]
+        windows = (root / "Training" / "bees_remote_bootstrap.ps1").read_text(
+            encoding="utf-8"
+        )
+        linux = (root / "Training" / "bees_remote_bootstrap.sh").read_text(
+            encoding="utf-8"
+        )
+        generator = (root / "Training" / "operator" / "tailnet.js").read_text(
+            encoding="utf-8"
+        )
+
+        for source in (windows, linux):
+            self.assertIn("__BEES_GAMEPLAY_PORT__", source)
+            self.assertIn("--gameplay-port", source)
+        self.assertEqual(
+            generator.count("'__BEES_GAMEPLAY_PORT__': String(gameplayPort)"),
+            2,
+        )
+        self.assertIn("GAMEPLAY_SERVER_PORT", generator)
+
     def test_tailnet_transport_includes_gameplay_server_and_child_override(self):
         args = Namespace(
             tailnet_bridge="/tmp/bees-tailnet-bridge",
