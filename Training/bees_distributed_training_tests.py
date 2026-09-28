@@ -11,6 +11,7 @@ from pathlib import Path
 
 import bees_distributed_training as distributed
 import bees_remote_worker as remote
+import bees_continual_distributed_train as continual_distributed
 
 
 class DistributedOptionTests(unittest.TestCase):
@@ -231,6 +232,52 @@ class ExternalWorkerServerTests(unittest.TestCase):
 
     def test_start_failure_stops_partial_server(self):
         self._assert_startup_failure_stops_server("start")
+
+
+class ContinualDistributedWrapperTests(unittest.TestCase):
+    def test_factory_is_restored_when_setup_logging_raises(self):
+        options = type("Options", (), {"enabled": True, "remote_spec": "remote.json"})()
+        original_factory = object()
+        with (
+            patch.object(
+                continual_distributed.distributed,
+                "extract_distributed_options",
+                return_value=(["trainer.yaml"], options),
+            ),
+            patch.object(
+                continual_distributed.continual,
+                "extract_continual_options",
+                return_value=(["trainer.yaml"], object()),
+            ),
+            patch.object(
+                continual_distributed.distributed,
+                "training_topology",
+                return_value=(2, 5005, (1,)),
+            ),
+            patch.object(
+                continual_distributed.distributed,
+                "write_remote_worker_spec",
+                return_value=Path("remote.json"),
+            ),
+            patch.object(
+                continual_distributed.distributed,
+                "install_external_worker_factory",
+                return_value=original_factory,
+            ),
+            patch.object(
+                continual_distributed.distributed,
+                "describe_topology",
+                side_effect=OSError("output closed"),
+            ),
+            patch.object(
+                continual_distributed.distributed,
+                "restore_external_worker_factory",
+            ) as restore_factory,
+        ):
+            with self.assertRaisesRegex(OSError, "output closed"):
+                continual_distributed.main([])
+
+        restore_factory.assert_called_once_with(original_factory)
 
 
 class RemoteWorkerTests(unittest.TestCase):
