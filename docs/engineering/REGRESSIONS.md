@@ -1570,3 +1570,11 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** heartbeat normalization now accepts `applied_revision` only when `Number.isSafeInteger` succeeds; malformed or unsafe revisions become `-1`, which cannot satisfy a pending phase. `trainingControl.module.test.js` adds a focused unsafe-revision case.  
 **Verification:** source and regression coverage were read back and reviewed statically. The test was not run under the static-only audit instruction.  
 **Invariant/knowledge:** rollout acknowledgement revisions must be exact monotonic control revisions; lossy numeric values must fail closed.
+
+### REG-184 — Unsafe throughput totals distorted environment probes
+**Area:** `BeesServer~/trainingEnvOptimizer.js`, learner and producer throughput counter validation  
+**Symptom:** counters outside JavaScript's safe integer range could enter steps-per-second measurements with lost precision, distorting environment-count comparisons and probe decisions.  
+**Root cause:** the shared `finiteInteger` validator used `Number.isInteger`, which accepts integer-valued numbers that JavaScript cannot represent exactly.  
+**Permanent protection:** `finiteInteger` now requires `Number.isSafeInteger`, so optimizer counters and capacity values outside the exact integer range are ignored. `trainingEnvOptimizer.module.test.js` adds unsafe learner-consumed and producer-accepted counter cases.  
+**Verification:** source and focused regression coverage were read back and reviewed statically. The test was not run under the static-only audit instruction.  
+**Invariant/knowledge:** throughput totals must remain exact monotonic integers before they are used in rate calculations.
