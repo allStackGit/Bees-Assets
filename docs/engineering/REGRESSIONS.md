@@ -1372,3 +1372,12 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** `Training/bees_continual_service_tests.py` covers Windows interruptible-stop cleanup and cleanup after the root phase process has already exited. Tests were added but not executed under the static-only request.
 **Verification:** Re-read the Windows Job Object setup, managed subprocess completion path, and regression source through GitHub. No tests, builds, Unity, or runtime checks were run.
 **Invariant/knowledge:** Windows child-tree cleanup must terminate the owning Job Object; terminating or reaping the root process alone does not guarantee descendant exit.
+
+### REG-157 — Rejected WAN trajectory batches must not renew actor leases
+**Area:** `Training/bees_wan_actor_training.py`; base WAN actor broker
+**Symptom:** An authenticated actor could submit a malformed trajectory or a batch rejected by per-actor backpressure and still refresh its lease, leaving the broker to count that actor as live.
+**Root cause:** `submit_trajectory_batch` renewed the registration before validating trajectory identity/shape and before its final queue-admission checks.
+**Fix:** Renew the actor lease only after the batch has passed validation and has been inserted into the trajectory queue.
+**Permanent protection:** `Training/bees_wan_actor_training_tests.py` covers malformed upload rejection, per-actor queue backpressure, and successful admission lease renewal. The test was added but not executed under the static-only audit scope.
+**Verification:** Static review confirmed rejected validation and backpressure paths return before the lease touch, while successful queue insertion renews the lease under the broker condition. No tests, builds, Unity, or runtime checks were run.
+**Invariant/knowledge:** Actor liveness reflects a valid admitted trajectory or a separate valid heartbeat; rejected upload attempts do not extend a lease.
