@@ -333,7 +333,7 @@ test('optimizer holds a recovered worker before probing again after a reported f
     assert.equal(state.probing, true);
 });
 
-test('brief stopped heartbeat during runtime cutover does not trigger stability hold', () => {
+test('unexplained stopped heartbeat is instability even when brief', () => {
     const optimizer = new TrainingEnvOptimizer({
         warmupMs: 0,
         measurementMs: 1_000_000,
@@ -341,23 +341,12 @@ test('brief stopped heartbeat during runtime cutover does not trigger stability 
         instabilityHoldMs: 10_000,
     });
 
-    let state = update(optimizer, 'remote-a', 8, 100, 1000, {
-        max: 16,
-        processState: 'stopped',
-    });
-    assert.notEqual(state.phase, 'stability-hold');
-
-    state = update(optimizer, 'remote-a', 8, 100, 20_000, {
-        max: 16,
-        processState: 'stopped',
-    });
-    assert.notEqual(state.phase, 'stability-hold');
-
-    state = update(optimizer, 'remote-a', 8, 100, 32_000, {
+    const state = update(optimizer, 'remote-a', 8, 100, 1000, {
         max: 16,
         processState: 'stopped',
     });
     assert.equal(state.phase, 'stability-hold');
+    assert.match(state.last_instability_reason, /worker process state stopped/);
 });
 
 test('active reconciliation keeps planned stopped worker out of stability hold', () => {
