@@ -572,23 +572,6 @@ function prepareRemoteBootstrap(config, python, release) {
     // the boundary before it is embedded for remotes.
     removeUtf8BomIfPresent(paths.latestReleasePath);
 
-    const bundle = invokePythonJson(python, [
-        paths.bootstrapBundleScript,
-        '--output', bundleCandidate,
-        '--runtime', releaseRuntimeArchive,
-        '--worker-token', paths.workerTokenPath,
-        '--wan-token', paths.wanTokenPath,
-        '--release', paths.latestReleasePath,
-        '--windows-bridge', windowsBridge,
-        '--linux-bridge', linuxBridge,
-    ]);
-    if (String(bundle.build_id) !== String(release.build_id)) {
-        throw new Error(
-            'Published bootstrap bundle build identity disagrees with release. bundle=' +
-            bundle.build_id + ' release=' + release.build_id
-        );
-    }
-
     let windowsBody = readText(paths.remoteBootstrapTemplate);
     const replacements = {
         '__BEES_TAILNET_LEARNER__': escapePowerShellSingleQuoted(tailnetTarget),
@@ -669,6 +652,8 @@ ${windowsPayload}
 set -euo pipefail
 
 echo "[Bees remote] launching Linux training worker..."
+BEES_REMOTE_LAUNCHER_PATH="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)/$(basename -- "${BASH_SOURCE[0]}")"
+export BEES_REMOTE_LAUNCHER_PATH
 
 have() { command -v "$1" >/dev/null 2>&1; }
 sudo_cmd() {
@@ -719,6 +704,25 @@ exit "$BEES_EXIT"
         throw new Error('Generated Linux remote launcher has an invalid shebang/newline layout.');
     }
     fs.writeFileSync(linuxCandidate, linuxWrapper, 'utf8');
+
+    const bundle = invokePythonJson(python, [
+        paths.bootstrapBundleScript,
+        '--output', bundleCandidate,
+        '--runtime', releaseRuntimeArchive,
+        '--worker-token', paths.workerTokenPath,
+        '--wan-token', paths.wanTokenPath,
+        '--release', paths.latestReleasePath,
+        '--windows-bridge', windowsBridge,
+        '--linux-bridge', linuxBridge,
+        '--windows-launcher', windowsCandidate,
+        '--linux-launcher', linuxCandidate,
+    ]);
+    if (String(bundle.build_id) !== String(release.build_id)) {
+        throw new Error(
+            'Published bootstrap bundle build identity disagrees with release. bundle=' +
+            bundle.build_id + ' release=' + release.build_id
+        );
+    }
 
     atomicReplace(windowsCandidate, path.join(paths.remoteRoot, 'bees-remote-worker.cmd'));
     atomicReplace(linuxCandidate, path.join(paths.remoteRoot, 'bees-remote-worker.sh'));
