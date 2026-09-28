@@ -1510,6 +1510,24 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     last_control_failure_monotonic: Optional[float] = None
     last_control_failure_type = ""
 
+    reconciliation_phase = ""
+    reconciliation_started_monotonic: Optional[float] = None
+
+    def set_reconciliation_phase(phase: str) -> None:
+        nonlocal reconciliation_phase, reconciliation_started_monotonic
+        normalized = str(phase or "").strip()
+        if normalized == reconciliation_phase:
+            return
+        reconciliation_phase = normalized
+        reconciliation_started_monotonic = time.monotonic() if normalized else None
+
+    def metrics_run_id() -> str:
+        if isinstance(desired, Mapping):
+            desired_run_id = str(desired.get("run_id", "") or "").strip()
+            if desired_run_id:
+                return desired_run_id
+        return str(managed.run_id or "").strip()
+
     def worker_capacity() -> dict[str, object]:
         if args.worker_envs is None:
             return {}
@@ -1551,6 +1569,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 ),
                 "last_failure_type": last_control_failure_type,
             }
+        if reconciliation_phase and reconciliation_started_monotonic is not None:
+            snapshot["reconciliation"] = {
+                "phase": reconciliation_phase,
+                "seconds_in_phase": max(
+                    0.0,
+                    time.monotonic() - reconciliation_started_monotonic,
+                ),
+            }
         return snapshot
 
     def request_stop(_signum: int, _frame: object) -> None:
@@ -1570,7 +1596,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             build=active_build,
             prepared_build_id="",
             last_error=last_error,
-            metrics=current_metrics(managed.run_id),
+            metrics=current_metrics(metrics_run_id()),
             environment_id=(
                 environment_args_identity(managed.environment_args)
                 if managed.alive()
@@ -1597,7 +1623,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             build=active_build,
             prepared_build_id="",
             last_error=last_error,
-            metrics=current_metrics(managed.run_id),
+            metrics=current_metrics(metrics_run_id()),
             environment_id=(
                 environment_args_identity(managed.environment_args)
                 if managed.alive()
@@ -1771,12 +1797,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     # active player session merely to install a newer build or command-line config.
                     # If the game is already gone, prepare the canonical next launch immediately.
                     if descriptor and not managed.alive():
+                        set_reconciliation_phase("ensuring canonical build")
                         entrypoint, active_build = builds.ensure(
                             client,
                             descriptor,
                             progress_callback=blocking_keepalive,
                         )
                         desired_sha = str(active_build["archive_sha256"])
+                        set_reconciliation_phase("resolving managed runtime")
                         runtime_command_template = _runtime_launch_template(
                             args.runtime_cutover_pointer,
                             str(active_build["build_id"]),
@@ -1881,6 +1909,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                             or managed.command != tuple(command)
                         )
                         if needs_restart:
+                            set_reconciliation_phase("launching managed actor")
                             managed.start(
                                 command,
                                 revision=revision,
@@ -1918,6 +1947,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                             command=managed.command or command,
                         )
                         applied_revision = revision
+                        set_reconciliation_phase("")
                 else:
                     raise RuntimeError(f"unsupported desired mode {mode!r}")
 
@@ -1953,6 +1983,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         last_error="",
                     )
             except (ControlUnavailable, ControlRejected, OSError, ValueError, RuntimeError) as exc:
+                set_reconciliation_phase("")
                 error_text = f"{type(exc).__name__}: {exc}"
                 if isinstance(exc, (ControlUnavailable, ControlRejected)):
                     control_failures_total += 1
