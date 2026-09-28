@@ -77,6 +77,19 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void ManagedRemoteTrainingCanOverrideGameplayServerThroughLocalTailnetForward()
+        {
+            string source = ReadSource("Scripts", "ConfigData.cs");
+
+            Assert.That(source, Does.Contain("BEES_TRAINING_GAMEPLAY_HOST"));
+            Assert.That(source, Does.Contain("BEES_TRAINING_GAMEPLAY_PORT"));
+            Assert.That(source, Does.Contain("TryGetManagedTrainingGameplayServer"));
+            Assert.That(
+                source,
+                Does.Contain("trainingPort,\n                            trainingHostname,\n                            UseWebSocketSharp"));
+        }
+
+        [Test]
         public void OneVsOneSetupUsesExplicitFleetShipsWithoutArmedTypeRestriction()
         {
             string source = ReadSource("Scripts", "Levels", "Level.RandomSquadSetup.cs");
