@@ -226,6 +226,11 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         self.assertFalse(any(value.startswith("--unity-editor=") for value in argv))
 
     def test_central_supervisor_rejects_legacy_argv_transport_even_when_hash_matches(self):
+        source = read_operator("central.js")
+        self.assertIn(
+            "centralSupervisorLaunchContractMatches(existing, commandHash)",
+            source,
+        )
         node = node_executable()
         if not node:
             self.skipTest("node is not available")
