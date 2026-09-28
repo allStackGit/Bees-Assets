@@ -117,8 +117,10 @@ def _episode_numeric_field(line: str, key: str) -> Optional[float]:
         rf"\b{re.escape(key)}=(-?[0-9]+(?:\.[0-9]+)?)(?:deg|%)?",
         line,
     )
-    return float(match.group(1)) if match else None
-
+    if not match:
+        return None
+    value = float(match.group(1))
+    return value if math.isfinite(value) else None
 
 class EpisodeLogMetrics:
     def __init__(self, root: Path, window: int = 100) -> None:
@@ -213,13 +215,22 @@ class EpisodeLogMetrics:
             if not match:
                 continue
             values = match.groups()
+            try:
+                duration = float(values[2])
+            except (ValueError, OverflowError):
+                # Ignore malformed complete lines instead of letting diagnostics terminate
+                # the training supervisor before its heartbeat error handler.
+                continue
+            if not math.isfinite(duration):
+                continue
+
             timeout = values[1] == "True"
             bee_final = int(values[4])
             human_final = int(values[6])
             self._episodes.append({
                 "episode": int(values[0]),
                 "timeout": timeout,
-                "duration": float(values[2]),
+                "duration": duration,
                 "bee_win": (not timeout and bee_final > 0 and human_final == 0),
                 "human_win": (not timeout and human_final > 0 and bee_final == 0),
                 "bee_shots": int(values[8]),
