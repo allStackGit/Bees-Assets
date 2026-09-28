@@ -165,9 +165,7 @@ class ExternalWorkerServerTests(unittest.TestCase):
 
         fake_server = Mock()
         fake_server.add_insecure_port.return_value = 0
-        if failure_point == "bind":
-            fake_server.add_insecure_port.return_value = 0
-        elif failure_point == "start":
+        if failure_point == "start":
             fake_server.add_insecure_port.return_value = 5005
             fake_server.start.side_effect = RuntimeError("start failed")
 
@@ -177,6 +175,7 @@ class ExternalWorkerServerTests(unittest.TestCase):
         register_servicer = Mock()
         if failure_point == "registration":
             register_servicer.side_effect = RuntimeError("registration failed")
+            fake_server.stop.side_effect = RuntimeError("stop failed")
         proto_module.add_UnityToExternalProtoServicer_to_server = register_servicer
         rpc_module = ModuleType("mlagents_envs.rpc_communicator")
         rpc_module.UnityToExternalServicerImplementation = Mock(return_value=object())
@@ -210,10 +209,16 @@ class ExternalWorkerServerTests(unittest.TestCase):
             "concurrent.futures.ThreadPoolExecutor"
         ):
             communicator = CommunicatorHarness()
-            with self.assertRaises(worker_in_use):
+            with self.assertRaises(worker_in_use) as failure:
                 communicator.create_server()
 
         self.assertEqual(communicator.asserted_port, 5005)
+        expected_cause = {
+            "registration": "registration failed",
+            "bind": "could not bind loopback",
+            "start": "start failed",
+        }[failure_point]
+        self.assertIn(expected_cause, str(failure.exception.__cause__))
         self.assertIsNone(communicator.server)
         self.assertFalse(communicator.is_open)
         fake_server.stop.assert_called_once_with(0)
