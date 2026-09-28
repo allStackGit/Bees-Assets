@@ -14,7 +14,6 @@ None currently confirmed. The active audit continues; resolved findings have bee
 
 - REG-144 rejects boolean byte offsets and malformed non-object HTTP 409 response bodies in the training log client, preventing offset 1 from being inferred from `true` and keeping malformed conflicts within controlled protocol rejection. This production change resets the post-fix clean-pass count to **0 / 2**. Static source review only; no tests or runtime checks were run.
 
-
 - REG-143 makes both training log readers verify that an opened handle still has the identity observed before selecting its cached cursor. This closes a stat/open rotation race that could misattribute episode metrics or append a replacement generation at the prior upload offset. This production change resets the post-fix clean-pass count to **0 / 2**. Static source review only; no tests or runtime checks were run.
 
 - REG-142 adds an enemy-side guard at the shared weapon target validator, preserving the enemy-only rule even if a caller supplies a friendly candidate or range-cache ownership regresses. This production change resets the post-fix clean-pass count to **0 / 2**. Static source review only; no tests or runtime checks were run.
