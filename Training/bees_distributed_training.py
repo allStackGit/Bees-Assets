@@ -314,21 +314,31 @@ class _LoopbackRpcCommunicatorMixin:
         from mlagents_envs.exception import UnityWorkerInUseException
 
         self.check_port(self.port)
+        server = None
         try:
-            self.server = grpc.server(
+            server = grpc.server(
                 thread_pool=ThreadPoolExecutor(max_workers=10),
                 options=(("grpc.so_reuseport", 1),),
             )
+            self.server = server
             self.unity_to_external = UnityToExternalServicerImplementation()
-            add_UnityToExternalProtoServicer_to_server(self.unity_to_external, self.server)
-            bound_port = self.server.add_insecure_port("127.0.0.1:" + str(self.port))
+            add_UnityToExternalProtoServicer_to_server(self.unity_to_external, server)
+            bound_port = server.add_insecure_port("127.0.0.1:" + str(self.port))
             if bound_port != self.port:
                 raise RuntimeError(
                     f"ML-Agents external worker could not bind loopback port {self.port}."
                 )
-            self.server.start()
+            server.start()
             self.is_open = True
         except Exception as exc:
+            self.is_open = False
+            self.server = None
+            if server is not None:
+                try:
+                    server.stop(0)
+                except Exception:
+                    # Preserve the startup failure that the ML-Agents caller needs to diagnose.
+                    pass
             raise UnityWorkerInUseException(self.worker_id) from exc
 
 
