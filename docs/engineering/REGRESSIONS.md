@@ -1209,3 +1209,12 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** Both readers must remain bounded, reject once, and avoid destroying the socket before the oversized-body response is sent. An over-limit HTTP regression should assert status 413 and connection closure for both JSON and raw-body routes; it was not added under the static code-analysis-only request.
 **Verification:** Statically traced the overflow event, promise rejection, handler catch, response headers/body, and post-response request destruction for both readers. No tests, builds, services, or runtime checks were run.
 **Invariant/knowledge:** HTTP request rejection should preserve the intended client-visible status when the connection can still carry an error response; close the connection only after that response is ended.
+
+### REG-139 — Late stale-upload response could stall a synchronized WAN actor
+**Area:** `Training/bees_wan_actor_worker.py`, `WanActorWorker._synchronize_state`
+**Symptom:** A WAN actor could remain in a tight synchronization loop and stop advancing Unity environments after a late stale-policy/control response from its upload thread.
+**Root cause:** Another thread could complete state synchronization first, then the in-flight upload could set `_stale`. The next synchronization fetched the already-current broker state and returned through the no-change branch without clearing `_stale` (or `_state_changed`), so the main loop retried synchronization forever.
+**Fix:** When the broker snapshot confirms both control and policy versions already match local state, the no-change branch now updates the policy epoch and clears both synchronization signals before returning.
+**Permanent protection:** A confirmed no-change synchronization must release pending stale/state-change signals; a late stale response for an already-discarded batch must not stop subsequent environment stepping. A deterministic regression case for the late-response ordering is missing and was not added under the static-analysis-only request.
+**Verification:** Statically traced the actor main loop, upload retry/error signaling, watcher synchronization handshake, and the no-change return path. No tests, builds, Unity, or training runs were performed.
+**Invariant/knowledge:** When asynchronous components report a stale state, resolve the signal against an authoritative current snapshot; if that snapshot already matches, clear the signal so the owner can resume.
