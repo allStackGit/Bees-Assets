@@ -2118,3 +2118,4 @@
 [Bees WAN capacity] remote_actors=0 remote_envs=0 trainer_steps_per_sec=warming remote_rollout_steps_per_sec=0.0 queue=0/32 backpressure_total=0 backpressure_60s=0 backpressure_per_min=0.0.
 [Bees continuous] managed shutdown requested; waiting for the active phase to finalize checkpoint/model output.
 [INFO] Learning was interrupted. Please wait while the graph is generated.
+[Bees control] supervisor shutdown requested; finalizing managed learner.
