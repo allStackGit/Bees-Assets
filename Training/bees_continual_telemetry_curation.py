@@ -39,15 +39,9 @@ def _required_text(value: object, label: str, maximum: int) -> str:
 
 
 def _positive_integer(value: object, label: str) -> int:
-    if isinstance(value, bool):
+    if type(value) is not int or value <= 0:
         raise ValidationError(f"{label} must be a positive integer.")
-    try:
-        parsed = int(value)
-    except (TypeError, ValueError) as exc:
-        raise ValidationError(f"{label} must be a positive integer.") from exc
-    if parsed <= 0 or (isinstance(value, float) and not value.is_integer()):
-        raise ValidationError(f"{label} must be a positive integer.")
-    return parsed
+    return value
 
 
 def _max_batches_per_contributor(store: ContinualLearningStore) -> int:
