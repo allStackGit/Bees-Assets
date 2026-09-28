@@ -268,9 +268,19 @@ def _load_state(path: Path) -> Optional[dict[str, Any]]:
     value = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(value, dict) or value.get("schema_version") != SCHEMA_VERSION:
         raise ValueError(f"training run lifecycle state is incompatible: {path}")
-    if not isinstance(value.get("run_id"), str) or not value["run_id"]:
-        raise ValueError(f"training run lifecycle state has no run_id: {path}")
-    if not isinstance(value.get("compatibility_key"), str) or len(value["compatibility_key"]) != 64:
+    run_id = value.get("run_id")
+    if (
+        not isinstance(run_id, str)
+        or not run_id
+        or run_id in {".", ".."}
+        or re.fullmatch(r"[A-Za-z0-9._-]+", run_id) is None
+    ):
+        raise ValueError(f"training run lifecycle state has unsafe run_id: {path}")
+    compatibility_key = value.get("compatibility_key")
+    if (
+        not isinstance(compatibility_key, str)
+        or re.fullmatch(r"[0-9a-f]{64}", compatibility_key) is None
+    ):
         raise ValueError(f"training run lifecycle state has invalid compatibility_key: {path}")
     return value
 
