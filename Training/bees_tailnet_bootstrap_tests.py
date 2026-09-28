@@ -185,6 +185,23 @@ class TailnetBootstrapSourceTests(unittest.TestCase):
         self.assertIn("'--linux-launcher', linuxCandidate", operator_node)
         self.assertIn("BEES_REMOTE_LAUNCHER_PATH", operator_node)
 
+    def test_remote_start_registers_reboot_persistence_and_stop_removes_it(self):
+        windows = WINDOWS_TEMPLATE.read_text(encoding="utf-8")
+        linux = LINUX_TEMPLATE.read_text(encoding="utf-8")
+
+        self.assertIn("Install-RemoteAutostart", windows)
+        self.assertIn("Remove-RemoteAutostart", windows)
+        self.assertIn("GetFolderPath('Startup')", windows)
+        self.assertIn("BEES_REMOTE_LAUNCHER_PATH", windows)
+        self.assertIn("[switch]$NoAutostart", windows)
+
+        self.assertIn("install_remote_autostart", linux)
+        self.assertIn("remove_remote_autostart", linux)
+        self.assertIn("bees-training-worker.service", linux)
+        self.assertIn("systemctl --user enable", linux)
+        self.assertIn("loginctl enable-linger", linux)
+        self.assertIn("--no-autostart", linux)
+
     def test_tailnet_helper_exposes_private_gateway_bootstrap_and_multi_forward(self):
         source = TAILNET_MAIN.read_text(encoding="utf-8")
         for command in ('case "auth":', 'case "gateway":', 'case "fetch":', 'case "forward-multi":'):
