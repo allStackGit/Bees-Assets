@@ -549,6 +549,15 @@ def _request_graceful_training_child_stop(process: subprocess.Popen) -> None:
                 os.killpg(process.pid, signal.SIGINT)
         except ProcessLookupError:
             pass
+        except OSError as exc:
+            # Never abandon an active optimizer because the graceful signal failed.
+            # Keep this owner attached until the child exits naturally.
+            print(
+                "[Bees continuous] could not deliver a graceful trainer interrupt; "
+                f"continuing to wait for the owned trainer: {exc}",
+                file=sys.stderr,
+                flush=True,
+            )
 
     print(
         "[Bees continuous] waiting for the trainer to finalize checkpoint/model output.",
