@@ -3,7 +3,8 @@ param(
     [string]$Command='start',
     [int]$Envs=0,
     [string]$InstallRoot='',
-    [string]$TorchDevice=''
+    [string]$TorchDevice='',
+    [switch]$NoAutostart
 )
 
 Set-StrictMode -Version Latest
@@ -72,6 +73,36 @@ foreach($path in @($InstallRoot,$RuntimeRoot,$SecretsRoot,$DownloadsRoot,$Tailne
     $null=New-Item -ItemType Directory -Force -Path $path
 }
 
+$StartupRoot=[Environment]::GetFolderPath('Startup')
+$AutostartFile=if($StartupRoot){Join-Path $StartupRoot 'BeesTrainingRemoteWorker.cmd'}else{''}
+
+function Remove-RemoteAutostart {
+    if($AutostartFile){
+        Remove-Item -LiteralPath $AutostartFile -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Install-RemoteAutostart {
+    if($NoAutostart){
+        Remove-RemoteAutostart
+        return
+    }
+    $launcherPath=[string]$env:BEES_REMOTE_LAUNCHER_PATH
+    if([string]::IsNullOrWhiteSpace($launcherPath) -or -not(Test-Path -LiteralPath $launcherPath)){
+        Write-Warning '[Bees remote] copied launcher path is unavailable; reboot autostart could not be registered.'
+        return
+    }
+    if(-not $AutostartFile){
+        Write-Warning '[Bees remote] Windows Startup folder is unavailable; reboot autostart could not be registered.'
+        return
+    }
+    $args=@('start','-InstallRoot',('"' + $InstallRoot + '"'),'-TorchDevice',('"' + $TorchDevice + '"'))
+    if($Envs -gt 0){$args+=@('-Envs',[string]$Envs)}
+    $line='@echo off' + [Environment]::NewLine +
+        'call "' + $launcherPath + '" ' + ($args -join ' ') + [Environment]::NewLine
+    [IO.File]::WriteAllText($AutostartFile,$line,(New-Object Text.UTF8Encoding($false)))
+}
+
 function Get-RecordedSupervisorPid {
     if(-not(Test-Path -LiteralPath $SupervisorPidFile)){return 0}
     $value=(Get-Content -LiteralPath $SupervisorPidFile -Raw -ErrorAction SilentlyContinue).Trim()
@@ -102,6 +133,7 @@ function Get-LiveSupervisorProcess {
 }
 
 if($Command -eq 'stop'){
+    Remove-RemoteAutostart
     $process=Get-LiveSupervisorProcess
     if($null -eq $process){
         Remove-Item -LiteralPath $SupervisorPidFile,$ShutdownRequestFile -Force -ErrorAction SilentlyContinue
@@ -125,6 +157,7 @@ if($Command -eq 'stop'){
 
 $existingProcess=Get-LiveSupervisorProcess
 if($null -ne $existingProcess){
+    Install-RemoteAutostart
     Write-Host "[Bees remote] worker is already running in the background (PID $($existingProcess.Id))."
     Write-Host '[Bees remote] use bees-remote-worker.cmd stop to stop it.'
     exit 0
@@ -380,6 +413,7 @@ while([DateTime]::UtcNow -lt $startupDeadline){
     Start-Sleep -Milliseconds 250
 }
 
+Install-RemoteAutostart
 Write-Host "[Bees remote] supervisor started in the background (PID $($process.Id))."
 if($startupState -like '*not reachable*'){
     Write-Warning "[Bees remote] startup state: $startupState"
