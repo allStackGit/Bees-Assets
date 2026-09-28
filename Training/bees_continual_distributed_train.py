@@ -24,28 +24,28 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     )
 
     original_factory = None
-    if options.enabled:
-        spec_path = distributed.write_remote_worker_spec(
-            options.remote_spec,
-            mlagents_args,
-            base_port=base_port,
-            worker_ids=external_worker_ids,
-        )
-        original_factory = distributed.install_external_worker_factory(
-            total_envs=total_envs,
-            external_worker_ids=external_worker_ids,
-        )
-        print(
-            "[Bees distributed] "
-            + distributed.describe_topology(base_port, total_envs, external_worker_ids)
-        )
-        print(f"[Bees distributed] remote_session_spec={spec_path}")
-        print(
-            "[Bees distributed] One central PPO learner owns optimizer/checkpoints; "
-            "external machines contribute ordinary fresh ML-Agents rollouts pinned by the session spec."
-        )
-
     try:
+        if options.enabled:
+            spec_path = distributed.write_remote_worker_spec(
+                options.remote_spec,
+                mlagents_args,
+                base_port=base_port,
+                worker_ids=external_worker_ids,
+            )
+            original_factory = distributed.install_external_worker_factory(
+                total_envs=total_envs,
+                external_worker_ids=external_worker_ids,
+            )
+            print(
+                "[Bees distributed] "
+                + distributed.describe_topology(base_port, total_envs, external_worker_ids)
+            )
+            print(f"[Bees distributed] remote_session_spec={spec_path}")
+            print(
+                "[Bees distributed] One central PPO learner owns optimizer/checkpoints; "
+                "external machines contribute ordinary fresh ML-Agents rollouts pinned by the session spec."
+            )
+
         return continual.main(trainer_args)
     finally:
         distributed.restore_external_worker_factory(original_factory)
