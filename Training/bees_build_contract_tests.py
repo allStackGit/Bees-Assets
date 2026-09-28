@@ -225,6 +225,39 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         self.assertEqual(argv[index + 1], spaced)
         self.assertFalse(any(value.startswith("--unity-editor=") for value in argv))
 
+    def test_central_supervisor_rejects_legacy_argv_transport_even_when_hash_matches(self):
+        node = node_executable()
+        if not node:
+            self.skipTest("node is not available")
+        central = OPERATOR_ROOT / "central.js"
+        script = (
+            "const c=require(process.argv[1]);"
+            "const h='same-command-hash';"
+            "const legacy={command_hash:h,runtime_cutover_capable:true,"
+            "argv_transport:'legacy-powershell-string-v1'};"
+            "const current={command_hash:h,runtime_cutover_capable:true,"
+            "argv_transport:'node-spawn-array-v1'};"
+            "process.stdout.write(JSON.stringify({"
+            "legacy:c.centralSupervisorLaunchContractMatches(legacy,h),"
+            "current:c.centralSupervisorLaunchContractMatches(current,h),"
+            "wrongHash:c.centralSupervisorLaunchContractMatches(current,'other')"
+            "}));"
+        )
+        completed = subprocess.run(
+            [node, "-e", script, str(central)],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+        self.assertEqual(completed.returncode, 0, msg=completed.stderr)
+        result = json.loads(completed.stdout)
+        self.assertEqual(
+            result,
+            {"legacy": False, "current": True, "wrongHash": False},
+        )
+
     def test_server_restart_reconciles_persisted_active_training(self):
         source = read_operator("commands.js")
         helper_start = source.index(
