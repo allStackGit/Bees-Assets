@@ -156,6 +156,29 @@ test('one user cannot fork an active match identity across reconnects', async t 
     );
 });
 
+test('identical telemetry upload resumes from its durable offset after reconnect', async t => {
+    const { manager, context } = await fixture(t, { maxChunkBytes: 64 });
+    const bytes = payloadBytes();
+    const first = await manager.handle(beginRequest(bytes), context);
+    const firstChunk = bytes.subarray(0, 64);
+    await manager.handle(chunkRequest(first.UploadId, 0, firstChunk), context);
+
+    const reconnectedContext = { userId: context.userId, connectionId: '18' };
+    const resumed = await manager.handle(beginRequest(bytes), reconnectedContext);
+    assert.equal(resumed.UploadId, first.UploadId);
+    assert.equal(resumed.NextOffset, firstChunk.length);
+
+    for (let offset = resumed.NextOffset; offset < bytes.length; offset += resumed.ChunkBytes) {
+        const chunk = bytes.subarray(offset, Math.min(bytes.length, offset + resumed.ChunkBytes));
+        await manager.handle(chunkRequest(resumed.UploadId, offset, chunk), reconnectedContext);
+    }
+    const completed = await manager.handle(
+        { Type: 'rl-telemetry-complete', UploadId: resumed.UploadId },
+        reconnectedContext,
+    );
+    assert.equal(completed.Completed, true);
+});
+
 test('incompatible policy is rejected before a partial file is allocated', async t => {
     const { root, manager, context } = await fixture(t);
     const bytes = payloadBytes();
