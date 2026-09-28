@@ -632,9 +632,19 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         self.assertIn("Time Elapsed", status)
         self.assertIn("replace(/,/g, '')", status)
         self.assertIn("registered candidate ... step=1144671", status)
+        main_start = learner.index("def main() -> None:")
+        live_log_install = learner.index(
+            "live_log_streams = _install_managed_live_log()",
+            main_start,
+        )
+        main_mlagents_import = learner.index(
+            "    import mlagents.trainers",
+            live_log_install,
+        )
         self.assertLess(
-            learner.index("live_log_streams = _install_managed_live_log()"),
-            learner.index("import mlagents.trainers"),
+            live_log_install,
+            main_mlagents_import,
+            "the managed learner log tee must be installed before main() imports ML-Agents and configures logging",
         )
         authoritative = status.index("if (authoritative.Step !== null) return authoritative;")
         fallback = status.index("const operatorLogRoot = path.join(paths.logsRoot, 'Training');")
