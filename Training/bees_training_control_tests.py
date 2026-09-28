@@ -262,6 +262,26 @@ class TrainingControlClientTests(unittest.TestCase):
         self.assertEqual(builds.checks, 1)
         self.assertEqual(preparer.prepared_build_id, "build-a")
 
+    def test_background_build_wait_reports_prepare_failure(self):
+        class FailedBuilds:
+            def is_prepared(self, _descriptor):
+                return False
+
+            def prepare(self, _client, _descriptor):
+                raise RuntimeError("artifact download failed")
+
+        preparer = agent.BackgroundBuildPreparer(FailedBuilds(), client=object())
+        descriptor = {
+            "role": "dedicated",
+            "platform": "LinuxPlayer",
+            "build_id": "build-failed",
+            "archive_sha256": "b" * 64,
+        }
+        preparer.request(descriptor)
+
+        self.assertFalse(preparer.wait_for_build(descriptor))
+        self.assertIn("artifact download failed", preparer.last_error)
+
     def test_worker_control_requests_fail_fast_inside_server_lease(self):
         self.assertEqual(
             agent._parser().get_default("request_timeout_seconds"),
