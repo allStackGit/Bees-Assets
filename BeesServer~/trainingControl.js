@@ -1046,6 +1046,16 @@ class TrainingControlStore {
         if (typeof incompatible !== 'boolean') {
             throw Object.assign(new Error('incompatible must be boolean'), { statusCode: 400 });
         }
+        const compatibilityChanged = Boolean(this.state.canonical_build_id) && (
+            runId !== this.state.run_id ||
+            compatibilityKey !== this.state.compatibility_key
+        );
+        if (compatibilityChanged && !incompatible) {
+            throw Object.assign(
+                new Error(
+                    'a changed run or compatibility identity requires an incompatible stop-barrier rollout'),
+                { statusCode: 409 });
+        }
         let expectedSupersededBuildId = null;
         if (supersedeCompatibleBuildId !== undefined && supersedeCompatibleBuildId !== null) {
             expectedSupersededBuildId = requireString(
