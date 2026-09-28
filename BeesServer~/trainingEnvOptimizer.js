@@ -12,7 +12,7 @@ const DEFAULT_MIN_IMPROVEMENT_RATIO = 0.03;
 const DEFAULT_REGRESSION_RATIO = 0.05;
 
 function finiteInteger(value) {
-    return Number.isInteger(value) && !Number.isNaN(value);
+    return Number.isSafeInteger(value);
 }
 
 function normalizeCapacity(value) {
@@ -416,7 +416,11 @@ class TrainingEnvOptimizer {
             capacity && capacity.auto;
 
         if (!capacity) {
-            this._releaseProbe(record && record.trainer_id);
+            const trainerId = record && record.trainer_id;
+            this._releaseProbe(trainerId);
+            if (typeof trainerId === 'string' && trainerId) {
+                this.states.delete(trainerId);
+            }
             return null;
         }
 
@@ -556,6 +560,10 @@ class TrainingEnvOptimizer {
                 processState !== 'running' &&
                 !expectedTransition) ||
             Boolean(optimizerError);
+        const probeRollbackPending =
+            this.activeProbeTrainerId === state.trainer_id &&
+            state.baseline_envs !== null &&
+            capacity.current_envs !== state.baseline_envs;
         const workerUnstable = currentProcessFailure || recentSessionFailure;
         if (workerUnstable) {
             if (recentSessionFailure && newSessionFailure && !probingAwayFromBaseline) {
@@ -601,7 +609,7 @@ class TrainingEnvOptimizer {
                 state.instability_hold_until_ms,
                 holdUntil,
             );
-            if (probingAwayFromBaseline) {
+            if (probingAwayFromBaseline || probeRollbackPending) {
                 this._abortProbe(
                     state,
                     capacity,
