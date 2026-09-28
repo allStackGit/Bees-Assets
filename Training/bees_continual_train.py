@@ -896,7 +896,19 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         f"[Bees continual] root={store.root} run_id={run_id} "
         f"parent_model_id={parent_model_id or 'none'} results={results_run_dir}"
     )
-    monitor.start()
+    try:
+        monitor.start()
+    except BaseException:
+        if historical_patch is not None:
+            try:
+                historical_patch.restore()
+            except Exception as cleanup_error:
+                print(
+                    "[Bees continual] historical-opponent cleanup failed after monitor startup error: "
+                    f"{type(cleanup_error).__name__}: {cleanup_error}",
+                    file=sys.stderr,
+                )
+        raise
 
     original_argv = sys.argv
     try:
