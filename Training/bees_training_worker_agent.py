@@ -506,14 +506,22 @@ def render_command(
 
 
 class BackgroundBuildPreparer:
+    IDENTITY_FIELDS = ("role", "platform", "build_id", "archive_sha256")
+
     def __init__(self, builds: ManagedBuildStore, client: TrainingControlClient) -> None:
         self.builds = builds
         self.client = client
         self._lock = threading.Lock()
         self._thread: Optional[threading.Thread] = None
         self._requested_build_id = ""
+        self._requested_identity: Optional[tuple[str, ...]] = None
+        self._prepared_identity: Optional[tuple[str, ...]] = None
         self.prepared_build_id = ""
         self.last_error = ""
+
+    @classmethod
+    def _identity(cls, descriptor: Mapping[str, Any]) -> tuple[str, ...]:
+        return tuple(str(descriptor.get(key, "")) for key in cls.IDENTITY_FIELDS)
 
     def request(self, descriptor: Optional[Mapping[str, Any]]) -> None:
         if not descriptor:
@@ -521,25 +529,33 @@ class BackgroundBuildPreparer:
         build_id = str(descriptor.get("build_id", ""))
         if not build_id:
             return
+        identity = self._identity(descriptor)
+        with self._lock:
+            if self._prepared_identity == identity:
+                return
+            if self._prepared_identity != identity:
+                self._prepared_identity = None
+                self.prepared_build_id = ""
+            if self._thread is not None and self._thread.is_alive():
+                return
+
         try:
             if self.builds.is_prepared(descriptor):
                 with self._lock:
+                    self._prepared_identity = identity
                     self.prepared_build_id = build_id
                     self.last_error = ""
                 return
         except (OSError, ValueError) as exc:
             with self._lock:
-                if self.prepared_build_id == build_id:
-                    self.prepared_build_id = ""
                 self.last_error = f"{type(exc).__name__}: {exc}"
             return
 
         with self._lock:
-            if self.prepared_build_id == build_id:
-                self.prepared_build_id = ""
             if self._thread is not None and self._thread.is_alive():
                 return
             self._requested_build_id = build_id
+            self._requested_identity = identity
             self.last_error = ""
             payload = dict(descriptor)
             self._thread = threading.Thread(
@@ -558,10 +574,11 @@ class BackgroundBuildPreparer:
         poll_seconds: float = 1.0,
     ) -> bool:
         build_id = str(descriptor.get("build_id", ""))
+        identity = self._identity(descriptor)
         with self._lock:
-            if self.prepared_build_id == build_id:
+            if self._prepared_identity == identity:
                 return True
-            thread = self._thread if self._requested_build_id == build_id else None
+            thread = self._thread if self._requested_identity == identity else None
             if thread is None and self._thread is not None and self._thread.is_alive():
                 # A different build is still preparing. Let the supervisor heartbeat and
                 # reconcile desired state instead of falling through to a synchronous download.
@@ -581,9 +598,11 @@ class BackgroundBuildPreparer:
 
     def _prepare(self, descriptor: Mapping[str, Any]) -> None:
         build_id = str(descriptor.get("build_id", ""))
+        identity = self._identity(descriptor)
         try:
             self.builds.prepare(self.client, descriptor)
             with self._lock:
+                self._prepared_identity = identity
                 self.prepared_build_id = build_id
                 self.last_error = ""
         except Exception as exc:
