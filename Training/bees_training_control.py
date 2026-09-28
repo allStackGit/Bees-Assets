@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import re
 import shutil
@@ -96,9 +97,10 @@ class TrainingControlClient:
                 return dict(response.headers.items()), response.read()
         except urllib.error.HTTPError as exc:
             raw = exc.read().decode("utf-8", errors="replace")
-            raise ControlRejected(
-                f"training control rejected {method} {path}: HTTP {exc.code}: {raw}"
-            ) from exc
+            message = f"training control HTTP {exc.code} for {method} {path}: {raw}"
+            if exc.code in (408, 425, 429) or exc.code >= 500:
+                raise ControlUnavailable(message) from exc
+            raise ControlRejected(message) from exc
         except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as exc:
             raise ControlUnavailable(f"{method} {path}: {exc}") from exc
 
@@ -121,8 +123,19 @@ class TrainingControlClient:
         env_optimizer = value.get("env_optimizer")
         if not isinstance(revision, int) or isinstance(revision, bool) or revision < 0:
             raise ControlRejected("training-control revision is invalid")
-        if not isinstance(lease_seconds, (int, float)) or isinstance(lease_seconds, bool) or lease_seconds <= 0:
+        if (
+            not isinstance(lease_seconds, (int, float))
+            or isinstance(lease_seconds, bool)
+        ):
             raise ControlRejected("training-control lease_seconds is invalid")
+        try:
+            normalized_lease_seconds = float(lease_seconds)
+        except (OverflowError, ValueError) as exc:
+            raise ControlRejected("training-control lease_seconds is invalid") from exc
+        if not math.isfinite(normalized_lease_seconds) or normalized_lease_seconds <= 0:
+            raise ControlRejected("training-control lease_seconds is invalid")
+        value = dict(value)
+        value["lease_seconds"] = normalized_lease_seconds
         if not isinstance(environment_args, list) or any(
             not isinstance(item, str) for item in environment_args
         ):
@@ -198,17 +211,36 @@ class TrainingControlClient:
                     value = json.loads(raw)
                 except json.JSONDecodeError:
                     value = {}
+                if not isinstance(value, Mapping):
+                    value = {}
                 expected = value.get("expected_offset")
-                if isinstance(expected, int) and expected >= 0:
+                if (
+                    isinstance(expected, int)
+                    and not isinstance(expected, bool)
+                    and expected >= 0
+                ):
                     return -expected - 1
+            if exc.code in (408, 425, 429) or exc.code >= 500:
+                raise ControlUnavailable(
+                    f"training-control HTTP {exc.code}: {raw}"
+                ) from exc
             raise ControlRejected(
                 f"training log upload failed: HTTP {exc.code}: {raw}"
             ) from exc
         except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as exc:
             raise ControlUnavailable(str(exc)) from exc
         next_offset = value.get("next_offset") if isinstance(value, Mapping) else None
-        if not isinstance(next_offset, int) or next_offset < 0:
+        if (
+            not isinstance(next_offset, int)
+            or isinstance(next_offset, bool)
+            or next_offset < 0
+        ):
             raise ControlRejected("training log upload returned invalid next_offset")
+        expected_next_offset = len(data) if reset else int(offset) + len(data)
+        if next_offset != expected_next_offset:
+            raise ControlRejected(
+                "training log upload returned an unexpected next_offset"
+            )
         return next_offset
 
 
