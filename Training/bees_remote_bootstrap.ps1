@@ -311,6 +311,7 @@ $workerArgs=@(
     '--gameplay-port',[string]$GameplayPort,
     '--install-root',$InstallRoot,
     '--runtime-archive',$runtimeZip,
+    '--launcher-path',$env:BEES_REMOTE_LAUNCHER_PATH,
     '--bootstrap-token-file',$bootstrapTokenPath,
     '--worker-token-file',$workerToken,
     '--wan-token-file',$wanToken,
