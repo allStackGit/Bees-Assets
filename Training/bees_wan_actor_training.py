@@ -26,6 +26,7 @@ import json
 import pickle
 import queue
 import secrets
+import sys
 import threading
 import time
 import urllib.parse
@@ -359,6 +360,7 @@ class WanActorBroker:
         self._cohort_blocked_actors = set()
         self._server: Optional[http.server.ThreadingHTTPServer] = None
         self._server_thread: Optional[threading.Thread] = None
+        self._server_started_once = False
 
     def session_payload(self) -> Mapping[str, Any]:
         return {
@@ -579,6 +581,7 @@ class WanActorBroker:
             daemon=True,
         )
         self._server_thread.start()
+        self._server_started_once = True
         print(
             f"[Bees WAN] actor broker listening only on 127.0.0.1:{self.options.broker_port}; "
             "remote machines must use the managed authenticated private forward."
@@ -587,6 +590,10 @@ class WanActorBroker:
     def ensure_server_alive(self) -> None:
         if self._closed:
             raise RuntimeError("WAN actor broker is closed")
+        # Direct broker/unit use may intentionally never bind the HTTP endpoint. Only heal
+        # a server that this broker instance previously started.
+        if not self._server_started_once:
+            return
         if (
             self._server is not None
             and self._server_thread is not None
@@ -842,13 +849,13 @@ class WanActorBroker:
             ) from exc
 
     def next_trajectory_cohort(self, timeout_seconds: float) -> Tuple[Mapping[str, Any], ...]:
-        self.ensure_server_alive()
         """Return current-policy batches from at least min_actors distinct actor machines.
 
         Actors already selected for a cohort receive HTTP backpressure until the learner consumes the
         cohort. This prevents one low-latency machine from filling the entire central queue while the
         configured minimum set of remote machines is still producing its first batch.
         """
+        self.ensure_server_alive()
         deadline = time.monotonic() + timeout_seconds
         with self._condition:
             self._cohort_blocked_actors.clear()
