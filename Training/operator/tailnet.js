@@ -493,7 +493,10 @@ function validatePowerShellFile(filePath) {
     const env = { ...process.env, BEES_PS_PARSE_FILE: filePath };
     const script =
         '$e=$null;$null=[System.Management.Automation.Language.Parser]::ParseFile($env:BEES_PS_PARSE_FILE,[ref]$null,[ref]$e);' +
-        'if($e.Count){$e|ForEach-Object{Write-Error $_.Message};exit 2}';
+        'if($e.Count){$e|ForEach-Object{' +
+        '$x=$_.Extent;' +
+        'Write-Error ("line {0}, column {1}: {2} :: {3}" -f $x.StartLineNumber,$x.StartColumnNumber,$_.Message,$x.Text)' +
+        '};exit 2}';
     runSync(ps, ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', script], {
         env,
         cwd: paths.assetsRoot,
