@@ -1522,14 +1522,14 @@ def _control_failure_total(record: Optional[Mapping[str, object]]) -> Optional[i
 def stale_trainer_requires_recycle(
     record: Optional[Mapping[str, object]],
     *,
-    worker_started_monotonic: float,
+    grace_started_monotonic: float,
     now: float,
     grace_seconds: float = WORKER_REGISTRATION_GRACE_SECONDS,
 ) -> bool:
-    """Ignore a previous stale server record while a fresh worker registers its first heartbeat."""
+    """Allow one bounded heartbeat window after worker launch or central-control recovery."""
     if not isinstance(record, Mapping) or not bool(record.get("stale", False)):
         return False
-    return now - float(worker_started_monotonic) >= max(0.0, float(grace_seconds))
+    return now - float(grace_started_monotonic) >= max(0.0, float(grace_seconds))
 
 
 def _inner_control_stalled(
@@ -1923,6 +1923,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             worker: Optional[subprocess.Popen] = None
             worker_log_thread: Optional[threading.Thread] = None
             worker_started_monotonic = 0.0
+            stale_recycle_grace_started_monotonic = 0.0
             runtime_cutover: Optional[Path] = None
             try:
                 tailnet, tailnet_log_thread = _start_logged_process(
@@ -1974,6 +1975,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                             environment=_worker_environment(args),
                         )
                         worker_started_monotonic = time.monotonic()
+                        stale_recycle_grace_started_monotonic = worker_started_monotonic
 
                     next_status = 0.0
                     # The inner worker can lose heartbeat POST responses even while this outer
@@ -2009,6 +2011,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                             # Clear asymmetric-failure history across a global outage so old failed
                             # POSTs cannot trigger a transport recycle after recovery.
                             if not control_healthy:
+                                # Continuously move the stale-record deadline while central control
+                                # is absent. When it returns, the existing worker gets a full bounded
+                                # heartbeat window to reconcile before stale status can recycle it.
+                                stale_recycle_grace_started_monotonic = now
                                 inner_control_stall_watchdog.observe(True, now)
                                 control_failure_watchdog.reset()
                             record_stale = (
@@ -2016,8 +2022,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                                 and bool(record.get("stale", False))
                             )
                             registration_grace = (
-                                worker_started_monotonic > 0.0
-                                and now - worker_started_monotonic
+                                stale_recycle_grace_started_monotonic > 0.0
+                                and now - stale_recycle_grace_started_monotonic
                                 < WORKER_REGISTRATION_GRACE_SECONDS
                             )
 
@@ -2060,7 +2066,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
                             if stale_trainer_requires_recycle(
                                 record,
-                                worker_started_monotonic=worker_started_monotonic,
+                                grace_started_monotonic=stale_recycle_grace_started_monotonic,
                                 now=now,
                             ):
                                 print(
