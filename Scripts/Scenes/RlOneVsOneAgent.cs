@@ -892,7 +892,7 @@ internal sealed class RlOneVsOneAgent : Agent
 
     private bool IsGroupRewardRepresentative(bool requireCurrentController = true)
     {
-        if (!_hasParticipatedThisEpisode ||
+        if (!_hasParticipatedThisEpisode || _agentGroup == null ||
             (requireCurrentController && !IsCurrentController()))
         {
             return false;
@@ -904,7 +904,7 @@ internal sealed class RlOneVsOneAgent : Agent
             RlOneVsOneAgent other = Instances[i];
             if (other == null || other == this ||
                 other._level != _level || other._side != _side || other._teamId != _teamId ||
-                !other._hasParticipatedThisEpisode ||
+                !other._hasParticipatedThisEpisode || other._agentGroup == null ||
                 (requireCurrentController && !other.IsCurrentController()))
             {
                 continue;
@@ -1081,7 +1081,8 @@ internal sealed class RlOneVsOneAgent : Agent
 
         if (!endTrajectory)
         {
-            _hasParticipatedThisEpisode = false;
+            // Participation is episode-scoped, not ship-binding-scoped. A controller may
+            // temporarily have no active group while waiting to bind a replacement ship.
             _endingShipTrajectory = false;
             return;
         }
