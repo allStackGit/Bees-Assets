@@ -70,6 +70,20 @@ function sessionFailureType(metrics) {
         : '';
 }
 
+function envResizeFailure(metrics) {
+    if (!metrics || typeof metrics !== 'object' || Array.isArray(metrics)) return null;
+    const throughput = metrics.throughput;
+    if (!throughput || typeof throughput !== 'object' || Array.isArray(throughput)) return null;
+    const target = throughput.env_resize_failed_target;
+    const error = typeof throughput.env_resize_error === 'string'
+        ? throughput.env_resize_error.trim()
+        : '';
+    if (!finiteInteger(target) || target < DEFAULT_MIN_ENVS || target > DEFAULT_MAX_ENVS || !error) {
+        return null;
+    }
+    return { target_envs: target, error };
+}
+
 function recentSessionFailureAgeSeconds(metrics) {
     if (!metrics || typeof metrics !== 'object' || Array.isArray(metrics)) return null;
     const throughput = metrics.throughput;
@@ -402,6 +416,7 @@ class TrainingEnvOptimizer {
             record && record.metrics);
         const sessionFailuresTotal = sessionFailureCount(record && record.metrics);
         const lastSessionFailureType = sessionFailureType(record && record.metrics);
+        const resizeFailure = envResizeFailure(record && record.metrics);
         const contextKey = String(context.contextKey || '');
         if (this.activeProbeTrainerId && this.activeProbeTrainerId !== record?.trainer_id) {
             const active = this.states.get(this.activeProbeTrainerId);
@@ -459,6 +474,32 @@ class TrainingEnvOptimizer {
             const pausedDecision = capacity.auto ? 'optimizer paused' : 'manual env count';
             this._resetMeasurement(state, timestamp, totalSteps, pausedDecision);
             state.phase = pausedPhase;
+            return this.snapshot(record.trainer_id);
+        }
+
+        if (
+            resizeFailure &&
+            capacity.current_envs !== state.desired_envs &&
+            resizeFailure.target_envs === state.desired_envs
+        ) {
+            const direction = state.desired_envs > capacity.current_envs ? 1 : -1;
+            this._blockDirection(state, direction);
+            this._releaseProbe(state.trainer_id);
+            if (state.baseline_envs === null) {
+                state.baseline_envs = capacity.current_envs;
+            }
+            state.desired_envs = state.baseline_envs;
+            state.phase = 'cooldown';
+            state.phase_started_ms = timestamp;
+            state.cooldown_until_ms = timestamp + this.cooldownMs;
+            state.measurement_started_ms = null;
+            state.measurement_start_steps = null;
+            state.measurement_start_produced_steps = null;
+            state.source_steps = totalSteps;
+            state.metrics_missing_since_ms = null;
+            state.last_decision =
+                'live resize probe failed; retained ' + capacity.current_envs +
+                ' envs: ' + resizeFailure.error;
             return this.snapshot(record.trainer_id);
         }
 
@@ -797,5 +838,6 @@ module.exports = {
     recentSessionFailureAgeSeconds,
     sessionFailureCount,
     sessionFailureType,
+    envResizeFailure,
     initialStep,
 };
