@@ -1923,7 +1923,7 @@ server.listen(0,'127.0.0.1',async()=>{
             operator,
         )
 
-        powershell = read_text(OPERATOR_SCRIPT)
+        powershell = OPERATOR_SCRIPT.read_text(encoding="utf-8")
         self.assertIn("[switch]$PreserveRun", powershell)
         self.assertIn("if($PreserveRun){$arguments+='--preserve-run'}", powershell)
         self.assertIn(
