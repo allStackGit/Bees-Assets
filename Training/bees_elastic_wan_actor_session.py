@@ -201,15 +201,10 @@ class ElasticActorSession(worker.ActorSession):
         manager.restart_counts.append(0)
         manager.workers_alive += 1
         try:
-            new_worker.send(EnvironmentCommand.BEHAVIOR_SPECS)
-            specs_response = new_worker.recv()
-            candidate_specs = specs_response.payload
-            if not isinstance(candidate_specs, Mapping) or not self._behavior_specs_match(candidate_specs):
-                raise RuntimeError(
-                    f"new Unity worker {local_worker_id} behavior specifications do not match "
-                    "the live actor session"
-                )
-
+            # Match normal SubprocessEnvManager startup ordering: establish the current
+            # environment parameters and reset the Unity instance before inspecting its
+            # behavior specifications. Bees assigns episode/team behavior state during reset,
+            # so a pre-reset spec is not the contract the live actor is actually training on.
             parameters = manager.env_parameters
             if parameters is not None:
                 new_worker.send(EnvironmentCommand.ENVIRONMENT_PARAMETERS, parameters)
@@ -219,6 +214,15 @@ class ElasticActorSession(worker.ActorSession):
                 raise RuntimeError(
                     f"new Unity worker {local_worker_id} returned {reset_response.cmd!r} "
                     "instead of RESET"
+                )
+
+            new_worker.send(EnvironmentCommand.BEHAVIOR_SPECS)
+            specs_response = new_worker.recv()
+            candidate_specs = specs_response.payload
+            if not isinstance(candidate_specs, Mapping) or not self._behavior_specs_match(candidate_specs):
+                raise RuntimeError(
+                    f"new Unity worker {local_worker_id} behavior specifications do not match "
+                    "the live actor session after reset"
                 )
             initial = EnvironmentStep(reset_response.payload, local_worker_id, {}, {})
             mapped = worker._remap_step(initial, self.worker_offset)
