@@ -45,6 +45,72 @@ def fake_run_options():
     )
 
 
+class WanActorPolicyConstructionTests(unittest.TestCase):
+    def tearDown(self):
+        from bees_mlagents_ppo_compat import (
+            restore_continuous_sigma_guard,
+            restore_inactive_continuous_action_masking,
+        )
+        from bees_mlagents_structured_policy import restore_structured_policy
+
+        restore_continuous_sigma_guard()
+        restore_inactive_continuous_action_masking()
+        restore_structured_policy()
+
+    def test_remote_actor_reconstructs_structured_bees_policy(self):
+        from mlagents.trainers.settings import NetworkSettings
+        from mlagents_envs.base_env import (
+            ActionSpec,
+            BehaviorSpec,
+            DimensionProperty,
+            ObservationSpec,
+            ObservationType,
+        )
+
+        behavior_spec = BehaviorSpec(
+            observation_specs=[
+                ObservationSpec(
+                    shape=(7614,),
+                    dimension_property=(DimensionProperty.NONE,),
+                    observation_type=ObservationType.DEFAULT,
+                    name="vector",
+                )
+            ],
+            action_spec=ActionSpec(
+                continuous_size=16,
+                discrete_branches=(2, 2, 2, 2, 2, 5),
+            ),
+        )
+        settings = SimpleNamespace(
+            hyperparameters=SimpleNamespace(),
+            network_settings=NetworkSettings(
+                normalize=True,
+                hidden_units=384,
+                num_layers=3,
+            ),
+            reward_signals={},
+        )
+        run_options = SimpleNamespace(
+            behaviors={"BeesRL1v1": settings},
+        )
+
+        policy = actor._build_template_policy(
+            "BeesRL1v1?team=0",
+            behavior_spec,
+            run_options,
+            seed=123,
+        )
+
+        self.assertEqual(
+            type(policy.actor.network_body).__name__,
+            "BeesStructuredNetworkBody",
+        )
+        self.assertEqual(
+            type(policy.actor.action_model).__name__,
+            "BeesStructuredActionModel",
+        )
+
+
 class WanHttpResponseTests(unittest.TestCase):
     @staticmethod
     def _handler(write_side_effect):
