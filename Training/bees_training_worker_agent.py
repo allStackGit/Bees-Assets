@@ -1386,19 +1386,6 @@ def full_game_update_requires_deferred_restart(
     )
 
 
-def _restart_worker_agent(raw_argv: Sequence[str]) -> int:
-    command = [sys.executable, str(Path(__file__).resolve()), *[str(v) for v in raw_argv]]
-    if not _is_windows():
-        os.execv(command[0], command)
-        raise RuntimeError("POSIX worker-agent exec unexpectedly returned")
-
-    # Keep the original worker-agent PID alive as the supervised owner while the replacement
-    # runs. This avoids Windows exec quoting failures for profile paths containing spaces without
-    # creating an unsupervised replacement process.
-    completed = subprocess.run(command, check=False)
-    return int(completed.returncode)
-
-
 def write_local_state(
     path: Path,
     *,
@@ -1621,7 +1608,6 @@ def _write_runtime_state(
 def main(argv: Optional[Sequence[str]] = None) -> int:
     raw_argv = list(sys.argv[1:] if argv is None else argv)
     args = _parser().parse_args(raw_argv)
-    startup_source_sha = file_sha256(Path(__file__).resolve())
     if args.heartbeat_seconds <= 0 or args.request_timeout_seconds <= 0:
         print("error: heartbeat and request timeout must be positive", file=sys.stderr)
         return 2
@@ -1925,26 +1911,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         environment_args=environment_args,
                         worker_env_count=worker_env_count,
                     )
-
-                desired_build_id = str(desired.get("desired_build_id", ""))
-                active_build_id = str(active_build.get("build_id", "")) if active_build else ""
-
-                source_changed = file_sha256(Path(__file__).resolve()) != startup_source_sha
-                if source_changed and (
-                    mode == "stopped"
-                    or (desired_build_id and desired_build_id != active_build_id)
-                ):
-                    managed.stop(progress_callback=stopping_keepalive)
-                    try:
-                        log_uploader.flush_all(
-                            client,
-                            trainer_id=args.trainer_id,
-                            run_id=run_id,
-                            progress_callback=stopping_keepalive,
-                        )
-                    except (ControlUnavailable, ControlRejected, OSError, ValueError, RuntimeError):
-                        pass
-                    return _restart_worker_agent(raw_argv)
 
                 if mode == "stopped":
                     set_reconciliation_phase("")
