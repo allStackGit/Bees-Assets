@@ -848,6 +848,11 @@ internal sealed class RlPlayerDerivedActionReplayController : MonoBehaviour
         asteroid.Health -= amountMined;
         _ship.FleetShip.MineralsMinedThisLevel += amountMined;
         _ship.Tsv = Utilities.CalculateTsv(_ship);
+        RlOneVsOneEpisodeDiagnostics.RecordMiningOutcome(
+            _ship,
+            asteroid,
+            amountMined,
+            asteroid.Health <= 0);
         if (asteroid.Health <= 0 && !asteroid.IsDead)
         {
             asteroid.Kill(false);
