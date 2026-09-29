@@ -72,6 +72,13 @@ internal static class RlOneVsOneEpisodeDiagnostics
             BeeMiningAsteroidsDepleted = state.DepletedMiningAsteroidIds[0].Count;
             HumanMiningAsteroidsDepleted = state.DepletedMiningAsteroidIds[1].Count;
         }
+
+        internal static EnvironmentSnapshot FromLevel(Level level)
+        {
+            return TryGetState(level, out ArenaState state)
+                ? new EnvironmentSnapshot(state)
+                : default;
+        }
     }
 
     private sealed class RootShipRecord
@@ -363,9 +370,7 @@ internal static class RlOneVsOneEpisodeDiagnostics
 
     internal static EnvironmentSnapshot GetEnvironmentSnapshot(Level level)
     {
-        return TryGetState(level, out ArenaState state)
-            ? new EnvironmentSnapshot(state)
-            : default;
+        return EnvironmentSnapshot.FromLevel(level);
     }
 
     internal static string BuildEnvironmentEpisodeFields(Level level)
