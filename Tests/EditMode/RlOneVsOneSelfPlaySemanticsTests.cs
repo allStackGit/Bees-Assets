@@ -14,10 +14,10 @@ namespace Bees.Tests.EditMode
         {
             string agent = ReadSource("Scripts", "Scenes", "RlOneVsOneAgent.cs");
             int assignedTeam = agent.IndexOf("int assignedTeam = _side == ConfigData.Configuration.BeeSide", StringComparison.Ordinal);
-            int idleGuard = agent.IndexOf("if (_teamId != assignedTeam || !_hasParticipatedThisEpisode)", assignedTeam, StringComparison.Ordinal);
+            int idleGuard = agent.IndexOf("if (_teamId != assignedTeam || !_hasParticipatedThisEpisode ||", assignedTeam, StringComparison.Ordinal);
             int idleReturn = agent.IndexOf("return;", idleGuard, StringComparison.Ordinal);
-            int activeReward = agent.IndexOf("AddReward(_side == ConfigData.Configuration.BeeSide", idleReturn, StringComparison.Ordinal);
-            int endEpisode = agent.IndexOf("EndEpisode();", activeReward, StringComparison.Ordinal);
+            int activeReward = agent.IndexOf("_agentGroup?.AddGroupReward(terminalReward);", idleReturn, StringComparison.Ordinal);
+            int endEpisode = agent.IndexOf("_agentGroup?.EndGroupEpisode();", activeReward, StringComparison.Ordinal);
 
             Assert.That(assignedTeam, Is.GreaterThanOrEqualTo(0));
             Assert.That(idleGuard, Is.GreaterThan(assignedTeam));
@@ -51,7 +51,7 @@ namespace Bees.Tests.EditMode
 
             string agent = ReadSource("Scripts", "Scenes", "RlOneVsOneAgent.cs");
             int timeoutComment = agent.IndexOf("Timeouts are explicit terminal losses in this environment", StringComparison.Ordinal);
-            int endEpisode = agent.IndexOf("EndEpisode();", timeoutComment, StringComparison.Ordinal);
+            int endEpisode = agent.IndexOf("EndGroupEpisode();", timeoutComment, StringComparison.Ordinal);
 
             Assert.That(timeoutComment, Is.GreaterThanOrEqualTo(0));
             Assert.That(endEpisode, Is.GreaterThan(timeoutComment));
