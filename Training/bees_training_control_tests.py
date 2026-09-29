@@ -140,6 +140,64 @@ class TrainingControlClientTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "version marker"):
                 agent._load_runtime_cutover_pointer(str(pointer))
 
+    def test_actor_runtime_pointer_requires_actor_entrypoint_and_worker_env_placeholder(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            version = "d" * 64
+            runtime_root = root / "runtime-actor"
+            runtime_root.mkdir(parents=True)
+            (runtime_root / "bees-runtime-version.txt").write_text(
+                version + "\n",
+                encoding="ascii",
+            )
+            actor = runtime_root / "bees_elastic_wan_actor_worker.py"
+            actor.write_text("# pinned actor\n", encoding="utf-8")
+            python_executable = root / "python-actor"
+            python_executable.write_bytes(b"python")
+            command = [
+                str(python_executable),
+                str(actor),
+                "--env={env}",
+                "--envs={worker_envs}",
+            ]
+            pointer = root / "release-runtime.json"
+            pointer.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "build_id": "build-actor",
+                        "runtime_version": version,
+                        "runtime_root": str(runtime_root),
+                        "python_executable": str(python_executable),
+                        "launch_command": command,
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            loaded = agent._load_runtime_cutover_pointer(
+                str(pointer),
+                "bees_elastic_wan_actor_worker.py",
+            )
+            self.assertEqual(loaded["launch_command"], command)
+
+            with self.assertRaisesRegex(ValueError, "expected pinned entrypoint"):
+                agent._load_runtime_cutover_pointer(str(pointer))
+
+            command_without_worker_count = [
+                str(python_executable),
+                str(actor),
+                "--env={env}",
+            ]
+            payload = json.loads(pointer.read_text(encoding="utf-8"))
+            payload["launch_command"] = command_without_worker_count
+            pointer.write_text(json.dumps(payload), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "worker_envs"):
+                agent._load_runtime_cutover_pointer(
+                    str(pointer),
+                    "bees_elastic_wan_actor_worker.py",
+                )
+
     def test_pending_runtime_pointer_does_not_replace_current_cached_runtime(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
