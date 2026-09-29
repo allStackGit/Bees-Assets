@@ -906,7 +906,7 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         current = block.index("const currentRelease = getLatestRelease()")
         reconcile = block.index("reconcileLatestReleaseBeforeBuild(", current)
         archive = block.index("archiveTrainingRun(", reconcile)
-        plan = block.index("newTrainingRunPlan(python)", archive)
+        plan = block.index("newTrainingRunPlan(python", archive)
         release = block.index("const release = {", plan)
         self.assertLess(current, reconcile)
         self.assertLess(reconcile, archive)
