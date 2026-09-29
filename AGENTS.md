@@ -12,7 +12,7 @@ Mandatory rules for coding/development work in this repository.
 
 ### Protected paths
 
-- Never read or ingest `results/`, `.results/`, or `Demonstrations/` unless the user explicitly requests that protected path or a specific file within it.
+- Never read or ingest `results/`, `.results/`, `Demonstrations/`, `Logs/`, or `TrainingHistory~/` unless the user explicitly requests that protected path or a specific file within it.
 - Without that explicit request, do not retrieve their contents directly or indirectly through broad search, history, diffs, indexing, or tooling that may surface excerpts.
 
 ## Engineering contract
