@@ -149,7 +149,7 @@ namespace Bees.Tests.EditMode
             const float max = 11f;
             List<Rect> layout = (List<Rect>)buildLayout.Invoke(
                 null,
-                new object[] { min, max, min, max, 12345 });
+                new object[] { min, max, min, max, 12345, 0f });
 
             Assert.That(layout, Is.Not.Empty);
             float playableArea = (max - min) * (max - min);
