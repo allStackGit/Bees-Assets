@@ -473,11 +473,11 @@ def _terminate(process: Optional[subprocess.Popen]) -> None:
         ) from exc
 
 
-def _worker_cleanup_grace_seconds(transport_watchdog_restart: bool) -> float:
-    # A control-path outage cannot reliably complete remote log/control finalization, so do not
-    # spend the normal 30-second graceful budget before rebuilding transport. Normal stops and
-    # release cutovers retain the longer window for orderly log preservation.
-    return 8.0 if transport_watchdog_restart else 30.0
+def _worker_cleanup_grace_seconds(fast_recovery_restart: bool) -> float:
+    # A worker that is already stale or whose supervisor state cannot recover should not spend the
+    # normal 30-second graceful budget blocking repair. Normal stops and release cutovers retain the
+    # longer window for orderly log preservation. Transport-only repair never calls this path.
+    return 8.0 if fast_recovery_restart else 30.0
 
 
 def _worker_agent_stop_request_path(args: argparse.Namespace) -> Path:
