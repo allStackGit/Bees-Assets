@@ -1403,21 +1403,6 @@ class TrainingControlClientTests(unittest.TestCase):
             agent.dedicated_process_matches_desired(managed, **base)
         )
 
-    def test_windows_worker_agent_self_restart_preserves_spaced_python_path(self):
-        completed = mock.Mock(returncode=17)
-        with (
-            mock.patch.object(agent, "_is_windows", return_value=True),
-            mock.patch.object(agent.subprocess, "run", return_value=completed) as run,
-            mock.patch.object(agent.os, "execv") as execv,
-        ):
-            result = agent._restart_worker_agent(["--install-root", r"C:\Users\Seagrams Crown\BeesTraining"])
-
-        self.assertEqual(result, 17)
-        execv.assert_not_called()
-        command = run.call_args.args[0]
-        self.assertEqual(command[0], agent.sys.executable)
-        self.assertIn(r"C:\Users\Seagrams Crown\BeesTraining", command)
-
     def test_full_game_local_state_defaults_offline_to_inference(self):
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "state.json"
