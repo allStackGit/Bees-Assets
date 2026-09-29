@@ -114,28 +114,6 @@ def _bees_movement_activity(policy, batch):
     return (mobile & ~barge_charge_active).astype(np.float32)
 
 
-def _bees_bc_special_activity(mini_batch):
-    """Return 1 where the capability branch has a legal non-noop action."""
-
-    import numpy as np
-    from mlagents.trainers.buffer import BufferKey
-
-    if BufferKey.ACTION_MASK not in mini_batch:
-        return None
-    masks = np.asarray(
-        mini_batch[BufferKey.ACTION_MASK].get_batch(),
-        dtype=np.float32,
-    )
-    expected = sum(BEES_DISCRETE_BRANCHES)
-    if masks.ndim != 2 or masks.shape[1] < expected:
-        return None
-    special_start = sum(BEES_DISCRETE_BRANCHES[:-1])
-    return (
-        np.sum(masks[:, special_start + 1 : special_start + BEES_DISCRETE_BRANCHES[-1]], axis=1)
-        > 0.5
-    ).astype(np.float32)
-
-
 def _bees_bc_weapon_activity(policy, mini_batch):
     """Return per-sample turret activity from the frozen self-weapon observation slots."""
 
@@ -173,7 +151,6 @@ def _bees_masked_behavioral_cloning_loss(
     expert_actions,
     weapon_activity,
     movement_activity=None,
-    special_activity=None,
 ):
     """BC loss that excludes movement/weapon actions with no physical effect."""
 
@@ -272,15 +249,12 @@ def _bees_masked_behavioral_cloning_loss(
                     (per_sample * branch_activity).sum()
                     / torch.clamp(active_count, min=1.0)
                 )
-            elif special_activity is not None:
-                special = torch.as_tensor(
-                    special_activity,
-                    dtype=per_sample.dtype,
-                    device=per_sample.device,
-                )
+            else:
                 # Ordinary passive demonstrations intentionally write NoSpecialAction.
-                # Only explicit capability-event demos carry an authoritative nonzero label.
-                special = special * (
+                # ML-Agents 1.1.0 demo buffers do not preserve action masks, so the
+                # authoritative signal is the nonzero action itself: only explicit
+                # capability-event demonstrations supervise this branch.
+                special = (
                     expert_special != 0
                 ).to(per_sample.dtype)
                 active_count = special.sum()
@@ -290,8 +264,6 @@ def _bees_masked_behavioral_cloning_loss(
                     (per_sample * special).sum()
                     / torch.clamp(active_count, min=1.0)
                 )
-            else:
-                branch_losses.append(per_sample.mean())
 
         if branch_losses:
             loss = loss + torch.mean(torch.stack(branch_losses))
@@ -651,15 +623,11 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             self.policy,
             mini_batch_demo,
         )
-        _BC_MASK_STATE.special_activity = _bees_bc_special_activity(
-            mini_batch_demo,
-        )
         try:
             return original_bc_update_batch(self, mini_batch_demo, n_sequences)
         finally:
             _BC_MASK_STATE.weapon_activity = None
             _BC_MASK_STATE.movement_activity = None
-            _BC_MASK_STATE.special_activity = None
 
     def masked_bc_loss(self, selected_actions, log_probs, expert_actions):
         masked = _bees_masked_behavioral_cloning_loss(
@@ -669,7 +637,6 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             expert_actions,
             getattr(_BC_MASK_STATE, "weapon_activity", None),
             getattr(_BC_MASK_STATE, "movement_activity", None),
-            getattr(_BC_MASK_STATE, "special_activity", None),
         )
         if masked is not None:
             return masked
@@ -931,7 +898,6 @@ def restore_inactive_continuous_action_masking() -> None:
     _POLICY_DIMENSION_MASK_STATE.mask = None
     _BC_MASK_STATE.weapon_activity = None
     _BC_MASK_STATE.movement_activity = None
-    _BC_MASK_STATE.special_activity = None
     _POLICY_DIMENSION_MASK_STATE.sample_weights = None
 
     _ORIGINAL_ACTION_MODEL_FORWARD = None
