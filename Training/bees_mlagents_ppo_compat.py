@@ -28,9 +28,12 @@ _ORIGINAL_PPO_UPDATE = None
 _ORIGINAL_POCA_UPDATE = None
 _ORIGINAL_TRUST_REGION_POLICY_LOSS = None
 _ORIGINAL_MASKED_MEAN = None
+_ORIGINAL_BC_UPDATE_BATCH = None
+_ORIGINAL_BC_LOSS = None
 _ORIGINAL_PPO_CREATE_OPTIMIZER = None
 _ORIGINAL_PPO_PROCESS_TRAJECTORY = None
 _POLICY_DIMENSION_MASK_STATE = threading.local()
+_BC_MASK_STATE = threading.local()
 
 
 def _is_bees_action_spec(action_spec) -> bool:
@@ -69,6 +72,120 @@ def _build_bees_continuous_activity_mask(action_spec, masks, reference):
             slot_active.unsqueeze(1)
         )
     return activity
+
+
+def _bees_bc_weapon_activity(policy, mini_batch):
+    """Return per-sample turret activity from the frozen self-weapon observation slots."""
+
+    import numpy as np
+    from mlagents.trainers.trajectory import ObsUtil
+    from bees_mlagents_structured_policy import (
+        BEES_OBSERVATION_SIZE,
+        SELF_WEAPON_SIZE,
+        SELF_WEAPON_START,
+    )
+
+    if not _is_bees_action_spec(policy.behavior_spec.action_spec):
+        return None
+    if len(policy.behavior_spec.observation_specs) != 1:
+        return None
+
+    observations = ObsUtil.from_buffer(mini_batch, 1)
+    raw = np.asarray(observations[0].to_ndarray(), dtype=np.float32)
+    if raw.ndim != 2 or raw.shape[1] != BEES_OBSERVATION_SIZE:
+        return None
+
+    # SelfWeaponObservation index 10 is the explicit "is turret" flag. Only turrets
+    # have aim/fire actions; other weapon objects occupying a slot must remain inactive.
+    activity = np.zeros((raw.shape[0], BEES_WEAPON_SLOTS), dtype=np.float32)
+    for slot in range(BEES_WEAPON_SLOTS):
+        turret_index = SELF_WEAPON_START + slot * SELF_WEAPON_SIZE + 10
+        activity[:, slot] = (raw[:, turret_index] > 0.5).astype(np.float32)
+    return activity
+
+
+def _bees_masked_behavioral_cloning_loss(
+    policy,
+    selected_actions,
+    log_probs,
+    expert_actions,
+    weapon_activity,
+):
+    """BC loss that excludes actions for weapon slots that do not contain turrets."""
+
+    from mlagents.torch_utils import torch
+    from mlagents.trainers.torch_entities.utils import ModelUtils
+
+    action_spec = policy.behavior_spec.action_spec
+    if weapon_activity is None or not _is_bees_action_spec(action_spec):
+        return None
+
+    reference = (
+        selected_actions.continuous_tensor
+        if action_spec.continuous_size > 0
+        else log_probs.all_discrete_tensor
+    )
+    activity = torch.as_tensor(
+        weapon_activity,
+        dtype=reference.dtype,
+        device=reference.device,
+    )
+
+    loss = reference.new_tensor(0.0)
+    if action_spec.continuous_size > 0:
+        continuous_mask = torch.ones_like(selected_actions.continuous_tensor)
+        for slot in range(BEES_WEAPON_SLOTS):
+            aim_start = (
+                BEES_MOVEMENT_CONTINUOUS_ACTIONS
+                + slot * BEES_WEAPON_AIM_ACTIONS_PER_SLOT
+            )
+            continuous_mask[
+                :,
+                aim_start : aim_start + BEES_WEAPON_AIM_ACTIONS_PER_SLOT,
+            ] = activity[:, slot : slot + 1]
+
+        squared_error = (
+            selected_actions.continuous_tensor - expert_actions.continuous_tensor
+        ) ** 2
+        loss = loss + (squared_error * continuous_mask).sum() / torch.clamp(
+            continuous_mask.sum(),
+            min=1.0,
+        )
+
+    if action_spec.discrete_size > 0:
+        one_hot_expert_actions = ModelUtils.actions_to_onehot(
+            expert_actions.discrete_tensor,
+            action_spec.discrete_branches,
+        )
+        log_prob_branches = ModelUtils.break_into_branches(
+            log_probs.all_discrete_tensor,
+            action_spec.discrete_branches,
+        )
+        branch_losses = []
+        for branch_index, (log_prob_branch, expert_branch) in enumerate(
+            zip(log_prob_branches, one_hot_expert_actions)
+        ):
+            per_sample = torch.sum(
+                -torch.nn.functional.log_softmax(log_prob_branch, dim=1)
+                * expert_branch,
+                dim=1,
+            )
+            if branch_index < BEES_WEAPON_SLOTS:
+                branch_activity = activity[:, branch_index]
+                active_count = branch_activity.sum()
+                if float(active_count.detach().cpu().item()) <= 0.0:
+                    continue
+                branch_losses.append(
+                    (per_sample * branch_activity).sum()
+                    / torch.clamp(active_count, min=1.0)
+                )
+            else:
+                branch_losses.append(per_sample.mean())
+
+        if branch_losses:
+            loss = loss + torch.mean(torch.stack(branch_losses))
+
+    return loss
 
 
 def _masked_action_log_probs_and_entropy(action_model, actions, dists, masks):
@@ -222,6 +339,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
 
     from mlagents.trainers.buffer import BufferKey
     from mlagents.trainers.poca.optimizer_torch import TorchPOCAOptimizer
+    from mlagents.trainers.torch_entities.components.bc.module import BCModule
     from mlagents.trainers.ppo.optimizer_torch import TorchPPOOptimizer
     from mlagents.trainers.torch_entities.action_model import ActionModel
     from mlagents.trainers.torch_entities.utils import ModelUtils
@@ -232,6 +350,8 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
     global _ORIGINAL_POCA_UPDATE
     global _ORIGINAL_TRUST_REGION_POLICY_LOSS
     global _ORIGINAL_MASKED_MEAN
+    global _ORIGINAL_BC_UPDATE_BATCH
+    global _ORIGINAL_BC_LOSS
 
     if _ORIGINAL_ACTION_MODEL_FORWARD is not None:
         return None
@@ -242,6 +362,35 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
     original_poca_update = TorchPOCAOptimizer.update
     original_policy_loss = ModelUtils.trust_region_policy_loss
     original_masked_mean = ModelUtils.masked_mean
+    original_bc_update_batch = BCModule._update_batch
+    original_bc_loss = BCModule._behavioral_cloning_loss
+
+    def masked_bc_update_batch(self, mini_batch_demo, n_sequences):
+        _BC_MASK_STATE.weapon_activity = _bees_bc_weapon_activity(
+            self.policy,
+            mini_batch_demo,
+        )
+        try:
+            return original_bc_update_batch(self, mini_batch_demo, n_sequences)
+        finally:
+            _BC_MASK_STATE.weapon_activity = None
+
+    def masked_bc_loss(self, selected_actions, log_probs, expert_actions):
+        masked = _bees_masked_behavioral_cloning_loss(
+            self.policy,
+            selected_actions,
+            log_probs,
+            expert_actions,
+            getattr(_BC_MASK_STATE, "weapon_activity", None),
+        )
+        if masked is not None:
+            return masked
+        return original_bc_loss(
+            self,
+            selected_actions,
+            log_probs,
+            expert_actions,
+        )
 
     def masked_forward(self, inputs, masks):
         dists = self._get_dists(inputs, masks)
@@ -363,6 +512,8 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
     TorchPOCAOptimizer.update = masked_poca_update
     ModelUtils.trust_region_policy_loss = staticmethod(masked_policy_loss)
     ModelUtils.masked_mean = staticmethod(weighted_masked_mean)
+    BCModule._update_batch = masked_bc_update_batch
+    BCModule._behavioral_cloning_loss = masked_bc_loss
 
     _ORIGINAL_ACTION_MODEL_FORWARD = original_forward
     _ORIGINAL_ACTION_MODEL_EVALUATE = original_evaluate
@@ -370,6 +521,8 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
     _ORIGINAL_POCA_UPDATE = original_poca_update
     _ORIGINAL_TRUST_REGION_POLICY_LOSS = original_policy_loss
     _ORIGINAL_MASKED_MEAN = original_masked_mean
+    _ORIGINAL_BC_UPDATE_BATCH = original_bc_update_batch
+    _ORIGINAL_BC_LOSS = original_bc_loss
     return original_forward
 
 
@@ -382,12 +535,15 @@ def restore_inactive_continuous_action_masking() -> None:
     global _ORIGINAL_POCA_UPDATE
     global _ORIGINAL_TRUST_REGION_POLICY_LOSS
     global _ORIGINAL_MASKED_MEAN
+    global _ORIGINAL_BC_UPDATE_BATCH
+    global _ORIGINAL_BC_LOSS
 
     if _ORIGINAL_ACTION_MODEL_FORWARD is None:
         return
 
     from mlagents.trainers.poca.optimizer_torch import TorchPOCAOptimizer
     from mlagents.trainers.ppo.optimizer_torch import TorchPPOOptimizer
+    from mlagents.trainers.torch_entities.components.bc.module import BCModule
     from mlagents.trainers.torch_entities.action_model import ActionModel
     from mlagents.trainers.torch_entities.utils import ModelUtils
 
@@ -399,7 +555,10 @@ def restore_inactive_continuous_action_masking() -> None:
         _ORIGINAL_TRUST_REGION_POLICY_LOSS
     )
     ModelUtils.masked_mean = staticmethod(_ORIGINAL_MASKED_MEAN)
+    BCModule._update_batch = _ORIGINAL_BC_UPDATE_BATCH
+    BCModule._behavioral_cloning_loss = _ORIGINAL_BC_LOSS
     _POLICY_DIMENSION_MASK_STATE.mask = None
+    _BC_MASK_STATE.weapon_activity = None
     _POLICY_DIMENSION_MASK_STATE.sample_weights = None
 
     _ORIGINAL_ACTION_MODEL_FORWARD = None
@@ -408,6 +567,8 @@ def restore_inactive_continuous_action_masking() -> None:
     _ORIGINAL_POCA_UPDATE = None
     _ORIGINAL_TRUST_REGION_POLICY_LOSS = None
     _ORIGINAL_MASKED_MEAN = None
+    _ORIGINAL_BC_UPDATE_BATCH = None
+    _ORIGINAL_BC_LOSS = None
 
 
 def install_continuous_sigma_guard(
