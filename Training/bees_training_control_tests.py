@@ -477,6 +477,28 @@ class TrainingControlClientTests(unittest.TestCase):
                 "zero-local trainer failed during startup",
             )
 
+    def test_restart_backoff_preserves_previous_child_error(self):
+        managed = agent.ManagedProcess()
+        managed.command = ("python", "worker.py")
+        managed.restart_not_before_monotonic = agent.time.monotonic() + 30.0
+        managed.last_exit_code = 1
+        managed.last_exit_error = "trainer initialization failed"
+
+        with self.assertRaisesRegex(
+            RuntimeError,
+            r"previous exit code 1; child error: trainer initialization failed",
+        ):
+            managed.start(
+                ["python", "worker.py"],
+                revision=1,
+                build_sha256="a" * 64,
+                build_id="build-a",
+                run_id="run-a",
+                compatibility_key="b" * 64,
+                state_file=Path("state.json"),
+                environment_args=(),
+            )
+
     def test_child_health_distinguishes_heartbeat_from_real_rollout_progress(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
