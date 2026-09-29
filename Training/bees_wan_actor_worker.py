@@ -610,6 +610,9 @@ class ActorSession:
                 self.stop.wait(1.0)
         raise KeyboardInterrupt
 
+    def _throughput_extra_metrics(self) -> Mapping[str, object]:
+        return {}
+
     def _write_throughput_metrics(self, *, force: bool = False) -> None:
         path = self._throughput_metrics_path
         if path is None:
@@ -634,6 +637,7 @@ class ActorSession:
             if callable(failure_snapshot):
                 payload.update(failure_snapshot())
             payload.update(self.client.traffic_snapshot())
+            payload.update(self._throughput_extra_metrics())
             try:
                 atomic_write_text(
                     path,
