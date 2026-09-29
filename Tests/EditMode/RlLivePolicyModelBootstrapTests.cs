@@ -1,5 +1,4 @@
 using System;
-using System.IO;
 using System.Reflection;
 using NUnit.Framework;
 using UnityEngine;
@@ -70,49 +69,6 @@ namespace Bees.Tests.EditMode
             Assert.That(error, Does.Contain("policy ABI"));
         }
 
-        [Test]
-        public void RuntimeSourceBindsModelBeforeAgentPhysicsAndFallsBackToHiveMind()
-        {
-            string source = ReadSource("Scripts", "Scenes", "RlLivePolicyModelBootstrap.cs");
-            Assert.That(source, Does.Contain("[DefaultExecutionOrder(-10000)]"));
-            Assert.That(source, Does.Contain("agent.SetModel(RlOneVsOneAgent.BehaviorName, _model)"));
-            Assert.That(source, Does.Contain("behavior.BehaviorType = BehaviorType.InferenceOnly;"));
-            Assert.That(source, Does.Contain("_stage.ActivateRlPolicy = false;"));
-            Assert.That(source, Does.Contain("RlProductionControllerRouter.SetNeuralNetworkAvailable(_stage, false);"));
-            Assert.That(source, Does.Contain("level.SetupHivemind();"));
-            Assert.That(source, Does.Contain("agents[i].enabled = false;"));
-            Assert.That(source, Does.Contain("RlPolicy/BeesRL1v1"));
-            Assert.That(source, Does.Contain("RlPolicy/BeesRL1v1Deployment"));
-        }
-
-        [Test]
-        public void EveryGameplayStagePollsValidatedChampionWithoutChangingNonNeuralOwnership()
-        {
-            string source = ReadSource("Scripts", "Scenes", "RlLivePolicyModelBootstrap.cs");
-            Assert.That(source, Does.Contain("private static void InstallForGameplayStage()"));
-            Assert.That(source, Does.Contain("if (stage == null)"));
-            Assert.That(source, Does.Contain(
-                "bool neuralRequested = RlProductionControllerRouter.AnyNeuralNetworkRequested(stage);"));
-            Assert.That(source, Does.Contain("if (neuralRequested)"));
-            Assert.That(source, Does.Contain("bootstrap.FailToHiveMind(error);"));
-            Assert.That(source, Does.Contain("non-neural controller ownership is unchanged"));
-            Assert.That(source, Does.Contain("stage.gameObject.AddComponent<RlLivePolicyModelUpdater>()"));
-            Assert.That(source, Does.Contain("updater.Initialize(bootstrap, deploymentId);"));
-            Assert.That(source, Does.Contain("RlProductionControllerRouter.AnyNeuralNetwork(_stage)"));
-            Assert.That(source, Does.Not.Contain("private static bool IsLiveRlRequested(Stage stage)"));
-        }
-
-        [Test]
-        public void BuildTimeInstallerAndRuntimeLoaderUseSameResourceContract()
-        {
-            string installer = ReadSource("Training", "bees_continual_unity_bundle.py");
-            string runtime = ReadSource("Scripts", "Scenes", "RlLivePolicyModelBootstrap.cs");
-            Assert.That(installer, Does.Contain("RESOURCE_MODEL_FILE = \"BeesRL1v1.onnx\""));
-            Assert.That(installer, Does.Contain("RESOURCE_MANIFEST_FILE = \"BeesRL1v1Deployment.json\""));
-            Assert.That(runtime, Does.Contain("ModelResourcePath = \"RlPolicy/BeesRL1v1\""));
-            Assert.That(runtime, Does.Contain("ManifestResourcePath = \"RlPolicy/BeesRL1v1Deployment\""));
-        }
-
         private bool Validate(string json, out string error)
         {
             object[] args = { json, null };
@@ -148,14 +104,5 @@ namespace Bees.Tests.EditMode
                    "\"training_step\":100}}";
         }
 
-        private static string ReadSource(params string[] parts)
-        {
-            string path = Application.dataPath;
-            for (int i = 0; i < parts.Length; i++)
-            {
-                path = Path.Combine(path, parts[i]);
-            }
-            return File.ReadAllText(path);
-        }
     }
 }

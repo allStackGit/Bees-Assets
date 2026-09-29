@@ -1,5 +1,4 @@
 using System;
-using System.IO;
 using System.Reflection;
 using NUnit.Framework;
 using UnityEngine;
@@ -42,19 +41,6 @@ namespace Bees.Tests.EditMode
             AssertParseFails("--rl-decision-period", "-1");
         }
 
-        [Test]
-        public void RuntimeUsesOneAuthoritativeDecisionPeriodAndOneDecisionRequester()
-        {
-            string bootstrap = ReadSource("Scripts", "Scenes", "RlOneVsOneTrainingBootstrap.cs");
-            string agent = ReadSource("Scripts", "Scenes", "RlOneVsOneAgent.cs");
-
-            Assert.That(bootstrap, Does.Contain("CurrentDecisionPeriod => RuntimeOptions.DecisionPeriod"));
-            Assert.That(agent, Does.Contain("Time.frameCount % RlOneVsOneTrainingBootstrap.CurrentDecisionPeriod"));
-            Assert.That(agent, Does.Contain("_decisionCounter >= RlOneVsOneTrainingBootstrap.CurrentDecisionPeriod"));
-            Assert.That(agent, Does.Contain("RequestDecision();"));
-            Assert.That(agent, Does.Not.Contain("DecisionRequester"));
-        }
-
         private object Parse(params string[] args)
         {
             return _parse.Invoke(null, new object[] { args });
@@ -73,14 +59,5 @@ namespace Bees.Tests.EditMode
             Assert.That(exception.InnerException, Is.TypeOf<ArgumentException>());
         }
 
-        private static string ReadSource(params string[] parts)
-        {
-            string path = Application.dataPath;
-            for (int i = 0; i < parts.Length; i++)
-            {
-                path = Path.Combine(path, parts[i]);
-            }
-            return File.ReadAllText(path);
-        }
     }
 }

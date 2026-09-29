@@ -282,6 +282,7 @@ internal sealed class RlLivePolicyAgent : Agent
         RlOneVsOneAgent.SetCommunicationActions(_ship, continuous);
 
         ActionSegment<int> discrete = actions.DiscreteActions;
+        int specialAction = discrete[RlOneVsOneAgent.SpecialActionBranch];
         for (int slot = 0; slot < RlOneVsOneAgent.MaxWeaponSlots; slot++)
         {
             int aimStart = RlOneVsOneAgent.WeaponAimContinuousActionStart +
@@ -296,7 +297,9 @@ internal sealed class RlLivePolicyAgent : Agent
                 _ship,
                 slot,
                 _weaponAimDirections[slot],
-                discrete[RlOneVsOneAgent.WeaponFireBranchStart + slot] == RlOneVsOneAgent.FireWeaponAction);
+                ShouldFireWeaponForAction(
+                    specialAction,
+                    discrete[RlOneVsOneAgent.WeaponFireBranchStart + slot]));
         }
 
         switch (discrete[RlOneVsOneAgent.SpecialActionBranch])
@@ -330,6 +333,12 @@ internal sealed class RlLivePolicyAgent : Agent
         {
             discrete[i] = 0;
         }
+    }
+
+    internal static bool ShouldFireWeaponForAction(int specialAction, int weaponAction)
+    {
+        return RlOneVsOneAgent.SpecialActionAllowsWeaponFire(specialAction) &&
+               weaponAction == RlOneVsOneAgent.FireWeaponAction;
     }
 
     private bool HasTurretForSlot(int slot)

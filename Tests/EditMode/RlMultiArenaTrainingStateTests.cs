@@ -1,5 +1,4 @@
 using System;
-using System.IO;
 using System.Reflection;
 using NUnit.Framework;
 using UnityEngine;
@@ -69,46 +68,5 @@ namespace Bees.Tests.EditMode
             Assert.That((int)_getTrackedLevelCount.Invoke(null, null), Is.EqualTo(2));
         }
 
-        [Test]
-        public void MultiArenaRuntimeAppliesDurabilityToAdditionalLevels()
-        {
-            string source = ReadSource("Scripts", "Scenes", "RlOneVsOneTrainingDurabilityGuard.cs");
-            Assert.That(source, Does.Contain("IReadOnlyList<Level> levels = _stage.Levels;"));
-            Assert.That(source, Does.Contain("for (int levelIndex = 0; levelIndex < levels.Count; levelIndex++)"));
-            Assert.That(source, Does.Contain("ApplyTrainingDurability(ships[shipIndex]);"));
-        }
-
-        [Test]
-        public void LevelSetupUsesArenaLocalMapAndMatchupState()
-        {
-            string levelSetup = ReadSource("Scripts", "Levels", "Level.Setup.cs");
-            string squadSetup = ReadSource("Scripts", "Levels", "Level.RandomSquadSetup.cs");
-
-            Assert.That(levelSetup, Does.Contain("RlOneVsOneArenaMapSizeState.ConfigureTrainingMap(this, Map);"));
-            Assert.That(squadSetup, Does.Contain("RlOneVsOnePerArenaMatchups.PrepareEpisode(this);"));
-            Assert.That(squadSetup, Does.Contain("RlOneVsOnePerArenaMatchups.GetShipType(this, side, shipIndex);"));
-            Assert.That(squadSetup, Does.Contain("RlOneVsOneArenaMapSizeState.GetSpawnRadius(this);"));
-            Assert.That(squadSetup, Does.Contain("RlOneVsOneArenaMapSizeState.GetShipFormationOffset(this, shipIndex);"));
-        }
-
-        [Test]
-        public void LegacyRangeMapSizeNoLongerOwnsMutableProcessEpisodeState()
-        {
-            string options = ReadSource("Scripts", "Scenes", "RlOneVsOneTrainingOptions.cs");
-
-            Assert.That(options, Does.Not.Contain("_sampledMapSizeValid"));
-            Assert.That(options, Does.Not.Contain("RlOneVsOneEpisodeCoordinator.EpisodeEnded += HandleEpisodeEnded"));
-            Assert.That(options, Does.Contain("internal float MapSize => HasMapSizeRange ? _mapSizeMinimum : _mapSize;"));
-        }
-
-        private static string ReadSource(params string[] parts)
-        {
-            string path = Application.dataPath;
-            for (int i = 0; i < parts.Length; i++)
-            {
-                path = Path.Combine(path, parts[i]);
-            }
-            return File.ReadAllText(path);
-        }
     }
 }

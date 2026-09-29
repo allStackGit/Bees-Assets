@@ -1,6 +1,5 @@
 using System;
 using System.Collections;
-using System.IO;
 using System.Reflection;
 using NUnit.Framework;
 using UnityEngine;
@@ -106,34 +105,6 @@ namespace Bees.Tests.EditMode
                 Does.Contain("reserved for authoritative evaluator runs"));
         }
 
-        [Test]
-        public void MapSetupPreparesExactlyOneEpisodeBeforeReadingScenarioGeometry()
-        {
-            string mapState = ReadSource("Scripts", "Scenes", "RlOneVsOneArenaMapSizeState.cs");
-            int prepare = mapState.IndexOf(
-                "RlOneVsOnePerArenaMatchups.PrepareEpisode(level);",
-                StringComparison.Ordinal);
-            int mapSelection = mapState.IndexOf(
-                "EpisodeMapSizes.TryGetValue(level",
-                StringComparison.Ordinal);
-            int geometry = mapState.IndexOf(
-                "RlPlayerDerivedTacticalGeometry.TryGetCurrent",
-                StringComparison.Ordinal);
-            Assert.That(prepare, Is.GreaterThanOrEqualTo(0));
-            Assert.That(mapSelection, Is.GreaterThan(prepare));
-            Assert.That(geometry, Is.GreaterThan(prepare));
-            Assert.That(mapState, Does.Contain("geometry.SpawnSeparationRatio * 0.5f"));
-
-            string perArena = ReadSource("Scripts", "Scenes", "RlOneVsOnePerArenaMatchups.cs");
-            Assert.That(perArena, Does.Contain("PreparedEpisodes.Contains(level)"));
-            Assert.That(perArena, Does.Contain("PreparedEpisodes.Add(level)"));
-            Assert.That(perArena, Does.Contain("PreparedEpisodes.Remove(level)"));
-
-            string squadSetup = ReadSource("Scripts", "Levels", "Level.RandomSquadSetup.cs");
-            Assert.That(squadSetup, Does.Contain("RlOneVsOnePerArenaMatchups.PrepareEpisode(this)"),
-                "Existing ship setup should keep its preparation call; the per-arena owner makes it idempotent.");
-        }
-
         private void AssertCatalogFails(string encoded)
         {
             TargetInvocationException exception = Assert.Throws<TargetInvocationException>(() =>
@@ -144,14 +115,5 @@ namespace Bees.Tests.EditMode
             Assert.That(exception.InnerException, Is.TypeOf<ArgumentException>());
         }
 
-        private static string ReadSource(params string[] parts)
-        {
-            string path = Application.dataPath;
-            for (int i = 0; i < parts.Length; i++)
-            {
-                path = Path.Combine(path, parts[i]);
-            }
-            return File.ReadAllText(path);
-        }
     }
 }

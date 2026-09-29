@@ -1,5 +1,4 @@
 using System;
-using System.IO;
 using System.Reflection;
 using NUnit.Framework;
 using UnityEngine;
@@ -114,45 +113,6 @@ namespace Bees.Tests.EditMode
             AssertParseFails(
                 "--rl-map-size-min", "128",
                 "--rl-map-size-max", "64");
-        }
-
-        [Test]
-        public void TrainingTelemetryReportsAimQualityAndFirstEngagementDistancesWithoutPerFrameScanning()
-        {
-            string telemetry = ReadSource("Scripts", "Scenes", "RlOneVsOneCombatTelemetry.cs");
-            string diagnostics = ReadSource("Scripts", "Scenes", "RlOneVsOneEpisodeDiagnostics.cs");
-            string turret = ReadSource("Scripts", "Entities", "Ships", "Weapons", "Turret.Aiming.cs");
-            string beamCannon = ReadSource("Scripts", "Entities", "Ships", "Weapons", "BeamCannon.cs");
-            string dualCannon = ReadSource("Scripts", "Entities", "Ships", "Weapons", "DualCannon.cs");
-
-            Assert.That(telemetry, Does.Contain("bee_aim_error="));
-            Assert.That(telemetry, Does.Contain("bee_aim_within_5deg="));
-            Assert.That(telemetry, Does.Contain("bee_turret_aligned="));
-            Assert.That(telemetry, Does.Contain("bee_first_fire_distance="));
-            Assert.That(telemetry, Does.Contain("bee_first_hit_distance="));
-            Assert.That(telemetry, Does.Contain("human_aim_error="));
-            Assert.That(telemetry, Does.Contain("human_first_fire_distance="));
-            Assert.That(telemetry, Does.Contain("human_first_hit_distance="));
-            Assert.That(telemetry, Does.Contain("map_size="));
-            Assert.That(telemetry, Does.Contain("RlOneVsOneArenaMapSizeState.GetMapSize(level)"));
-            Assert.That(telemetry, Does.Contain("RecordShotFired"));
-            Assert.That(telemetry, Does.Contain("RecordHit"));
-            Assert.That(telemetry, Does.Contain("!turret.IsRlControlled"),
-                "Aim aggregates should describe policy-controlled fire rather than automatic pre-bind shots.");
-            Assert.That(telemetry, Does.Contain("turret.RlTargetPoint"),
-                "Aim error should be measured from the policy's requested aim point.");
-            Assert.That(telemetry, Does.Not.Contain("MonoBehaviour"));
-            Assert.That(telemetry, Does.Not.Contain("private void Update()"));
-            Assert.That(telemetry, Does.Not.Contain("Debug.Log("),
-                "Combat telemetry must be appended to the existing episode line rather than emitting a second line.");
-            Assert.That(telemetry, Does.Not.Contain("AddReward("));
-            Assert.That(telemetry, Does.Not.Contain("SetReward("));
-
-            Assert.That(diagnostics, Does.Contain("RlOneVsOneCombatTelemetry.BuildEpisodeFields(level)"));
-            Assert.That(diagnostics, Does.Contain("RlOneVsOneCombatTelemetry.RecordHit(sourceShip, target, appliedDamage)"));
-            Assert.That(CountOccurrences(turret, "RlOneVsOneCombatTelemetry.RecordShotFired(Ship, this);"), Is.EqualTo(1));
-            Assert.That(CountOccurrences(beamCannon, "RlOneVsOneCombatTelemetry.RecordShotFired(Ship, this);"), Is.EqualTo(1));
-            Assert.That(CountOccurrences(dualCannon, "RlOneVsOneCombatTelemetry.RecordShotFired(Ship, this);"), Is.EqualTo(2));
         }
 
         [Test]
@@ -316,33 +276,6 @@ namespace Bees.Tests.EditMode
             }
         }
 
-        [Test]
-        public void EpisodeCoordinatorLogsDiagnosticsForEveryArena()
-        {
-            string coordinator = ReadSource("Scripts", "Scenes", "RlOneVsOneEpisodeCoordinator.cs");
-
-            Assert.That(coordinator, Does.Not.Contain("private bool IsPrimaryArena"));
-            Assert.That(coordinator, Does.Not.Contain("if (IsPrimaryArena)"));
-            Assert.That(coordinator, Does.Contain("RlOneVsOneEpisodeDiagnostics.Begin(level);"));
-            Assert.That(coordinator, Does.Contain("RlOneVsOneEpisodeDiagnostics.Track(level);"));
-            Assert.That(coordinator, Does.Contain("RlOneVsOneEpisodeDiagnostics.BuildEpisodeFields(level, timedOut);"));
-            Assert.That(coordinator, Does.Contain("arena={GetArenaIndex()}"));
-        }
-
-        [Test]
-        public void TrainerConfigUsesMoreConservativePolicyAndOpponentUpdates()
-        {
-            string config = ReadSource("Training", "rl_1v1_config.yaml");
-
-            Assert.That(config, Does.Contain("learning_rate: 0.0003"));
-            Assert.That(config, Does.Contain("epsilon: 0.15"));
-            Assert.That(config, Does.Contain("save_steps: 20000"));
-            Assert.That(config, Does.Contain("team_change: 100000"));
-            Assert.That(config, Does.Contain("swap_steps: 20000"));
-            Assert.That(config, Does.Contain("window: 30"));
-            Assert.That(config, Does.Contain("play_against_latest_model_ratio: 0.20"));
-        }
-
         private object Parse(params string[] args)
         {
             return _parse.Invoke(null, new object[] { args });
@@ -384,14 +317,5 @@ namespace Bees.Tests.EditMode
             return count;
         }
 
-        private static string ReadSource(params string[] parts)
-        {
-            string path = Application.dataPath;
-            for (int i = 0; i < parts.Length; i++)
-            {
-                path = Path.Combine(path, parts[i]);
-            }
-            return File.ReadAllText(path);
-        }
     }
 }

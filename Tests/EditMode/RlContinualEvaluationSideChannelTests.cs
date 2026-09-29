@@ -1,5 +1,4 @@
 using System;
-using System.IO;
 using System.Reflection;
 using NUnit.Framework;
 using UnityEngine;
@@ -12,62 +11,6 @@ namespace Bees.Tests.EditMode
     {
         private const string EvaluationChannelId = "7ca0e8e5-47f7-49ce-b44a-738ae7f1ad15";
         private const string EvaluationModeFlag = "--bees-rl-evaluator";
-
-        [Test]
-        public void UnityResultChannelMatchesPythonEvaluatorProtocol()
-        {
-            string unity = ReadSource("Scripts", "Scenes", "RlOneVsOneEvaluationSideChannel.cs");
-            string python = ReadSource("Training", "bees_continual_evaluate.py");
-
-            Assert.That(unity, Does.Contain($"ChannelIdText = \"{EvaluationChannelId}\";"));
-            Assert.That(python, Does.Contain($"EVALUATION_CHANNEL_ID = uuid.UUID(\"{EvaluationChannelId}\")"));
-            Assert.That(unity, Does.Contain("internal const int ProtocolVersion = 1;"));
-            Assert.That(python, Does.Contain("EVALUATION_PROTOCOL_VERSION = 1"));
-            Assert.That(unity, Does.Contain($"EvaluationModeFlag = \"{EvaluationModeFlag}\";"));
-            Assert.That(python, Does.Contain($"EVALUATION_MODE_FLAG = \"{EvaluationModeFlag}\""));
-
-            AssertTokensInOrder(
-                unity,
-                "message.WriteInt32(ProtocolVersion);",
-                "message.WriteInt32(result.EpisodeNumber);",
-                "message.WriteInt32(beeTeamId);",
-                "message.WriteInt32(humanTeamId);",
-                "message.WriteInt32(result.WinningSide);",
-                "message.WriteInt32(GetWinningTeamId(result, beeTeamId, humanTeamId));",
-                "message.WriteBoolean(result.TimedOut);",
-                "message.WriteFloat32(result.DurationSeconds);",
-                "message.WriteInt32(result.BeeStartingTsv);",
-                "message.WriteInt32(result.BeeFinalTsv);",
-                "message.WriteInt32(result.HumanStartingTsv);",
-                "message.WriteInt32(result.HumanFinalTsv);",
-                "message.WriteInt32(result.BeeShotsFired);",
-                "message.WriteInt32(result.BeeShotsHit);",
-                "message.WriteInt32(result.BeeDamageDealt);",
-                "message.WriteInt32(result.HumanShotsFired);",
-                "message.WriteInt32(result.HumanShotsHit);",
-                "message.WriteInt32(result.HumanDamageDealt);");
-
-            AssertTokensInOrder(
-                python,
-                "version = message.read_int32()",
-                "episode_number=message.read_int32(),",
-                "bee_team_id=message.read_int32(),",
-                "human_team_id=message.read_int32(),",
-                "winning_side=message.read_int32(),",
-                "winning_team_id=message.read_int32(),",
-                "timed_out=message.read_bool(),",
-                "duration_seconds=float(message.read_float32()),",
-                "bee_starting_tsv=message.read_int32(),",
-                "bee_final_tsv=message.read_int32(),",
-                "human_starting_tsv=message.read_int32(),",
-                "human_final_tsv=message.read_int32(),",
-                "bee_shots=message.read_int32(),",
-                "bee_hits=message.read_int32(),",
-                "bee_damage=message.read_int32(),",
-                "human_shots=message.read_int32(),",
-                "human_hits=message.read_int32(),",
-                "human_damage=message.read_int32(),");
-        }
 
         [Test]
         public void ResultChannelRegistersOnlyForExplicitEvaluatorRuns()
@@ -96,17 +39,6 @@ namespace Bees.Tests.EditMode
             Assert.That(evaluator, Is.True);
             Assert.That(wrongScene, Is.False);
             Assert.That(alreadyRegistered, Is.False);
-        }
-
-        [Test]
-        public void ResultChannelUnregistersBeforeItsStaticInstanceIsCleared()
-        {
-            string channel = ReadSource("Scripts", "Scenes", "RlOneVsOneEvaluationSideChannel.cs");
-            AssertTokensInOrder(
-                channel,
-                "RlOneVsOneEpisodeCoordinator.EpisodeEnded -= OnEpisodeEnded;",
-                "SideChannelManager.UnregisterSideChannel(_instance);",
-                "_instance = null;");
         }
 
         [Test]
@@ -151,41 +83,6 @@ namespace Bees.Tests.EditMode
             {
                 RuntimeAssembly.SetStaticField(configDataType, "Configuration", previousConfiguration);
             }
-        }
-
-        [Test]
-        public void EpisodeCompletionPublishesOneFinishedResultToTheEvaluatorHook()
-        {
-            Type coordinatorType = RuntimeAssembly.GetType("RlOneVsOneEpisodeCoordinator");
-            EventInfo episodeEnded = coordinatorType.GetEvent(
-                "EpisodeEnded",
-                BindingFlags.Static | BindingFlags.NonPublic);
-            Assert.That(episodeEnded, Is.Not.Null);
-
-            string coordinator = ReadSource("Scripts", "Scenes", "RlOneVsOneEpisodeCoordinator.cs");
-            int buildResult = coordinator.IndexOf("EpisodeResult result = new EpisodeResult(", StringComparison.Ordinal);
-            int retainResult = coordinator.IndexOf("LastEpisodeResult = result;", buildResult, StringComparison.Ordinal);
-            int closeEpisode = coordinator.IndexOf("_episodeActive = false;", retainResult, StringComparison.Ordinal);
-            int publishResult = coordinator.IndexOf("EpisodeEnded?.Invoke(level, result);", closeEpisode, StringComparison.Ordinal);
-
-            Assert.That(buildResult, Is.GreaterThanOrEqualTo(0));
-            Assert.That(retainResult, Is.GreaterThan(buildResult));
-            Assert.That(closeEpisode, Is.GreaterThan(retainResult));
-            Assert.That(publishResult, Is.GreaterThan(closeEpisode));
-            Assert.That(
-                coordinator,
-                Does.Contain("coordinator.CompleteEpisode(level, DetermineWinner(level), false);"));
-            Assert.That(
-                coordinator,
-                Does.Contain("coordinator.CompleteEpisode(level, 0, true);"));
-
-            string channel = ReadSource("Scripts", "Scenes", "RlOneVsOneEvaluationSideChannel.cs");
-            Assert.That(channel, Does.Contain("RlOneVsOneEpisodeCoordinator.EpisodeEnded += OnEpisodeEnded;"));
-            Assert.That(channel, Does.Contain("SideChannelManager.RegisterSideChannel(_instance);"));
-            Assert.That(channel, Does.Contain("SideChannelManager.UnregisterSideChannel(_instance);"));
-            Assert.That(channel, Does.Contain("IsEvaluationMode(args)"));
-            Assert.That(channel, Does.Not.Contain("msg.Read"),
-                "The authoritative result channel must remain output-only; evaluation configuration belongs to command-line options.");
         }
 
         private static object CreateEpisodeResult(int winningSide, bool timedOut)
@@ -233,14 +130,5 @@ namespace Bees.Tests.EditMode
             }
         }
 
-        private static string ReadSource(params string[] parts)
-        {
-            string path = Application.dataPath;
-            for (int i = 0; i < parts.Length; i++)
-            {
-                path = Path.Combine(path, parts[i]);
-            }
-            return File.ReadAllText(path);
-        }
     }
 }

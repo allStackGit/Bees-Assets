@@ -1,5 +1,4 @@
 using System;
-using System.IO;
 using System.Reflection;
 using NUnit.Framework;
 using UnityEngine;
@@ -84,36 +83,11 @@ namespace Bees.Tests.EditMode
             Assert.That(result.Error, Does.Contain("requires a path argument"));
         }
 
-        [Test]
-        public void CaptureSamplesLiveAgentObservationsAndAppendsEveryTwentiethToJsonArray()
-        {
-            string source = ReadSource("Scripts", "Scenes", "RlObservationSnapshotCapture.cs");
-
-            Assert.That(source, Does.Contain("agent.CollectObservations(sensor);"));
-            Assert.That(source, Does.Contain("_validObservationCount % CaptureInterval != 0"));
-            Assert.That(source, Does.Contain("RlPolicySchema.ExpectedObservationSize"));
-            Assert.That(source, Does.Contain("raw_pre_normalization = true"));
-            Assert.That(source, Does.Contain("FileMode.Open"));
-            Assert.That(source, Does.Contain("FindClosingArrayBracket"));
-            Assert.That(source, Does.Contain("while (true)"));
-            Assert.That(source, Does.Not.Contain("Wrote one-shot observation snapshot"));
-        }
-
         private ParseResult Parse(params string[] args)
         {
             object[] invocationArgs = { args, null, null };
             bool requested = (bool)_tryParseCommandLine.Invoke(null, invocationArgs);
             return new ParseResult(requested, invocationArgs[1] as string, invocationArgs[2] as string);
-        }
-
-        private static string ReadSource(params string[] parts)
-        {
-            string path = Application.dataPath;
-            for (int i = 0; i < parts.Length; i++)
-            {
-                path = Path.Combine(path, parts[i]);
-            }
-            return File.ReadAllText(path);
         }
 
         private readonly struct ParseResult

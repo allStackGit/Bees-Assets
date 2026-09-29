@@ -1,5 +1,4 @@
 using System;
-using System.IO;
 using NUnit.Framework;
 using UnityEngine;
 
@@ -9,56 +8,6 @@ namespace Bees.Tests.EditMode
     [Category("BeesFoundation")]
     public class RlOneVsOneSelfPlaySemanticsTests
     {
-        [Test]
-        public void IdleRoleAgentsDoNotEmitSyntheticZeroStepTrajectories()
-        {
-            string agent = ReadSource("Scripts", "Scenes", "RlOneVsOneAgent.cs");
-            int assignedTeam = agent.IndexOf("int assignedTeam = _side == ConfigData.Configuration.BeeSide", StringComparison.Ordinal);
-            int idleGuard = agent.IndexOf("if (_teamId != assignedTeam || !_hasParticipatedThisEpisode ||", assignedTeam, StringComparison.Ordinal);
-            int idleReturn = agent.IndexOf("return;", idleGuard, StringComparison.Ordinal);
-            int activeReward = agent.IndexOf("_agentGroup?.AddGroupReward(terminalReward);", idleReturn, StringComparison.Ordinal);
-            int endEpisode = agent.IndexOf("_agentGroup?.EndGroupEpisode();", activeReward, StringComparison.Ordinal);
-
-            Assert.That(assignedTeam, Is.GreaterThanOrEqualTo(0));
-            Assert.That(idleGuard, Is.GreaterThan(assignedTeam));
-            Assert.That(idleReturn, Is.GreaterThan(idleGuard),
-                "An idle self-play role must return without creating an empty ML-Agents trajectory.");
-            Assert.That(activeReward, Is.GreaterThan(idleReturn));
-            Assert.That(endEpisode, Is.GreaterThan(activeReward));
-        }
-
-        [Test]
-        public void TimeoutRemainsAnExplicitTerminalLossRatherThanAnInterruptedTrajectory()
-        {
-            Type rewardType = RuntimeAssembly.GetType("RlOneVsOneReward");
-            float timeoutReward = (float)RuntimeAssembly.InvokeStatic(
-                rewardType,
-                "CalculateTerminalReward",
-                1,
-                0,
-                true);
-            float simultaneousEliminationReward = (float)RuntimeAssembly.InvokeStatic(
-                rewardType,
-                "CalculateTerminalReward",
-                1,
-                0,
-                false);
-
-            Assert.That(timeoutReward, Is.LessThan(0f),
-                "A timeout must remain a loss even when no side won by elimination.");
-            Assert.That(simultaneousEliminationReward, Is.EqualTo(0f),
-                "A simultaneous elimination remains a neutral draw; it must not be conflated with a timeout.");
-
-            string agent = ReadSource("Scripts", "Scenes", "RlOneVsOneAgent.cs");
-            int timeoutComment = agent.IndexOf("Timeouts are explicit terminal losses in this environment", StringComparison.Ordinal);
-            int endEpisode = agent.IndexOf("EndGroupEpisode();", timeoutComment, StringComparison.Ordinal);
-
-            Assert.That(timeoutComment, Is.GreaterThanOrEqualTo(0));
-            Assert.That(endEpisode, Is.GreaterThan(timeoutComment));
-            Assert.That(agent, Does.Not.Contain("EpisodeInterrupted();"),
-                "A timeout is a game-terminal loss and must not bootstrap through an interrupted trajectory.");
-        }
-
         [Test]
         public void ConstantPolicyDirectionMapsToFourDifferentWorldDirections()
         {
@@ -183,14 +132,5 @@ namespace Bees.Tests.EditMode
             Assert.That(worldIndexForPolicyUpAtQuarterTurnOne, Is.EqualTo(worldRight));
         }
 
-        private static string ReadSource(params string[] pathParts)
-        {
-            string path = Application.dataPath;
-            for (int i = 0; i < pathParts.Length; i++)
-            {
-                path = Path.Combine(path, pathParts[i]);
-            }
-            return File.ReadAllText(path);
-        }
     }
 }

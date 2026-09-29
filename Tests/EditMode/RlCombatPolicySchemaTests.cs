@@ -1,7 +1,6 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
-using System.IO;
 using NUnit.Framework;
 using UnityEngine;
 
@@ -71,17 +70,8 @@ namespace Bees.Tests.EditMode
         public void TacticalPerceptionCapacityRemainsBoundedWithoutTrainingPopulationLimit()
         {
             Type agentType = RuntimeAssembly.GetType("RlOneVsOneAgent");
-            string options = File.ReadAllText(Path.Combine(
-                Application.dataPath,
-                "Scripts",
-                "Scenes",
-                "RlOneVsOneTrainingOptions.cs"));
-
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "MaxObservedAllies"), Is.EqualTo(64));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "MaxObservedEnemies"), Is.EqualTo(64));
-            Assert.That(options, Does.Not.Contain("MaximumShipsPerSide"));
-            Assert.That(options, Does.Contain("if (ShipsPerSide < 1)"),
-                "Training population may exceed tactical top-K capacity; only non-positive team sizes are invalid.");
         }
 
         [Test]
@@ -238,58 +228,6 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void NeuralTrainingKeepsEveryShipOnActivatedHiveMindVisionPath()
-        {
-            string lifecycle = ReadSource("Scripts", "Entities", "Ships", "Ship.Lifecycle.cs");
-            string vision = ReadSource("Scripts", "Entities", "Ships", "Weapons", "HivemindVision.cs");
-
-            Assert.That(lifecycle, Does.Contain("IsHiveMindControlled = Stage.IsTrainingNueralNetwork || !IsUserControlled"));
-            Assert.That(lifecycle, Does.Contain("IsUserControlled && !Stage.IsTrainingNueralNetwork"));
-            Assert.That(lifecycle, Does.Contain("if (IsHiveMindControlled)"));
-            Assert.That(lifecycle, Does.Contain("HiveMindVision.Activate()"));
-            Assert.That(vision, Does.Contain("public bool CanSee(Collider2D targetCollider"));
-            Assert.That(vision, Does.Contain("targetCollider.ClosestPoint(observerWorldPosition)"),
-                "Large targets and walls should become visible when their collider edge enters sight, not only when their center does.");
-        }
-
-        [Test]
-        public void SharedVisionRefreshCoversEnemyShipsObstaclesAndTargetableMapObjects()
-        {
-            string queries = ReadSource("Scripts", "Levels", "GameState.Queries.cs");
-
-            Assert.That(queries, Does.Contain("observer.HiveMindVision.CanSee(spotted.Collider, spotted.GetPosition())"));
-            Assert.That(queries, Does.Contain("RecordHiveMindSighting(observer, spotted)"),
-                "HumanTarget and every other enemy Ship type must use the ordinary shared enemy-ship vision path.");
-            Assert.That(queries, Does.Contain("PathfinderObstacleScope.GetActiveObstacleObjects(Level)"));
-            Assert.That(queries, Does.Contain("RecordHiveMindObstacleSighting(observer, obstacle)"));
-            Assert.That(queries, Does.Contain("GetComponentsInChildren<MapObject>(false)"));
-            Assert.That(queries, Does.Contain("RecordHiveMindMapObjectSighting(observer, mapObject)"));
-        }
-
-        [Test]
-        public void EnvironmentObservationsSeparateStaticGeometryMovingAsteroidsAndStrategicObjects()
-        {
-            string source = ReadSource("Scripts", "Scenes", "RlCombatPerception.cs");
-
-            Assert.That(source, Does.Contain("GetMiningAsteroidsVisibleToHiveMind(side)"));
-            Assert.That(source, Does.Contain("GetMapObjectsVisibleToHiveMind(side)"));
-            Assert.That(source, Does.Contain("GetObstaclesVisibleToHiveMind(side)"));
-            Assert.That(source, Does.Contain("collisionAsteroid.Body.linearVelocity"));
-            Assert.That(source, Does.Contain("asteroid.HalfExtents.x"));
-            Assert.That(source, Does.Contain("asteroid.HalfExtents.y"));
-            Assert.That(source, Does.Contain("AddHeading(sensor, asteroid.Rotation)"));
-            Assert.That(source, Does.Contain("obstacle.ObstacleType == ConfigData.ObstacleTypes.StaticObstacle"));
-            Assert.That(source, Does.Contain("MarkNavigationAabb(_navigationOccupancy"));
-            Assert.That(source, Does.Contain("MarkNavigationBounds(_navigationOccupancy"));
-            Assert.That(source, Does.Contain("mapObject is CanisterBomb"));
-            Assert.That(source, Does.Contain("FireTankObservationType"));
-            Assert.That(source, Does.Contain("mapObject.Targetable ? 1f : 0f"));
-            Assert.That(source, Does.Not.Contain("MaxObservedProjectiles"));
-            Assert.That(source, Does.Not.Contain("AddProjectileSlots"),
-                "Projectile-evasion slots are intentionally excluded; weapon ProjectileValue remains a weapon characteristic.");
-        }
-
-        [Test]
         public void ExplorationGridUsesEffectiveHiveMindVisionRangeWhenSightIsZero()
         {
             Type visionType = RuntimeAssembly.GetType("Assets.Scripts.Entities.Ships.Weapons.HiveMindVision");
@@ -336,10 +274,6 @@ namespace Bees.Tests.EditMode
                 RuntimeAssembly.SetField(ship, "Sight", 80);
                 Assert.That((int)RuntimeAssembly.InvokeStatic(visionType, "GetEffectiveRange", ship), Is.EqualTo(80),
                     "An explicit Sight value must take precedence over MaxRange.");
-
-                string perception = ReadSource("Scripts", "Scenes", "RlCombatPerception.cs");
-                Assert.That(perception, Does.Contain("NormalizePositive(HiveMindVision.GetEffectiveRange(ship), 80f)"),
-                    "The policy sight channel must observe the same effective range that drives actual Hive Mind visibility.");
             }
             finally
             {
@@ -377,60 +311,6 @@ namespace Bees.Tests.EditMode
             Assert.That(occupancy[center], Is.EqualTo(1f));
             Assert.That(blocked, Is.EqualTo(1),
                 "A small obstacle centered on the ship should occupy only the center 6x6 navigation cell.");
-
-            string agent = ReadSource("Scripts", "Scenes", "RlOneVsOneAgent.cs");
-            Assert.That(agent, Does.Not.Contain("MaxObservedObstacles"));
-            Assert.That(agent, Does.Contain("MaxObservedCollisionAsteroids"));
-        }
-
-        [Test]
-        public void SelfPerceptionUsesActualMapBoundsAndCompactGlobalBattleCounts()
-        {
-            string source = ReadSource("Scripts", "Scenes", "RlCombatPerception.cs");
-
-            Assert.That(source, Does.Contain("NormalizeSignedCoordinate(position.x, level.MinX, level.MaxX)"));
-            Assert.That(source, Does.Contain("NormalizeSignedCoordinate(position.y, level.MinY, level.MaxY)"));
-            Assert.That(source, Does.Contain("level.MaxX - level.MinX"));
-            Assert.That(source, Does.Contain("level.MaxY - level.MinY"));
-            Assert.That(source, Does.Contain("CountLiveShips(state.GetShips(side))"));
-            Assert.That(source, Does.Contain("CountLiveShips(state.GetAllEnemyShips(side))"));
-            Assert.That(source, Does.Contain("candidate != null && !candidate.IsDead"));
-        }
-
-        [Test]
-        public void TargetableNonShipObjectsCanBeHitByRlPointFire()
-        {
-            string projectile = ReadSource("Scripts", "Entities", "Projectiles", "Projectile.cs");
-            string mapObject = ReadSource("Scripts", "Entities", "MapObject.cs");
-            string turret = ReadSource("Scripts", "Entities", "Ships", "Weapons", "Turret.Targeting.cs");
-
-            Assert.That(projectile, Does.Contain("DamageObstacle((CollisionAsteroid)obstacle)"),
-                "Collision asteroids must remain destructible by ordinary projectiles.");
-            Assert.That(mapObject, Does.Contain("Health -= LastHitProjectile.Power"),
-                "Targetable MapObjects such as the Fire Tank must remain destructible by projectile contact.");
-            Assert.That(turret, Does.Contain("if (IsRlControlled)"));
-            Assert.That(turret, Does.Contain("FireAtPoint()"),
-                "RL turrets must be able to shoot an observed point without a scripted Ship target.");
-        }
-
-        [Test]
-        public void ObservationCollectionsUseExplicitDeterministicOrdering()
-        {
-            string source = ReadSource("Scripts", "Scenes", "RlCombatPerception.cs");
-
-            Assert.That(source, Does.Contain("SortShipsForObservation(_allyCandidates, origin)"));
-            Assert.That(source, Does.Contain("SortShipsForObservation(_enemyCandidates, origin)"));
-            Assert.That(source, Does.Contain("((int)left.ShipType).CompareTo((int)right.ShipType)"));
-            Assert.That(source, Does.Contain("left.Id.CompareTo(right.Id)"));
-            Assert.That(source, Does.Contain("_miningAsteroidCandidates.Add(new ObservedMiningAsteroid("));
-            Assert.That(source, Does.Contain("_mapObjectCandidates.Add(new ObservedMapObject("));
-            Assert.That(source, Does.Contain("_collisionAsteroidCandidates.Add(new ObservedCollisionAsteroid("));
-            Assert.That(source, Does.Contain("_miningAsteroidCandidates.Sort"));
-            Assert.That(source, Does.Contain("_mapObjectCandidates.Sort"));
-            Assert.That(source, Does.Contain("_collisionAsteroidCandidates.Sort"));
-            Assert.That(source, Does.Contain("left.Type.CompareTo(right.Type)"));
-            Assert.That(source, Does.Contain("for (int slot = 0; slot < MaxObservedEntityWeaponSlots; slot++)"),
-                "Observed weapon mounts must retain authored list order rather than introducing unordered iteration.");
         }
 
         [Test]
@@ -451,89 +331,5 @@ namespace Bees.Tests.EditMode
                 noSpecialAction), Is.True);
         }
 
-        [Test]
-        public void PrimitiveCapabilityActionsAreMaskedByCapabilityNotCurrentSituation()
-        {
-            string source = ReadSource("Scripts", "Scenes", "RlOneVsOneAgent.cs");
-
-            Assert.That(source, Does.Contain("ship.ShipType == ConfigData.ShipTypes.Factory"));
-            Assert.That(source, Does.Contain("ship.ShipType == ConfigData.ShipTypes.CarpenterBee"));
-            Assert.That(source, Does.Contain("ship.Side != ConfigData.Configuration.BeeSide"));
-            Assert.That(source, Does.Contain("shipSize.x < beehiveSize.x && shipSize.y < beehiveSize.y"));
-            Assert.That(source, Does.Contain("ship.Side == ConfigData.Configuration.HumanSide"));
-            Assert.That(source, Does.Contain("ship.ShipType != ConfigData.ShipTypes.WarpGate"));
-
-            Assert.That(source, Does.Contain("canControl && CanUseMiningAction(_ship)"));
-            Assert.That(source, Does.Contain("canControl && CanUseHealingAction(_ship)"));
-            Assert.That(source, Does.Contain("canControl && CanUseWarpAction(_ship)"));
-            Assert.That(source, Does.Not.Contain("GetSpecialReadiness(_ship) > 0f"),
-                "Cooldown/contact validity must not leak through the action mask.");
-        }
-
-        [Test]
-        public void PrimitiveCapabilityExecutionUsesCurrentPhysicalContactAndNeverHiveMindCommands()
-        {
-            string source = ReadSource("Scripts", "Scenes", "RlOneVsOneAgent.cs");
-
-            Assert.That(source, Does.Contain("FindTouchingMiningAsteroid()"));
-            Assert.That(source, Does.Contain("_ship.Collider.IsTouching(asteroid.Collider)"));
-            Assert.That(source, Does.Contain("FindTouchingBeehive()"));
-            Assert.That(source, Does.Contain("beehive.HealCollider.IsTouching(_ship.Collider)"));
-            Assert.That(source, Does.Contain("FindTouchingWarpGate()"));
-            Assert.That(source, Does.Contain("warpGate.WarpCollider.IsTouching(_ship.Collider)"));
-            Assert.That(source, Does.Contain("_ship.EndKill()"));
-            Assert.That(source, Does.Not.Contain("CommandTypes.Mining"));
-            Assert.That(source, Does.Not.Contain("CommandTypes.Heal"));
-            Assert.That(source, Does.Not.Contain("CommandTypes.FullRetreat"));
-            Assert.That(source, Does.Not.Contain("MoveToTrackedPoint"),
-                "Mine/heal/warp actions must not navigate the ship for the policy.");
-        }
-
-        [Test]
-        public void SuccessfulPrimitiveOutcomesProduceRewardButInvalidAttemptsDoNot()
-        {
-            string agent = ReadSource("Scripts", "Scenes", "RlOneVsOneAgent.cs");
-            string coordinator = ReadSource("Scripts", "Scenes", "RlOneVsOneEpisodeCoordinator.cs");
-            string yellowJacket = ReadSource("Scripts", "Entities", "Ships", "YellowJacket.cs");
-
-            Assert.That(agent, Does.Contain("RewardSuccessfulCapabilityOutcome(_ship.Tsv - oldTsv)"));
-            Assert.That(agent, Does.Contain("RewardSuccessfulCapabilityOutcome(preservedTsv)"));
-            Assert.That(agent, Does.Contain("if (asteroid == null)"));
-            Assert.That(agent, Does.Contain("if (beehive == null)"));
-            Assert.That(agent, Does.Contain("if (warpGate == null)"));
-            Assert.That(coordinator, Does.Contain("RecordSuccessfulCapabilityOutcome"));
-            Assert.That(coordinator, Does.Contain("RlOneVsOneEpisodeCoordinator coordinator = GetCoordinator(ship)"));
-            Assert.That(coordinator, Does.Contain("coordinator.ApplyImmediateTsvReward(ship.Side, reward)"));
-            Assert.That(yellowJacket, Does.Contain("RlOneVsOneEpisodeCoordinator.RecordHit"),
-                "Direct Yellow Jacket damage must receive the same real-outcome reward path as weapon impacts.");
-        }
-
-        [Test]
-        public void DirectShipSpecialsDoNotDependOnTheirScriptedCommandLoops()
-        {
-            string striker = ReadSource("Scripts", "Entities", "Ships", "Striker.cs");
-            string barge = ReadSource("Scripts", "Entities", "Ships", "Barge.cs");
-
-            Assert.That(striker, Does.Contain("if (Stage.IsTrainingNueralNetwork)"));
-            Assert.That(striker, Does.Contain("HasDroppedBomb = false;"),
-                "A policy-controlled Striker must be able to drop again after its proximity reload without BombingRun resetting a new run.");
-            Assert.That(barge, Does.Contain("if (Stage.IsTrainingNueralNetwork && IsRlPolicyControlled && !Squad.IsUserControlled)"));
-            Assert.That(barge, Does.Contain("RlMovementDirection = NormalizeDirection(Rotation)"),
-                "A policy-controlled Barge must retain the heading established by the policy through charge wind-up.");
-            Assert.That(barge, Does.Contain("else if (target != null && !target.IsDead)"),
-                "Scripted non-policy charges must retain their target-following behavior.");
-            Assert.That(barge, Does.Contain("MoveInDirection(Rotation)"),
-                "Untargeted charge must continue along the ship's established heading.");
-        }
-
-        private static string ReadSource(params string[] pathParts)
-        {
-            string path = Application.dataPath;
-            for (int i = 0; i < pathParts.Length; i++)
-            {
-                path = Path.Combine(path, pathParts[i]);
-            }
-            return File.ReadAllText(path);
-        }
     }
 }

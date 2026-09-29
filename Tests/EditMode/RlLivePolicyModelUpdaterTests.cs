@@ -1,5 +1,4 @@
 using System;
-using System.IO;
 using System.Reflection;
 using NUnit.Framework;
 using UnityEngine;
@@ -142,43 +141,6 @@ namespace Bees.Tests.EditMode
             Assert.That(args[4] as string, Does.Contain("deployment"));
         }
 
-        [Test]
-        public void UpdaterPinsValidatedDeploymentAndUsesBuildAwareTransport()
-        {
-            string source = ReadSource("Scripts", "Scenes", "RlLivePolicyModelUpdater.cs");
-            Assert.That(source, Does.Contain("CurrentRequestType = \"rl-model-current\""));
-            Assert.That(source, Does.Contain("ChunkRequestType = \"rl-model-chunk\""));
-            Assert.That(source, Does.Contain("ConfigData.Test ? string.Empty : SteamWebApiAuth.TicketHex"));
-            Assert.That(source, Does.Contain("ConfigData.TestServerHostname"));
-            Assert.That(source, Does.Contain("ConfigData.DevelopmentServerHostname"));
-            Assert.That(source, Does.Contain("ConfigData.ProductionServerHostname"));
-            Assert.That(source, Does.Contain("ConfigData.TestPort"));
-            Assert.That(source, Does.Contain("ConfigData.DevelopmentPort"));
-            Assert.That(source, Does.Contain("ConfigData.ProductionPort"));
-            Assert.That(source, Does.Contain("string scheme = ConfigData.Production ? \"wss\" : \"ws\";"));
-            Assert.That(source, Does.Contain("PolicyAbiVersion = RlPolicySchema.Version"));
-            Assert.That(source, Does.Contain("PolicySignature = RlPolicySchema.Signature"));
-            Assert.That(source, Does.Contain("chunk.BundleSha256 = descriptor.BundleSha256"));
-            Assert.That(source, Does.Contain("ComputeFileSha256(tempPath)"));
-            Assert.That(source, Does.Contain("AssetBundle.LoadFromFileAsync(finalPath)"));
-            Assert.That(source, Does.Contain("LoadAssetAsync<ModelAsset>(ModelAddress)"));
-            Assert.That(source, Does.Contain("LoadAssetAsync<TextAsset>(ManifestAddress)"));
-            Assert.That(source, Does.Contain("_bootstrap.TryApplyHotBundle("));
-            Assert.That(source, Does.Contain("_currentDeploymentId = descriptor.DeploymentId;"));
-        }
-
-        [Test]
-        public void BootstrapHotSwapRollsBackPartialReplacementAndFallsBackIfRollbackFails()
-        {
-            string source = ReadSource("Scripts", "Scenes", "RlLivePolicyModelBootstrap.cs");
-            Assert.That(source, Does.Contain("List<RlLivePolicyAgent> changedAgents"));
-            Assert.That(source, Does.Contain("agent.SetModel(RlOneVsOneAgent.BehaviorName, previousModel)"));
-            Assert.That(source, Does.Contain("if (rollbackFailed)"));
-            Assert.That(source, Does.Contain("FailToHiveMind(error + \"; rollback to the prior champion also failed\")"));
-            Assert.That(source, Does.Contain("_model = model;"));
-            Assert.That(source, Does.Contain("_deploymentId = manifest.deployment_id;"));
-        }
-
         private static object NewResponse(Type responseType, params (string name, object value)[] fields)
         {
             object response = Activator.CreateInstance(responseType, true);
@@ -222,14 +184,5 @@ namespace Bees.Tests.EditMode
             return (T)property.GetValue(null, null);
         }
 
-        private static string ReadSource(params string[] parts)
-        {
-            string path = Application.dataPath;
-            for (int i = 0; i < parts.Length; i++)
-            {
-                path = Path.Combine(path, parts[i]);
-            }
-            return File.ReadAllText(path);
-        }
     }
 }

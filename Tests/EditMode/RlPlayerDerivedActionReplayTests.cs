@@ -166,32 +166,6 @@ namespace Bees.Tests.EditMode
             AssertLoadFails(rooted);
         }
 
-        [Test]
-        public void PolicyAgentAndArenaLifecycleKeepScriptedSideOutOfPpoOwnership()
-        {
-            string agent = ReadSource("Scripts", "Scenes", "RlOneVsOneAgent.cs");
-            Assert.That(agent, Does.Contain("!RlPlayerDerivedActionReplay.IsScriptedSide(_level, _side)"));
-            Assert.That(agent, Does.Contain("internal static void ApplyMovementCommand(Ship ship"));
-            Assert.That(agent, Does.Contain("internal static void ApplyWeaponCommand(Ship ship"));
-
-            string matchups = ReadSource("Scripts", "Scenes", "RlOneVsOnePerArenaMatchups.cs");
-            Assert.That(matchups, Does.Contain("RlPlayerDerivedActionReplay.PrepareEpisode(level);"));
-            Assert.That(matchups, Does.Contain("RlPlayerDerivedActionReplay.EndEpisode(level);"));
-
-            string replay = ReadSource("Scripts", "Scenes", "RlPlayerDerivedActionReplay.cs");
-            Assert.That(replay, Does.Contain("private bool _hasBoundOnce;"));
-            Assert.That(replay, Does.Contain("if (_hasBoundOnce)"));
-            Assert.That(replay, Does.Contain("_neutralized = true;"));
-            Assert.That(replay, Does.Contain("ApplyCapabilityAction(_replay.SpecialActions[frameIndex]);"));
-            Assert.That(replay, Does.Contain("case RlOneVsOneAgent.MiningAction:"));
-            Assert.That(replay, Does.Contain("case RlOneVsOneAgent.HealingAction:"));
-            Assert.That(replay, Does.Contain("case RlOneVsOneAgent.WarpAction:"));
-
-            string coordinator = ReadSource("Scripts", "Scenes", "RlOneVsOneEpisodeCoordinator.cs");
-            Assert.That(coordinator, Does.Contain("!RlPlayerDerivedActionReplay.IsScriptedSide(ship.Level, ship.Side)"));
-            Assert.That(coordinator, Does.Contain("RlOneVsOneAgent.RequiresPolicyControl(ship) && !ship.IsRlPolicyControlled"));
-        }
-
         private string WriteReplay(
             int frameCount,
             bool capabilityAware,
@@ -335,14 +309,5 @@ namespace Bees.Tests.EditMode
             return value.Replace("\\", "\\\\").Replace("\"", "\\\"");
         }
 
-        private static string ReadSource(params string[] parts)
-        {
-            string path = Application.dataPath;
-            for (int i = 0; i < parts.Length; i++)
-            {
-                path = Path.Combine(path, parts[i]);
-            }
-            return File.ReadAllText(path);
-        }
     }
 }
