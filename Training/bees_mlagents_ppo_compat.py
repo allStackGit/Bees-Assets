@@ -25,6 +25,7 @@ BEES_SELF_IS_MOBILE_INDEX = 16
 BEES_CAPABILITY_START = 25
 BEES_CAPABILITY_SPECIAL_PHASE_INDEX = BEES_CAPABILITY_START + 4
 BEES_BARGE_SHIP_TYPE_SCALAR = -1.0 / 23.0
+BEES_HEALING_SPECIAL_ACTION = 3
 ACTION_ENTROPY_EPSILON = 1e-7
 
 _ORIGINAL_GAUSSIAN_FORWARD = None
@@ -235,6 +236,10 @@ def _bees_masked_behavioral_cloning_loss(
             action_spec.discrete_branches,
         )
         branch_losses = []
+        expert_special = expert_actions.discrete_tensor[:, BEES_WEAPON_SLOTS]
+        fire_effective = (
+            expert_special != BEES_HEALING_SPECIAL_ACTION
+        ).to(reference.dtype)
         for branch_index, (log_prob_branch, expert_branch) in enumerate(
             zip(log_prob_branches, one_hot_expert_actions)
         ):
@@ -244,7 +249,9 @@ def _bees_masked_behavioral_cloning_loss(
                 dim=1,
             )
             if branch_index < BEES_WEAPON_SLOTS:
-                branch_activity = activity[:, branch_index]
+                branch_activity = (
+                    activity[:, branch_index] * fire_effective
+                )
                 active_count = branch_activity.sum()
                 if float(active_count.detach().cpu().item()) <= 0.0:
                     continue
@@ -321,13 +328,30 @@ def _masked_action_log_probs_and_entropy(action_model, actions, dists, masks):
     if dists.discrete is not None:
         discrete_log_probs = []
         all_discrete_log_probs = []
-        for discrete_action, discrete_dist in zip(
+        policy_dimension_mask = getattr(
+            _POLICY_DIMENSION_MASK_STATE,
+            "mask",
+            None,
+        )
+        for branch_index, (discrete_action, discrete_dist) in enumerate(zip(
             actions.discrete_list,
             dists.discrete,
-        ):
+        )):
             discrete_log_probs.append(discrete_dist.log_prob(discrete_action))
             all_discrete_log_probs.append(discrete_dist.all_log_prob())
-            entropies.append(discrete_dist.entropy())
+            branch_entropy = discrete_dist.entropy()
+            if (
+                policy_dimension_mask is not None
+                and policy_dimension_mask.shape[0] == branch_entropy.shape[0]
+                and policy_dimension_mask.shape[1]
+                >= BEES_CONTINUOUS_ACTIONS + action_model.action_spec.discrete_size
+            ):
+                branch_activity = policy_dimension_mask[
+                    :,
+                    BEES_CONTINUOUS_ACTIONS + branch_index,
+                ].to(branch_entropy.dtype)
+                branch_entropy = branch_entropy * branch_activity.unsqueeze(1)
+            entropies.append(branch_entropy)
 
     action_log_probs = ActionLogProbs(
         continuous_log_prob,
@@ -342,6 +366,7 @@ def _build_bees_policy_dimension_mask(
     action_spec,
     action_masks,
     movement_activity=None,
+    discrete_actions=None,
 ):
     """Build PPO loss weights that omit action dimensions with no physical effect."""
 
@@ -380,11 +405,26 @@ def _build_bees_policy_dimension_mask(
         dtype=continuous_activity.dtype,
         device=continuous_activity.device,
     )
+    fire_effective = None
+    if (
+        discrete_actions is not None
+        and discrete_actions.ndim == 2
+        and discrete_actions.shape[0] == action_masks.shape[0]
+        and discrete_actions.shape[1] >= len(BEES_DISCRETE_BRANCHES)
+    ):
+        fire_effective = (
+            discrete_actions[:, BEES_WEAPON_SLOTS]
+            != BEES_HEALING_SPECIAL_ACTION
+        ).to(discrete_activity.dtype)
+
     for slot in range(BEES_WEAPON_SLOTS):
         fire_action_index = slot * 2 + 1
-        discrete_activity[:, slot] = (
+        slot_activity = (
             action_masks[:, fire_action_index] > 0.5
         ).to(discrete_activity.dtype)
+        if fire_effective is not None:
+            slot_activity = slot_activity * fire_effective
+        discrete_activity[:, slot] = slot_activity
 
     special_start = sum(BEES_DISCRETE_BRANCHES[:-1])
     discrete_activity[:, BEES_WEAPON_SLOTS] = (
@@ -717,10 +757,14 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         )
         if movement_activity is not None:
             movement_activity = action_masks.new_tensor(movement_activity)
+        discrete_actions = ModelUtils.list_to_tensor(
+            batch[BufferKey.DISCRETE_ACTION]
+        )
         dimension_mask = _build_bees_policy_dimension_mask(
             optimizer.policy.behavior_spec.action_spec,
             action_masks,
             movement_activity=movement_activity,
+            discrete_actions=discrete_actions,
         )
         _POLICY_DIMENSION_MASK_STATE.mask = dimension_mask
         return action_masks
