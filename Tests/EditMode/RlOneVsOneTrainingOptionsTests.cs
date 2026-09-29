@@ -32,6 +32,9 @@ namespace Bees.Tests.EditMode
             Assert.That(GetProperty(options, "MapSize"), Is.EqualTo(30f));
             Assert.That(GetProperty(options, "EpisodeTimeoutSeconds"), Is.EqualTo(120));
             Assert.That(GetProperty(options, "ShipsPerSide"), Is.EqualTo(1));
+            Assert.That(GetProperty(options, "CollisionAsteroidSpawnSeconds"), Is.EqualTo(0f));
+            Assert.That(GetProperty(options, "StaticObstaclesEnabled"), Is.False);
+            Assert.That(GetProperty(options, "MiningAsteroidsEnabled"), Is.False);
             CollectionAssert.AreEqual(new[] { "Wasp" }, GetShipTypeNames(options, "BeeShipTypes"));
             CollectionAssert.AreEqual(new[] { "Gunship" }, GetShipTypeNames(options, "HumanShipTypes"));
         }
@@ -44,6 +47,9 @@ namespace Bees.Tests.EditMode
                 "--rl-map-size", "60",
                 "--rl-episode-timeout=45",
                 "--rl-ships-per-side", "2",
+                "--rl-collision-asteroid-spawn-seconds=15",
+                "--rl-static-obstacles",
+                "--rl-mining-asteroids=true",
                 "--rl-bee-ship-types", "Wasp,Hornet",
                 "--rl-human-ship-types=Gunship,Frigate");
 
@@ -51,8 +57,24 @@ namespace Bees.Tests.EditMode
             Assert.That(GetProperty(options, "MapSize"), Is.EqualTo(60f));
             Assert.That(GetProperty(options, "EpisodeTimeoutSeconds"), Is.EqualTo(45));
             Assert.That(GetProperty(options, "ShipsPerSide"), Is.EqualTo(2));
+            Assert.That(GetProperty(options, "CollisionAsteroidSpawnSeconds"), Is.EqualTo(15f));
+            Assert.That(GetProperty(options, "StaticObstaclesEnabled"), Is.True);
+            Assert.That(GetProperty(options, "MiningAsteroidsEnabled"), Is.True);
             CollectionAssert.AreEqual(new[] { "Wasp", "Hornet" }, GetShipTypeNames(options, "BeeShipTypes"));
             CollectionAssert.AreEqual(new[] { "Gunship", "Frigate" }, GetShipTypeNames(options, "HumanShipTypes"));
+        }
+
+        [Test]
+        public void EnvironmentBooleansAcceptExplicitFalseAndCollisionZeroMeansOff()
+        {
+            object options = Parse(
+                "--rl-collision-asteroid-spawn-seconds", "0",
+                "--rl-static-obstacles=false",
+                "--rl-mining-asteroids", "off");
+
+            Assert.That(GetProperty(options, "CollisionAsteroidSpawnSeconds"), Is.EqualTo(0f));
+            Assert.That(GetProperty(options, "StaticObstaclesEnabled"), Is.False);
+            Assert.That(GetProperty(options, "MiningAsteroidsEnabled"), Is.False);
         }
 
         [Test]
@@ -123,6 +145,9 @@ namespace Bees.Tests.EditMode
             AssertParseFails("--rl-map-size", "5");
             AssertParseFails("--rl-episode-timeout", "0");
             AssertParseFails("--rl-ships-per-side", "0");
+            AssertParseFails("--rl-collision-asteroid-spawn-seconds", "-1");
+            AssertParseFails("--rl-static-obstacles=maybe");
+            AssertParseFails("--rl-mining-asteroids", "maybe");
             AssertParseFails("--rl-bee-ship-types", "NotAShip");
             AssertParseFails("--rl-matchup-mode=2");
             AssertParseFails("--rl-ships-per-side", "3", "--rl-bee-ship-types", "Wasp,Hornet");
@@ -138,6 +163,9 @@ namespace Bees.Tests.EditMode
             Assert.That(bootstrap, Does.Contain("RlOneVsOneTrainingBootstrap.TryApplyAfterSettingsLoaded(_stage);"));
             Assert.That(bootstrap, Does.Contain("stage.TimeoutTime = options.EpisodeTimeoutSeconds;"));
             Assert.That(bootstrap, Does.Contain("CurrentShipsPerSide => RuntimeOptions.ShipsPerSide"));
+            Assert.That(bootstrap, Does.Contain("CurrentCollisionAsteroidSpawnSeconds => RuntimeOptions.CollisionAsteroidSpawnSeconds"));
+            Assert.That(bootstrap, Does.Contain("CurrentStaticObstaclesEnabled => RuntimeOptions.StaticObstaclesEnabled"));
+            Assert.That(bootstrap, Does.Contain("CurrentMiningAsteroidsEnabled => RuntimeOptions.MiningAsteroidsEnabled"));
             Assert.That(bootstrap, Does.Contain("stage.OverrideBeeShipTypes = new List<ConfigData.ShipTypes>(options.BeeShipTypes);"));
             Assert.That(bootstrap, Does.Contain("stage.OverrideHumanShipTypes = new List<ConfigData.ShipTypes>(options.HumanShipTypes);"));
 
