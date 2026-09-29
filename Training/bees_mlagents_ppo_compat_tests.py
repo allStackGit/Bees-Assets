@@ -447,7 +447,6 @@ class BehavioralCloningWeaponMaskTests(unittest.TestCase):
             dtype=np.float32,
         )
         movement_activity = np.ones((1,), dtype=np.float32)
-        special_activity = np.ones((1,), dtype=np.float32)
 
         baseline_logits = torch.zeros(
             (1, sum(compat.BEES_DISCRETE_BRANCHES))
@@ -463,7 +462,6 @@ class BehavioralCloningWeaponMaskTests(unittest.TestCase):
             expert,
             weapon_activity,
             movement_activity,
-            special_activity,
         )
         changed = compat._bees_masked_behavioral_cloning_loss(
             policy,
@@ -472,7 +470,6 @@ class BehavioralCloningWeaponMaskTests(unittest.TestCase):
             expert,
             weapon_activity,
             movement_activity,
-            special_activity,
         )
 
         self.assertAlmostEqual(float(baseline.item()), float(changed.item()), places=6)
@@ -513,7 +510,7 @@ class BehavioralCloningWeaponMaskTests(unittest.TestCase):
             np.asarray([0.0, 1.0, 0.0], dtype=np.float32),
         )
 
-    def test_neutral_capability_frame_is_not_supervised(self):
+    def test_neutral_capability_frame_is_not_supervised_without_action_masks(self):
         import numpy as np
         from mlagents.torch_utils import torch
 
@@ -533,7 +530,6 @@ class BehavioralCloningWeaponMaskTests(unittest.TestCase):
             dtype=np.float32,
         )
         movement_activity = np.ones((1,), dtype=np.float32)
-        special_activity = np.ones((1,), dtype=np.float32)
 
         baseline_logits = torch.zeros(
             (1, sum(compat.BEES_DISCRETE_BRANCHES))
@@ -550,7 +546,6 @@ class BehavioralCloningWeaponMaskTests(unittest.TestCase):
             expert,
             weapon_activity,
             movement_activity,
-            special_activity,
         )
         changed = compat._bees_masked_behavioral_cloning_loss(
             policy,
@@ -559,7 +554,6 @@ class BehavioralCloningWeaponMaskTests(unittest.TestCase):
             expert,
             weapon_activity,
             movement_activity,
-            special_activity,
         )
 
         self.assertAlmostEqual(float(baseline.item()), float(changed.item()), places=6)
@@ -586,7 +580,6 @@ class BehavioralCloningWeaponMaskTests(unittest.TestCase):
             dtype=np.float32,
         )
         movement_activity = np.ones((1,), dtype=np.float32)
-        special_activity = np.ones((1,), dtype=np.float32)
 
         baseline_logits = torch.zeros(
             (1, sum(compat.BEES_DISCRETE_BRANCHES))
@@ -603,7 +596,6 @@ class BehavioralCloningWeaponMaskTests(unittest.TestCase):
             expert,
             weapon_activity,
             movement_activity,
-            special_activity,
         )
         wrong = compat._bees_masked_behavioral_cloning_loss(
             policy,
@@ -612,7 +604,6 @@ class BehavioralCloningWeaponMaskTests(unittest.TestCase):
             expert,
             weapon_activity,
             movement_activity,
-            special_activity,
         )
 
         self.assertGreater(float(wrong.item()), float(baseline.item()))
@@ -671,6 +662,14 @@ class BehavioralCloningWeaponMaskTests(unittest.TestCase):
         )
 
         self.assertAlmostEqual(float(baseline.item()), float(changed.item()), places=6)
+
+
+class BehavioralCloningBufferContractTests(unittest.TestCase):
+    def test_sparse_capability_bc_does_not_depend_on_demo_action_masks(self):
+        self.assertFalse(
+            hasattr(compat, "_bees_bc_special_activity"),
+            "ML-Agents 1.1.0 demonstration buffers do not preserve ACTION_MASK.",
+        )
 
 
 class PocaAdvantageNormalizationTests(unittest.TestCase):
