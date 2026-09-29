@@ -259,6 +259,24 @@ class ElasticActorHealthTests(unittest.TestCase):
         self.assertIn("phase_started_unix_seconds", latest.kwargs["details"])
         self.assertIn("progress_unix_seconds", latest.kwargs["details"])
 
+    def test_rollout_progress_does_not_take_health_publication_lock(self):
+        heartbeat = actor_worker._StartupHealthHeartbeat(
+            actor_id=1,
+            env_count=4,
+            interval_seconds=60.0,
+        )
+
+        class FailingLock:
+            def __enter__(self):
+                raise AssertionError("rollout progress must not acquire publication lock")
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        heartbeat._lock = FailingLock()
+        heartbeat.mark_progress()
+        self.assertTrue(heartbeat._progress_pending.is_set())
+
     def test_running_actor_wires_main_rollout_progress_into_managed_health(self):
         source = Path(actor_worker.__file__).read_text(encoding="utf-8")
         base_source = Path(actor_worker.worker.__file__).read_text(encoding="utf-8")
