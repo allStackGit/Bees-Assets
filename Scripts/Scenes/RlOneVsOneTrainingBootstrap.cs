@@ -68,6 +68,9 @@ internal static class RlOneVsOneTrainingBootstrap
     internal static int CurrentTimeoutSeconds => RuntimeOptions.EpisodeTimeoutSeconds;
     internal static int CurrentShipsPerSide => RuntimeOptions.ShipsPerSide;
     internal static int CurrentDecisionPeriod => RuntimeOptions.DecisionPeriod;
+    internal static float CurrentCollisionAsteroidSpawnSeconds => RuntimeOptions.CollisionAsteroidSpawnSeconds;
+    internal static bool CurrentStaticObstaclesEnabled => RuntimeOptions.StaticObstaclesEnabled;
+    internal static bool CurrentMiningAsteroidsEnabled => RuntimeOptions.MiningAsteroidsEnabled;
 
     private static RlOneVsOneTrainingOptions RuntimeOptions
     {
