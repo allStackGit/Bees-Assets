@@ -446,6 +446,37 @@ class TrainingControlClientTests(unittest.TestCase):
                 self.assertEqual(managed.state("dedicated"), "starting")
                 self.assertEqual(managed.health_error(), "trainer failed to initialize")
 
+    def test_terminal_child_health_error_survives_process_exit(self):
+        with tempfile.TemporaryDirectory() as temp:
+            health_path = Path(temp) / "child-health.json"
+            process = mock.Mock()
+            process.poll.return_value = 1
+
+            managed = agent.ManagedProcess()
+            managed.process = process
+            managed.health_required = True
+            managed.health_file = health_path
+            managed.health_token = "health-token"
+            health_path.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "token": "health-token",
+                        "state": "error",
+                        "error": "zero-local trainer failed during startup",
+                        "updated_unix_seconds": 1000.0,
+                        "pid": 123,
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            self.assertFalse(managed.alive())
+            self.assertEqual(
+                managed.terminal_health_error(),
+                "zero-local trainer failed during startup",
+            )
+
     def test_child_health_distinguishes_heartbeat_from_real_rollout_progress(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
