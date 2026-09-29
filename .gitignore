@@ -10,3 +10,10 @@ __pycache__.meta
 /.results/bees-full-004/BeesRL1v1
 # Ignore nested RL checkpoint folders while preserving run-level exported models.
 **/BeesRL1v1/
+
+# Generated logs and local training-history snapshots are never source.
+*.log
+*.log.meta
+/Logs/
+/Logs.meta
+/TrainingHistory~/

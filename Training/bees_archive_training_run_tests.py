@@ -38,92 +38,23 @@ class ArchiveTrainingRunTests(unittest.TestCase):
             )
             self.assertEqual(rebuilt, payload)
 
-    def test_run_git_uses_explicit_git_executable(self):
-        assets = Path("C:/Bees/Assets")
-        with mock.patch.object(archive.subprocess, "run") as run:
-            run.return_value.returncode = 0
-            archive._run_git(
-                assets,
-                ["status"],
-                git_executable="C:/Tools/Git/cmd/git.exe",
-            )
-
-        command = run.call_args.args[0]
-        self.assertEqual(command[0], "C:/Tools/Git/cmd/git.exe")
-        self.assertEqual(command[1:], ["status"])
-
-    def test_push_retries_transient_failures_and_then_succeeds(self):
-        failed = mock.Mock(returncode=1, stdout="temporary network failure")
-        succeeded = mock.Mock(returncode=0, stdout="")
-        sleeper = mock.Mock()
-        with mock.patch.object(
-            archive,
-            "_run_git",
-            side_effect=[failed, failed, succeeded],
-        ) as run:
-            archive._push_with_retry(
-                Path("C:/Bees/Assets"),
-                git_executable="git",
-                attempts=4,
-                sleeper=sleeper,
-            )
-
-        self.assertEqual(run.call_count, 3)
-        self.assertEqual(
-            [call.args[1] for call in run.call_args_list],
-            [["push", "origin", "HEAD"]] * 3,
-        )
-        self.assertEqual(
-            [call.args[0] for call in sleeper.call_args_list],
-            [1.0, 2.0],
-        )
-
-    def test_push_still_fails_closed_after_retry_budget(self):
-        failed = mock.Mock(returncode=1, stdout="offline")
-        sleeper = mock.Mock()
-        with mock.patch.object(
-            archive,
-            "_run_git",
-            return_value=failed,
-        ) as run:
-            with self.assertRaisesRegex(
-                RuntimeError,
-                "failed after 3 attempts",
-            ):
-                archive._push_with_retry(
-                    Path("C:/Bees/Assets"),
-                    git_executable="git",
-                    attempts=3,
-                    sleeper=sleeper,
-                )
-
-        self.assertEqual(run.call_count, 3)
-        self.assertEqual(sleeper.call_count, 2)
-
-    def test_main_forwards_git_executable_to_archive_commit(self):
+    def test_main_succeeds_outside_git_repository(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             assets = root / "Assets"
             assets.mkdir()
-            history = assets / "TrainingHistory~" / "runs" / "run-1"
-            history.mkdir(parents=True)
 
-            with (
-                mock.patch.object(archive, "sync_run_history", return_value=history),
-                mock.patch.object(archive, "commit_and_push") as commit,
-            ):
-                result = archive.main([
-                    "--assets-root", str(assets),
-                    "--bees-root", str(root),
-                    "--run-id", "run-1",
-                    "--git-executable", "C:/Tools/Git/cmd/git.exe",
-                ])
+            result = archive.main([
+                "--assets-root", str(assets),
+                "--bees-root", str(root),
+                "--run-id", "run-1",
+                "--reason", "test",
+            ])
 
-        self.assertEqual(result, 0)
-        self.assertEqual(
-            commit.call_args.kwargs["git_executable"],
-            "C:/Tools/Git/cmd/git.exe",
-        )
+            self.assertEqual(result, 0)
+            self.assertTrue(
+                (assets / "TrainingHistory~" / "runs" / "run-1" / "manifest.json").is_file()
+            )
 
     def test_archive_does_not_touch_durable_checkpoint_tree(self):
         with tempfile.TemporaryDirectory() as temp:
