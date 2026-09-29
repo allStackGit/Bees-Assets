@@ -705,13 +705,24 @@ class BeesStructuredNetworkBody(nn.Module):
         self.use_lstm = False
         self.h_size = int(network_settings.hidden_units)
         self.m_size = 0
-        self.observation_encoder = BeesStructuredObservationEncoder(
+
+        # Actor perception is faction-specific too. This prevents gradients from
+        # Human tactical representations from rewriting Bee representations (and
+        # vice versa) while still sharing encoders across entities/weapon slots
+        # inside each faction.
+        self.bee_observation_encoder = BeesStructuredObservationEncoder(
             observation_specs,
             self.h_size,
             network_settings.vis_encode_type,
             self.normalize,
         )
-        self.processors = self.observation_encoder.processors
+        self.human_observation_encoder = BeesStructuredObservationEncoder(
+            observation_specs,
+            self.h_size,
+            network_settings.vis_encode_type,
+            self.normalize,
+        )
+        self.processors = self.bee_observation_encoder.processors
         self.bee_trunk = LinearEncoder(
             CONTEXT_SIZE,
             network_settings.num_layers,
@@ -732,8 +743,22 @@ class BeesStructuredNetworkBody(nn.Module):
     def update_normalization(self, buffer) -> None:
         if self._fallback is not None:
             self._fallback.update_normalization(buffer)
-        else:
-            self.observation_encoder.update_normalization(buffer)
+            return
+
+        obs = ObsUtil.from_buffer(buffer, 1)
+        raw = obs[0].to_ndarray()
+        if raw.shape[0] == 0:
+            return
+        bee_rows = raw[:, FACTION_INDEX] > 0.0
+        human_rows = ~bee_rows
+        if bee_rows.any():
+            self.bee_observation_encoder.vector_input.update_normalization(
+                torch.as_tensor(raw[bee_rows])
+            )
+        if human_rows.any():
+            self.human_observation_encoder.vector_input.update_normalization(
+                torch.as_tensor(raw[human_rows])
+            )
 
     def copy_normalization(self, other_network) -> None:
         if self._fallback is not None:
@@ -748,8 +773,11 @@ class BeesStructuredNetworkBody(nn.Module):
             isinstance(other_network, BeesStructuredNetworkBody)
             and other_network._fallback is None
         ):
-            self.observation_encoder.copy_normalization(
-                other_network.observation_encoder
+            self.bee_observation_encoder.copy_normalization(
+                other_network.bee_observation_encoder
+            )
+            self.human_observation_encoder.copy_normalization(
+                other_network.human_observation_encoder
             )
 
     def forward(
@@ -767,14 +795,22 @@ class BeesStructuredNetworkBody(nn.Module):
                 sequence_length=sequence_length,
             )
 
-        structured = self.observation_encoder(inputs)
+        raw_faction = inputs[0][:, FACTION_INDEX : FACTION_INDEX + 1]
+        bee_mask = torch.clamp((raw_faction + 1.0) * 0.5, 0.0, 1.0)
+
+        bee_structured = self.bee_observation_encoder(inputs)
+        human_structured = self.human_observation_encoder(inputs)
+        structured = (
+            bee_structured * bee_mask
+            + human_structured * (1.0 - bee_mask)
+        )
+
         context = structured[:, :CONTEXT_SIZE]
         weapon_start = CONTEXT_SIZE
         weapon_end = weapon_start + BEES_WEAPON_SLOTS * WEAPON_SLOT_EMBED
         weapon_embeddings = structured[:, weapon_start:weapon_end]
-        faction = structured[:, weapon_end : weapon_end + 1]
+        faction = raw_faction
 
-        bee_mask = torch.clamp((faction + 1.0) * 0.5, 0.0, 1.0)
         bee_encoding = self.bee_trunk(context)
         human_encoding = self.human_trunk(context)
         faction_encoding = (
