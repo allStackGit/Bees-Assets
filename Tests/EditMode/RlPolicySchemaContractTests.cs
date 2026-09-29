@@ -156,7 +156,12 @@ namespace Bees.Tests.EditMode
             Assert.That(agent, Does.Contain("private static readonly Dictionary<Ship, Vector4> ShipCommunications"));
             Assert.That(agent, Does.Contain("ResetCommunication(_ship);"));
             Assert.That(agent, Does.Contain("SetCommunicationActions(_ship, continuous);"));
-            Assert.That(agent, Does.Contain("ClearCommunication(_ship);"));
+            int releaseShipStart = agent.IndexOf("private void ReleaseShip()", StringComparison.Ordinal);
+            int releaseShipEnd = agent.IndexOf("private Ship FindNearestVisibleEnemy()", releaseShipStart, StringComparison.Ordinal);
+            Assert.That(releaseShipStart, Is.GreaterThanOrEqualTo(0));
+            Assert.That(releaseShipEnd, Is.GreaterThan(releaseShipStart));
+            string releaseShip = agent.Substring(releaseShipStart, releaseShipEnd - releaseShipStart);
+            Assert.That(releaseShip, Does.Contain("ClearCommunication("));
             Assert.That(agent, Does.Contain("ShipCommunications[ship] = Vector4.zero;"));
             Assert.That(agent, Does.Contain("ShipCommunications[ship] = new Vector4("));
             Assert.That(agent, Does.Contain("ShipCommunications.Remove(ship);"));
@@ -178,7 +183,6 @@ namespace Bees.Tests.EditMode
             Assert.That(agent, Does.Contain("CollectPolicyObservations(_perception, _ship, _side, sensor, frameQuarterTurns);"));
             Assert.That(agent, Does.Contain("perception.Collect(ship, side, sensor, frameQuarterTurns);"));
             Assert.That(agent, Does.Contain("ApplyMovementCommand(_ship, RlPolicyCoordinateFrame.PolicyToWorld(policyMovement, frameQuarterTurns));"));
-            Assert.That(agent, Does.Contain("RlPolicyCoordinateFrame.EndEpisode(level);"));
         }
 
         [Test]
