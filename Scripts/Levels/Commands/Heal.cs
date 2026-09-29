@@ -307,7 +307,14 @@ namespace Assets.Scripts.Levels.Commands
                 }
 
                 _oldTsv = _ship.Tsv;
-                _ship.Health += math.min(_ship.MaxHealth - _ship.Health, 50);
+                int amountHealed = math.min(_ship.MaxHealth - _ship.Health, 50);
+                if (amountHealed > 0)
+                {
+                    global::RlGameplayDemonstrationCapabilityCapture.Record(
+                        _ship,
+                        global::RlOneVsOneAgent.HealingAction);
+                }
+                _ship.Health += amountHealed;
                 _ship.Tsv = Utilities.CalculateTsv(_ship);
                 _tsvDifference = _ship.Tsv - _oldTsv;
 

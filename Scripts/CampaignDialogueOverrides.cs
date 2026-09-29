@@ -82,7 +82,7 @@ public static class CampaignDialogueOverrides
 
     private static void PatchPlutoAnomaly(List<DialogueLine> lines)
     {
-        Set(lines, 3, "Samuel", "The tech gets a notification of some kind.");
+        Set(lines, 3, "Samuel", "Samuel gets a notification of some kind.");
         Set(lines, 6, "Samuel", "Right away, sir. Contacting the vessel.");
         Set(lines, 8, "Samuel", "It isn’t responding, sir.");
         Set(lines, 10, "Samuel", "Understood, sir. We’ll send Lieutenant Tom out immediately.");

@@ -57,7 +57,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                     //Debug.Log($"Got target! {ship.Name}");
                     _readyToChangeColor = true;
                 }
-                else if (!Ship.IsCeaseFire && IsAimedAtTarget)
+                else if (!Ship.IsCeaseFire && IsAlignedWithTargetPoint)
                 {
                     //Debug.Log("Setting color red!");
                     Pupil.color = ConfigData.GetUIColor("eye-aiming");
@@ -73,13 +73,13 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             // resets the eye color if there is no target
             if (Stage.IsRendering)
             {
-                if (((!HasTargetShip && !IsFiringManually) || Ship.IsCeaseFire || !IsAimedAtTarget) && Pupil.color != Color.white)
+                if (((!HasTargetShip && !IsFiringManually) || Ship.IsCeaseFire || !IsAlignedWithTargetPoint) && Pupil.color != Color.white)
                 {
                     //Debug.Log("Setting color white!");
                     //Debug.Log($"!HasTargetShip: {!HasTargetShip}");
                     //Debug.Log($"!IsFiringManually: {!IsFiringManually}");
                     //Debug.Log($"Ship.IsCeaseFire: {Ship.IsCeaseFire}");
-                    //Debug.Log($"!IsAimedAtTarget: {!IsAimedAtTarget}");
+                    //Debug.Log($"!IsAlignedWithTargetPoint: {!IsAlignedWithTargetPoint}");
                     //Debug.Log($"Pupil.color: {Pupil.color}");
 
                     Pupil.color = Color.white;
@@ -91,7 +91,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                         //Debug.Log($"Got target!");
                         _readyToChangeColor = true;
                     }
-                    else if (IsAimedAtTarget)
+                    else if (IsAlignedWithTargetPoint)
                     {
                         //Debug.Log("Setting color red!");
                         Pupil.color = ConfigData.GetUIColor("eye-aiming");

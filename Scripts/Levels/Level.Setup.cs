@@ -93,6 +93,25 @@ namespace Assets.Scripts.Levels
         private ScaledTimer _timeoutTimer = new ScaledTimer();
         public void SetupMapAndCamera()
         {
+            if (global::RlOneVsOneTrainingBootstrap.IsActiveFor(Stage))
+            {
+                global::RlOneVsOneArenaMapSizeState.ConfigureTrainingMap(this, Map);
+
+                bool useStaticObstacles = global::RlOneVsOneTrainingBootstrap.CurrentStaticObstaclesEnabled;
+                bool useCollisionAsteroids =
+                    global::RlOneVsOneTrainingBootstrap.CurrentCollisionAsteroidSpawnSeconds > 0f;
+                bool useMiningAsteroids = global::RlOneVsOneTrainingBootstrap.CurrentMiningAsteroidsEnabled;
+
+                CurrentLevelOptions.Obstacles = useStaticObstacles ? "" : "No";
+                CurrentLevelOptions.AsteroidOption = useCollisionAsteroids ? 1 : 0;
+                CurrentLevelOptions.FogOfWar = 0;
+                CurrentLevelOptions.Mining = useMiningAsteroids ? 1 : 0;
+                HasObstacles = useStaticObstacles || useCollisionAsteroids;
+                ActivateCollisionAsteroids = useCollisionAsteroids;
+                ActivateMining = useMiningAsteroids;
+                ActivateFogOfWar = false;
+            }
+
             Map.Setup(this);
             
             if (CurrentLevelOptions.UserStartingPosition != Vector2.zero)

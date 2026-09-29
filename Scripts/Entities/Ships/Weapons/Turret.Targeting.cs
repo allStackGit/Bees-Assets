@@ -10,8 +10,33 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         private void TargetingSequence()
         {
             FreezeDiagnostics.RecordTurretTargetingPass(Level, ShipsWithinRange.Count);
+
+            if (IsRlControlled)
+            {
+                // The authored targeting timer remains the sole cooldown clock, but readiness now
+                // latches once that cooldown completes. A policy that does not request fire on the
+                // exact timer pass therefore does not lose the firing opportunity for another cycle.
+                if (!ReadyToFire)
+                {
+                    TargetingPasses++;
+                    if (TargetingPasses >= PassesPerFire)
+                    {
+                        TargetingPasses = PassesPerFire;
+                        ReadyToFire = true;
+                    }
+                }
+
+                if (ReadyToFire && RlFireRequested && CanAcceptRlFireRequest() && !Ship.IsCeaseFire)
+                {
+                    FireAtPoint();
+                    ReadyToFire = false;
+                    TargetingPasses = 0;
+                }
+                return;
+            }
+
             TargetingPasses++;
-            if ((ReadyToFire && IsAimedAtTarget) || TargetingPasses == PassesPerFire)
+            if ((ReadyToFire && IsAlignedWithTargetPoint) || TargetingPasses == PassesPerFire)
             {
                 TryToFire();
             }
@@ -31,6 +56,11 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             {
                 TryToFindAsteroidTarget();
             }
+        }
+
+        protected virtual bool CanAcceptRlFireRequest()
+        {
+            return IsAlignedWithTargetPoint;
         }
 
         public void TryToFindAsteroidTarget()
@@ -127,14 +157,14 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         {
             if (IsFiringManually || IsFiringAtAsteroid)
             {
-                if (IsAimedAtTarget && !Ship.IsCeaseFire)
+                if (IsAlignedWithTargetPoint && !Ship.IsCeaseFire)
                 {
                     FireAtPoint();
                 }
             }
             else if (ShouldFire)
             {
-                if (IsAimedAtTarget)
+                if (IsAlignedWithTargetPoint)
                 {
                     Fire();
                 }

@@ -59,9 +59,9 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains("request is CommandRequest || request is MatchupStrategyRequest", source);
             StringAssert.Contains("OrderByDescending(request => request.StartTime)", source);
             StringAssert.Contains("Take(StaleSquadRequestHistoryLimit)", source);
-            StringAssert.Contains("ConfigData.__PastServerRequests.IntersectWith(staleResponseHistory);", source);
+            StringAssert.Contains("ConfigData.RequestHistory.IntersectWith(staleResponseHistory);", source);
             StringAssert.DoesNotContain(".ToHashSet()", source);
-            StringAssert.DoesNotContain("ConfigData.__PastServerRequests.Clear();", source);
+            StringAssert.DoesNotContain("ConfigData.RequestHistory.Clear();", source);
         }
     }
 }

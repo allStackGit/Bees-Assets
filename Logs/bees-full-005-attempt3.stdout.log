@@ -1,0 +1,64 @@
+[WARNING] Environment timed out shutting down. Killing...
+[WARNING] Environment timed out shutting down. Killing...
+[WARNING] Environment timed out shutting down. Killing...
+[WARNING] Environment timed out shutting down. Killing...
+[WARNING] Environment timed out shutting down. Killing...
+[WARNING] Environment timed out shutting down. Killing...
+[WARNING] Environment timed out shutting down. Killing...
+[Bees RL] PPO value-estimate/return buffer key separation: enabled
+[Bees RL] Cross-worker policy inference batching: enabled
+[Bees RL] Slim subprocess action IPC: enabled
+[Bees RL] Worker timer transfer: every 64 steps
+[Bees RL] Blocking Unity-worker wait: enabled
+[Bees RL] Hybrid devices: trainer/optimizer uses --torch-device; environment inference uses synchronized CPU actor replicas
+
+
+	Unity Technologies
+
+ Version information:
+  ml-agents: 1.1.0,
+  ml-agents-envs: 1.1.0,
+  Communicator API: 1.5.0,
+  PyTorch: 2.1.1+cu121
+[ERROR] SubprocessEnvManager had workers that didn't signal shutdown
+[ERROR] A SubprocessEnvManager worker did not shut down correctly so it was forcefully terminated.
+[ERROR] A SubprocessEnvManager worker did not shut down correctly so it was forcefully terminated.
+[ERROR] A SubprocessEnvManager worker did not shut down correctly so it was forcefully terminated.
+[ERROR] A SubprocessEnvManager worker did not shut down correctly so it was forcefully terminated.
+[ERROR] A SubprocessEnvManager worker did not shut down correctly so it was forcefully terminated.
+[ERROR] A SubprocessEnvManager worker did not shut down correctly so it was forcefully terminated.
+[ERROR] A SubprocessEnvManager worker did not shut down correctly so it was forcefully terminated.
+[ERROR] A SubprocessEnvManager worker did not shut down correctly so it was forcefully terminated.
+[ERROR] A SubprocessEnvManager worker did not shut down correctly so it was forcefully terminated.
+[ERROR] A SubprocessEnvManager worker did not shut down correctly so it was forcefully terminated.
+[ERROR] A SubprocessEnvManager worker did not shut down correctly so it was forcefully terminated.
+[ERROR] A SubprocessEnvManager worker did not shut down correctly so it was forcefully terminated.
+[ERROR] A SubprocessEnvManager worker did not shut down correctly so it was forcefully terminated.
+[ERROR] A SubprocessEnvManager worker did not shut down correctly so it was forcefully terminated.
+[ERROR] A SubprocessEnvManager worker did not shut down correctly so it was forcefully terminated.
+[ERROR] A SubprocessEnvManager worker did not shut down correctly so it was forcefully terminated.
+[ERROR] A SubprocessEnvManager worker did not shut down correctly so it was forcefully terminated.
+[ERROR] A SubprocessEnvManager worker did not shut down correctly so it was forcefully terminated.
+[ERROR] A SubprocessEnvManager worker did not shut down correctly so it was forcefully terminated.
+[ERROR] A SubprocessEnvManager worker did not shut down correctly so it was forcefully terminated.
+[ERROR] A SubprocessEnvManager worker did not shut down correctly so it was forcefully terminated.
+[ERROR] A SubprocessEnvManager worker did not shut down correctly so it was forcefully terminated.
+[ERROR] A SubprocessEnvManager worker did not shut down correctly so it was forcefully terminated.
+[ERROR] A SubprocessEnvManager worker did not shut down correctly so it was forcefully terminated.
+[ERROR] A SubprocessEnvManager worker did not shut down correctly so it was forcefully terminated.
+[ERROR] A SubprocessEnvManager worker did not shut down correctly so it was forcefully terminated.
+[ERROR] A SubprocessEnvManager worker did not shut down correctly so it was forcefully terminated.
+[ERROR] A SubprocessEnvManager worker did not shut down correctly so it was forcefully terminated.
+[ERROR] A SubprocessEnvManager worker did not shut down correctly so it was forcefully terminated.
+[ERROR] A SubprocessEnvManager worker did not shut down correctly so it was forcefully terminated.
+[ERROR] A SubprocessEnvManager worker did not shut down correctly so it was forcefully terminated.
+[ERROR] A SubprocessEnvManager worker did not shut down correctly so it was forcefully terminated.
+[ERROR] A SubprocessEnvManager worker did not shut down correctly so it was forcefully terminated.
+[ERROR] A SubprocessEnvManager worker did not shut down correctly so it was forcefully terminated.
+[ERROR] A SubprocessEnvManager worker did not shut down correctly so it was forcefully terminated.
+[ERROR] A SubprocessEnvManager worker did not shut down correctly so it was forcefully terminated.
+[ERROR] A SubprocessEnvManager worker did not shut down correctly so it was forcefully terminated.
+[ERROR] A SubprocessEnvManager worker did not shut down correctly so it was forcefully terminated.
+[ERROR] A SubprocessEnvManager worker did not shut down correctly so it was forcefully terminated.
+[ERROR] A SubprocessEnvManager worker did not shut down correctly so it was forcefully terminated.
+[ERROR] A SubprocessEnvManager worker did not shut down correctly so it was forcefully terminated.

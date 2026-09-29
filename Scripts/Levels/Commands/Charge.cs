@@ -163,7 +163,6 @@ namespace Assets.Scripts.Levels.Commands
                         {
                             if (!Stage.IsTraining)
                             {
-                                Debug.Log($"Barge is charging after {barge.Charge.TargetShip} which is within range");
                             }
                             ChargingShips.Add(barge);
                             IsCharging = true;

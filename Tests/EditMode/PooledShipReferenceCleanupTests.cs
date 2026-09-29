@@ -21,14 +21,18 @@ namespace Bees.Tests.EditMode
 
             string method = source.Substring(methodStart, methodEnd - methodStart);
             int damageCleanup = method.IndexOf("for (int statusIndex = statuses.Count - 1; statusIndex >= 0; statusIndex--)");
-            int spottedCleanup = method.IndexOf("for (int spottedIndex = spotted.Count - 1; spottedIndex >= 0; spottedIndex--)");
+            int observerCleanup = method.IndexOf("foreach (Dictionary<long, HashSet<Ship>> observerMap in HivemindShips)");
+            int visibilityCleanup = method.IndexOf("foreach (HashSet<Ship> visibleCache in VisionCache)");
             int releaseQueue = method.IndexOf("ShipsToRelease.Add(ship)");
 
             Assert.That(damageCleanup, Is.GreaterThanOrEqualTo(0));
-            Assert.That(spottedCleanup, Is.GreaterThan(damageCleanup));
-            Assert.That(releaseQueue, Is.GreaterThan(spottedCleanup));
+            Assert.That(observerCleanup, Is.GreaterThan(damageCleanup));
+            Assert.That(visibilityCleanup, Is.GreaterThan(observerCleanup));
+            Assert.That(releaseQueue, Is.GreaterThan(visibilityCleanup));
             StringAssert.Contains("status.Ship == ship", method);
-            StringAssert.Contains("entry.Ship == ship", method);
+            StringAssert.Contains("observerMap.Remove(ship.Id);", method);
+            StringAssert.Contains("visibleShips?.Remove(ship);", method);
+            StringAssert.Contains("visibleCache?.Remove(ship);", method);
             StringAssert.Contains("ShipsBySide[shipSideIndex].Remove(ship);", method);
         }
 

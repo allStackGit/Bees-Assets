@@ -1,4 +1,3 @@
-﻿using System.Collections;
 using UnityEngine;
 
 namespace Assets.Scripts.Entities.Ships.Weapons
@@ -27,23 +26,29 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         }
         protected override void Aim()
         {
+            if (IsRlControlled)
+            {
+                AimRlMainCannon();
+                return;
+            }
+
             if (!Ship.IsMoving)
             {
                 if (IsFiringManually)
                 {
                     TargetPoint = Stage.InputManager.GetMousePosition();
-                    IsAimedAtTarget = RotateShipTowardsTargetPoint(GetDegreesTowardsPoint(TargetPoint));
+                    IsAlignedWithTargetPoint = RotateShipTowardsTargetPoint(GetDegreesTowardsPoint(TargetPoint));
                 }
                 else
                 {
                     if (ShouldFire)
                     {
                         TargetPoint = GetTargetPoint(TargetShip);
-                        IsAimedAtTarget = RotateShipTowardsTargetPoint(GetDegreesTowardsPoint(TargetPoint));
+                        IsAlignedWithTargetPoint = RotateShipTowardsTargetPoint(GetDegreesTowardsPoint(TargetPoint));
                     }
                     else
                     {
-                        IsAimedAtTarget = false;
+                        IsAlignedWithTargetPoint = false;
                         if (Ship.IsCeaseFire || !HasValidTarget())
                         {
                             //Debug.Log($"{Name} has no ships to fire at, returning to default aim");
@@ -57,21 +62,21 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 if (IsFiringManually)
                 {
                     TargetPoint = Stage.InputManager.GetMousePosition();
-                    IsAimedAtTarget = Utilities.IsRotatedTowards(this, GetDegreesTowardsPoint(TargetPoint));
+                    IsAlignedWithTargetPoint = Utilities.IsRotatedTowards(this, GetDegreesTowardsPoint(TargetPoint));
                 }
                 else if (ShouldFire)
                 {
                     TargetPoint = GetTargetPoint(TargetShip);
-                    IsAimedAtTarget = Utilities.IsRotatedTowards(this, GetDegreesTowardsPoint(TargetPoint));
+                    IsAlignedWithTargetPoint = Utilities.IsRotatedTowards(this, GetDegreesTowardsPoint(TargetPoint));
                 }
                 else
                 {
-                    IsAimedAtTarget = false;
+                    IsAlignedWithTargetPoint = false;
                 }
 
             }
 
-            if (!IsAimedAtTarget)
+            if (!IsAlignedWithTargetPoint)
             {
                 //LaserBuilderAnimation.SetActive(false);
                 Animator.speed = 0;
@@ -90,6 +95,24 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             MoveTargetingMarker();
 
         }
+        private void AimRlMainCannon()
+        {
+            // The policy owns the hull. This method observes whether the current hull/cannon heading
+            // happens to line up with the requested point for diagnostics, but never rotates or slows
+            // the ship. A queued shot is allowed to charge regardless of that alignment.
+            TargetPoint = RlTargetPoint;
+            IsFiringAtAsteroid = false;
+            IsAlignedWithTargetPoint = Utilities.IsRotatedTowards(this, GetDegreesTowardsPoint(TargetPoint));
+            Animator.speed = 1f;
+            MoveTargetingMarker();
+        }
+        protected override bool CanAcceptRlFireRequest()
+        {
+            // Unlike an independently rotating turret, this fixed cannon must not hide hull aiming
+            // behind scripted assistance. If the weapon is ready, the policy may commit the shot at
+            // any heading and learn from the resulting hit or miss.
+            return true;
+        }
         private float _difference;
         private static Vector3 _forward = Vector3.forward;
         protected bool RotateShipTowardsTargetPoint(float rotation)
@@ -98,8 +121,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             //Debug.Log($"Difference in angles {difference}, {(difference > closeEnough ? "counter-clockwise" : "clockwise")}");
             if (_difference > 3)
             {
-                PieceTransform.Rotate(_rightRotationRate);
-                Ship.Rotation += _rightRotationRate.z;
+                RotateShipAndTurrets(_rightRotationRate);
 
                 if (Ship.HasRocketFlares)
                 {
@@ -117,8 +139,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             }
             else if (_difference < -3)
             {
-                PieceTransform.Rotate(_leftRotationRate);
-                Ship.Rotation += _leftRotationRate.z;
+                RotateShipAndTurrets(_leftRotationRate);
 
                 if (Ship.HasRocketFlares)
                 {
@@ -136,8 +157,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             }
             else
             {
-                PieceTransform.localEulerAngles = _forward * rotation;
-                Ship.Rotation = rotation;
+                SnapShipAndTurretsToRotation(rotation);
 
                 if (Ship.HasRocketFlares)
                 {
@@ -158,11 +178,47 @@ namespace Assets.Scripts.Entities.Ships.Weapons
 
             return false;
         }
+        private void RotateShipAndTurrets(Vector3 rotationDelta)
+        {
+            PieceTransform.Rotate(rotationDelta);
+            Ship.Rotation += rotationDelta.z;
+            Ship.Turrets.ForEach((turret) => turret.Rotation += rotationDelta.z);
+        }
+        private void SnapShipAndTurretsToRotation(float rotation)
+        {
+            float rotationDelta = Mathf.DeltaAngle(Ship.Rotation, rotation);
+            PieceTransform.localEulerAngles = _forward * rotation;
+            Ship.Rotation = rotation;
+            Ship.Turrets.ForEach((turret) => turret.Rotation += rotationDelta);
+        }
         protected override void SendProjectile()
         {
             base.SendProjectile();
-            LaserBuilderAnimation.SetActive(false);
+            if (!IsRlControlled)
+            {
+                LaserBuilderAnimation.SetActive(false);
+            }
             //_chargingSound.Stop();
+        }
+        protected override bool CanCompleteQueuedShot()
+        {
+            if (!IsRlControlled || !IsRlShotQueued)
+            {
+                return base.CanCompleteQueuedShot();
+            }
+
+            // Turret.SendProjectile launches toward TargetPoint. For the fixed RL cannon, replace the
+            // policy's diagnostic aim point at the final animation event with a point directly ahead
+            // of the cannon's current physical heading. The ship may keep moving and turning while it
+            // charges, so the heading at the instant of firing determines the actual shot direction.
+            TargetPoint = GetRlForwardFirePoint();
+            return true;
+        }
+        private Vector2 GetRlForwardFirePoint()
+        {
+            float radians = Rotation * Mathf.Deg2Rad;
+            Vector2 forwardDirection = new Vector2(-Mathf.Sin(radians), Mathf.Cos(radians));
+            return GetPosition() + forwardDirection;
         }
     }
 }

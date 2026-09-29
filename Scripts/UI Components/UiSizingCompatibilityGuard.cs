@@ -51,7 +51,9 @@ namespace Assets.Scripts.UI_Components
                     }
                 }
 
-                if (tmpLabel != null && tmpLabel.text.Trim().ToUpperInvariant() == "COLOR" &&
+                if (tmpLabel != null &&
+                    !string.IsNullOrWhiteSpace(tmpLabel.text) &&
+                    tmpLabel.text.Trim().ToUpperInvariant() == "COLOR" &&
                     button.GetComponent<SquadColorButtonInsetMarker>() == null)
                 {
                     RectTransform rect = button.GetComponent<RectTransform>();

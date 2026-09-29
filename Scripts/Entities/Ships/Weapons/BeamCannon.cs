@@ -19,10 +19,16 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         }
         protected override void Aim()
         {
-            if (IsFiringManually)
+            if (IsRlControlled)
+            {
+                TargetPoint = RlTargetPoint;
+                IsAlignedWithTargetPoint = Utilities.TimedRotation(this, GetDegreesTowardsPoint(TargetPoint), RotationRate);
+                IsFiringAtAsteroid = false;
+            }
+            else if (IsFiringManually)
             {
                 TargetPoint = Stage.InputManager.GetMousePosition();
-                IsAimedAtTarget = Utilities.TimedRotation(this, GetDegreesTowardsPoint(TargetPoint), RotationRate);
+                IsAlignedWithTargetPoint = Utilities.TimedRotation(this, GetDegreesTowardsPoint(TargetPoint), RotationRate);
             }
             else
             {
@@ -33,22 +39,21 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 if (ShouldFire)
                 {
                     TargetPoint = GetTargetPoint(TargetShip);
-                    IsAimedAtTarget = Utilities.TimedRotation(this, GetDegreesTowardsPoint(TargetPoint), RotationRate);
+                    IsAlignedWithTargetPoint = Utilities.TimedRotation(this, GetDegreesTowardsPoint(TargetPoint), RotationRate);
                     IsFiringAtAsteroid = false;
 
                 }
                 else if (ShouldFireAtAsteroid)
                 {
                     TargetPoint = TargetAsteroid.GetPosition();
-                    IsAimedAtTarget = Utilities.TimedRotation(this, GetDegreesTowardsPoint(TargetPoint), RotationRate);
+                    IsAlignedWithTargetPoint = Utilities.TimedRotation(this, GetDegreesTowardsPoint(TargetPoint), RotationRate);
                     IsFiringAtAsteroid = true;
                 }
                 else
                 {
                     if (!IsFiringLaserBeam)
                     {
-                        //Debug.Log($"TargetShip is null, rotating back");
-                        IsAimedAtTarget = false;
+                        IsAlignedWithTargetPoint = false;
                         Utilities.TimedRotation(this, Ship.Rotation, RotationRate);
                     }
                     IsFiringAtAsteroid = false;
@@ -66,26 +71,14 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         {
             if (!IsFiringLaserBeam)
             {
-                //Debug.Log($"Setting target ship to {targetShip.Name}");
                 base.SetTargetShip(targetShip);
             }
         }
         private LaserBeam _beam;
-        protected override void SendProjectile() // [projectile-method] [note] [stats-method]
+        protected override void SendProjectile()
         {
             if (!IsFiringLaserBeam)
             {
-                //Debug.Log("Sending beam cannon projectile");
-
-
-
-                //Vector2 mapTransformPoint = Ship.Level.Map.Transform.InverseTransformPoint(Piece.transform.position);
-                //Vector2 shipOffset = Ship.GetPosition() + (Vector2) transform.position;
-
-                //Debug.Log($"Potential spawn point for laser beam, mapTransformPoint: {mapTransformPoint}, shipOffset: {shipOffset}");
-
-                //Projectile beam = Level.AddProjectile(ConfigData.ProjectileTypes.Beam, this, GetPosition(), angle);
-
                 _beam = (LaserBeam) Stage.Pool.GetProjectileFromPool(ConfigData.ProjectileTypes.Beam);
                 _beam.Transform.parent = Level.Map.Transform;
 
@@ -94,7 +87,6 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                     SetTargetShipNull();
                 }
 
-                //Debug.Log($"Position before setup for {projectile.Id}: {instance.transform.localPosition}, {projectile.GetPosition()}");
                 _beam.Setup(Level, this, Ship, TargetShip, GetPosition(), AngleToPoint(TargetPoint), Range, Power);
                 Ship.ProjectilesInFlight.Add(_beam);
 
@@ -108,6 +100,8 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 }
 
                 Ship.FleetShip.ShotsFired++;
+                global::RlOneVsOneCombatTelemetry.RecordShotFired(Ship, this);
+                global::RlOneVsOneEpisodeCoordinator.RecordShotFired(Ship, this);
                 if (!IsFiringManually && !IsFiringAtAsteroid)
                 {
                     Level.State.GetShipDamageStatus(Side, TargetShip).TotalDamageSentToShip += Power;
@@ -116,8 +110,6 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 IsFiringLaserBeam = true;
                 PlaySoundEffect();
             }
-
-
         }
     }
 }

@@ -16,7 +16,10 @@ namespace Bees.Tests.EditMode
 
             Assert.That(config, Does.Contain("SecureSocketFactory.Create"));
             Assert.That(factory, Does.Contain("wss://{hostname}:{port}"));
-            Assert.That(factory, Does.Contain("FormatterServices.GetUninitializedObject"));
+            Assert.That(factory, Does.Contain("return new Socket("),
+                "The secure factory must construct a fully initialized Socket rather than bypassing field initialization.");
+            Assert.That(factory, Does.Contain("secured: true"));
+            Assert.That(factory, Does.Not.Contain("FormatterServices.GetUninitializedObject"));
             Assert.That(factory, Does.Not.Contain("bootstrapSocket.Close"));
         }
 

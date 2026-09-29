@@ -30,7 +30,7 @@ public class Tooltip : MonoBehaviour
     private bool _visualsConfigured;
     private float _authoredFontSize;
     private Vector2 _requestedPosition;
-    private Vector2 _requestedSize = new Vector2(150f, 150f);
+    private Vector2 _requestedSize = Vector2.zero;
     private readonly List<string> _sequencePages = new List<string>();
     private int _sequenceIndex;
     private Action _sequenceComplete;
@@ -41,6 +41,8 @@ public class Tooltip : MonoBehaviour
     private TMP_Text _previousLabel;
     private TMP_Text _nextLabel;
     private DialogueManager _dialogueManager;
+
+    public bool IsSequenceActive => _sequenceActive;
 
     private void Awake()
     {
@@ -97,6 +99,7 @@ public class Tooltip : MonoBehaviour
             return;
         }
 
+
         Transform dialogueTransform = _dialogueManager.transform;
         if (dialogueTransform.parent != parent)
         {
@@ -118,7 +121,20 @@ public class Tooltip : MonoBehaviour
     {
         _requestedPosition = position;
         _requestedSize = size;
+
+        bool wasVisible = TooltipObject != null && TooltipObject.activeSelf;
+        if (wasVisible)
+        {
+            TooltipObject.SetActive(false);
+        }
+
         ApplyLayout();
+        Canvas.ForceUpdateCanvases();
+
+        if (wasVisible)
+        {
+            TooltipObject.SetActive(true);
+        }
     }
 
     public void Show(string text, bool hasX)
@@ -168,10 +184,12 @@ public class Tooltip : MonoBehaviour
         ConfigureVisuals();
         if (ConfigData.UserProgressData.ShowToolTips)
         {
+            TooltipObject.SetActive(false);
             TooltipText.text = text;
-            Debug.Log($"Showing tooltip: {text}");
             CloseButton.SetActive(hasX);
             _sequenceFooter.SetActive(false);
+            ApplyLayout();
+            Canvas.ForceUpdateCanvases();
             TooltipObject.SetActive(true);
             ApplyLayout();
         }
@@ -189,13 +207,20 @@ public class Tooltip : MonoBehaviour
         }
 
         TooltipText.text = _sequencePages[_sequenceIndex];
-        TooltipObject.SetActive(true);
         _sequenceFooter.SetActive(true);
         _previousButton.interactable = _sequenceIndex > 0;
         _previousLabel.text = "PREV";
         _nextLabel.text = (_sequenceIndex == _sequencePages.Count - 1 ? "CLOSE" : "NEXT") +
                           $" ({_sequenceIndex + 1}/{_sequencePages.Count})";
         ApplyLayout();
+
+        // Keep the sequence object active while replacing page content. The sequence layout is
+        // owned here; periodic presentation guards must not rewrite or re-measure the live TMP text.
+        if (!TooltipObject.activeSelf)
+        {
+            TooltipObject.SetActive(true);
+        }
+        Canvas.ForceUpdateCanvases();
     }
 
     private void PreviousPage()
@@ -380,7 +405,7 @@ public class Tooltip : MonoBehaviour
         }
 
         // The tab is part of the panel silhouette rather than a floating badge. Extend its left
-        // edge by the steel outline thickness while keeping the right-hand join at the same point.
+        // edge past the tab's own border and the panel outline while keeping the right join fixed.
         GameObject tab = new GameObject(
             "Tutorial Info Tab",
             typeof(RectTransform),
@@ -391,8 +416,8 @@ public class Tooltip : MonoBehaviour
         rect.anchorMin = new Vector2(0f, 1f);
         rect.anchorMax = new Vector2(0f, 1f);
         rect.pivot = new Vector2(0f, 0f);
-        rect.anchoredPosition = new Vector2(-InfoTabBorder, 0f);
-        rect.sizeDelta = new Vector2(InfoTabWidth + InfoTabBorder, InfoTabHeight);
+        rect.anchoredPosition = new Vector2(-(InfoTabBorder * 2f), 0f);
+        rect.sizeDelta = new Vector2(InfoTabWidth + (InfoTabBorder * 2f), InfoTabHeight);
 
         TutorialInfoTabGraphic border = tab.GetComponent<TutorialInfoTabGraphic>();
         border.color = SteelBorderColor;

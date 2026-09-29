@@ -73,7 +73,6 @@ namespace Assets.Scripts.Levels
                     }
                     else if (obstacle.ObstacleType != ConfigData.ObstacleTypes.MapBorder)
                     {
-                        Debug.Log($"Invalid indexes: {point[0]}, {point[1]}");
                     }
                 }
             }

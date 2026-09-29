@@ -1,4 +1,5 @@
 using Assets.Scripts.Data;
+using Assets.Scripts.Entities;
 using Assets.Scripts.Entities.Ships;
 using Assets.Scripts.Server;
 using System;
@@ -56,16 +57,7 @@ namespace Assets.Scripts.Levels
                 }
                 else if (!Stage.IsTraining)
                 {
-                    Debug.Log("Both sides died! no on won!");
                 }
-            }
-
-            // RemoveShip prunes spotting entries during ordinary lifecycle teardown. Reset already
-            // owns the entire old episode, so clear the existing containers once before killing
-            // the snapshot instead of nulling/recreating them or repeatedly scanning old sightings.
-            for (_reset_i = 0; _reset_i < State.SpottedShips.Length; _reset_i++)
-            {
-                State.SpottedShips[_reset_i]?.Clear();
             }
 
             for (_reset_i = 0; _reset_i < _resetShips.Count; _reset_i++)
@@ -83,7 +75,14 @@ namespace Assets.Scripts.Levels
         public void SetupLevel()
         {
             StartTime = Time.realtimeSinceStartup;
-            if (ConfigData.ChooseRandomLevel)
+            bool isDedicatedRlTraining = global::RlOneVsOneTrainingBootstrap.IsActiveFor(Stage);
+            if (isDedicatedRlTraining)
+            {
+                // Dedicated ML-Agents training owns an ephemeral local level. Do not touch the
+                // player's persisted LevelData/LevelOptions after the server settings are loaded.
+                CurrentLevelOptions = new LevelOptions(-1, ConfigData.Configuration.AISide, "RL Training Level");
+            }
+            else if (ConfigData.ChooseRandomLevel)
             {
                 _setup_possibleLevels.Clear();
                 List<LevelOptions> levels = ConfigData.GetLevelData().GetLevels();
@@ -106,7 +105,9 @@ namespace Assets.Scripts.Levels
                 CurrentLevelOptions = (LevelOptions)ConfigData.LevelOptions.Clone();
             }
 
-            if (ConfigData.CurrentGameMode == ConfigData.GameModes.Campaign)
+            // Campaign hides player HUD entries here. Dedicated training shortens the UI list,
+            // so training resets must not index those player-only entries.
+            if (ConfigData.CurrentGameMode == ConfigData.GameModes.Campaign && !Stage.IsTraining)
             {
                 Destroy(Stage.UIElements[2]);
                 Stage.UIElements[3].GetComponent<HorizontalLayoutGroup>().padding.left = 0;
@@ -118,7 +119,7 @@ namespace Assets.Scripts.Levels
             }
 
             ResetGameData();
-            if (ConfigData.LevelOptions != null)
+            if (ConfigData.LevelOptions != null && !isDedicatedRlTraining)
             {
                 ConfigData.LevelOptions.ChosenSquads.ForEach((savedSquad) =>
                 {
@@ -133,29 +134,28 @@ namespace Assets.Scripts.Levels
                 });
                 if (!Stage.IsTraining)
                 {
-                    Debug.Log(Utilities.ListToString(CurrentLevelOptions.ChosenSquads));
                 }
             }
 
             if (!Stage.IsTraining)
             {
-                Debug.Log($"Game mode: {ConfigData.CurrentGameMode}");
-            }
 
-            if (ConfigData.CurrentGameMode != ConfigData.GameModes.Campaign)
-            {
-                CurrentLevelOptions.HasSquadActionBox = true;
-                Stage.Menus.ActionBox.Setup(Stage, this, Stage.EventSystem, ConfigData.Configuration.UserSide);
-            }
-            else if (CurrentLevelOptions.HasSquadActionBox)
-            {
-                Stage.Menus.ActionBox.Setup(Stage, this, Stage.EventSystem, ConfigData.Configuration.UserSide);
+                // The action box is player UI. Automated training destroys/omits that hierarchy,
+                // so neither initial setup nor episode resets may touch its serialized references.
+                if (ConfigData.CurrentGameMode != ConfigData.GameModes.Campaign)
+                {
+                    CurrentLevelOptions.HasSquadActionBox = true;
+                    Stage.Menus.ActionBox.Setup(Stage, this, Stage.EventSystem, ConfigData.Configuration.UserSide);
+                }
+                else if (CurrentLevelOptions.HasSquadActionBox)
+                {
+                    Stage.Menus.ActionBox.Setup(Stage, this, Stage.EventSystem, ConfigData.Configuration.UserSide);
+                }
             }
 
             StageConfigOptions.Apply(Stage, this);
             if (!Stage.IsTraining)
             {
-                Debug.Log($"Generating {CurrentLevelOptions.EnemySquadGenerationCount} enemy squads for this level");
             }
 
             if (Stage.HasRandomizedOptions)
@@ -166,7 +166,6 @@ namespace Assets.Scripts.Levels
             {
                 if (!Stage.IsTraining)
                 {
-                    Debug.Log("The map does not have randomized options");
                 }
                 CurrentLevelOptions.MapIndex = Stage.OverrideMapIndex;
                 MapData = ConfigData.Maps[CurrentLevelOptions.MapIndex];
@@ -266,7 +265,6 @@ namespace Assets.Scripts.Levels
             }
             else if (ConfigData.CurrentGameMode != ConfigData.GameModes.Campaign)
             {
-                Debug.Log($"User squads: {userSquadCount}, AI squads: {aiSquadCount}");
                 Pause();
                 Stage.Menus.NoAliveShipsAlert.SetActive(true);
             }
@@ -281,10 +279,30 @@ namespace Assets.Scripts.Levels
             ResetRuntimeState(ConfigData.Socket.HandledRequests);
             PruneServerRequestHistoryForReset();
 
+            ReleasePooledObstacleLayoutForReset();
+
             if (Map != null)
             {
                 Stage.Pool.ReturnMapToPool(Map);
             }
+        }
+
+        private void ReleasePooledObstacleLayoutForReset()
+        {
+            if (!_usesPooledStaticObstaclePrefabs || ObstacleMap == null)
+            {
+                return;
+            }
+
+            StaticObstaclePool obstaclePool = GetStaticObstaclePool();
+            for (int i = 0; i < ObstacleMap.Obstacles.Count; i++)
+            {
+                obstaclePool.ReleaseObstacle(ObstacleMap.Obstacles[i]);
+            }
+            obstaclePool.ReleaseBackground(ObstacleMap.ObstacleBackground);
+            ObstacleMap.Obstacles.Clear();
+            ObstacleMap.ObstacleBackground = null;
+            _usesPooledStaticObstaclePrefabs = false;
         }
 
         private void PruneServerRequestHistoryForReset()
@@ -299,12 +317,12 @@ namespace Assets.Scripts.Levels
             // prove that such a response belonged to a retired Squad lifecycle. Preserve only the
             // newest bounded set of request types needed for that ownership check; discard all
             // unrelated debug history as before so normal play does not accumulate it indefinitely.
-            List<ServerRequest> staleResponseHistory = ConfigData.__PastServerRequests
+            List<ServerRequest> staleResponseHistory = ConfigData.RequestHistory
                 .Where(request => request is CommandRequest || request is MatchupStrategyRequest)
                 .OrderByDescending(request => request.StartTime)
                 .Take(StaleSquadRequestHistoryLimit)
                 .ToList();
-            ConfigData.__PastServerRequests.IntersectWith(staleResponseHistory);
+            ConfigData.RequestHistory.IntersectWith(staleResponseHistory);
         }
 
         private void ReconcilePersistedFleetForSetup()

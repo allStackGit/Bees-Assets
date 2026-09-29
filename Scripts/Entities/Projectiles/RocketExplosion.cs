@@ -115,7 +115,15 @@ namespace Assets.Scripts.Entities.Projectiles
                 HasHitShip(ship)))
             {
                 ContactTarget(ship);
-                Ship.LogAttackingDamage(Power, Shooter, FleetShip, SavedSquad, ship, CommandOutcomeId);
+                string rlDamageSource = Type == ConfigData.ProjectileTypes.FireBargeExplosion ? "explosion" : "gun";
+                Ship.LogAttackingDamage(
+                    Power,
+                    Shooter,
+                    FleetShip,
+                    SavedSquad,
+                    ship,
+                    CommandOutcomeId,
+                    rlDamageSource);
             }
         }
     }

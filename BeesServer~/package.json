@@ -11,7 +11,8 @@
     "test": "node run-tests.js",
     "migrate:test": "node migrate.js --test",
     "migrate:production": "node migrate.js --production",
-    "test:live": "node run-tests.js"
+    "test:live": "node run-tests.js",
+    "training-control": "node trainingControlCli.js"
   },
   "keywords": [],
   "author": "",

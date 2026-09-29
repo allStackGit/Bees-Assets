@@ -54,7 +54,7 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains("List<ServerRequest> _requests", standingSetSource);
             StringAssert.Contains("request.Hash == hash", standingSetSource);
             StringAssert.Contains("ServerRequestSet _waitableRequests", socketSource);
-            StringAssert.Contains("ServerRequestSet __PastServerRequests", configSource);
+            StringAssert.Contains("ServerRequestSet RequestHistory", configSource);
             StringAssert.DoesNotContain("Dictionary<", standingSetSource);
             StringAssert.DoesNotContain("HashSet<ServerRequest>", standingSetSource);
             StringAssert.DoesNotContain("HashSet<ServerRequest>", socketSource);

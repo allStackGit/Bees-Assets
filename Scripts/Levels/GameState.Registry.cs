@@ -44,6 +44,7 @@ namespace Assets.Scripts.Levels
                 ShipsBySide[sideIndex].Add(ship);
             }
             ShipsById.Add(ship.Id, ship);
+            global::RlOneVsOneEpisodeDiagnostics.TrackShip(ship);
             if (ship.IsHiveMindControlled)
             {
                 HivemindShips[ship.Side - 1][ship.Id] =
@@ -125,6 +126,7 @@ namespace Assets.Scripts.Levels
 
         public void RemoveObstacle(Obstacle obstacle)
         {
+            ForgetHiveMindObstacle(obstacle);
             Obstacles.Remove(obstacle);
         }
 
@@ -148,23 +150,6 @@ namespace Assets.Scripts.Levels
                 }
                 ShipDamageStatusesById[sideIndex].Remove(ship.Id);
             }
-            for (int sideIndex = 0; sideIndex < SpottedShips.Length; sideIndex++)
-            {
-                List<SpottedShip> spotted = SpottedShips[sideIndex];
-                if (spotted == null)
-                {
-                    continue;
-                }
-                for (int spottedIndex = spotted.Count - 1; spottedIndex >= 0; spottedIndex--)
-                {
-                    SpottedShip entry = spotted[spottedIndex];
-                    if (entry == null || entry.Ship == null || entry.Ship == ship)
-                    {
-                        spotted.RemoveAt(spottedIndex);
-                    }
-                }
-            }
-
             foreach (Dictionary<long, HashSet<Ship>> observerMap in HivemindShips)
             {
                 if (observerMap == null)

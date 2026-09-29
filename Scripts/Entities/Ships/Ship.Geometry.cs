@@ -18,7 +18,6 @@ namespace Assets.Scripts.Entities.Ships
         public static RaycastHit2D BoxCastDebug(Vector2 origin, Vector2 size, float angle, Vector2 direction, float distance, int mask)
         {
             RaycastHit2D hit = Physics2D.BoxCast(origin, size, angle, direction, distance, mask);
-            Debug.Log($"{hit}, {hit.collider}, {hit.transform}");
             return hit;
         }
 
@@ -163,7 +162,6 @@ namespace Assets.Scripts.Entities.Ships
                         }
                     }
                 }
-                Debug.Log($"Could not find a random point on {Name}");
             }
             return _randomPoint;
         }

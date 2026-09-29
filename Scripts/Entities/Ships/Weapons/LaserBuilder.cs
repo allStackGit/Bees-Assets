@@ -17,6 +17,9 @@ namespace Assets.Scripts.Entities.Ships
         public LaserBuilderControl LaserBuilderControl;
         public GameObject LaserBuilderAnimation;
         public Animator Animator;
+        private bool _rlShotQueued;
+        private bool _animatorResetPending;
+        protected bool IsRlShotQueued => _rlShotQueued;
 
         public override void Create(Ship ship, ConfigData.WeaponTypes type, ConfigData.WeaponSoundTypes weaponSound, int range, int power, float rateOfFire, float projectileValue, GameObject piece,
             ConfigData.ProjectileTypes projectileType, bool fireAtFrontOfShip, float rotationRate)
@@ -32,85 +35,142 @@ namespace Assets.Scripts.Entities.Ships
         public override void ClearData()
         {
             base.ClearData();
+            _rlShotQueued = false;
             LaserBuilderAnimation.SetActive(false);
             Animator.speed = 1f;
-            Animator.Rebind();
-            Animator.Update(0f);
+            ResetAnimatorWhenSafe();
             //IsReadyForFiring = false;
         }
         public override void Activate()
         {
             base.Activate();
             Animator.enabled = true;
+            if (_animatorResetPending)
+            {
+                ResetAnimatorWhenSafe();
+            }
         }
         public override void Deactivate()
         {
             base.Deactivate();
+            _rlShotQueued = false;
             Animator.enabled = false;
+        }
+        private void ResetAnimatorWhenSafe()
+        {
+            if (Animator == null)
+            {
+                _animatorResetPending = false;
+                return;
+            }
+
+            if (!Animator.isActiveAndEnabled || !Animator.gameObject.activeInHierarchy)
+            {
+                _animatorResetPending = true;
+                return;
+            }
+
+            Animator.Rebind();
+            Animator.Update(0f);
+            _animatorResetPending = false;
         }
         protected override void SendProjectile() // [projectile-method] [note] this doesn't actually send the projectile because we need to wait for the animation to finish
         {
-            //IsReadyForFiring = true;
-            //Debug.Log($"{Name} send projectile called");
-
+            // Normal gameplay starts the animation when a target/manual point is selected. RL point
+            // fire reaches this method only after the shared turret timer has accepted a fire request,
+            // so queue the animation here instead of continuously driving it from Aim().
+            if (IsRlControlled)
+            {
+                _rlShotQueued = true;
+                LaserBuilderAnimation.SetActive(true);
+            }
         }
         public void ActuallyShoot() // [projectile-method] [note] this actually sends the projectile once the animation is finished
         {
-            bool canShoot = !Ship.IsDead && !Ship.IsCeaseFire && IsAimedAtTarget &&
-                (IsFiringManually || (IsFiringAtAsteroid ? ShouldFireAtAsteroid : ShouldFire));
+            bool directPointFire = IsRlControlled ? _rlShotQueued : IsFiringManually;
+            bool canShoot = !Ship.IsDead && !Ship.IsCeaseFire &&
+                (directPointFire || (IsFiringAtAsteroid ? ShouldFireAtAsteroid : ShouldFire)) &&
+                CanCompleteQueuedShot();
+            bool fired = false;
 
             if (canShoot)
             {
                 base.SendProjectile();
+                fired = true;
             }
+            _rlShotQueued = false;
             LaserBuilderAnimation.SetActive(false);
+            OnShotResolved(fired);
 
         }
+        protected virtual bool CanCompleteQueuedShot()
+        {
+            return IsAlignedWithTargetPoint;
+        }
+        protected virtual void OnShotResolved(bool fired) { }
         protected override void SetTargetShip(Ship ship)
         {
             //Debug.Log($"{Name} set target ship to {ship}");
             base.SetTargetShip(ship);
-            LaserBuilderAnimation.SetActive(true);
+            if (!IsRlControlled)
+            {
+                LaserBuilderAnimation.SetActive(true);
+            }
         }
         protected override void Aim()
         {
             //Debug.Log("Leafcutter aiming");
             //base.Aim();
 
-            if (IsFiringManually)
+            if (IsRlControlled)
+            {
+                TargetPoint = RlTargetPoint;
+                IsAlignedWithTargetPoint = true;
+                IsFiringAtAsteroid = false;
+                if (!_rlShotQueued && LaserBuilderAnimation.activeSelf)
+                {
+                    LaserBuilderAnimation.SetActive(false);
+                }
+            }
+            else if (IsFiringManually)
             {
                 TargetPoint = Stage.InputManager.GetMousePosition();
-                IsAimedAtTarget = true;
+                IsAlignedWithTargetPoint = true;
             }
             else
             {
                 if (ShouldFire)
                 {
                     TargetPoint = GetTargetPoint(TargetShip);
-                    IsAimedAtTarget = true;
+                    IsAlignedWithTargetPoint = true;
                     IsFiringAtAsteroid = false;
                 }
                 else if (ShouldFireAtAsteroid)
                 {
                     TargetPoint = TargetAsteroid.GetPosition();
-                    IsAimedAtTarget = true;
+                    IsAlignedWithTargetPoint = true;
                     IsFiringAtAsteroid = true;
                 }
                 else
                 {
-                    IsAimedAtTarget = false;
+                    IsAlignedWithTargetPoint = false;
                     IsFiringAtAsteroid = false;
                 }
             }
             MoveTargetingMarker();
 
-            if ((IsFiringManually && IsAimedAtTarget) || (IsFiringAtAsteroid && IsAimedAtTarget))
+            if (IsRlControlled)
+            {
+                return;
+            }
+
+            if ((IsFiringManually && IsAlignedWithTargetPoint) || (IsFiringAtAsteroid && IsAlignedWithTargetPoint))
             {
                 LaserBuilderAnimation.SetActive(true);
             }
             else
             {
-                if (LaserBuilderAnimation.activeSelf && (!HasTargetShip || Ship.IsCeaseFire || !IsAimedAtTarget))
+                if (LaserBuilderAnimation.activeSelf && (!HasTargetShip || Ship.IsCeaseFire || !IsAlignedWithTargetPoint))
                 {
                     //Debug.Log($"{Name} has no TargetShip, deactivating animation");
                     LaserBuilderAnimation.SetActive(false);

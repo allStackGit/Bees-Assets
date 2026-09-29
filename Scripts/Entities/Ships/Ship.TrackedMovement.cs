@@ -73,7 +73,6 @@ namespace Assets.Scripts.Entities.Ships
             {
                 // MoveToPoint only changes the path request identity when it actually dispatches
                 // or queues A*. Direct movement therefore does not inflate this diagnostic.
-                FreezeDiagnostics.RecordPathRequest(this);
             }
         }
     }

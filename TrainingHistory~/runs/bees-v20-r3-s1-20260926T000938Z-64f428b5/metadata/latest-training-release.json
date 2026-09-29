@@ -1,0 +1,52 @@
+{
+    "schema_version":  3,
+    "build_id":  "2026-09-26-135048-f23dbede4be8",
+    "source_commit":  "f23dbede4be8",
+    "created_utc":  "2026-09-26T18:01:53.3335527Z",
+    "run_id":  "bees-v20-r3-s1-20260926T175011Z-4fc8512c",
+    "previous_run_id":  "bees-v20-r3-s1-20260926T000938Z-64f428b5",
+    "compatibility_key":  "4fc8512cabe70e1612f62af6803298798ad03b489f6efafec257b8041c3602ca",
+    "incompatible":  true,
+    "contract":  {
+                     "action_schema_version":  9,
+                     "agent_action_source_sha256":  "914b36f9d20018108ebb312e4e4cfc658e979a5c23c33b1f8cc76f40d0ecb696",
+                     "behavior_name":  "BeesRL1v1",
+                     "combat_perception_source_sha256":  "4e9d693140221fdaa7edb9a3460b338388ce7920a33abea1bdaf63f3e2d40d1b",
+                     "episode_coordinator_source_sha256":  "3dac48b50ed3a0bdfd344b4e552a095a4aa91f17e1073991e56453e8fecbc785",
+                     "episode_identity_source_sha256":  "e526a01196e8f30de12a3dc116d851cf3ed121d88672814646a9c2472df6da00",
+                     "network_settings":  "network_settings:\nnormalize: true\nhidden_units: 128\nnum_layers: 3\n",
+                     "observation_schema_version":  11,
+                     "policy_abi_version":  20,
+                     "policy_schema_source_sha256":  "df8c4bb2514d7af8854703f1e88f9550793f1623a356de45182f7a0aa7e1603e",
+                     "policy_signature":  "bees-rl-v20|behavior=BeesRL1v1|network=ff-128x3|normalize=true|obs=7614|tail=episode-progress+20-reserved|cont=16|disc=2x5,5|coord-frame=team-episode-distinct-quarter-turn|weapon-aim=slotwise-xy|weapon-fire=slotwise-cease-or-fire|healing=weapon-exclusive|weapon-ready=rl-latched-until-fire|shiptype=fixed-scrambled-scalar24|weapontype=fixed-scrambled-scalar10|mapbits=4|shipmap=v1-0..23|weaponmap=v1-0..9|allies=64|enemies=64|weapons=5|entity-weapons=5|enemy-mounts=0|mining=8|map-objects=64|moving-asteroids=48|self=25|ship-id=episode-permuted-scalar23|capability=12|parent-carrier=40|entity-core=14|entity=40|ally=44-with-private-comm4|communication=4-continuous-private-allied|self-weapon=15|observed-weapon=5|weapon-observation=split-self-vs-observed|mining-slot=7|map-slot=12|moving-asteroid-slot=11|objective=16|grid=21x21-cell6|exploration-grid=16x16-team-shared-sight-recency|entity-order=distance,type,fleet-id,runtime-id",
+                     "reward_schema_version":  3,
+                     "reward_source_sha256":  "356983c2c69d4b201ca52e23982f114122be7c2e1e508f95f1bf72714078890b",
+                     "scenario_schema_version":  1,
+                     "team_exploration_source_sha256":  "c41203e4bc98e018b377017a548127efd8e45a35b5390cb0a8c089f2c43f1361"
+                 },
+    "artifacts":  [
+                      {
+                          "role":  "dedicated",
+                          "platform":  "WindowsPlayer",
+                          "folder":  "B:\\Bees\\Builds\\2026-09-26 RL Windows",
+                          "archive":  "B:\\Bees\\Builds\\Packages\\2026-09-26-135048-f23dbede4be8\\rl-windows.zip",
+                          "entrypoint":  "Bees RL Training.exe"
+                      },
+                      {
+                          "role":  "dedicated",
+                          "platform":  "LinuxPlayer",
+                          "folder":  "B:\\Bees\\Builds\\2026-09-26 RL Linux",
+                          "archive":  "B:\\Bees\\Builds\\Packages\\2026-09-26-135048-f23dbede4be8\\rl-linux.zip",
+                          "entrypoint":  "Bees RL Training.x86_64"
+                      }
+                  ],
+    "training_runtime":  {
+                             "archive":  "B:\\Bees\\Builds\\Packages\\2026-09-26-135048-f23dbede4be8\\training-runtime.zip",
+                             "archive_sha256":  "3e6af690f6c9048bae559a1971a700f723e4e82e76537e2a2b4c6ff9ddf8310c",
+                             "archive_size_bytes":  324280,
+                             "build_id":  "2026-09-26-135048-f23dbede4be8",
+                             "runtime_version":  "23ecde8a35dd7d2cdd6f28715d1263d754dd606d19871a40105ebda86be7a248",
+                             "schema_version":  1,
+                             "source_commit":  "f23dbede4be8"
+                         }
+}

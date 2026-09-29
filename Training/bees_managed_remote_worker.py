@@ -1,0 +1,2465 @@
+"""Persistent one-command remote Bees rollout worker supervisor.
+
+The worker uses the bundled userspace tailnet bridge for both BeesServer control traffic and WAN
+rollout traffic. No separate remote-login service, account, password, key, or file-copy transport is involved.
+The learner-side WAN broker assigns an available actor slot automatically. Each remote installation
+keeps a persistent actor key so reconnects can reclaim its current slot safely.
+"""
+
+from __future__ import annotations
+
+import argparse
+import ctypes
+import hashlib
+import http.client
+import io
+import json
+import os
+from pathlib import Path
+import re
+import signal
+import shutil
+import socket
+import subprocess
+import sys
+import tempfile
+import threading
+import time
+from typing import Mapping, Optional, Sequence
+import urllib.error
+import urllib.parse
+import urllib.request
+import uuid
+import zipfile
+
+from bees_process_safety import close_windows_owned_child_job, popen_owned
+
+
+DEFAULT_RECONNECT_SECONDS = 5.0
+WORKER_REGISTRATION_GRACE_SECONDS = 30.0
+DEFAULT_GAMEPLAY_PORT = 7146
+TRAINING_GAMEPLAY_HOST_ENV = "BEES_TRAINING_GAMEPLAY_HOST"
+TRAINING_GAMEPLAY_PORT_ENV = "BEES_TRAINING_GAMEPLAY_PORT"
+MAX_ENVS_PER_ACTOR = 64
+REMOTE_CPU_START_ENVS_PER_THREAD = 1
+REMOTE_MEMORY_RESERVE_BYTES = 1 * 1024 * 1024 * 1024
+REMOTE_MEMORY_PER_ENV_BYTES = 512 * 1024 * 1024
+REMOTE_PID_FILE = "remote-worker.pid"
+REMOTE_STOP_REQUEST_FILE = "remote-worker.stop"
+REMOTE_WORKER_AGENT_STOP_REQUEST_FILE = "worker-agent-stop.request"
+MAX_RETAINED_RUNTIME_VERSIONS = 4
+MAX_RETAINED_VENV_VERSIONS = 4
+RUN_ID_PATTERN = re.compile(r"^[A-Za-z0-9._-]+$")
+
+
+class _SupervisorProcessRestartRequired(RuntimeError):
+    """The current process must exit before recovery to avoid overlapping owned state."""
+
+
+class _WindowsSupervisorMutex:
+    def __init__(self, handle: int) -> None:
+        self.handle = int(handle)
+
+    def close(self) -> None:
+        handle = self.handle
+        if not handle:
+            return
+        self.handle = 0
+        from ctypes import wintypes
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.ReleaseMutex.restype = wintypes.BOOL
+        kernel32.ReleaseMutex.argtypes = (wintypes.HANDLE,)
+        kernel32.CloseHandle.restype = wintypes.BOOL
+        kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
+        kernel32.ReleaseMutex(wintypes.HANDLE(handle))
+        kernel32.CloseHandle(wintypes.HANDLE(handle))
+
+
+def _windows_supervisor_mutex_name(install_root: Path) -> str:
+    normalized = os.path.normcase(os.path.abspath(os.fspath(install_root)))
+    identity = hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+    return "Local\\BeesRemoteSupervisor-" + identity
+
+
+def _acquire_windows_supervisor_lock(
+    install_root: Path,
+    timeout_ms: int = 10_000,
+):
+    """Serialize supervisors while still allowing an intentional staged-runtime handoff.
+
+    A staged replacement starts before the old Windows supervisor returns. Waiting briefly on the
+    named mutex lets that replacement inherit ownership as soon as the old process releases it,
+    while an accidental second supervisor cannot overwrite the PID file or bind forwarding ports.
+    """
+    from ctypes import wintypes
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.CreateMutexW.restype = wintypes.HANDLE
+    kernel32.CreateMutexW.argtypes = (ctypes.c_void_p, wintypes.BOOL, wintypes.LPCWSTR)
+    kernel32.WaitForSingleObject.restype = wintypes.DWORD
+    kernel32.WaitForSingleObject.argtypes = (wintypes.HANDLE, wintypes.DWORD)
+    kernel32.CloseHandle.restype = wintypes.BOOL
+    kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
+
+    handle = kernel32.CreateMutexW(
+        None,
+        False,
+        _windows_supervisor_mutex_name(install_root),
+    )
+    if not handle:
+        raise ctypes.WinError(ctypes.get_last_error())
+
+    wait_object_0 = 0x00000000
+    wait_abandoned = 0x00000080
+    wait_timeout = 0x00000102
+    result = kernel32.WaitForSingleObject(
+        handle,
+        max(0, int(timeout_ms)),
+    )
+    if result in (wait_object_0, wait_abandoned):
+        handle_value = getattr(handle, "value", handle)
+        return _WindowsSupervisorMutex(int(handle_value))
+    kernel32.CloseHandle(handle)
+    if result == wait_timeout:
+        return None
+    raise ctypes.WinError(ctypes.get_last_error())
+
+
+def _acquire_posix_supervisor_lock(install_root: Path):
+    """Own one managed supervisor per POSIX install root."""
+    import fcntl
+
+    install_root.mkdir(parents=True, exist_ok=True)
+    lock_path = install_root / "remote-worker.lock"
+    handle = lock_path.open("a+", encoding="ascii")
+    try:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        handle.close()
+        return None
+    return handle
+
+
+def _acquire_supervisor_lock(install_root: Path):
+    """Own one managed supervisor per install root before PID or local-port mutation."""
+    if os.name == "nt":
+        return _acquire_windows_supervisor_lock(install_root)
+    return _acquire_posix_supervisor_lock(install_root)
+
+
+class _RunScopedLogSink:
+    """Mirror supervisor/child console output into the run-scoped uploaded log tree."""
+
+    MAX_BYTES = 16 * 1024 * 1024
+
+    def __init__(self, root: Path) -> None:
+        self.root = root
+        self._run_id = ""
+        self._lock = threading.Lock()
+
+    def set_run_id(self, run_id: str) -> None:
+        normalized = str(run_id or "").strip()
+        if normalized and not RUN_ID_PATTERN.fullmatch(normalized):
+            return
+        with self._lock:
+            self._run_id = normalized
+
+    def write(self, value: str) -> None:
+        if not value:
+            return
+        with self._lock:
+            run_id = self._run_id
+            if not run_id:
+                return
+            path = self.root / run_id / "remote-supervisor.log"
+            try:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                encoded_size = len(value.encode("utf-8", errors="replace"))
+                current_size = path.stat().st_size if path.is_file() else 0
+                if current_size > 0 and current_size + encoded_size > self.MAX_BYTES:
+                    rotated = path.with_name(path.name + ".1")
+                    try:
+                        rotated.unlink()
+                    except FileNotFoundError:
+                        pass
+                    os.replace(path, rotated)
+                with path.open("a", encoding="utf-8", errors="replace") as handle:
+                    handle.write(value)
+            except OSError:
+                pass
+
+
+class _RunScopedTee:
+    def __init__(self, primary, sink: _RunScopedLogSink) -> None:
+        self.primary = primary
+        self.sink = sink
+
+    def write(self, value):
+        result = self.primary.write(value)
+        self.sink.write(str(value))
+        return result
+
+    def flush(self):
+        self.primary.flush()
+
+    def isatty(self):
+        return bool(getattr(self.primary, "isatty", lambda: False)())
+
+    def fileno(self):
+        return self.primary.fileno()
+
+    @property
+    def encoding(self):
+        return getattr(self.primary, "encoding", "utf-8")
+
+
+def _forward_process_output(process: subprocess.Popen) -> None:
+    stream = process.stdout
+    if stream is None:
+        return
+    try:
+        for line in stream:
+            sys.stdout.write(line)
+            sys.stdout.flush()
+    finally:
+        try:
+            stream.close()
+        except OSError:
+            pass
+
+
+def _start_logged_process(
+    command: Sequence[str],
+    *,
+    environment: Optional[Mapping[str, str]] = None,
+) -> tuple[subprocess.Popen, threading.Thread]:
+    popen_kwargs = {
+        "env": None if environment is None else dict(environment),
+        "stdout": subprocess.PIPE,
+        "stderr": subprocess.STDOUT,
+        "text": True,
+        "encoding": "utf-8",
+        "errors": "replace",
+        "bufsize": 1,
+    }
+    if os.name != "nt":
+        popen_kwargs["start_new_session"] = True
+    process = popen_owned(
+        list(command),
+        **popen_kwargs,
+    )
+    thread = threading.Thread(
+        target=_forward_process_output,
+        args=(process,),
+        name="bees-remote-console-forwarder",
+        daemon=True,
+    )
+    thread.start()
+    return process, thread
+
+
+def _available_cpu_threads() -> int:
+    affinity = getattr(os, "sched_getaffinity", None)
+    if affinity is not None:
+        try:
+            count = len(affinity(0))
+            if count > 0:
+                return count
+        except (OSError, TypeError):
+            pass
+
+    if os.name == "nt":
+        try:
+            process_mask = ctypes.c_size_t()
+            system_mask = ctypes.c_size_t()
+            kernel32 = ctypes.windll.kernel32
+            if kernel32.GetProcessAffinityMask(
+                kernel32.GetCurrentProcess(),
+                ctypes.byref(process_mask),
+                ctypes.byref(system_mask),
+            ):
+                count = int(process_mask.value).bit_count()
+                if count > 0:
+                    return count
+        except (AttributeError, OSError, ValueError):
+            pass
+
+    return max(1, int(os.cpu_count() or 1))
+
+
+class _MemoryStatusEx(ctypes.Structure):
+    _fields_ = [
+        ("dwLength", ctypes.c_ulong),
+        ("dwMemoryLoad", ctypes.c_ulong),
+        ("ullTotalPhys", ctypes.c_ulonglong),
+        ("ullAvailPhys", ctypes.c_ulonglong),
+        ("ullTotalPageFile", ctypes.c_ulonglong),
+        ("ullAvailPageFile", ctypes.c_ulonglong),
+        ("ullTotalVirtual", ctypes.c_ulonglong),
+        ("ullAvailVirtual", ctypes.c_ulonglong),
+        ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
+    ]
+
+
+def _windows_memory_status() -> Optional[_MemoryStatusEx]:
+    if os.name != "nt":
+        return None
+    try:
+        status = _MemoryStatusEx()
+        status.dwLength = ctypes.sizeof(status)
+        if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
+            return status
+    except (AttributeError, OSError, ValueError):
+        pass
+    return None
+
+
+def _available_memory_bytes() -> Optional[int]:
+    status = _windows_memory_status()
+    if status is not None:
+        available = int(status.ullAvailPhys)
+        if available > 0:
+            return available
+
+    meminfo = Path("/proc/meminfo")
+    if meminfo.is_file():
+        try:
+            for line in meminfo.read_text(encoding="ascii").splitlines():
+                if line.startswith("MemAvailable:"):
+                    parts = line.split()
+                    if len(parts) >= 2:
+                        available = int(parts[1]) * 1024
+                        if available > 0:
+                            return available
+        except (OSError, UnicodeError, ValueError):
+            pass
+
+    try:
+        pages = int(os.sysconf("SC_AVPHYS_PAGES"))
+        page_size = int(os.sysconf("SC_PAGE_SIZE"))
+        available = pages * page_size
+        return available if available > 0 else None
+    except (AttributeError, OSError, TypeError, ValueError):
+        return None
+
+
+def _memory_limit_for_bytes(memory_bytes: Optional[int]) -> int:
+    if memory_bytes is None:
+        return MAX_ENVS_PER_ACTOR
+    usable = max(0, memory_bytes - REMOTE_MEMORY_RESERVE_BYTES)
+    return max(1, min(MAX_ENVS_PER_ACTOR, usable // REMOTE_MEMORY_PER_ENV_BYTES))
+
+
+def _memory_env_limit() -> int:
+    """Safe initial environment count based on memory that is free right now."""
+    return _memory_limit_for_bytes(_available_memory_bytes())
+
+
+def _cpu_env_start_limit() -> int:
+    """Conservative startup count so auto mode cannot saturate a small CPU immediately."""
+    return max(
+        1,
+        min(
+            MAX_ENVS_PER_ACTOR,
+            REMOTE_CPU_START_ENVS_PER_THREAD * _available_cpu_threads(),
+        ),
+    )
+
+
+def _default_envs() -> int:
+    return min(MAX_ENVS_PER_ACTOR, _cpu_env_start_limit(), _memory_env_limit())
+
+
+def _parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Run one self-healing managed remote Bees rollout worker.")
+    parser.add_argument(
+        "--tailnet-bridge",
+        required=True,
+        help="Path to the bundled bees-tailnet-bridge executable.",
+    )
+    parser.add_argument("--tailnet-state", required=True)
+    parser.add_argument("--tailnet-hostname", required=True)
+    parser.add_argument(
+        "--tailnet-target",
+        required=True,
+        help="Learner tailnet IPv4 address baked into the generated launcher.",
+    )
+    parser.add_argument(
+        "--envs",
+        type=int,
+        default=None,
+        help=(
+            "Fixed Unity environment count (1-64). If omitted, BeesServer auto-tunes "
+            "the count for useful steps/sec."
+        ),
+    )
+    parser.add_argument(
+        "--min-envs",
+        type=int,
+        default=1,
+        help="Minimum environment count for automatic tuning (default 1).",
+    )
+    parser.add_argument(
+        "--max-envs",
+        type=int,
+        default=None,
+        help="Maximum environment count for automatic tuning (default 64; startup still uses CPU/RAM heuristics).",
+    )
+    parser.add_argument(
+        "--gameplay-port",
+        type=int,
+        default=DEFAULT_GAMEPLAY_PORT,
+        help=argparse.SUPPRESS,
+    )
+    parser.add_argument("--control-port", type=int, default=7150)
+    parser.add_argument("--bootstrap-port", type=int, default=7151)
+    parser.add_argument("--broker-port", type=int, default=55051)
+    parser.add_argument("--install-root", required=True)
+    parser.add_argument("--runtime-archive", required=True)
+    parser.add_argument(
+        "--launcher-path",
+        default="",
+        help="Absolute path to the copied one-file launcher so it can self-update.",
+    )
+    parser.add_argument("--no-autostart", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--bootstrap-token-file", required=True)
+    parser.add_argument("--worker-token-file", required=True)
+    parser.add_argument("--wan-token-file", required=True)
+    parser.add_argument("--runtime-poll-seconds", type=float, default=20.0)
+    parser.add_argument(
+        "--transport-watchdog-seconds",
+        type=float,
+        default=30.0,
+        help=argparse.SUPPRESS,
+    )
+    parser.add_argument("--torch-device", default="cpu")
+    parser.add_argument("--reconnect-seconds", type=float, default=DEFAULT_RECONNECT_SECONDS)
+    return parser
+
+
+def _load_actor_key(install_root: Path) -> str:
+    install_root.mkdir(parents=True, exist_ok=True)
+    path = install_root / "actor-key.txt"
+    try:
+        existing = path.read_text(encoding="ascii").strip().lower()
+    except FileNotFoundError:
+        existing = ""
+    if existing:
+        if len(existing) != 32 or any(ch not in "0123456789abcdef" for ch in existing):
+            raise ValueError(f"invalid persistent actor key: {path}")
+        return existing
+
+    candidate = uuid.uuid4().hex
+    try:
+        with path.open("x", encoding="ascii") as handle:
+            handle.write(candidate + "\n")
+    except FileExistsError:
+        existing = path.read_text(encoding="ascii").strip().lower()
+        if len(existing) != 32 or any(ch not in "0123456789abcdef" for ch in existing):
+            raise ValueError(f"invalid persistent actor key: {path}")
+        return existing
+    return candidate
+
+
+def _terminate(process: Optional[subprocess.Popen]) -> None:
+    if process is None or process.poll() is not None:
+        return
+    if os.name == "nt":
+        try:
+            subprocess.run(
+                ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+            )
+        except Exception:
+            pass
+        try:
+            process.wait(timeout=5)
+            return
+        except Exception:
+            pass
+        try:
+            process.kill()
+        except Exception:
+            pass
+        try:
+            process.wait(timeout=5)
+            return
+        except Exception as exc:
+            raise RuntimeError(
+                f"remote supervisor child process tree {process.pid} did not stop"
+            ) from exc
+    else:
+        # Remote children are launched in their own session. Signal the whole session so a
+        # tailnet/helper descendant or a Unity child cannot survive after its managed parent exits.
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except (ProcessLookupError, PermissionError, OSError):
+            try:
+                process.terminate()
+            except Exception:
+                pass
+        try:
+            process.wait(timeout=10)
+            return
+        except Exception:
+            pass
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError, OSError):
+            try:
+                process.kill()
+            except Exception:
+                pass
+        try:
+            process.wait(timeout=10)
+            return
+        except Exception as exc:
+            raise RuntimeError(
+                f"remote supervisor child process tree {process.pid} did not stop"
+            ) from exc
+    try:
+        process.terminate()
+    except Exception:
+        pass
+    try:
+        process.wait(timeout=10)
+        return
+    except Exception:
+        pass
+    try:
+        process.kill()
+    except Exception:
+        pass
+    try:
+        process.wait(timeout=5)
+        return
+    except Exception as exc:
+        raise RuntimeError(
+            f"remote supervisor child process {process.pid} did not stop"
+        ) from exc
+
+
+def _worker_cleanup_grace_seconds(fast_recovery_restart: bool) -> float:
+    # A worker that is already stale or whose supervisor state cannot recover should not spend the
+    # normal 30-second graceful budget blocking repair. Normal stops and release cutovers retain the
+    # longer window for orderly log preservation. Transport-only repair never calls this path.
+    return 8.0 if fast_recovery_restart else 30.0
+
+
+def _worker_agent_stop_request_path(args: argparse.Namespace) -> Path:
+    return (
+        Path(args.install_root).expanduser().resolve()
+        / "ManagedBuilds"
+        / REMOTE_WORKER_AGENT_STOP_REQUEST_FILE
+    )
+
+
+def _request_graceful_worker_stop(
+    process: Optional[subprocess.Popen],
+    request_path: Path,
+    *,
+    timeout: float = 30.0,
+) -> bool:
+    if process is None or process.poll() is not None:
+        return True
+    try:
+        request_path.parent.mkdir(parents=True, exist_ok=True)
+        request_path.write_text("stop\n", encoding="ascii")
+    except OSError:
+        return False
+    try:
+        process.wait(timeout=timeout)
+        return True
+    except Exception:
+        return False
+
+
+def _wait_for_ports(
+    ports: Sequence[int],
+    process: subprocess.Popen,
+    stop: list[bool],
+    timeout: float = 20.0,
+) -> bool:
+    pending = set(int(port) for port in ports)
+    deadline = time.monotonic() + timeout
+    while not stop[0] and pending and time.monotonic() < deadline:
+        if process.poll() is not None:
+            return False
+        for port in tuple(pending):
+            try:
+                with socket.create_connection(("127.0.0.1", port), timeout=0.4):
+                    pending.remove(port)
+            except OSError:
+                pass
+        if pending:
+            time.sleep(0.2)
+    return not pending
+
+
+def _tailnet_forward_command(args: argparse.Namespace) -> list[str]:
+    return [
+        str(Path(args.tailnet_bridge).expanduser().resolve()),
+        "forward-multi",
+        "--state",
+        str(Path(args.tailnet_state).expanduser().resolve()),
+        "--hostname",
+        args.tailnet_hostname,
+        "--map",
+        f"127.0.0.1:{args.control_port}={args.tailnet_target}:{args.control_port}",
+        "--map",
+        f"127.0.0.1:{args.broker_port}={args.tailnet_target}:{args.broker_port}",
+        "--map",
+        f"127.0.0.1:{args.bootstrap_port}={args.tailnet_target}:{args.bootstrap_port}",
+        "--map",
+        f"127.0.0.1:{args.gameplay_port}={args.tailnet_target}:{args.gameplay_port}",
+    ]
+
+
+def _worker_environment(args: argparse.Namespace) -> dict[str, str]:
+    environment = os.environ.copy()
+    environment[TRAINING_GAMEPLAY_HOST_ENV] = "127.0.0.1"
+    environment[TRAINING_GAMEPLAY_PORT_ENV] = str(args.gameplay_port)
+    return environment
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _python_executable_path(path: str | Path) -> Path:
+    # Do not resolve symlinks here. On Linux, a venv's bin/python is commonly a
+    # symlink to the base interpreter; resolving it discards the venv context and
+    # makes installed packages appear to be missing.
+    return Path(os.path.abspath(os.fspath(path)))
+
+
+def _activate_staged_runtime(
+    python_executable: str | Path,
+    script: Path,
+    raw_argv: Sequence[str],
+    *,
+    working_directory: Path,
+) -> Optional[subprocess.Popen]:
+    """Replace this supervisor with a staged runtime without reparsing spaced Windows paths."""
+    command = [
+        str(_python_executable_path(python_executable)),
+        str(script),
+        *[str(value) for value in raw_argv],
+    ]
+    if os.name != "nt":
+        os.execv(command[0], command)
+        raise RuntimeError("POSIX runtime exec unexpectedly returned")
+
+    # os.execv() on Windows has historically had path-quoting edge cases when the executable
+    # lives below a user/profile directory containing spaces. Spawn the replacement from an
+    # argv array instead, then let main() return so this old supervisor can finish cleanup.
+    creation_flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    replacement = subprocess.Popen(
+        command,
+        cwd=str(working_directory),
+        creationflags=creation_flags,
+        stdin=subprocess.DEVNULL,
+        stdout=sys.stdout,
+        stderr=sys.stderr,
+        close_fds=True,
+    )
+    time.sleep(0.25)
+    code = replacement.poll()
+    if code is not None:
+        raise RuntimeError(
+            "staged Windows runtime exited during handoff "
+            f"(pid={replacement.pid} exit={code})"
+        )
+    return replacement
+
+
+def _python_remote_dependencies_ok(python_path: Path) -> bool:
+    completed = subprocess.run(
+        [
+            str(python_path),
+            "-c",
+            "import pkg_resources, mlagents, torch, numpy",
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    return completed.returncode == 0
+
+
+def _decode_release_metadata(data: bytes) -> Mapping[str, object]:
+    try:
+        value = json.loads(data.decode("utf-8-sig"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError(f"bootstrap release metadata is invalid JSON: {exc}") from exc
+    if not isinstance(value, Mapping):
+        raise ValueError("bootstrap release metadata must be a JSON object")
+    return value
+
+
+def _valid_runtime_version(value: str) -> bool:
+    return (
+        len(value) in (40, 64)
+        and all(ch in "0123456789abcdef" for ch in value)
+    )
+
+
+def _runtime_version_from_root(root: Path) -> str:
+    path = root / "bees-runtime-version.txt"
+    try:
+        value = path.read_text(encoding="ascii").strip().lower()
+    except OSError:
+        return ""
+    return value if _valid_runtime_version(value) else ""
+
+
+def _runtime_version_from_zip(runtime_zip: bytes) -> str:
+    try:
+        with zipfile.ZipFile(io.BytesIO(runtime_zip), "r") as bundle:
+            value = bundle.read("bees-runtime-version.txt").decode("ascii").strip().lower()
+    except (KeyError, UnicodeDecodeError, zipfile.BadZipFile):
+        return ""
+    return value if _valid_runtime_version(value) else ""
+
+
+def _atomic_bytes(path: Path, data: bytes, mode: int = 0o600) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(path.name + ".tmp")
+    temporary.write_bytes(data)
+    try:
+        os.chmod(temporary, mode)
+    except OSError:
+        pass
+    deadline = time.monotonic() + 30.0
+    while True:
+        try:
+            os.replace(temporary, path)
+            return
+        except PermissionError:
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(0.1)
+
+
+def _watch_shutdown_request(
+    path: Path,
+    stop: list[bool],
+    poll_seconds: float = 0.25,
+) -> None:
+    """Turn a launcher stop request into the supervisor's normal cleanup path."""
+    while not stop[0]:
+        if path.is_file():
+            stop[0] = True
+            return
+        time.sleep(poll_seconds)
+
+
+def _clear_pid_file_if_owned(path: Path, pid: int) -> None:
+    try:
+        recorded = path.read_text(encoding="ascii").strip()
+    except OSError:
+        return
+    if recorded != str(pid):
+        return
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        pass
+
+
+def _safe_extract_runtime(runtime_zip: bytes, destination: Path) -> None:
+    temporary = destination.with_name(destination.name + ".tmp")
+    if temporary.exists():
+        import shutil
+        shutil.rmtree(temporary)
+    temporary.mkdir(parents=True, exist_ok=False)
+    try:
+        with zipfile.ZipFile(io.BytesIO(runtime_zip), "r") as bundle:
+            root = temporary.resolve()
+            for member in bundle.infolist():
+                normalized = member.filename.replace("\\", "/")
+                if (
+                    not normalized
+                    or normalized.startswith("/")
+                    or normalized.startswith("../")
+                    or "/../" in normalized
+                ):
+                    raise ValueError(f"unsafe runtime member: {member.filename!r}")
+                target = (temporary / normalized).resolve()
+                target.relative_to(root)
+                if member.is_dir():
+                    target.mkdir(parents=True, exist_ok=True)
+                    continue
+                target.parent.mkdir(parents=True, exist_ok=True)
+                with bundle.open(member, "r") as source, target.open("wb") as output:
+                    output.write(source.read())
+        if destination.exists():
+            import shutil
+            shutil.rmtree(destination)
+        os.replace(temporary, destination)
+    finally:
+        if temporary.exists():
+            import shutil
+            shutil.rmtree(temporary, ignore_errors=True)
+
+
+def _direct_version_root(root: Path, path: Path) -> Optional[Path]:
+    # Do not resolve interpreter symlinks here. Linux venv/bin/python commonly points at
+    # a base interpreter outside the venv; resolving it would make an active managed venv
+    # look unrelated to VenvVersions and eligible for deletion.
+    root_absolute = Path(os.path.abspath(os.fspath(root)))
+    path_absolute = Path(os.path.abspath(os.fspath(path)))
+    try:
+        relative = path_absolute.relative_to(root_absolute)
+    except ValueError:
+        return None
+    if not relative.parts:
+        return None
+    return root_absolute / relative.parts[0]
+
+
+def _prune_version_directories(
+    root: Path,
+    *,
+    preserve_paths: Sequence[Path],
+    retain: int,
+) -> None:
+    if retain < 1 or not root.is_dir():
+        return
+    keep = set()
+    for path in preserve_paths:
+        candidate = _direct_version_root(root, Path(path))
+        if candidate is not None:
+            keep.add(candidate)
+
+    candidates = []
+    try:
+        children = list(root.iterdir())
+    except OSError:
+        return
+    for child in children:
+        if not child.is_dir() or child.name.endswith(".tmp"):
+            continue
+        try:
+            candidates.append((child.stat().st_mtime_ns, child.resolve()))
+        except OSError:
+            continue
+    candidates.sort(reverse=True)
+    keep.update(path for _, path in candidates[:retain])
+
+    for _, path in candidates:
+        if path in keep:
+            continue
+        shutil.rmtree(path, ignore_errors=True)
+
+
+def _is_transient_transport_error(exc: BaseException) -> bool:
+    if isinstance(
+        exc,
+        (
+            ConnectionResetError,
+            ConnectionAbortedError,
+            TimeoutError,
+            http.client.IncompleteRead,
+        ),
+    ):
+        return True
+    if isinstance(exc, urllib.error.URLError):
+        reason = getattr(exc, "reason", None)
+        return isinstance(reason, BaseException) and _is_transient_transport_error(reason)
+    if isinstance(exc, OSError):
+        code = getattr(exc, "winerror", None)
+        if code in {10053, 10054, 10060, 10061, 10064}:
+            return True
+        if getattr(exc, "errno", None) in {32, 54, 60, 61, 104, 110, 111}:
+            return True
+    return False
+
+
+class RuntimeUpdater:
+    def __init__(self, args: argparse.Namespace, install_root: Path) -> None:
+        self.args = args
+        self.install_root = install_root
+        self.versions_root = install_root / "RuntimeVersions"
+        self.versions_root.mkdir(parents=True, exist_ok=True)
+        self.ready_build_path = install_root / "runtime-ready-build.txt"
+        self._stop = threading.Event()
+        self._refresh = threading.Event()
+        self._lock = threading.Lock()
+        self._thread = threading.Thread(target=self._run, name="bees-runtime-updater", daemon=True)
+        self._started = False
+        self._last_attempt_monotonic = 0.0
+        archive = Path(args.runtime_archive).expanduser().resolve()
+        self.current_sha256 = _sha256_file(archive) if archive.is_file() else ""
+        self.current_version = _runtime_version_from_root(Path(__file__).resolve().parent)
+        self.staged_sha256 = ""
+        self.staged_root: Optional[Path] = None
+        self.staged_bridge: Optional[Path] = None
+        self.staged_python: Optional[Path] = None
+        self.staged_build_id = ""
+        self.verified_build_id = ""
+        self.bootstrap_identity = ""
+        self.last_error = ""
+
+    def start(self) -> None:
+        if self._started:
+            self.request_refresh()
+            return
+        self._started = True
+        self._thread.start()
+
+    def request_refresh(self) -> None:
+        # Runtime-alignment loops can request refresh frequently. Never let those requests
+        # bypass the normal poll interval; older gateways answer with a full bootstrap GET.
+        now = time.monotonic()
+        if (
+            self._last_attempt_monotonic > 0.0
+            and now - self._last_attempt_monotonic < self.args.runtime_poll_seconds
+        ):
+            return
+        self._refresh.set()
+
+    def stop(self) -> None:
+        self._stop.set()
+        self._refresh.set()
+        if self._started:
+            self._thread.join(timeout=12.0)
+            if self._thread.is_alive():
+                raise _SupervisorProcessRestartRequired(
+                    "runtime updater did not stop within 12 seconds; "
+                    "replacing the supervisor process"
+                )
+
+    def alive(self) -> bool:
+        return not self._started or self._thread.is_alive()
+
+    def revive(self) -> bool:
+        if self._stop.is_set():
+            return False
+        if self._thread.is_alive():
+            return True
+        self._thread = threading.Thread(
+            target=self._run,
+            name="bees-runtime-updater",
+            daemon=True,
+        )
+        self._started = True
+        self._thread.start()
+        return True
+
+    def verified(self) -> tuple[str, str]:
+        with self._lock:
+            return self.verified_build_id, self.last_error
+
+    def staged(
+        self,
+    ) -> tuple[str, Optional[Path], Optional[Path], Optional[Path], str, str]:
+        with self._lock:
+            return (
+                self.staged_sha256,
+                self.staged_root,
+                self.staged_bridge,
+                self.staged_python,
+                self.staged_build_id,
+                self.last_error,
+            )
+
+    def _bootstrap_token(self) -> str:
+        value = Path(self.args.bootstrap_token_file).expanduser().read_text(encoding="ascii").strip()
+        if not value:
+            raise ValueError("bootstrap token is empty")
+        return value
+
+    def _managed_launcher_path(self) -> Path:
+        name = "bees-remote-worker.cmd" if os.name == "nt" else "bees-remote-worker.sh"
+        return self.install_root / "Launcher" / name
+
+    def _external_launcher_state_path(self) -> Path:
+        return self.install_root / "Launcher" / "external-launcher.path"
+
+    def _external_launcher_path(self) -> Optional[Path]:
+        managed_launcher = self._managed_launcher_path().resolve()
+        current_value = (
+            str(getattr(self.args, "launcher_path", "") or "").strip()
+            or os.environ.get("BEES_REMOTE_LAUNCHER_PATH", "").strip()
+            or os.environ.get("BEES_SELF", "").strip()
+        )
+        if current_value:
+            current = Path(current_value).expanduser().resolve()
+            if current != managed_launcher:
+                try:
+                    _atomic_bytes(
+                        self._external_launcher_state_path(),
+                        (str(current) + "\n").encode("utf-8"),
+                        0o600,
+                    )
+                except OSError:
+                    pass
+                return current
+
+        try:
+            persisted_value = self._external_launcher_state_path().read_text(
+                encoding="utf-8"
+            ).strip()
+        except OSError:
+            persisted_value = ""
+        if persisted_value:
+            persisted = Path(persisted_value).expanduser().resolve()
+            if persisted != managed_launcher and persisted.is_file():
+                return persisted
+        return None
+
+    def _adopt_managed_launcher(self, launcher_path: Path) -> None:
+        if bool(getattr(self.args, "no_autostart", False)):
+            return
+        if os.name == "nt":
+            command = [
+                os.environ.get("COMSPEC", "cmd.exe"),
+                "/d",
+                "/c",
+                "call",
+                str(launcher_path),
+                "start",
+                "-InstallRoot",
+                str(self.install_root),
+                "-TorchDevice",
+                str(self.args.torch_device),
+            ]
+            if not bool(getattr(self.args, "auto_envs", False)):
+                command.extend(["-Envs", str(self.args.envs)])
+        else:
+            command = [
+                "bash",
+                str(launcher_path),
+                "start",
+                "--install-root",
+                str(self.install_root),
+                "--torch-device",
+                str(self.args.torch_device),
+            ]
+            if not bool(getattr(self.args, "auto_envs", False)):
+                command.extend(["--envs", str(self.args.envs)])
+        environment = os.environ.copy()
+        # A supervisor relaunched by the OS watchdog inherits this marker so the watchdog
+        # child does not recursively re-register itself. Managed-launcher adoption is a
+        # deliberate persistence migration and must not inherit that suppression.
+        environment.pop("BEES_AUTOSTART_CHILD", None)
+        completed = subprocess.run(
+            command,
+            cwd=str(self.install_root),
+            env=environment,
+            check=False,
+            timeout=30.0,
+        )
+        if completed.returncode != 0:
+            raise RuntimeError(
+                "managed launcher could not register reboot persistence "
+                f"(exit {completed.returncode})"
+            )
+
+    def _fetch_bootstrap_identity(self) -> str:
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{self.args.bootstrap_port}/bootstrap",
+            method="HEAD",
+            headers={"Authorization": "Bearer " + self._bootstrap_token()},
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=10.0) as response:
+                return str(response.headers.get("ETag", "") or "").strip()
+        except urllib.error.HTTPError as exc:
+            # Older gateways only support GET. Fall back to the full bundle until the
+            # staged bridge rolls forward, rather than deadlocking the bridge update.
+            if exc.code in {404, 405, 501}:
+                return ""
+            raise
+
+    def _fetch_bootstrap(self) -> tuple[bytes, bytes, bytes, bytes, bytes, bytes, str]:
+        maximum_attempts = 4
+        last_error: Optional[Exception] = None
+        for attempt in range(1, maximum_attempts + 1):
+            request = urllib.request.Request(
+                f"http://127.0.0.1:{self.args.bootstrap_port}/bootstrap",
+                method="GET",
+                headers={"Authorization": "Bearer " + self._bootstrap_token()},
+            )
+            try:
+                with urllib.request.urlopen(request, timeout=10.0) as response:
+                    identity = str(response.headers.get("ETag", "") or "").strip()
+                    chunks: list[bytes] = []
+                    while True:
+                        if self._stop.is_set():
+                            raise RuntimeError("runtime updater stopped during bootstrap download")
+                        chunk = response.read(1024 * 1024)
+                        if not chunk:
+                            break
+                        chunks.append(chunk)
+                    outer = b"".join(chunks)
+                with zipfile.ZipFile(io.BytesIO(outer), "r") as bundle:
+                    bridge_name = (
+                        "bees-tailnet-bridge-windows.exe"
+                        if os.name == "nt"
+                        else "bees-tailnet-bridge-linux"
+                    )
+                    launcher_name = (
+                        "bees-remote-worker.cmd"
+                        if os.name == "nt"
+                        else "bees-remote-worker.sh"
+                    )
+                    try:
+                        launcher_bytes = bundle.read(launcher_name)
+                    except KeyError:
+                        # Compatibility with bootstrap bundles published before launchers
+                        # were included in the self-update payload.
+                        launcher_bytes = b""
+                    return (
+                        bundle.read("bees-remote-runtime.zip"),
+                        bundle.read("training-worker.token"),
+                        bundle.read("wan.token"),
+                        bundle.read(bridge_name),
+                        bundle.read("latest-training-release.json"),
+                        launcher_bytes,
+                        identity,
+                    )
+            except Exception as exc:
+                if not _is_transient_transport_error(exc) or attempt >= maximum_attempts:
+                    raise
+                last_error = exc
+                delay = 0.5 * attempt
+                print(
+                    "[Bees remote] bootstrap transport reset during learner cutover; "
+                    f"retrying attempt {attempt + 1}/{maximum_attempts} in {delay:.1f}s.",
+                    file=sys.stderr,
+                    flush=True,
+                )
+                if self._stop.wait(delay):
+                    raise RuntimeError("runtime updater stopped during bootstrap retry") from exc
+        assert last_error is not None
+        raise last_error
+
+    def _prepare_python_for_requirements(
+        self,
+        runtime_root: Path,
+    ) -> Path:
+        requirements = runtime_root / "bees_remote_requirements.txt"
+        if not requirements.is_file():
+            return _python_executable_path(sys.executable)
+
+        active_requirements = Path(__file__).resolve().parent / "bees_remote_requirements.txt"
+        new_hash = _sha256_file(requirements)
+        active_hash = _sha256_file(active_requirements) if active_requirements.is_file() else ""
+        if new_hash == active_hash and _python_remote_dependencies_ok(Path(sys.executable)):
+            return _python_executable_path(sys.executable)
+
+        venv_root = self.install_root / "VenvVersions" / new_hash
+        python_path = (
+            venv_root / "Scripts" / "python.exe"
+            if os.name == "nt"
+            else venv_root / "bin" / "python"
+        )
+        if python_path.is_file():
+            if _python_remote_dependencies_ok(python_path):
+                return _python_executable_path(python_path)
+            shutil.rmtree(venv_root, ignore_errors=True)
+
+        venv_root.parent.mkdir(parents=True, exist_ok=True)
+        temporary = venv_root.with_name(venv_root.name + ".tmp")
+        if temporary.exists():
+            shutil.rmtree(temporary)
+
+        if os.name == "nt":
+            completed = subprocess.run(
+                [sys.executable, "-m", "venv", str(temporary)],
+                check=False,
+            )
+            if completed.returncode != 0:
+                raise RuntimeError(
+                    "failed to create staged Windows Python environment "
+                    f"(exit {completed.returncode})"
+                )
+            staged_python = temporary / "Scripts" / "python.exe"
+            completed = subprocess.run(
+                [
+                    str(staged_python),
+                    "-m",
+                    "pip",
+                    "install",
+                    "-r",
+                    str(requirements),
+                ],
+                check=False,
+            )
+        else:
+            uv = shutil.which("uv")
+            if not uv:
+                candidate = Path.home() / ".local" / "bin" / "uv"
+                uv = str(candidate) if candidate.is_file() else ""
+            if not uv:
+                raise RuntimeError(
+                    "changed remote requirements need uv on Linux; rerun the generated "
+                    "launcher once to restore the managed uv installation"
+                )
+            completed = subprocess.run(
+                [uv, "venv", "--python", "3.10", str(temporary)],
+                check=False,
+            )
+            if completed.returncode != 0:
+                raise RuntimeError(
+                    "failed to create staged Linux Python environment "
+                    f"(exit {completed.returncode})"
+                )
+            staged_python = temporary / "bin" / "python"
+            completed = subprocess.run(
+                [
+                    uv,
+                    "pip",
+                    "install",
+                    "--python",
+                    str(staged_python),
+                    "-r",
+                    str(requirements),
+                ],
+                check=False,
+            )
+
+        if completed.returncode != 0:
+            shutil.rmtree(temporary, ignore_errors=True)
+            raise RuntimeError(
+                "staged remote dependency installation failed "
+                f"(exit {completed.returncode})"
+            )
+        if not _python_remote_dependencies_ok(staged_python):
+            shutil.rmtree(temporary, ignore_errors=True)
+            raise RuntimeError(
+                "staged remote dependency validation failed; "
+                "pkg_resources/ML-Agents runtime is incomplete"
+            )
+        if venv_root.exists():
+            shutil.rmtree(venv_root)
+        os.replace(temporary, venv_root)
+        python_path = (
+            venv_root / "Scripts" / "python.exe"
+            if os.name == "nt"
+            else venv_root / "bin" / "python"
+        )
+        if not python_path.is_file():
+            raise RuntimeError("staged Python environment is missing its interpreter")
+        if not _python_remote_dependencies_ok(python_path):
+            shutil.rmtree(venv_root, ignore_errors=True)
+            raise RuntimeError(
+                "staged remote dependency validation failed after activation path move"
+            )
+        return _python_executable_path(python_path)
+
+    def _stage_once(self) -> None:
+        identity = self._fetch_bootstrap_identity()
+        with self._lock:
+            if identity and identity == self.bootstrap_identity:
+                self.last_error = ""
+                return
+
+        (
+            runtime_zip,
+            worker_token,
+            wan_token,
+            bridge_bytes,
+            release_bytes,
+            launcher_bytes,
+            downloaded_identity,
+        ) = self._fetch_bootstrap()
+        bootstrap_identity = downloaded_identity or identity
+        runtime_sha = hashlib.sha256(runtime_zip).hexdigest()
+        runtime_version = _runtime_version_from_zip(runtime_zip)
+        release = _decode_release_metadata(release_bytes)
+        staged_build_id = str(release.get("build_id", ""))
+        if not staged_build_id:
+            raise ValueError("bootstrap release metadata has no build_id")
+
+        release_runtime = release.get("training_runtime")
+        if release_runtime is not None:
+            if not isinstance(release_runtime, Mapping):
+                raise ValueError("bootstrap release training_runtime metadata is invalid")
+            expected_runtime_sha = str(
+                release_runtime.get("archive_sha256", "")
+            ).strip().lower()
+            expected_runtime_version = str(
+                release_runtime.get("runtime_version", "")
+            ).strip().lower()
+            if (
+                len(expected_runtime_sha) != 64
+                or any(ch not in "0123456789abcdef" for ch in expected_runtime_sha)
+            ):
+                raise ValueError("bootstrap release training runtime SHA-256 is invalid")
+            if not _valid_runtime_version(expected_runtime_version):
+                raise ValueError("bootstrap release training runtime version is invalid")
+            if runtime_sha != expected_runtime_sha:
+                raise ValueError(
+                    "downloaded training runtime SHA-256 does not match release metadata"
+                )
+            if runtime_version != expected_runtime_version:
+                raise ValueError(
+                    "downloaded training runtime version does not match release metadata"
+                )
+
+        bridge_path = Path(self.args.tailnet_bridge).expanduser().resolve()
+        bridge_sha = hashlib.sha256(bridge_bytes).hexdigest()
+        current_bridge_sha = _sha256_file(bridge_path) if bridge_path.is_file() else ""
+
+        launcher_changed = False
+        if launcher_bytes:
+            launcher_sha = hashlib.sha256(launcher_bytes).hexdigest()
+            managed_launcher = self._managed_launcher_path()
+            managed_launcher_changed = (
+                not managed_launcher.is_file()
+                or _sha256_file(managed_launcher) != launcher_sha
+            )
+            if managed_launcher_changed:
+                _atomic_bytes(managed_launcher, launcher_bytes, 0o700)
+                launcher_changed = True
+                print(
+                    f"[Bees remote] updated managed launcher: {managed_launcher}",
+                    flush=True,
+                )
+
+            external_launcher = self._external_launcher_path()
+            if (
+                external_launcher is not None
+                and external_launcher != managed_launcher
+            ):
+                external_changed = (
+                    not external_launcher.is_file()
+                    or _sha256_file(external_launcher) != launcher_sha
+                )
+                if external_changed:
+                    _atomic_bytes(external_launcher, launcher_bytes, 0o700)
+                    launcher_changed = True
+                    print(
+                        "[Bees remote] updated copied launcher in place: "
+                        f"{external_launcher}",
+                        flush=True,
+                    )
+                else:
+                    print(
+                        "[Bees remote] copied launcher already current: "
+                        f"{external_launcher}",
+                        flush=True,
+                    )
+            else:
+                print(
+                    "[Bees remote] copied launcher path is unavailable; "
+                    "the managed launcher is current but the original copy cannot be refreshed.",
+                    file=sys.stderr,
+                    flush=True,
+                )
+
+            if managed_launcher_changed:
+                self._adopt_managed_launcher(managed_launcher)
+
+        _atomic_bytes(Path(self.args.worker_token_file).expanduser().resolve(), worker_token)
+        _atomic_bytes(Path(self.args.wan_token_file).expanduser().resolve(), wan_token)
+
+        if runtime_version:
+            # Compare against the code this process is actually executing. The downloaded
+            # archive may already contain a newer runtime that has not been activated yet.
+            runtime_changed = runtime_version != self.current_version
+        else:
+            # Backward compatibility for runtimes produced before explicit version markers.
+            runtime_changed = runtime_sha != self.current_sha256
+        bridge_changed = bridge_sha != current_bridge_sha
+        active_dependencies_ok = _python_remote_dependencies_ok(Path(sys.executable))
+        with self._lock:
+            if (
+                not runtime_changed
+                and not bridge_changed
+                and active_dependencies_ok
+            ):
+                self.staged_sha256 = ""
+                self.staged_root = None
+                self.staged_bridge = None
+                self.staged_python = None
+                self.staged_build_id = ""
+                self.verified_build_id = staged_build_id
+                self.bootstrap_identity = bootstrap_identity
+                self.last_error = ""
+                _atomic_bytes(
+                    self.ready_build_path,
+                    (staged_build_id + "\n").encode("ascii"),
+                    0o600,
+                )
+                return
+            if (
+                runtime_sha == self.staged_sha256
+                and self.staged_root is not None
+                and (not bridge_changed or self.staged_bridge is not None)
+            ):
+                self.bootstrap_identity = bootstrap_identity
+                self.last_error = ""
+                return
+
+        destination = self.versions_root / runtime_sha
+        if runtime_changed and not (destination / "bees_managed_remote_worker.py").is_file():
+            _safe_extract_runtime(runtime_zip, destination)
+        runtime_root = destination if runtime_changed else Path(__file__).resolve().parent
+        staged_python = self._prepare_python_for_requirements(runtime_root)
+        if runtime_changed:
+            archive = self.install_root / "Downloads" / f"bees-remote-runtime-{runtime_sha}.zip"
+            _atomic_bytes(archive, runtime_zip, 0o644)
+            _atomic_bytes(Path(self.args.runtime_archive).expanduser().resolve(), runtime_zip, 0o644)
+
+        staged_bridge = None
+        if bridge_changed:
+            suffix = ".exe" if os.name == "nt" else ""
+            staged_bridge = bridge_path.with_name("bees-tailnet-bridge.next" + suffix)
+            _atomic_bytes(staged_bridge, bridge_bytes, 0o700)
+
+        with self._lock:
+            self.staged_sha256 = runtime_sha
+            self.staged_root = runtime_root
+            self.staged_bridge = staged_bridge
+            self.staged_python = staged_python
+            self.staged_build_id = staged_build_id
+            self.verified_build_id = staged_build_id
+            self.bootstrap_identity = bootstrap_identity
+            self.last_error = ""
+        _atomic_bytes(
+            self.ready_build_path,
+            (staged_build_id + "\n").encode("ascii"),
+            0o600,
+        )
+        _prune_version_directories(
+            self.versions_root,
+            preserve_paths=[Path(__file__).resolve().parent, runtime_root],
+            retain=MAX_RETAINED_RUNTIME_VERSIONS,
+        )
+        _prune_version_directories(
+            self.install_root / "VenvVersions",
+            preserve_paths=[Path(sys.executable).absolute(), staged_python],
+            retain=MAX_RETAINED_VENV_VERSIONS,
+        )
+        update_parts = [f"runtime={runtime_sha[:12]}", f"bridge={bridge_sha[:12]}"]
+        if launcher_changed:
+            update_parts.append("launcher=updated")
+        if not active_dependencies_ok:
+            update_parts.append("python-dependencies=repair")
+        print("[Bees remote] staged worker update " + " ".join(update_parts) + ".")
+
+    def _run(self) -> None:
+        while not self._stop.is_set():
+            self._last_attempt_monotonic = time.monotonic()
+            try:
+                self._stage_once()
+            except Exception as exc:
+                # An unexpected updater exception must degrade to a visible retryable error,
+                # never silently kill the daemon thread and permanently disable auto-update.
+                with self._lock:
+                    self.last_error = f"{type(exc).__name__}: {exc}"
+            self._refresh.wait(self.args.runtime_poll_seconds)
+            self._refresh.clear()
+
+
+def _control_state(args: argparse.Namespace, trainer_id: str) -> Optional[Mapping[str, object]]:
+    try:
+        token = Path(args.worker_token_file).expanduser().read_text(encoding="utf-8").strip()
+        query = urllib.parse.urlencode({
+            "trainer_id": trainer_id,
+            "role": "dedicated",
+            "platform": "WindowsPlayer" if os.name == "nt" else "LinuxPlayer",
+        })
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{args.control_port}/v1/state?{query}",
+            headers={"Authorization": "Bearer " + token},
+        )
+        with urllib.request.urlopen(request, timeout=3.0) as response:
+            value = json.loads(response.read().decode("utf-8"))
+        return value if isinstance(value, Mapping) else None
+    except (OSError, ValueError, json.JSONDecodeError, urllib.error.URLError):
+        return None
+
+
+def _control_status(args: argparse.Namespace) -> Optional[Mapping[str, object]]:
+    try:
+        token = Path(args.worker_token_file).expanduser().read_text(encoding="utf-8").strip()
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{args.control_port}/v1/status",
+            headers={"Authorization": "Bearer " + token},
+        )
+        with urllib.request.urlopen(request, timeout=3.0) as response:
+            value = json.loads(response.read().decode("utf-8"))
+        return value if isinstance(value, Mapping) else None
+    except (OSError, ValueError, json.JSONDecodeError, urllib.error.URLError):
+        return None
+
+
+def _broker_session_available(args: argparse.Namespace) -> bool:
+    try:
+        token = Path(args.wan_token_file).expanduser().read_text(encoding="ascii").strip()
+        if not token:
+            return False
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{args.broker_port}/session",
+            headers={"Authorization": "Bearer " + token},
+        )
+        with urllib.request.urlopen(request, timeout=2.0) as response:
+            # The session payload is binary and owned by the WAN protocol. Consume the small
+            # response fully so the broker does not see an intentional early-close/broken pipe;
+            # transport supervision only cares that the authenticated request completed.
+            response.read()
+            return int(getattr(response, "status", 200)) == 200
+    except (
+        OSError,
+        ValueError,
+        urllib.error.URLError,
+        urllib.error.HTTPError,
+        http.client.HTTPException,
+    ):
+        return False
+
+
+def _training_desired(status: object) -> bool:
+    if not isinstance(status, Mapping):
+        return False
+    desired = status.get("desired")
+    if not isinstance(desired, Mapping):
+        return False
+    return bool(desired.get("training_enabled", False))
+
+
+class _TransportWatchdog:
+    def __init__(self, timeout_seconds: float) -> None:
+        if timeout_seconds <= 0:
+            raise ValueError("transport watchdog timeout must be positive")
+        self.timeout_seconds = float(timeout_seconds)
+        self.failure_since: Optional[float] = None
+
+    def observe(self, healthy: bool, now: float) -> bool:
+        if healthy:
+            self.failure_since = None
+            return False
+        if self.failure_since is None:
+            self.failure_since = now
+            return False
+        return now - self.failure_since >= self.timeout_seconds
+
+
+def _wait_for_private_transport(
+    args: argparse.Namespace,
+    process: subprocess.Popen,
+    stop: list[bool],
+    timeout: float = 30.0,
+) -> bool:
+    """Wait only for the local forwarder, not for the central services behind it.
+
+    forward-multi binds these listeners only after tsnet itself is up. Central control, broker,
+    bootstrap, and gameplay targets have independent lifecycles and may legitimately be down
+    during a runtime/server cutover; their availability must not decide whether tsnet is healthy.
+    """
+    return _wait_for_ports(
+        (args.control_port, args.broker_port, args.bootstrap_port, args.gameplay_port),
+        process,
+        stop,
+        timeout=min(timeout, 20.0),
+    )
+
+
+_STATUS_UNSET = object()
+
+
+def _trainer_record(
+    status: object,
+    trainer_id: str,
+) -> Optional[Mapping[str, object]]:
+    if not isinstance(status, Mapping):
+        return None
+    trainers = status.get("trainers")
+    if not isinstance(trainers, list):
+        return None
+    for candidate in trainers:
+        if isinstance(candidate, Mapping) and candidate.get("trainer_id") == trainer_id:
+            return candidate
+    return None
+
+
+def _session_failure_total(record: Optional[Mapping[str, object]]) -> Optional[int]:
+    if not isinstance(record, Mapping):
+        return None
+    metrics = record.get("metrics")
+    metrics_map = metrics if isinstance(metrics, Mapping) else {}
+    throughput = metrics_map.get("throughput")
+    throughput_map = throughput if isinstance(throughput, Mapping) else {}
+    value = throughput_map.get("session_failures_total")
+    if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+        return value
+    return None
+
+
+def _control_failure_total(record: Optional[Mapping[str, object]]) -> Optional[int]:
+    if not isinstance(record, Mapping):
+        return None
+    metrics = record.get("metrics")
+    metrics_map = metrics if isinstance(metrics, Mapping) else {}
+    control = metrics_map.get("control")
+    control_map = control if isinstance(control, Mapping) else {}
+    value = control_map.get("failures_total")
+    if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+        return value
+    return None
+
+
+def stale_trainer_requires_recycle(
+    record: Optional[Mapping[str, object]],
+    *,
+    grace_started_monotonic: float,
+    now: float,
+    grace_seconds: float = WORKER_REGISTRATION_GRACE_SECONDS,
+) -> bool:
+    """Allow one bounded heartbeat window after worker launch or central-control recovery."""
+    if not isinstance(record, Mapping) or not bool(record.get("stale", False)):
+        return False
+    return now - float(grace_started_monotonic) >= max(0.0, float(grace_seconds))
+
+
+def _inner_control_stalled(
+    status: object,
+    record: Optional[Mapping[str, object]],
+) -> bool:
+    """Detect a dedicated worker stranded by asymmetric heartbeat response failure.
+
+    A healthy outer GET /v1/status does not prove the inner worker receives POST /v1/heartbeat
+    responses. During ordinary training, a stopped trainer reporting ControlUnavailable is not a
+    useful steady state: it cannot receive the desired state needed to relaunch. Ignore release
+    rollouts because a pending release can intentionally stop dedicated trainers.
+    """
+    if not isinstance(status, Mapping) or not isinstance(record, Mapping):
+        return False
+    desired = status.get("desired")
+    desired_map = desired if isinstance(desired, Mapping) else {}
+    if not bool(desired_map.get("training_enabled", False)):
+        return False
+    if desired_map.get("pending_release"):
+        return False
+    if str(record.get("process_state", "") or "") != "stopped":
+        return False
+    error = str(record.get("last_error", "") or "")
+    if not error.startswith("ControlUnavailable:"):
+        return False
+    metrics = record.get("metrics")
+    metrics_map = metrics if isinstance(metrics, Mapping) else {}
+    control = metrics_map.get("control")
+    control_map = control if isinstance(control, Mapping) else {}
+    failure_type = str(control_map.get("last_failure_type", "") or "")
+    return failure_type == "ControlUnavailable"
+
+
+class _SessionFailureWatchdog:
+    def __init__(self, *, threshold: int = 3, window_seconds: float = 120.0) -> None:
+        self.threshold = max(1, int(threshold))
+        self.window_seconds = max(1.0, float(window_seconds))
+        self.last_total: Optional[int] = None
+        self.window_started: Optional[float] = None
+        self.failures_in_window = 0
+
+    def reset(self) -> None:
+        self.last_total = None
+        self.window_started = None
+        self.failures_in_window = 0
+
+    def observe(self, total: Optional[int], now: float) -> bool:
+        if total is None:
+            return False
+        if self.last_total is None or total < self.last_total:
+            self.last_total = total
+            self.window_started = None
+            self.failures_in_window = 0
+            return False
+        delta = total - self.last_total
+        self.last_total = total
+        if self.window_started is not None and now - self.window_started > self.window_seconds:
+            self.window_started = None
+            self.failures_in_window = 0
+        if delta <= 0:
+            return False
+        if self.window_started is None:
+            self.window_started = now
+        self.failures_in_window += delta
+        return self.failures_in_window >= self.threshold
+
+
+def _remote_status_summary(
+    args: argparse.Namespace,
+    trainer_id: str,
+    updater: Optional[RuntimeUpdater] = None,
+    log_sink: Optional[_RunScopedLogSink] = None,
+    status: object = _STATUS_UNSET,
+) -> str:
+    if status is _STATUS_UNSET:
+        status = _control_status(args)
+    if not isinstance(status, Mapping):
+        return (
+            f"[Bees remote] status: connecting to learner; trainer={trainer_id} "
+            f"envs={args.envs}"
+        )
+
+    desired = status.get("desired")
+    desired_map = desired if isinstance(desired, Mapping) else {}
+    if log_sink is not None:
+        log_sink.set_run_id(str(desired_map.get("run_id", "") or ""))
+    record = _trainer_record(status, trainer_id)
+
+    if record is None:
+        build_id = str(desired_map.get("canonical_build_id", "") or "-")
+        return (
+            f"[Bees remote] status: learner connected; waiting for trainer registration; "
+            f"trainer={trainer_id} envs={args.envs} build={build_id}"
+        )
+
+    state = str(record.get("process_state", "") or "unknown")
+    if bool(record.get("stale", False)):
+        state = "STALE"
+    build_id = str(record.get("build_id", "") or desired_map.get("canonical_build_id", "") or "-")
+    revision = record.get("applied_revision", "-")
+    error = str(record.get("last_error", "") or "")
+    suffix = f" error={error}" if error else ""
+    capacity = record.get("worker_capacity")
+    capacity_map = capacity if isinstance(capacity, Mapping) else {}
+    current_envs = capacity_map.get("current_envs", args.envs)
+    optimizer = record.get("env_optimizer")
+    optimizer_map = optimizer if isinstance(optimizer, Mapping) else {}
+    desired_envs = optimizer_map.get("desired_envs", current_envs)
+    phase = str(optimizer_map.get("phase", "") or "")
+    measured_sps = optimizer_map.get("measured_sps")
+    baseline_sps = optimizer_map.get("baseline_sps")
+    sps = measured_sps if isinstance(measured_sps, (int, float)) else baseline_sps
+    env_status = str(current_envs)
+    if isinstance(desired_envs, int) and desired_envs != current_envs:
+        env_status += f"->{desired_envs}"
+    optimizer_suffix = f" optimizer={phase}" if phase else ""
+    if isinstance(sps, (int, float)):
+        optimizer_suffix += f" learner_sps={float(sps):.1f}"
+    runtime_suffix = ""
+    if updater is not None:
+        _sha, staged_root, _bridge, _python, _build, update_error = updater.staged()
+        if update_error:
+            runtime_suffix = f" runtime_update_error={update_error}"
+        elif staged_root is not None:
+            runtime_suffix = f" runtime_update=staged:{staged_root.name[:12]}"
+    return (
+        f"[Bees remote] status: learner=connected trainer={trainer_id} "
+        f"state={state} envs={env_status} build={build_id} rev={revision}"
+        f"{optimizer_suffix}{suffix}{runtime_suffix}"
+    )
+
+
+def _runtime_cutover_selected(
+    args: argparse.Namespace,
+    trainer_id: str,
+    updater: RuntimeUpdater,
+) -> Optional[Path]:
+    _sha, staged_root, _staged_bridge, _staged_python, staged_build_id, _error = updater.staged()
+    if staged_root is None:
+        return None
+    state = _control_state(args, trainer_id)
+    if not state:
+        return None
+    pending = state.get("pending_release")
+    if not isinstance(pending, Mapping):
+        if staged_build_id and str(state.get("canonical_build_id", "")) == staged_build_id:
+            return staged_root
+        return None
+    pending_build = str(pending.get("build_id", ""))
+    if staged_build_id and staged_build_id != pending_build:
+        return None
+    phase = str(pending.get("phase", ""))
+    incompatible = bool(pending.get("incompatible", False))
+    if phase == "rolling" and str(state.get("desired_build_id", "")) == pending_build:
+        return staged_root
+    if incompatible and phase == "stopping" and state.get("desired_mode") == "stopped":
+        phase_revision = pending.get("phase_revision")
+        if (
+            not isinstance(phase_revision, int)
+            or isinstance(phase_revision, bool)
+            or phase_revision < 0
+        ):
+            return None
+        status = _control_status(args)
+        trainers = status.get("trainers", ()) if isinstance(status, Mapping) else ()
+        if isinstance(trainers, list):
+            for record in trainers:
+                applied_revision = (
+                    record.get("applied_revision")
+                    if isinstance(record, Mapping)
+                    else None
+                )
+                if (
+                    isinstance(record, Mapping)
+                    and record.get("trainer_id") == trainer_id
+                    and record.get("stale") is False
+                    and record.get("process_state") == "stopped"
+                    and isinstance(applied_revision, int)
+                    and not isinstance(applied_revision, bool)
+                    and applied_revision >= phase_revision
+                ):
+                    return staged_root
+    return None
+
+
+def _wait_for_runtime_alignment(
+    args: argparse.Namespace,
+    trainer_id: str,
+    updater: RuntimeUpdater,
+    tailnet: subprocess.Popen,
+    stop: list[bool],
+) -> tuple[bool, Optional[Path]]:
+    """Fail closed until this supervisor has verified the canonical Training runtime."""
+
+    updater.start()
+    next_status = 0.0
+    while not stop[0] and tailnet.poll() is None:
+        runtime_cutover = _runtime_cutover_selected(args, trainer_id, updater)
+        if runtime_cutover is not None:
+            return True, runtime_cutover
+
+        status = _control_status(args)
+        now = time.monotonic()
+
+        # Central service availability and private-network health are separate failure domains.
+        # A runtime/server cutover can make /v1/status temporarily unavailable while tsnet is
+        # completely healthy. Preserve the forwarder and wait for control to return; forward-multi
+        # supervises its own tsnet backend and exits if the private network itself fails.
+        desired = status.get("desired") if isinstance(status, Mapping) else None
+        canonical_build = (
+            str(desired.get("canonical_build_id", "") or "")
+            if isinstance(desired, Mapping)
+            else ""
+        )
+        verified_build, update_error = updater.verified()
+        _sha, staged_root, _bridge, _python, _staged_build, _staged_error = updater.staged()
+        if (
+            canonical_build
+            and verified_build == canonical_build
+            and staged_root is None
+        ):
+            return True, None
+
+        updater.request_refresh()
+        if now >= next_status:
+            waiting_for = canonical_build or "(canonical build unavailable)"
+            suffix = f" error={update_error}" if update_error else ""
+            print(
+                "[Bees remote] waiting for matching Training runtime before rollout: "
+                f"canonical={waiting_for} verified={verified_build or '-'}{suffix}",
+                file=sys.stderr,
+                flush=True,
+            )
+            next_status = now + 5.0
+        time.sleep(0.5)
+    return False, None
+
+
+def _worker_command(args: argparse.Namespace, root: Path, actor_key: str) -> list[str]:
+    trainer_id = f"remote-{socket.gethostname().lower()}-{actor_key[:8]}"
+    command = [
+        sys.executable,
+        "-u",
+        str(root / "bees_training_worker_agent.py"),
+        "--server-url",
+        f"http://127.0.0.1:{args.control_port}",
+        "--token-file",
+        str(Path(args.worker_token_file).expanduser().resolve()),
+        "--trainer-id",
+        trainer_id,
+        "--role",
+        "dedicated",
+        "--platform",
+        "WindowsPlayer" if os.name == "nt" else "LinuxPlayer",
+        "--install-root",
+        str(Path(args.install_root).expanduser().resolve() / "ManagedBuilds"),
+        "--runtime-ready-file",
+        str(Path(args.install_root).expanduser().resolve() / "runtime-ready-build.txt"),
+        "--shutdown-request-file",
+        str(_worker_agent_stop_request_path(args)),
+        "--worker-envs",
+        str(args.envs),
+        "--worker-envs-min",
+        str(args.min_envs),
+        "--worker-envs-max",
+        str(args.max_envs),
+    ]
+    if args.auto_envs:
+        command.append("--auto-worker-envs")
+    command.extend([
+        "--",
+        sys.executable,
+        str(root / "bees_elastic_wan_actor_worker.py"),
+        "--actor-key",
+        actor_key,
+        "--envs",
+        "{worker_envs}",
+        "--broker-host",
+        "127.0.0.1",
+        "--broker-port",
+        str(args.broker_port),
+        "--env",
+        "{env}",
+        "--auth-token-file",
+        str(Path(args.wan_token_file).expanduser().resolve()),
+        "--torch-device",
+        args.torch_device,
+    ])
+    return command
+
+
+def main(argv: Optional[Sequence[str]] = None) -> int:
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    args = _parser().parse_args(raw_argv)
+    memory_start_cap = _memory_env_limit()
+    cpu_threads = _available_cpu_threads()
+    cpu_start_cap = min(
+        MAX_ENVS_PER_ACTOR,
+        REMOTE_CPU_START_ENVS_PER_THREAD * cpu_threads,
+    )
+    if args.envs is None:
+        args.auto_envs = True
+        requested_max = MAX_ENVS_PER_ACTOR if args.max_envs is None else args.max_envs
+        if not 1 <= args.min_envs <= requested_max <= MAX_ENVS_PER_ACTOR:
+            print("error: automatic env bounds must satisfy 1 <= min <= max <= 64", file=sys.stderr)
+            return 2
+        # CPU threads and currently free RAM are deliberately only startup heuristics. Once a
+        # baseline exists, BeesServer is allowed to probe upward until measured throughput stops
+        # improving (or an explicit --max-envs/global actor limit is reached).
+        args.max_envs = requested_max
+        args.envs = max(args.min_envs, min(_default_envs(), args.max_envs))
+        print(
+            f"[Bees remote] --envs omitted; auto optimizer enabled at {args.envs} envs "
+            f"(range={args.min_envs}-{args.max_envs} cpu_threads={cpu_threads} "
+            f"cpu_start_cap={cpu_start_cap} memory_start_cap={memory_start_cap} "
+            f"hard_cap={MAX_ENVS_PER_ACTOR})."
+        )
+    else:
+        args.auto_envs = False
+        if not 1 <= args.envs <= MAX_ENVS_PER_ACTOR:
+            print(f"error: --envs must be in 1-{MAX_ENVS_PER_ACTOR}", file=sys.stderr)
+            return 2
+        args.min_envs = args.envs
+        args.max_envs = args.envs
+    if (
+        not 1 <= args.control_port <= 65535
+        or not 1 <= args.bootstrap_port <= 65535
+        or not 1 <= args.broker_port <= 65535
+        or not 1 <= args.gameplay_port <= 65535
+    ):
+        print("error: control/bootstrap/broker/gameplay ports must be in 1-65535", file=sys.stderr)
+        return 2
+    if len({
+        args.control_port,
+        args.bootstrap_port,
+        args.broker_port,
+        args.gameplay_port,
+    }) != 4:
+        print("error: control/bootstrap/broker/gameplay ports must be distinct", file=sys.stderr)
+        return 2
+    if (
+        args.reconnect_seconds <= 0
+        or args.runtime_poll_seconds <= 0
+        or args.transport_watchdog_seconds <= 0
+    ):
+        print(
+            "error: reconnect/runtime-poll/transport-watchdog seconds must be positive",
+            file=sys.stderr,
+        )
+        return 2
+    if not str(args.tailnet_target).strip():
+        print("error: --tailnet-target is required", file=sys.stderr)
+        return 2
+
+    bridge = Path(args.tailnet_bridge).expanduser().resolve()
+    if not bridge.is_file():
+        print(f"error: bundled tailnet bridge does not exist: {bridge}", file=sys.stderr)
+        return 2
+
+    root = Path(__file__).resolve().parent
+    for required in ("bees_training_worker_agent.py", "bees_elastic_wan_actor_worker.py"):
+        if not (root / required).is_file():
+            print(f"error: remote runtime is missing {required}", file=sys.stderr)
+            return 2
+
+    install_root = Path(args.install_root).expanduser().resolve()
+    supervisor_lock = _acquire_supervisor_lock(install_root)
+    if supervisor_lock is None:
+        print(
+            "[Bees remote] another managed supervisor already owns this install root; "
+            "leaving the existing worker in control.",
+            flush=True,
+        )
+        return 0
+    try:
+        actor_key = _load_actor_key(install_root)
+    except (OSError, ValueError) as exc:
+        print(f"error: could not establish remote actor identity: {exc}", file=sys.stderr)
+        if supervisor_lock is not None:
+            supervisor_lock.close()
+        return 2
+
+    pid_file = install_root / REMOTE_PID_FILE
+    shutdown_request_file = install_root / REMOTE_STOP_REQUEST_FILE
+    try:
+        _atomic_bytes(pid_file, f"{os.getpid()}\n".encode("ascii"), 0o600)
+    except OSError as exc:
+        print(f"error: could not record remote supervisor PID: {exc}", file=sys.stderr)
+        if supervisor_lock is not None:
+            supervisor_lock.close()
+        return 2
+
+    trainer_id = f"remote-{socket.gethostname().lower()}-{actor_key[:8]}"
+    log_sink = _RunScopedLogSink(install_root / "ManagedBuilds" / "logs")
+    original_stdout = sys.stdout
+    original_stderr = sys.stderr
+    sys.stdout = _RunScopedTee(original_stdout, log_sink)
+    sys.stderr = _RunScopedTee(original_stderr, log_sink)
+    updater = RuntimeUpdater(args, install_root)
+    stop = [False]
+    shutdown_watcher = threading.Thread(
+        target=_watch_shutdown_request,
+        args=(shutdown_request_file, stop),
+        name="bees-remote-shutdown-watcher",
+        daemon=True,
+    )
+    shutdown_watcher.start()
+
+    def request_stop(_signum: int, _frame: object) -> None:
+        stop[0] = True
+
+    old_sigint = signal.signal(signal.SIGINT, request_stop)
+    old_sigterm = signal.signal(signal.SIGTERM, request_stop)
+    try:
+        while not stop[0]:
+            tailnet: Optional[subprocess.Popen] = None
+            tailnet_log_thread: Optional[threading.Thread] = None
+            worker: Optional[subprocess.Popen] = None
+            worker_log_thread: Optional[threading.Thread] = None
+            worker_started_monotonic = 0.0
+            stale_recycle_grace_started_monotonic = 0.0
+            runtime_cutover: Optional[Path] = None
+            worker_recycle_requested = False
+            try:
+                tailnet, tailnet_log_thread = _start_logged_process(
+                    _tailnet_forward_command(args)
+                )
+                if not _wait_for_private_transport(
+                    args,
+                    tailnet,
+                    stop,
+                ):
+                    code = tailnet.poll()
+                    print(
+                        "[Bees remote] private tailnet forwarder failed to become ready"
+                        + ("" if code is None else f" (exit {code})")
+                        + ".",
+                        file=sys.stderr,
+                    )
+                else:
+                    print(
+                        f"[Bees remote] private transport ready; identity={actor_key[:8]} "
+                        f"envs={args.envs}; actor slot will be assigned by the learner."
+                    )
+                    print(
+                        f"[Bees remote] managed worker launched; waiting for trainer registration "
+                        f"and assigned build. trainer={trainer_id}",
+                        flush=True,
+                    )
+                    current_status = _control_status(args)
+                    if isinstance(current_status, Mapping):
+                        current_desired = current_status.get("desired")
+                        if isinstance(current_desired, Mapping):
+                            log_sink.set_run_id(str(current_desired.get("run_id", "") or ""))
+
+                    runtime_aligned, runtime_cutover = _wait_for_runtime_alignment(
+                        args,
+                        trainer_id,
+                        updater,
+                        tailnet,
+                        stop,
+                    )
+                    if runtime_cutover is not None:
+                        print(
+                            f"[Bees remote] activating staged worker runtime "
+                            f"{runtime_cutover.name[:12]} before rollout."
+                        )
+                    elif runtime_aligned and not stop[0] and tailnet.poll() is None:
+                        worker, worker_log_thread = _start_logged_process(
+                            _worker_command(args, root, actor_key),
+                            environment=_worker_environment(args),
+                        )
+                        worker_started_monotonic = time.monotonic()
+                        stale_recycle_grace_started_monotonic = worker_started_monotonic
+
+                    next_status = 0.0
+                    # The inner worker can lose heartbeat POST responses even while this outer
+                    # supervisor's independent GET /v1/status probe still succeeds. Watch the
+                    # worker's cumulative control failures so that asymmetric/wedged forwarding
+                    # cannot strand a trainer indefinitely in stopped/awaiting-restart.
+                    control_failure_watchdog = _SessionFailureWatchdog(
+                        threshold=3,
+                        window_seconds=60.0,
+                    )
+                    # Count-based escalation intentionally adopts the first cumulative counter as
+                    # a baseline. Cover the complementary failure mode where several failed POSTs
+                    # occurred before the outer supervisor first sampled status and the worker is
+                    # already stranded stopped waiting for desired state.
+                    inner_control_stall_watchdog = _TransportWatchdog(10.0)
+                    while (
+                        runtime_cutover is None
+                        and worker is not None
+                        and not stop[0]
+                        and worker.poll() is None
+                    ):
+                        tailnet_code = tailnet.poll() if tailnet is not None else None
+                        if tailnet is None or tailnet_code is not None:
+                            if tailnet is not None:
+                                print(
+                                    f"[Bees remote] tailnet transport exited ({tailnet_code}); "
+                                    "restarting private transport while keeping the managed worker alive.",
+                                    file=sys.stderr,
+                                    flush=True,
+                                )
+                                if tailnet_log_thread is not None:
+                                    tailnet_log_thread.join(timeout=1.0)
+                                tailnet = None
+                                tailnet_log_thread = None
+                                if stop[0]:
+                                    break
+                                time.sleep(args.reconnect_seconds)
+
+                            tailnet, tailnet_log_thread = _start_logged_process(
+                                _tailnet_forward_command(args)
+                            )
+                            if not _wait_for_private_transport(args, tailnet, stop):
+                                code = tailnet.poll()
+                                print(
+                                    "[Bees remote] replacement private tailnet forwarder "
+                                    "failed to become ready"
+                                    + ("" if code is None else f" (exit {code})")
+                                    + "; keeping the managed worker alive while transport retries.",
+                                    file=sys.stderr,
+                                    flush=True,
+                                )
+                                try:
+                                    _terminate(tailnet)
+                                except RuntimeError as exc:
+                                    raise _SupervisorProcessRestartRequired(
+                                        "private transport replacement could not be retired: "
+                                        + str(exc)
+                                    ) from exc
+                                if tailnet_log_thread is not None:
+                                    tailnet_log_thread.join(timeout=1.0)
+                                tailnet = None
+                                tailnet_log_thread = None
+                                if not stop[0]:
+                                    time.sleep(args.reconnect_seconds)
+                                continue
+
+                            print(
+                                "[Bees remote] private transport restored without restarting "
+                                "the managed worker.",
+                                flush=True,
+                            )
+                            stale_recycle_grace_started_monotonic = time.monotonic()
+                            inner_control_stall_watchdog.observe(True, time.monotonic())
+                            control_failure_watchdog.reset()
+                            next_status = 0.0
+
+                        now = time.monotonic()
+                        if now >= next_status:
+                            status = _control_status(args)
+                            control_healthy = isinstance(status, Mapping)
+                            record = _trainer_record(status, trainer_id)
+
+                            # Do not tear down a healthy private network merely because the central
+                            # control service is restarting. The worker lease handles a genuine
+                            # control outage fail-closed and will reconcile when control returns.
+                            # Clear asymmetric-failure history across a global outage so old failed
+                            # POSTs cannot trigger a transport recycle after recovery.
+                            if not control_healthy:
+                                # Continuously move the stale-record deadline while central control
+                                # is absent. When it returns, the existing worker gets a full bounded
+                                # heartbeat window to reconcile before stale status can recycle it.
+                                stale_recycle_grace_started_monotonic = now
+                                inner_control_stall_watchdog.observe(True, now)
+                                control_failure_watchdog.reset()
+                            record_stale = (
+                                isinstance(record, Mapping)
+                                and bool(record.get("stale", False))
+                            )
+                            registration_grace = (
+                                stale_recycle_grace_started_monotonic > 0.0
+                                and now - stale_recycle_grace_started_monotonic
+                                < WORKER_REGISTRATION_GRACE_SECONDS
+                            )
+
+                            # The server may still expose the previous instance's stale record
+                            # immediately after this supervisor launches a replacement worker. Give
+                            # the new worker one bounded heartbeat-registration window before using
+                            # that historical record to trigger another recycle; otherwise the
+                            # supervisor can kill every replacement before its first heartbeat.
+                            if control_healthy and not record_stale and not registration_grace:
+                                if inner_control_stall_watchdog.observe(
+                                    not _inner_control_stalled(status, record),
+                                    now,
+                                ):
+                                    print(
+                                        "[Bees remote] inner worker is stopped during active training "
+                                        "after repeated heartbeat response failures while outer control "
+                                        "GETs still succeed; recycling private transport.",
+                                        file=sys.stderr,
+                                        flush=True,
+                                    )
+                                    try:
+                                        _terminate(tailnet)
+                                    except RuntimeError as exc:
+                                        raise _SupervisorProcessRestartRequired(
+                                            "private control transport could not be recycled: "
+                                            + str(exc)
+                                        ) from exc
+                                    if tailnet_log_thread is not None:
+                                        tailnet_log_thread.join(timeout=1.0)
+                                    tailnet = None
+                                    tailnet_log_thread = None
+                                    control_failure_watchdog.reset()
+                                    inner_control_stall_watchdog.observe(True, now)
+                                    continue
+                                if control_failure_watchdog.observe(
+                                    _control_failure_total(record),
+                                    now,
+                                ):
+                                    print(
+                                        "[Bees remote] repeated inner worker control failures indicate "
+                                        "a private control path that is not healing; recycling private "
+                                        "transport.",
+                                        file=sys.stderr,
+                                        flush=True,
+                                    )
+                                    try:
+                                        _terminate(tailnet)
+                                    except RuntimeError as exc:
+                                        raise _SupervisorProcessRestartRequired(
+                                            "private control transport could not be recycled: "
+                                            + str(exc)
+                                        ) from exc
+                                    if tailnet_log_thread is not None:
+                                        tailnet_log_thread.join(timeout=1.0)
+                                    tailnet = None
+                                    tailnet_log_thread = None
+                                    control_failure_watchdog.reset()
+                                    inner_control_stall_watchdog.observe(True, now)
+                                    continue
+                            else:
+                                inner_control_stall_watchdog.observe(True, now)
+                                if record_stale or not control_healthy:
+                                    control_failure_watchdog.reset()
+
+                            if stale_trainer_requires_recycle(
+                                record,
+                                grace_started_monotonic=stale_recycle_grace_started_monotonic,
+                                now=now,
+                            ):
+                                print(
+                                    "[Bees remote] trainer heartbeat remained STALE beyond the "
+                                    f"{WORKER_REGISTRATION_GRACE_SECONDS:g}s registration grace; "
+                                    "recycling the managed worker and private transport.",
+                                    file=sys.stderr,
+                                    flush=True,
+                                )
+                                worker_recycle_requested = True
+                                break
+                            if not updater.alive():
+                                if updater.revive():
+                                    print(
+                                        "[Bees remote] runtime updater thread stopped unexpectedly; "
+                                        "restarted updater in place.",
+                                        file=sys.stderr,
+                                        flush=True,
+                                    )
+                                else:
+                                    print(
+                                        "[Bees remote] runtime updater stopped and could not be "
+                                        "restarted; recycling supervisor state.",
+                                        file=sys.stderr,
+                                        flush=True,
+                                    )
+                                    worker_recycle_requested = True
+                                    break
+                            print(
+                                _remote_status_summary(
+                                    args,
+                                    trainer_id,
+                                    updater,
+                                    log_sink,
+                                    status=status,
+                                ),
+                                flush=True,
+                            )
+                            next_status = now + 5.0
+                        runtime_cutover = _runtime_cutover_selected(
+                            args,
+                            trainer_id,
+                            updater,
+                        )
+                        if runtime_cutover is not None:
+                            print(
+                                f"[Bees remote] activating staged worker runtime "
+                                f"{runtime_cutover.name[:12]} at this trainer's rollout turn."
+                            )
+                            break
+                        time.sleep(0.5)
+                    if not stop[0] and runtime_cutover is None:
+                        if worker_recycle_requested:
+                            print(
+                                "[Bees remote] restarting managed worker after a stale or "
+                                "unrecoverable worker-supervision condition.",
+                                file=sys.stderr,
+                                flush=True,
+                            )
+                        elif worker is not None and worker.poll() is not None:
+                            print(
+                                f"[Bees remote] worker exited ({worker.returncode}); restarting.",
+                                file=sys.stderr,
+                            )
+            except KeyboardInterrupt:
+                stop[0] = True
+            finally:
+                termination_errors = []
+                worker_stopped = _request_graceful_worker_stop(
+                    worker,
+                    _worker_agent_stop_request_path(args),
+                    timeout=_worker_cleanup_grace_seconds(worker_recycle_requested),
+                )
+                if not worker_stopped:
+                    try:
+                        _terminate(worker)
+                    except RuntimeError as exc:
+                        termination_errors.append(f"worker: {exc}")
+                try:
+                    _terminate(tailnet)
+                except RuntimeError as exc:
+                    termination_errors.append(f"tailnet: {exc}")
+                if worker_log_thread is not None:
+                    worker_log_thread.join(timeout=1.0)
+                if tailnet_log_thread is not None:
+                    tailnet_log_thread.join(timeout=1.0)
+                if termination_errors:
+                    raise _SupervisorProcessRestartRequired(
+                        "remote supervisor cleanup could not confirm child shutdown: " +
+                        "; ".join(termination_errors)
+                    )
+
+            if runtime_cutover is not None and not stop[0]:
+                updater.stop()
+                _sha, next_root, staged_bridge, staged_python, _staged_build_id, _error = updater.staged()
+                if next_root is None:
+                    raise RuntimeError("staged runtime disappeared before activation")
+                if staged_bridge is not None:
+                    active_bridge = Path(args.tailnet_bridge).expanduser().resolve()
+                    os.replace(staged_bridge, active_bridge)
+                    try:
+                        os.chmod(active_bridge, 0o700)
+                    except OSError:
+                        pass
+                next_script = next_root / "bees_managed_remote_worker.py"
+                if not next_script.is_file():
+                    raise RuntimeError(f"staged runtime is missing {next_script}")
+                next_python = str(staged_python or _python_executable_path(sys.executable))
+                replacement = _activate_staged_runtime(
+                    next_python,
+                    next_script,
+                    raw_argv,
+                    working_directory=install_root,
+                )
+                if replacement is not None:
+                    print(
+                        "[Bees remote] staged Windows runtime handoff started "
+                        f"(PID {replacement.pid}).",
+                        flush=True,
+                    )
+                    return 0
+
+            if not stop[0]:
+                time.sleep(args.reconnect_seconds)
+        return 0
+    finally:
+        stop[0] = True
+        shutdown_watcher.join(timeout=1.0)
+        updater.stop()
+        try:
+            shutdown_request_file.unlink()
+        except FileNotFoundError:
+            pass
+        _clear_pid_file_if_owned(pid_file, os.getpid())
+        if supervisor_lock is not None:
+            supervisor_lock.close()
+        signal.signal(signal.SIGINT, old_sigint)
+        signal.signal(signal.SIGTERM, old_sigterm)
+        sys.stdout = original_stdout
+        sys.stderr = original_stderr
+
+
+def _spawn_clean_supervisor_replacement() -> subprocess.Popen:
+    command = [
+        sys.executable,
+        str(Path(__file__).resolve()),
+        *[str(value) for value in sys.argv[1:]],
+    ]
+    kwargs: dict[str, object] = {
+        "stdin": subprocess.DEVNULL,
+        "stdout": sys.stdout,
+        "stderr": sys.stderr,
+        "close_fds": True,
+    }
+    if os.name == "nt":
+        # Managed children live in this supervisor's kill-on-close job. Close it before
+        # spawning the replacement so old children die and the replacement is not inherited
+        # into a job that is about to be torn down.
+        close_windows_owned_child_job()
+        kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    else:
+        kwargs["start_new_session"] = True
+    return subprocess.Popen(command, **kwargs)
+
+
+def _run_with_crash_recovery() -> int:
+    while True:
+        try:
+            return main()
+        except KeyboardInterrupt:
+            return 130
+        except _SupervisorProcessRestartRequired as exc:
+            print(
+                "[Bees remote] supervisor requires a clean process replacement: "
+                f"{exc}",
+                file=sys.stderr,
+                flush=True,
+            )
+            replacement = _spawn_clean_supervisor_replacement()
+            print(
+                f"[Bees remote] replacement supervisor started (PID {replacement.pid}).",
+                file=sys.stderr,
+                flush=True,
+            )
+            return 0
+        except Exception as exc:
+            print(
+                "[Bees remote] supervisor encountered an unexpected runtime failure: "
+                f"{type(exc).__name__}: {exc}; restarting in "
+                f"{DEFAULT_RECONNECT_SECONDS:.1f}s.",
+                file=sys.stderr,
+                flush=True,
+            )
+            time.sleep(DEFAULT_RECONNECT_SECONDS)
+
+
+if __name__ == "__main__":
+    raise SystemExit(_run_with_crash_recovery())

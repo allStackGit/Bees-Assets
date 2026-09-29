@@ -32,7 +32,6 @@ namespace Assets.Scripts.Scenes
         public int TargetFrameRate;
         public ConfigData.SceneTypes Type;
 
-        public int __Updates = 0;
         private int _automaticReconnectAttempts;
         private bool _pausedForNetworkDisconnect;
         private bool _hasShownDeadVersionAlert;
@@ -63,12 +62,10 @@ namespace Assets.Scripts.Scenes
                 if (TargetFrameRate > 0)
                 {
                     Application.targetFrameRate = TargetFrameRate;
-                    Debug.Log($"Target Frame rate set to {Application.targetFrameRate} fps");
                 }
                 else if (TargetFrameRate == -1)
                 {
                     QualitySettings.vSyncCount = 1;
-                    Debug.Log($"Target Frane rate set to sync to display at {Screen.currentResolution.refreshRateRatio} fps");
                 }
             }
             InvokeRepeating(nameof(LoadSettingsWhenOpen), .1f, .1f);
@@ -96,17 +93,17 @@ namespace Assets.Scripts.Scenes
         }
         public void Exit()
         {
-            Debug.Log("Exiting game!");
             Application.Quit();
         }
         /// <summary>
-        /// Finishes setting up the scene when all the user data has been loaded from the server
+        /// Finishes setting up the scene once its required startup data has loaded. Normal scenes
+        /// require user data; dedicated ML-Agents training can finalize from server settings alone.
         /// </summary>
         protected virtual void FinalizeSceneWithUserData()
         {
             //Debug.Log($"Finalizing {Name} Scene");
 
-            if (IsMainScene && ConfigData.CurrentShips == null)
+            if (IsMainScene && ConfigData.CurrentShips == null && !CanRunWithoutServer())
             {
                 ConfigData.FreePlayShips = new Ships(ConfigData.GetFleetData(), ConfigData.GetSavedSquadsData());
                 ConfigData.CampaignShips = new Ships(ConfigData.GetCampaignFleetData(), ConfigData.GetCampaignSavedSquadsData());
@@ -198,7 +195,6 @@ namespace Assets.Scripts.Scenes
             if (_resends > 0)
             {
                 Debug.LogWarning($"Resending {_resends} timed-out requests");
-                ConfigData.__TotalResends += _resends;
             }
         }
 
@@ -231,66 +227,105 @@ namespace Assets.Scripts.Scenes
                 level == null || level.IsLevelConnectedToServer);
         }
 
+        /// <summary>
+        /// The dedicated ML-Agents scene needs the server only until its configuration/settings are
+        /// loaded. Deliberately key this off the scene identity rather than IsActiveFor(stage): the
+        /// final settings response is pumped inside Scene.Update, one frame before the startup gate
+        /// can apply the Stage training flags. This prevents that frame from starting user-data
+        /// requests or reconnect/disconnect handling that training does not need.
+        /// </summary>
+        private bool CanRunWithoutServer()
+        {
+            return this is Stage &&
+                   global::RlOneVsOneTrainingBootstrap.IsDedicatedTrainingRuntime &&
+                   ConfigData.AreAllSettingsLoaded &&
+                   !ConfigData.Configuration.IsDeadVersion;
+        }
+
         // Update is called once per frame
         protected virtual void Update()
         {
-            __Updates++;
+            // WebSocketSharp dispatches open/error/close events through Socket.Update's bounded
+            // main-thread queue. Keep pumping it even when RL no longer depends on the server so
+            // IsOpen/HasClosed and any already-arrived response state remain truthful.
             SocketTimer.Update();
 
-            // Do not feed standing requests into a dead WebSocket. They remain in
-            // Socket.StandingRequests and the normal resend timer resumes once a connection
-            // is open again. Socket.Open first submits ReconnectLevel requests for active levels.
-            if (ConfigData.Socket.IsOpen)
+            bool canRunWithoutServer = CanRunWithoutServer();
+            if (!canRunWithoutServer)
             {
-                ResendTimer.Update();
-            }
-
-            // Retry any socket that remains unopened, including an initial transport failure that
-            // reports OnError without OnClose. Keep the disconnect UI below tied to HasClosed so
-            // the normal initial connection window does not show a false disconnect dialogue.
-            if (IsSocketManager && !ConfigData.Socket.IsOpen && !ConfigData.Socket.KeepClosed)
-            {
-                AutomaticReconnectTimer.Update();
-            }
-
-            if (ConfigData.Socket.HasClosed && IsSocketManager)
-            {
-                //Debug.Log($"Updating the AutoReconnect Timer. {AutomaticReconnectTimer.Elapsed} seconds have elapsed");
-
-                if (!NetworkDisconnection.IsOpen)
+                // Do not feed standing requests into a dead WebSocket. They remain in
+                // Socket.StandingRequests and the normal resend timer resumes once a connection
+                // is open again. Socket.Open first submits ReconnectLevel requests for active levels.
+                if (ConfigData.Socket.IsOpen)
                 {
-                    Debug.Log($"Network disconnected!");
-                    if (Type == ConfigData.SceneTypes.Stage)
+                    ResendTimer.Update();
+                }
+
+                // Retry any socket that remains unopened, including an initial transport failure that
+                // reports OnError without OnClose. Keep the disconnect UI below tied to HasClosed so
+                // the normal initial connection window does not show a false disconnect dialogue.
+                if (IsSocketManager && !ConfigData.Socket.IsOpen && !ConfigData.Socket.KeepClosed)
+                {
+                    AutomaticReconnectTimer.Update();
+                }
+
+                if (ConfigData.Socket.HasClosed && IsSocketManager)
+                {
+                    //Debug.Log($"Updating the AutoReconnect Timer. {AutomaticReconnectTimer.Elapsed} seconds have elapsed");
+
+                    if (!NetworkDisconnection.IsOpen)
                     {
-                        Level primaryLevel = ((Stage)this).PrimaryLevel;
-                        if (primaryLevel != null && primaryLevel.State != null)
+                        if (Type == ConfigData.SceneTypes.Stage)
                         {
-                            _pausedForNetworkDisconnect = !primaryLevel.State.IsPaused;
-                            if (_pausedForNetworkDisconnect)
+                            Level primaryLevel = ((Stage)this).PrimaryLevel;
+                            if (primaryLevel != null && primaryLevel.State != null)
                             {
-                                primaryLevel.Pause();
+                                _pausedForNetworkDisconnect = !primaryLevel.State.IsPaused;
+                                if (_pausedForNetworkDisconnect)
+                                {
+                                    primaryLevel.Pause();
+                                }
+                            }
+                            else
+                            {
+                                _pausedForNetworkDisconnect = false;
                             }
                         }
-                        else
-                        {
-                            _pausedForNetworkDisconnect = false;
-                        }
+                        NetworkDisconnection.Show();
                     }
-                    NetworkDisconnection.Show();
+                }
+                else if (ConfigData.Socket.IsOpen && IsSocketManager && NetworkDisconnection.IsOpen && AreOpenLevelsReconnected())
+                {
+                    _automaticReconnectAttempts = 0;
+                    NetworkDisconnection.Hide();
+                    if (Type == ConfigData.SceneTypes.Stage && _pausedForNetworkDisconnect)
+                    {
+                        ((Stage)this).PrimaryLevel.UnPause();
+                    }
+                    _pausedForNetworkDisconnect = false;
                 }
             }
-            
-            else if (ConfigData.Socket.IsOpen && IsSocketManager && NetworkDisconnection.IsOpen && AreOpenLevelsReconnected())
+            else if (IsSocketManager && NetworkDisconnection != null && NetworkDisconnection.IsOpen)
             {
-                _automaticReconnectAttempts = 0;
+                // A close callback can be processed in the same socket-pump frame as the final
+                // settings response. Once settings are complete, dismiss any stale disconnect UI;
+                // dedicated training will not reconnect or pause because of the transport again.
                 NetworkDisconnection.Hide();
-                if (Type == ConfigData.SceneTypes.Stage && _pausedForNetworkDisconnect)
-                {
-                    ((Stage)this).PrimaryLevel.UnPause();
-                }
                 _pausedForNetworkDisconnect = false;
             }
-            if (!ConfigData.SocketManager.NetworkDisconnection.IsOpen)
+
+            if (canRunWithoutServer)
+            {
+                // The startup gate runs before Scene.Update, but settings responses are pumped above.
+                // On the response frame, wait without loading user data. On the next frame the gate
+                // applies the RL flags first, after which the Stage can finalize entirely from settings.
+                if (!IsFinalized && this is Stage trainingStage &&
+                    global::RlOneVsOneTrainingBootstrap.IsActiveFor(trainingStage))
+                {
+                    FinalizeSceneWithUserData();
+                }
+            }
+            else if (!ConfigData.SocketManager.NetworkDisconnection.IsOpen)
             {
                 // [alert] [debug]
               

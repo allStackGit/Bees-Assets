@@ -1,0 +1,32 @@
+{
+  "deployment_id": "deploy-d1525f82d8df30c029a254b3",
+  "identity": {
+    "behavior_name": "BeesRL1v1",
+    "compatibility": {
+      "action_schema_version": 9,
+      "behavior_name": "BeesRL1v1",
+      "observation_schema_version": 11,
+      "policy_abi_version": 20,
+      "reward_schema_version": 3,
+      "scenario_schema_version": 1
+    },
+    "game_build_version": "2026-09-25-112424-7285efe9ff25",
+    "model_id": "bees-rl-v20-efaf13ef893636c62abfb27e",
+    "model_sha256": "efaf13ef893636c62abfb27eff5d638090f70654e28d164190c6195bb68511b5",
+    "model_size_bytes": 4128441,
+    "policy_signature": "bees-rl-v20|behavior=BeesRL1v1|network=ff-128x3|normalize=true|obs=7614|tail=episode-progress+20-reserved|cont=16|disc=2x5,5|coord-frame=team-episode-distinct-quarter-turn|weapon-aim=slotwise-xy|weapon-fire=slotwise-cease-or-fire|healing=weapon-exclusive|weapon-ready=rl-latched-until-fire|shiptype=fixed-scrambled-scalar24|weapontype=fixed-scrambled-scalar10|mapbits=4|shipmap=v1-0..23|weaponmap=v1-0..9|allies=64|enemies=64|weapons=5|entity-weapons=5|enemy-mounts=0|mining=8|map-objects=64|moving-asteroids=48|self=25|ship-id=episode-permuted-scalar23|capability=12|parent-carrier=40|entity-core=14|entity=40|ally=44-with-private-comm4|communication=4-continuous-private-allied|self-weapon=15|observed-weapon=5|weapon-observation=split-self-vs-observed|mining-slot=7|map-slot=12|moving-asteroid-slot=11|objective=16|grid=21x21-cell6|exploration-grid=16x16-team-shared-sight-recency|entity-order=distance,type,fleet-id,runtime-id",
+    "promotion_evidence": {
+      "created_at": "2026-09-25T20:18:43.339884Z",
+      "evidence_sha256": "7a0dacf66f334e014c0608b06b7de97f4250161412878b8f2562f5949b495ed9",
+      "reason": "Automatic generation-zero bootstrap after successful bounded training run bees-v20-r3-s1-20260925T145404Z-0cca37ac.",
+      "source_status": "candidate",
+      "type": "generation-zero-bootstrap"
+    },
+    "schema_version": 1,
+    "training_run_id": "bees-v20-r3-s1-20260925T145404Z-0cca37ac",
+    "training_step": 1000068
+  },
+  "identity_sha256": "d1525f82d8df30c029a254b3da80d53d70c68cc48b5da93df97e8366a3e0f5ae",
+  "model_file": "model.onnx",
+  "schema_version": 1
+}

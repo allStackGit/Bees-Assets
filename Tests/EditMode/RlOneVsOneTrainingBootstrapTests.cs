@@ -1,0 +1,433 @@
+using System;
+using System.IO;
+using System.Reflection;
+using System.Collections.Generic;
+using NUnit.Framework;
+using UnityEngine;
+
+namespace Bees.Tests.EditMode
+{
+    [TestFixture]
+    [Category("BeesFoundation")]
+    public class RlOneVsOneTrainingBootstrapTests
+    {
+        private GameObject _stageObject;
+        private Component _stage;
+        private Type _bootstrapType;
+
+        [SetUp]
+        public void SetUp()
+        {
+            _stageObject = new GameObject(nameof(RlOneVsOneTrainingBootstrapTests));
+            _stage = _stageObject.AddComponent(RuntimeAssembly.GetType("Stage"));
+            ((Behaviour)_stage).enabled = false;
+            _bootstrapType = RuntimeAssembly.GetType("RlOneVsOneTrainingBootstrap");
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            UnityEngine.Object.DestroyImmediate(_stageObject);
+        }
+
+        [Test]
+        public void DedicatedSceneAppliesMinimalOneVsOneTrainingConfiguration()
+        {
+            // The dedicated scene was copied from a player-facing stage and may retain these flags.
+            // Training skips AudioController.Setup(), so the bootstrap must normalize them explicitly.
+            RuntimeAssembly.SetField(_stage, "ActivateAudio", true);
+            RuntimeAssembly.SetField(_stage, "PlayMusic", true);
+
+            ApplyBootstrap();
+
+            Assert.That(RuntimeAssembly.GetField(_stage, "IsTrainingHiveMind"), Is.False);
+            Assert.That(RuntimeAssembly.GetField(_stage, "IsTrainingNueralNetwork"), Is.True);
+            Assert.That(RuntimeAssembly.GetField(_stage, "ActivateHiveMind"), Is.False);
+            Assert.That(RuntimeAssembly.GetField(_stage, "DoesUserHaveController"), Is.False);
+            Assert.That(RuntimeAssembly.GetField(_stage, "UseFullyRandomSquads"), Is.True);
+            Assert.That(RuntimeAssembly.GetField(_stage, "HasRandomizedOptions"), Is.False);
+            Assert.That(RuntimeAssembly.GetField(_stage, "IsRendering"), Is.True);
+            Assert.That(RuntimeAssembly.GetField(_stage, "ActivateAudio"), Is.False);
+            Assert.That(RuntimeAssembly.GetField(_stage, "PlayMusic"), Is.False);
+            Assert.That(RuntimeAssembly.GetField(_stage, "LevelCount"), Is.EqualTo(1));
+            Assert.That(RuntimeAssembly.GetField(_stage, "GeneratedSquadCountOverride"), Is.EqualTo(1));
+            Assert.That(RuntimeAssembly.GetField(_stage, "OverrideMapIndex"), Is.EqualTo(2));
+            Assert.That(RuntimeAssembly.GetField(_stage, "TimeoutTime"), Is.EqualTo(120));
+        }
+
+        [Test]
+        public void FirstProofUsesRequestedMapAndMatchup()
+        {
+            Assert.That(GetBootstrapConstant("TrainingMapSize"), Is.EqualTo(30f));
+            Assert.That(GetBootstrapConstant("SpawnRadius"), Is.EqualTo(7.5f));
+            Assert.That(GetBootstrapConstant("BeeShipType").ToString(), Is.EqualTo("Wasp"));
+            Assert.That(GetBootstrapConstant("HumanShipType").ToString(), Is.EqualTo("Gunship"));
+        }
+
+        [Test]
+        public void BootstrapOnlyBindsTheDedicatedRlScene()
+        {
+            MethodInfo shouldApply = _bootstrapType.GetMethod(
+                "ShouldApply",
+                BindingFlags.Static | BindingFlags.NonPublic);
+            Assert.That(shouldApply, Is.Not.Null);
+
+            Assert.That(shouldApply.Invoke(null, new object[] { "RL 1v1 Training" }), Is.True);
+            Assert.That(shouldApply.Invoke(null, new object[] { "Space" }), Is.False);
+            Assert.That(shouldApply.Invoke(null, new object[] { "Hivemind Training Downsized" }), Is.False);
+        }
+
+        [Test]
+        public void ManagedRemoteTrainingCanOverrideGameplayServerThroughLocalTailnetForward()
+        {
+            string source = ReadSource("Scripts", "ConfigData.cs");
+
+            Assert.That(source, Does.Contain("BEES_TRAINING_GAMEPLAY_HOST"));
+            Assert.That(source, Does.Contain("BEES_TRAINING_GAMEPLAY_PORT"));
+            Assert.That(source, Does.Contain("TryGetManagedTrainingGameplayServer"));
+            string normalized = string.Join(
+                " ",
+                source.Split((char[])null, StringSplitOptions.RemoveEmptyEntries));
+            Assert.That(
+                normalized,
+                Does.Contain("new Socket( trainingPort, trainingHostname, UseWebSocketSharp);"),
+                "Managed dedicated training must route gameplay/settings through the local tailnet forward.");
+        }
+
+        [Test]
+        public void OneVsOneSetupUsesExplicitFleetShipsWithoutArmedTypeRestriction()
+        {
+            string source = ReadSource("Scripts", "Levels", "Level.RandomSquadSetup.cs");
+            int methodStart = source.IndexOf("private void AddRlOneVsOneSquadForSetup", StringComparison.Ordinal);
+            int methodEnd = source.IndexOf("private void AddRandomSquadsForSetup", methodStart, StringComparison.Ordinal);
+
+            Assert.That(methodStart, Is.GreaterThanOrEqualTo(0));
+            Assert.That(methodEnd, Is.GreaterThan(methodStart));
+
+            string method = source.Substring(methodStart, methodEnd - methodStart);
+            Assert.That(method, Does.Contain("new FleetShip("));
+            Assert.That(method, Does.Contain("new SquadShip(fleetShip, Vector2.zero)"));
+            Assert.That(method, Does.Not.Contain("SetupRandomShips"));
+            Assert.That(method, Does.Not.Contain("ConfigData.ArmedShipTypes.Contains(type)"),
+                "Dedicated RL training must accept utility, special, stationary, and spawned-only ship types.");
+            Assert.That(method, Does.Contain("Utilities.ConvertShipTypeToSide[type] != side"),
+                "Dedicated RL training must still reject a ship configured for the wrong faction.");
+        }
+
+        [Test]
+        public void TrainingEnvironmentUsesRuntimeFlagsAndRandomizesFacing()
+        {
+            string setup = ReadSource("Scripts", "Levels", "Level.Setup.cs");
+            Assert.That(setup, Does.Contain("RlOneVsOneArenaMapSizeState.ConfigureTrainingMap(this, Map)"));
+            Assert.That(setup, Does.Contain("CurrentStaticObstaclesEnabled"));
+            Assert.That(setup, Does.Contain("CurrentCollisionAsteroidSpawnSeconds"));
+            Assert.That(setup, Does.Contain("CurrentMiningAsteroidsEnabled"));
+
+            string environment = ReadSource("Scripts", "Levels", "Level.Environment.cs");
+            Assert.That(environment, Does.Contain("BuildRlTrainingObstacleLayout"));
+            Assert.That(environment, Does.Contain("CurrentCollisionAsteroidSpawnSeconds"));
+            Assert.That(environment, Does.Contain("maximum = 6"));
+
+            string squadSetup = ReadSource("Scripts", "Levels", "Level.RandomSquadSetup.cs");
+            Assert.That(squadSetup, Does.Contain("TrySetRlOneVsOneSpawnPositions"));
+            Assert.That(squadSetup, Does.Contain("RandomizeRlOneVsOneFacing(side)"));
+            Assert.That(squadSetup, Does.Contain("Random.Range(0f, 360f)"));
+            Assert.That(squadSetup, Does.Contain("ship.Rotation = ship.transform.eulerAngles.z"));
+            Assert.That(squadSetup, Does.Contain("Rotation = ship.Turrets[turretIndex].PieceTransform.eulerAngles.z"));
+        }
+
+        [Test]
+        public void TrainingStaticObstacleLayoutStaysUnderAreaBudgetAndCannotPartitionTheArena()
+        {
+            Type levelType = RuntimeAssembly.GetType("Assets.Scripts.Levels.Level");
+            MethodInfo buildLayout = levelType.GetMethod(
+                "BuildRlTrainingObstacleLayout",
+                BindingFlags.Static | BindingFlags.NonPublic);
+            Assert.That(buildLayout, Is.Not.Null);
+
+            const float min = -11f;
+            const float max = 11f;
+            List<Rect> layout = (List<Rect>)buildLayout.Invoke(
+                null,
+                new object[] { min, max, min, max, 12345, 0f });
+
+            Assert.That(layout, Is.Not.Empty);
+            float playableArea = (max - min) * (max - min);
+            float obstacleArea = 0f;
+            float corridorHalfWidth = (max - min) * 0.25f;
+            for (int i = 0; i < layout.Count; i++)
+            {
+                Rect obstacle = layout[i];
+                obstacleArea += obstacle.width * obstacle.height;
+
+                Assert.That(
+                    obstacle.xMax <= -corridorHalfWidth || obstacle.xMin >= corridorHalfWidth,
+                    Is.True,
+                    "Every static obstacle must stay outside the full-height central corridor.");
+                Assert.That(
+                    obstacle.yMax <= -corridorHalfWidth || obstacle.yMin >= corridorHalfWidth,
+                    Is.True,
+                    "Every static obstacle must stay outside the full-width central corridor.");
+            }
+
+            Assert.That(obstacleArea, Is.LessThanOrEqualTo(playableArea * 0.25f + 0.001f));
+
+            List<Rect> oversizedShipLayout = (List<Rect>)buildLayout.Invoke(
+                null,
+                new object[] { min, max, min, max, 12345, 10.5f });
+            Assert.That(oversizedShipLayout, Is.Empty,
+                "When the selected ships need nearly the full arena width, obstacle generation must yield rather than block movement.");
+        }
+
+        [Test]
+        public void RewardWeightsKeepVictoryDominant()
+        {
+            Type rewardType = RuntimeAssembly.GetType("RlOneVsOneReward");
+            Assert.That(rewardType, Is.Not.Null);
+
+            Assert.That(GetConstant(rewardType, "WinReward"), Is.EqualTo(1f));
+            Assert.That(GetConstant(rewardType, "LossReward"), Is.EqualTo(-1f));
+            Assert.That(GetConstant(rewardType, "TimeoutReward"), Is.EqualTo(-1.1f));
+            Assert.That(GetConstant(rewardType, "TsvRewardScale"), Is.EqualTo(0.1f));
+            Assert.That(GetConstant(rewardType, "MaximumEpisodeTimePenalty"), Is.EqualTo(0.01f));
+
+            MethodInfo immediateTsvReward = rewardType.GetMethod("CalculateTsvLossReward", BindingFlags.Static | BindingFlags.NonPublic);
+            MethodInfo tsvReward = rewardType.GetMethod("CalculateTsvDeltaReward", BindingFlags.Static | BindingFlags.NonPublic);
+            MethodInfo timePenalty = rewardType.GetMethod("CalculateTimePenalty", BindingFlags.Static | BindingFlags.NonPublic);
+            Assert.That(immediateTsvReward, Is.Not.Null);
+            Assert.That(tsvReward, Is.Not.Null);
+            Assert.That(timePenalty, Is.Not.Null);
+
+            float immediate = (float)immediateTsvReward.Invoke(null, new object[] { 30, 300 });
+            float tsv = (float)tsvReward.Invoke(null, new object[] { 100, 80, 200, 150, 300 });
+            float fullTimeoutPenalty = (float)timePenalty.Invoke(null, new object[] { 120f });
+            Assert.That(immediate, Is.EqualTo(0.01f).Within(0.0001f));
+            Assert.That(tsv, Is.EqualTo(0.01f).Within(0.0001f));
+            Assert.That(fullTimeoutPenalty, Is.EqualTo(-0.01f).Within(0.0001f));
+        }
+
+        [Test]
+        public void TsvShapingIsDeliveredAtImpactAndNotDoubleCountedAtEpisodeEnd()
+        {
+            string combat = ReadSource("Scripts", "Entities", "Ships", "Ship.Combat.cs");
+            int tsvCalculated = combat.IndexOf("_targetTSVChange = target.Tsv - _targetOldTSV;", StringComparison.Ordinal);
+            int immediateReward = combat.IndexOf(
+                "RlOneVsOneEpisodeCoordinator.RecordHit(attacker, target, appliedDamage, -_targetTSVChange);",
+                StringComparison.Ordinal);
+            Assert.That(tsvCalculated, Is.GreaterThanOrEqualTo(0));
+            Assert.That(immediateReward, Is.GreaterThan(tsvCalculated));
+
+            string coordinator = ReadSource("Scripts", "Scenes", "RlOneVsOneEpisodeCoordinator.cs");
+            Assert.That(coordinator, Does.Contain("TsvRewardOccurred?.Invoke(_level, side, emittedReward);"));
+            Assert.That(coordinator, Does.Contain("_beeTsvRewardThisEpisode"));
+            Assert.That(coordinator, Does.Not.Contain("float beeTsv = RlOneVsOneReward.CalculateTsvDeltaReward"));
+
+            string agent = ReadSource("Scripts", "Scenes", "RlOneVsOneAgent.cs");
+            Assert.That(agent, Does.Contain("TsvRewardOccurred += HandleTsvRewardOccurred"));
+            Assert.That(agent, Does.Contain("result.BeeTerminalReward + result.BeeTimeReward"));
+            Assert.That(agent, Does.Contain("result.HumanTerminalReward + result.HumanTimeReward"));
+            Assert.That(agent, Does.Not.Contain("result.BeeTotalReward"));
+            Assert.That(agent, Does.Not.Contain("result.HumanTotalReward"));
+        }
+
+        [Test]
+        public void TimePreferenceOnlyAppliesToTheWinner()
+        {
+            string coordinator = ReadSource("Scripts", "Scenes", "RlOneVsOneEpisodeCoordinator.cs");
+            Assert.That(coordinator, Does.Contain("winningSide == beeSide"));
+            Assert.That(coordinator, Does.Contain("winningSide == humanSide"));
+            Assert.That(coordinator, Does.Contain("? RlOneVsOneReward.CalculateTimePenalty(durationSeconds)"));
+            Assert.That(coordinator, Does.Contain(": 0f;"));
+        }
+
+        [Test]
+        public void PolicyUsesOneSharedBehaviorAndOnlyHiveMindEnemyKnowledge()
+        {
+            Type agentType = RuntimeAssembly.GetType("RlOneVsOneAgent");
+            string agent = ReadSource("Scripts", "Scenes", "RlOneVsOneAgent.cs");
+
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "BehaviorName"), Is.EqualTo("BeesRL1v1"));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "ContinuousActionCount"), Is.EqualTo(16));
+            Assert.That(agent, Does.Contain("CreateAgent(stage, level, ConfigData.Configuration.BeeSide, 0"));
+            Assert.That(agent, Does.Contain("CreateAgent(stage, level, ConfigData.Configuration.BeeSide, 1"));
+            Assert.That(agent, Does.Contain("CreateAgent(stage, level, ConfigData.Configuration.HumanSide, 0"));
+            Assert.That(agent, Does.Contain("CreateAgent(stage, level, ConfigData.Configuration.HumanSide, 1"));
+            Assert.That(agent, Does.Contain("CollectPolicyObservations(_perception, _ship, _side, sensor, frameQuarterTurns)"));
+            Assert.That(agent, Does.Not.Contain("GetAllEnemyShips("));
+        }
+
+        [Test]
+        public void SelfPlayTeamsAlternateAcrossBothPhysicalShipRoles()
+        {
+            string coordinator = ReadSource("Scripts", "Scenes", "RlOneVsOneEpisodeCoordinator.cs");
+            Assert.That(coordinator, Does.Contain("int beeTeamId = (episodeNumber & 1) == 1 ? 0 : 1;"));
+            Assert.That(coordinator, Does.Contain("return 1 - beeTeamId;"));
+            Assert.That(coordinator, Does.Contain("IsControllerForSide(Level level, int side, int teamId)"));
+
+            string agent = ReadSource("Scripts", "Scenes", "RlOneVsOneAgent.cs");
+            Assert.That(agent, Does.Contain("!IsCurrentController()"));
+            Assert.That(agent, Does.Contain("result.BeeTeamId"));
+            Assert.That(agent, Does.Contain("result.HumanTeamId"));
+        }
+
+        [Test]
+        public void PolicyObservationsUseFrozenTacticalPerception()
+        {
+            Type agentType = RuntimeAssembly.GetType("RlOneVsOneAgent");
+            string agent = ReadSource("Scripts", "Scenes", "RlOneVsOneAgent.cs");
+            string perception = ReadSource("Scripts", "Scenes", "RlCombatPerception.cs");
+
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "ObservationSize"), Is.EqualTo(7614));
+            Assert.That(agent, Does.Contain("CollectPolicyObservations(_perception, _ship, _side, sensor, frameQuarterTurns)"));
+            Assert.That(perception, Does.Contain("AddSelfObservations(ship, side, sensor, origin, frameQuarterTurns)"));
+            Assert.That(perception, Does.Contain("AddWeaponSlots(ship, sensor, frameQuarterTurns)"));
+            Assert.That(perception, Does.Contain("AddEntityWeaponSlots(observed, sensor)"));
+            Assert.That(perception, Does.Contain("AddNavigationGridObservations(sensor, frameQuarterTurns)"));
+            Assert.That(perception, Does.Contain("AddExplorationGridObservations(ship.Level, side, sensor, frameQuarterTurns)"));
+            Assert.That(perception, Does.Not.Contain("MaxObservedProjectiles"));
+            Assert.That(perception, Does.Not.Contain("AddProjectileSlots"),
+                "Projectile-evasion slots are intentionally outside the canonical policy; weapon ProjectileValue remains a weapon characteristic.");
+        }
+
+        [Test]
+        public void PolicyOwnsMovementAndIndependentWeaponAimFireWhileWeaponTimerOwnsRateOfFire()
+        {
+            string agent = ReadSource("Scripts", "Scenes", "RlOneVsOneAgent.cs");
+            Assert.That(agent, Does.Contain("ship.RlMovementDirection = 360"));
+            Assert.That(agent, Does.Contain("for (int slot = 0; slot < MaxWeaponSlots; slot++)"));
+            Assert.That(agent, Does.Contain("WeaponAimContinuousActionStart + slot * WeaponAimContinuousActionsPerSlot"));
+            Assert.That(agent, Does.Contain("discrete[WeaponFireBranchStart + slot] == FireWeaponAction"));
+            Assert.That(agent, Does.Contain("ApplyWeaponCommand(_ship, slot, _weaponAimDirections[slot], fire)"));
+            Assert.That(agent, Does.Contain("turret.SetRlControl(target, fire)"));
+
+            string aiming = ReadSource("Scripts", "Entities", "Ships", "Weapons", "Turret.Aiming.cs");
+            int rlAim = aiming.IndexOf("if (IsRlControlled)", StringComparison.Ordinal);
+            int mouseAim = aiming.IndexOf("else if (IsFiringManually)", StringComparison.Ordinal);
+            Assert.That(rlAim, Is.GreaterThanOrEqualTo(0));
+            Assert.That(mouseAim, Is.GreaterThan(rlAim));
+            Assert.That(aiming, Does.Contain("TargetPoint = RlTargetPoint"));
+
+            string targeting = ReadSource("Scripts", "Entities", "Ships", "Weapons", "Turret.Targeting.cs");
+            Assert.That(targeting, Does.Contain("if (IsRlControlled)"));
+            Assert.That(targeting, Does.Contain("TargetingPasses >= PassesPerFire"));
+            Assert.That(targeting, Does.Contain("RlFireRequested && CanAcceptRlFireRequest()"));
+            Assert.That(targeting, Does.Contain("FireAtPoint();"));
+        }
+
+        [Test]
+        public void FirstTrainerConfigMatchesSharedBehaviorAndUsesLongRunPocaSelfPlay()
+        {
+            string config = ReadSource("Training", "rl_1v1_config.yaml");
+            Assert.That(config, Does.Contain("BeesRL1v1:"));
+            Assert.That(config, Does.Contain("trainer_type: poca"));
+            Assert.That(config, Does.Contain("learning_rate_schedule: constant"));
+            Assert.That(config, Does.Contain("beta_schedule: constant"));
+            Assert.That(config, Does.Contain("epsilon_schedule: constant"));
+            Assert.That(config, Does.Contain("self_play:"));
+            Assert.That(config, Does.Contain("max_steps: 5000000000000"));
+        }
+
+        [Test]
+        public void EpisodeCoordinatorExposesTrainerHooksAndEliminationIsReportedBeforeReset()
+        {
+            Type coordinatorType = RuntimeAssembly.GetType("RlOneVsOneEpisodeCoordinator");
+            Assert.That(coordinatorType, Is.Not.Null);
+
+            DefaultExecutionOrder executionOrder = coordinatorType.GetCustomAttribute<DefaultExecutionOrder>();
+            Assert.That(executionOrder, Is.Not.Null);
+            Assert.That(executionOrder.order, Is.LessThan(0));
+            Assert.That(coordinatorType.GetEvent("TsvRewardOccurred", BindingFlags.Static | BindingFlags.NonPublic), Is.Not.Null);
+            Assert.That(coordinatorType.GetEvent("EpisodeEnded", BindingFlags.Static | BindingFlags.NonPublic), Is.Not.Null);
+
+            string coordinator = ReadSource("Scripts", "Scenes", "RlOneVsOneEpisodeCoordinator.cs");
+            Assert.That(coordinator, Does.Contain("EpisodeEnded?.Invoke(level, result);"));
+            Assert.That(coordinator, Does.Contain("coordinator.CompleteEpisode(level, DetermineWinner(level), false);"));
+
+            string runtime = ReadSource("Scripts", "Levels", "Level.Runtime.cs");
+            int report = runtime.IndexOf("RlOneVsOneEpisodeCoordinator.CompleteElimination(this);", StringComparison.Ordinal);
+            int reset = runtime.IndexOf("ResetLevel(false);", StringComparison.Ordinal);
+            Assert.That(report, Is.GreaterThanOrEqualTo(0));
+            Assert.That(reset, Is.GreaterThan(report));
+        }
+
+        [Test]
+        public void TimeoutIsReportedAsNoWinnerBeforeLevelTeardown()
+        {
+            string coordinator = ReadSource("Scripts", "Scenes", "RlOneVsOneEpisodeCoordinator.cs");
+            Assert.That(coordinator, Does.Contain("coordinator.CompleteEpisode(level, 0, true);"));
+
+            string ending = ReadSource("Scripts", "Levels", "Level.Ending.cs");
+            int report = ending.IndexOf("RlOneVsOneEpisodeCoordinator.CompleteTimeout(this);", StringComparison.Ordinal);
+            int teardown = ending.IndexOf("SaveAndEnd();", report, StringComparison.Ordinal);
+            Assert.That(report, Is.GreaterThanOrEqualTo(0));
+            Assert.That(teardown, Is.GreaterThan(report));
+        }
+
+        [Test]
+        public void TrainingSceneAssetExists()
+        {
+            string scenePath = ReadPath("Scenes", "RL 1v1 Training.unity");
+            Assert.That(File.Exists(scenePath), Is.True);
+        }
+
+        private void ApplyBootstrap()
+        {
+            MethodInfo apply = _bootstrapType.GetMethod(
+                "Apply",
+                BindingFlags.Static | BindingFlags.NonPublic);
+            Assert.That(apply, Is.Not.Null);
+
+            Type configDataType = RuntimeAssembly.GetType("Assets.Scripts.ConfigData");
+            object previousConfiguration = RuntimeAssembly.GetStaticField(configDataType, "Configuration");
+            object previousStartingSettings = RuntimeAssembly.GetStaticField(configDataType, "StartingSettings");
+            object previousShipInfo = RuntimeAssembly.GetStaticField(configDataType, "ShipInfo");
+            try
+            {
+                RuntimeAssembly.SetStaticField(configDataType, "Configuration", CreateLoadedSetting("Assets.Scripts.Settings.Configuration"));
+                RuntimeAssembly.SetStaticField(configDataType, "StartingSettings", CreateLoadedSetting("Assets.Scripts.Settings.StartingSettings"));
+                RuntimeAssembly.SetStaticField(configDataType, "ShipInfo", CreateLoadedSetting("Assets.Scripts.Settings.ShipStats"));
+                apply.Invoke(null, new object[] { _stage });
+            }
+            finally
+            {
+                RuntimeAssembly.SetStaticField(configDataType, "Configuration", previousConfiguration);
+                RuntimeAssembly.SetStaticField(configDataType, "StartingSettings", previousStartingSettings);
+                RuntimeAssembly.SetStaticField(configDataType, "ShipInfo", previousShipInfo);
+            }
+        }
+
+        private static object CreateLoadedSetting(string typeName)
+        {
+            object setting = RuntimeAssembly.CreateUninitialized(typeName);
+            RuntimeAssembly.SetField(setting, "IsLoaded", true);
+            return setting;
+        }
+
+        private object GetBootstrapConstant(string name)
+        {
+            return GetConstant(_bootstrapType, name);
+        }
+
+        private static object GetConstant(Type type, string name)
+        {
+            FieldInfo field = type.GetField(name, BindingFlags.Static | BindingFlags.NonPublic);
+            Assert.That(field, Is.Not.Null, $"Missing constant {name} on {type.FullName}");
+            return field.GetValue(null);
+        }
+
+        private static string ReadSource(params string[] pathParts)
+        {
+            return File.ReadAllText(ReadPath(pathParts));
+        }
+
+        private static string ReadPath(params string[] pathParts)
+        {
+            string path = Application.dataPath;
+            for (int i = 0; i < pathParts.Length; i++)
+            {
+                path = Path.Combine(path, pathParts[i]);
+            }
+            return path;
+        }
+    }
+}

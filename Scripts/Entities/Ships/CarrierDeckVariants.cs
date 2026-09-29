@@ -177,14 +177,43 @@ namespace Assets.Scripts.Entities.Ships
                 SpriteHeight);
         }
 
+        private static bool CachedSpritesAreUsable()
+        {
+            if (_texture == null || _sprites == null || _sprites.Length != DeckCount)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < _sprites.Length; i++)
+            {
+                if (_sprites[i] == null)
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+
         private static void EnsureSpritesLoaded()
         {
-            if (_loadAttempted)
+            if (CachedSpritesAreUsable())
+            {
+                return;
+            }
+
+            // Unity's EditMode runner can destroy dynamically-created UnityEngine.Objects
+            // between tests while static managed fields survive. In that case the Sprite[]
+            // remains non-null but contains destroyed-object references. Rebuild that cache
+            // instead of returning it. A genuine prior load failure still remains sticky.
+            if (_loadAttempted && _sprites == null && _texture == null)
             {
                 return;
             }
 
             _loadAttempted = true;
+            _sprites = null;
+            _texture = null;
+
             TextAsset source = Resources.Load<TextAsset>(ResourcePath);
             if (source == null)
             {

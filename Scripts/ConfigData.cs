@@ -18,14 +18,14 @@ namespace Assets.Scripts
         public const bool Development = true;
         public const bool Production = !Test && !Development;
 
-        public const string LocalServerHostname = "clashofempire.net";
+        public const string LocalServerHostname = "seagrams7.softether.net";
         public const string GlobalServerHostname = "seagrams7.softether.net";
-        public const string TestServerHostname = GlobalServerHostname;
+        public const string TestServerHostname = LocalServerHostname;
         public const string DevelopmentServerHostname = LocalServerHostname;
         public const string ProductionServerHostname = GlobalServerHostname;
-        public const string DevelopmentWebGlWebSocketURL = "wss://clashofempire.net/bees-ws/";
+        public const string DevelopmentWebGlWebSocketURL = "wss://seagrams7.softether.net/bees-ws/";
         public const int DevelopmentPort = 7146;
-        public const int TestPort = 7143;
+        public const int TestPort = 7146;
         public const int ProductionPort = 7144;
         public const int RLPort = 7242;
         public const int StandardMaxTimeOnQueue = 10;
@@ -59,6 +59,36 @@ namespace Assets.Scripts
         public static int SquadMakerSide;
 
         public const bool UseWebSocketSharp = true;
+        private const string ManagedTrainingGameplayHostEnvironment = "BEES_TRAINING_GAMEPLAY_HOST";
+        private const string ManagedTrainingGameplayPortEnvironment = "BEES_TRAINING_GAMEPLAY_PORT";
+
+        private static bool TryGetManagedTrainingGameplayServer(out string hostname, out int port)
+        {
+            hostname = System.Environment.GetEnvironmentVariable(
+                ManagedTrainingGameplayHostEnvironment);
+            string portText = System.Environment.GetEnvironmentVariable(
+                ManagedTrainingGameplayPortEnvironment);
+
+            bool hasHostname = !string.IsNullOrWhiteSpace(hostname);
+            bool hasPort = !string.IsNullOrWhiteSpace(portText);
+            if (!hasHostname && !hasPort)
+            {
+                port = 0;
+                return false;
+            }
+
+            if (!hasHostname ||
+                !int.TryParse(portText, out port) ||
+                port < 1 ||
+                port > 65535)
+            {
+                throw new System.InvalidOperationException(
+                    "Managed training gameplay server override is incomplete or invalid.");
+            }
+
+            return true;
+        }
+
         private static Socket _socket;
         public static Socket Socket
         {
@@ -66,6 +96,23 @@ namespace Assets.Scripts
             {
                 if (_socket == null)
                 {
+#if UNITY_EDITOR
+                    // The Editor always uses the local test-mode BeesServer. Test mode deliberately
+                    // does not require Steam authentication and shares the normal development port.
+                    _socket = new Socket(TestPort, TestServerHostname, UseWebSocketSharp);
+#else
+#if !UNITY_WEBGL
+                    if (TryGetManagedTrainingGameplayServer(
+                        out string trainingHostname,
+                        out int trainingPort))
+                    {
+                        _socket = new Socket(
+                            trainingPort,
+                            trainingHostname,
+                            UseWebSocketSharp);
+                    }
+                    else
+#endif
                     if (Test)
                     {
                         _socket = new Socket(TestPort, TestServerHostname, UseWebSocketSharp);
@@ -89,6 +136,7 @@ namespace Assets.Scripts
                             UseWebSocketSharp,
                             secure: true);
                     }
+#endif
                 }
                 return _socket;
             }
@@ -150,19 +198,7 @@ namespace Assets.Scripts
         public static System.Diagnostics.Stopwatch Stopwatch;
         public static UIAudioController UIAudioController;
 
-        public static ServerRequestSet __PastServerRequests = new ServerRequestSet();
-        public static int __TotalResends;
-        public static int __TotalRequests;
-        public static double __AverageTimeOnQueue;
-        public static double __TotalLength;
-        public static double __AverageLength;
-        public static double __TotalC2C;
-        public static double __AverageC2C;
-        public static double __TotalWireTime;
-        public static double __AverageWireTime;
-        public static double __TotalProcessingTime;
-        public static double __AverageProcessingTime;
-        public static long __TotalTimeOnQueue;
+        public static ServerRequestSet RequestHistory = new ServerRequestSet();
 
         private static ulong _userId;
         public static UserProgressData UserProgressData;

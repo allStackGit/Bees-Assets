@@ -11,11 +11,9 @@ public class SafeMemorySnapshotTaker
     public static void TakeSafeSnapshot()
     {
         // Force full garbage collection to clean up stale memory
-        Debug.Log("Starting GC...");
         GC.Collect();
         GC.WaitForPendingFinalizers();
         GC.Collect();
-        Debug.Log("GC Done.");
 
         // Create snapshot folder if needed
         string snapshotFolder = Path.Combine(Application.dataPath, "../MemoryCaptures");
@@ -31,10 +29,10 @@ public class SafeMemorySnapshotTaker
         // Take snapshot using the Memory Profiler
         MemoryProfiler.TakeSnapshot(snapshotPath, (path, success) =>
         {
-            if (success)
-                Debug.Log($"Snapshot saved to: {path}");
-            else
+            if (!success)
+            {
                 Debug.LogError("Failed to save snapshot.");
+            }
         });
     }
 }

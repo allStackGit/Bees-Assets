@@ -93,7 +93,6 @@ namespace Assets.Scripts
             if (!AreAllSettingsLoaded)
             {
                 ShipInfo = new ShipStats(GetUserId());
-                Debug.Log($"User id is {_userId}");
                 Configuration = new Configuration(GetUserId());
                 StartingSettings = new StartingSettings(GetUserId());
             }
@@ -160,7 +159,6 @@ namespace Assets.Scripts
         /// </summary>
         public static void SetupFirstTimePlayingHumanCampaign()
         {
-            Debug.Log("Setting up first time playing human campaign data");
 
             SavedSquad squad = CurrentShips.BuildNewSquad($"Squad #{UserProgressData.HumanCampaignSavedSquadNumber++}", Configuration.HumanSide, ShipTypes.Scout, 1);
 
@@ -320,7 +318,6 @@ namespace Assets.Scripts
             {
                 int totalPlaytime;
                 bool hasStats = SteamUserStats.GetStat("total_playtime", out totalPlaytime);
-                Debug.Log($"totalPlaytime {totalPlaytime}");
                 return hasStats && totalPlaytime > 0;
             }
             catch (System.Exception exception)

@@ -78,6 +78,21 @@ namespace Assets.Scripts
         public bool IntroEnded;
         public Level Level;
 
+        private void Awake()
+        {
+            if (!global::RlOneVsOneTrainingBootstrap.IsDedicatedTrainingRuntime)
+            {
+                return;
+            }
+
+            AudioSource[] sources = GetComponentsInChildren<AudioSource>(true);
+            for (int i = 0; i < sources.Length; i++)
+            {
+                sources[i].Stop();
+            }
+            gameObject.SetActive(false);
+        }
+
         public void Setup(bool playMusic, Level level)
         {
             Level = level;
@@ -89,34 +104,14 @@ namespace Assets.Scripts
             WeaponSounds.Add(ConfigData.WeaponSoundTypes.FlagshipLaser, new AudioSource[] { FlagshipLaserFiringSound });
             WeaponSounds.Add(ConfigData.WeaponSoundTypes.QueenLaser, new AudioSource[] { QueenCrownLaser });
             WeaponSounds.Add(ConfigData.WeaponSoundTypes.RocketLaunch, new AudioSource[] { RocketFiring });
-
-
-            //ExplosionSounds.Add(ConfigData.Tiny, TinyShipExplosionSounds);
-            //ExplosionSounds.Add(ConfigData.Small, SmallShipExplosionSounds);
-            //ExplosionSounds.Add(ConfigData.Large, LargeShipExplosionSounds);
-
-
-
-            //mute bee intros
-            //MuteSource(CarpenterBeeIntro);
-            //MuteSource(HoneybeeIntro);
-            //MuteSource(HornetIntro);
-            //MuteSource(WaspIntro);
-
-
-
-
-            // mute bee loops
-            //MuteSource(CarpenterBeeLoop);
-            //MuteSource(HoneybeeLoop);
-            //MuteSource(HornetLoop);
-            //MuteSource(WaspLoop);
-
-
-
         }
         public void SetupMusic()
         {
+            if (global::RlOneVsOneTrainingBootstrap.IsDedicatedTrainingRuntime)
+            {
+                return;
+            }
+
             IntroEnded = false;
             Intros.ForEach((source) =>
             {
@@ -128,7 +123,6 @@ namespace Assets.Scripts
             });
             Intros.Clear();
             Loops.Clear();
-
 
             switch (Level.MapData.Location)
             {
@@ -157,58 +151,22 @@ namespace Assets.Scripts
                     EnsureTitaniaMusicSources();
                     LocationIntro = TitaniaIntro;
                     LocationLoop = TitaniaLoop;
-                    // Titania currently has only a base location composition. Do not
-                    // accidentally carry faction stems over from the previous location.
                     HumanLoop = null;
                     BeesLoop = null;
                     IntroLength = TitaniaIntro != null ? TitaniaIntro.clip.length : TitaniaIntroLength;
                     break;
             }
 
-            // Setup audio [make audio controller]
-            //BeesLoops.Add("Carpenter Bee", CarpenterBeeLoop);
-            //BeesLoops.Add("Honeybee", HoneybeeLoop);
-            //BeesLoops.Add("Hornet", HornetLoop);
-            //BeesLoops.Add("Wasp", WaspLoop);
-
-            //BeesIntros.Add("Carpenter Bee", CarpenterBeeIntro);
-            //BeesIntros.Add("Honeybee", HoneybeeIntro);
-            //BeesIntros.Add("Hornet", HornetIntro);
-            //BeesIntros.Add("Wasp", WaspIntro);
-
             AddIfPresent(Intros, LocationIntro);
-
-            //Intros.Add(CarpenterBeeIntro);
-            //Intros.Add(HoneybeeIntro);
-            //Intros.Add(HornetIntro);
-            //Intros.Add(WaspIntro);
-
             AddIfPresent(Loops, LocationLoop);
-            //Loops.Add(CarpenterBeeLoop);
-            //Loops.Add(HoneybeeLoop);
-            //Loops.Add(HornetLoop);
-            //Loops.Add(WaspLoop);
             AddIfPresent(Loops, HumanLoop);
             AddIfPresent(Loops, BeesLoop);
 
-            // play intros
             PlayIntro(LocationIntro);
-            //PlayIntro(CarpenterBeeIntro);
-            //PlayIntro(HoneybeeIntro);
-            //PlayIntro(HornetIntro);
-            //PlayIntro(WaspIntro);
-
-            // play loops
             PlayLoop(IntroLength, LocationLoop);
-            //PlayLoop(IntroLength, CarpenterBeeLoop);
-            //PlayLoop(IntroLength, HoneybeeLoop);
-            //PlayLoop(IntroLength, HornetLoop);
-            //PlayLoop(IntroLength, WaspLoop);
             PlayLoop(IntroLength, HumanLoop);
             PlayLoop(IntroLength, BeesLoop);
 
-            //StartCoroutine(nameof(EndIntro), IntroLength);
-            //Invoke(nameof(EndIntro), IntroLength);
             Level.AddTimer(new ScaledTimer(IntroLength, EndIntro));
         }
 
@@ -260,7 +218,6 @@ namespace Assets.Scripts
 
         private void EndIntro()
         {
-            //Debug.Log($"The intro has ended");
             IntroEnded = true;
         }
         private void PlayLoop(float delay, AudioSource loop)
@@ -286,10 +243,8 @@ namespace Assets.Scripts
         }
         public void Pause()
         {
-            
             if (IntroEnded)
             {
-                // The intro has ended, the loops need to be paused
                 Loops.ForEach((source) =>
                 {
                     source.Pause();
@@ -297,7 +252,6 @@ namespace Assets.Scripts
             }
             else
             {
-                /// The intro has not ended, the loops need to be stopped and the intros need to be paused
                 Loops.ForEach((source) =>
                 {
                     source.Stop();
@@ -307,13 +261,11 @@ namespace Assets.Scripts
                     source.Pause();
                 });
             }
-
         }
         public void Play()
         {
             if (IntroEnded)
             {
-                // The intro has ended, play the loops
                 Loops.ForEach((source) =>
                 {
                     source.Play();
@@ -328,12 +280,9 @@ namespace Assets.Scripts
                     timeLeft = IntroLength - source.time;
                 });
 
-                //Debug.Log($"Setting the loops to play after being paused. They were delayed by {IntroLength}s initially but they are now delayed by {timeLeft}s.");
-                // play loops
                 Loops.ForEach((source) =>
                 {
                     PlayLoop(timeLeft, source);
-
                 });
             }
         }

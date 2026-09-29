@@ -1,0 +1,48 @@
+{
+    "BeesRL1v1": {
+        "checkpoints": [
+            {
+                "steps": 49967,
+                "file_path": "results\\bees-rl-1v1\\BeesRL1v1\\BeesRL1v1-49967.onnx",
+                "reward": -9.990196228027344,
+                "creation_time": 1788221001.8540761,
+                "auxillary_file_paths": [
+                    "results\\bees-rl-1v1\\BeesRL1v1\\BeesRL1v1-49967.pt"
+                ]
+            },
+            {
+                "steps": 99854,
+                "file_path": "results\\bees-rl-1v1\\BeesRL1v1\\BeesRL1v1-99854.onnx",
+                "reward": -9.970588366190592,
+                "creation_time": 1788222867.6444993,
+                "auxillary_file_paths": [
+                    "results\\bees-rl-1v1\\BeesRL1v1\\BeesRL1v1-99854.pt"
+                ]
+            },
+            {
+                "steps": 103965,
+                "file_path": "results\\bees-rl-1v1\\BeesRL1v1\\BeesRL1v1-103965.onnx",
+                "reward": -10.0,
+                "creation_time": 1788223150.637999,
+                "auxillary_file_paths": [
+                    "results\\bees-rl-1v1\\BeesRL1v1\\BeesRL1v1-103965.pt"
+                ]
+            }
+        ],
+        "elo": 1166.3885039387328,
+        "final_checkpoint": {
+            "steps": 103965,
+            "file_path": "results\\bees-rl-1v1\\BeesRL1v1.onnx",
+            "reward": -10.0,
+            "creation_time": 1788223150.637999,
+            "auxillary_file_paths": [
+                "results\\bees-rl-1v1\\BeesRL1v1\\BeesRL1v1-103965.pt"
+            ]
+        }
+    },
+    "metadata": {
+        "stats_format_version": "0.3.0",
+        "mlagents_version": "1.1.0",
+        "torch_version": "2.1.1+cpu"
+    }
+}

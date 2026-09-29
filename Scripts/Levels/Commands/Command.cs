@@ -89,7 +89,6 @@ namespace Assets.Scripts.Levels.Commands
         {
             IsDead = false;
             Level = squad.Level;
-            Stage.DebugLogger.__CommandCounts[(int)CommandType]++;
             Side = squad.Side;
             SetSquad(squad);
             EnemySquad = enemy;
@@ -125,10 +124,6 @@ namespace Assets.Scripts.Levels.Commands
                 GetSquad().SetShootingStrategy(ShootingStrategy.ShootingStrategyType);
                 GetSquad().ClearTargets();
 
-                if (Stage.DebugLogger.IsDebugging)
-                {
-                    GetSquad().PastCommands.Add(new StoredCommand(this));
-                }
                 HasStoredOutcomeRecord = Level.State.AddCommand(this);
                 if (!Stage.IsTraining)
                 {
@@ -363,8 +358,6 @@ namespace Assets.Scripts.Levels.Commands
         }
 
         private StoredCommand _finalize_storedCommand;
-        private StoredCommand _finalize_squadCommand;
-        private string _finalize_enemyName;
 
         private void Finalize(string cause)
         {
@@ -372,7 +365,6 @@ namespace Assets.Scripts.Levels.Commands
             {
                 if (!Stage.IsTraining)
                 {
-                    Debug.Log($"Finalizing Command {this} because of {cause}");
                 }
                 if (cause == "")
                 {
@@ -442,22 +434,6 @@ namespace Assets.Scripts.Levels.Commands
                         _finalize_storedCommand.IsFinalized = true;
                     }
 
-                    if (Stage.DebugLogger.IsDebugging)
-                    {
-                        _finalize_squadCommand = GetSquad().PastCommands.FirstOrDefault(c => c.OutcomeId == OutcomeId);
-                        if (_finalize_squadCommand != null)
-                        {
-                            _finalize_enemyName = EnemySquad != null ? EnemySquad.Name : "N/A";
-                            _finalize_squadCommand.Enemy = _finalize_enemyName;
-                            _finalize_squadCommand.Tsv = Tsv;
-                            _finalize_squadCommand.FinalizationCause = cause;
-                            _finalize_squadCommand.IsFinalized = true;
-                        }
-                        else
-                        {
-                            Debug.LogError($"Could not find squad command for OutcomeId #{OutcomeId} in Squad {GetSquad().Name}");
-                        }
-                    }
                 }
 
                 ClearData();

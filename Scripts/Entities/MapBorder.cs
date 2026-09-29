@@ -57,13 +57,11 @@ namespace Assets.Scripts.Entities
             _collidingThing = collider.gameObject;
             if (!IsTraining)
             {
-                Debug.Log($"{Name} collided with {_collidingThing.name}");
             }
             if (_collidingThing.CompareTag("Ship"))
             {
                 if (!IsTraining)
                 {
-                    Debug.Log($"{Name} Hit by ship");
                 }
 
                 // Some ship prefabs expose a tagged child collider rather than putting every
@@ -76,14 +74,15 @@ namespace Assets.Scripts.Entities
                     return;
                 }
 
-                // Scripted exits deliberately opt out of the playable-map clamp. Do not stop those
-                // ships at the border. If a cutscene camera is following the exiting ship, release
-                // it as the ship crosses the edge so the ship can visibly leave the screen instead
-                // of dragging the camera down/outside the map (Pluto I's Scout retreat).
+                // Scripted exits deliberately opt out of the playable-map clamp. Keep the camera
+                // attached to non-interactive cutscene ships (such as Pluto I's Scout) while they
+                // leave. If an override-bounds ship is still user-controllable, release the camera
+                // at the edge rather than letting normal play drag it outside the map.
                 if (_collidingShip.CanOverrideBounds)
                 {
                     if (Stage != null && Stage.IsFollowingShip && Stage.CameraShip == _collidingShip &&
-                        Stage.InputManager != null && Stage.PrimaryLevel != null)
+                        Stage.InputManager != null && Stage.PrimaryLevel != null &&
+                        _collidingShip.Squad != null && _collidingShip.Squad.CanAcceptUserInput)
                     {
                         Stage.IsFollowingShip = false;
                         Stage.SetupCamera();
@@ -95,7 +94,6 @@ namespace Assets.Scripts.Entities
                 {
                     if (!IsTraining)
                     {
-                        Debug.Log($"{Name} hit the map border while moving in a direction");
                     }
                     if (_collidingShip.ShipType == ConfigData.ShipTypes.Barge)
                     {

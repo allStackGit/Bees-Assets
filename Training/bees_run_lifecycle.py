@@ -1,0 +1,609 @@
+"""Plan and persist Bees training run identities from the authoritative compatibility contract."""
+
+from __future__ import annotations
+
+import argparse
+import ast
+import base64
+import hashlib
+import json
+import os
+import re
+import tempfile
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Mapping, Optional, Sequence
+
+
+SCHEMA_VERSION = 1
+CONTRACT_FIELDS = (
+    "behavior_name",
+    "policy_abi_version",
+    "policy_signature",
+    "observation_schema_version",
+    "action_schema_version",
+    "reward_schema_version",
+    "scenario_schema_version",
+)
+
+CHECKPOINT_COMPATIBILITY_FIELDS = (
+    "behavior_name",
+    "policy_abi_version",
+    "policy_signature",
+    "observation_schema_version",
+    "action_schema_version",
+    "trainer_type",
+    "network_settings",
+)
+
+
+def _sha256_bytes(value: bytes) -> str:
+    return hashlib.sha256(value).hexdigest()
+
+
+def _semantic_python_text_sha256(text: str) -> str:
+    """Hash executable Python semantics while ignoring comments, layout, and docstrings."""
+
+    try:
+        tree = ast.parse(text)
+    except SyntaxError as exc:
+        raise ValueError(f"training Python source is not syntactically valid: {exc}") from exc
+
+    def strip_docstring(body):
+        if (
+            body
+            and isinstance(body[0], ast.Expr)
+            and isinstance(body[0].value, ast.Constant)
+            and isinstance(body[0].value.value, str)
+        ):
+            del body[0]
+
+    for node in ast.walk(tree):
+        if isinstance(
+            node,
+            (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef),
+        ):
+            strip_docstring(node.body)
+
+    canonical = ast.dump(
+        tree,
+        annotate_fields=True,
+        include_attributes=False,
+    )
+    return _sha256_bytes(canonical.encode("utf-8"))
+
+
+def _semantic_python_sha256(path: Path) -> str:
+    return _semantic_python_text_sha256(path.read_text(encoding="utf-8"))
+
+
+def _semantic_csharp_text_sha256(text: str) -> str:
+    """Hash C# code while ignoring comments and indentation-only formatting changes."""
+    output: list[str] = []
+    index = 0
+    state = "code"
+    quote = ""
+    pending_space = False
+    while index < len(text):
+        current = text[index]
+        following = text[index + 1] if index + 1 < len(text) else ""
+
+        if state == "line-comment":
+            if current in "\r\n":
+                state = "code"
+            index += 1
+            continue
+
+        if state == "block-comment":
+            if current == "*" and following == "/":
+                state = "code"
+                index += 2
+            else:
+                index += 1
+            continue
+
+        if state in ("string", "char"):
+            output.append(current)
+            if current == "\\" and index + 1 < len(text):
+                output.append(text[index + 1])
+                index += 2
+                continue
+            if current == quote:
+                state = "code"
+            index += 1
+            continue
+
+        if current == "/" and following == "/":
+            pending_space = True
+            state = "line-comment"
+            index += 2
+            continue
+        if current == "/" and following == "*":
+            pending_space = True
+            state = "block-comment"
+            index += 2
+            continue
+        if current.isspace():
+            pending_space = True
+            index += 1
+            continue
+
+        if pending_space and output and output[-1] != " ":
+            output.append(" ")
+        pending_space = False
+
+        if current in ('"', "'"):
+            state = "string" if current == '"' else "char"
+            quote = current
+        output.append(current)
+        index += 1
+
+    return _sha256_bytes("".join(output).strip().encode("utf-8"))
+
+
+def _semantic_csharp_sha256(path: Path) -> str:
+    return _semantic_csharp_text_sha256(path.read_text(encoding="utf-8"))
+
+
+_EPISODE_COORDINATOR_DIAGNOSTIC_CONSTANTS = (
+    (
+        re.compile(r"\bprivate\s+const\s+int\s+EpisodeMetricsLogInterval\s*=\s*\d+\s*;"),
+        "private const int EpisodeMetricsLogInterval = 10;",
+    ),
+    (
+        re.compile(r"\bprivate\s+const\s+int\s+SummaryIntervalEpisodes\s*=\s*\d+\s*;"),
+        "private const int SummaryIntervalEpisodes = 100;",
+    ),
+    (
+        re.compile(r"\bprivate\s+const\s+int\s+FullEpisodeDiagnosticsInterval\s*=\s*\d+\s*;"),
+        "private const int FullEpisodeDiagnosticsInterval = 1000;",
+    ),
+    (
+        re.compile(
+            r"\bprivate\s+const\s+long\s+TrainingDiagnosticMaxBytes\s*=\s*[^;]+;"
+        ),
+        "private const long TrainingDiagnosticMaxBytes = 8L * 1024L * 1024L;",
+    ),
+)
+
+
+def _episode_coordinator_semantic_sha256(path: Path) -> str:
+    """Hash training semantics while keeping diagnostics-only cadence backward-compatible."""
+    text = path.read_text(encoding="utf-8")
+    for pattern, baseline in _EPISODE_COORDINATOR_DIAGNOSTIC_CONSTANTS:
+        text, count = pattern.subn(baseline, text, count=1)
+        if count != 1:
+            raise ValueError(
+                "episode coordinator compatibility source is missing expected "
+                f"diagnostic constant: {pattern.pattern}"
+            )
+    return _semantic_csharp_text_sha256(text)
+
+
+def _trainer_type(text: str, behavior_name: str) -> str:
+    """Return the configured algorithm for the authoritative training behavior."""
+
+    lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    behavior_pattern = re.compile(
+        rf"^(\s*){re.escape(behavior_name)}:\s*(?:#.*)?$"
+    )
+    behavior_index = None
+    behavior_indent = None
+    for index, line in enumerate(lines):
+        match = behavior_pattern.match(line)
+        if match:
+            behavior_index = index
+            behavior_indent = len(match.group(1))
+            break
+    if behavior_index is None or behavior_indent is None:
+        raise ValueError(
+            f"trainer config has no behavior block for {behavior_name!r}"
+        )
+
+    for line in lines[behavior_index + 1 :]:
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        current_indent = len(line) - len(line.lstrip())
+        if current_indent <= behavior_indent:
+            break
+        body = line.split("#", 1)[0].strip()
+        match = re.fullmatch(r"trainer_type:\s*([A-Za-z0-9_-]+)", body)
+        if match:
+            return match.group(1)
+
+    raise ValueError(
+        f"trainer config behavior {behavior_name!r} has no trainer_type"
+    )
+
+
+def _network_settings_block(text: str) -> str:
+    lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    start = None
+    indent = None
+    captured: list[str] = []
+    for index, line in enumerate(lines):
+        match = re.match(r"^(\s*)network_settings:\s*(?:#.*)?$", line)
+        if match:
+            start = index
+            indent = len(match.group(1))
+            break
+    if start is None or indent is None:
+        raise ValueError("trainer config has no network_settings block")
+    captured.append(lines[start].strip())
+    for line in lines[start + 1 :]:
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        current_indent = len(line) - len(line.lstrip())
+        if current_indent <= indent:
+            break
+        body = line.split("#", 1)[0].rstrip()
+        if body.strip():
+            captured.append(body.strip())
+    if len(captured) <= 1:
+        raise ValueError("trainer config network_settings block is empty")
+    return "\n".join(captured) + "\n"
+
+
+def contract_payload(assets_root: Path) -> dict[str, Any]:
+    assets_root = assets_root.resolve()
+    continual_path = assets_root / "Training" / "continual_learning_config.json"
+    trainer_path = assets_root / "Training" / "rl_1v1_config.yaml"
+    scenes_root = assets_root / "Scripts" / "Scenes"
+    reward_path = scenes_root / "RlOneVsOneReward.cs"
+    policy_path = scenes_root / "RlPolicySchema.cs"
+    episode_coordinator_path = scenes_root / "RlOneVsOneEpisodeCoordinator.cs"
+    semantic_sources = {
+        "combat_perception_source_sha256": scenes_root / "RlCombatPerception.cs",
+        "agent_action_source_sha256": scenes_root / "RlOneVsOneAgent.cs",
+        "team_exploration_source_sha256": scenes_root / "RlTeamExplorationGrid.cs",
+        "episode_identity_source_sha256": scenes_root / "RlEpisodeShipIdentity.cs",
+    }
+    trainer_semantic_sources = {
+        "structured_policy_source_sha256": assets_root / "Training" / "bees_mlagents_structured_policy.py",
+        "optimizer_compat_source_sha256": assets_root / "Training" / "bees_mlagents_ppo_compat.py",
+        "learner_launcher_source_sha256": assets_root / "Training" / "bees_mlagents_learn.py",
+    }
+    for path in (
+        continual_path,
+        trainer_path,
+        reward_path,
+        policy_path,
+        episode_coordinator_path,
+        *semantic_sources.values(),
+        *trainer_semantic_sources.values(),
+    ):
+        if not path.is_file():
+            raise ValueError(f"training compatibility source is missing: {path}")
+
+    continual = json.loads(continual_path.read_text(encoding="utf-8"))
+    if not isinstance(continual, Mapping):
+        raise ValueError("continual learning config must contain a JSON object")
+
+    payload: dict[str, Any] = {}
+    for field in CONTRACT_FIELDS:
+        if field not in continual:
+            raise ValueError(f"continual learning config is missing {field}")
+        payload[field] = continual[field]
+
+    trainer_text = trainer_path.read_text(encoding="utf-8")
+    payload["trainer_type"] = _trainer_type(
+        trainer_text,
+        str(payload["behavior_name"]),
+    )
+    payload["network_settings"] = _network_settings_block(trainer_text)
+    # Reward semantics are intentionally part of compatibility even if a future editor forgets to
+    # increment reward_schema_version. PolicySchema source is hashed too so ABI edits cannot silently
+    # reuse an optimizer lineage before its mirrored JSON signature is corrected.
+    payload["reward_source_sha256"] = _semantic_csharp_sha256(reward_path)
+    payload["policy_schema_source_sha256"] = _semantic_csharp_sha256(policy_path)
+    payload["episode_coordinator_source_sha256"] = (
+        _episode_coordinator_semantic_sha256(episode_coordinator_path)
+    )
+    for name, path in semantic_sources.items():
+        payload[name] = _semantic_csharp_sha256(path)
+    for name, path in trainer_semantic_sources.items():
+        payload[name] = _semantic_python_sha256(path)
+    return payload
+
+
+def compatibility_key(payload: Mapping[str, Any]) -> str:
+    canonical = json.dumps(dict(payload), sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    return _sha256_bytes(canonical.encode("utf-8"))
+
+
+def contract_fingerprint(assets_root: Path) -> dict[str, Any]:
+    payload = contract_payload(assets_root)
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "compatibility_key": compatibility_key(payload),
+        "contract": payload,
+    }
+
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _run_id(payload: Mapping[str, Any], key: str, now: datetime) -> str:
+    abi = int(payload["policy_abi_version"])
+    reward = int(payload["reward_schema_version"])
+    scenario = int(payload["scenario_schema_version"])
+    stamp = now.strftime("%Y%m%dT%H%M%SZ")
+    return f"bees-v{abi}-r{reward}-s{scenario}-{stamp}-{key[:8]}"
+
+
+def _load_state(path: Path) -> Optional[dict[str, Any]]:
+    if not path.is_file():
+        return None
+    value = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(value, dict) or value.get("schema_version") != SCHEMA_VERSION:
+        raise ValueError(f"training run lifecycle state is incompatible: {path}")
+    if not isinstance(value.get("run_id"), str) or not value["run_id"]:
+        raise ValueError(f"training run lifecycle state has no run_id: {path}")
+    if not isinstance(value.get("compatibility_key"), str) or len(value["compatibility_key"]) != 64:
+        raise ValueError(f"training run lifecycle state has invalid compatibility_key: {path}")
+    return value
+
+
+def plan_run(
+    assets_root: Path,
+    state_path: Path,
+    now: Optional[datetime] = None,
+    *,
+    force_new: bool = False,
+    preserve_run: bool = False,
+    build_id: Optional[str] = None,
+    environment_args: Optional[Sequence[str]] = None,
+) -> dict[str, Any]:
+    now = now or _utc_now()
+    if force_new and preserve_run:
+        raise ValueError("force_new and preserve_run are mutually exclusive")
+    if build_id is not None:
+        if not isinstance(build_id, str) or not re.fullmatch(r"[A-Za-z0-9._-]+", build_id):
+            raise ValueError("build_id must contain only safe release-id characters")
+        if not force_new:
+            raise ValueError("build_id is only valid for a forced-new run plan")
+    normalized_environment_args: Optional[list[str]] = None
+    if environment_args is not None:
+        if not force_new:
+            raise ValueError("environment_args are only valid for a forced-new run plan")
+        normalized_environment_args = []
+        for argument in environment_args:
+            if not isinstance(argument, str) or not argument:
+                raise ValueError("environment_args must contain non-empty strings")
+            normalized_environment_args.append(argument)
+    payload = contract_payload(assets_root)
+    key = compatibility_key(payload)
+    previous = _load_state(state_path)
+    if preserve_run and previous is None:
+        raise ValueError("preserve_run requires an existing training run")
+
+    contract_changed = (
+        previous is not None and previous["compatibility_key"] != key
+    )
+    preserve_run_override = bool(preserve_run and contract_changed)
+    if preserve_run_override:
+        previous_contract = previous.get("contract")
+        if not isinstance(previous_contract, Mapping):
+            raise ValueError(
+                "cannot preserve run because existing lifecycle state has no compatibility contract"
+            )
+        changed_checkpoint_fields = [
+            field
+            for field in CHECKPOINT_COMPATIBILITY_FIELDS
+            if previous_contract.get(field) != payload.get(field)
+        ]
+        if changed_checkpoint_fields:
+            raise ValueError(
+                "cannot preserve run because checkpoint compatibility changed: "
+                + ", ".join(changed_checkpoint_fields)
+            )
+
+    incompatible = previous is not None and (contract_changed or force_new)
+    new_run = previous is None or (incompatible and not preserve_run_override)
+    run_id = _run_id(payload, key, now) if new_run else str(previous["run_id"])
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "planned_utc": now.isoformat(),
+        "run_id": run_id,
+        "previous_run_id": str(previous["run_id"]) if previous else None,
+        "compatibility_key": key,
+        "previous_compatibility_key": (
+            str(previous["compatibility_key"]) if previous else None
+        ),
+        "incompatible": incompatible,
+        "new_run": new_run,
+        "forced_new_run": bool(force_new),
+        "preserve_run_override": preserve_run_override,
+        "build_id": build_id,
+        "environment_args": normalized_environment_args,
+        "contract": payload,
+    }
+
+
+def _atomic_json(path: Path, value: Mapping[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(prefix=path.name + ".", suffix=".tmp", dir=str(path.parent))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
+            json.dump(dict(value), handle, indent=2, sort_keys=True)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    finally:
+        try:
+            os.unlink(temporary)
+        except FileNotFoundError:
+            pass
+
+
+def commit_plan(state_path: Path, plan: Mapping[str, Any]) -> dict[str, Any]:
+    if plan.get("schema_version") != SCHEMA_VERSION:
+        raise ValueError("run plan schema is incompatible")
+    now = _utc_now().isoformat()
+    existing = _load_state(state_path)
+    created = (
+        existing.get("created_utc")
+        if existing and existing.get("run_id") == plan.get("run_id")
+        else now
+    )
+    state = {
+        "schema_version": SCHEMA_VERSION,
+        "run_id": str(plan["run_id"]),
+        "compatibility_key": str(plan["compatibility_key"]),
+        "contract": dict(plan["contract"]),
+        "created_utc": created,
+        "last_build_utc": now,
+    }
+    _atomic_json(state_path, state)
+    return state
+
+
+def recover_active_run(
+    assets_root: Path,
+    state_path: Path,
+    *,
+    run_id: str,
+    expected_compatibility_key: str,
+) -> dict[str, Any]:
+    """Repair local lifecycle state only when live authority matches current source."""
+    if not re.fullmatch(r"[A-Za-z0-9._-]+", run_id):
+        raise ValueError("run_id must contain only safe release-id characters")
+    expected = str(expected_compatibility_key or "").strip().lower()
+    if len(expected) != 64 or any(ch not in "0123456789abcdef" for ch in expected):
+        raise ValueError("expected compatibility key must be 64 lowercase hex characters")
+
+    fingerprint = contract_fingerprint(assets_root)
+    actual = str(fingerprint["compatibility_key"]).lower()
+    if actual != expected:
+        raise ValueError(
+            "refusing lifecycle recovery because current source compatibility "
+            f"{actual} does not match authoritative active key {expected}"
+        )
+
+    now = _utc_now().isoformat()
+    existing = _load_state(state_path)
+    created = (
+        existing.get("created_utc")
+        if existing and existing.get("run_id") == run_id
+        else now
+    )
+    state = {
+        "schema_version": SCHEMA_VERSION,
+        "run_id": run_id,
+        "compatibility_key": actual,
+        "contract": dict(fingerprint["contract"]),
+        "created_utc": created,
+        "last_build_utc": now,
+        "recovered_utc": now,
+    }
+    _atomic_json(state_path, state)
+    return state
+
+
+def _parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser()
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    plan = sub.add_parser("plan")
+    plan.add_argument("--assets-root", required=True)
+    plan.add_argument("--state", required=True)
+    plan.add_argument("--out", required=True)
+    plan.add_argument(
+        "--force-new",
+        action="store_true",
+        help="Create a new run even when the compatibility contract is unchanged.",
+    )
+    plan.add_argument(
+        "--preserve-run",
+        action="store_true",
+        help=(
+            "Keep the existing run/checkpoint lineage across a semantic compatibility "
+            "change when the checkpoint ABI/network shape is unchanged."
+        ),
+    )
+    plan.add_argument(
+        "--build-id",
+        default=None,
+        help="Bind a forced-new operation to the exact existing release build.",
+    )
+    plan.add_argument(
+        "--environment-args-json",
+        default=None,
+        help="Persist the exact server-owned environment argument list for a forced-new operation.",
+    )
+    plan.add_argument(
+        "--environment-args-base64",
+        default=None,
+        help="Base64-encoded UTF-8 JSON environment argument list for native-shell-safe transport.",
+    )
+
+    commit = sub.add_parser("commit")
+    commit.add_argument("--state", required=True)
+    commit.add_argument("--plan", required=True)
+
+    recover = sub.add_parser("recover-active")
+    recover.add_argument("--assets-root", required=True)
+    recover.add_argument("--state", required=True)
+    recover.add_argument("--run-id", required=True)
+    recover.add_argument("--expected-compatibility-key", required=True)
+
+    fingerprint = sub.add_parser("fingerprint")
+    fingerprint.add_argument("--assets-root", required=True)
+    return parser
+
+
+def main(argv: Optional[Sequence[str]] = None) -> int:
+    args = _parser().parse_args(argv)
+    if args.command == "plan":
+        environment_args = None
+        if (
+            args.environment_args_json is not None
+            and args.environment_args_base64 is not None
+        ):
+            raise ValueError(
+                "specify only one of --environment-args-json or --environment-args-base64"
+            )
+        if args.environment_args_base64 is not None:
+            encoded = args.environment_args_base64.encode("ascii")
+            decoded = base64.b64decode(encoded, validate=True).decode("utf-8")
+            environment_args = json.loads(decoded)
+        elif args.environment_args_json is not None:
+            environment_args = json.loads(args.environment_args_json)
+        if environment_args is not None and not isinstance(environment_args, list):
+            raise ValueError("environment arguments must contain a JSON list")
+        value = plan_run(
+            Path(args.assets_root),
+            Path(args.state),
+            force_new=bool(args.force_new),
+            preserve_run=bool(args.preserve_run),
+            build_id=args.build_id,
+            environment_args=environment_args,
+        )
+        _atomic_json(Path(args.out), value)
+        print(json.dumps(value, sort_keys=True))
+        return 0
+    if args.command == "commit":
+        plan = json.loads(Path(args.plan).read_text(encoding="utf-8"))
+        value = commit_plan(Path(args.state), plan)
+        print(json.dumps(value, sort_keys=True))
+        return 0
+    if args.command == "recover-active":
+        value = recover_active_run(
+            Path(args.assets_root),
+            Path(args.state),
+            run_id=args.run_id,
+            expected_compatibility_key=args.expected_compatibility_key,
+        )
+        print(json.dumps(value, sort_keys=True))
+        return 0
+    if args.command == "fingerprint":
+        value = contract_fingerprint(Path(args.assets_root))
+        print(json.dumps(value, sort_keys=True))
+        return 0
+    return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -17,6 +17,7 @@ public class CutsceneManager : MonoBehaviour
     public bool HitDialogueBreak = false;
     public Action EndDialogueAction;
     public bool HasEndDialogueAction = false;
+    private bool _dialoguePresentationSuppressed;
 
     public TimelineAsset PlutoIntroCutscene;
 
@@ -51,33 +52,33 @@ public class CutsceneManager : MonoBehaviour
         {
             new DialogueLine("Samuel", Portraits["Samuel"], $"Good morning, Commander {ConfigData.UserProgressData.PlayerName}! I brought your coffee.", "[Press Space to Continue]"),
             new DialogueLine("Samuel", Portraits["Samuel"], 1),
-            new DialogueLine("Samuel", Portraits["Samuel"], "I agree, it doesn't taste as good as Earth coffee. Or even Mars coffee… But hey, coffee is coffee! And we’ll both get off of Pluto soon enough."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "I agree, it doesn't taste as good as Earth coffee. Or even Mars coffeeâ€¦ But hey, coffee is coffee! And weâ€™ll both get off of Pluto soon enough."),
             new DialogueLine("Samuel", Portraits["Samuel"], "Samuel gets a notification of some kind.", 2),
             new DialogueLine("Samuel", Portraits["Samuel"], "Oh, that's odd. A Scout is reporting an unidentified vessel approaching military airspace. What should we do?"),
             new DialogueLine("Samuel", Portraits["Samuel"], 1),
             new DialogueLine("Samuel", Portraits["Samuel"], "Right away. Contacting the vessel."),
             new DialogueLine("Samuel", Portraits["Samuel"], 1),
-            new DialogueLine("Samuel", Portraits["Samuel"], "It isn’t responding, commander."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "It isnâ€™t responding, commander."),
             new DialogueLine("Samuel", Portraits["Samuel"], 1),
-            new DialogueLine("Samuel", Portraits["Samuel"], "Understood, commander. We’ll send Lieutenant Tom out immediately."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Understood, commander. Weâ€™ll send Lieutenant Tom out immediately."),
 
-            new DialogueLine("Tom", Portraits["Tom"], $"This is Gunship D-4 reporting to command. I’m approaching the unidentified vessel now."),
+            new DialogueLine("Tom", Portraits["Tom"], $"This is Gunship D-4 reporting to command. Iâ€™m approaching the unidentified vessel now."),
 
             new DialogueLine("Tom", Portraits["Tom"], "Unidentified vessel, you are in United Earth military airspace. Identify yourself now."),
             new DialogueLine("Samuel", Portraits["Samuel"], 1),
             new DialogueLine("Samuel", Portraits["Samuel"], "Still nothing, even on local communications?"),
             new DialogueLine("Tom", Portraits["Tom"], "Negative."),
-            new DialogueLine("Samuel", Portraits["Samuel"], "Strange. It doesn’t seem hostile. What are your orders- oh, we’re getting a call from High Command."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Strange. It doesnâ€™t seem hostile. What are your orders- oh, weâ€™re getting a call from High Command."),
             new DialogueLine("High Command", Portraits["High Command"], $"Commander {ConfigData.UserProgressData.PlayerName}, we have received reports of an alien vessel in Pluto airspace. We cannot allow it to infiltrate our territory. Shoot it down."),
-            new DialogueLine("Samuel", Portraits["Samuel"], "Shoot it down? We don’t even know what it is! Who even reported this?"),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Shoot it down? We donâ€™t even know what it is! Who even reported this?"),
             new DialogueLine("High Command", Portraits["High Command"], "Those are your orders, Commander."),
             new DialogueLine("Samuel", Portraits["Samuel"], "But- oh, they disconnected. Looks like we have to attack, commander."),
 
             new DialogueLine("Tom", Portraits["Tom"], "What are your orders, Commander?"),
-            new DialogueLine("Samuel", Portraits["Samuel"], "In order to attack, he’ll need to get in range. Once he's in range, he can attack the ship."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "In order to attack, heâ€™ll need to get in range. Once he's in range, he can attack the ship."),
 
             new DialogueLine("Tom", Portraits["Tom"], "Well, that was hardly a fight."),
-            new DialogueLine("Samuel", Portraits["Samuel"], "I hope it wasn’t an innocent civilian. Why would High Command even order that?"),
+            new DialogueLine("Samuel", Portraits["Samuel"], "I hope it wasnâ€™t an innocent civilian. Why would High Command even order that?"),
 
             new DialogueLine("Tom", Portraits["Tom"], "Uh, Commander? Are you picking this up?"),
             new DialogueLine("Samuel", Portraits["Samuel"], "You need to get out of there, now!"),
@@ -93,107 +94,107 @@ public class CutsceneManager : MonoBehaviour
         PlutoLines_Reinforcements = new List<DialogueLine>
         {
 
-            new DialogueLine("Samuel", Portraits["Samuel"], "We’ve been caught off guard by the strange alien fleet cutting our communications. Only our patrol ships are ready for combat for the moment, but we have sent orders to the rest."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Weâ€™ve been caught off guard by the strange alien fleet cutting our communications. Only our patrol ships are ready for combat for the moment, but we have sent orders to the rest."),
             new DialogueLine("Samuel", Portraits["Samuel"], "Commander, you need to engage in this fight with the patrol ships and buy time for the rest of the fleet to mobilize."),
 
 
             new DialogueLine("Samuel", Portraits["Samuel"], "Okay, commander, it's up to you to lead us to victory."),
 
-            new DialogueLine("Samuel", Portraits["Samuel"], "I recommend you try to find out where the enemy is with your scouts, then form a plan of attack. I’ll be working on restoring our local communications with the rest of the base."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "I recommend you try to find out where the enemy is with your scouts, then form a plan of attack. Iâ€™ll be working on restoring our local communications with the rest of the base."),
 
-            new DialogueLine("Samuel", Portraits["Samuel"], " . . .Also, Marco wants me to remind you that we are… now at war, so all of our combat vessels are ordered to fire on sight by default."),
+            new DialogueLine("Samuel", Portraits["Samuel"], " . . .Also, Marco wants me to remind you that we areâ€¦ now at war, so all of our combat vessels are ordered to fire on sight by default."),
 
 
-            new DialogueLine("Samuel", Portraits["Samuel"], "Great work, commander. We’ve kept them at bay for now. Local communications are restored, and we have more of Pluto’s fleet online. Let’s prepare for the next wave."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Great work, commander. Weâ€™ve kept them at bay for now. Local communications are restored, and we have more of Plutoâ€™s fleet online. Letâ€™s prepare for the next wave."),
 
-            new DialogueLine("Samuel", Portraits["Samuel"], "Commander, we may not have won that fight but we've bought enough time for local communications to be restored and more of the fleet to be brought online. Let’s prepare for the next wave."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Commander, we may not have won that fight but we've bought enough time for local communications to be restored and more of the fleet to be brought online. Letâ€™s prepare for the next wave."),
 
         };
 
         PlutoLines_Pushback = new List<DialogueLine>
         {
-            new DialogueLine("Samuel", Portraits["Samuel"], "With the more of Pluto’s fleet online and the cover of some floating space junk coming our way, we’re going to try and push back the assault from these aliens."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "With the more of Plutoâ€™s fleet online and the cover of some floating space junk coming our way, weâ€™re going to try and push back the assault from these aliens."),
 
 
-            new DialogueLine("Samuel", Portraits["Samuel"], "Alright, commander, we have all of our Lieutenants online. They’ll be giving orders for each of your vessels as you direct the entire fleet."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Alright, commander, we have all of our Lieutenants online. Theyâ€™ll be giving orders for each of your vessels as you direct the entire fleet."),
 
-            new DialogueLine("Oviya", Portraits["Oviya"], " I'm Oviya, your scout lieutenant. Use the scout to… well, scout the battlefield. They get around fast, so as long as you keep giving orders they probably won't get hit by enemy fire."),
-            new DialogueLine("Oviya", Portraits["Oviya"], "They don’t have any guns, though, so please don’t leave them out to dry when they can’t fight back."),
+            new DialogueLine("Oviya", Portraits["Oviya"], " I'm Oviya, your scout lieutenant. Use the scout toâ€¦ well, scout the battlefield. They get around fast, so as long as you keep giving orders they probably won't get hit by enemy fire."),
+            new DialogueLine("Oviya", Portraits["Oviya"], "They donâ€™t have any guns, though, so please donâ€™t leave them out to dry when they canâ€™t fight back."),
 
             new DialogueLine("Joey", Portraits["Joey"], "Alrighty, Commander, I'm commanding yer Frigates. They're yer explosives experts. They can't shoot far, but they sure pack a wallop."),
             new DialogueLine("Joey", Portraits["Joey"], "Those rockets will do some serious damage, and they can even hit multiple targets inside the blast radius."),
-            new DialogueLine("Joey", Portraits["Joey"], "Use ‘em against those ships that like to group up like moths to a flame and you’ll find them <i>quite</i> effective."),
+            new DialogueLine("Joey", Portraits["Joey"], "Use â€˜em against those ships that like to group up like moths to a flame and youâ€™ll find them <i>quite</i> effective."),
 
             new DialogueLine("Marco", Portraits["Marco"], "I'll be commanding your Gunships. They're fast-flying dogfighting specialists. Use their speed to your advantage if you can."),
-            new DialogueLine("Marco", Portraits["Marco"], "Even if they can't fly as well as me, they'll still be good at dodging fire. As long as you’re competent."),
+            new DialogueLine("Marco", Portraits["Marco"], "Even if they can't fly as well as me, they'll still be good at dodging fire. As long as youâ€™re competent."),
 
-            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "And I’m Yoshiko, your Dreadnought lieutenant! These babies are made to brawl. They can take a lotta hits and dish it right back! Keep ‘em out front and watch ‘em tear it up!"),
+            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "And Iâ€™m Yoshiko, your Dreadnought lieutenant! These babies are made to brawl. They can take a lotta hits and dish it right back! Keep â€˜em out front and watch â€˜em tear it up!"),
 
-            new DialogueLine("Samuel", Portraits["Samuel"], "And that’s everyone. Use all of our fleet’s strengths to win this battle, commander."),
-            new DialogueLine("Samuel", Portraits["Samuel"], " If you ever need a reminder on what any of our ships do or what we’ve discovered about the enemy’s fleet, you can always pause and view the United Fleet Codex."),
-            new DialogueLine("Samuel", Portraits["Samuel"], "I’ll be keeping it updated for you. I believe in you!"),
+            new DialogueLine("Samuel", Portraits["Samuel"], "And thatâ€™s everyone. Use all of our fleetâ€™s strengths to win this battle, commander."),
+            new DialogueLine("Samuel", Portraits["Samuel"], " If you ever need a reminder on what any of our ships do or what weâ€™ve discovered about the enemyâ€™s fleet, you can always pause and view the United Fleet Codex."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Iâ€™ll be keeping it updated for you. I believe in you!"),
 
 
             new DialogueLine("Samuel", Portraits["Samuel"], "Great work, commander! This might not be so b-"),
-            new DialogueLine("Oviya", Portraits["Oviya"], "Commander, I’ve had my team scouting further ahead during the battle, and… it’s not looking good. There’s… more than we can count."),
-            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "Good, we didn’t get to have much of a fight yet!"),
-            new DialogueLine("Oviya", Portraits["Oviya"], "No, Yoshiko, it’s far too many for us to defeat here and now."),
+            new DialogueLine("Oviya", Portraits["Oviya"], "Commander, Iâ€™ve had my team scouting further ahead during the battle, andâ€¦ itâ€™s not looking good. Thereâ€™sâ€¦ more than we can count."),
+            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "Good, we didnâ€™t get to have much of a fight yet!"),
+            new DialogueLine("Oviya", Portraits["Oviya"], "No, Yoshiko, itâ€™s far too many for us to defeat here and now."),
             new DialogueLine("Marco", Portraits["Marco"], "Commander, I recommend an emergency retreat. We need to regroup and assess this threat before going fully to war with it."),
             new DialogueLine("Oviya", Portraits["Oviya"], "I agree."),
             new DialogueLine("Samuel", Portraits["Samuel"], "Commander?"),
             new DialogueLine("Samuel", Portraits["Samuel"], 1),
-            new DialogueLine("Samuel", Portraits["Samuel"], "Then it’s settled. I’ll issue the evacuation alert, and you’ll prepare the fleet to defend Pluto until we can get our people off the surface."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Then itâ€™s settled. Iâ€™ll issue the evacuation alert, and youâ€™ll prepare the fleet to defend Pluto until we can get our people off the surface."),
 
 
-            new DialogueLine("Samuel", Portraits["Samuel"], "These aliens are much tougher than I thought…"),
-            new DialogueLine("Oviya", Portraits["Oviya"], "Commander, I’ve had my team scouting further ahead during the battle, and… it’s not looking good. There’s… more than we can count."),
-             new DialogueLine("Yoshiko", Portraits["Yoshiko"], "Good, let’s win the next fight then!"),
-            new DialogueLine("Oviya", Portraits["Oviya"], "No, Yoshiko, it’s far too many for us to defeat here and now. Especially if that first wave was too much for us."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "These aliens are much tougher than I thoughtâ€¦"),
+            new DialogueLine("Oviya", Portraits["Oviya"], "Commander, Iâ€™ve had my team scouting further ahead during the battle, andâ€¦ itâ€™s not looking good. Thereâ€™sâ€¦ more than we can count."),
+             new DialogueLine("Yoshiko", Portraits["Yoshiko"], "Good, letâ€™s win the next fight then!"),
+            new DialogueLine("Oviya", Portraits["Oviya"], "No, Yoshiko, itâ€™s far too many for us to defeat here and now. Especially if that first wave was too much for us."),
             new DialogueLine("Marco", Portraits["Marco"], "Commander, I recommend an emergency retreat. We need to regroup and assess this threat before going fully to war with it."),
             new DialogueLine("Oviya", Portraits["Oviya"], "I agree."),
             new DialogueLine("Samuel", Portraits["Samuel"], "Commander?"),
             new DialogueLine("Samuel", Portraits["Samuel"], 1),
-            new DialogueLine("Samuel", Portraits["Samuel"], "Then it’s settled. I’ll issue the evacuation alert, and you’ll prepare the fleet to defend Pluto until we can get our people off the surface."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Then itâ€™s settled. Iâ€™ll issue the evacuation alert, and youâ€™ll prepare the fleet to defend Pluto until we can get our people off the surface."),
         };
 
             PlutoLines_BluerPastures = new List<DialogueLine>
         {
-            new DialogueLine("Samuel", Portraits["Samuel"], "Scouts are reporting overwhelming reinforcements from the enemy. We can’t outlast them, but we have to buy enough time for those on the planet to evacuate."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Scouts are reporting overwhelming reinforcements from the enemy. We canâ€™t outlast them, but we have to buy enough time for those on the planet to evacuate."),
 
-            new DialogueLine("Samuel", Portraits["Samuel"], "Commander, these… Bees?"),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Commander, theseâ€¦ Bees?"),
             new DialogueLine("Oviya", Portraits["Oviya"], "They do look like Bees."),
-            new DialogueLine("Joey", Portraits["Joey"], "Let’s just call ‘em that. It’s easier than U.F.O.s."),
-            new DialogueLine("Samuel", Portraits["Samuel"], "Um, right, whatever they are, they’re still coming. In order to evacuate Pluto base, we have to keep the Bees from reaching the surface."),
+            new DialogueLine("Joey", Portraits["Joey"], "Letâ€™s just call â€˜em that. Itâ€™s easier than U.F.O.s."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Um, right, whatever they are, theyâ€™re still coming. In order to evacuate Pluto base, we have to keep the Bees from reaching the surface."),
 
-            new DialogueLine("Samuel", Portraits["Samuel"], "If they get to that point, we’re going to start losing people and ships before they can lift off."),
-            new DialogueLine("Samuel", Portraits["Samuel"], "This is a full emergency order, so personnel have to be on space-ready vessels within 5 minutes. As soon as we have the fleet ready to leave, we’ll evacuate out of here at full speed."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "If they get to that point, weâ€™re going to start losing people and ships before they can lift off."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "This is a full emergency order, so personnel have to be on space-ready vessels within 5 minutes. As soon as we have the fleet ready to leave, weâ€™ll evacuate out of here at full speed."),
 
-            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "We’ve got this, commander! Dreadnoughts standing by."),
+            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "Weâ€™ve got this, commander! Dreadnoughts standing by."),
             new DialogueLine("Marco", Portraits["Marco"], "Gunships at the ready."),
             new DialogueLine("Joey", Portraits["Joey"], "Frigates ready to go!"),
-            new DialogueLine("Oviya", Portraits["Oviya"], "I’ve got the Scouts mapping an escape route."),
-            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "Let's take out as many as we can on our way out! That’ll show 'em!"),
-            new DialogueLine("Marco", Portraits["Marco"], "Don’t be risky with our fleet’s lives, Yoshiko. Destroy enemy ships where we can <i>safely</i>. That’s the only way we’ll get through this."),
+            new DialogueLine("Oviya", Portraits["Oviya"], "Iâ€™ve got the Scouts mapping an escape route."),
+            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "Let's take out as many as we can on our way out! Thatâ€™ll show 'em!"),
+            new DialogueLine("Marco", Portraits["Marco"], "Donâ€™t be risky with our fleetâ€™s lives, Yoshiko. Destroy enemy ships where we can <i>safely</i>. Thatâ€™s the only way weâ€™ll get through this."),
 
             new DialogueLine("Samuel", Portraits["Samuel"], "Commander, Bees are firing down onto the surface! You need to stop them!"),
 
-            new DialogueLine("Joey", Portraits["Joey"], "That ship’s blasts are splitting up on impact. Don’t group yer ships up near it."),
+            new DialogueLine("Joey", Portraits["Joey"], "That shipâ€™s blasts are splitting up on impact. Donâ€™t group yer ships up near it."),
 
-            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "So those are suicide ships! Don’t let them near any of our ships."),
-            new DialogueLine("Samuel", Portraits["Samuel"], "I hope they aren’t manned…"),
+            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "So those are suicide ships! Donâ€™t let them near any of our ships."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "I hope they arenâ€™t mannedâ€¦"),
             new DialogueLine("Marco", Portraits["Marco"], "This is a war, boy, worry about it later."),
 
             new DialogueLine("Samuel", Portraits["Samuel"], "Comms with the surface went down, commander."),
-            new DialogueLine("Marco", Portraits["Marco"], "They’re a lost cause. Get out of here, now."),
+            new DialogueLine("Marco", Portraits["Marco"], "Theyâ€™re a lost cause. Get out of here, now."),
             new DialogueLine("Samuel", Portraits["Samuel"], "But-"),
-            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "He’s right, Sam. We can’t lose everyone."),
+            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "Heâ€™s right, Sam. We canâ€™t lose everyone."),
 
             new DialogueLine("Samuel", Portraits["Samuel"], "All personnel are ready to leave."),
-            new DialogueLine("Oviya", Portraits["Oviya"], "Go quickly! They’re closing in on our escape route!"),
+            new DialogueLine("Oviya", Portraits["Oviya"], "Go quickly! Theyâ€™re closing in on our escape route!"),
             new DialogueLine("Samuel", Portraits["Samuel"], "Right!"),
             new DialogueLine("Marco", Portraits["Marco"], "Get moving, people!"),
 
-            new DialogueLine("Samuel", Portraits["Samuel"], "Incredible work, commander! We didn’t lose anyone in the evacuation."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Incredible work, commander! We didnâ€™t lose anyone in the evacuation."),
             new DialogueLine("Marco", Portraits["Marco"], "Impressive."),
 
 
@@ -202,128 +203,128 @@ public class CutsceneManager : MonoBehaviour
 
         PlutoToNeptune = new List<DialogueLine>
         {
-            new DialogueLine("Samuel", Portraits["Samuel"], "What do we do now? Those… bees outnumber us."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "What do we do now? Thoseâ€¦ bees outnumber us."),
             new DialogueLine("Marco", Portraits["Marco"], "Badly."),
-            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "That doesn’t mean we lose!"),
-            new DialogueLine("Joey", Portraits["Joey"], "But it’s a heck of a lot harder."),
-            new DialogueLine("Marco", Portraits["Marco"], "And I’m not going into a fight like that unless I absolutely have to."),
+            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "That doesnâ€™t mean we lose!"),
+            new DialogueLine("Joey", Portraits["Joey"], "But itâ€™s a heck of a lot harder."),
+            new DialogueLine("Marco", Portraits["Marco"], "And Iâ€™m not going into a fight like that unless I absolutely have to."),
             new DialogueLine("Oviya", Portraits["Oviya"], "What we need is allies."),
-            new DialogueLine("Samuel", Portraits["Samuel"], "Just because interplanetary comms are cut off doesn’t mean others aren’t still out there… right?"),
-            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "They couldn’t have destroyed all the United Fleet. It’s the finest military presence in the solar system!"),
-            new DialogueLine("Marco", Portraits["Marco"], "The <i>only</i> military presence in the solar system. Until now. And we don’t know how many more bees there are."),
-            new DialogueLine("Samuel", Portraits["Samuel"], "There’s no way they could take Mars… or even Earth."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Just because interplanetary comms are cut off doesnâ€™t mean others arenâ€™t still out thereâ€¦ right?"),
+            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "They couldnâ€™t have destroyed all the United Fleet. Itâ€™s the finest military presence in the solar system!"),
+            new DialogueLine("Marco", Portraits["Marco"], "The <i>only</i> military presence in the solar system. Until now. And we donâ€™t know how many more bees there are."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Thereâ€™s no way they could take Marsâ€¦ or even Earth."),
             new DialogueLine("Marco", Portraits["Marco"], "No way to know."),
             new DialogueLine("Oviya", Portraits["Oviya"], "The next closest human settlement is Neptune. Commander, I recommend we go there."),
             new DialogueLine("Samuel", Portraits["Samuel"], "There might be survivors!"),
-            new DialogueLine("Joey", Portraits["Joey"], "It’s just a Jensen mining facility, so we won’t find any more United Fleet help. But we can help anyone that’s sticking it out."),
+            new DialogueLine("Joey", Portraits["Joey"], "Itâ€™s just a Jensen mining facility, so we wonâ€™t find any more United Fleet help. But we can help anyone thatâ€™s sticking it out."),
             new DialogueLine("Samuel", Portraits["Samuel"], "And they could have a way to make more ships for our fleet!"),
-            new DialogueLine("Joey", Portraits["Joey"], "If there’s still anything left there."),
-            new DialogueLine("Oviya", Portraits["Oviya"], "It’s our best option right now. If Neptune is wiped out, then we move on."),
-            new DialogueLine("Joey", Portraits["Joey"], "And if it’s not, we have to deal with Wesley…"),
+            new DialogueLine("Joey", Portraits["Joey"], "If thereâ€™s still anything left there."),
+            new DialogueLine("Oviya", Portraits["Oviya"], "Itâ€™s our best option right now. If Neptune is wiped out, then we move on."),
+            new DialogueLine("Joey", Portraits["Joey"], "And if itâ€™s not, we have to deal with Wesleyâ€¦"),
         };
 
         Neptune_SeizeTheMeans = new List<DialogueLine>
         {
-            new DialogueLine("Samuel", Portraits["Samuel"], "We’re approaching Neptune to see if we can gather any allies there."),
-            new DialogueLine("Samuel", Portraits["Samuel"], "The Scout team has reported movement, but we're unable to determine if it’s friendly or not. We’ll just have to find out."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Weâ€™re approaching Neptune to see if we can gather any allies there."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "The Scout team has reported movement, but we're unable to determine if itâ€™s friendly or not. Weâ€™ll just have to find out."),
 
-            new DialogueLine("Samuel", Portraits["Samuel"], "Commander, we’re getting an emergency signal from somewhere on Neptune."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Commander, weâ€™re getting an emergency signal from somewhere on Neptune."),
             new DialogueLine("???", Portraits["Wesley"], "-day, Mayd- this is an emerg- enem- facility dest- need evac-", true),
-            new DialogueLine("Samuel", Portraits["Samuel"], "It’s very faint, but it’s clear we need to go help."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Itâ€™s very faint, but itâ€™s clear we need to go help."),
             new DialogueLine("Oviya", Portraits["Oviya"], "It looks like the bees are gathered around ore-rich asteroids around the planet. Scouts are reporting the mining facility on the surface is flattened."),
-            new DialogueLine("Joey", Portraits["Joey"], "There’s an underground bunker beneath the facility. I’m darn sure that’s where your signal’s coming from."),
-            new DialogueLine("Marco", Portraits["Marco"], "Let’s clear out those bees so we can land safely."),
+            new DialogueLine("Joey", Portraits["Joey"], "Thereâ€™s an underground bunker beneath the facility. Iâ€™m darn sure thatâ€™s where your signalâ€™s coming from."),
+            new DialogueLine("Marco", Portraits["Marco"], "Letâ€™s clear out those bees so we can land safely."),
 
-            new DialogueLine("Samuel", Portraits["Samuel"], "Strange, that ship doesn’t seem to be firing back."),
-            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "Why won’t they fight?! Cowards."),
-            new DialogueLine("Marco", Portraits["Marco"], "Can it, Yoshiko. Look, they’re attached to the asteroid’s surface."),
-            new DialogueLine("Joey", Portraits["Joey"], "Mining ships. I know Jensen was working on a model like that. Just less… insectile."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Strange, that ship doesnâ€™t seem to be firing back."),
+            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "Why wonâ€™t they fight?! Cowards."),
+            new DialogueLine("Marco", Portraits["Marco"], "Can it, Yoshiko. Look, theyâ€™re attached to the asteroidâ€™s surface."),
+            new DialogueLine("Joey", Portraits["Joey"], "Mining ships. I know Jensen was working on a model like that. Just lessâ€¦ insectile."),
 
             new DialogueLine("Samuel", Portraits["Samuel"], "Great work, commander. We can check the facility now."),
 
-            new DialogueLine("Samuel", Portraits["Samuel"], "We’ve lost all the squads we sent out, commander. There’s no safe way onto Neptune."),
-            new DialogueLine("Marco", Portraits["Marco"], "There’s not much time to hang around here. The closest United Fleet base is on Uranus."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Weâ€™ve lost all the squads we sent out, commander. Thereâ€™s no safe way onto Neptune."),
+            new DialogueLine("Marco", Portraits["Marco"], "Thereâ€™s not much time to hang around here. The closest United Fleet base is on Uranus."),
              new DialogueLine("Marco", Portraits["Marco"], "We can find help there. Those people in the mining facility will just have to hang on a bit longer until others can come back."),
-            new DialogueLine("Oviya", Portraits["Oviya"], "Scouts are reporting a bee blockade between here and Uranus. We’ll have to break it."),
+            new DialogueLine("Oviya", Portraits["Oviya"], "Scouts are reporting a bee blockade between here and Uranus. Weâ€™ll have to break it."),
 
             
-            new DialogueLine("Samuel", Portraits["Samuel"], "Commander, we’ve rescued the mining personnel from their bunker. Their leader has come to speak with you."),
-            new DialogueLine("Wesley", Portraits["Wesley"], "I’m no leader. That would be my manager, Derek. I’m simply the regional head of the accounting department for Jensen Industries."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Commander, weâ€™ve rescued the mining personnel from their bunker. Their leader has come to speak with you."),
+            new DialogueLine("Wesley", Portraits["Wesley"], "Iâ€™m no leader. That would be my manager, Derek. Iâ€™m simply the regional head of the accounting department for Jensen Industries."),
             new DialogueLine("Joey", Portraits["Joey"], "Same as always."),
             new DialogueLine("Wesley", Portraits["Wesley"], "Ah, greetings, Joey."),
-            new DialogueLine("Joey", Portraits["Joey"], "Howdy. Where’s Derek, then?"),
-            new DialogueLine("Wesley", Portraits["Wesley"], "Derek is no longer with us. He didn’t make it to the bunker in time. I’ve been the de facto leader for the remaining Jensen personnel."),
+            new DialogueLine("Joey", Portraits["Joey"], "Howdy. Whereâ€™s Derek, then?"),
+            new DialogueLine("Wesley", Portraits["Wesley"], "Derek is no longer with us. He didnâ€™t make it to the bunker in time. Iâ€™ve been the de facto leader for the remaining Jensen personnel."),
             new DialogueLine("Samuel", Portraits["Samuel"], "Then why did you say-"),
-            new DialogueLine("Joey", Portraits["Joey"], "Don’t bother. Wesley, tell us what we need to know for this war against the Bees."),
-            new DialogueLine("Wesley", Portraits["Wesley"], "Bees? Is that what’s attacking us? I was not aware they had the biology to survive in space. They’re hardly surviving on Earth any longer, due to-"),
-            new DialogueLine("Marco", Portraits["Marco"], "They’re not bees."),
-            new DialogueLine("Joey", Portraits["Joey"], "They just look like ‘em. Easier to call ‘em that."),
-            new DialogueLine("Wesley", Portraits["Wesley"], "Ah. Right. Of course. Well, these… bees quickly disposed of our contracted defense team and started bombing the surface."),
+            new DialogueLine("Joey", Portraits["Joey"], "Donâ€™t bother. Wesley, tell us what we need to know for this war against the Bees."),
+            new DialogueLine("Wesley", Portraits["Wesley"], "Bees? Is that whatâ€™s attacking us? I was not aware they had the biology to survive in space. Theyâ€™re hardly surviving on Earth any longer, due to-"),
+            new DialogueLine("Marco", Portraits["Marco"], "Theyâ€™re not bees."),
+            new DialogueLine("Joey", Portraits["Joey"], "They just look like â€˜em. Easier to call â€˜em that."),
+            new DialogueLine("Wesley", Portraits["Wesley"], "Ah. Right. Of course. Well, theseâ€¦ bees quickly disposed of our contracted defense team and started bombing the surface."),
              new DialogueLine("Wesley", Portraits["Wesley"], "The emergency code was sent, and we all attempted to secure ourselves in the underground bunker. Not everyone made it."),
             new DialogueLine("Marco", Portraits["Marco"], "Great. So we have an accountant-"),
             new DialogueLine("Wesley", Portraits["Wesley"], "Regional head of the accounting department."),
             new DialogueLine("Marco", Portraits["Marco"], "..."),
-            new DialogueLine("Marco", Portraits["Marco"], "We have that and a bunch of miners, then? This isn’t really helping our chances."),
+            new DialogueLine("Marco", Portraits["Marco"], "We have that and a bunch of miners, then? This isnâ€™t really helping our chances."),
             new DialogueLine("Wesley", Portraits["Wesley"], "Well, um, we do have a line of prototype Factory ships, capable of mining ore-rich asteroids, as well as personnel trained to man them."),
-            new DialogueLine("Joey", Portraits["Joey"], "And plenty of those asteroids nearby. Well, I’ll be, Wesley, this really is helpful."),
-            new DialogueLine("Wesley", Portraits["Wesley"], "They are property of Jensen Corporation, and all personnel including myself are on their payroll. I’m sure we can reach some sort of agreement for their use, perhaps a loan."),
-            new DialogueLine("Wesley", Portraits["Wesley"], "But of course, these ships are the intellectual property of Jensen, so I can’t have any of you stealing these plans."),
-            new DialogueLine("Samuel", Portraits["Samuel"], "We don’t have any way to contact Jensen Corporation, Wesley."),
+            new DialogueLine("Joey", Portraits["Joey"], "And plenty of those asteroids nearby. Well, Iâ€™ll be, Wesley, this really is helpful."),
+            new DialogueLine("Wesley", Portraits["Wesley"], "They are property of Jensen Corporation, and all personnel including myself are on their payroll. Iâ€™m sure we can reach some sort of agreement for their use, perhaps a loan."),
+            new DialogueLine("Wesley", Portraits["Wesley"], "But of course, these ships are the intellectual property of Jensen, so I canâ€™t have any of you stealing these plans."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "We donâ€™t have any way to contact Jensen Corporation, Wesley."),
             new DialogueLine("Wesley", Portraits["Wesley"], "Well, that is unfortunate. I do need approval from a home office manager before I-"),
             new DialogueLine("Yoshiko", Portraits["Yoshiko"], "How many punches does it take to get him to shut up?"),
-            new DialogueLine("Joey", Portraits["Joey"], "I dunno, you’ll have to just try until he quiets down."),
-            new DialogueLine("Wesley", Portraits["Wesley"], "N-nw, now, I’m sure w-we don’t have to resort to such… b-barbaric means! We’re all adults here!"),
+            new DialogueLine("Joey", Portraits["Joey"], "I dunno, youâ€™ll have to just try until he quiets down."),
+            new DialogueLine("Wesley", Portraits["Wesley"], "N-nw, now, Iâ€™m sure w-we donâ€™t have to resort to suchâ€¦ b-barbaric means! Weâ€™re all adults here!"),
             new DialogueLine("Yoshiko", Portraits["Yoshiko"], "I'm thinking at least a dozen. Six to the nose and six to the stomach."),
-            new DialogueLine("Wesley", Portraits["Wesley"], "Ahh! Please don’t engage in a physical altercation, it’s far from necessary! Please, use the Factories however you please! We can negotiate fair compensation once we’ve made contact with my superiors."),
+            new DialogueLine("Wesley", Portraits["Wesley"], "Ahh! Please donâ€™t engage in a physical altercation, itâ€™s far from necessary! Please, use the Factories however you please! We can negotiate fair compensation once weâ€™ve made contact with my superiors."),
             new DialogueLine("Joey", Portraits["Joey"], "There ya go, commander. Factory ships at your disposal."),
             new DialogueLine("Samuel", Portraits["Samuel"], "Thank you, Wesley."),
-            new DialogueLine("Wesley", Portraits["Wesley"], "Yes, of course, just leave my nose intact, please. It’s my best feature."),
+            new DialogueLine("Wesley", Portraits["Wesley"], "Yes, of course, just leave my nose intact, please. Itâ€™s my best feature."),
             
 
         };
 
         Neptune_OfProduction = new List<DialogueLine>
         {
-            new DialogueLine("Samuel", Portraits["Samuel"], "Scouts are reporting the bee forces on all sides. Their fleet from Pluto is catching up, and they’ve already established a blockade between here and Uranus."),
-            new DialogueLine("Samuel", Portraits["Samuel"], "Now that we have Factories, we can gather resources from the same asteroids the bees were defending. That’ll give us a fighting chance against the blockade, but we need to be quick."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Scouts are reporting the bee forces on all sides. Their fleet from Pluto is catching up, and theyâ€™ve already established a blockade between here and Uranus."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Now that we have Factories, we can gather resources from the same asteroids the bees were defending. Thatâ€™ll give us a fighting chance against the blockade, but we need to be quick."),
 
             new DialogueLine("Oviya", Portraits["Oviya"], "The mining asteroids can be found at these locations."),
             new DialogueLine("Wesley", Portraits["Wesley"], "Our Factory ships should be quite capable of increasing your prof- erm, resources in order to further bolster your fleet. Simply direct them to a mining location."),
-            new DialogueLine("Samuel", Portraits["Samuel"], "Collect these ores as long as you can, commander, but don’t risk too many lives."),
-            new DialogueLine("Samuel", Portraits["Samuel"], "If a Factory goes down, it’ll lose all the resources it collected. It won’t be worth it in the end."),
-            new DialogueLine("Wesley", Portraits["Wesley"], "Be careful with those Factories! They’re not built for combat or maneuverability."),
-            new DialogueLine("Oviya", Portraits["Oviya"], "In that case, you’ll have to plan your retreat carefully."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Collect these ores as long as you can, commander, but donâ€™t risk too many lives."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "If a Factory goes down, itâ€™ll lose all the resources it collected. It wonâ€™t be worth it in the end."),
+            new DialogueLine("Wesley", Portraits["Wesley"], "Be careful with those Factories! Theyâ€™re not built for combat or maneuverability."),
+            new DialogueLine("Oviya", Portraits["Oviya"], "In that case, youâ€™ll have to plan your retreat carefully."),
 
 
-            new DialogueLine("Oviya", Portraits["Oviya"], "It looks like there are bee scouting parties approaching. They’ll soon find out their fleet here was destroyed.", DialogueLine.DialogueType.Disappearing),
+            new DialogueLine("Oviya", Portraits["Oviya"], "It looks like there are bee scouting parties approaching. Theyâ€™ll soon find out their fleet here was destroyed.", DialogueLine.DialogueType.Disappearing),
 
             new DialogueLine("Oviya", Portraits["Oviya"], "More bees are en route. The longer we stay here, the more dangerous it becomes, commander.", DialogueLine.DialogueType.Disappearing),
 
             new DialogueLine("Yoshiko", Portraits["Yoshiko"], "Incoming ships! Get ready for a fight!", DialogueLine.DialogueType.Disappearing),
-            new DialogueLine("Marco", Portraits["Marco"], "More bees. Hope you know what you’re doing, commander.", DialogueLine.DialogueType.Disappearing),
+            new DialogueLine("Marco", Portraits["Marco"], "More bees. Hope you know what youâ€™re doing, commander.", DialogueLine.DialogueType.Disappearing),
             new DialogueLine("Joey", Portraits["Joey"], "Gracious, how many more bees are there?", DialogueLine.DialogueType.Disappearing),
             new DialogueLine("Oviya", Portraits["Oviya"], "Scouts are reporting even more bees than before. Brace yourselves.", DialogueLine.DialogueType.Disappearing),
             new DialogueLine("Samuel", Portraits["Samuel"], "Commander, get ready for another fight. We have bees incoming.", DialogueLine.DialogueType.Disappearing),
 
             new DialogueLine("Samuel", Portraits["Samuel"], "The commander is calling a retreat. Regroup for our next battle!"),
-            new DialogueLine("Samuel", Portraits["Samuel"], "We've lost the last ships we sent out, commander. It’s time to regroup."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "We've lost the last ships we sent out, commander. Itâ€™s time to regroup."),
             new DialogueLine("Samuel", Portraits["Samuel"], "That's everyone commander, we made it out."),
         };
 
         Neptune_PressingForward = new List<DialogueLine>
         {
-            new DialogueLine("Samuel", Portraits["Samuel"], "It’s time to break through this blockade, commander. Use everything at your disposal."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Itâ€™s time to break through this blockade, commander. Use everything at your disposal."),
 
-            new DialogueLine("Samuel", Portraits["Samuel"], "Great work, commander! We’re free to travel to Uranus."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Great work, commander! Weâ€™re free to travel to Uranus."),
             new DialogueLine("Marco", Portraits["Marco"], "That was a tough fight, commander, you did well."),
             new DialogueLine("Yoshiko", Portraits["Yoshiko"], "We showed those bee losers who the real fighters are!"),
-            new DialogueLine("Oviya", Portraits["Oviya"], "Don’t get too cocky now, Yoshiko. Let’s focus on what’s next."),
+            new DialogueLine("Oviya", Portraits["Oviya"], "Donâ€™t get too cocky now, Yoshiko. Letâ€™s focus on whatâ€™s next."),
 
-            new DialogueLine("Samuel", Portraits["Samuel"], "Commander, we’ve lost contact with all our forces. What do we do now? The bees from Pluto are catching up."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Commander, weâ€™ve lost contact with all our forces. What do we do now? The bees from Pluto are catching up."),
             new DialogueLine("Oviya", Portraits["Oviya"], "The fight diverted forces from elsewhere in the blockade. We can escape if we move quickly!"),
             new DialogueLine("Marco", Portraits["Marco"], "Those Factories are slow and defenseless. Leave them behind."),
             new DialogueLine("Wesley", Portraits["Wesley"], "Now hold on a second! Those ships have already proven lots of shareholder val-"),
-            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "He’s right, Wes, if they can’t fight and they can’t move they won’t make it!"),
+            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "Heâ€™s right, Wes, if they canâ€™t fight and they canâ€™t move they wonâ€™t make it!"),
             new DialogueLine("Oviya", Portraits["Oviya"], "Agreed. Now move!"),
             new DialogueLine("Samuel", Portraits["Samuel"], "Full speed ahead!"),
 
@@ -331,37 +332,37 @@ public class CutsceneManager : MonoBehaviour
 
         NeptuneToTitania = new List<DialogueLine>
         {
-            new DialogueLine("Samuel", Portraits["Samuel"], "Commander, I’ve been reviewing the colonies and bases throughout the solar system. While there is a small UF outpost on Uranus proper, there’s also a research and engineering base on one of its moons, Titania. We should be able to find allies here."),
-            new DialogueLine("Marco", Portraits["Marco"], "If there’s anyone left."),
-            new DialogueLine("Samuel", Portraits["Samuel"], "If- yeah, if… I’m just trying to think through our options."),
-            new DialogueLine("Oviya", Portraits["Oviya"], "Titania is en route to Uranus. I’ll have some scouts look ahead and see if there’s anything worth stopping for."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Commander, Iâ€™ve been reviewing the colonies and bases throughout the solar system. While there is a small UF outpost on Uranus proper, thereâ€™s also a research and engineering base on one of its moons, Titania. We should be able to find allies here."),
+            new DialogueLine("Marco", Portraits["Marco"], "If thereâ€™s anyone left."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "If- yeah, ifâ€¦ Iâ€™m just trying to think through our options."),
+            new DialogueLine("Oviya", Portraits["Oviya"], "Titania is en route to Uranus. Iâ€™ll have some scouts look ahead and see if thereâ€™s anything worth stopping for."),
             new DialogueLine("Yoshiko", Portraits["Yoshiko"], "You think the nerds on Titania might have cool new weapons we can use?"),
             new DialogueLine("Samuel", Portraits["Samuel"], "Nerds?"),
-            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "Yeah, you said it’s a research and… whatever base. I love those nerds."),
+            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "Yeah, you said itâ€™s a research andâ€¦ whatever base. I love those nerds."),
             new DialogueLine("Joey", Portraits["Joey"], "Ha! We could probably use some more nerds on our side. Even one other person who understands how explosives work."),
             new DialogueLine("Yoshiko", Portraits["Yoshiko"], "Just cuz I blew up one frigate-"),
             new DialogueLine("Marco", Portraits["Marco"], "Can we focus, please?"),
             new DialogueLine("Oviya", Portraits["Oviya"], "Scouts are reporting Titania base looks evacuated. No damage, but no signals either. And lots of bee patrols."),
-            new DialogueLine("Samuel", Portraits["Samuel"], "Wait a minute, we’re getting a request right now! Let me put them on…"),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Wait a minute, weâ€™re getting a request right now! Let me put them onâ€¦"),
             new DialogueLine("Samuel", Portraits["Samuel"], "..."),
             new DialogueLine("Alejandra", Portraits["Alejandra"], "Hello? Do you read me?"),
-            new DialogueLine("Samuel", Portraits["Samuel"], "Loud and clear, ma’am."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Loud and clear, maâ€™am."),
             new DialogueLine("Alejandra", Portraits["Alejandra"], "Ah, good. This is Alejandra Vasquez, research and engineering wing, regional commander and research lead for United Fleet Titania."),
             new DialogueLine("Emilia", Portraits["Emilia"], "Ohhhh, who are they?"),
             new DialogueLine("Alejandra", Portraits["Alejandra"], "Emilia, please. We saw other United Fleet vessels around our base. I presume those belong to your contingent?"),
             new DialogueLine("Oviya", Portraits["Oviya"], "Yes, that was my scout team. We thought your base was abandoned, though."),
             new DialogueLine("Emilia", Portraits["Emilia"], "We need help!"),
             new DialogueLine("Alejandra", Portraits["Alejandra"], "I was getting there, Emilia."),
-            new DialogueLine("Emilia", Portraits["Emilia"], "We can’t get off the base right now!"),
-            new DialogueLine("Alejandra", Portraits["Alejandra"], "That is correct. The initial assault of these unidentified aliens targeted the surface of Uranus, primarily. They were swiftly dismantled. We sent a signal on the emergency frequency, as is protocol, but they detected us. Their attack destroyed our weapons bay and sent experimental explosive devices out into the debris. It’s keeping them from approaching at the moment, but it’s also keeping us trapped here. Someone needs to clear an evacuation route and keep it safe from the bees."),
+            new DialogueLine("Emilia", Portraits["Emilia"], "We canâ€™t get off the base right now!"),
+            new DialogueLine("Alejandra", Portraits["Alejandra"], "That is correct. The initial assault of these unidentified aliens targeted the surface of Uranus, primarily. They were swiftly dismantled. We sent a signal on the emergency frequency, as is protocol, but they detected us. Their attack destroyed our weapons bay and sent experimental explosive devices out into the debris. Itâ€™s keeping them from approaching at the moment, but itâ€™s also keeping us trapped here. Someone needs to clear an evacuation route and keep it safe from the bees."),
             new DialogueLine("Emilia", Portraits["Emilia"], "You can help us! You have fighting ships! And we have a carrier to help too!"),
-            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "Oh, what’s a carrier?"),
-            new DialogueLine("Emilia", Portraits["Emilia"], "It’s this awesome ship my dad designed. It has a bunch of little robot controlled ships. We call ‘em drones and strikers, and they can-"),
-            new DialogueLine("Alejandra", Portraits["Alejandra"], "Please, Emilia, I’d love to discuss the details of Philip’s designs, but we don’t have the time right now. To abbreviate this conversation, would your fleet be able to assist in our attempt to extricate our staff and their families from this moon? The prototypal carrier is our only military vessel at the moment."),
-            new DialogueLine("Emilia", Portraits["Emilia"], "Right! We’re running out of food and batteries!"),
-            new DialogueLine("Samuel", Portraits["Samuel"], "Of course we can help. We’re already pretty experienced bee fighters."),
+            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "Oh, whatâ€™s a carrier?"),
+            new DialogueLine("Emilia", Portraits["Emilia"], "Itâ€™s this awesome ship my dad designed. It has a bunch of little robot controlled ships. We call â€˜em drones and strikers, and they can-"),
+            new DialogueLine("Alejandra", Portraits["Alejandra"], "Please, Emilia, Iâ€™d love to discuss the details of Philipâ€™s designs, but we donâ€™t have the time right now. To abbreviate this conversation, would your fleet be able to assist in our attempt to extricate our staff and their families from this moon? The prototypal carrier is our only military vessel at the moment."),
+            new DialogueLine("Emilia", Portraits["Emilia"], "Right! Weâ€™re running out of food and batteries!"),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Of course we can help. Weâ€™re already pretty experienced bee fighters."),
             new DialogueLine("Alejandra", Portraits["Alejandra"], "Bees?"),
-            new DialogueLine("Samuel", Portraits["Samuel"], "Erm… yes, that’s what we’re calling the aliens."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Ermâ€¦ yes, thatâ€™s what weâ€™re calling the aliens."),
             new DialogueLine("Alejandra", Portraits["Alejandra"], "Yes, I do suppose they bear some resemblance to the endangered species. Fascinating observation."),
             new DialogueLine("Emilia", Portraits["Emilia"], "I like that name! Stupid bees! Yeah, it feels good to say."),
             new DialogueLine("Marco", Portraits["Marco"], "Quit wasting time."),
@@ -372,127 +373,127 @@ public class CutsceneManager : MonoBehaviour
         Titania_Minesweeper = new List<DialogueLine>
         {
             new DialogueLine("Samuel", Portraits["Samuel"], "We need to clear out the debris surrounding Titania to give our new friends an exit path. Bee patrols have also been spotted around the area, trying to make sure nothing gets in or out."),
-            new DialogueLine("Alejandra", Portraits["Alejandra"], "Commander, that’s one of the explosives."),
-            new DialogueLine("Emilia", Portraits["Emilia"], "You can tell it’s a bomb cuz we put a big blinky light on it!"),
+            new DialogueLine("Alejandra", Portraits["Alejandra"], "Commander, thatâ€™s one of the explosives."),
+            new DialogueLine("Emilia", Portraits["Emilia"], "You can tell itâ€™s a bomb cuz we put a big blinky light on it!"),
             new DialogueLine("Marco", Portraits["Marco"], "Can we please remove her from this frequency?"),
-            new DialogueLine("Alejandra", Portraits["Alejandra"], "No. As I was saying, Commander, that’s one of the bombs."),
+            new DialogueLine("Alejandra", Portraits["Alejandra"], "No. As I was saying, Commander, thatâ€™s one of the bombs."),
             new DialogueLine("Joey", Portraits["Joey"], "If we detonate it, it should be able to clear out the debris and cut a path straight to the surface."),
             new DialogueLine("Oviya", Portraits["Oviya"], "It will also alert the bee patrols."),
-            new DialogueLine("Alejandra", Portraits["Alejandra"], "Your fleet’s automatic targeting systems won’t see it, so you’ll have to fire manually and precisely. Once the debris has been jettisoned, we can begin evacuating the base."),
+            new DialogueLine("Alejandra", Portraits["Alejandra"], "Your fleetâ€™s automatic targeting systems wonâ€™t see it, so youâ€™ll have to fire manually and precisely. Once the debris has been jettisoned, we can begin evacuating the base."),
             new DialogueLine("Joey", Portraits["Joey"], "Should we be worried about stray debris hitting your base?"),
-            new DialogueLine("Alejandra", Portraits["Alejandra"], "The explosives should be powerful enough to disintegrate any debris. Ah. Yes, don’t fly too closely."),
-            new DialogueLine("Marco", Portraits["Marco"], "They’re powerful enough to what?"),
+            new DialogueLine("Alejandra", Portraits["Alejandra"], "The explosives should be powerful enough to disintegrate any debris. Ah. Yes, donâ€™t fly too closely."),
+            new DialogueLine("Marco", Portraits["Marco"], "Theyâ€™re powerful enough to what?"),
             new DialogueLine("Emilia", Portraits["Emilia"], "She said they were experimental!"),
             new DialogueLine("Yoshiko", Portraits["Yoshiko"], "Woohoo! Now this is fun!"),
             new DialogueLine("Emilia", Portraits["Emilia"], "Aww man, I wish I could see."),
-            new DialogueLine("Marco", Portraits["Marco"], "Stay focused. We’re still fighting out here."),
-            new DialogueLine("Alejandra", Portraits["Alejandra"], "If the bees weren’t alerted to your presence already, they will be now. Stay vigilant."),
-            new DialogueLine("Alejandra", Portraits["Alejandra"], "Excellent work, Commander. We’ll begin the evacuation process immediately."),
-            new DialogueLine("Oviya", Portraits["Oviya"], "This fight alerted the bees on Uranus’s surface."),
-            new DialogueLine("Marco", Portraits["Marco"], "Fantastic…"),
+            new DialogueLine("Marco", Portraits["Marco"], "Stay focused. Weâ€™re still fighting out here."),
+            new DialogueLine("Alejandra", Portraits["Alejandra"], "If the bees werenâ€™t alerted to your presence already, they will be now. Stay vigilant."),
+            new DialogueLine("Alejandra", Portraits["Alejandra"], "Excellent work, Commander. Weâ€™ll begin the evacuation process immediately."),
+            new DialogueLine("Oviya", Portraits["Oviya"], "This fight alerted the bees on Uranusâ€™s surface."),
+            new DialogueLine("Marco", Portraits["Marco"], "Fantasticâ€¦"),
             new DialogueLine("Samuel", Portraits["Samuel"], "Looks like we need to cover their exit, commander."),
             new DialogueLine("Yoshiko", Portraits["Yoshiko"], "Stay frosty, everyone!"),
-            new DialogueLine("Samuel", Portraits["Samuel"], "We can’t clear the bees out, commander."),
-            new DialogueLine("Oviya", Portraits["Oviya"], "More from Uranus’s surface have been alerted to our presence as well."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "We canâ€™t clear the bees out, commander."),
+            new DialogueLine("Oviya", Portraits["Oviya"], "More from Uranusâ€™s surface have been alerted to our presence as well."),
             new DialogueLine("Alejandra", Portraits["Alejandra"], "What do you propose we do, then?"),
-            new DialogueLine("Emilia", Portraits["Emilia"], "We’re gonna die…"),
+            new DialogueLine("Emilia", Portraits["Emilia"], "Weâ€™re gonna dieâ€¦"),
             new DialogueLine("Alejandra", Portraits["Alejandra"], "None of that, Emilia."),
-            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "We can still attempt an evacuation, but it’ll be risky."),
+            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "We can still attempt an evacuation, but itâ€™ll be risky."),
             new DialogueLine("Marco", Portraits["Marco"], "Too risky."),
-            new DialogueLine("Samuel", Portraits["Samuel"], "Don’t worry, ma’am, we will get you out."),
-            new DialogueLine("Marco", Portraits["Marco"], "…Don’t make promises you can’t keep, son."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Donâ€™t worry, maâ€™am, we will get you out."),
+            new DialogueLine("Marco", Portraits["Marco"], "â€¦Donâ€™t make promises you canâ€™t keep, son."),
             new DialogueLine("Samuel", Portraits["Samuel"], "Lives are at stake! Commander, what do we do?"),
         };
 
         Titania_Beenoculars = new List<DialogueLine>
         {
-            new DialogueLine("Samuel", Portraits["Samuel"], "Commander, we have to defend Titania’s base long enough for all of their personnel to escape the surface."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Commander, we have to defend Titaniaâ€™s base long enough for all of their personnel to escape the surface."),
             new DialogueLine("Alejandra", Portraits["Alejandra"], "Our personnel are preparing for evacuation. Rebooting base systems now."),
-            new DialogueLine("Emilia", Portraits["Emilia"], "I’m gonna get A.M.I.!"),
-            new DialogueLine("Alejandra", Portraits["Alejandra"], "Em- ugh, she’s already run off."),
+            new DialogueLine("Emilia", Portraits["Emilia"], "Iâ€™m gonna get A.M.I.!"),
+            new DialogueLine("Alejandra", Portraits["Alejandra"], "Em- ugh, sheâ€™s already run off."),
             new DialogueLine("Yoshiko", Portraits["Yoshiko"], "Amy?"),
-            new DialogueLine("Alejandra", Portraits["Alejandra"], "A.M.I. She’s a strategy AI our team was developing for military applications."),
+            new DialogueLine("Alejandra", Portraits["Alejandra"], "A.M.I. Sheâ€™s a strategy AI our team was developing for military applications."),
             new DialogueLine("Joey", Portraits["Joey"], "Sounds mighty helpful. Is there a problem with that?"),
-            new DialogueLine("Alejandra", Portraits["Alejandra"], "It will consume a considerable amount of time to transfer her to a portable device. Time that I don’t surmise we have."),
-            new DialogueLine("Samuel", Portraits["Samuel"], "We’ll do our best, ma’am."),
+            new DialogueLine("Alejandra", Portraits["Alejandra"], "It will consume a considerable amount of time to transfer her to a portable device. Time that I donâ€™t surmise we have."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Weâ€™ll do our best, maâ€™am."),
             new DialogueLine("Marco", Portraits["Marco"], "If this goes sideways, make damn sure that child is ready to leave on our orders."),
             new DialogueLine("Alejandra", Portraits["Alejandra"], "Affirmative. Good luck, commander."),
-            new DialogueLine("Alejandra", Portraits["Alejandra"], "We’re already under heavy fire. You have your work cut out for you, but we’ll focus our efforts on an expedient evacuation."),
+            new DialogueLine("Alejandra", Portraits["Alejandra"], "Weâ€™re already under heavy fire. You have your work cut out for you, but weâ€™ll focus our efforts on an expedient evacuation."),
             new DialogueLine("Alejandra", Portraits["Alejandra"], "Upload is at ten percent, commander."),
             new DialogueLine("Oviya", Portraits["Oviya"], "The bees are definitely starting to take notice!"),
             new DialogueLine("Marco", Portraits["Marco"], "Keep your wits about you, team."),
-            new DialogueLine("Emilia", Portraits["Emilia"], "Upload’s at twenty four percent!"),
-            new DialogueLine("Alejandra", Portraits["Alejandra"], "Why would you not wait until twenty five? It’s a good fraction of one hundred."),
-            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "It’s turning into a real fight out here!"),
+            new DialogueLine("Emilia", Portraits["Emilia"], "Uploadâ€™s at twenty four percent!"),
+            new DialogueLine("Alejandra", Portraits["Alejandra"], "Why would you not wait until twenty five? Itâ€™s a good fraction of one hundred."),
+            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "Itâ€™s turning into a real fight out here!"),
             new DialogueLine("Alejandra", Portraits["Alejandra"], "Fifty percent, now, commander."),
-            new DialogueLine("Emilia", Portraits["Emilia"], "You’re doing awesome! Keep it up!"),
-            new DialogueLine("Marco", Portraits["Marco"], "Don’t get too comfortable now."),
+            new DialogueLine("Emilia", Portraits["Emilia"], "Youâ€™re doing awesome! Keep it up!"),
+            new DialogueLine("Marco", Portraits["Marco"], "Donâ€™t get too comfortable now."),
             new DialogueLine("Emilia", Portraits["Emilia"], "Seventy fo-"),
             new DialogueLine("Alejandra", Portraits["Alejandra"], "Seventy five percent."),
             new DialogueLine("Marco", Portraits["Marco"], "Things are getting dicey out here. That AI better be worth the trouble."),
             new DialogueLine("Alejandra", Portraits["Alejandra"], "Upload is at ninety percent, commander. You are doing an excellent job out there."),
-            new DialogueLine("Joey", Portraits["Joey"], "Just another day, ma’am."),
+            new DialogueLine("Joey", Portraits["Joey"], "Just another day, maâ€™am."),
             new DialogueLine("Samuel", Portraits["Samuel"], "Commander is calling a retreat!"),
             new DialogueLine("Emilia", Portraits["Emilia"], "But-"),
             new DialogueLine("Alejandra", Portraits["Alejandra"], "Emilia, no. We are leaving now."),
-            new DialogueLine("Emilia", Portraits["Emilia"], "Sorry…"),
-            new DialogueLine("Alejandra", Portraits["Alejandra"], "We’ll join your formation shortly, commander."),
-            new DialogueLine("Alejandra", Portraits["Alejandra"], "A.M.I. is fully uploaded, commander. We are engaging the ship’s liftoff now."),
-            new DialogueLine("Emilia", Portraits["Emilia"], "Let’s go! You guys are the real deal!"),
+            new DialogueLine("Emilia", Portraits["Emilia"], "Sorryâ€¦"),
+            new DialogueLine("Alejandra", Portraits["Alejandra"], "Weâ€™ll join your formation shortly, commander."),
+            new DialogueLine("Alejandra", Portraits["Alejandra"], "A.M.I. is fully uploaded, commander. We are engaging the shipâ€™s liftoff now."),
+            new DialogueLine("Emilia", Portraits["Emilia"], "Letâ€™s go! You guys are the real deal!"),
         };
 
 
         NeptuneToUranus = new List<DialogueLine>
         {
             new DialogueLine("Oviya", Portraits["Oviya"], "Our next destination is Uranus. There are bases on the planet proper and one of its moons-"),
-            new DialogueLine("Samuel", Portraits["Samuel"], "Commander! We’re picking up other human vessels on our radars!"),
-            new DialogueLine("Oviya", Portraits["Oviya"], " We’re near Titania’s research and engineering base. It could be survivors."),
-            new DialogueLine("Samuel", Portraits["Samuel"], "Let’s establish contact."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Commander! Weâ€™re picking up other human vessels on our radars!"),
+            new DialogueLine("Oviya", Portraits["Oviya"], " Weâ€™re near Titaniaâ€™s research and engineering base. It could be survivors."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Letâ€™s establish contact."),
             new DialogueLine("Alejandra", Portraits["Alejandra"], "Hello? Ah, good. This is Alejandra Vasquez, research and engineering wing, regional commander and research lead for United Fleet Titania."),
             new DialogueLine("Emilia", Portraits["Emilia"], "Ohhhh, who are they?"),
             new DialogueLine("Alejandra", Portraits["Alejandra"], "Emilia, please. I see you all have also survived the assault. There is safety in numbers, as the saying goes."),
             new DialogueLine("Alejandra", Portraits["Alejandra"], "I imagine our chances of success directly correlate with the strength of our numbers. May we join your fleet?"),
-            new DialogueLine("Samuel", Portraits["Samuel"], "Of course! I mean- well, it’s up to the commander."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Of course! I mean- well, itâ€™s up to the commander."),
             new DialogueLine("Samuel", Portraits["Samuel"], 2),
             new DialogueLine("Samuel", Portraits["Samuel"], "Yes, you can join."),
             new DialogueLine("Alejandra", Portraits["Alejandra"], "Excellent. We have just finished the first prototypes of our Carrier units for the United Fleet. I imagine it will be a valuable addition to your fleet."),
-            new DialogueLine("Emilia", Portraits["Emilia"], "Oh yay! We’re going to survive!"),
-            new DialogueLine("Alejandra", Portraits["Alejandra"], "Yes, let’s meet in person and discuss a plan."),
-            new DialogueLine("Samuel", Portraits["Samuel"], "We’ll prepare for boarding here."),
+            new DialogueLine("Emilia", Portraits["Emilia"], "Oh yay! Weâ€™re going to survive!"),
+            new DialogueLine("Alejandra", Portraits["Alejandra"], "Yes, letâ€™s meet in person and discuss a plan."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Weâ€™ll prepare for boarding here."),
             new DialogueLine("Samuel", Portraits["Samuel"], 2),
             new DialogueLine("Samuel", Portraits["Samuel"], "The Titania research and engineering team should make a great addition to the fleet."),
-            new DialogueLine("Alejandra", Portraits["Alejandra"], "We will. You appear horribly disorganized after all. Your fleet isn’t even in regulation formations, or any formation for that matter. You could use my help."),
-            new DialogueLine("Marco", Portraits["Marco"], "You’ve been on our ship for about ten seconds."),
-            new DialogueLine("Emilia", Portraits["Emilia"], "Well, I think you’re doing great! The way you fought was amazing! And we need their help, too, Alejandra."),
+            new DialogueLine("Alejandra", Portraits["Alejandra"], "We will. You appear horribly disorganized after all. Your fleet isnâ€™t even in regulation formations, or any formation for that matter. You could use my help."),
+            new DialogueLine("Marco", Portraits["Marco"], "Youâ€™ve been on our ship for about ten seconds."),
+            new DialogueLine("Emilia", Portraits["Emilia"], "Well, I think youâ€™re doing great! The way you fought was amazing! And we need their help, too, Alejandra."),
             new DialogueLine("Alejandra", Portraits["Alejandra"], "Of course. I have great admiration for this group. Was that not clear?"),
-            new DialogueLine("Joey", Portraits["Joey"], "Clear as mud, ma’am."),
+            new DialogueLine("Joey", Portraits["Joey"], "Clear as mud, maâ€™am."),
             new DialogueLine("Alejandra", Portraits["Alejandra"], "My apologies."),
 
             new DialogueLine("Joey", Portraits["Joey"], "Tell me about those Carriers you mentioned, they sound mighty interesting."),
-            new DialogueLine("Emilia", Portraits["Emilia"], "Oh! Oh! They’re really cool! So the Carrier itself doesn’t fight anything, but it has Drones and Strikers on board, and those can go out and attack things."),
+            new DialogueLine("Emilia", Portraits["Emilia"], "Oh! Oh! Theyâ€™re really cool! So the Carrier itself doesnâ€™t fight anything, but it has Drones and Strikers on board, and those can go out and attack things."),
             new DialogueLine("Alejandra", Portraits["Alejandra"], "And we possess all of the blueprints for that design with us, so if you have adequate production facilities, you may construct more than we have here."),
-            new DialogueLine("Alejandra", Portraits["Alejandra"], "Now, tell me about your fleet’s survival. Any information on these unidentified, possibly alien vessels will be critical."),
+            new DialogueLine("Alejandra", Portraits["Alejandra"], "Now, tell me about your fleetâ€™s survival. Any information on these unidentified, possibly alien vessels will be critical."),
 
             new DialogueLine("Samuel", Portraits["Samuel"], "We originally came from Pluto. We fought with the bees-"),
             new DialogueLine("Alejandra", Portraits["Alejandra"], "Bees?"),
-            new DialogueLine("Samuel", Portraits["Samuel"], "Erm… yes, that’s what we’re calling this enemy."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Ermâ€¦ yes, thatâ€™s what weâ€™re calling this enemy."),
             new DialogueLine("Alejandra", Portraits["Alejandra"], "Yes, I do suppose they bear some resemblance to the endangered species. Fascinating observation."),
             new DialogueLine("Emilia", Portraits["Emilia"], "I like that name! Stupid bees! Yeah, it feels good to say."),
             new DialogueLine("Samuel", Portraits["Samuel"], "What are you writing? Um- nevermind."),
-            new DialogueLine("Samuel", Portraits["Samuel"], " Anyway, we fought them, but there were too many for us to beat. We’ve been making our way closer to Earth and picking up survivors along the way."),
-            new DialogueLine("Alejandra", Portraits["Alejandra"], "And I assume you’ve encountered their communications jamming as well?"),
-            new DialogueLine("Joey", Portraits["Joey"], "Yes, ma’am. "),
-            new DialogueLine("Alejandra", Portraits["Alejandra"], "It’s been frustrating. We lacked significant combat capabilities, so we had to go dark after the first assault."),
+            new DialogueLine("Samuel", Portraits["Samuel"], " Anyway, we fought them, but there were too many for us to beat. Weâ€™ve been making our way closer to Earth and picking up survivors along the way."),
+            new DialogueLine("Alejandra", Portraits["Alejandra"], "And I assume youâ€™ve encountered their communications jamming as well?"),
+            new DialogueLine("Joey", Portraits["Joey"], "Yes, maâ€™am. "),
+            new DialogueLine("Alejandra", Portraits["Alejandra"], "Itâ€™s been frustrating. We lacked significant combat capabilities, so we had to go dark after the first assault."),
             new DialogueLine("Alejandra", Portraits["Alejandra"], "It was enough to throw them off, but it seems the fighting on Uranus was intense enough to be their main focus. We took the opportunity to flee."),
-            new DialogueLine("Alejandra", Portraits["Alejandra"], "I can’t say if there are survivors there."),
+            new DialogueLine("Alejandra", Portraits["Alejandra"], "I canâ€™t say if there are survivors there."),
             new DialogueLine("Alejandra", Portraits["Alejandra"], "It was primarily a mining facility, but because it supplied the manufacturing operations on Saturn, we had some of our advanced Cruisers patrolling the area."),
             new DialogueLine("Alejandra", Portraits["Alejandra"], "We may need to act fast."),
-            new DialogueLine("Marco", Portraits["Marco"], "We’re used to that by now."),
-            new DialogueLine("Joey", Portraits["Joey"], "You said you were the research lead? Where’s the engineering lead?"),
-            new DialogueLine("Alejandra", Portraits["Alejandra"], "He… is no longer with us after the initial assault. He took a Carrier out to draw their fire while we went dark. His daughter, Emilia, has been helping me in his stead. She is quite talented."),
-            new DialogueLine("Emilia", Portraits["Emilia"], " …yeah."),
-            new DialogueLine("Samuel", Portraits["Samuel"], "I’m so sorry, Emilia."),
-            new DialogueLine("Emilia", Portraits["Emilia"], "Now let’s take those stupid bees down! Uranus is under new management! Er- well, I guess old management. We’re taking the new management down. Yeah!"),
+            new DialogueLine("Marco", Portraits["Marco"], "Weâ€™re used to that by now."),
+            new DialogueLine("Joey", Portraits["Joey"], "You said you were the research lead? Whereâ€™s the engineering lead?"),
+            new DialogueLine("Alejandra", Portraits["Alejandra"], "Heâ€¦ is no longer with us after the initial assault. He took a Carrier out to draw their fire while we went dark. His daughter, Emilia, has been helping me in his stead. She is quite talented."),
+            new DialogueLine("Emilia", Portraits["Emilia"], " â€¦yeah."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Iâ€™m so sorry, Emilia."),
+            new DialogueLine("Emilia", Portraits["Emilia"], "Now letâ€™s take those stupid bees down! Uranus is under new management! Er- well, I guess old management. Weâ€™re taking the new management down. Yeah!"),
             new DialogueLine("Samuel", Portraits["Samuel"], "The first way sounds cooler, though."),
             new DialogueLine("Emilia", Portraits["Emilia"], "Yeah!"),
             new DialogueLine("Marco", Portraits["Marco"], "Are we sure this is an improvement?"),
@@ -502,55 +503,55 @@ public class CutsceneManager : MonoBehaviour
         Uranus_OnTheOffensive = new List<DialogueLine>
         {
             new DialogueLine("Samuel", Portraits["Samuel"], "There is still fighting around Uranus, another resource-rich area. If we take the bees down, we can bolster our own fleet with resources and personnel."),
-            new DialogueLine("Samuel", Portraits["Samuel"], "Radars are jammed in the area, so we’ll need to rely on our Scouts for vision."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Radars are jammed in the area, so weâ€™ll need to rely on our Scouts for vision."),
 
 
-            new DialogueLine("Oviya", Portraits["Oviya"], "Bee presence around Uranus is heavy, but not insurmountable. We’re far enough from the blockade that we aren’t expecting reinforcements now."),
+            new DialogueLine("Oviya", Portraits["Oviya"], "Bee presence around Uranus is heavy, but not insurmountable. Weâ€™re far enough from the blockade that we arenâ€™t expecting reinforcements now."),
             new DialogueLine("Oviya", Portraits["Oviya"], "Victory should ensure us time to collect more resources for the fleet."),
-            new DialogueLine("Samuel", Portraits["Samuel"], "We aren’t receiving any human signals, but it does look like there’s fighting ahead."),
-            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "Let’s get in there! And fast!"),
+            new DialogueLine("Samuel", Portraits["Samuel"], "We arenâ€™t receiving any human signals, but it does look like thereâ€™s fighting ahead."),
+            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "Letâ€™s get in there! And fast!"),
 
             new DialogueLine("Oviya", Portraits["Oviya"], "Commander, a survivor! ", DialogueLine.DialogueType.Disappearing),
-            new DialogueLine("Marco", Portraits["Marco"], "They’re outnumbered, move quick.", DialogueLine.DialogueType.Disappearing),
-            new DialogueLine("Samuel", Portraits["Samuel"], "We’ve established comms with the ship.", DialogueLine.DialogueType.Disappearing),
+            new DialogueLine("Marco", Portraits["Marco"], "Theyâ€™re outnumbered, move quick.", DialogueLine.DialogueType.Disappearing),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Weâ€™ve established comms with the ship.", DialogueLine.DialogueType.Disappearing),
             new DialogueLine("Fritz", Portraits["Fritz"], "Ahahahaha! Die! See the light and DIE!", DialogueLine.DialogueType.Disappearing),
-            new DialogueLine("Samuel", Portraits["Samuel"], "They’re… colorful.", DialogueLine.DialogueType.Disappearing),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Theyâ€™reâ€¦ colorful.", DialogueLine.DialogueType.Disappearing),
             new DialogueLine("Yoshiko", Portraits["Yoshiko"], "I like them!", DialogueLine.DialogueType.Disappearing),
 
-            new DialogueLine("Oviya", Portraits["Oviya"], "Commander! This is a bee ship we haven’t seen before. Be careful; we don’t know what it can do.", DialogueLine.DialogueType.Disappearing),
+            new DialogueLine("Oviya", Portraits["Oviya"], "Commander! This is a bee ship we havenâ€™t seen before. Be careful; we donâ€™t know what it can do.", DialogueLine.DialogueType.Disappearing),
 
             new DialogueLine("Samuel", Portraits["Samuel"], "We just took massive damage from the unknown ship, commander!", DialogueLine.DialogueType.Disappearing),
             new DialogueLine("Yoshiko", Portraits["Yoshiko"], "Find a way to take it out!", DialogueLine.DialogueType.Disappearing),
-            new DialogueLine("Joey", Portraits["Joey"], "That’s not gonna be so easy. Its weapon range is huge from what I can tell.", DialogueLine.DialogueType.Disappearing),
+            new DialogueLine("Joey", Portraits["Joey"], "Thatâ€™s not gonna be so easy. Its weapon range is huge from what I can tell.", DialogueLine.DialogueType.Disappearing),
 
             new DialogueLine("Samuel", Portraits["Samuel"], "Good work, commander. That was scary.", DialogueLine.DialogueType.Disappearing),
-            new DialogueLine("Marco", Portraits["Marco"], "I’m sure there will be more later…", DialogueLine.DialogueType.Disappearing),
+            new DialogueLine("Marco", Portraits["Marco"], "Iâ€™m sure there will be more laterâ€¦", DialogueLine.DialogueType.Disappearing),
 
             new DialogueLine("Samuel", Portraits["Samuel"], "We did it, commander!"),
             new DialogueLine("Oviya", Portraits["Oviya"], "Scouts are on the way to see what can be salvaged from the surface."),
-            new DialogueLine("Samuel", Portraits["Samuel"], "Let’s get our new… friend? Let’s get them on board."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Letâ€™s get our newâ€¦ friend? Letâ€™s get them on board."),
             new DialogueLine("Fritz", Portraits["Fritz"], "H-hi! Other humans! Wait-"),
             new DialogueLine("Samuel", Portraits["Samuel"], "Please stop touching my face."),
-            new DialogueLine("Fritz", Portraits["Fritz"], " Real! You’re real! You hear that, NATALIE?! Why can’t you be like him?!"),
+            new DialogueLine("Fritz", Portraits["Fritz"], " Real! Youâ€™re real! You hear that, NATALIE?! Why canâ€™t you be like him?!"),
             new DialogueLine("Alejandra", Portraits["Alejandra"], "Fritz? What were you doing here?"),
-            new DialogueLine("Fritz", Portraits["Fritz"], "Another memory… or a ghost- ow!"),
-            new DialogueLine("Emilia", Portraits["Emilia"], "Memories can’t slap you! Neither can ghosts!"),
+            new DialogueLine("Fritz", Portraits["Fritz"], "Another memoryâ€¦ or a ghost- ow!"),
+            new DialogueLine("Emilia", Portraits["Emilia"], "Memories canâ€™t slap you! Neither can ghosts!"),
             new DialogueLine("Alejandra", Portraits["Alejandra"], "Erm, thank you Emilia."),
-            new DialogueLine("Fritz", Portraits["Fritz"], "If… if I remember… I was fixing the gun. Then… boom! Boom. Bees. Pilot’s down. Bees! I’ll get them… I’ll blow them up! Where are they?!"),
+            new DialogueLine("Fritz", Portraits["Fritz"], "Ifâ€¦ if I rememberâ€¦ I was fixing the gun. Thenâ€¦ boom! Boom. Bees. Pilotâ€™s down. Bees! Iâ€™ll get themâ€¦ Iâ€™ll blow them up! Where are they?!"),
             new DialogueLine("Marco", Portraits["Marco"], "Snap out of it!"),
-            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "Fight’s over! We won."),
-            new DialogueLine("Samuel", Portraits["Samuel"], "You’re safe now. Promise."),
+            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "Fightâ€™s over! We won."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Youâ€™re safe now. Promise."),
             new DialogueLine("Fritz", Portraits["Fritz"], "Ah- yes. Right. There will be more. Let me blow them up! The ghosts want to. Cruisers are great at that."),
             new DialogueLine("Alejandra", Portraits["Alejandra"], "You do have schematics for such a ship, correct? Since you are a Cruiser engineer."),
             new DialogueLine("Fritz", Portraits["Fritz"], "Yes! Yes yes yes! Make more! More light! Bees die in light!"),
 
             new DialogueLine("Wesley", Portraits["Wesley"], "Your mining vessels are ready for the asteroids, commander. I recommend initiating operations quickly, before more of these bees arrive."),
-            new DialogueLine("Alejandra", Portraits["Alejandra"], "I like the way you think! I’m glad somebody else here cares about efficiency."),
-            new DialogueLine("Wesley", Portraits["Wesley"], "Efficiency creates profit, ma’am."),
+            new DialogueLine("Alejandra", Portraits["Alejandra"], "I like the way you think! Iâ€™m glad somebody else here cares about efficiency."),
+            new DialogueLine("Wesley", Portraits["Wesley"], "Efficiency creates profit, maâ€™am."),
 
             new DialogueLine("Samuel", Portraits["Samuel"], "All of our fleet we sent out is down, commander."),
-            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "We can still take ‘em!"),
-            new DialogueLine("Marco", Portraits["Marco"], "We can’t risk further casualties, Yoshiko. Keep your head on straight."),
+            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "We can still take â€˜em!"),
+            new DialogueLine("Marco", Portraits["Marco"], "We canâ€™t risk further casualties, Yoshiko. Keep your head on straight."),
         };
 
         Uranus_OnTheDefensive = new List<DialogueLine>
@@ -559,78 +560,78 @@ public class CutsceneManager : MonoBehaviour
 
             new DialogueLine("Oviya", Portraits["Oviya"], "Reinforcements from the remnants of the blockade are incoming.", DialogueLine.DialogueType.Disappearing),
 
-            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "More bees! Let’s give ‘em hell!", DialogueLine.DialogueType.Disappearing),
-            new DialogueLine("Marco", Portraits["Marco"], "Even more ships. Commander, I trust you’ll know when to exit.", DialogueLine.DialogueType.Disappearing),
+            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "More bees! Letâ€™s give â€˜em hell!", DialogueLine.DialogueType.Disappearing),
+            new DialogueLine("Marco", Portraits["Marco"], "Even more ships. Commander, I trust youâ€™ll know when to exit.", DialogueLine.DialogueType.Disappearing),
             new DialogueLine("Joey", Portraits["Joey"], "More bees? What in tarnation? Where are they coming from? ", DialogueLine.DialogueType.Disappearing),
             new DialogueLine("Oviya", Portraits["Oviya"], "We've found more bee ships, inbound to our location.", DialogueLine.DialogueType.Disappearing),
             new DialogueLine("Samuel", Portraits["Samuel"], "Another wave of ships!", DialogueLine.DialogueType.Disappearing),
-            new DialogueLine("Wesley", Portraits["Wesley"], "More of those… bees? Don’t risk our profit margins. You’ll receive a bill from Jensen if you lose any Factories.", DialogueLine.DialogueType.Disappearing),
+            new DialogueLine("Wesley", Portraits["Wesley"], "More of thoseâ€¦ bees? Donâ€™t risk our profit margins. Youâ€™ll receive a bill from Jensen if you lose any Factories.", DialogueLine.DialogueType.Disappearing),
 
             new DialogueLine("Oviya", Portraits["Oviya"], "We're seeing more reinforcements from a different direction, now. It could be their main fleet. Things are going to get tough from here."),
 
-            new DialogueLine("Fritz", Portraits["Fritz"], "Ahaha! We have more bees come to meet the light! That’s right, Dee, this one’s for you!"),
+            new DialogueLine("Fritz", Portraits["Fritz"], "Ahaha! We have more bees come to meet the light! Thatâ€™s right, Dee, this oneâ€™s for you!"),
             new DialogueLine("Alejandra", Portraits["Alejandra"], "More wrinkles in our plans approaching. I trust you can sort them out, commander."),
-            new DialogueLine("Emilia", Portraits["Emilia"], "Oh! Uh- is this thing on? Commander! There’s more bees! Get 'em!"),
+            new DialogueLine("Emilia", Portraits["Emilia"], "Oh! Uh- is this thing on? Commander! Thereâ€™s more bees! Get 'em!"),
 
-            new DialogueLine("Samuel", Portraits["Samuel"], "Fleet, it’s time to regroup and head out! Return to the commander’s position immediately."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Fleet, itâ€™s time to regroup and head out! Return to the commanderâ€™s position immediately."),
 
-            new DialogueLine("Samuel", Portraits["Samuel"], "We've lost the last ship we sent out, commander. It’s time to regroup."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "We've lost the last ship we sent out, commander. Itâ€™s time to regroup."),
 
-            new DialogueLine("Oviya", Portraits["Oviya"], "Hold on, we have more bees on our radar! They’re… not coming towards us?"),
-            new DialogueLine("Marco", Portraits["Marco"], "No rest for the weary…"),
+            new DialogueLine("Oviya", Portraits["Oviya"], "Hold on, we have more bees on our radar! Theyâ€™reâ€¦ not coming towards us?"),
+            new DialogueLine("Marco", Portraits["Marco"], "No rest for the wearyâ€¦"),
             new DialogueLine("Samuel", Portraits["Samuel"], "Alright, commander, gather your squads and let's investigate."),
 
             new DialogueLine("Samuel", Portraits["Samuel"], "That was close! Let's get out of here."),
         };
 
         Uranus_ANewThreat = new List<DialogueLine> {
-            new DialogueLine("Samuel", Portraits["Samuel"], "We need to check out a grouping of bees further out from Uranus. They’re moving… very slowly."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "We need to check out a grouping of bees further out from Uranus. Theyâ€™re movingâ€¦ very slowly."),
 
-            new DialogueLine("Marge", Portraits["Marge"], "Is this dang thing working? Hello! Any humans left? Hang in there, team, we’re gonna get through this, okay?"),
-            new DialogueLine("Barge Pilot", Portraits["Barge Pilot"], "It’s not looking good, Marge…"),
+            new DialogueLine("Marge", Portraits["Marge"], "Is this dang thing working? Hello! Any humans left? Hang in there, team, weâ€™re gonna get through this, okay?"),
+            new DialogueLine("Barge Pilot", Portraits["Barge Pilot"], "Itâ€™s not looking good, Margeâ€¦"),
             new DialogueLine("Marge", Portraits["Marge"], "I'll get you through, okay?"),
             new DialogueLine("Samuel", Portraits["Samuel"], "Hello? Identify yourself."),
-            new DialogueLine("Marge", Portraits["Marge"], "Oh, thank the stars! Are you UF? Come help us, quick! We’re surrounded over here!"),
+            new DialogueLine("Marge", Portraits["Marge"], "Oh, thank the stars! Are you UF? Come help us, quick! Weâ€™re surrounded over here!"),
 
-            new DialogueLine("Marge", Portraits["Marge"], "No!!! They’re gonna pay for that!", DialogueLine.DialogueType.Disappearing),
+            new DialogueLine("Marge", Portraits["Marge"], "No!!! Theyâ€™re gonna pay for that!", DialogueLine.DialogueType.Disappearing),
 
-            new DialogueLine("Marge", Portraits["Marge"], "There’s more coming! ", DialogueLine.DialogueType.Disappearing),
-            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "Those are Yellow Jackets! Don’t let them hit those Barges!", DialogueLine.DialogueType.Disappearing),
+            new DialogueLine("Marge", Portraits["Marge"], "Thereâ€™s more coming! ", DialogueLine.DialogueType.Disappearing),
+            new DialogueLine("Yoshiko", Portraits["Yoshiko"], "Those are Yellow Jackets! Donâ€™t let them hit those Barges!", DialogueLine.DialogueType.Disappearing),
 
-            new DialogueLine("Marge", Portraits["Marge"], "Just cuz I don’t have guns don't mean I can’t fight! Take this!", DialogueLine.DialogueType.Disappearing),
+            new DialogueLine("Marge", Portraits["Marge"], "Just cuz I donâ€™t have guns don't mean I canâ€™t fight! Take this!", DialogueLine.DialogueType.Disappearing),
 
-            new DialogueLine("Marge", Portraits["Marge"], "I thought we were goners. I can’t thank you enough for risking yourselves."),
-            new DialogueLine("Marco", Portraits["Marco"], "We're getting pretty used to these rescue missions, don’t sweat it."),
+            new DialogueLine("Marge", Portraits["Marge"], "I thought we were goners. I canâ€™t thank you enough for risking yourselves."),
+            new DialogueLine("Marco", Portraits["Marco"], "We're getting pretty used to these rescue missions, donâ€™t sweat it."),
             new DialogueLine("Fritz", Portraits["Fritz"], "And we get to explode stuff! Win win!"),
-            new DialogueLine("Marge", Portraits["Marge"], "…right."),
-            new DialogueLine("Samuel", Portraits["Samuel"], "How’d you end up here?"),
-            new DialogueLine("Marge", Portraits["Marge"], "Well, we were on a transport line from Saturn. Those… things-"),
+            new DialogueLine("Marge", Portraits["Marge"], "â€¦right."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "Howâ€™d you end up here?"),
+            new DialogueLine("Marge", Portraits["Marge"], "Well, we were on a transport line from Saturn. Thoseâ€¦ things-"),
             new DialogueLine("Emilia", Portraits["Emilia"], "Bees!"),
-            new DialogueLine("Marge", Portraits["Marge"], "They do look like that, huh? Wait- you all don’t think they’re really bees, right?"),
-            new DialogueLine("Alejandra", Portraits["Alejandra"], "Of course not, that’s preposterous."),
-            new DialogueLine("Fritz", Portraits["Fritz"], "…really?! Jeremy lied to me…"),
+            new DialogueLine("Marge", Portraits["Marge"], "They do look like that, huh? Wait- you all donâ€™t think theyâ€™re really bees, right?"),
+            new DialogueLine("Alejandra", Portraits["Alejandra"], "Of course not, thatâ€™s preposterous."),
+            new DialogueLine("Fritz", Portraits["Fritz"], "â€¦really?! Jeremy lied to meâ€¦"),
             new DialogueLine("Marge", Portraits["Marge"], "Right. Glad most of us have our heads screwed on straight! Either way, they chased behind us during our trip over."),
             new DialogueLine("Oviya", Portraits["Oviya"], "And they chased you from Saturn. This is bad."),
-            new DialogueLine("Emilia", Portraits["Emilia"], "Why’s that? Well obviously it’s bad because the bees attacked there."),
-            new DialogueLine("Joey", Portraits["Joey"], "Saturn’s the biggest UF station this side of the asteroid belt."),
+            new DialogueLine("Emilia", Portraits["Emilia"], "Whyâ€™s that? Well obviously itâ€™s bad because the bees attacked there."),
+            new DialogueLine("Joey", Portraits["Joey"], "Saturnâ€™s the biggest UF station this side of the asteroid belt."),
             new DialogueLine("Alejandra", Portraits["Alejandra"], "And its largest off-Earth manufacturing site."),
-            new DialogueLine("Joey", Portraits["Joey"], "They’re mighty fine facilities."),
-            new DialogueLine("Marco", Portraits["Marco"], "If they’re smart, they’re using those facilities."),
+            new DialogueLine("Joey", Portraits["Joey"], "Theyâ€™re mighty fine facilities."),
+            new DialogueLine("Marco", Portraits["Marco"], "If theyâ€™re smart, theyâ€™re using those facilities."),
             new DialogueLine("Emilia", Portraits["Emilia"], "You think they can make more bees? They can probably make more bees."),
-            new DialogueLine("Oviya", Portraits["Oviya"], "Let’s get within scouting distance as soon as possible. If it’s as bad as we think, we need to stop this immediately."),
+            new DialogueLine("Oviya", Portraits["Oviya"], "Letâ€™s get within scouting distance as soon as possible. If itâ€™s as bad as we think, we need to stop this immediately."),
             new DialogueLine("Yoshiko", Portraits["Yoshiko"], "Oh, this is gonna be a big fight. I can tell!"),
 
-            new DialogueLine("Samuel", Portraits["Samuel"], "We couldn’t save them…"),
-            new DialogueLine("Marco", Portraits["Marco"], "Sometimes that’s life, kid. We’ll avenge them."),
+            new DialogueLine("Samuel", Portraits["Samuel"], "We couldnâ€™t save themâ€¦"),
+            new DialogueLine("Marco", Portraits["Marco"], "Sometimes thatâ€™s life, kid. Weâ€™ll avenge them."),
             new DialogueLine("Oviya", Portraits["Oviya"], "It looks like they were coming from Saturn."),
             new DialogueLine("Yoshiko", Portraits["Yoshiko"], "Bees included. This is bad."),
-            new DialogueLine("Emilia", Portraits["Emilia"], "Why’s that? Well obviously it’s bad because the bees attacked there."),
-            new DialogueLine("Joey", Portraits["Joey"], "Saturn’s the biggest UF station this side of the asteroid belt."),
+            new DialogueLine("Emilia", Portraits["Emilia"], "Whyâ€™s that? Well obviously itâ€™s bad because the bees attacked there."),
+            new DialogueLine("Joey", Portraits["Joey"], "Saturnâ€™s the biggest UF station this side of the asteroid belt."),
             new DialogueLine("Alejandra", Portraits["Alejandra"], "And its largest off-Earth manufacturing site."),
-            new DialogueLine("Joey", Portraits["Joey"], "They’re mighty fine facilities."),
-            new DialogueLine("Marco", Portraits["Marco"], "If they’re smart, they’re using those facilities."),
+            new DialogueLine("Joey", Portraits["Joey"], "Theyâ€™re mighty fine facilities."),
+            new DialogueLine("Marco", Portraits["Marco"], "If theyâ€™re smart, theyâ€™re using those facilities."),
             new DialogueLine("Emilia", Portraits["Emilia"], "You think they can make more bees? They can probably make more bees."),
-            new DialogueLine("Oviya", Portraits["Oviya"], "Let’s get within scouting distance as soon as possible. If it’s as bad as we think, we need to stop this immediately."),
+            new DialogueLine("Oviya", Portraits["Oviya"], "Letâ€™s get within scouting distance as soon as possible. If itâ€™s as bad as we think, we need to stop this immediately."),
             new DialogueLine("Yoshiko", Portraits["Yoshiko"], "Oh, this is gonna be a big fight. I can tell!"),
         };
 
@@ -638,30 +639,30 @@ public class CutsceneManager : MonoBehaviour
         {
             new DialogueLine("Samuel", Portraits["Samuel"], "Commander! We have no ships left that can fight!"),
             new DialogueLine("Yoshiko", Portraits["Yoshiko"], "Who needs ships?! I'll fight them with my bare hands!"),
-            new DialogueLine("Marco", Portraits["Marco"], "It’s a death wish. Others will continue the fight, and we’re no use to them if we’re gone."),
+            new DialogueLine("Marco", Portraits["Marco"], "Itâ€™s a death wish. Others will continue the fight, and weâ€™re no use to them if weâ€™re gone."),
         };
 
         StartedChallengeMode = new List<DialogueLine>
         {
             new DialogueLine("A.M.I.", Portraits["AMI"], "Welcome to Challenge Mode, Commander!"),
-            new DialogueLine("A.M.I.", Portraits["AMI"], "This simulation works a little differently from Campaign Mode. First of all, you start out with a set amount of ships that decreases as you lose them. You won’t be able to construct additional ships for your fleet."),
+            new DialogueLine("A.M.I.", Portraits["AMI"], "This simulation works a little differently from Campaign Mode. First of all, you start out with a set amount of ships that decreases as you lose them. You wonâ€™t be able to construct additional ships for your fleet."),
             new DialogueLine("A.M.I.", Portraits["AMI"], "Secondly, you only advance onto the next level when you beat the current level. If you fail, you lose your ships, but the Bees are as strong as before."),
             new DialogueLine("A.M.I.", Portraits["AMI"], $"The goal is to make it as far as possible before you run out of ships. As the name implies, Challenge Mode will challenge your strategic and leadership skills, so use this opportunity to sharpen your abilities. Good luck Commander {ConfigData.UserProgressData.PlayerName}!"),
         };
 
         SelectedCarrierSquad = new List<DialogueLine>
         {
-            new DialogueLine("Emilia", Portraits["Emilia"], "Alright, commander, let’s show you how it’s done!"),
+            new DialogueLine("Emilia", Portraits["Emilia"], "Alright, commander, letâ€™s show you how itâ€™s done!"),
             new DialogueLine("Alejandra", Portraits["Alejandra"], "Yes, it is a complex vessel. The Carrier itself cannot engage in combat."),
             new DialogueLine("Emilia", Portraits["Emilia"], "But the Drone shoots stuff! And the Striker explodes stuff!"),
-            new DialogueLine("Alejandra", Portraits["Alejandra"], "More or less. Drones will operate much like the other fleet types you’re used to. Strikers function a bit differently. If you- Emilia, wake up."),
-            new DialogueLine("Emilia", Portraits["Emilia"], "Ah! Right, so the strikers have to drop their bombs! Don’t worry about it being space, they’re magnetic. But the magnets only engage once they release the bombs. The mechanism behind that is really neat, because it-"),
+            new DialogueLine("Alejandra", Portraits["Alejandra"], "More or less. Drones will operate much like the other fleet types youâ€™re used to. Strikers function a bit differently. If you- Emilia, wake up."),
+            new DialogueLine("Emilia", Portraits["Emilia"], "Ah! Right, so the strikers have to drop their bombs! Donâ€™t worry about it being space, theyâ€™re magnetic. But the magnets only engage once they release the bombs. The mechanism behind that is really neat, because it-"),
              new DialogueLine("Alejandra", Portraits["Alejandra"], "Emilia, stay on task."),
-             new DialogueLine("Emilia", Portraits["Emilia"], "Right, right. Anyway, your strikers will have to get to their target to drop off their payload, so keep in mind that they need a target. It’s a very simple program, so they won’t automatically attack anything."),
+             new DialogueLine("Emilia", Portraits["Emilia"], "Right, right. Anyway, your strikers will have to get to their target to drop off their payload, so keep in mind that they need a target. Itâ€™s a very simple program, so they wonâ€™t automatically attack anything."),
              new DialogueLine("Alejandra", Portraits["Alejandra"], "Their effective range is nonexistent."),
-             new DialogueLine("Emilia", Portraits["Emilia"], "And then after that, they can’t attack anything else until they get a new payload at the Carrier."),
+             new DialogueLine("Emilia", Portraits["Emilia"], "And then after that, they canâ€™t attack anything else until they get a new payload at the Carrier."),
              new DialogueLine("Alejandra", Portraits["Alejandra"], "The Carrier will always be ready to restock your Strikers, and they will seek a reload after dropping their payload automatically."),
-             new DialogueLine("Emilia", Portraits["Emilia"], "Now go get ‘em!"),
+             new DialogueLine("Emilia", Portraits["Emilia"], "Now go get â€˜em!"),
         };
 
         EasterEggLines = new List<DialogueLine>
@@ -671,7 +672,7 @@ public class CutsceneManager : MonoBehaviour
             new DialogueLine("Fritz", Portraits["Fritz"], "Jeremy has nothing on Dee when it comes to the social game which is really the crux of the show, but in season four thousand six hundred and twenty, the meta <i>really</i> changed..."),
             new DialogueLine("Samuel", Portraits["Samuel"], "Have you heard of my new game? It's called The Folk and there's an eclectic assortment of mysteriously transformed animals from all over Montana."),
             new DialogueLine("A.M.I.", Portraits["AMI"], "I've never actually played a video game in my life, I just really like Bees."),
-            new DialogueLine("Alejandra", Portraits["Alejandra"], "Si este juego no está completamente traducido al español, ahogaré a mi esposo en su propio batido."),
+            new DialogueLine("Alejandra", Portraits["Alejandra"], "Si este juego no estÃ¡ completamente traducido al espaÃ±ol, ahogarÃ© a mi esposo en su propio batido."),
         };
         /*
          * 
@@ -703,6 +704,15 @@ public class CutsceneManager : MonoBehaviour
         DialogueManager.gameObject.SetActive(false);
     }
 
+    public void SetDialoguePresentationSuppressed(bool suppressed)
+    {
+        _dialoguePresentationSuppressed = suppressed;
+        if (suppressed)
+        {
+            HideDialogue();
+        }
+    }
+
     public void StartCutScene()
     {
         CutsceneCanvas.SetActive(true);
@@ -712,6 +722,11 @@ public class CutsceneManager : MonoBehaviour
     }
     public void ShowDialogue()
     {
+        if (_dialoguePresentationSuppressed)
+        {
+            DialogueManager.gameObject.SetActive(false);
+            return;
+        }
         DialogueManager.gameObject.SetActive(true);
     }
     public void PlaySingleDialogueLine(DialogueLine line, bool isLastDialogue = false)
@@ -721,6 +736,12 @@ public class CutsceneManager : MonoBehaviour
     }
     public void PlayDialogueSection(List<DialogueLine> lines, bool isLastDialogue = false)
     {
+        if (_dialoguePresentationSuppressed)
+        {
+            DialogueManager.gameObject.SetActive(false);
+            return;
+        }
+
         HitDialogueBreak = false;
         ShowDialogue();
         DialogueManager.Setup(this);
