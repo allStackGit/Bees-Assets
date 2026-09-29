@@ -1913,7 +1913,9 @@ server.listen(0,'127.0.0.1',async()=>{
 
 
     def test_build_preserve_run_override_is_explicit_and_build_only(self):
-        operator = read_text(ROOT / "Training" / "bees_operator.js")
+        operator = (ROOT / "Training" / "bees_operator.js").read_text(
+            encoding="utf-8"
+        )
         self.assertIn("[--preserve-run]", operator)
         self.assertIn("options.preserveRun = true", operator)
         self.assertIn(
