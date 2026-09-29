@@ -228,6 +228,8 @@ The launcher records the supervisor PID under the worker install root only for l
 
 The launcher is now part of the same self-update publication as the runtime and tailnet helper. Existing workers automatically adopt the managed current launcher during this rollout; future launcher changes therefore do not require manual recopying.
 
+A central-training machine may also run one independent local WAN actor without using the remote Tailnet launcher. Configure `localActor` in `Training/bees.cluster.json`. The local actor connects directly to loopback control/broker endpoints, keeps its own persistent actor/trainer identity, installs the same canonical Unity artifacts as a remote worker, participates in release barriers, and uses the same per-worker environment optimizer. Its broker slot is reserved in addition to `maxRemoteActors`, so enabling it does not reduce the configured external-worker capacity. `start`, `server`, and `runtime` reconcile the local supervisor; builds pre-stage its release-specific actor runtime before rollout. Set `localActor.enabled` to `false` to disable it.
+
 Environment count is automatically optimized per remote machine by default:
 
 ```cmd
