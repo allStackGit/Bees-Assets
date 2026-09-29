@@ -307,7 +307,6 @@ internal sealed class RlOneVsOneAgent : Agent
         agent._level = level;
         agent._side = side;
         agent._teamId = teamId;
-        agent.RegisterWithMultiAgentGroup();
         IncrementAgentCount(level, side, teamId);
     }
 
@@ -388,7 +387,6 @@ internal sealed class RlOneVsOneAgent : Agent
     {
         ResetWeaponAimDirections();
         Instances.Add(this);
-        RegisterWithMultiAgentGroup();
         RlOneVsOneEpisodeCoordinator.TsvRewardOccurred += HandleTsvRewardOccurred;
         RlOneVsOneEpisodeCoordinator.EpisodeEnded += HandleEpisodeEnded;
     }
@@ -896,6 +894,17 @@ internal sealed class RlOneVsOneAgent : Agent
             return false;
         }
 
+        // EndGroupEpisode resets participating Agents immediately, but unregistering from the
+        // SimpleMultiAgentGroup inside OnEpisodeBegin would mutate its HashSet during iteration.
+        // Defer that unregister until this Agent next attempts to participate. This also keeps
+        // surplus dynamic controller slots out of the new episode's MA-POCA group when the fleet
+        // has shrunk since the previous battle.
+        if (!_hasParticipatedThisEpisode && !_hasBoundShip && _agentGroup != null)
+        {
+            _agentGroup.UnregisterAgent(this);
+            _agentGroup = null;
+        }
+
         if (_hasBoundShip)
         {
             if (_ship != null && !_ship.IsDead && _ship.Level == level && _ship.Id == _boundRuntimeShipId)
@@ -940,6 +949,7 @@ internal sealed class RlOneVsOneAgent : Agent
 
         _boundRuntimeShipId = _ship.Id;
         _hasBoundShip = true;
+        RegisterWithMultiAgentGroup();
         ResetCommunication(_ship);
         _hasParticipatedThisEpisode = true;
         _decisionCounter = 0;
