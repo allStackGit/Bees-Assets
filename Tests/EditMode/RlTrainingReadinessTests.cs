@@ -8,14 +8,14 @@ namespace Bees.Tests.EditMode
     public class RlTrainingReadinessTests
     {
         [Test]
-        public void CanonicalPolicyAbiIdentifiesThe128By3Network()
+        public void CanonicalPolicyAbiIdentifiesTheStructured384By3Network()
         {
             Type schemaType = RuntimeAssembly.GetType("RlPolicySchema");
 
-            Assert.That((int)RuntimeAssembly.GetStaticField(schemaType, "Version"), Is.EqualTo(20));
+            Assert.That((int)RuntimeAssembly.GetStaticField(schemaType, "Version"), Is.EqualTo(21));
             string signature = (string)RuntimeAssembly.GetStaticField(schemaType, "Signature");
-            StringAssert.StartsWith("bees-rl-v20|", signature);
-            StringAssert.Contains("network=ff-128x3", signature);
+            StringAssert.StartsWith("bees-rl-v21|", signature);
+            StringAssert.Contains("network=structured-dual-faction-384x3", signature);
             StringAssert.Contains("obs=7614", signature);
         }
 
