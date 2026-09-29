@@ -74,12 +74,100 @@ namespace Assets.Scripts.Levels
 
         private void ConfigureRlOneVsOneSpawnPositions()
         {
-            float angle = Random.Range(0f, Mathf.PI * 2f);
-            Vector2 offset = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) *
-                             global::RlOneVsOneArenaMapSizeState.GetSpawnRadius(this);
+            float spawnRadius = global::RlOneVsOneArenaMapSizeState.GetSpawnRadius(this);
+            for (int attempt = 0; attempt < 64; attempt++)
+            {
+                float angle = Random.Range(0f, Mathf.PI * 2f);
+                Vector2 offset = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * spawnRadius;
+                if (TrySetRlOneVsOneSpawnPositions(-offset, offset))
+                {
+                    return;
+                }
+            }
 
-            StartingPositions[ConfigData.Configuration.BeeSide - 1] = -offset;
-            StartingPositions[ConfigData.Configuration.HumanSide - 1] = offset;
+            // Static RL obstacles preserve a clear full-width/full-height cross. A deterministic
+            // sweep guarantees we use that corridor even if all random attempts happened to miss it.
+            for (int direction = 0; direction < 64; direction++)
+            {
+                float angle = direction * Mathf.PI * 2f / 64f;
+                Vector2 offset = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * spawnRadius;
+                if (TrySetRlOneVsOneSpawnPositions(-offset, offset))
+                {
+                    return;
+                }
+            }
+
+            throw new System.InvalidOperationException(
+                "RL training could not find spawn positions that keep every configured ship outside static obstacles and map bounds.");
+        }
+
+        private bool TrySetRlOneVsOneSpawnPositions(Vector2 beeCenter, Vector2 humanCenter)
+        {
+            if (!IsRlSpawnCenterClear(ConfigData.Configuration.BeeSide, beeCenter) ||
+                !IsRlSpawnCenterClear(ConfigData.Configuration.HumanSide, humanCenter))
+            {
+                return false;
+            }
+
+            StartingPositions[ConfigData.Configuration.BeeSide - 1] = beeCenter;
+            StartingPositions[ConfigData.Configuration.HumanSide - 1] = humanCenter;
+            return true;
+        }
+
+        private bool IsRlSpawnCenterClear(int side, Vector2 center)
+        {
+            int shipCount = global::RlOneVsOneTrainingBootstrap.CurrentShipsPerSide;
+            for (int shipIndex = 0; shipIndex < shipCount; shipIndex++)
+            {
+                ConfigData.ShipTypes shipType =
+                    global::RlOneVsOnePerArenaMatchups.GetShipType(this, side, shipIndex);
+                Vector2 shipSize = (Vector2)ConfigData.ShipSizes[shipType] / ConfigData.PixelsPerUnit;
+                float shipExtent = Mathf.Max(shipSize.x, shipSize.y) * 0.5f;
+                Vector2 shipPosition =
+                    center + global::RlOneVsOneArenaMapSizeState.GetShipFormationOffset(this, shipIndex);
+
+                if (shipPosition.x - shipExtent < MinX ||
+                    shipPosition.x + shipExtent > MaxX ||
+                    shipPosition.y - shipExtent < MinY ||
+                    shipPosition.y + shipExtent > MaxY)
+                {
+                    return false;
+                }
+
+                if (!global::RlOneVsOneTrainingBootstrap.CurrentStaticObstaclesEnabled ||
+                    ObstacleMap == null ||
+                    ObstacleMap.Obstacles == null)
+                {
+                    continue;
+                }
+
+                for (int obstacleIndex = 0; obstacleIndex < ObstacleMap.Obstacles.Count; obstacleIndex++)
+                {
+                    StaticObstacle obstacle = ObstacleMap.Obstacles[obstacleIndex];
+                    if (obstacle == null || obstacle.IsDead || obstacle.Collider == null)
+                    {
+                        continue;
+                    }
+
+                    Bounds worldBounds = obstacle.Collider.bounds;
+                    Vector3 localMin = Map.Transform.InverseTransformPoint(worldBounds.min);
+                    Vector3 localMax = Map.Transform.InverseTransformPoint(worldBounds.max);
+                    float obstacleMinX = Mathf.Min(localMin.x, localMax.x);
+                    float obstacleMaxX = Mathf.Max(localMin.x, localMax.x);
+                    float obstacleMinY = Mathf.Min(localMin.y, localMax.y);
+                    float obstacleMaxY = Mathf.Max(localMin.y, localMax.y);
+
+                    if (shipPosition.x + shipExtent > obstacleMinX &&
+                        shipPosition.x - shipExtent < obstacleMaxX &&
+                        shipPosition.y + shipExtent > obstacleMinY &&
+                        shipPosition.y - shipExtent < obstacleMaxY)
+                    {
+                        return false;
+                    }
+                }
+            }
+
+            return true;
         }
 
         private void RandomizeRlOneVsOneFacing(int side)
