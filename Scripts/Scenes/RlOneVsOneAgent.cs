@@ -875,9 +875,10 @@ internal sealed class RlOneVsOneAgent : Agent
         RlOneVsOneEpisodeCoordinator.RecordSuccessfulCapabilityOutcome(_ship, tsvValue);
     }
 
-    private bool IsGroupRewardRepresentative()
+    private bool IsGroupRewardRepresentative(bool requireCurrentController = true)
     {
-        if (!IsCurrentController() || !_hasParticipatedThisEpisode)
+        if (!_hasParticipatedThisEpisode ||
+            (requireCurrentController && !IsCurrentController()))
         {
             return false;
         }
@@ -888,7 +889,8 @@ internal sealed class RlOneVsOneAgent : Agent
             RlOneVsOneAgent other = Instances[i];
             if (other == null || other == this ||
                 other._level != _level || other._side != _side || other._teamId != _teamId ||
-                !other._hasParticipatedThisEpisode || !other.IsCurrentController())
+                !other._hasParticipatedThisEpisode ||
+                (requireCurrentController && !other.IsCurrentController()))
             {
                 continue;
             }
@@ -916,10 +918,6 @@ internal sealed class RlOneVsOneAgent : Agent
             return;
         }
 
-        // Invalidate only this arena's randomized frame. Other arenas may be part-way through an
-        // unrelated episode and must retain their coordinate assignment.
-        RlPolicyCoordinateFrame.EndEpisode(level);
-
         if (result.EpisodeNumber <= _lastRewardedEpisode)
         {
             return;
@@ -927,7 +925,7 @@ internal sealed class RlOneVsOneAgent : Agent
 
         int assignedTeam = _side == ConfigData.Configuration.BeeSide ? result.BeeTeamId : result.HumanTeamId;
         if (_teamId != assignedTeam || !_hasParticipatedThisEpisode ||
-            !IsGroupRewardRepresentative())
+            !IsGroupRewardRepresentative(requireCurrentController: false))
         {
             return;
         }
