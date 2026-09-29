@@ -520,6 +520,7 @@ namespace Assets.Scripts.Levels
         private void SpawnAsteroid()
         {
             Stage.Pool.GetCollisionAsteroidFromPool().Setup(this);
+            global::RlOneVsOneEpisodeDiagnostics.RecordCollisionAsteroidSpawned(this);
         }
     }
 }
