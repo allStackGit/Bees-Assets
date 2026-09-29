@@ -94,8 +94,13 @@ function buildLocalActorLaunchCommand(config, preparedRuntime, actorKey) {
     if (!settings.enabled) {
         throw new Error('Local actor launch requested while localActor.enabled is false.');
     }
-    const python = path.resolve(String(preparedRuntime.learner_python || ''));
-    const runtimeRoot = path.resolve(String(preparedRuntime.runtime_root || ''));
+    const rawPython = String(preparedRuntime.learner_python || '').trim();
+    const rawRuntimeRoot = String(preparedRuntime.runtime_root || '').trim();
+    if (!rawPython || !rawRuntimeRoot) {
+        throw new Error('Prepared local actor runtime is missing Python/runtime identity.');
+    }
+    const python = path.resolve(rawPython);
+    const runtimeRoot = path.resolve(rawRuntimeRoot);
     const actor = path.join(runtimeRoot, LOCAL_ACTOR_ENTRYPOINT);
     if (!exists(python)) throw new Error('Local actor learner Python is missing: ' + python);
     if (!exists(actor)) throw new Error('Local actor runtime entrypoint is missing: ' + actor);
@@ -339,15 +344,15 @@ async function startLocalActorIfNeeded(
 
     await sleep(100);
     const identity = getProcessIdentity(child.pid);
-    if (!identity || !samePath(identity.executable_path, bootstrapPython)) {
-        try {
-            stopManagedProcessTree(
-                { ...launchIntent, ...(identity || {}), pid: child.pid },
-                bootstrapPython,
-                'local training actor',
-            );
-        } catch (_) {}
-        throw new Error('Could not establish local actor supervisor process identity after launch.');
+    if (!identity) {
+        throw new Error(
+            'Local actor supervisor exited before its managed process identity could be established.'
+        );
+    }
+    if (!samePath(identity.executable_path, bootstrapPython)) {
+        throw new Error(
+            'Local actor supervisor PID was observed with an unexpected executable; refusing PID-only cleanup.'
+        );
     }
 
     writeJsonAtomic(paths.localActorStatePath, {
