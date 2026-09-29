@@ -95,6 +95,10 @@ namespace Assets.Scripts.Levels
         {
             if (global::RlOneVsOneTrainingBootstrap.IsActiveFor(Stage))
             {
+                // Static-obstacle geometry depends on the selected ship sizes, so the sampled
+                // matchup must exist before map setup asks for those ship types. Ship setup calls
+                // PrepareEpisode again later; that call is intentionally idempotent.
+                global::RlOneVsOnePerArenaMatchups.PrepareEpisode(this);
                 global::RlOneVsOneArenaMapSizeState.ConfigureTrainingMap(this, Map);
 
                 bool useStaticObstacles = global::RlOneVsOneTrainingBootstrap.CurrentStaticObstaclesEnabled;
