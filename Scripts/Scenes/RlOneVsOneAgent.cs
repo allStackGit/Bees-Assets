@@ -953,8 +953,10 @@ internal sealed class RlOneVsOneAgent : Agent
 
     private void ReleaseShip()
     {
-        if (_ship != null)
+        if (_ship != null && _ship.Id == _boundRuntimeShipId)
         {
+            // Ship instances are pooled. A stale agent must not clear control or communication
+            // state after this object has been reused for a newer runtime ship.
             ClearCommunication(_ship);
             _ship.IsRlPolicyControlled = false;
             for (int i = 0; i < _ship.Turrets.Count; i++)

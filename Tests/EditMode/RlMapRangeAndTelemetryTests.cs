@@ -49,6 +49,21 @@ namespace Bees.Tests.EditMode
             }
         }
 
+        [TestCase(32.4f, 32.8f)]
+        [TestCase(32.6f, 32.8f)]
+        public void SampledMapSizeStaysWithinDecimalBounds(float minimum, float maximum)
+        {
+            Type mapStateType = RuntimeAssembly.GetType("RlOneVsOneArenaMapSizeState");
+            MethodInfo sample = mapStateType.GetMethod("SampleMapSize", BindingFlags.Static | BindingFlags.NonPublic);
+            Assert.That(sample, Is.Not.Null);
+
+            for (int i = 0; i < 8; i++)
+            {
+                float value = (float)sample.Invoke(null, new object[] { minimum, maximum });
+                Assert.That(value, Is.InRange(minimum, maximum));
+            }
+        }
+
         [Test]
         public void ShipFitValidationUsesTheSampledArenaSize()
         {
