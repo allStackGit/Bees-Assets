@@ -184,6 +184,11 @@ def contract_payload(assets_root: Path) -> dict[str, Any]:
         "team_exploration_source_sha256": scenes_root / "RlTeamExplorationGrid.cs",
         "episode_identity_source_sha256": scenes_root / "RlEpisodeShipIdentity.cs",
     }
+    trainer_semantic_sources = {
+        "structured_policy_source_sha256": assets_root / "Training" / "bees_mlagents_structured_policy.py",
+        "optimizer_compat_source_sha256": assets_root / "Training" / "bees_mlagents_ppo_compat.py",
+        "learner_launcher_source_sha256": assets_root / "Training" / "bees_mlagents_learn.py",
+    }
     for path in (
         continual_path,
         trainer_path,
@@ -191,6 +196,7 @@ def contract_payload(assets_root: Path) -> dict[str, Any]:
         policy_path,
         episode_coordinator_path,
         *semantic_sources.values(),
+        *trainer_semantic_sources.values(),
     ):
         if not path.is_file():
             raise ValueError(f"training compatibility source is missing: {path}")
@@ -217,6 +223,8 @@ def contract_payload(assets_root: Path) -> dict[str, Any]:
     )
     for name, path in semantic_sources.items():
         payload[name] = _semantic_csharp_sha256(path)
+    for name, path in trainer_semantic_sources.items():
+        payload[name] = _sha256_bytes(path.read_bytes())
     return payload
 
 
