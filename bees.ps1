@@ -4,6 +4,7 @@ param(
     [string]$Command,
     [switch]$FullGame,
     [switch]$Force,
+    [switch]$PreserveRun,
     [switch]$NewRun,
     [string[]]$EnvArg,
     [switch]$Once,
@@ -17,6 +18,9 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 
+if($PreserveRun -and $Command -ne 'build'){
+    throw '-PreserveRun is only valid with the build command.'
+}
 if($NewRun -and $Command -ne 'start'){
     throw '-NewRun is only valid with the start command.'
 }
@@ -56,6 +60,7 @@ if(Test-Path -LiteralPath $nodeSetting -PathType Leaf){
 $arguments=@($operator,$Command)
 if($FullGame){$arguments+='--full-game'}
 if($Force){$arguments+='--force'}
+if($PreserveRun){$arguments+='--preserve-run'}
 if($NewRun){$arguments+='--new-run'}
 foreach($value in @($EnvArg)){
     if($null -ne $value){$arguments+=@('--env-arg',[string]$value)}
