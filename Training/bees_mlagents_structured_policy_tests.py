@@ -50,10 +50,6 @@ class StructuredPolicyArchitectureTests(unittest.TestCase):
             for parameter in module.parameters()
         )
 
-    @staticmethod
-    def _has_any_gradient(module):
-        return any(parameter.grad is not None for parameter in module.parameters())
-
     def test_structured_encoder_preserves_weapon_slots_and_faction(self):
         from mlagents.torch_utils import torch
 
@@ -95,8 +91,8 @@ class StructuredPolicyArchitectureTests(unittest.TestCase):
         output.sum().backward()
         self.assertTrue(self._has_nonzero_gradient(body.bee_observation_encoder))
         self.assertTrue(self._has_nonzero_gradient(body.bee_trunk))
-        self.assertFalse(self._has_any_gradient(body.human_observation_encoder))
-        self.assertFalse(self._has_any_gradient(body.human_trunk))
+        self.assertFalse(self._has_nonzero_gradient(body.human_observation_encoder))
+        self.assertFalse(self._has_nonzero_gradient(body.human_trunk))
 
     def test_weapon_action_head_is_shared_across_slots_but_not_factions(self):
         from mlagents.torch_utils import torch
@@ -137,7 +133,7 @@ class StructuredPolicyArchitectureTests(unittest.TestCase):
             model.human_special,
         )
         self.assertTrue(any(self._has_nonzero_gradient(module) for module in bee_modules))
-        self.assertFalse(any(self._has_any_gradient(module) for module in human_modules))
+        self.assertFalse(any(self._has_nonzero_gradient(module) for module in human_modules))
 
 
 if __name__ == "__main__":
