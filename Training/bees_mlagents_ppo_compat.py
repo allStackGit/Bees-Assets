@@ -26,6 +26,7 @@ _ORIGINAL_ACTION_MODEL_FORWARD = None
 _ORIGINAL_ACTION_MODEL_EVALUATE = None
 _ORIGINAL_PPO_UPDATE = None
 _ORIGINAL_POCA_UPDATE = None
+_ORIGINAL_POCA_UPDATE_POLICY = None
 _ORIGINAL_TRUST_REGION_POLICY_LOSS = None
 _ORIGINAL_MASKED_MEAN = None
 _ORIGINAL_BC_UPDATE_BATCH = None
@@ -301,26 +302,17 @@ def _trust_region_policy_loss_with_dimension_mask(
     return (element_loss * weights).sum() / torch.clamp(weights.sum(), min=1.0)
 
 
-def _poca_inverse_group_size_weights(policy, batch, reference):
-    """Weight each agent sample so one team-timestep has roughly unit total weight.
-
-    MA-POCA exposes each sample's groupmates explicitly. A timestep with N active
-    agents therefore contributes N actor samples. Giving each sample weight 1/N
-    prevents large fleets from overwhelming updates merely because they contain
-    more policy-controlled ships.
-    """
+def _poca_inverse_group_size_weight_array(policy, batch, batch_size):
+    """Return exact 1/N active-group weights as a NumPy vector."""
 
     import numpy as np
     from mlagents.trainers.buffer import BufferKey
     from mlagents.trainers.trajectory import GroupObsUtil
 
     n_obs = len(policy.behavior_spec.observation_specs)
-    if n_obs <= 0:
+    if n_obs <= 0 or batch_size <= 0:
         return None
     groupmate_obs = GroupObsUtil.from_buffer(batch, n_obs)
-    batch_size = int(reference.shape[0])
-    if batch_size <= 0:
-        return None
 
     group_size = np.ones(batch_size, dtype=np.float32)
     for groupmate in groupmate_obs:
@@ -336,7 +328,58 @@ def _poca_inverse_group_size_weights(policy, batch, reference):
     loss_masks = np.asarray(batch[BufferKey.MASKS].get_batch(), dtype=np.float32)
     if loss_masks.shape[0] == batch_size:
         weights *= (loss_masks > 0.0).astype(np.float32)
-    return reference.new_tensor(weights)
+    return weights
+
+
+def _poca_inverse_group_size_weights(policy, batch, reference):
+    """Weight each agent sample so one team-timestep has roughly unit total weight.
+
+    MA-POCA exposes each sample's groupmates explicitly. A timestep with N active
+    agents therefore contributes N actor samples. Giving each sample weight 1/N
+    prevents large fleets from overwhelming updates merely because they contain
+    more policy-controlled ships.
+    """
+
+    weights = _poca_inverse_group_size_weight_array(
+        policy,
+        batch,
+        int(reference.shape[0]),
+    )
+    return None if weights is None else reference.new_tensor(weights)
+
+
+def _normalize_poca_advantages(policy, batch):
+    """Standardize advantages with the same 1/N team-timestep weighting as the loss."""
+
+    import numpy as np
+    from mlagents.trainers.buffer import BufferKey
+
+    advantages = np.asarray(
+        batch[BufferKey.ADVANTAGES].get_batch(),
+        dtype=np.float32,
+    )
+    if advantages.size == 0:
+        return advantages
+
+    weights = _poca_inverse_group_size_weight_array(
+        policy,
+        batch,
+        int(advantages.shape[0]),
+    )
+    if weights is None:
+        weights = np.ones(advantages.shape[0], dtype=np.float32)
+
+    weight_sum = float(weights.sum())
+    if weight_sum <= 0.0:
+        normalized = np.zeros_like(advantages, dtype=np.float32)
+    else:
+        mean = float(np.sum(weights * advantages) / weight_sum)
+        centered = advantages - mean
+        variance = float(np.sum(weights * centered * centered) / weight_sum)
+        normalized = centered / (math.sqrt(max(0.0, variance)) + 1e-10)
+
+    batch[BufferKey.ADVANTAGES].set(normalized)
+    return normalized
 
 
 def install_inactive_continuous_action_masking() -> Optional[Callable]:
@@ -344,6 +387,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
 
     from mlagents.trainers.buffer import BufferKey
     from mlagents.trainers.poca.optimizer_torch import TorchPOCAOptimizer
+    from mlagents.trainers.poca.trainer import POCATrainer
     from mlagents.trainers.torch_entities.components.bc.module import BCModule
     from mlagents.trainers.ppo.optimizer_torch import TorchPPOOptimizer
     from mlagents.trainers.torch_entities.action_model import ActionModel
@@ -353,6 +397,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
     global _ORIGINAL_ACTION_MODEL_EVALUATE
     global _ORIGINAL_PPO_UPDATE
     global _ORIGINAL_POCA_UPDATE
+    global _ORIGINAL_POCA_UPDATE_POLICY
     global _ORIGINAL_TRUST_REGION_POLICY_LOSS
     global _ORIGINAL_MASKED_MEAN
     global _ORIGINAL_BC_UPDATE_BATCH
@@ -365,6 +410,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
     original_evaluate = ActionModel.evaluate
     original_ppo_update = TorchPPOOptimizer.update
     original_poca_update = TorchPOCAOptimizer.update
+    original_poca_update_policy = POCATrainer._update_policy
     original_policy_loss = ModelUtils.trust_region_policy_loss
     original_masked_mean = ModelUtils.masked_mean
     original_bc_update_batch = BCModule._update_batch
@@ -396,6 +442,55 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             log_probs,
             expert_actions,
         )
+
+    def weighted_poca_update_policy(self):
+        """ML-Agents 1.1.0 on-policy update with team-timestep-weighted advantages."""
+
+        import numpy as np
+        from collections import defaultdict
+        from mlagents.trainers.buffer import BufferKey
+
+        buffer_length = self.update_buffer.num_experiences
+        self.cumulative_returns_since_policy_update.clear()
+
+        batch_size = (
+            self.hyperparameters.batch_size
+            - self.hyperparameters.batch_size % self.policy.sequence_length
+        )
+        batch_size = max(batch_size, self.policy.sequence_length)
+        n_sequences = max(
+            int(self.hyperparameters.batch_size / self.policy.sequence_length),
+            1,
+        )
+
+        _normalize_poca_advantages(self.policy, self.update_buffer)
+
+        num_epoch = self.hyperparameters.num_epoch
+        batch_update_stats = defaultdict(list)
+        for _ in range(num_epoch):
+            self.update_buffer.shuffle(
+                sequence_length=self.policy.sequence_length
+            )
+            buffer = self.update_buffer
+            max_num_batch = buffer_length // batch_size
+            for i in range(0, max_num_batch * batch_size, batch_size):
+                minibatch = buffer.make_mini_batch(i, i + batch_size)
+                update_stats = self.optimizer.update(minibatch, n_sequences)
+                update_stats.update(
+                    self.optimizer.update_reward_signals(minibatch)
+                )
+                for stat_name, value in update_stats.items():
+                    batch_update_stats[stat_name].append(value)
+
+        for stat, stat_list in batch_update_stats.items():
+            self._stats_reporter.add_stat(stat, np.mean(stat_list))
+
+        if self.optimizer.bc_module:
+            update_stats = self.optimizer.bc_module.update()
+            for stat, val in update_stats.items():
+                self._stats_reporter.add_stat(stat, val)
+        self._clear_update_buffer()
+        return True
 
     def masked_forward(self, inputs, masks):
         dists = self._get_dists(inputs, masks)
@@ -515,6 +610,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
     ActionModel.evaluate = masked_evaluate
     TorchPPOOptimizer.update = masked_ppo_update
     TorchPOCAOptimizer.update = masked_poca_update
+    POCATrainer._update_policy = weighted_poca_update_policy
     ModelUtils.trust_region_policy_loss = staticmethod(masked_policy_loss)
     ModelUtils.masked_mean = staticmethod(weighted_masked_mean)
     BCModule._update_batch = masked_bc_update_batch
@@ -524,6 +620,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
     _ORIGINAL_ACTION_MODEL_EVALUATE = original_evaluate
     _ORIGINAL_PPO_UPDATE = original_ppo_update
     _ORIGINAL_POCA_UPDATE = original_poca_update
+    _ORIGINAL_POCA_UPDATE_POLICY = original_poca_update_policy
     _ORIGINAL_TRUST_REGION_POLICY_LOSS = original_policy_loss
     _ORIGINAL_MASKED_MEAN = original_masked_mean
     _ORIGINAL_BC_UPDATE_BATCH = original_bc_update_batch
@@ -538,6 +635,7 @@ def restore_inactive_continuous_action_masking() -> None:
     global _ORIGINAL_ACTION_MODEL_EVALUATE
     global _ORIGINAL_PPO_UPDATE
     global _ORIGINAL_POCA_UPDATE
+    global _ORIGINAL_POCA_UPDATE_POLICY
     global _ORIGINAL_TRUST_REGION_POLICY_LOSS
     global _ORIGINAL_MASKED_MEAN
     global _ORIGINAL_BC_UPDATE_BATCH
@@ -547,6 +645,7 @@ def restore_inactive_continuous_action_masking() -> None:
         return
 
     from mlagents.trainers.poca.optimizer_torch import TorchPOCAOptimizer
+    from mlagents.trainers.poca.trainer import POCATrainer
     from mlagents.trainers.ppo.optimizer_torch import TorchPPOOptimizer
     from mlagents.trainers.torch_entities.components.bc.module import BCModule
     from mlagents.trainers.torch_entities.action_model import ActionModel
@@ -556,6 +655,7 @@ def restore_inactive_continuous_action_masking() -> None:
     ActionModel.evaluate = _ORIGINAL_ACTION_MODEL_EVALUATE
     TorchPPOOptimizer.update = _ORIGINAL_PPO_UPDATE
     TorchPOCAOptimizer.update = _ORIGINAL_POCA_UPDATE
+    POCATrainer._update_policy = _ORIGINAL_POCA_UPDATE_POLICY
     ModelUtils.trust_region_policy_loss = staticmethod(
         _ORIGINAL_TRUST_REGION_POLICY_LOSS
     )
@@ -570,6 +670,7 @@ def restore_inactive_continuous_action_masking() -> None:
     _ORIGINAL_ACTION_MODEL_EVALUATE = None
     _ORIGINAL_PPO_UPDATE = None
     _ORIGINAL_POCA_UPDATE = None
+    _ORIGINAL_POCA_UPDATE_POLICY = None
     _ORIGINAL_TRUST_REGION_POLICY_LOSS = None
     _ORIGINAL_MASKED_MEAN = None
     _ORIGINAL_BC_UPDATE_BATCH = None
