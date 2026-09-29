@@ -46,7 +46,7 @@ internal sealed class RlOneVsOneAgent : Agent
     internal const int MapObjectObservationSize = RlCombatPerception.MapObjectObservationSize;
     internal const int CollisionAsteroidObservationSize = RlCombatPerception.CollisionAsteroidObservationSize;
     internal const int ObjectiveObservationSize = RlCombatPerception.ObjectiveObservationSize;
-    internal const int ObservationSize = RlCombatPerception.ObservationSize + 1 + RlPolicySchema.ReservedObservationCount;
+    internal const int ObservationSize = RlCombatPerception.ObservationSize + 2 + RlPolicySchema.ReservedObservationCount;
 
     // Movement occupies the first two continuous actions. Every authored weapon slot then gets its
     // own aim x/y pair and its own fire branch so all turrets can be aimed/fired independently in
