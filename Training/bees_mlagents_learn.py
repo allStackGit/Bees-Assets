@@ -821,6 +821,10 @@ def main() -> None:
         install_value_estimate_key_fix,
         restore_value_estimate_key,
     )
+    from bees_mlagents_structured_policy import (
+        install_structured_policy,
+        restore_structured_policy,
+    )
 
     actual_version = mlagents.trainers.__version__
     if actual_version != EXPECTED_MLAGENTS_VERSION:
@@ -831,8 +835,14 @@ def main() -> None:
             "this version guard."
         )
 
-    original_value_estimate_key = install_value_estimate_key_fix()
-    print("[Bees RL] PPO value-estimate/return buffer key separation: enabled")
+    structured_policy_state = install_structured_policy()
+    try:
+        original_value_estimate_key = install_value_estimate_key_fix()
+    except Exception:
+        restore_structured_policy(structured_policy_state)
+        raise
+    print("[Bees RL] Structured dual-faction entity/weapon policy: enabled")
+    print("[Bees RL] PPO/POCA value-estimate/return buffer key separation: enabled")
 
     if torch_threads is not None:
         torch_utils.torch.set_num_threads(torch_threads)
@@ -889,6 +899,7 @@ def main() -> None:
             RLTrainer._maybe_save_model = original_maybe_save_model
         torch_utils.torch.load = original_torch_load
         restore_value_estimate_key(original_value_estimate_key)
+        restore_structured_policy(structured_policy_state)
         if original_queue_steps is not None:
             SubprocessEnvManager._queue_steps = original_queue_steps
         if original_env_step is not None:
