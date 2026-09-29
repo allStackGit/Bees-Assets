@@ -32,7 +32,7 @@ namespace Bees.Tests.EditMode
             }
             finally
             {
-                Object.DestroyImmediate(obstacleObject);
+                UnityEngine.Object.DestroyImmediate(obstacleObject);
             }
         }
 
