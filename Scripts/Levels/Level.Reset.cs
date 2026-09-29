@@ -343,6 +343,7 @@ namespace Assets.Scripts.Levels
             _hasSetTimeoutTimer = false;
             State.ResetState();
             Seconds = 0;
+            MaxMinerals = 0;
             RemoveHandledRequests(allHandledRequests, HandledRequests);
             AllSquads.Clear();
             CurrentLevelOptions.ChosenSquads.Clear();
