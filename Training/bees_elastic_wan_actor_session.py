@@ -2,10 +2,18 @@
 
 from __future__ import annotations
 
+import os
+import queue
 import time
+from pathlib import Path
 from typing import Any, Mapping
 
 import bees_wan_actor_worker as worker
+
+
+WORKER_ENVS_TARGET_ENV = "BEES_TRAINING_WORKER_ENVS_FILE"
+MAX_DYNAMIC_ENVS = 64
+WORKER_CLOSE_SECONDS = 10.0
 
 
 class ElasticActorSession(worker.ActorSession):
@@ -21,6 +29,264 @@ class ElasticActorSession(worker.ActorSession):
         super().__init__(*args, **kwargs)
         self.topology_epoch = -1
         self._last_consumed_sample = None
+        target_path = os.environ.get(WORKER_ENVS_TARGET_ENV, "").strip()
+        self._env_target_path = (
+            Path(target_path).expanduser().resolve() if target_path else None
+        )
+        self._capacity_registration_pending = False
+
+    def _desired_env_count(self) -> int:
+        path = self._env_target_path
+        if path is None:
+            return int(self.env_count)
+        try:
+            raw = path.read_text(encoding="ascii").strip()
+        except FileNotFoundError:
+            return int(self.env_count)
+        except OSError as exc:
+            raise RuntimeError(f"could not read live worker env target: {exc}") from exc
+        try:
+            value = int(raw)
+        except ValueError as exc:
+            raise RuntimeError(f"live worker env target is not an integer: {raw!r}") from exc
+        if not 1 <= value <= MAX_DYNAMIC_ENVS:
+            raise RuntimeError(
+                f"live worker env target must be in 1-{MAX_DYNAMIC_ENVS}, got {value}"
+            )
+        return value
+
+    def _register_current_capacity(self) -> bool:
+        if not self._behavior_specs:
+            return False
+        self.client.env_count = int(self.env_count)
+        registration = {
+            "session_id": self.session_id,
+            "actor_id": self.actor_id,
+            "control_epoch": self.control_epoch,
+            "behavior_specs": dict(self._behavior_specs),
+        }
+        try:
+            self._retry_broker_unavailable(
+                lambda: self.client.register(registration),
+                label="environment-capacity registration",
+            )
+        except worker.BrokerStaleActor:
+            self._capacity_registration_pending = True
+            self._state_changed.set()
+            return False
+        self._capacity_registration_pending = False
+        return True
+
+    def _behavior_specs_match(self, candidate: Mapping[str, Any]) -> bool:
+        if set(candidate) != set(self._behavior_specs):
+            return False
+        return all(
+            worker.wan._behavior_spec_signature(candidate[name])
+            == worker.wan._behavior_spec_signature(self._behavior_specs[name])
+            for name in candidate
+        )
+
+    def _cleanup_worker_agent_state(self, global_worker_id: int) -> None:
+        prefix = f"agent_{int(global_worker_id)}-"
+        for agent_manager in self.manager.agent_managers.values():
+            agent_ids = set()
+            for name in (
+                "_experience_buffers",
+                "_last_take_action_outputs",
+                "_last_step_result",
+                "_episode_steps",
+                "_episode_rewards",
+            ):
+                values = getattr(agent_manager, name, None)
+                if isinstance(values, Mapping):
+                    agent_ids.update(
+                        key for key in values if isinstance(key, str) and key.startswith(prefix)
+                    )
+            for name in ("_current_group_obs", "_group_status"):
+                groups = getattr(agent_manager, name, None)
+                if isinstance(groups, Mapping):
+                    for values in groups.values():
+                        if isinstance(values, Mapping):
+                            agent_ids.update(
+                                key
+                                for key in values
+                                if isinstance(key, str) and key.startswith(prefix)
+                            )
+            for agent_id in agent_ids:
+                agent_manager._clean_agent_data(agent_id)
+                agent_manager._clear_group_status_and_obs(agent_id)
+
+    def _close_tail_worker(self) -> None:
+        from mlagents.trainers.subprocess_env_manager import EnvironmentCommand
+
+        manager = self.manager
+        local_worker_id = len(manager.env_workers) - 1
+        target = manager.env_workers[local_worker_id]
+        if target.waiting:
+            raise RuntimeError("cannot retire a Unity worker with an in-flight step")
+
+        target.request_close()
+        buffered = []
+        closed = False
+        deadline = time.monotonic() + WORKER_CLOSE_SECONDS
+        while time.monotonic() < deadline:
+            try:
+                response = manager.step_queue.get(
+                    timeout=min(0.25, max(0.01, deadline - time.monotonic()))
+                )
+            except queue.Empty:
+                if not target.process.is_alive():
+                    break
+                continue
+            if int(response.worker_id) == local_worker_id:
+                if response.cmd == EnvironmentCommand.CLOSED:
+                    closed = True
+                    break
+                # No step is in flight for an intentionally retired worker. Discard only its
+                # terminal shutdown/error notifications; its unfinished trajectory state was
+                # removed explicitly before this method was called.
+                continue
+            buffered.append(response)
+
+        if target.process.is_alive():
+            target.process.join(timeout=0.5)
+        if target.process.is_alive():
+            target.process.terminate()
+            target.process.join(timeout=2.0)
+        if target.process.is_alive():
+            for response in buffered:
+                manager.step_queue.put(response)
+            raise RuntimeError(f"Unity worker {local_worker_id} did not stop during live resize")
+
+        # Remove any late shutdown notification from the retired worker while preserving every
+        # response belonging to the workers that stay alive.
+        while True:
+            try:
+                response = manager.step_queue.get_nowait()
+            except queue.Empty:
+                break
+            if int(response.worker_id) != local_worker_id:
+                buffered.append(response)
+            elif response.cmd == EnvironmentCommand.CLOSED:
+                closed = True
+        for response in buffered:
+            manager.step_queue.put(response)
+
+        target.closed = True
+        manager.workers_alive = max(0, int(manager.workers_alive) - 1)
+        manager.env_workers.pop()
+        manager.recent_restart_timestamps.pop()
+        manager.restart_counts.pop()
+        if not closed:
+            # Forced termination is still a successful retirement as long as the process is gone;
+            # there is no remaining worker that can emit stale steps for this worker id.
+            pass
+
+    def _scale_up_one(self) -> bool:
+        from mlagents.trainers.env_manager import EnvironmentStep
+        from mlagents.trainers.subprocess_env_manager import EnvironmentCommand
+
+        manager = self.manager
+        local_worker_id = len(manager.env_workers)
+        if local_worker_id >= MAX_DYNAMIC_ENVS:
+            return False
+        new_worker = manager.create_worker(
+            local_worker_id,
+            manager.step_queue,
+            manager.env_factory,
+            manager.run_options,
+        )
+        manager.env_workers.append(new_worker)
+        manager.recent_restart_timestamps.append([])
+        manager.restart_counts.append(0)
+        manager.workers_alive += 1
+        try:
+            new_worker.send(EnvironmentCommand.BEHAVIOR_SPECS)
+            specs_response = new_worker.recv()
+            candidate_specs = specs_response.payload
+            if not isinstance(candidate_specs, Mapping) or not self._behavior_specs_match(candidate_specs):
+                raise RuntimeError(
+                    f"new Unity worker {local_worker_id} behavior specifications do not match "
+                    "the live actor session"
+                )
+
+            parameters = manager.env_parameters
+            if parameters is not None:
+                new_worker.send(EnvironmentCommand.ENVIRONMENT_PARAMETERS, parameters)
+            new_worker.send(EnvironmentCommand.RESET, self._current_env_config)
+            reset_response = new_worker.recv()
+            if reset_response.cmd != EnvironmentCommand.RESET:
+                raise RuntimeError(
+                    f"new Unity worker {local_worker_id} returned {reset_response.cmd!r} "
+                    "instead of RESET"
+                )
+            initial = EnvironmentStep(reset_response.payload, local_worker_id, {}, {})
+            mapped = worker._remap_step(initial, self.worker_offset)
+            new_worker.previous_step = mapped
+            manager.process_steps([mapped])
+
+            previous_count = int(self.env_count)
+            self.env_count = previous_count + 1
+            if not self._register_current_capacity():
+                self._cleanup_worker_agent_state(self.worker_offset + local_worker_id)
+                self._close_tail_worker()
+                self.env_count = previous_count
+                self.client.env_count = previous_count
+                return False
+            self._report_env_count_changed()
+            self._write_throughput_metrics(force=True)
+            print(
+                f"[Bees WAN actor] scaled Unity environments {previous_count}->{self.env_count}; "
+                "existing workers remained running.",
+                flush=True,
+            )
+            return True
+        except BaseException:
+            if manager.env_workers and manager.env_workers[-1] is new_worker:
+                try:
+                    self._cleanup_worker_agent_state(self.worker_offset + local_worker_id)
+                    if not new_worker.waiting:
+                        self._close_tail_worker()
+                    else:
+                        new_worker.request_close()
+                except Exception:
+                    pass
+            raise
+
+    def _scale_down_one(self) -> bool:
+        if self.env_count <= 1:
+            return False
+        if not self._upload_queue.empty() or not self._upload_idle.is_set():
+            return False
+        manager = self.manager
+        local_worker_id = len(manager.env_workers) - 1
+        target = manager.env_workers[local_worker_id]
+        if target.waiting:
+            return False
+
+        previous_count = int(self.env_count)
+        self._cleanup_worker_agent_state(self.worker_offset + local_worker_id)
+        self._close_tail_worker()
+        self.env_count = previous_count - 1
+        self.client.env_count = int(self.env_count)
+        self._register_current_capacity()
+        self._report_env_count_changed()
+        self._write_throughput_metrics(force=True)
+        print(
+            f"[Bees WAN actor] scaled Unity environments {previous_count}->{self.env_count}; "
+            "remaining workers stayed running.",
+            flush=True,
+        )
+        return True
+
+    def _reconcile_env_count(self) -> None:
+        if self.manager is None or self._env_target_path is None:
+            return
+        desired = self._desired_env_count()
+        if desired > self.env_count:
+            self._scale_up_one()
+        elif desired < self.env_count:
+            self._scale_down_one()
 
     def _heartbeat(self) -> bool:
         try:
@@ -107,6 +373,8 @@ class ElasticActorSession(worker.ActorSession):
         # Base synchronization handles policy/control freshness and clears state_changed. Fetch one
         # immediate state afterward so topology metadata is applied atomically before rollout resumes.
         super()._synchronize_state(require_policy=require_policy)
+        if self._capacity_registration_pending:
+            self._register_current_capacity()
         state = self.client.state(
             self.session_id,
             self.policy_epoch,
