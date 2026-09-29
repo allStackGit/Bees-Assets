@@ -727,6 +727,20 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
             managed.os.name != "nt",
         )
 
+    def test_supervisor_lock_dispatches_to_windows_mutex_on_windows(self):
+        token = object()
+        root = Path("C:/BeesTraining")
+        with (
+            mock.patch.object(managed.os, "name", "nt"),
+            mock.patch.object(
+                managed,
+                "_acquire_windows_supervisor_lock",
+                return_value=token,
+            ) as acquire,
+        ):
+            self.assertIs(managed._acquire_supervisor_lock(root), token)
+        acquire.assert_called_once_with(root)
+
     @unittest.skipIf(managed.os.name == "nt", "POSIX flock ownership only")
     def test_posix_supervisor_lock_allows_only_one_owner_per_install_root(self):
         with tempfile.TemporaryDirectory() as temp:
