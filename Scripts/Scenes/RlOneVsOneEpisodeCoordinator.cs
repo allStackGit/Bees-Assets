@@ -1265,6 +1265,11 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         _episodeActive = false;
         _discoveryRewardsReady = false;
         EpisodeEnded?.Invoke(level, result);
+
+        // Terminal MA-POCA delivery resets participating Agents synchronously. Clear the randomized
+        // coordinate frame only after every terminal handler has run so those resets cannot create
+        // competing next-episode frames while this event is still being dispatched.
+        RlPolicyCoordinateFrame.EndEpisode(level);
     }
 
     private void UpdateRunningDiagnostics(EpisodeResult result, int beeSide, int humanSide)
