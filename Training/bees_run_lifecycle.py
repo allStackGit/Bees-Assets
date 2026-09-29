@@ -31,6 +31,7 @@ CHECKPOINT_COMPATIBILITY_FIELDS = (
     "policy_signature",
     "observation_schema_version",
     "action_schema_version",
+    "trainer_type",
     "network_settings",
 )
 
@@ -142,6 +143,42 @@ def _episode_coordinator_semantic_sha256(path: Path) -> str:
     return _semantic_csharp_text_sha256(text)
 
 
+def _trainer_type(text: str, behavior_name: str) -> str:
+    """Return the configured algorithm for the authoritative training behavior."""
+
+    lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    behavior_pattern = re.compile(
+        rf"^(\s*){re.escape(behavior_name)}:\s*(?:#.*)?$"
+    )
+    behavior_index = None
+    behavior_indent = None
+    for index, line in enumerate(lines):
+        match = behavior_pattern.match(line)
+        if match:
+            behavior_index = index
+            behavior_indent = len(match.group(1))
+            break
+    if behavior_index is None or behavior_indent is None:
+        raise ValueError(
+            f"trainer config has no behavior block for {behavior_name!r}"
+        )
+
+    for line in lines[behavior_index + 1 :]:
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        current_indent = len(line) - len(line.lstrip())
+        if current_indent <= behavior_indent:
+            break
+        body = line.split("#", 1)[0].strip()
+        match = re.fullmatch(r"trainer_type:\s*([A-Za-z0-9_-]+)", body)
+        if match:
+            return match.group(1)
+
+    raise ValueError(
+        f"trainer config behavior {behavior_name!r} has no trainer_type"
+    )
+
+
 def _network_settings_block(text: str) -> str:
     lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
     start = None
@@ -212,6 +249,10 @@ def contract_payload(assets_root: Path) -> dict[str, Any]:
         payload[field] = continual[field]
 
     trainer_text = trainer_path.read_text(encoding="utf-8")
+    payload["trainer_type"] = _trainer_type(
+        trainer_text,
+        str(payload["behavior_name"]),
+    )
     payload["network_settings"] = _network_settings_block(trainer_text)
     # Reward semantics are intentionally part of compatibility even if a future editor forgets to
     # increment reward_schema_version. PolicySchema source is hashed too so ABI edits cannot silently
