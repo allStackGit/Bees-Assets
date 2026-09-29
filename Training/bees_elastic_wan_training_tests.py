@@ -166,6 +166,8 @@ class ElasticActorLiveResizeTests(unittest.TestCase):
         session._current_env_config = {}
         session._behavior_specs = {"BeesRL1v1?team=0": FakeBehaviorSpec()}
         session._capacity_registration_pending = False
+        session._resize_failed_target = None
+        session._resize_failure = None
         session._state_changed = threading.Event()
         session.stop = threading.Event()
         session._upload_queue = queue.Queue()
@@ -229,6 +231,51 @@ class ElasticActorLiveResizeTests(unittest.TestCase):
         self.assertEqual(manager.workers_alive, 3)
         self.assertEqual(len(manager.recent_restart_timestamps), 3)
         self.assertEqual(len(manager.restart_counts), 3)
+
+    def test_failed_scale_up_retires_candidate_and_keeps_existing_actor_alive(self):
+        from mlagents.trainers.subprocess_env_manager import (
+            EnvironmentCommand,
+            EnvironmentResponse,
+        )
+
+        existing = [SimpleNamespace(worker_id=0), SimpleNamespace(worker_id=1)]
+        new_worker = mock.Mock()
+        new_worker.worker_id = 2
+        new_worker.waiting = False
+        new_worker.process.is_alive.return_value = False
+        new_worker.recv.side_effect = [
+            EnvironmentResponse(EnvironmentCommand.RESET, 2, {}),
+            EnvironmentResponse(
+                EnvironmentCommand.BEHAVIOR_SPECS,
+                2,
+                {"DifferentBehavior?team=0": FakeBehaviorSpec()},
+            ),
+        ]
+        manager = SimpleNamespace(
+            env_workers=list(existing),
+            step_queue=queue.Queue(),
+            env_factory=object(),
+            run_options=object(),
+            env_parameters={},
+            recent_restart_timestamps=[[], []],
+            restart_counts=[0, 0],
+            workers_alive=2,
+            agent_managers={},
+            create_worker=mock.Mock(return_value=new_worker),
+            process_steps=mock.Mock(),
+        )
+        manager.step_queue.put(
+            EnvironmentResponse(EnvironmentCommand.CLOSED, 2, None)
+        )
+        session = self._session(manager, 2)
+
+        self.assertFalse(session._scale_up_one())
+
+        self.assertEqual(manager.env_workers, existing)
+        self.assertEqual(manager.workers_alive, 2)
+        self.assertEqual(session.env_count, 2)
+        self.assertEqual(session._resize_failed_target, 3)
+        self.assertIn("behavior specifications do not match", session._resize_failure["error"])
 
     def test_downscale_waits_for_upload_without_requeueing_idle_tail(self):
         tail = SimpleNamespace(worker_id=2, waiting=False)
