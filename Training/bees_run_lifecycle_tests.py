@@ -41,15 +41,15 @@ class RunLifecycleTests(unittest.TestCase):
             encoding="utf-8",
         )
         (training / "bees_mlagents_structured_policy.py").write_text(
-            "structured-policy-v1\n",
+            '"""Structured fixture."""\nSTRUCTURED_POLICY = 1\n',
             encoding="utf-8",
         )
         (training / "bees_mlagents_ppo_compat.py").write_text(
-            "optimizer-compat-v1\n",
+            '"""Optimizer fixture."""\nOPTIMIZER_COMPAT = 1\n',
             encoding="utf-8",
         )
         (training / "bees_mlagents_learn.py").write_text(
-            "learner-launcher-v1\n",
+            '"""Launcher fixture."""\nLEARNER_LAUNCHER = 1\n',
             encoding="utf-8",
         )
         (scenes / "RlOneVsOneReward.cs").write_text("reward-v1\n", encoding="utf-8")
@@ -410,6 +410,26 @@ class RunLifecycleTests(unittest.TestCase):
             self.assertTrue(second["incompatible"])
             self.assertNotEqual(second["run_id"], first["run_id"])
 
+    def test_python_comment_docstring_and_formatting_changes_keep_run_compatible(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            assets = self._assets(root)
+            state = root / "current.json"
+            first = lifecycle.plan_run(assets, state)
+            lifecycle.commit_plan(state, first)
+
+            structured = assets / "Training" / "bees_mlagents_structured_policy.py"
+            structured.write_text(
+                '"""Changed documentation only."""\n\n# explanatory comment\nSTRUCTURED_POLICY=1\n',
+                encoding="utf-8",
+            )
+            second = lifecycle.plan_run(assets, state)
+
+            self.assertFalse(second["incompatible"])
+            self.assertFalse(second["new_run"])
+            self.assertEqual(second["run_id"], first["run_id"])
+            self.assertEqual(second["compatibility_key"], first["compatibility_key"])
+
     def test_structured_policy_implementation_change_creates_new_run(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
@@ -419,7 +439,7 @@ class RunLifecycleTests(unittest.TestCase):
             lifecycle.commit_plan(state, first)
 
             structured = assets / "Training" / "bees_mlagents_structured_policy.py"
-            structured.write_text("structured-policy-v2\n", encoding="utf-8")
+            structured.write_text("STRUCTURED_POLICY = 2\n", encoding="utf-8")
             second = lifecycle.plan_run(assets, state)
 
             self.assertTrue(second["incompatible"])
