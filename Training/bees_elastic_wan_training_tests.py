@@ -163,6 +163,7 @@ class ElasticActorLiveResizeTests(unittest.TestCase):
         session.session_id = "session"
         session.actor_id = 1
         session.control_epoch = 3
+        session._current_env_config = {}
         session._behavior_specs = {"BeesRL1v1?team=0": FakeBehaviorSpec()}
         session._capacity_registration_pending = False
         session._state_changed = threading.Event()
