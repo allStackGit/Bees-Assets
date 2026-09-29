@@ -208,7 +208,8 @@ namespace Assets.Scripts.Levels
                 MaxX,
                 MinY,
                 MaxY,
-                random.Next());
+                random.Next(),
+                GetRlStaticObstacleMinimumCorridorHalfWidth());
 
             for (int i = 0; i < layout.Count; i++)
             {
@@ -222,6 +223,34 @@ namespace Assets.Scripts.Levels
                 obstacle.Collider.enabled = true;
                 ObstacleMap.Obstacles.Add(obstacle);
             }
+
+            Physics2D.SyncTransforms();
+        }
+
+        private float GetRlStaticObstacleMinimumCorridorHalfWidth()
+        {
+            float largestShipExtent = 0f;
+            int shipCount = global::RlOneVsOneTrainingBootstrap.CurrentShipsPerSide;
+            int[] sides =
+            {
+                ConfigData.Configuration.BeeSide,
+                ConfigData.Configuration.HumanSide,
+            };
+
+            for (int sideIndex = 0; sideIndex < sides.Length; sideIndex++)
+            {
+                for (int shipIndex = 0; shipIndex < shipCount; shipIndex++)
+                {
+                    ConfigData.ShipTypes shipType =
+                        global::RlOneVsOnePerArenaMatchups.GetShipType(this, sides[sideIndex], shipIndex);
+                    Vector2 shipSize = (Vector2)ConfigData.ShipSizes[shipType] / ConfigData.PixelsPerUnit;
+                    largestShipExtent = Mathf.Max(
+                        largestShipExtent,
+                        Mathf.Max(shipSize.x, shipSize.y) * 0.5f);
+                }
+            }
+
+            return largestShipExtent + 1f;
         }
 
         internal static List<Rect> BuildRlTrainingObstacleLayout(
@@ -229,7 +258,8 @@ namespace Assets.Scripts.Levels
             float maxX,
             float minY,
             float maxY,
-            int seed)
+            int seed,
+            float minimumCorridorHalfWidth)
         {
             List<Rect> layout = new List<Rect>();
             float playableWidth = Mathf.Max(0f, maxX - minX);
@@ -246,7 +276,9 @@ namespace Assets.Scripts.Levels
             // Keep the middle half of the smaller playable dimension clear on both axes. The
             // resulting full-width/full-height cross guarantees that corner obstacles cannot join
             // into a wall that partitions the arena.
-            float corridorHalfWidth = Mathf.Min(playableWidth, playableHeight) * 0.25f;
+            float corridorHalfWidth = Mathf.Max(
+                Mathf.Min(playableWidth, playableHeight) * 0.25f,
+                Mathf.Max(0f, minimumCorridorHalfWidth));
             Rect[] cells =
             {
                 Rect.MinMaxRect(
