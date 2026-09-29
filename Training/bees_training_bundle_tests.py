@@ -519,7 +519,7 @@ class TrainingBundleTests(unittest.TestCase):
         self.assertIn("--benchmark-json", operator)
         self.assertIn("'bundle'{Invoke-Bundle}", operator)
 
-    def test_failed_live_snapshot_does_not_substitute_stale_retained_model(self) -> None:
+    def test_failed_live_snapshot_marks_retained_model_as_explicitly_stale(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             run_id = "bees-v20-live-snapshot-failed"
