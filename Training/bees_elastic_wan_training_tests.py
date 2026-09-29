@@ -55,10 +55,21 @@ class ElasticWanOptionTests(unittest.TestCase):
         self.assertEqual(options.min_actors, 0)
         self.assertTrue(options.enabled)
 
-    def test_more_than_twelve_actor_slots_is_rejected(self):
-        with self.assertRaisesRegex(SystemExit, "between 1 and 12"):
+    def test_local_actor_slot_can_extend_broker_capacity_to_thirteen(self):
+        with tempfile.TemporaryDirectory() as temp:
+            _cleaned, options = elastic.extract_elastic_wan_options(
+                [
+                    "config.yaml",
+                    "--bees-wan-actors=13",
+                    f"--bees-wan-auth-token-file={self._token(temp)}",
+                ]
+            )
+        self.assertEqual(options.max_actors, 13)
+
+    def test_more_than_thirteen_actor_slots_is_rejected(self):
+        with self.assertRaisesRegex(SystemExit, "between 1 and 13"):
             elastic.extract_elastic_wan_options(
-                ["config.yaml", "--bees-wan-actors=13"]
+                ["config.yaml", "--bees-wan-actors=14"]
             )
 
     def test_fixed_envs_per_actor_setting_is_obsolete(self):
