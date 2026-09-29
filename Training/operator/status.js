@@ -12,6 +12,7 @@ const {
     requestJson,
     sleep,
 } = require('./common');
+const { localActorSettings } = require('./localActor');
 
 function listLogFiles(root, recursive, limit = Number.POSITIVE_INFINITY) {
     if (!fs.existsSync(root)) return [];
@@ -391,8 +392,18 @@ async function getStatusFrameLines(config, adminToken) {
             'Build:  ' + String(desired.canonical_build_id || '') +
             '   Run: ' + String(desired.run_id || '')
         );
+        const localActor = localActorSettings(config);
         lines.push(
             'Cluster: local_envs=' + config.numLocalEnvs +
+            ' local_actor=' + (
+                localActor.enabled
+                    ? localActor.initialEnvs + (
+                        localActor.autoTune
+                            ? '(auto ' + localActor.minEnvs + '-' + localActor.maxEnvs + ')'
+                            : '(fixed)'
+                    )
+                    : 'off'
+            ) +
             ' max_remote=' + config.maxRemoteActors +
             ' broker_port=' + config.brokerPort
         );
