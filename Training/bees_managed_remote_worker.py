@@ -2042,14 +2042,68 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     # occurred before the outer supervisor first sampled status and the worker is
                     # already stranded stopped waiting for desired state.
                     inner_control_stall_watchdog = _TransportWatchdog(10.0)
-                    transport_watchdog_restart = False
+                    worker_recycle_requested = False
                     while (
                         runtime_cutover is None
                         and worker is not None
                         and not stop[0]
-                        and tailnet.poll() is None
                         and worker.poll() is None
                     ):
+                        tailnet_code = tailnet.poll() if tailnet is not None else None
+                        if tailnet is None or tailnet_code is not None:
+                            if tailnet is not None:
+                                print(
+                                    f"[Bees remote] tailnet transport exited ({tailnet_code}); "
+                                    "restarting private transport while keeping the managed worker alive.",
+                                    file=sys.stderr,
+                                    flush=True,
+                                )
+                                if tailnet_log_thread is not None:
+                                    tailnet_log_thread.join(timeout=1.0)
+                                tailnet = None
+                                tailnet_log_thread = None
+                                if stop[0]:
+                                    break
+                                time.sleep(args.reconnect_seconds)
+
+                            tailnet, tailnet_log_thread = _start_logged_process(
+                                _tailnet_forward_command(args)
+                            )
+                            if not _wait_for_private_transport(args, tailnet, stop):
+                                code = tailnet.poll()
+                                print(
+                                    "[Bees remote] replacement private tailnet forwarder "
+                                    "failed to become ready"
+                                    + ("" if code is None else f" (exit {code})")
+                                    + "; keeping the managed worker alive while transport retries.",
+                                    file=sys.stderr,
+                                    flush=True,
+                                )
+                                try:
+                                    _terminate(tailnet)
+                                except RuntimeError as exc:
+                                    raise _SupervisorProcessRestartRequired(
+                                        "private transport replacement could not be retired: "
+                                        + str(exc)
+                                    ) from exc
+                                if tailnet_log_thread is not None:
+                                    tailnet_log_thread.join(timeout=1.0)
+                                tailnet = None
+                                tailnet_log_thread = None
+                                if not stop[0]:
+                                    time.sleep(args.reconnect_seconds)
+                                continue
+
+                            print(
+                                "[Bees remote] private transport restored without restarting "
+                                "the managed worker.",
+                                flush=True,
+                            )
+                            stale_recycle_grace_started_monotonic = time.monotonic()
+                            inner_control_stall_watchdog.observe(True, time.monotonic())
+                            control_failure_watchdog.reset()
+                            next_status = 0.0
+
                         now = time.monotonic()
                         if now >= next_status:
                             status = _control_status(args)
@@ -2095,8 +2149,20 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                                         file=sys.stderr,
                                         flush=True,
                                     )
-                                    transport_watchdog_restart = True
-                                    break
+                                    try:
+                                        _terminate(tailnet)
+                                    except RuntimeError as exc:
+                                        raise _SupervisorProcessRestartRequired(
+                                            "private control transport could not be recycled: "
+                                            + str(exc)
+                                        ) from exc
+                                    if tailnet_log_thread is not None:
+                                        tailnet_log_thread.join(timeout=1.0)
+                                    tailnet = None
+                                    tailnet_log_thread = None
+                                    control_failure_watchdog.reset()
+                                    inner_control_stall_watchdog.observe(True, now)
+                                    continue
                                 if control_failure_watchdog.observe(
                                     _control_failure_total(record),
                                     now,
@@ -2108,8 +2174,20 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                                         file=sys.stderr,
                                         flush=True,
                                     )
-                                    transport_watchdog_restart = True
-                                    break
+                                    try:
+                                        _terminate(tailnet)
+                                    except RuntimeError as exc:
+                                        raise _SupervisorProcessRestartRequired(
+                                            "private control transport could not be recycled: "
+                                            + str(exc)
+                                        ) from exc
+                                    if tailnet_log_thread is not None:
+                                        tailnet_log_thread.join(timeout=1.0)
+                                    tailnet = None
+                                    tailnet_log_thread = None
+                                    control_failure_watchdog.reset()
+                                    inner_control_stall_watchdog.observe(True, now)
+                                    continue
                             else:
                                 inner_control_stall_watchdog.observe(True, now)
                                 if record_stale or not control_healthy:
@@ -2127,7 +2205,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                                     file=sys.stderr,
                                     flush=True,
                                 )
-                                transport_watchdog_restart = True
+                                worker_recycle_requested = True
                                 break
                             if not updater.alive():
                                 if updater.revive():
@@ -2144,7 +2222,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                                         file=sys.stderr,
                                         flush=True,
                                     )
-                                    transport_watchdog_restart = True
+                                    worker_recycle_requested = True
                                     break
                             print(
                                 _remote_status_summary(
@@ -2170,17 +2248,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                             break
                         time.sleep(0.5)
                     if not stop[0] and runtime_cutover is None:
-                        if transport_watchdog_restart:
+                        if worker_recycle_requested:
                             print(
-                                "[Bees remote] restarting managed worker after private "
-                                "transport watchdog trip.",
+                                "[Bees remote] restarting managed worker after a stale or "
+                                "unrecoverable worker-supervision condition.",
                                 file=sys.stderr,
                                 flush=True,
-                            )
-                        elif tailnet.poll() is not None:
-                            print(
-                                f"[Bees remote] tailnet transport exited ({tailnet.returncode}); restarting.",
-                                file=sys.stderr,
                             )
                         elif worker is not None and worker.poll() is not None:
                             print(
@@ -2194,7 +2267,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 worker_stopped = _request_graceful_worker_stop(
                     worker,
                     _worker_agent_stop_request_path(args),
-                    timeout=_worker_cleanup_grace_seconds(transport_watchdog_restart),
+                    timeout=_worker_cleanup_grace_seconds(worker_recycle_requested),
                 )
                 if not worker_stopped:
                     try:
