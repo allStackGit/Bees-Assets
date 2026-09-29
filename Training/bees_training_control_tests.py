@@ -1445,6 +1445,14 @@ class TrainingControlClientTests(unittest.TestCase):
                     )
                 )
 
+        self.assertTrue(
+            agent.dedicated_process_matches_desired(
+                managed,
+                **{**base, "worker_env_count": 9},
+                allow_live_worker_env_resize=True,
+            )
+        )
+
         managed.health_error = mock.Mock(return_value="stale child health")
         self.assertFalse(
             agent.dedicated_process_matches_desired(managed, **base)
@@ -1455,6 +1463,20 @@ class TrainingControlClientTests(unittest.TestCase):
         self.assertFalse(
             agent.dedicated_process_matches_desired(managed, **base)
         )
+
+    def test_live_worker_env_target_is_written_without_changing_launch_identity(self):
+        with tempfile.TemporaryDirectory() as temp:
+            managed = agent.ManagedProcess()
+            target = Path(temp) / "worker-envs.target"
+            managed.worker_env_target_file = target
+            managed.worker_env_count = 4
+            managed.command = ("python", "actor.py", "--envs", "4")
+
+            managed.set_worker_env_target(6)
+
+            self.assertEqual(target.read_text(encoding="ascii"), "6\n")
+            self.assertEqual(managed.worker_env_count, 4)
+            self.assertEqual(managed.command, ("python", "actor.py", "--envs", "4"))
 
     def test_full_game_local_state_defaults_offline_to_inference(self):
         with tempfile.TemporaryDirectory() as temp:
