@@ -35,6 +35,20 @@ const {
 } = require('./runtime');
 const { localActorBrokerSlots } = require('./localActor');
 
+function centralSupervisorAgentPath(preparedRuntime) {
+    const runtimeRootValue = String(
+        preparedRuntime && preparedRuntime.runtime_root || ''
+    ).trim();
+    if (!runtimeRootValue) {
+        throw new Error('Prepared central runtime root is missing.');
+    }
+    const agent = path.join(path.resolve(runtimeRootValue), 'bees_training_worker_agent.py');
+    if (!exists(agent)) {
+        throw new Error('Prepared central supervisor is missing: ' + agent);
+    }
+    return agent;
+}
+
 function buildCentralLearnerArgv(config, learnerPython, unity, runtimeRoot) {
     const service = path.join(runtimeRoot, 'bees_continual_elastic_wan_service.py');
     const trainerConfig = path.join(runtimeRoot, 'rl_1v1_config.yaml');
@@ -472,8 +486,7 @@ async function startCentralAgentIfNeeded(
         preparedRuntime = prepareCentralReleaseRuntime(config, bootstrapPython, unity, release);
     }
 
-    const agent = path.join(paths.assetsRoot, 'Training', 'bees_training_worker_agent.py');
-    if (!exists(agent)) throw new Error('Stable central training supervisor is missing: ' + agent);
+    const agent = centralSupervisorAgentPath(preparedRuntime);
     if (!testPythonCode(bootstrapPython, 'import sys; raise SystemExit(0 if sys.version_info[:2] == (3,10) else 1)')) {
         throw new Error('Central training supervisor requires Python 3.10: ' + bootstrapPython);
     }
@@ -636,6 +649,7 @@ async function startCentralAgentIfNeeded(
 module.exports = {
     assertCentralAgentCheckpointSafe,
     buildCentralLearnerArgv,
+    centralSupervisorAgentPath,
     centralSupervisorLaunchContractMatches,
     getCentralFallbackLaunchCommand,
     getRunningCentralAgentPid,
