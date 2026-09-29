@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import base64
 import hashlib
 import json
@@ -38,6 +39,42 @@ CHECKPOINT_COMPATIBILITY_FIELDS = (
 
 def _sha256_bytes(value: bytes) -> str:
     return hashlib.sha256(value).hexdigest()
+
+
+def _semantic_python_text_sha256(text: str) -> str:
+    """Hash executable Python semantics while ignoring comments, layout, and docstrings."""
+
+    try:
+        tree = ast.parse(text)
+    except SyntaxError as exc:
+        raise ValueError(f"training Python source is not syntactically valid: {exc}") from exc
+
+    def strip_docstring(body):
+        if (
+            body
+            and isinstance(body[0], ast.Expr)
+            and isinstance(body[0].value, ast.Constant)
+            and isinstance(body[0].value.value, str)
+        ):
+            del body[0]
+
+    for node in ast.walk(tree):
+        if isinstance(
+            node,
+            (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef),
+        ):
+            strip_docstring(node.body)
+
+    canonical = ast.dump(
+        tree,
+        annotate_fields=True,
+        include_attributes=False,
+    )
+    return _sha256_bytes(canonical.encode("utf-8"))
+
+
+def _semantic_python_sha256(path: Path) -> str:
+    return _semantic_python_text_sha256(path.read_text(encoding="utf-8"))
 
 
 def _semantic_csharp_text_sha256(text: str) -> str:
@@ -265,7 +302,7 @@ def contract_payload(assets_root: Path) -> dict[str, Any]:
     for name, path in semantic_sources.items():
         payload[name] = _semantic_csharp_sha256(path)
     for name, path in trainer_semantic_sources.items():
-        payload[name] = _sha256_bytes(path.read_bytes())
+        payload[name] = _semantic_python_sha256(path)
     return payload
 
 
