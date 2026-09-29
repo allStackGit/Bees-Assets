@@ -78,6 +78,8 @@ internal sealed class RlOneVsOneAgent : Agent
     private const int HealingPerSuccessfulAction = 50;
 
     private static readonly List<RlOneVsOneAgent> Instances = new List<RlOneVsOneAgent>();
+    private static readonly Dictionary<Ship, RlOneVsOneAgent> ShipControllers =
+        new Dictionary<Ship, RlOneVsOneAgent>();
     private static readonly Dictionary<Ship, Vector4> ShipCommunications = new Dictionary<Ship, Vector4>();
     private static readonly Dictionary<Level, Dictionary<int, int>> AgentCounts =
         new Dictionary<Level, Dictionary<int, int>>();
@@ -140,6 +142,8 @@ internal sealed class RlOneVsOneAgent : Agent
 
         RlPolicySchema.ValidateOrThrow();
         AgentCounts.Clear();
+        ShipControllers.Clear();
+        ShipCommunications.Clear();
         DisposeAgentGroups();
         _lastProvisionFrame = -1;
         _invalidEnvironmentReported = false;
@@ -978,15 +982,16 @@ internal sealed class RlOneVsOneAgent : Agent
 
         _bindCandidates.Sort(CompareShipsForControl);
         _ship = _bindCandidates[0];
+        ShipControllers[_ship] = this;
         if (!RlPolicySchema.TryValidateShip(_ship, out string schemaError))
         {
             ReportInvalidEnvironment(schemaError);
-            _ship = null;
+            ReleaseShip();
             return false;
         }
         if (!ValidateShipFitsArena(_ship))
         {
-            _ship = null;
+            ReleaseShip();
             return false;
         }
 
@@ -1060,16 +1065,10 @@ internal sealed class RlOneVsOneAgent : Agent
 
     private bool IsControlledByAnotherAgent(Ship candidate)
     {
-        for (int i = 0; i < Instances.Count; i++)
-        {
-            RlOneVsOneAgent other = Instances[i];
-            if (other != null && other != this && other._level == _level && other._side == _side && other._teamId == _teamId &&
-                other._hasBoundShip && other._ship == candidate)
-            {
-                return true;
-            }
-        }
-        return false;
+        return candidate != null &&
+               ShipControllers.TryGetValue(candidate, out RlOneVsOneAgent controller) &&
+               controller != null &&
+               controller != this;
     }
 
     private static int CompareShipsForControl(Ship left, Ship right)
@@ -1127,15 +1126,23 @@ internal sealed class RlOneVsOneAgent : Agent
 
     private void ReleaseShip()
     {
-        if (_ship != null && _ship.Id == _boundRuntimeShipId)
+        Ship ship = _ship;
+        if (ship != null &&
+            ShipControllers.TryGetValue(ship, out RlOneVsOneAgent controller) &&
+            controller == this)
+        {
+            ShipControllers.Remove(ship);
+        }
+
+        if (ship != null && ship.Id == _boundRuntimeShipId)
         {
             // Ship instances are pooled. A stale agent must not clear control or communication
             // state after this object has been reused for a newer runtime ship.
-            ClearCommunication(_ship);
-            _ship.IsRlPolicyControlled = false;
-            for (int i = 0; i < _ship.Turrets.Count; i++)
+            ClearCommunication(ship);
+            ship.IsRlPolicyControlled = false;
+            for (int i = 0; i < ship.Turrets.Count; i++)
             {
-                _ship.Turrets[i].ClearRlControl();
+                ship.Turrets[i].ClearRlControl();
             }
         }
         _ship = null;
