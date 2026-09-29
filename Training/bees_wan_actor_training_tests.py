@@ -278,6 +278,49 @@ class WanOptionTests(unittest.TestCase):
         self.assertEqual(options.env_settings.restarts_rate_limit_period_s, 60)
         self.assertEqual(options.env_settings.num_envs, 3)
 
+    def test_transient_broker_unavailability_retries_without_replacing_actor_session(self):
+        session = object.__new__(actor.ActorSession)
+        session.stop = actor.threading.Event()
+        operation = mock.Mock(
+            side_effect=[
+                actor.BrokerUnavailable("temporary forward reset"),
+                "recovered",
+            ]
+        )
+
+        with mock.patch.object(session.stop, "wait", return_value=False) as wait:
+            result = session._retry_broker_unavailable(
+                operation,
+                label="test synchronization",
+            )
+
+        self.assertEqual(result, "recovered")
+        self.assertEqual(operation.call_count, 2)
+        wait.assert_called_once_with(1.0)
+
+    def test_run_routes_state_resynchronization_through_in_place_broker_retry(self):
+        session = object.__new__(actor.ActorSession)
+        session.stop = actor.threading.Event()
+        session._thread_error = queue.Queue()
+        session._session_changed = actor.threading.Event()
+        session._state_changed = actor.threading.Event()
+        session._state_changed.set()
+        session._stale = actor.threading.Event()
+        session._synchronize_state = mock.Mock()
+        session._report_runtime_progress = mock.Mock()
+
+        def retry(operation, *, label):
+            self.assertEqual(label, "policy/control synchronization")
+            operation()
+            session.stop.set()
+
+        session._retry_broker_unavailable = mock.Mock(side_effect=retry)
+        session.run()
+
+        session._retry_broker_unavailable.assert_called_once()
+        session._synchronize_state.assert_called_once_with()
+        session._report_runtime_progress.assert_called_once_with()
+
     def test_missing_initial_reset_is_central_availability_not_session_failure(self):
         session = object.__new__(actor.ActorSession)
         session.central_run_options = SimpleNamespace(
