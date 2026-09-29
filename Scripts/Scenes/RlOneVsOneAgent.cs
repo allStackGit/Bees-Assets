@@ -496,12 +496,27 @@ internal sealed class RlOneVsOneAgent : Agent
     {
         if (_endingShipTrajectory || !IsCurrentController() || !TryBindShip())
         {
-            AddZeroObservations(sensor, ObservationSize);
+            AddInactivePolicyObservations(sensor);
             return;
         }
 
         int frameQuarterTurns = RlPolicyCoordinateFrame.GetQuarterTurns(_ship.Level, _teamId);
         CollectPolicyObservations(_perception, _ship, _side, sensor, frameQuarterTurns);
+    }
+
+    private void AddInactivePolicyObservations(VectorSensor sensor)
+    {
+        // Individual MA-POCA members can terminate while their teammates continue. ML-Agents
+        // bootstraps those partial-group trajectories from the terminal observation, so preserve
+        // the faction discriminator even though all unavailable ship state is zero.
+        AddZeroObservations(sensor, RlPolicySchema.FactionObservationIndex);
+        float faction = ConfigData.Configuration == null ? 0f :
+            _side == ConfigData.Configuration.BeeSide ? 1f :
+            _side == ConfigData.Configuration.HumanSide ? -1f : 0f;
+        sensor.AddObservation(faction);
+        AddZeroObservations(
+            sensor,
+            ObservationSize - RlPolicySchema.FactionObservationIndex - 1);
     }
 
     public override void WriteDiscreteActionMask(IDiscreteActionMask actionMask)
