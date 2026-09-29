@@ -26,16 +26,16 @@ namespace Assets.Scripts.Entities
                 if (ship.SizeClass < SizeClass)
                 {
                     Health -= math.min(ship.OriginalHealth, Health);
-                    ship.LogDamage(ship.Health);
+                    ship.LogDamage(ship.Health, "collision_asteroid");
                 }
                 else if (ship.SizeClass == SizeClass)
                 {
-                    ship.LogDamage(ship.Health);
+                    ship.LogDamage(ship.Health, "collision_asteroid");
                     Health = 0;
                 }
                 else
                 {
-                    ship.LogDamage(OriginalHealth);
+                    ship.LogDamage(OriginalHealth, "collision_asteroid");
                     Health = 0;
                 }
                 NearbyShips.Remove(ship);
