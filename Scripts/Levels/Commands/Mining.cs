@@ -217,8 +217,14 @@ namespace Assets.Scripts.Levels.Commands
             for (int i = 0; i < ShipsCurrentlyMining.Count; i++)
             {
                 Ship ship = ShipsCurrentlyMining[i];
-                ship.FleetShip.MineralsMinedThisLevel += _baseAmountPerShip + (i < _miningRemainder ? 1 : 0);
+                int minedForShip = _baseAmountPerShip + (i < _miningRemainder ? 1 : 0);
+                ship.FleetShip.MineralsMinedThisLevel += minedForShip;
                 ship.Tsv = Utilities.CalculateTsv(ship);
+                global::RlOneVsOneEpisodeDiagnostics.RecordMiningOutcome(
+                    ship,
+                    TargetAstroid,
+                    minedForShip,
+                    TargetAstroid.Health <= 0);
             }
 
             if (TargetAstroid.Health == 0)
