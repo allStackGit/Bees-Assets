@@ -1025,9 +1025,23 @@ class ManagedProcess:
         pid = getattr(process, "pid", None)
         return pid if isinstance(pid, int) and not isinstance(pid, bool) and pid > 0 else None
 
+    def terminal_health_error(self) -> str:
+        """Return an authenticated child error even after the managed process has exited."""
+        if not self.health_required:
+            return ""
+        health = self.health()
+        if not isinstance(health, Mapping):
+            return ""
+        if str(health.get("state", "")) != "error":
+            return ""
+        return str(health.get("error") or "managed child reported an internal failure")
+
     def health_error(self) -> str:
         if not self.health_required or not self.alive():
             return ""
+        terminal_error = self.terminal_health_error()
+        if terminal_error:
+            return terminal_error
         health = self.health()
         if health is None:
             if (
@@ -2202,9 +2216,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     break
                 if managed.process is not None and managed.process.poll() is not None:
                     code = managed.process.returncode
+                    child_error = managed.terminal_health_error()
                     restart_delay = managed.record_exit(code)
+                    detail = f"; child error: {child_error}" if child_error else ""
                     last_error = (
-                        f"managed process exited with code {code}; "
+                        f"managed process exited with code {code}{detail}; "
                         f"retrying in {restart_delay:.0f}s unless desired launch changes"
                     )
                     break
