@@ -1,8 +1,8 @@
 {
-  "compatibility_key": "7147fa1c16c1bbba4c40312612a573837a4dacd0b8418338eb33cfd24a70c927",
+  "compatibility_key": "34b57ea70ba025bf26b258ce74de55eaab1b0b786d4d3e62202f6ac732668810",
   "contract": {
     "action_schema_version": 9,
-    "agent_action_source_sha256": "914b36f9d20018108ebb312e4e4cfc658e979a5c23c33b1f8cc76f40d0ecb696",
+    "agent_action_source_sha256": "955d09ed094864f360247084e30221013d261808bf1f8206e7eab427e87aaf14",
     "behavior_name": "BeesRL1v1",
     "combat_perception_source_sha256": "4e9d693140221fdaa7edb9a3460b338388ce7920a33abea1bdaf63f3e2d40d1b",
     "episode_coordinator_source_sha256": "ce0dc4e88f9d30d23e4641c2b0519da7dcdbb4aa19dbfc3496cd079ffa1604b3",
@@ -17,8 +17,8 @@
     "scenario_schema_version": 1,
     "team_exploration_source_sha256": "c41203e4bc98e018b377017a548127efd8e45a35b5390cb0a8c089f2c43f1361"
   },
-  "created_utc": "2026-09-28T23:26:29.915848+00:00",
-  "last_build_utc": "2026-09-28T23:26:29.915848+00:00",
-  "run_id": "bees-v20-r3-s1-20260928T231820Z-7147fa1c",
+  "created_utc": "2026-09-29T10:55:49.739489+00:00",
+  "last_build_utc": "2026-09-29T10:55:49.739489+00:00",
+  "run_id": "bees-v20-r3-s1-20260929T104735Z-34b57ea7",
   "schema_version": 1
 }

@@ -5,14 +5,14 @@
       "destination": "trainer-logs\\central-learner\\learner-live.log",
       "parts": [
         {
-          "bytes": 438677,
+          "bytes": 451525,
           "file": "learner-live.log.part0001",
-          "sha256": "7d76ba62a95169f3342dcbb108c92a699728aa670ff4cd7a2c91da048f468d1c"
+          "sha256": "24094db55acc4772f7d22ee8196b244b3dc863d683fe145ba246b327cdec0edd"
         }
       ],
       "source": "B:\\Bees\\Training\\TrainerLogs\\bees-v20-r3-s1-20260928T231820Z-7147fa1c\\central-learner\\learner-live.log",
-      "source_bytes": 438677,
-      "source_sha256": "7d76ba62a95169f3342dcbb108c92a699728aa670ff4cd7a2c91da048f468d1c"
+      "source_bytes": 451525,
+      "source_sha256": "24094db55acc4772f7d22ee8196b244b3dc863d683fe145ba246b327cdec0edd"
     },
     {
       "destination": "trainer-logs\\remote-lancaster-8533f4bd\\BeesEpisode-10117.log",
@@ -6944,6 +6944,32 @@
       "source_sha256": "4b7ebb39e31dcd0b9bea1626c544b4cf9943f6e0796aba87ce504ccd0a1d61bd"
     },
     {
+      "destination": "trainer-logs\\remote-lancaster-8533f4bd\\BeesEpisode-52640.log",
+      "parts": [
+        {
+          "bytes": 2901,
+          "file": "BeesEpisode-52640.log.part0001",
+          "sha256": "80b82c44d3c5c8dfbb5dff2a59632d94caa6f16702c2511abc43453f038f4ee4"
+        }
+      ],
+      "source": "B:\\Bees\\Training\\TrainerLogs\\bees-v20-r3-s1-20260928T231820Z-7147fa1c\\remote-lancaster-8533f4bd\\BeesEpisode-52640.log",
+      "source_bytes": 2901,
+      "source_sha256": "80b82c44d3c5c8dfbb5dff2a59632d94caa6f16702c2511abc43453f038f4ee4"
+    },
+    {
+      "destination": "trainer-logs\\remote-lancaster-8533f4bd\\BeesEpisode-52645.log",
+      "parts": [
+        {
+          "bytes": 2983,
+          "file": "BeesEpisode-52645.log.part0001",
+          "sha256": "f592d9d20194a5d2ee14988b9682161ce220b38b161d4921b159227b3492cc4b"
+        }
+      ],
+      "source": "B:\\Bees\\Training\\TrainerLogs\\bees-v20-r3-s1-20260928T231820Z-7147fa1c\\remote-lancaster-8533f4bd\\BeesEpisode-52645.log",
+      "source_bytes": 2983,
+      "source_sha256": "f592d9d20194a5d2ee14988b9682161ce220b38b161d4921b159227b3492cc4b"
+    },
+    {
       "destination": "trainer-logs\\remote-lancaster-8533f4bd\\BeesEpisode-5557.log",
       "parts": [
         {
@@ -7792,14 +7818,14 @@
       "destination": "trainer-logs\\remote-seagrams-2f9ebbaa\\BeesEpisode-10268.log",
       "parts": [
         {
-          "bytes": 12810,
+          "bytes": 39934,
           "file": "BeesEpisode-10268.log.part0001",
-          "sha256": "e2db03ffda4c778febd0d972926eba4ee22544f510f1eb9d4e1f36405c073a70"
+          "sha256": "03f2d639625074fd255b04bf0f30249fce1fae6f1beedabeeb24445fae9cf6b7"
         }
       ],
       "source": "B:\\Bees\\Training\\TrainerLogs\\bees-v20-r3-s1-20260928T231820Z-7147fa1c\\remote-seagrams-2f9ebbaa\\BeesEpisode-10268.log",
-      "source_bytes": 12810,
-      "source_sha256": "e2db03ffda4c778febd0d972926eba4ee22544f510f1eb9d4e1f36405c073a70"
+      "source_bytes": 39934,
+      "source_sha256": "03f2d639625074fd255b04bf0f30249fce1fae6f1beedabeeb24445fae9cf6b7"
     },
     {
       "destination": "trainer-logs\\remote-seagrams-2f9ebbaa\\BeesEpisode-10284.log",
@@ -8374,6 +8400,19 @@
       "source_sha256": "46a6a9bb0d9c02704a04033353d6e78a1eac197ef8ca0242121586dfbaa708ad"
     },
     {
+      "destination": "trainer-logs\\remote-seagrams-2f9ebbaa\\BeesEpisode-13576.log",
+      "parts": [
+        {
+          "bytes": 5974,
+          "file": "BeesEpisode-13576.log.part0001",
+          "sha256": "280b71d9e4de408a7c51f35357171ebe240781a000e86d2ccd9f64006ace7c4d"
+        }
+      ],
+      "source": "B:\\Bees\\Training\\TrainerLogs\\bees-v20-r3-s1-20260928T231820Z-7147fa1c\\remote-seagrams-2f9ebbaa\\BeesEpisode-13576.log",
+      "source_bytes": 5974,
+      "source_sha256": "280b71d9e4de408a7c51f35357171ebe240781a000e86d2ccd9f64006ace7c4d"
+    },
+    {
       "destination": "trainer-logs\\remote-seagrams-2f9ebbaa\\BeesEpisode-13692.log",
       "parts": [
         {
@@ -8793,14 +8832,14 @@
       "destination": "trainer-logs\\remote-seagrams-2f9ebbaa\\BeesEpisode-16052.log",
       "parts": [
         {
-          "bytes": 18270,
+          "bytes": 44089,
           "file": "BeesEpisode-16052.log.part0001",
-          "sha256": "ab795f50f3b38998b2801d1380991969ec2f3035eee372574f52547e5c1106f7"
+          "sha256": "02b7ba0aa2308e28eb06ea3a4b30cc148cf499204b6be216fd43f0c77762546d"
         }
       ],
       "source": "B:\\Bees\\Training\\TrainerLogs\\bees-v20-r3-s1-20260928T231820Z-7147fa1c\\remote-seagrams-2f9ebbaa\\BeesEpisode-16052.log",
-      "source_bytes": 18270,
-      "source_sha256": "ab795f50f3b38998b2801d1380991969ec2f3035eee372574f52547e5c1106f7"
+      "source_bytes": 44089,
+      "source_sha256": "02b7ba0aa2308e28eb06ea3a4b30cc148cf499204b6be216fd43f0c77762546d"
     },
     {
       "destination": "trainer-logs\\remote-seagrams-2f9ebbaa\\BeesEpisode-16208.log",
@@ -9157,14 +9196,14 @@
       "destination": "trainer-logs\\remote-seagrams-2f9ebbaa\\BeesEpisode-17880.log",
       "parts": [
         {
-          "bytes": 12166,
+          "bytes": 39259,
           "file": "BeesEpisode-17880.log.part0001",
-          "sha256": "1a205a39fe21a285ae9e9cd2512576478691fb038a7b9e1f902037504cacf2e5"
+          "sha256": "0f514adaa0228e9f5462d9552edcef39ebe06c7f62ac8fea88305c51e5169435"
         }
       ],
       "source": "B:\\Bees\\Training\\TrainerLogs\\bees-v20-r3-s1-20260928T231820Z-7147fa1c\\remote-seagrams-2f9ebbaa\\BeesEpisode-17880.log",
-      "source_bytes": 12166,
-      "source_sha256": "1a205a39fe21a285ae9e9cd2512576478691fb038a7b9e1f902037504cacf2e5"
+      "source_bytes": 39259,
+      "source_sha256": "0f514adaa0228e9f5462d9552edcef39ebe06c7f62ac8fea88305c51e5169435"
     },
     {
       "destination": "trainer-logs\\remote-seagrams-2f9ebbaa\\BeesEpisode-17968.log",
@@ -9778,6 +9817,19 @@
       "source_sha256": "ab01edb139d326826bf23083267cc22a9a0133c0ddeefc13259fc5601fcac009"
     },
     {
+      "destination": "trainer-logs\\remote-seagrams-2f9ebbaa\\BeesEpisode-3260.log",
+      "parts": [
+        {
+          "bytes": 7928,
+          "file": "BeesEpisode-3260.log.part0001",
+          "sha256": "74a34a7d621ef9771fe9ff8865c6cfa7d290a9e8f3ce880c5d50e88e0a4bc221"
+        }
+      ],
+      "source": "B:\\Bees\\Training\\TrainerLogs\\bees-v20-r3-s1-20260928T231820Z-7147fa1c\\remote-seagrams-2f9ebbaa\\BeesEpisode-3260.log",
+      "source_bytes": 7928,
+      "source_sha256": "74a34a7d621ef9771fe9ff8865c6cfa7d290a9e8f3ce880c5d50e88e0a4bc221"
+    },
+    {
       "destination": "trainer-logs\\remote-seagrams-2f9ebbaa\\BeesEpisode-3412.log",
       "parts": [
         {
@@ -9960,6 +10012,19 @@
       "source_sha256": "d99d5437534d90d8ad19a054ded2cacbb3d1b824e0b6e8785c2c6434707af144"
     },
     {
+      "destination": "trainer-logs\\remote-seagrams-2f9ebbaa\\BeesEpisode-4932.log",
+      "parts": [
+        {
+          "bytes": 7236,
+          "file": "BeesEpisode-4932.log.part0001",
+          "sha256": "38527bfe11de7825168638590be92ea1b787756ac5f65411cce2179824080118"
+        }
+      ],
+      "source": "B:\\Bees\\Training\\TrainerLogs\\bees-v20-r3-s1-20260928T231820Z-7147fa1c\\remote-seagrams-2f9ebbaa\\BeesEpisode-4932.log",
+      "source_bytes": 7236,
+      "source_sha256": "38527bfe11de7825168638590be92ea1b787756ac5f65411cce2179824080118"
+    },
+    {
       "destination": "trainer-logs\\remote-seagrams-2f9ebbaa\\BeesEpisode-5524.log",
       "parts": [
         {
@@ -10010,6 +10075,19 @@
       "source": "B:\\Bees\\Training\\TrainerLogs\\bees-v20-r3-s1-20260928T231820Z-7147fa1c\\remote-seagrams-2f9ebbaa\\BeesEpisode-5996.log",
       "source_bytes": 19422,
       "source_sha256": "fbc3c41a62a22ab949f535be50c6d4853aa7fca50fbc50689de64180d81a544a"
+    },
+    {
+      "destination": "trainer-logs\\remote-seagrams-2f9ebbaa\\BeesEpisode-6032.log",
+      "parts": [
+        {
+          "bytes": 8971,
+          "file": "BeesEpisode-6032.log.part0001",
+          "sha256": "674b114f65d0e5889632c8f946a2934a4dd29286ea20bcc64dcf54d4dca23406"
+        }
+      ],
+      "source": "B:\\Bees\\Training\\TrainerLogs\\bees-v20-r3-s1-20260928T231820Z-7147fa1c\\remote-seagrams-2f9ebbaa\\BeesEpisode-6032.log",
+      "source_bytes": 8971,
+      "source_sha256": "674b114f65d0e5889632c8f946a2934a4dd29286ea20bcc64dcf54d4dca23406"
     },
     {
       "destination": "trainer-logs\\remote-seagrams-2f9ebbaa\\BeesEpisode-6112.log",
@@ -10535,14 +10613,14 @@
       "destination": "trainer-logs\\remote-seagrams-2f9ebbaa\\BeesEpisode-9824.log",
       "parts": [
         {
-          "bytes": 11492,
+          "bytes": 33118,
           "file": "BeesEpisode-9824.log.part0001",
-          "sha256": "0699655e8589404cd4716a10e6bfe8b97b7a65c3585dda479a4113c088485896"
+          "sha256": "bb6592d25ec39bbd3529da797499dcca7fe474bd744c355d22ced183a9e4beee"
         }
       ],
       "source": "B:\\Bees\\Training\\TrainerLogs\\bees-v20-r3-s1-20260928T231820Z-7147fa1c\\remote-seagrams-2f9ebbaa\\BeesEpisode-9824.log",
-      "source_bytes": 11492,
-      "source_sha256": "0699655e8589404cd4716a10e6bfe8b97b7a65c3585dda479a4113c088485896"
+      "source_bytes": 33118,
+      "source_sha256": "bb6592d25ec39bbd3529da797499dcca7fe474bd744c355d22ced183a9e4beee"
     },
     {
       "destination": "trainer-logs\\remote-seagrams-2f9ebbaa\\BeesEpisode-9828.log",
@@ -10613,53 +10691,53 @@
       "destination": "trainer-logs\\remote-seagrams-2f9ebbaa\\Player-0.log",
       "parts": [
         {
-          "bytes": 4306,
+          "bytes": 4678,
           "file": "Player-0.log.part0001",
-          "sha256": "89e90a31b40a924031b75c6a5dd21f3b55beefcaf29245c86d0b97fe23f11c22"
+          "sha256": "e2c2deb6f974dfb36c6fe4ecee1d29e58db06def40e02481dcec6d28cd16a93b"
         }
       ],
       "source": "B:\\Bees\\Training\\TrainerLogs\\bees-v20-r3-s1-20260928T231820Z-7147fa1c\\remote-seagrams-2f9ebbaa\\Player-0.log",
-      "source_bytes": 4306,
-      "source_sha256": "89e90a31b40a924031b75c6a5dd21f3b55beefcaf29245c86d0b97fe23f11c22"
+      "source_bytes": 4678,
+      "source_sha256": "e2c2deb6f974dfb36c6fe4ecee1d29e58db06def40e02481dcec6d28cd16a93b"
     },
     {
       "destination": "trainer-logs\\remote-seagrams-2f9ebbaa\\Player-1.log",
       "parts": [
         {
-          "bytes": 4306,
+          "bytes": 4920,
           "file": "Player-1.log.part0001",
-          "sha256": "76ebb22011f92c0333ed3bf6525f990c261c6882aa55fd0fd1b0b2ca5503a1b9"
+          "sha256": "b860563442bfa7db3cc36a30d08d3fc18b42de2bcfbd7845b492aae86af5a672"
         }
       ],
       "source": "B:\\Bees\\Training\\TrainerLogs\\bees-v20-r3-s1-20260928T231820Z-7147fa1c\\remote-seagrams-2f9ebbaa\\Player-1.log",
-      "source_bytes": 4306,
-      "source_sha256": "76ebb22011f92c0333ed3bf6525f990c261c6882aa55fd0fd1b0b2ca5503a1b9"
+      "source_bytes": 4920,
+      "source_sha256": "b860563442bfa7db3cc36a30d08d3fc18b42de2bcfbd7845b492aae86af5a672"
     },
     {
       "destination": "trainer-logs\\remote-seagrams-2f9ebbaa\\Player-2.log",
       "parts": [
         {
-          "bytes": 4306,
+          "bytes": 4920,
           "file": "Player-2.log.part0001",
-          "sha256": "7337b7c606229913071d01cfffb40ffe6978192adb34c8950ba1a3b6945d1964"
+          "sha256": "543b8b1ca7fc9f1d053bdf0eff0dffd5c0d4cdb7a6c6aba3983c792dc51288ac"
         }
       ],
       "source": "B:\\Bees\\Training\\TrainerLogs\\bees-v20-r3-s1-20260928T231820Z-7147fa1c\\remote-seagrams-2f9ebbaa\\Player-2.log",
-      "source_bytes": 4306,
-      "source_sha256": "7337b7c606229913071d01cfffb40ffe6978192adb34c8950ba1a3b6945d1964"
+      "source_bytes": 4920,
+      "source_sha256": "543b8b1ca7fc9f1d053bdf0eff0dffd5c0d4cdb7a6c6aba3983c792dc51288ac"
     },
     {
       "destination": "trainer-logs\\remote-seagrams-2f9ebbaa\\Player-3.log",
       "parts": [
         {
-          "bytes": 4306,
+          "bytes": 4920,
           "file": "Player-3.log.part0001",
-          "sha256": "9a6cf485682f57ba95248d696c25ec002c5cef2f0a8dedfbf1a0458087cd3e16"
+          "sha256": "aad86bca2a6abf43dcc355f71981f51f0fb5f772bc9050a7906932148033f708"
         }
       ],
       "source": "B:\\Bees\\Training\\TrainerLogs\\bees-v20-r3-s1-20260928T231820Z-7147fa1c\\remote-seagrams-2f9ebbaa\\Player-3.log",
-      "source_bytes": 4306,
-      "source_sha256": "9a6cf485682f57ba95248d696c25ec002c5cef2f0a8dedfbf1a0458087cd3e16"
+      "source_bytes": 4920,
+      "source_sha256": "aad86bca2a6abf43dcc355f71981f51f0fb5f772bc9050a7906932148033f708"
     },
     {
       "destination": "trainer-logs\\remote-seagrams-2f9ebbaa\\Player-4.log",
@@ -10678,14 +10756,14 @@
       "destination": "trainer-logs\\remote-seagrams-2f9ebbaa\\remote-supervisor.log",
       "parts": [
         {
-          "bytes": 1484098,
+          "bytes": 1519710,
           "file": "remote-supervisor.log.part0001",
-          "sha256": "3fea7607b011ae91123dde946740dd3d11e2f7ffae9a553746ee61bc6b93f4bf"
+          "sha256": "f22d5d55e7887e92aa6cc48fadae667120a00967b3a055356e747501ef8fbb83"
         }
       ],
       "source": "B:\\Bees\\Training\\TrainerLogs\\bees-v20-r3-s1-20260928T231820Z-7147fa1c\\remote-seagrams-2f9ebbaa\\remote-supervisor.log",
-      "source_bytes": 1484098,
-      "source_sha256": "3fea7607b011ae91123dde946740dd3d11e2f7ffae9a553746ee61bc6b93f4bf"
+      "source_bytes": 1519710,
+      "source_sha256": "f22d5d55e7887e92aa6cc48fadae667120a00967b3a055356e747501ef8fbb83"
     },
     {
       "destination": "central-training-logs\\central-agent.err.log",
@@ -10880,6 +10958,19 @@
       "source_sha256": "2bea12c349dd0048e1d11ae41b2cafd8a61f1ecd2316d03fd8cc27c547496f19"
     },
     {
+      "destination": "central-training-logs\\rl-environment-validation-f8e478e45566.log",
+      "parts": [
+        {
+          "bytes": 3165,
+          "file": "rl-environment-validation-f8e478e45566.log.part0001",
+          "sha256": "98f4ef9fecf3ce5eb2674b6e915ec6f9b1e8ea952b36776016fc941877419176"
+        }
+      ],
+      "source": "B:\\Bees\\Logs\\Training\\rl-environment-validation-f8e478e45566.log",
+      "source_bytes": 3165,
+      "source_sha256": "98f4ef9fecf3ce5eb2674b6e915ec6f9b1e8ea952b36776016fc941877419176"
+    },
+    {
       "destination": "central-training-logs\\rl-environment-validation-fd7e870f8450.log",
       "parts": [
         {
@@ -10896,14 +10987,14 @@
       "destination": "central-training-logs\\tailnet-gateway.err.log",
       "parts": [
         {
-          "bytes": 1534217,
+          "bytes": 1543317,
           "file": "tailnet-gateway.err.log.part0001",
-          "sha256": "9f7f4f14274327834b5cba8ba9e2d10dee3563618990f846e0f88c47b4cd6443"
+          "sha256": "c76d44856e1eeb0efa7bf588aa4da69ad852f3e321ba7678ca21006e5150d72e"
         }
       ],
       "source": "B:\\Bees\\Logs\\Training\\tailnet-gateway.err.log",
-      "source_bytes": 1534217,
-      "source_sha256": "9f7f4f14274327834b5cba8ba9e2d10dee3563618990f846e0f88c47b4cd6443"
+      "source_bytes": 1543317,
+      "source_sha256": "c76d44856e1eeb0efa7bf588aa4da69ad852f3e321ba7678ca21006e5150d72e"
     },
     {
       "destination": "central-training-logs\\tailnet-gateway.out.log",
@@ -10936,19 +11027,19 @@
       "bytes": 2287,
       "destination": "metadata\\run-lifecycle.json",
       "file": "run-lifecycle.json",
-      "sha256": "b79ba44d57870813f49b70381589006d2e8c731b380c0d4c25c205244bb27331",
+      "sha256": "4a9c70f21ccef2222a4d6caf5cb88539646ad59254d0424ecb540ee7532f8da6",
       "source": "B:\\Bees\\Training\\RunLifecycle\\current.json"
     },
     {
       "bytes": 3412,
       "destination": "metadata\\latest-training-release.json",
       "file": "latest-training-release.json",
-      "sha256": "0e17e50d7c96cdc2551f1b33173134e0179459c3a152bacffd2bdd2587048ce9",
+      "sha256": "a58438f9d8796fb69b352910dc6f73fe45e57871ff0ad4b240adc184986b4c43",
       "source": "B:\\Bees\\Builds\\latest-training-release.json"
     }
   ],
-  "reason": "pre-build",
+  "reason": "incompatible-run-final",
   "run_id": "bees-v20-r3-s1-20260928T231820Z-7147fa1c",
   "schema_version": 1,
-  "snapshot_utc": "2026-09-29T10:46:59.904911+00:00"
+  "snapshot_utc": "2026-09-29T11:00:35.763479+00:00"
 }
