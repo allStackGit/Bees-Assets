@@ -64,6 +64,9 @@ class _StartupHealthHeartbeat:
         self._phase_started_unix_seconds = time.time()
         self._last_progress_unix_seconds: Optional[float] = None
         self._lock = threading.Lock()
+        # Environment stepping can call mark_progress hundreds of times per second. Keep that hot
+        # path off the publication lock so the 5-second health writer cannot be starved by rollout.
+        self._progress_pending = threading.Event()
         self._stop = threading.Event()
         self._thread = threading.Thread(
             target=self._run,
@@ -73,6 +76,13 @@ class _StartupHealthHeartbeat:
 
     def _publish(self) -> None:
         with self._lock:
+            if (
+                self._state == "ready"
+                and self._phase == "running"
+                and self._progress_pending.is_set()
+            ):
+                self._last_progress_unix_seconds = time.time()
+                self._progress_pending.clear()
             phase = self._phase
             state = self._state
             error = self._error
@@ -105,6 +115,7 @@ class _StartupHealthHeartbeat:
             self._phase = phase
             self._error = ""
             self._last_progress_unix_seconds = None
+            self._progress_pending.clear()
         self._publish()
 
     def set_ready(self, phase: str, *, actor_id: Optional[int] = None) -> None:
@@ -120,18 +131,15 @@ class _StartupHealthHeartbeat:
                 self._last_progress_unix_seconds = now
             else:
                 self._last_progress_unix_seconds = None
+            self._progress_pending.clear()
             if actor_id is not None:
                 self.actor_id = int(actor_id)
         self._publish()
 
     def mark_progress(self) -> None:
-        # The rollout loop can advance many times per second. Record progress in memory and
-        # let the existing health heartbeat publish it at the bounded interval instead of
-        # performing an atomic filesystem write on every environment step.
-        with self._lock:
-            if self._state != "ready" or self._phase != "running":
-                return
-            self._last_progress_unix_seconds = time.time()
+        # The rollout loop can advance many times per second. Signal progress without competing
+        # with the health publisher; the publisher timestamps and persists it at bounded cadence.
+        self._progress_pending.set()
 
     def set_error(self, exc: BaseException) -> None:
         with self._lock:
@@ -139,6 +147,7 @@ class _StartupHealthHeartbeat:
             self._phase = "session-error"
             self._phase_started_unix_seconds = time.time()
             self._last_progress_unix_seconds = None
+            self._progress_pending.clear()
             self._error = f"{type(exc).__name__}: {exc}"
         self._publish()
 
