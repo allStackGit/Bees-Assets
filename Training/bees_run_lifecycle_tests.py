@@ -91,6 +91,63 @@ class RunLifecycleTests(unittest.TestCase):
             self.assertEqual(second["run_id"], first["run_id"])
             self.assertEqual(second["compatibility_key"], first["compatibility_key"])
 
+    def test_preserve_run_override_keeps_optimizer_lineage_across_semantic_change(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            assets = self._assets(root)
+            state = root / "current.json"
+            first = lifecycle.plan_run(
+                assets, state, datetime(2026, 9, 24, 12, 0, tzinfo=timezone.utc)
+            )
+            lifecycle.commit_plan(state, first)
+
+            actions = assets / "Scripts" / "Scenes" / "RlOneVsOneAgent.cs"
+            actions.write_text("actions-v2\n", encoding="utf-8")
+            second = lifecycle.plan_run(
+                assets,
+                state,
+                datetime(2026, 9, 24, 13, 0, tzinfo=timezone.utc),
+                preserve_run=True,
+            )
+
+            self.assertTrue(second["incompatible"])
+            self.assertFalse(second["new_run"])
+            self.assertTrue(second["preserve_run_override"])
+            self.assertEqual(second["run_id"], first["run_id"])
+            self.assertNotEqual(
+                second["compatibility_key"],
+                first["compatibility_key"],
+            )
+
+            lifecycle.commit_plan(state, second)
+            committed = json.loads(state.read_text(encoding="utf-8"))
+            self.assertEqual(committed["run_id"], first["run_id"])
+            self.assertEqual(
+                committed["compatibility_key"],
+                second["compatibility_key"],
+            )
+
+    def test_preserve_run_override_refuses_checkpoint_shape_change(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            assets = self._assets(root)
+            state = root / "current.json"
+            first = lifecycle.plan_run(assets, state)
+            lifecycle.commit_plan(state, first)
+
+            trainer = assets / "Training" / "rl_1v1_config.yaml"
+            trainer.write_text(
+                trainer.read_text(encoding="utf-8").replace(
+                    "hidden_units: 128", "hidden_units: 256"
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(
+                ValueError,
+                "checkpoint compatibility changed: network_settings",
+            ):
+                lifecycle.plan_run(assets, state, preserve_run=True)
+
     def test_force_new_creates_new_run_without_contract_change(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
