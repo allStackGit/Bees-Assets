@@ -258,6 +258,9 @@ function newTrainingRunPlan(python, options = {}) {
         '--state', paths.runStatePath,
         '--out', paths.runPlanPath,
     ];
+    if (options.preserveRun) {
+        args.push('--preserve-run');
+    }
     if (options.forceNew) {
         args.push('--force-new');
         if (options.buildId) args.push('--build-id', String(options.buildId));
