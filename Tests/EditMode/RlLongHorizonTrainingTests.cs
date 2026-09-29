@@ -62,7 +62,16 @@ namespace Bees.Tests.EditMode
 
             string method = agent.Substring(methodStart, methodEnd - methodStart);
             Assert.That(method, Does.Contain("EndGroupEpisode();"));
+            Assert.That(method, Does.Contain("IsGroupRewardRepresentative(requireCurrentController: false)"),
+                "Terminal group delivery happens after the coordinator deactivates the episode, so it must not require a live current-controller check.");
             Assert.That(method, Does.Not.Contain("EpisodeInterrupted();"));
+
+            string coordinator = ReadSource("Scripts", "Scenes", "RlOneVsOneEpisodeCoordinator.cs");
+            int eventIndex = coordinator.IndexOf("EpisodeEnded?.Invoke(level, result);", StringComparison.Ordinal);
+            int frameCleanupIndex = coordinator.IndexOf("RlPolicyCoordinateFrame.EndEpisode(level);", eventIndex, StringComparison.Ordinal);
+            Assert.That(eventIndex, Is.GreaterThanOrEqualTo(0));
+            Assert.That(frameCleanupIndex, Is.GreaterThan(eventIndex),
+                "The episode coordinate frame must remain stable until both MA-POCA groups have received their terminal transition.");
         }
 
         private static string ReadSource(params string[] parts)
