@@ -12,18 +12,22 @@ MAX_CONTINUOUS_SIGMA = 1.5
 BEES_MOVEMENT_CONTINUOUS_ACTIONS = 2
 BEES_WEAPON_SLOTS = 5
 BEES_WEAPON_AIM_ACTIONS_PER_SLOT = 2
+BEES_COMMUNICATION_CONTINUOUS_ACTIONS = 4
 BEES_CONTINUOUS_ACTIONS = (
     BEES_MOVEMENT_CONTINUOUS_ACTIONS
     + BEES_WEAPON_SLOTS * BEES_WEAPON_AIM_ACTIONS_PER_SLOT
+    + BEES_COMMUNICATION_CONTINUOUS_ACTIONS
 )
-BEES_DISCRETE_BRANCHES = (2,) * BEES_WEAPON_SLOTS + (5, 65, 65, 65)
+BEES_DISCRETE_BRANCHES = (2,) * BEES_WEAPON_SLOTS + (5,)
 ACTION_ENTROPY_EPSILON = 1e-7
 
 _ORIGINAL_GAUSSIAN_FORWARD = None
 _ORIGINAL_ACTION_MODEL_FORWARD = None
 _ORIGINAL_ACTION_MODEL_EVALUATE = None
 _ORIGINAL_PPO_UPDATE = None
+_ORIGINAL_POCA_UPDATE = None
 _ORIGINAL_TRUST_REGION_POLICY_LOSS = None
+_ORIGINAL_MASKED_MEAN = None
 _ORIGINAL_PPO_CREATE_OPTIMIZER = None
 _ORIGINAL_PPO_PROCESS_TRAJECTORY = None
 _POLICY_DIMENSION_MASK_STATE = threading.local()
@@ -155,8 +159,9 @@ def _trust_region_policy_loss_with_dimension_mask(
     loss_masks,
     epsilon,
     dimension_mask,
+    sample_weights=None,
 ):
-    """ML-Agents PPO loss with inactive action dimensions removed from the mean."""
+    """PPO/POCA loss with inactive actions and optional group-size weighting."""
 
     from mlagents.torch_utils import torch
 
@@ -169,13 +174,54 @@ def _trust_region_policy_loss_with_dimension_mask(
     valid_steps = loss_masks.to(element_loss.dtype).unsqueeze(-1)
     valid_dimensions = dimension_mask.to(element_loss.dtype)
     weights = valid_steps * valid_dimensions
+    if sample_weights is not None and sample_weights.shape[0] == weights.shape[0]:
+        weights = weights * sample_weights.to(element_loss.dtype).unsqueeze(-1)
     return (element_loss * weights).sum() / torch.clamp(weights.sum(), min=1.0)
 
 
+def _poca_inverse_group_size_weights(policy, batch, reference):
+    """Weight each agent sample so one team-timestep has roughly unit total weight.
+
+    MA-POCA exposes each sample's groupmates explicitly. A timestep with N active
+    agents therefore contributes N actor samples. Giving each sample weight 1/N
+    prevents large fleets from overwhelming updates merely because they contain
+    more policy-controlled ships.
+    """
+
+    import numpy as np
+    from mlagents.trainers.buffer import BufferKey
+    from mlagents.trainers.trajectory import GroupObsUtil
+
+    n_obs = len(policy.behavior_spec.observation_specs)
+    if n_obs <= 0:
+        return None
+    groupmate_obs = GroupObsUtil.from_buffer(batch, n_obs)
+    batch_size = int(reference.shape[0])
+    if batch_size <= 0:
+        return None
+
+    group_size = np.ones(batch_size, dtype=np.float32)
+    for groupmate in groupmate_obs:
+        if not groupmate:
+            continue
+        first_obs = np.asarray(groupmate[0])
+        if first_obs.shape[0] != batch_size:
+            return None
+        first_value = first_obs.reshape(batch_size, -1)[:, 0]
+        group_size += (~np.isnan(first_value)).astype(np.float32)
+
+    weights = 1.0 / np.maximum(group_size, 1.0)
+    loss_masks = np.asarray(batch[BufferKey.MASKS].get_batch(), dtype=np.float32)
+    if loss_masks.shape[0] == batch_size:
+        weights *= (loss_masks > 0.0).astype(np.float32)
+    return reference.new_tensor(weights)
+
+
 def install_inactive_continuous_action_masking() -> Optional[Callable]:
-    """Exclude nonexistent weapon aim slots from PPO learning without changing ABI."""
+    """Mask nonexistent weapon actions and normalize MA-POCA fleet-size gradients."""
 
     from mlagents.trainers.buffer import BufferKey
+    from mlagents.trainers.poca.optimizer_torch import TorchPOCAOptimizer
     from mlagents.trainers.ppo.optimizer_torch import TorchPPOOptimizer
     from mlagents.trainers.torch_entities.action_model import ActionModel
     from mlagents.trainers.torch_entities.utils import ModelUtils
@@ -183,15 +229,19 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
     global _ORIGINAL_ACTION_MODEL_FORWARD
     global _ORIGINAL_ACTION_MODEL_EVALUATE
     global _ORIGINAL_PPO_UPDATE
+    global _ORIGINAL_POCA_UPDATE
     global _ORIGINAL_TRUST_REGION_POLICY_LOSS
+    global _ORIGINAL_MASKED_MEAN
 
     if _ORIGINAL_ACTION_MODEL_FORWARD is not None:
         return None
 
     original_forward = ActionModel.forward
     original_evaluate = ActionModel.evaluate
-    original_update = TorchPPOOptimizer.update
+    original_ppo_update = TorchPPOOptimizer.update
+    original_poca_update = TorchPOCAOptimizer.update
     original_policy_loss = ModelUtils.trust_region_policy_loss
+    original_masked_mean = ModelUtils.masked_mean
 
     def masked_forward(self, inputs, masks):
         dists = self._get_dists(inputs, masks)
@@ -213,6 +263,21 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             masks,
         )
 
+    def weighted_masked_mean(tensor, masks):
+        sample_weights = getattr(
+            _POLICY_DIMENSION_MASK_STATE,
+            "sample_weights",
+            None,
+        )
+        if (
+            sample_weights is None
+            or masks is None
+            or sample_weights.shape[0] != masks.shape[0]
+        ):
+            return original_masked_mean(tensor, masks)
+        effective_masks = masks.to(sample_weights.dtype) * sample_weights
+        return original_masked_mean(tensor, effective_masks)
+
     def masked_policy_loss(
         advantages,
         log_probs,
@@ -221,13 +286,33 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         epsilon,
     ):
         dimension_mask = getattr(_POLICY_DIMENSION_MASK_STATE, "mask", None)
+        sample_weights = getattr(
+            _POLICY_DIMENSION_MASK_STATE,
+            "sample_weights",
+            None,
+        )
         if dimension_mask is None or tuple(dimension_mask.shape) != tuple(log_probs.shape):
-            return original_policy_loss(
-                advantages,
-                log_probs,
-                old_log_probs,
+            if sample_weights is None:
+                return original_policy_loss(
+                    advantages,
+                    log_probs,
+                    old_log_probs,
+                    loss_masks,
+                    epsilon,
+                )
+            from mlagents.torch_utils import torch
+
+            advantage = advantages.unsqueeze(-1)
+            r_theta = torch.exp(log_probs - old_log_probs)
+            p_opt_a = r_theta * advantage
+            p_opt_b = torch.clamp(
+                r_theta,
+                1.0 - epsilon,
+                1.0 + epsilon,
+            ) * advantage
+            return -weighted_masked_mean(
+                torch.min(p_opt_a, p_opt_b),
                 loss_masks,
-                epsilon,
             )
         return _trust_region_policy_loss_with_dimension_mask(
             advantages,
@@ -236,45 +321,72 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             loss_masks,
             epsilon,
             dimension_mask,
+            sample_weights=sample_weights,
         )
 
-    def masked_update(self, batch, num_sequences):
-        from mlagents.trainers.torch_entities.utils import ModelUtils
-
+    def _set_dimension_mask(optimizer, batch):
         action_masks = ModelUtils.list_to_tensor(batch[BufferKey.ACTION_MASK])
         dimension_mask = _build_bees_policy_dimension_mask(
-            self.policy.behavior_spec.action_spec,
+            optimizer.policy.behavior_spec.action_spec,
             action_masks,
         )
         _POLICY_DIMENSION_MASK_STATE.mask = dimension_mask
+        return action_masks
+
+    def masked_ppo_update(self, batch, num_sequences):
+        _set_dimension_mask(self, batch)
+        _POLICY_DIMENSION_MASK_STATE.sample_weights = None
         try:
-            return original_update(self, batch, num_sequences)
+            return original_ppo_update(self, batch, num_sequences)
         finally:
             _POLICY_DIMENSION_MASK_STATE.mask = None
+            _POLICY_DIMENSION_MASK_STATE.sample_weights = None
+
+    def masked_poca_update(self, batch, num_sequences):
+        action_masks = _set_dimension_mask(self, batch)
+        _POLICY_DIMENSION_MASK_STATE.sample_weights = (
+            _poca_inverse_group_size_weights(
+                self.policy,
+                batch,
+                action_masks,
+            )
+        )
+        try:
+            return original_poca_update(self, batch, num_sequences)
+        finally:
+            _POLICY_DIMENSION_MASK_STATE.mask = None
+            _POLICY_DIMENSION_MASK_STATE.sample_weights = None
 
     ActionModel.forward = masked_forward
     ActionModel.evaluate = masked_evaluate
-    TorchPPOOptimizer.update = masked_update
+    TorchPPOOptimizer.update = masked_ppo_update
+    TorchPOCAOptimizer.update = masked_poca_update
     ModelUtils.trust_region_policy_loss = staticmethod(masked_policy_loss)
+    ModelUtils.masked_mean = staticmethod(weighted_masked_mean)
 
     _ORIGINAL_ACTION_MODEL_FORWARD = original_forward
     _ORIGINAL_ACTION_MODEL_EVALUATE = original_evaluate
-    _ORIGINAL_PPO_UPDATE = original_update
+    _ORIGINAL_PPO_UPDATE = original_ppo_update
+    _ORIGINAL_POCA_UPDATE = original_poca_update
     _ORIGINAL_TRUST_REGION_POLICY_LOSS = original_policy_loss
+    _ORIGINAL_MASKED_MEAN = original_masked_mean
     return original_forward
 
 
 def restore_inactive_continuous_action_masking() -> None:
-    """Restore ML-Agents action statistics and PPO update methods."""
+    """Restore ML-Agents action statistics and optimizer methods."""
 
     global _ORIGINAL_ACTION_MODEL_FORWARD
     global _ORIGINAL_ACTION_MODEL_EVALUATE
     global _ORIGINAL_PPO_UPDATE
+    global _ORIGINAL_POCA_UPDATE
     global _ORIGINAL_TRUST_REGION_POLICY_LOSS
+    global _ORIGINAL_MASKED_MEAN
 
     if _ORIGINAL_ACTION_MODEL_FORWARD is None:
         return
 
+    from mlagents.trainers.poca.optimizer_torch import TorchPOCAOptimizer
     from mlagents.trainers.ppo.optimizer_torch import TorchPPOOptimizer
     from mlagents.trainers.torch_entities.action_model import ActionModel
     from mlagents.trainers.torch_entities.utils import ModelUtils
@@ -282,15 +394,20 @@ def restore_inactive_continuous_action_masking() -> None:
     ActionModel.forward = _ORIGINAL_ACTION_MODEL_FORWARD
     ActionModel.evaluate = _ORIGINAL_ACTION_MODEL_EVALUATE
     TorchPPOOptimizer.update = _ORIGINAL_PPO_UPDATE
+    TorchPOCAOptimizer.update = _ORIGINAL_POCA_UPDATE
     ModelUtils.trust_region_policy_loss = staticmethod(
         _ORIGINAL_TRUST_REGION_POLICY_LOSS
     )
+    ModelUtils.masked_mean = staticmethod(_ORIGINAL_MASKED_MEAN)
     _POLICY_DIMENSION_MASK_STATE.mask = None
+    _POLICY_DIMENSION_MASK_STATE.sample_weights = None
 
     _ORIGINAL_ACTION_MODEL_FORWARD = None
     _ORIGINAL_ACTION_MODEL_EVALUATE = None
     _ORIGINAL_PPO_UPDATE = None
+    _ORIGINAL_POCA_UPDATE = None
     _ORIGINAL_TRUST_REGION_POLICY_LOSS = None
+    _ORIGINAL_MASKED_MEAN = None
 
 
 def install_continuous_sigma_guard(
