@@ -171,6 +171,12 @@ namespace Bees.Tests.EditMode
             }
 
             Assert.That(obstacleArea, Is.LessThanOrEqualTo(playableArea * 0.25f + 0.001f));
+
+            List<Rect> oversizedShipLayout = (List<Rect>)buildLayout.Invoke(
+                null,
+                new object[] { min, max, min, max, 12345, 10.5f });
+            Assert.That(oversizedShipLayout, Is.Empty,
+                "When the selected ships need nearly the full arena width, obstacle generation must yield rather than block movement.");
         }
 
         [Test]
