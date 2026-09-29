@@ -23,6 +23,8 @@ function record(
         sessionFailures = 0,
         failureAgeSeconds = null,
         failureType = '',
+        resizeFailedTarget = null,
+        resizeError = '',
         reconciliationPhase = '',
     } = {},
 ) {
@@ -44,6 +46,8 @@ function record(
                 session_failures_total: sessionFailures,
                 seconds_since_last_session_failure: failureAgeSeconds,
                 last_session_failure_type: failureType,
+                env_resize_failed_target: resizeFailedTarget,
+                env_resize_error: resizeError,
             },
             reconciliation: reconciliationPhase
                 ? { phase: reconciliationPhase, seconds_in_phase: 1 }
@@ -675,6 +679,42 @@ test('repeated WAN failures at an accepted baseline back off the environment cou
         },
     );
     assert.equal(state.desired_envs, 4);
+});
+
+test('failed live resize probe keeps the running baseline and backs off without restart', () => {
+    const optimizer = new TrainingEnvOptimizer({
+        warmupMs: 0,
+        measurementMs: 1000,
+        cooldownMs: 20_000,
+        instabilityHoldMs: 10_000,
+    });
+
+    update(optimizer, 'remote-a', 3, 0, 0, { max: 8 });
+    let state = update(optimizer, 'remote-a', 3, 300, 1000, { max: 8 });
+    assert.equal(state.baseline_envs, 3);
+    assert.equal(state.desired_envs, 4);
+    assert.equal(state.probing, true);
+
+    state = update(
+        optimizer,
+        'remote-a',
+        3,
+        320,
+        1100,
+        {
+            max: 8,
+            processState: 'running',
+            resizeFailedTarget: 4,
+            resizeError: 'RuntimeError: candidate spec mismatch',
+        },
+    );
+
+    assert.equal(state.desired_envs, 3);
+    assert.equal(state.phase, 'cooldown');
+    assert.equal(state.probing, false);
+    assert.equal(state.stability_hold_until_ms, 0);
+    assert.match(state.decision, /live resize probe failed; retained 3 envs/);
+    assert.equal(optimizer.states.get('remote-a').blocked_up, true);
 });
 
 test('recent WAN failure aborts a probe with the correct reason', () => {
