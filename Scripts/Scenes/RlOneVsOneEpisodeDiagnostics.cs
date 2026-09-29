@@ -1,5 +1,6 @@
 using Assets.Scripts;
 using Assets.Scripts.Data;
+using Assets.Scripts.Entities;
 using Assets.Scripts.Entities.Ships;
 using Assets.Scripts.Levels;
 using System;
@@ -13,6 +14,66 @@ using UnityEngine;
 /// </summary>
 internal static class RlOneVsOneEpisodeDiagnostics
 {
+    internal readonly struct EnvironmentSnapshot
+    {
+        internal readonly bool StaticObstaclesEnabled;
+        internal readonly bool CollisionAsteroidsEnabled;
+        internal readonly bool MiningAsteroidsEnabled;
+        internal readonly bool StaticLayoutEmpty;
+        internal readonly int StaticObstacleCount;
+        internal readonly float StaticObstacleAreaFraction;
+        internal readonly int CollisionAsteroidsSpawned;
+        internal readonly int MiningAsteroidsSpawned;
+        internal readonly int BeeStaticObstacleContacts;
+        internal readonly int HumanStaticObstacleContacts;
+        internal readonly int BeeStaticObstacleDeaths;
+        internal readonly int HumanStaticObstacleDeaths;
+        internal readonly int BeeCollisionAsteroidHits;
+        internal readonly int HumanCollisionAsteroidHits;
+        internal readonly int BeeCollisionAsteroidDamage;
+        internal readonly int HumanCollisionAsteroidDamage;
+        internal readonly int BeeCollisionAsteroidDeaths;
+        internal readonly int HumanCollisionAsteroidDeaths;
+        internal readonly int BeeMiningEvents;
+        internal readonly int HumanMiningEvents;
+        internal readonly int BeeResourcesMined;
+        internal readonly int HumanResourcesMined;
+        internal readonly int BeeMiningAsteroidsMined;
+        internal readonly int HumanMiningAsteroidsMined;
+        internal readonly int BeeMiningAsteroidsDepleted;
+        internal readonly int HumanMiningAsteroidsDepleted;
+
+        private EnvironmentSnapshot(ArenaState state)
+        {
+            StaticObstaclesEnabled = state.StaticObstaclesEnabled;
+            CollisionAsteroidsEnabled = state.CollisionAsteroidsEnabled;
+            MiningAsteroidsEnabled = state.MiningAsteroidsEnabled;
+            StaticLayoutEmpty = state.StaticLayoutEmpty;
+            StaticObstacleCount = state.StaticObstacleCount;
+            StaticObstacleAreaFraction = state.StaticObstacleAreaFraction;
+            CollisionAsteroidsSpawned = state.CollisionAsteroidsSpawned;
+            MiningAsteroidsSpawned = state.MiningAsteroidsSpawned;
+            BeeStaticObstacleContacts = state.StaticObstacleContacts[0];
+            HumanStaticObstacleContacts = state.StaticObstacleContacts[1];
+            BeeStaticObstacleDeaths = state.StaticObstacleDeaths[0];
+            HumanStaticObstacleDeaths = state.StaticObstacleDeaths[1];
+            BeeCollisionAsteroidHits = state.CollisionAsteroidHits[0];
+            HumanCollisionAsteroidHits = state.CollisionAsteroidHits[1];
+            BeeCollisionAsteroidDamage = state.CollisionAsteroidDamage[0];
+            HumanCollisionAsteroidDamage = state.CollisionAsteroidDamage[1];
+            BeeCollisionAsteroidDeaths = state.CollisionAsteroidDeaths[0];
+            HumanCollisionAsteroidDeaths = state.CollisionAsteroidDeaths[1];
+            BeeMiningEvents = state.MiningEvents[0];
+            HumanMiningEvents = state.MiningEvents[1];
+            BeeResourcesMined = state.ResourcesMined[0];
+            HumanResourcesMined = state.ResourcesMined[1];
+            BeeMiningAsteroidsMined = state.MinedAsteroidIds[0].Count;
+            HumanMiningAsteroidsMined = state.MinedAsteroidIds[1].Count;
+            BeeMiningAsteroidsDepleted = state.DepletedMiningAsteroidIds[0].Count;
+            HumanMiningAsteroidsDepleted = state.DepletedMiningAsteroidIds[1].Count;
+        }
+    }
+
     private sealed class RootShipRecord
     {
         internal long Id;
@@ -70,6 +131,41 @@ internal static class RlOneVsOneEpisodeDiagnostics
         internal readonly int[] SelfDamage = new int[2];
         internal readonly int[] FriendlyDamage = new int[2];
         internal readonly int[] UnattributedDamage = new int[2];
+        internal readonly int[] StaticObstacleContacts = new int[2];
+        internal readonly int[] StaticObstacleDeaths = new int[2];
+        internal readonly int[] CollisionAsteroidHits = new int[2];
+        internal readonly int[] CollisionAsteroidDamage = new int[2];
+        internal readonly int[] CollisionAsteroidDeaths = new int[2];
+        internal readonly int[] MiningEvents = new int[2];
+        internal readonly int[] ResourcesMined = new int[2];
+        internal readonly Dictionary<string, int>[] StaticObstacleDeathsByShipType =
+        {
+            new Dictionary<string, int>(StringComparer.Ordinal),
+            new Dictionary<string, int>(StringComparer.Ordinal)
+        };
+        internal readonly Dictionary<string, int>[] CollisionAsteroidDeathsByShipType =
+        {
+            new Dictionary<string, int>(StringComparer.Ordinal),
+            new Dictionary<string, int>(StringComparer.Ordinal)
+        };
+        internal readonly HashSet<int>[] MinedAsteroidIds =
+        {
+            new HashSet<int>(),
+            new HashSet<int>()
+        };
+        internal readonly HashSet<int>[] DepletedMiningAsteroidIds =
+        {
+            new HashSet<int>(),
+            new HashSet<int>()
+        };
+        internal bool StaticObstaclesEnabled;
+        internal bool CollisionAsteroidsEnabled;
+        internal bool MiningAsteroidsEnabled;
+        internal bool StaticLayoutEmpty;
+        internal int StaticObstacleCount;
+        internal float StaticObstacleAreaFraction;
+        internal int CollisionAsteroidsSpawned;
+        internal int MiningAsteroidsSpawned;
 
         internal ArenaState(Level level, int beeSide, int humanSide)
         {
@@ -99,6 +195,7 @@ internal static class RlOneVsOneEpisodeDiagnostics
             ConfigData.Configuration.BeeSide,
             ConfigData.Configuration.HumanSide);
         States[level] = state;
+        CaptureEnvironmentBaseline(state);
         RlOneVsOneCombatTelemetry.Begin(level);
 
         CaptureInitialSide(state, level.State.GetShips(state.BeeSide), 0);
@@ -204,6 +301,28 @@ internal static class RlOneVsOneEpisodeDiagnostics
             return;
         }
 
+        if (string.Equals(source, "static_obstacle", StringComparison.Ordinal))
+        {
+            state.StaticObstacleContacts[sideIndex]++;
+            if (target.Health <= 0)
+            {
+                state.StaticObstacleDeaths[sideIndex]++;
+                Increment(state.StaticObstacleDeathsByShipType[sideIndex], target.ShipType.ToString(), 1);
+                RecordEnvironmentDeathCause(state, target, sideIndex, "static_obstacle");
+            }
+        }
+        else if (string.Equals(source, "collision_asteroid", StringComparison.Ordinal))
+        {
+            state.CollisionAsteroidHits[sideIndex]++;
+            state.CollisionAsteroidDamage[sideIndex] += appliedDamage;
+            if (target.Health <= 0)
+            {
+                state.CollisionAsteroidDeaths[sideIndex]++;
+                Increment(state.CollisionAsteroidDeathsByShipType[sideIndex], target.ShipType.ToString(), 1);
+                RecordEnvironmentDeathCause(state, target, sideIndex, "collision_asteroid");
+            }
+        }
+
         if (selfInflicted)
         {
             state.SelfDamage[sideIndex] += appliedDamage;
@@ -212,6 +331,67 @@ internal static class RlOneVsOneEpisodeDiagnostics
         {
             state.UnattributedDamage[sideIndex] += appliedDamage;
         }
+    }
+
+    internal static void RecordMiningOutcome(Ship ship, MiningAsteroid asteroid, int amountMined, bool depleted)
+    {
+        if (!TryGetSideIndex(ship, out ArenaState state, out int sideIndex) || amountMined <= 0)
+        {
+            return;
+        }
+
+        TrackShip(state, ship, sideIndex);
+        state.MiningEvents[sideIndex]++;
+        state.ResourcesMined[sideIndex] += amountMined;
+        if (asteroid != null)
+        {
+            state.MinedAsteroidIds[sideIndex].Add(asteroid.Id);
+            if (depleted)
+            {
+                state.DepletedMiningAsteroidIds[sideIndex].Add(asteroid.Id);
+            }
+        }
+    }
+
+    internal static void RecordCollisionAsteroidSpawned(Level level)
+    {
+        if (TryGetState(level, out ArenaState state))
+        {
+            state.CollisionAsteroidsSpawned++;
+        }
+    }
+
+    internal static EnvironmentSnapshot GetEnvironmentSnapshot(Level level)
+    {
+        return TryGetState(level, out ArenaState state)
+            ? new EnvironmentSnapshot(state)
+            : default;
+    }
+
+    internal static string BuildEnvironmentEpisodeFields(Level level)
+    {
+        if (!TryGetState(level, out ArenaState state))
+        {
+            return "env_static=0 env_collision=0 env_mining=0 static_obstacles=0 static_obstacle_area_fraction=0.0000 static_layout_empty=0 " +
+                   "collision_asteroids_spawned=0 mining_asteroids_spawned=0 " +
+                   "bee_static_contacts=0 human_static_contacts=0 bee_static_deaths=0 human_static_deaths=0 " +
+                   "bee_asteroid_hits=0 human_asteroid_hits=0 bee_asteroid_damage=0 human_asteroid_damage=0 bee_asteroid_deaths=0 human_asteroid_deaths=0 " +
+                   "bee_mining_events=0 human_mining_events=0 bee_resources_mined=0 human_resources_mined=0 " +
+                   "bee_mining_asteroids_mined=0 human_mining_asteroids_mined=0 bee_mining_asteroids_depleted=0 human_mining_asteroids_depleted=0";
+        }
+
+        return $"env_static={(state.StaticObstaclesEnabled ? 1 : 0)} env_collision={(state.CollisionAsteroidsEnabled ? 1 : 0)} env_mining={(state.MiningAsteroidsEnabled ? 1 : 0)} " +
+               $"static_obstacles={state.StaticObstacleCount} static_obstacle_area_fraction={state.StaticObstacleAreaFraction:F4} static_layout_empty={(state.StaticLayoutEmpty ? 1 : 0)} " +
+               $"collision_asteroids_spawned={state.CollisionAsteroidsSpawned} mining_asteroids_spawned={state.MiningAsteroidsSpawned} " +
+               $"bee_static_contacts={state.StaticObstacleContacts[0]} human_static_contacts={state.StaticObstacleContacts[1]} " +
+               $"bee_static_deaths={state.StaticObstacleDeaths[0]} human_static_deaths={state.StaticObstacleDeaths[1]} " +
+               $"bee_asteroid_hits={state.CollisionAsteroidHits[0]} human_asteroid_hits={state.CollisionAsteroidHits[1]} " +
+               $"bee_asteroid_damage={state.CollisionAsteroidDamage[0]} human_asteroid_damage={state.CollisionAsteroidDamage[1]} " +
+               $"bee_asteroid_deaths={state.CollisionAsteroidDeaths[0]} human_asteroid_deaths={state.CollisionAsteroidDeaths[1]} " +
+               $"bee_mining_events={state.MiningEvents[0]} human_mining_events={state.MiningEvents[1]} " +
+               $"bee_resources_mined={state.ResourcesMined[0]} human_resources_mined={state.ResourcesMined[1]} " +
+               $"bee_mining_asteroids_mined={state.MinedAsteroidIds[0].Count} human_mining_asteroids_mined={state.MinedAsteroidIds[1].Count} " +
+               $"bee_mining_asteroids_depleted={state.DepletedMiningAsteroidIds[0].Count} human_mining_asteroids_depleted={state.DepletedMiningAsteroidIds[1].Count}";
     }
 
     internal static void RecordSpecialAction(Ship ship, string action)
@@ -279,6 +459,7 @@ internal static class RlOneVsOneEpisodeDiagnostics
 
     internal static string BuildEpisodeFields(Level level, bool timedOut)
     {
+        string environmentTelemetry = BuildEnvironmentEpisodeFields(level);
         string combatTelemetry = RlOneVsOneCombatTelemetry.BuildEpisodeFields(level);
         if (!TryGetState(level, out ArenaState state))
         {
@@ -287,8 +468,10 @@ internal static class RlOneVsOneEpisodeDiagnostics
                    "bee_damage_sources=none human_damage_sources=none bee_damage_by_ship=none human_damage_by_ship=none " +
                    "bee_self_damage=0 human_self_damage=0 bee_friendly_damage=0 human_friendly_damage=0 " +
                    "bee_unattributed_damage=0 human_unattributed_damage=0 " +
+                   "bee_static_deaths_by_ship=none human_static_deaths_by_ship=none " +
+                   "bee_asteroid_deaths_by_ship=none human_asteroid_deaths_by_ship=none " +
                    "bee_specials=none human_specials=none bee_root_outcomes=none human_root_outcomes=none " +
-                   combatTelemetry;
+                   environmentTelemetry + " " + combatTelemetry;
         }
 
         return $"bee_ships={FormatRootShips(state, 0)} human_ships={FormatRootShips(state, 1)} " +
@@ -299,9 +482,66 @@ internal static class RlOneVsOneEpisodeDiagnostics
                $"bee_self_damage={state.SelfDamage[0]} human_self_damage={state.SelfDamage[1]} " +
                $"bee_friendly_damage={state.FriendlyDamage[0]} human_friendly_damage={state.FriendlyDamage[1]} " +
                $"bee_unattributed_damage={state.UnattributedDamage[0]} human_unattributed_damage={state.UnattributedDamage[1]} " +
+               $"bee_static_deaths_by_ship={FormatCounts(state.StaticObstacleDeathsByShipType[0])} human_static_deaths_by_ship={FormatCounts(state.StaticObstacleDeathsByShipType[1])} " +
+               $"bee_asteroid_deaths_by_ship={FormatCounts(state.CollisionAsteroidDeathsByShipType[0])} human_asteroid_deaths_by_ship={FormatCounts(state.CollisionAsteroidDeathsByShipType[1])} " +
                $"bee_specials={FormatCounts(state.SpecialActions[0])} human_specials={FormatCounts(state.SpecialActions[1])} " +
                $"bee_root_outcomes={FormatRootOutcomes(state, 0, timedOut)} human_root_outcomes={FormatRootOutcomes(state, 1, timedOut)} " +
-               combatTelemetry;
+               environmentTelemetry + " " + combatTelemetry;
+    }
+
+    private static void CaptureEnvironmentBaseline(ArenaState state)
+    {
+        Level level = state.Level;
+        state.StaticObstaclesEnabled = RlOneVsOneTrainingBootstrap.CurrentStaticObstaclesEnabled;
+        state.CollisionAsteroidsEnabled = RlOneVsOneTrainingBootstrap.CurrentCollisionAsteroidSpawnSeconds > 0f;
+        state.MiningAsteroidsEnabled = RlOneVsOneTrainingBootstrap.CurrentMiningAsteroidsEnabled;
+
+        float staticArea = 0f;
+        if (level.ObstacleMap != null && level.ObstacleMap.Obstacles != null)
+        {
+            for (int i = 0; i < level.ObstacleMap.Obstacles.Count; i++)
+            {
+                StaticObstacle obstacle = level.ObstacleMap.Obstacles[i];
+                if (obstacle == null || obstacle.IsDead || !obstacle.KillsShipsOnContact)
+                {
+                    continue;
+                }
+
+                state.StaticObstacleCount++;
+                Vector2 size = obstacle.Collider != null
+                    ? obstacle.Collider.bounds.size
+                    : new Vector2(Mathf.Abs(obstacle.transform.localScale.x), Mathf.Abs(obstacle.transform.localScale.y));
+                staticArea += Mathf.Max(0f, size.x) * Mathf.Max(0f, size.y);
+            }
+        }
+
+        float playableWidth = Mathf.Max(0f, level.MaxX - level.MinX);
+        float playableHeight = Mathf.Max(0f, level.MaxY - level.MinY);
+        float playableArea = playableWidth * playableHeight;
+        state.StaticObstacleAreaFraction = playableArea > 0f
+            ? Mathf.Clamp01(staticArea / playableArea)
+            : 0f;
+        state.StaticLayoutEmpty = state.StaticObstaclesEnabled && state.StaticObstacleCount == 0;
+
+        if (level.State != null && level.State.MiningAsteroids != null)
+        {
+            foreach (MiningAsteroid asteroid in level.State.MiningAsteroids)
+            {
+                if (asteroid != null && !asteroid.IsDead && asteroid.Level == level)
+                {
+                    state.MiningAsteroidsSpawned++;
+                }
+            }
+        }
+    }
+
+    private static void RecordEnvironmentDeathCause(ArenaState state, Ship target, int sideIndex, string cause)
+    {
+        if ((state.RootShips[sideIndex].ContainsKey(target.Id) || state.ChildShipTypes[sideIndex].ContainsKey(target.Id)) &&
+            !state.DeathCauses[sideIndex].ContainsKey(target.Id))
+        {
+            state.DeathCauses[sideIndex][target.Id] = cause;
+        }
     }
 
     private static void CaptureInitialSide(ArenaState state, List<Ship> ships, int sideIndex)
