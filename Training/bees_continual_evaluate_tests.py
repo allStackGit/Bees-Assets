@@ -219,7 +219,7 @@ class ContinualEvaluateTests(unittest.TestCase):
         with self.assertRaises(EvaluationError):
             parse_episode_message(BufferMessage(encoded_result(version=99)))
 
-    def test_timeout_is_scored_as_draw_and_retained_as_timeout(self):
+    def test_timeout_is_reported_as_draw_but_scores_as_failure(self):
         summary = summarize_results(
             [result(1, 0), result(2, 1), result(3, -1, timeout=True)],
             candidate_team_id=0,
@@ -228,8 +228,19 @@ class ContinualEvaluateTests(unittest.TestCase):
             (summary.wins, summary.losses, summary.draws, summary.timeouts),
             (1, 1, 1, 1),
         )
-        self.assertAlmostEqual(summary.score_rate, 0.5)
+        self.assertAlmostEqual(summary.score_rate, 1 / 3)
         self.assertAlmostEqual(summary.win_rate, 1 / 3)
+
+    def test_genuine_draw_still_receives_half_score(self):
+        summary = summarize_results(
+            [result(1, -1, timeout=False)],
+            candidate_team_id=0,
+        )
+        self.assertEqual(
+            (summary.wins, summary.losses, summary.draws, summary.timeouts),
+            (0, 0, 1, 0),
+        )
+        self.assertAlmostEqual(summary.score_rate, 0.5)
 
     def test_duplicate_episode_is_rejected(self):
         with self.assertRaises(EvaluationError):
