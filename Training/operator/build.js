@@ -471,8 +471,15 @@ async function invokeBuild(options = {}) {
     const outgoingRun = await getActiveRunId(config, preBuildAdmin);
     if (outgoingRun) archiveTrainingRun(python, outgoingRun, 'pre-build');
 
-    const plan = newTrainingRunPlan(python);
-    if (plan.incompatible) {
+    const plan = newTrainingRunPlan(python, {
+        preserveRun: Boolean(options.preserveRun),
+    });
+    if (plan.incompatible && plan.preserve_run_override) {
+        console.warn(
+            'Training contract changed incompatibly; preserving existing run by explicit override: ' +
+            plan.run_id + '. Trainers will stop together before the new compatibility contract becomes active.'
+        );
+    } else if (plan.incompatible) {
         console.log('Training contract changed incompatibly. New run: ' + plan.run_id);
     } else if (plan.new_run) {
         console.log('Creating initial training run: ' + plan.run_id);
@@ -591,6 +598,7 @@ async function invokeBuild(options = {}) {
         previous_run_id: plan.previous_run_id ? String(plan.previous_run_id) : null,
         compatibility_key: String(plan.compatibility_key),
         incompatible: Boolean(plan.incompatible),
+        preserve_run_override: Boolean(plan.preserve_run_override),
         contract: plan.contract,
         artifacts,
         training_runtime: trainingRuntime,
@@ -671,7 +679,10 @@ async function invokeBuild(options = {}) {
                     String(release.run_id),
                     String(release.compatibility_key),
                 );
-                if (release.previous_run_id) {
+                if (
+                    release.previous_run_id &&
+                    String(release.previous_run_id) !== String(release.run_id)
+                ) {
                     await sleep(2000);
                     archiveTrainingRun(
                         python,
@@ -679,7 +690,11 @@ async function invokeBuild(options = {}) {
                         'incompatible-run-final',
                     );
                 }
-                console.log('Incompatible cutover complete. Active run: ' + release.run_id);
+                console.log(
+                    release.preserve_run_override
+                        ? 'Compatibility cutover complete; preserved run: ' + release.run_id
+                        : 'Incompatible cutover complete. Active run: ' + release.run_id
+                );
             }
         }
     }
