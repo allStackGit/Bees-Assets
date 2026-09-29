@@ -52,9 +52,9 @@ class MaskedContinuousEntropyTests(unittest.TestCase):
         )
         masks = torch.ones((1, sum(compat.BEES_DISCRETE_BRANCHES)))
 
-        # Leave slot 0 active and mask the other 15 weapon slots. Together with
-        # the two movement dimensions this gives exactly four active continuous
-        # dimensions: movement X/Y plus turret-0 aim X/Y.
+        # Leave slot 0 active and mask the other weapon slots. Movement and the
+        # four communication outputs always remain active, so this leaves eight
+        # active continuous dimensions: movement X/Y, turret-0 aim X/Y, and comm4.
         for slot in range(1, compat.BEES_WEAPON_SLOTS):
             masks[0, slot * 2 + 1] = 0.0
 
@@ -68,7 +68,7 @@ class MaskedContinuousEntropyTests(unittest.TestCase):
         per_dimension = 0.5 * math.log(
             2 * math.pi * math.e + compat.ACTION_ENTROPY_EPSILON
         )
-        self.assertAlmostEqual(float(entropy.item()), 4.0 * per_dimension, places=6)
+        self.assertAlmostEqual(float(entropy.item()), 8.0 * per_dimension, places=6)
 
 
 if __name__ == "__main__":
