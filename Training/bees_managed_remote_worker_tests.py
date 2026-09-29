@@ -710,6 +710,22 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
             managed.os.name != "nt",
         )
 
+    @unittest.skipIf(managed.os.name == "nt", "POSIX flock ownership only")
+    def test_posix_supervisor_lock_allows_only_one_owner_per_install_root(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            first = managed._acquire_posix_supervisor_lock(root)
+            self.assertIsNotNone(first)
+            try:
+                second = managed._acquire_posix_supervisor_lock(root)
+                self.assertIsNone(second)
+            finally:
+                first.close()
+
+            third = managed._acquire_posix_supervisor_lock(root)
+            self.assertIsNotNone(third)
+            third.close()
+
     def test_terminate_raises_when_child_exit_cannot_be_confirmed(self):
         process = mock.Mock()
         process.pid = 7331
