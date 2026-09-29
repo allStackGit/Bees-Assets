@@ -139,6 +139,38 @@ class InactiveContinuousActionMaskTests(unittest.TestCase):
             0.0,
         )
 
+    def test_policy_dimension_mask_excludes_fire_branches_while_healing(self):
+        from mlagents.torch_utils import torch
+
+        action_spec = self._bees_action_spec()
+        masks = torch.ones((1, sum(compat.BEES_DISCRETE_BRANCHES)))
+        discrete_actions = torch.zeros(
+            (1, len(compat.BEES_DISCRETE_BRANCHES))
+        )
+        discrete_actions[0, compat.BEES_WEAPON_SLOTS] = (
+            compat.BEES_HEALING_SPECIAL_ACTION
+        )
+
+        dimension_mask = compat._build_bees_policy_dimension_mask(
+            action_spec,
+            masks,
+            discrete_actions=discrete_actions,
+        )
+
+        fire_dimensions = dimension_mask[
+            0,
+            compat.BEES_CONTINUOUS_ACTIONS :
+            compat.BEES_CONTINUOUS_ACTIONS + compat.BEES_WEAPON_SLOTS,
+        ]
+        self.assertTrue(torch.all(fire_dimensions == 0.0))
+        self.assertEqual(
+            float(dimension_mask[
+                0,
+                compat.BEES_CONTINUOUS_ACTIONS + compat.BEES_WEAPON_SLOTS,
+            ].item()),
+            1.0,
+        )
+
     def test_policy_loss_ignores_masked_dimensions_but_uses_active_ones(self):
         from mlagents.torch_utils import torch
 
@@ -357,6 +389,60 @@ class BehavioralCloningWeaponMaskTests(unittest.TestCase):
 
         self.assertAlmostEqual(float(baseline.item()), float(ignored.item()), places=6)
         self.assertGreater(float(active.item()), float(baseline.item()))
+
+    def test_healing_sample_does_not_train_weapon_fire_bc(self):
+        import numpy as np
+        from mlagents.torch_utils import torch
+
+        policy = self._policy()
+        expert_discrete = torch.zeros(
+            (1, len(compat.BEES_DISCRETE_BRANCHES)),
+            dtype=torch.long,
+        )
+        expert_discrete[0, compat.BEES_WEAPON_SLOTS] = (
+            compat.BEES_HEALING_SPECIAL_ACTION
+        )
+        expert = SimpleNamespace(
+            continuous_tensor=torch.zeros((1, compat.BEES_CONTINUOUS_ACTIONS)),
+            discrete_tensor=expert_discrete,
+        )
+        selected = SimpleNamespace(
+            continuous_tensor=torch.zeros((1, compat.BEES_CONTINUOUS_ACTIONS))
+        )
+        weapon_activity = np.ones(
+            (1, compat.BEES_WEAPON_SLOTS),
+            dtype=np.float32,
+        )
+        movement_activity = np.ones((1,), dtype=np.float32)
+        special_activity = np.ones((1,), dtype=np.float32)
+
+        baseline_logits = torch.zeros(
+            (1, sum(compat.BEES_DISCRETE_BRANCHES))
+        )
+        changed_logits = baseline_logits.clone()
+        changed_logits[0, 0] = -10.0
+        changed_logits[0, 1] = 10.0
+
+        baseline = compat._bees_masked_behavioral_cloning_loss(
+            policy,
+            selected,
+            SimpleNamespace(all_discrete_tensor=baseline_logits),
+            expert,
+            weapon_activity,
+            movement_activity,
+            special_activity,
+        )
+        changed = compat._bees_masked_behavioral_cloning_loss(
+            policy,
+            selected,
+            SimpleNamespace(all_discrete_tensor=changed_logits),
+            expert,
+            weapon_activity,
+            movement_activity,
+            special_activity,
+        )
+
+        self.assertAlmostEqual(float(baseline.item()), float(changed.item()), places=6)
 
     def test_movement_activity_uses_frozen_self_mobile_channel(self):
         import numpy as np
