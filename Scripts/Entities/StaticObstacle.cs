@@ -63,7 +63,7 @@ namespace Assets.Scripts.Entities
 
             if (KillsShipsOnContact)
             {
-                ship.LogDamage(ship.Health, "static_obstacle", true);
+                ship.LogDamage(ship.Health, "static_obstacle");
                 return;
             }
 
