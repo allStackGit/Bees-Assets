@@ -567,7 +567,7 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
         self.assertLess(acquire, pid_state)
         self.assertLess(pid_state, runtime_stage)
         self.assertIn('flock -w 60 "$BOOTSTRAP_LOCK_FD"', linux)
-        self.assertIn('ln -s "$" "$BOOTSTRAP_LOCK_LINK"', linux)
+        self.assertIn('ln -s "$$" "$BOOTSTRAP_LOCK_LINK"', linux)
         self.assertIn("trap release_bootstrap_lock EXIT", linux)
 
     def test_windows_launcher_rerun_repairs_live_but_unhealthy_supervisor(self):
