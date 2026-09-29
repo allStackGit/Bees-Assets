@@ -389,6 +389,15 @@ def _validate_session(session: Mapping[str, Any], actor_id: int) -> Tuple[str, i
 
 
 def _build_template_policy(behavior_id: str, behavior_spec: Any, run_options: Any, seed: int):
+    # WAN actors reconstruct the inference policy locally from the central state dict.
+    # Install the same exact-shape Bees architecture before TorchPolicy is created or the
+    # state dict would be loaded into ML-Agents' upstream flat MLP instead.
+    from bees_mlagents_ppo_compat import install_continuous_sigma_guard
+    from bees_mlagents_structured_policy import install_structured_policy
+
+    install_structured_policy()
+    install_continuous_sigma_guard()
+
     from mlagents.trainers.behavior_id_utils import BehaviorIdentifiers
     from mlagents.trainers.policy.torch_policy import TorchPolicy
     from mlagents.trainers.torch_entities.networks import SharedActorCritic, SimpleActor
