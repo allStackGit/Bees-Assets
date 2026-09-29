@@ -268,7 +268,7 @@ def _install_diagnostics(fresh_optimizer_state: bool, diagnostic_every: int):
     from mlagents.trainers.ppo.trainer import PPOTrainer
     import mlagents.trainers.ppo.trainer as ppo_trainer_module
     from mlagents.trainers.torch_entities.utils import ModelUtils
-    from mlagents.trainers.trajectory import ObsUtil
+    from mlagents.trainers.trajectory import GroupObsUtil, ObsUtil
 
     state = _DiagnosticState(diagnostic_every)
     original_get_gae = ppo_trainer_module.get_gae
@@ -430,9 +430,21 @@ def _install_diagnostics(fresh_optimizer_state: bool, diagnostic_every: int):
                 if value_memories:
                     value_memories = torch.stack(value_memories).unsqueeze(0)
 
+                critic_obs = current_obs
+                if isinstance(self, TorchPOCAOptimizer):
+                    groupmate_obs = GroupObsUtil.from_buffer(batch, n_obs)
+                    groupmate_obs = [
+                        [
+                            ModelUtils.list_to_tensor(observation)
+                            for observation in groupmate
+                        ]
+                        for groupmate in groupmate_obs
+                    ]
+                    critic_obs = [current_obs] + groupmate_obs
+
                 with torch.no_grad():
                     current_values, _ = self.critic.critic_pass(
-                        current_obs,
+                        critic_obs,
                         memories=value_memories,
                         sequence_length=self.policy.sequence_length,
                     )
