@@ -192,6 +192,30 @@ server.listen(0,'127.0.0.1',async()=>{
             self.assertEqual(completed.returncode, 0, msg=completed.stderr)
             self.assertEqual(Path(completed.stdout), agent)
 
+    def test_local_actor_supervisor_uses_prepared_immutable_runtime_copy(self):
+        node = node_executable()
+        if not node:
+            self.skipTest("node is not available")
+        local_actor = OPERATOR_ROOT / "localActor.js"
+        with tempfile.TemporaryDirectory() as temp:
+            runtime_root = Path(temp).resolve()
+            agent = runtime_root / "bees_training_worker_agent.py"
+            agent.write_text("# pinned local actor supervisor\n", encoding="utf-8")
+            script = (
+                "const a=require(process.argv[1]);"
+                "process.stdout.write(a.localActorSupervisorAgentPath({runtime_root:process.argv[2]}));"
+            )
+            completed = subprocess.run(
+                [node, "-e", script, str(local_actor), str(runtime_root)],
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=False,
+            )
+            self.assertEqual(completed.returncode, 0, msg=completed.stderr)
+            self.assertEqual(Path(completed.stdout), agent)
+
     def test_public_powershell_entrypoints_parse(self):
         powershell = shutil.which("powershell") or shutil.which("pwsh")
         if not powershell:
