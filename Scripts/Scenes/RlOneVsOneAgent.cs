@@ -95,6 +95,7 @@ internal sealed class RlOneVsOneAgent : Agent
     private int _lastRewardedEpisode;
     private bool _hasBoundShip;
     private bool _hasParticipatedThisEpisode;
+    private bool _endingShipTrajectory;
     private long _boundRuntimeShipId;
     private SimpleMultiAgentGroup _agentGroup;
     private float _nextMiningActionTime;
@@ -489,7 +490,7 @@ internal sealed class RlOneVsOneAgent : Agent
 
     public override void CollectObservations(VectorSensor sensor)
     {
-        if (!IsCurrentController() || !TryBindShip())
+        if (_endingShipTrajectory || !IsCurrentController() || !TryBindShip())
         {
             AddZeroObservations(sensor, ObservationSize);
             return;
@@ -1019,12 +1020,42 @@ internal sealed class RlOneVsOneAgent : Agent
 
     private void ReleaseStaleShipBinding()
     {
+        // A dead/despawned ship must disappear from MA-POCA immediately. If this Agent simply
+        // stops requesting decisions, Python retains its last group observation/action and the
+        // centralized critic continues to see a ghost teammate until the battle ends.
+        bool endTrajectory = _hasParticipatedThisEpisode && _agentGroup != null;
+        _endingShipTrajectory = true;
         ReleaseShip();
         _hasBoundShip = false;
         _boundRuntimeShipId = 0;
         _decisionCounter = 0;
         _nextMiningActionTime = 0f;
         _nextHealingActionTime = 0f;
+
+        if (!endTrajectory)
+        {
+            _hasParticipatedThisEpisode = false;
+            _endingShipTrajectory = false;
+            return;
+        }
+
+        SimpleMultiAgentGroup previousGroup = _agentGroup;
+        try
+        {
+            // End this ship-controller trajectory before recycling the controller for a spawned
+            // replacement. CollectObservations is forced to zeros during the terminal notification
+            // so it cannot bind the replacement prematurely while EndEpisode is resetting.
+            EndEpisode();
+        }
+        finally
+        {
+            previousGroup.UnregisterAgent(this);
+            if (_agentGroup == previousGroup)
+            {
+                _agentGroup = null;
+            }
+            _endingShipTrajectory = false;
+        }
     }
 
     private bool IsControlledByAnotherAgent(Ship candidate)
