@@ -20,7 +20,11 @@ BEES_CONTINUOUS_ACTIONS = (
 )
 BEES_DISCRETE_BRANCHES = (2,) * BEES_WEAPON_SLOTS + (5,)
 BEES_OBSERVATION_SIZE = 7614
+BEES_SELF_SHIP_TYPE_INDEX = 1
 BEES_SELF_IS_MOBILE_INDEX = 16
+BEES_CAPABILITY_START = 25
+BEES_CAPABILITY_SPECIAL_PHASE_INDEX = BEES_CAPABILITY_START + 4
+BEES_BARGE_SHIP_TYPE_SCALAR = -1.0 / 23.0
 ACTION_ENTROPY_EPSILON = 1e-7
 
 _ORIGINAL_GAUSSIAN_FORWARD = None
@@ -92,7 +96,43 @@ def _bees_movement_activity(policy, batch):
     raw = np.asarray(observations[0].to_ndarray(), dtype=np.float32)
     if raw.ndim != 2 or raw.shape[1] != BEES_OBSERVATION_SIZE:
         return None
-    return (raw[:, BEES_SELF_IS_MOBILE_INDEX] > 0.5).astype(np.float32)
+
+    mobile = raw[:, BEES_SELF_IS_MOBILE_INDEX] > 0.5
+    # Barge charge phases 1-3 all lock ordinary movement orders. The charge phase
+    # is already part of the frozen capability observation, so this requires no ABI change.
+    is_barge = np.isclose(
+        raw[:, BEES_SELF_SHIP_TYPE_INDEX],
+        BEES_BARGE_SHIP_TYPE_SCALAR,
+        rtol=0.0,
+        atol=1.0e-5,
+    )
+    barge_charge_active = (
+        is_barge
+        & (raw[:, BEES_CAPABILITY_SPECIAL_PHASE_INDEX] > 1.0e-6)
+    )
+    return (mobile & ~barge_charge_active).astype(np.float32)
+
+
+def _bees_bc_special_activity(mini_batch):
+    """Return 1 where the capability branch has a legal non-noop action."""
+
+    import numpy as np
+    from mlagents.trainers.buffer import BufferKey
+
+    if BufferKey.ACTION_MASK not in mini_batch:
+        return None
+    masks = np.asarray(
+        mini_batch[BufferKey.ACTION_MASK].get_batch(),
+        dtype=np.float32,
+    )
+    expected = sum(BEES_DISCRETE_BRANCHES)
+    if masks.ndim != 2 or masks.shape[1] < expected:
+        return None
+    special_start = sum(BEES_DISCRETE_BRANCHES[:-1])
+    return (
+        np.sum(masks[:, special_start + 1 : special_start + BEES_DISCRETE_BRANCHES[-1]], axis=1)
+        > 0.5
+    ).astype(np.float32)
 
 
 def _bees_bc_weapon_activity(policy, mini_batch):
@@ -132,6 +172,7 @@ def _bees_masked_behavioral_cloning_loss(
     expert_actions,
     weapon_activity,
     movement_activity=None,
+    special_activity=None,
 ):
     """BC loss that excludes movement/weapon actions with no physical effect."""
 
@@ -209,6 +250,19 @@ def _bees_masked_behavioral_cloning_loss(
                     continue
                 branch_losses.append(
                     (per_sample * branch_activity).sum()
+                    / torch.clamp(active_count, min=1.0)
+                )
+            elif special_activity is not None:
+                special = torch.as_tensor(
+                    special_activity,
+                    dtype=per_sample.dtype,
+                    device=per_sample.device,
+                )
+                active_count = special.sum()
+                if float(active_count.detach().cpu().item()) <= 0.0:
+                    continue
+                branch_losses.append(
+                    (per_sample * special).sum()
                     / torch.clamp(active_count, min=1.0)
                 )
             else:
@@ -331,6 +385,18 @@ def _build_bees_policy_dimension_mask(
         discrete_activity[:, slot] = (
             action_masks[:, fire_action_index] > 0.5
         ).to(discrete_activity.dtype)
+
+    special_start = sum(BEES_DISCRETE_BRANCHES[:-1])
+    discrete_activity[:, BEES_WEAPON_SLOTS] = (
+        torch.sum(
+            action_masks[
+                :,
+                special_start + 1 :
+                special_start + BEES_DISCRETE_BRANCHES[-1],
+            ],
+            dim=1,
+        ) > 0.5
+    ).to(discrete_activity.dtype)
     return torch.cat((continuous_activity, discrete_activity), dim=1)
 
 
@@ -484,11 +550,15 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             self.policy,
             mini_batch_demo,
         )
+        _BC_MASK_STATE.special_activity = _bees_bc_special_activity(
+            mini_batch_demo,
+        )
         try:
             return original_bc_update_batch(self, mini_batch_demo, n_sequences)
         finally:
             _BC_MASK_STATE.weapon_activity = None
             _BC_MASK_STATE.movement_activity = None
+            _BC_MASK_STATE.special_activity = None
 
     def masked_bc_loss(self, selected_actions, log_probs, expert_actions):
         masked = _bees_masked_behavioral_cloning_loss(
@@ -498,6 +568,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             expert_actions,
             getattr(_BC_MASK_STATE, "weapon_activity", None),
             getattr(_BC_MASK_STATE, "movement_activity", None),
+            getattr(_BC_MASK_STATE, "special_activity", None),
         )
         if masked is not None:
             return masked
@@ -737,6 +808,7 @@ def restore_inactive_continuous_action_masking() -> None:
     _POLICY_DIMENSION_MASK_STATE.mask = None
     _BC_MASK_STATE.weapon_activity = None
     _BC_MASK_STATE.movement_activity = None
+    _BC_MASK_STATE.special_activity = None
     _POLICY_DIMENSION_MASK_STATE.sample_weights = None
 
     _ORIGINAL_ACTION_MODEL_FORWARD = None
