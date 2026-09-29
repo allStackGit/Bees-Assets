@@ -206,6 +206,7 @@ async function startLocalActorIfNeeded(
     bootstrapPython,
     release,
     preparedRuntime,
+    options = {},
 ) {
     const settings = localActorSettings(config);
     if (!settings.enabled) {
@@ -217,6 +218,10 @@ async function startLocalActorIfNeeded(
         release,
         preparedRuntime,
     );
+    const releaseBuild = String(release.build_id || '').trim();
+    const canonicalBuild = String(
+        options.canonicalBuildId || releaseBuild
+    ).trim();
     const agent = path.join(paths.assetsRoot, 'Training', 'bees_training_worker_agent.py');
     if (!exists(agent)) throw new Error('Local actor worker supervisor is missing: ' + agent);
 
@@ -243,8 +248,8 @@ async function startLocalActorIfNeeded(
         bootstrapPython,
         agent,
         supervisorArgs,
-        prepared.launch_command,
-        preparedRuntime.runtime_version,
+        fallbackCommand,
+        fallbackRuntimeVersion,
     );
 
     let existing = null;
@@ -287,6 +292,45 @@ async function startLocalActorIfNeeded(
         removeIfExists(paths.localActorPidPath);
     }
 
+    let fallbackCommand = prepared.launch_command;
+    let fallbackRuntimeVersion = String(preparedRuntime.runtime_version || '');
+    if (canonicalBuild && canonicalBuild !== releaseBuild) {
+        if (exists(paths.localActorRuntimeStatePath)) {
+            try {
+                const activeRuntime = readJson(paths.localActorRuntimeStatePath);
+                if (
+                    String(activeRuntime.build_id || '').trim() === canonicalBuild &&
+                    activeRuntime.python_executable &&
+                    activeRuntime.runtime_root
+                ) {
+                    fallbackCommand = buildLocalActorLaunchCommand(
+                        config,
+                        {
+                            learner_python: String(activeRuntime.python_executable),
+                            runtime_root: String(activeRuntime.runtime_root),
+                        },
+                        prepared.actor_key,
+                    );
+                    fallbackRuntimeVersion = String(activeRuntime.runtime_version || '');
+                } else {
+                    fallbackCommand = null;
+                }
+            } catch (_) {
+                fallbackCommand = null;
+            }
+        } else {
+            fallbackCommand = null;
+        }
+        if (!fallbackCommand) {
+            console.log(
+                'Local actor start deferred: canonical build ' + canonicalBuild +
+                ' differs from prepared build ' + releaseBuild +
+                ' and no verified local runtime for the canonical build is available.'
+            );
+            return null;
+        }
+    }
+
     if (exists(paths.localActorPidPath)) {
         const legacyPid = Number(readText(paths.localActorPidPath).trim());
         if (legacyPid > 0 && getProcessIdentity(legacyPid)) {
@@ -307,7 +351,7 @@ async function startLocalActorIfNeeded(
         ...supervisorArgs,
         '--owner-token', ownerToken,
         '--',
-        ...prepared.launch_command,
+        ...fallbackCommand,
     ];
     const launchIntent = {
         schema_version: 1,
