@@ -108,7 +108,7 @@ namespace Assets.Scripts.Levels
             }
 
             throw new System.InvalidOperationException(
-                "RL training could not find spawn positions that keep every configured ship outside static obstacles and map bounds.");
+                "RL training could not find spawn positions that keep every configured ship outside static obstacles.");
         }
 
         private bool TrySetRlOneVsOneSpawnPositions(Vector2 beeCenter, Vector2 humanCenter)
@@ -135,14 +135,6 @@ namespace Assets.Scripts.Levels
                 float shipExtent = Mathf.Max(shipSize.x, shipSize.y) * 0.5f;
                 Vector2 shipPosition =
                     center + global::RlOneVsOneArenaMapSizeState.GetShipFormationOffset(this, shipIndex);
-
-                if (shipPosition.x - shipExtent < MinX ||
-                    shipPosition.x + shipExtent > MaxX ||
-                    shipPosition.y - shipExtent < MinY ||
-                    shipPosition.y + shipExtent > MaxY)
-                {
-                    return false;
-                }
 
                 if (!global::RlOneVsOneTrainingBootstrap.CurrentStaticObstaclesEnabled ||
                     ObstacleMap == null ||
