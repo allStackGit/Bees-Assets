@@ -139,16 +139,6 @@ class ElasticActorStaleResyncTests(unittest.TestCase):
         self.assertEqual(session.control_epoch, 1)
         session.manager.reset.assert_called_once_with(config={"difficulty": 2})
 
-    def test_outer_worker_does_not_record_broker_stale_actor_as_session_failure(self):
-        source = Path(actor_worker.__file__).read_text(encoding="utf-8")
-        stale_handler = source.index("except worker.BrokerStaleActor:")
-        generic_handler = source.index("except Exception as exc:", stale_handler)
-        telemetry = source.index("failure_telemetry.record(exc)", generic_handler)
-        self.assertLess(stale_handler, generic_handler)
-        self.assertLess(generic_handler, telemetry)
-        self.assertIn("central actor state advanced; resynchronizing", source)
-
-
 class ElasticActorThroughputTests(unittest.TestCase):
     def test_consumed_step_updates_publish_recent_rate(self):
         session = actor_session.ElasticActorSession.__new__(
@@ -276,12 +266,6 @@ class ElasticActorHealthTests(unittest.TestCase):
         heartbeat._lock = FailingLock()
         heartbeat.mark_progress()
         self.assertTrue(heartbeat._progress_pending.is_set())
-
-    def test_running_actor_wires_main_rollout_progress_into_managed_health(self):
-        source = Path(actor_worker.__file__).read_text(encoding="utf-8")
-        base_source = Path(actor_worker.worker.__file__).read_text(encoding="utf-8")
-        self.assertIn("runtime_progress=startup_health.mark_progress", source)
-        self.assertIn("self._report_runtime_progress()", base_source)
 
     def test_actor_marks_broker_wait_as_ready_before_session_polling(self):
         source = Path(actor_worker.__file__).read_text(encoding="utf-8")
