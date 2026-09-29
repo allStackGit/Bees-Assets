@@ -818,7 +818,11 @@ def main() -> None:
     from mlagents.trainers.env_manager import EnvManager
     from mlagents.trainers.subprocess_env_manager import SubprocessEnvManager
     from bees_mlagents_ppo_compat import (
+        install_continuous_sigma_guard,
+        install_inactive_continuous_action_masking,
         install_value_estimate_key_fix,
+        restore_continuous_sigma_guard,
+        restore_inactive_continuous_action_masking,
         restore_value_estimate_key,
     )
     from bees_mlagents_structured_policy import (
@@ -836,12 +840,22 @@ def main() -> None:
         )
 
     structured_policy_state = install_structured_policy()
+    original_value_estimate_key = None
+    original_sigma_forward = None
     try:
         original_value_estimate_key = install_value_estimate_key_fix()
+        install_inactive_continuous_action_masking()
+        original_sigma_forward = install_continuous_sigma_guard()
     except Exception:
+        restore_continuous_sigma_guard(original_sigma_forward)
+        restore_inactive_continuous_action_masking()
+        restore_value_estimate_key(original_value_estimate_key)
         restore_structured_policy(structured_policy_state)
         raise
     print("[Bees RL] Structured dual-faction entity/weapon policy: enabled")
+    print("[Bees RL] MA-POCA inverse-group-size gradient balancing: enabled")
+    print("[Bees RL] Inactive weapon-action masking: enabled")
+    print("[Bees RL] Continuous sigma guard: enabled")
     print("[Bees RL] PPO/POCA value-estimate/return buffer key separation: enabled")
 
     if torch_threads is not None:
@@ -898,6 +912,8 @@ def main() -> None:
             from mlagents.trainers.trainer.rl_trainer import RLTrainer
             RLTrainer._maybe_save_model = original_maybe_save_model
         torch_utils.torch.load = original_torch_load
+        restore_continuous_sigma_guard(original_sigma_forward)
+        restore_inactive_continuous_action_masking()
         restore_value_estimate_key(original_value_estimate_key)
         restore_structured_policy(structured_policy_state)
         if original_queue_steps is not None:
