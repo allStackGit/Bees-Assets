@@ -1,4 +1,4 @@
-"""Narrow compatibility fixes and exploration guardrails for Bees PPO training."""
+"""Narrow compatibility fixes and exploration guardrails for Bees PPO/MA-POCA training."""
 
 from __future__ import annotations
 
