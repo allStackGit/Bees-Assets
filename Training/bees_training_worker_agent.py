@@ -49,6 +49,7 @@ RUN_ID_PLACEHOLDER = "{run_id}"
 WORKER_ENVS_PLACEHOLDER = "{worker_envs}"
 MANAGED_STOP_FILE_ENV = "BEES_TRAINING_STOP_FILE"
 THROUGHPUT_METRICS_ENV = "BEES_TRAINING_THROUGHPUT_FILE"
+WORKER_ENVS_TARGET_ENV = "BEES_TRAINING_WORKER_ENVS_FILE"
 NETWORK_TRAFFIC_STATE_FILE = "worker-network-traffic.json"
 BUILD_ID_ENV = "BEES_TRAINING_BUILD_ID"
 COMPATIBILITY_KEY_ENV = "BEES_TRAINING_COMPATIBILITY_KEY"
@@ -953,6 +954,7 @@ class ManagedProcess:
         self.environment_args: tuple[str, ...] = ()
         self.worker_env_count: Optional[int] = None
         self.throughput_metrics_file: Optional[Path] = None
+        self.worker_env_target_file: Optional[Path] = None
         self.graceful_checkpoint = False
         self.graceful_remote_stop = False
         self.stop_request_file: Optional[Path] = None
@@ -993,6 +995,17 @@ class ManagedProcess:
         self.last_exit_error = str(error or "")
         self.process = None
         return delay
+
+    def set_worker_env_target(self, env_count: Optional[int]) -> None:
+        if env_count is None or self.worker_env_target_file is None:
+            return
+        if not 1 <= int(env_count) <= 64:
+            raise ValueError("worker env target must be in 1-64")
+        atomic_write_text(
+            self.worker_env_target_file,
+            f"{int(env_count)}\n",
+            encoding="ascii",
+        )
 
     def clear_restart_backoff(self) -> None:
         self.restart_failure_streak = 0
@@ -1183,6 +1196,17 @@ class ManagedProcess:
         except FileNotFoundError:
             pass
         environment[THROUGHPUT_METRICS_ENV] = str(throughput_metrics_file)
+        worker_env_target_file: Optional[Path] = None
+        if worker_env_count is not None:
+            worker_env_target_file = state_file.parent / "worker-envs.target"
+            atomic_write_text(
+                worker_env_target_file,
+                f"{int(worker_env_count)}\n",
+                encoding="ascii",
+            )
+            environment[WORKER_ENVS_TARGET_ENV] = str(worker_env_target_file)
+        else:
+            environment.pop(WORKER_ENVS_TARGET_ENV, None)
         if not run_id:
             raise ValueError("managed training process requires a non-empty run_id")
         logs_root = state_file.parent / "logs"
@@ -1219,6 +1243,7 @@ class ManagedProcess:
         self.environment_args = tuple(str(value) for value in environment_args)
         self.worker_env_count = worker_env_count
         self.throughput_metrics_file = throughput_metrics_file
+        self.worker_env_target_file = worker_env_target_file
         self.graceful_checkpoint = bool(graceful_checkpoint)
         self.graceful_remote_stop = bool(graceful_remote_stop)
         self.stop_request_file = (
@@ -1365,6 +1390,7 @@ def dedicated_process_matches_desired(
     compatibility_key: str,
     environment_args: Sequence[str],
     worker_env_count: Optional[int],
+    allow_live_worker_env_resize: bool = False,
 ) -> bool:
     """Return whether the live dedicated process is still safe under the latest desired state.
 
@@ -1385,7 +1411,10 @@ def dedicated_process_matches_desired(
         and managed.run_id == str(run_id)
         and managed.compatibility_key == str(compatibility_key).strip().lower()
         and managed.environment_args == tuple(str(value) for value in environment_args)
-        and managed.worker_env_count == worker_env_count
+        and (
+            allow_live_worker_env_resize
+            or managed.worker_env_count == worker_env_count
+        )
         and not managed.health_error()
     )
 
@@ -1710,11 +1739,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     def worker_capacity() -> dict[str, object]:
         if args.worker_envs is None:
             return {}
-        current = (
-            managed.worker_env_count
-            if managed.worker_env_count is not None
-            else args.worker_envs
-        )
+        current = managed.worker_env_count if managed.worker_env_count is not None else args.worker_envs
+        if args.auto_worker_envs and managed.alive():
+            throughput = read_throughput_metrics(
+                managed.throughput_metrics_file,
+                expected_pid=managed.throughput_expected_pid(),
+            )
+            reported_envs = throughput.get("env_count") if throughput else None
+            if isinstance(reported_envs, int) and not isinstance(reported_envs, bool):
+                current = reported_envs
         return {
             "auto": bool(args.auto_worker_envs),
             "current_envs": int(current),
@@ -1729,7 +1762,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             throughput = read_throughput_metrics(
                 managed.throughput_metrics_file,
                 expected_pid=managed.throughput_expected_pid(),
-                expected_env_count=managed.worker_env_count,
+                expected_env_count=(
+                    None if args.auto_worker_envs else managed.worker_env_count
+                ),
             )
             if throughput:
                 snapshot["throughput"] = throughput
@@ -2055,14 +2090,23 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                             runtime_launch_commands,
                             args.runtime_cutover_entrypoint,
                         )
+                        launch_worker_env_count = worker_env_count
+                        if (
+                            args.auto_worker_envs
+                            and managed.alive()
+                            and managed.worker_env_count is not None
+                        ):
+                            launch_worker_env_count = managed.worker_env_count
                         command = render_command(
                             runtime_command_template,
                             entrypoint,
                             environment_args,
                             str(active_build["build_id"]),
                             run_id,
-                            worker_env_count,
+                            launch_worker_env_count,
                         )
+                        if args.auto_worker_envs and managed.alive():
+                            managed.set_worker_env_target(worker_env_count)
                         needs_restart = (
                             not managed.alive()
                             or managed.build_sha256 != desired_sha
@@ -2104,6 +2148,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                                 compatibility_key=compatibility_key,
                                 environment_args=environment_args,
                                 worker_env_count=worker_env_count,
+                                allow_live_worker_env_resize=bool(args.auto_worker_envs),
                             )
                         _write_runtime_state(
                             args.runtime_state_file,
