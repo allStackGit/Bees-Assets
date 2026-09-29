@@ -668,7 +668,7 @@ class BeesStructuredObservationEncoder(nn.Module):
 
 
 class BeesStructuredNetworkBody(nn.Module):
-    """Independent Bee/Human actor trunks over the shared structured encoder."""
+    """Independent Bee/Human actor encoders and trunks with within-faction slot sharing."""
 
     def __init__(
         self,
