@@ -6,8 +6,8 @@ BeesRL1v1 model. Inside that model, Bees replaces ML-Agents' flat vector MLP wit
 * shared entity encoders and masked attention pooling;
 * a shared semantic weapon encoder reused by observed and self weapons;
 * per-slot weapon embeddings retained for shared weapon action heads;
-* independent Bee and Human actor trunks and action heads selected by an explicit
-  faction observation channel; and
+* independent Bee and Human actor encoders, trunks, and action heads selected by an
+  explicit faction observation channel; and
 * the ordinary ML-Agents MA-POCA centralized critic, which automatically consumes
   the structured observation encoding through the patched ObservationEncoder.
 
