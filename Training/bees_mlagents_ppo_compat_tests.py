@@ -67,6 +67,39 @@ class InactiveContinuousActionMaskTests(unittest.TestCase):
         self.assertTrue(torch.all(activity[1, 10:12] == 0.0))
         self.assertTrue(torch.all(activity[:, 12:16] == 1.0))
 
+    def test_policy_dimension_mask_excludes_missing_aim_and_fire_actions(self):
+        from mlagents.torch_utils import torch
+
+        action_spec = self._bees_action_spec()
+        masks = torch.ones((2, sum(compat.BEES_DISCRETE_BRANCHES)))
+
+        # Sample 0 has one turret; sample 1 has four.
+        for slot in range(1, compat.BEES_WEAPON_SLOTS):
+            masks[0, slot * 2 + 1] = 0.0
+        for slot in range(4, compat.BEES_WEAPON_SLOTS):
+            masks[1, slot * 2 + 1] = 0.0
+
+        dimension_mask = compat._build_bees_policy_dimension_mask(
+            action_spec,
+            masks,
+        )
+
+        self.assertEqual(
+            dimension_mask.shape,
+            (2, compat.BEES_CONTINUOUS_ACTIONS + len(compat.BEES_DISCRETE_BRANCHES)),
+        )
+        discrete = dimension_mask[:, compat.BEES_CONTINUOUS_ACTIONS :]
+        self.assertTrue(torch.equal(
+            discrete[0],
+            torch.tensor([1.0, 0.0, 0.0, 0.0, 0.0, 1.0]),
+        ))
+        self.assertTrue(torch.equal(
+            discrete[1],
+            torch.tensor([1.0, 1.0, 1.0, 1.0, 0.0, 1.0]),
+        ))
+        self.assertEqual(float(dimension_mask[0].sum().item()), 10.0)
+        self.assertEqual(float(dimension_mask[1].sum().item()), 19.0)
+
     def test_policy_loss_ignores_masked_dimensions_but_uses_active_ones(self):
         from mlagents.torch_utils import torch
 
