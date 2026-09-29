@@ -275,6 +275,43 @@ internal sealed class RlOneVsOneAgent : Agent
             }
         }
         AgentGroups.Clear();
+        for (int i = 0; i < Instances.Count; i++)
+        {
+            if (Instances[i] != null)
+            {
+                Instances[i]._agentGroup = null;
+            }
+        }
+    }
+
+    private static void ReleaseAgentGroup(Level level, int side, int teamId)
+    {
+        if (level == null ||
+            !AgentGroups.TryGetValue(level, out Dictionary<int, SimpleMultiAgentGroup> groups))
+        {
+            return;
+        }
+
+        int key = AgentCountKey(side, teamId);
+        if (groups.TryGetValue(key, out SimpleMultiAgentGroup group))
+        {
+            group?.Dispose();
+            groups.Remove(key);
+        }
+        if (groups.Count == 0)
+        {
+            AgentGroups.Remove(level);
+        }
+
+        for (int i = 0; i < Instances.Count; i++)
+        {
+            RlOneVsOneAgent agent = Instances[i];
+            if (agent != null && agent._level == level &&
+                agent._side == side && agent._teamId == teamId)
+            {
+                agent._agentGroup = null;
+            }
+        }
     }
 
     internal static int[] CreateDiscreteBranchSizes()
@@ -877,6 +914,11 @@ internal sealed class RlOneVsOneAgent : Agent
         // The battle terminates for the complete cooperating side. MA-POCA receives the terminal
         // group transition instead of N duplicated individual terminal rewards.
         _agentGroup?.EndGroupEpisode();
+
+        // EndGroupEpisode invokes OnEpisodeBegin synchronously while iterating the group's
+        // registered-agent set. Dispose only after it returns, then create a fresh group when
+        // participating agents bind in the next episode.
+        ReleaseAgentGroup(_level, _side, _teamId);
     }
 
     private bool IsCurrentController()
