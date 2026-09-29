@@ -1912,6 +1912,35 @@ server.listen(0,'127.0.0.1',async()=>{
         self.assertNotIn("catch (_) {\n            canonicalBuild = ''", block)
 
 
+    def test_build_preserve_run_override_is_explicit_and_build_only(self):
+        operator = read_text(ROOT / "Training" / "bees_operator.js")
+        self.assertIn("[--preserve-run]", operator)
+        self.assertIn("options.preserveRun = true", operator)
+        self.assertIn(
+            "--preserve-run is only valid with the build command.",
+            operator,
+        )
+
+        powershell = read_text(OPERATOR_SCRIPT)
+        self.assertIn("[switch]$PreserveRun", powershell)
+        self.assertIn("if($PreserveRun){$arguments+='--preserve-run'}", powershell)
+        self.assertIn(
+            "-PreserveRun is only valid with the build command.",
+            powershell,
+        )
+
+        runtime = read_operator("runtime.js")
+        self.assertIn("if (options.preserveRun)", runtime)
+        self.assertIn("args.push('--preserve-run')", runtime)
+
+        build = read_operator("build.js")
+        self.assertIn("preserveRun: Boolean(options.preserveRun)", build)
+        self.assertIn("preserve_run_override", build)
+        self.assertIn(
+            "String(release.previous_run_id) !== String(release.run_id)",
+            build,
+        )
+
     def test_operator_and_remote_bootstrap_parse_when_powershell_is_available(self):
         powershell = shutil.which("powershell") or shutil.which("pwsh")
         if not powershell:
