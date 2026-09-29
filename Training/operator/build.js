@@ -56,6 +56,10 @@ const {
 } = require('./tailnet');
 const { startBeesServerIfNeeded } = require('./server');
 const { assertRlEnvironmentArgsValid } = require('./validation');
+const {
+    prepareLocalActorReleaseRuntime,
+    startLocalActorIfNeeded,
+} = require('./localActor');
 
 function formatLocalDate(date = new Date()) {
     const year = String(date.getFullYear()).padStart(4, '0');
@@ -643,6 +647,7 @@ async function invokeBuild(options = {}) {
             assertCentralAgentCheckpointSafe();
             const centralRuntime = prepareCentralReleaseRuntime(config, python, unity, release);
             await startCentralAgentIfNeeded(config, python, unity, release, centralRuntime);
+            prepareLocalActorReleaseRuntime(config, release, centralRuntime);
             console.log(
                 'Training control is online; staging this release without stopping the active cluster.'
             );
@@ -694,6 +699,19 @@ async function invokeBuild(options = {}) {
                     release.preserve_run_override
                         ? 'Compatibility cutover complete; preserved run: ' + release.run_id
                         : 'Incompatible cutover complete. Active run: ' + release.run_id
+                );
+                await startLocalActorIfNeeded(
+                    config,
+                    python,
+                    release,
+                    centralRuntime,
+                );
+            } else if (!staged.pending_release) {
+                await startLocalActorIfNeeded(
+                    config,
+                    python,
+                    release,
+                    centralRuntime,
                 );
             }
         }
