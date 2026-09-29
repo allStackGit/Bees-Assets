@@ -17,7 +17,7 @@ namespace Bees.Tests.EditMode
             Type agentType = RuntimeAssembly.GetType("RlOneVsOneAgent");
             Type schemaType = RuntimeAssembly.GetType("RlPolicySchema");
 
-            Assert.That(RuntimeAssembly.GetStaticField(schemaType, "Version"), Is.EqualTo(20));
+            Assert.That(RuntimeAssembly.GetStaticField(schemaType, "Version"), Is.EqualTo(21));
             Assert.That((string)RuntimeAssembly.GetStaticField(schemaType, "Signature"),
                 Does.Contain("healing=weapon-exclusive"));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "MaxObservedAllies"), Is.EqualTo(64));
