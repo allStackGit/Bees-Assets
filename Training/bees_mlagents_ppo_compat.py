@@ -218,6 +218,19 @@ def _bees_masked_behavioral_cloning_loss(
                 aim_start : aim_start + BEES_WEAPON_AIM_ACTIONS_PER_SLOT,
             ] = activity[:, slot : slot + 1]
 
+        # Passive Human/HiveMind recorders have no communication control surface and
+        # intentionally leave these RL-private channels at zero. Zero is not an expert
+        # message, so never use demonstration loss to suppress emergent communication.
+        communication_start = (
+            BEES_MOVEMENT_CONTINUOUS_ACTIONS
+            + BEES_WEAPON_SLOTS * BEES_WEAPON_AIM_ACTIONS_PER_SLOT
+        )
+        continuous_mask[
+            :,
+            communication_start :
+            communication_start + BEES_COMMUNICATION_CONTINUOUS_ACTIONS,
+        ] = 0.0
+
         squared_error = (
             selected_actions.continuous_tensor - expert_actions.continuous_tensor
         ) ** 2
@@ -265,6 +278,11 @@ def _bees_masked_behavioral_cloning_loss(
                     dtype=per_sample.dtype,
                     device=per_sample.device,
                 )
+                # Ordinary passive demonstrations intentionally write NoSpecialAction.
+                # Only explicit capability-event demos carry an authoritative nonzero label.
+                special = special * (
+                    expert_special != 0
+                ).to(per_sample.dtype)
                 active_count = special.sum()
                 if float(active_count.detach().cpu().item()) <= 0.0:
                     continue
@@ -367,6 +385,7 @@ def _build_bees_policy_dimension_mask(
     action_masks,
     movement_activity=None,
     discrete_actions=None,
+    communication_activity=None,
 ):
     """Build PPO loss weights that omit action dimensions with no physical effect."""
 
@@ -396,6 +415,22 @@ def _build_bees_policy_dimension_mask(
                 device=continuous_activity.device,
             ).unsqueeze(1)
         )
+    if (
+        communication_activity is not None
+        and communication_activity.shape[0] == continuous_activity.shape[0]
+    ):
+        communication_start = (
+            BEES_MOVEMENT_CONTINUOUS_ACTIONS
+            + BEES_WEAPON_SLOTS * BEES_WEAPON_AIM_ACTIONS_PER_SLOT
+        )
+        continuous_activity[
+            :,
+            communication_start :
+            communication_start + BEES_COMMUNICATION_CONTINUOUS_ACTIONS,
+        ] = communication_activity.to(
+            dtype=continuous_activity.dtype,
+            device=continuous_activity.device,
+        ).unsqueeze(1)
 
     # A masked fire branch has only "cease" available, so its selected log-probability
     # is effectively constant and has zero gradient. Exclude it from the loss denominator
@@ -465,6 +500,32 @@ def _trust_region_policy_loss_with_dimension_mask(
     if sample_weights is not None and sample_weights.shape[0] == weights.shape[0]:
         weights = weights * sample_weights.to(element_loss.dtype).unsqueeze(-1)
     return (element_loss * weights).sum() / torch.clamp(weights.sum(), min=1.0)
+
+
+def _poca_communication_activity(policy, batch, batch_size):
+    """Return 1 where at least one live MA-POCA groupmate can receive communication."""
+
+    import numpy as np
+    from mlagents.trainers.trajectory import GroupObsUtil
+
+    n_obs = len(policy.behavior_spec.observation_specs)
+    if n_obs <= 0 or batch_size <= 0:
+        return None
+
+    groupmate_obs = GroupObsUtil.from_buffer(batch, n_obs)
+    active = np.zeros(batch_size, dtype=np.float32)
+    for groupmate in groupmate_obs:
+        if not groupmate:
+            continue
+        first_obs = np.asarray(groupmate[0])
+        if first_obs.shape[0] != batch_size:
+            return None
+        first_value = first_obs.reshape(batch_size, -1)[:, 0]
+        active = np.maximum(
+            active,
+            (~np.isnan(first_value)).astype(np.float32),
+        )
+    return active
 
 
 def _poca_inverse_group_size_weight_array(policy, batch, batch_size):
@@ -749,7 +810,11 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             sample_weights=sample_weights,
         )
 
-    def _set_dimension_mask(optimizer, batch):
+    def _set_dimension_mask(
+        optimizer,
+        batch,
+        communication_activity=None,
+    ):
         action_masks = ModelUtils.list_to_tensor(batch[BufferKey.ACTION_MASK])
         movement_activity = _bees_movement_activity(
             optimizer.policy,
@@ -760,11 +825,16 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         discrete_actions = ModelUtils.list_to_tensor(
             batch[BufferKey.DISCRETE_ACTION]
         )
+        if communication_activity is not None:
+            communication_activity = action_masks.new_tensor(
+                communication_activity
+            )
         dimension_mask = _build_bees_policy_dimension_mask(
             optimizer.policy.behavior_spec.action_spec,
             action_masks,
             movement_activity=movement_activity,
             discrete_actions=discrete_actions,
+            communication_activity=communication_activity,
         )
         _POLICY_DIMENSION_MASK_STATE.mask = dimension_mask
         return action_masks
@@ -779,7 +849,16 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             _POLICY_DIMENSION_MASK_STATE.sample_weights = None
 
     def masked_poca_update(self, batch, num_sequences):
-        action_masks = _set_dimension_mask(self, batch)
+        communication_activity = _poca_communication_activity(
+            self.policy,
+            batch,
+            len(batch[BufferKey.MASKS]),
+        )
+        action_masks = _set_dimension_mask(
+            self,
+            batch,
+            communication_activity=communication_activity,
+        )
         _POLICY_DIMENSION_MASK_STATE.sample_weights = (
             _poca_inverse_group_size_weights(
                 self.policy,
