@@ -56,16 +56,78 @@ class _SupervisorProcessRestartRequired(RuntimeError):
     """The current process must exit before recovery to avoid overlapping owned state."""
 
 
-def _acquire_posix_supervisor_lock(install_root: Path):
-    """Own one managed supervisor per POSIX install root.
+class _WindowsSupervisorMutex:
+    def __init__(self, handle: int) -> None:
+        self.handle = int(handle)
 
-    The launcher and its OS watchdog can race each other. The PID file is diagnostic state, not a
-    mutual-exclusion primitive, so enforce ownership in the supervisor process itself before it can
-    overwrite the PID file or bind the local Tailnet forwarding ports.
+    def close(self) -> None:
+        handle = self.handle
+        if not handle:
+            return
+        self.handle = 0
+        from ctypes import wintypes
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.ReleaseMutex.restype = wintypes.BOOL
+        kernel32.ReleaseMutex.argtypes = (wintypes.HANDLE,)
+        kernel32.CloseHandle.restype = wintypes.BOOL
+        kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
+        kernel32.ReleaseMutex(wintypes.HANDLE(handle))
+        kernel32.CloseHandle(wintypes.HANDLE(handle))
+
+
+def _windows_supervisor_mutex_name(install_root: Path) -> str:
+    normalized = os.path.normcase(os.path.abspath(os.fspath(install_root)))
+    identity = hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+    return "Local\\BeesRemoteSupervisor-" + identity
+
+
+def _acquire_windows_supervisor_lock(
+    install_root: Path,
+    timeout_ms: int = 10_000,
+):
+    """Serialize supervisors while still allowing an intentional staged-runtime handoff.
+
+    A staged replacement starts before the old Windows supervisor returns. Waiting briefly on the
+    named mutex lets that replacement inherit ownership as soon as the old process releases it,
+    while an accidental second supervisor cannot overwrite the PID file or bind forwarding ports.
     """
-    if os.name == "nt":
-        return None
+    from ctypes import wintypes
 
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.CreateMutexW.restype = wintypes.HANDLE
+    kernel32.CreateMutexW.argtypes = (ctypes.c_void_p, wintypes.BOOL, wintypes.LPCWSTR)
+    kernel32.WaitForSingleObject.restype = wintypes.DWORD
+    kernel32.WaitForSingleObject.argtypes = (wintypes.HANDLE, wintypes.DWORD)
+    kernel32.CloseHandle.restype = wintypes.BOOL
+    kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
+
+    handle = kernel32.CreateMutexW(
+        None,
+        False,
+        _windows_supervisor_mutex_name(install_root),
+    )
+    if not handle:
+        raise ctypes.WinError(ctypes.get_last_error())
+
+    wait_object_0 = 0x00000000
+    wait_abandoned = 0x00000080
+    wait_timeout = 0x00000102
+    result = kernel32.WaitForSingleObject(
+        handle,
+        max(0, int(timeout_ms)),
+    )
+    if result in (wait_object_0, wait_abandoned):
+        handle_value = getattr(handle, "value", handle)
+        return _WindowsSupervisorMutex(int(handle_value))
+    kernel32.CloseHandle(handle)
+    if result == wait_timeout:
+        return None
+    raise ctypes.WinError(ctypes.get_last_error())
+
+
+def _acquire_posix_supervisor_lock(install_root: Path):
+    """Own one managed supervisor per POSIX install root."""
     import fcntl
 
     install_root.mkdir(parents=True, exist_ok=True)
@@ -77,6 +139,13 @@ def _acquire_posix_supervisor_lock(install_root: Path):
         handle.close()
         return None
     return handle
+
+
+def _acquire_supervisor_lock(install_root: Path):
+    """Own one managed supervisor per install root before PID or local-port mutation."""
+    if os.name == "nt":
+        return _acquire_windows_supervisor_lock(install_root)
+    return _acquire_posix_supervisor_lock(install_root)
 
 
 class _RunScopedLogSink:
@@ -1920,8 +1989,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             return 2
 
     install_root = Path(args.install_root).expanduser().resolve()
-    supervisor_lock = _acquire_posix_supervisor_lock(install_root)
-    if os.name != "nt" and supervisor_lock is None:
+    supervisor_lock = _acquire_supervisor_lock(install_root)
+    if supervisor_lock is None:
         print(
             "[Bees remote] another managed supervisor already owns this install root; "
             "leaving the existing worker in control.",
