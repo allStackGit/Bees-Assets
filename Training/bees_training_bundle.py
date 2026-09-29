@@ -643,13 +643,18 @@ def create_bundle(
         model = _snapshot_model(snapshot_value, results_root, warnings)
         live_snapshot_requested = bool(snapshot_value)
         model_source = "live-snapshot" if model is not None else "unavailable"
-        if model is None and not live_snapshot_requested:
-            # Historical/offline bundles have no live learner to query, so newest retained ONNX
-            # remains the correct best-available artifact. For an active live snapshot request,
-            # however, substituting an older ONNX would misrepresent the network at learner_step.
-            model = latest_file(results_root, "*.onnx")
-            if model is not None:
-                model_source = "latest-on-disk"
+        if model is None:
+            retained = latest_file(results_root, "*.onnx")
+            if retained is not None:
+                model = retained
+                model_source = (
+                    "stale-fallback" if live_snapshot_requested else "latest-on-disk"
+                )
+                if live_snapshot_requested:
+                    warnings.append(
+                        "live diagnostic snapshot is unavailable; retained ONNX is included "
+                        "only as an explicitly stale fallback and is not the current learner policy"
+                    )
 
         status_run = _run_from_status(status_json)
         same_live_run = not status_run or status_run == resolved_run
@@ -717,6 +722,7 @@ def create_bundle(
                 "archive_path": archive_path,
                 "source": str(model),
                 "selection": model_source,
+                "current_policy": model_source == "live-snapshot",
                 "step": model_step,
                 "size_bytes": stat.st_size,
                 "sha256": sha256_file(model),
