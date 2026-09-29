@@ -119,6 +119,11 @@ async function reconcilePersistedTrainingAfterServerStart(config, admin) {
         bootstrapPython,
         release,
         preparedRuntime,
+        {
+            canonicalBuildId: String(
+                status.desired && status.desired.canonical_build_id || ''
+            ),
+        },
     );
 }
 
@@ -240,6 +245,7 @@ async function invokeRuntime() {
         python,
         updatedRelease,
         preparedRuntime,
+        { canonicalBuildId: canonicalBuild },
     );
 
     if (exists(paths.tailnetAddressPath)) {
