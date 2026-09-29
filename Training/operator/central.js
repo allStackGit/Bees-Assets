@@ -192,11 +192,18 @@ async function getCentralFallbackLaunchCommand(config, unity, preparedRuntime) {
         try { existing = readJson(paths.centralAgentStatePath); } catch (_) {}
     }
     if (existing) {
+        const persistedFallback = persistedCentralFallback(existing, canonicalBuild);
+        if (persistedFallback) return persistedFallback;
+
         const existingPython = String(existing.learner_python || '').trim();
         const existingRoot = String(existing.release_runtime_root || '').trim();
         const cutoverCapable = Boolean(existing.runtime_cutover_capable);
         const fallbackBuild = String(existing.fallback_build_id || '').trim();
         if (cutoverCapable) {
+            // Legacy cutover-capable state did not persist the verified fallback argv.
+            // Reconstruct it once for migration; newly written state persists the exact
+            // command so subsequent operator invocations cannot silently bind the
+            // canonical build to the prepared pending runtime.
             if (fallbackBuild === canonicalBuild && existingPython && existingRoot) {
                 return {
                     build_id: fallbackBuild,
@@ -471,6 +478,27 @@ function centralSupervisorLaunchContractMatches(state, commandHash, agent) {
     );
 }
 
+function persistedCentralFallback(state, canonicalBuild) {
+    if (!state || !Boolean(state.runtime_cutover_capable)) return null;
+    const buildId = String(state.fallback_build_id || '').trim();
+    const command = Array.isArray(state.fallback_launch_command)
+        ? state.fallback_launch_command.map(String)
+        : null;
+    if (
+        !buildId ||
+        buildId !== String(canonicalBuild || '').trim() ||
+        !command ||
+        command.length < 2 ||
+        command.some(value => !value)
+    ) {
+        return null;
+    }
+    return {
+        build_id: buildId,
+        launch_command: command,
+    };
+}
+
 async function startCentralAgentIfNeeded(
     config,
     bootstrapPython,
@@ -598,6 +626,7 @@ async function startCentralAgentIfNeeded(
         runtime_state_file: paths.centralRuntimeStatePath,
         runtime_cutover_capable: true,
         fallback_build_id: String(fallback.build_id),
+        fallback_launch_command: [...fallback.launch_command.map(String)],
         graceful_checkpoint_shutdown: true,
         argv_transport: 'node-spawn-array-v1',
         started_utc: new Date().toISOString(),
@@ -657,6 +686,7 @@ module.exports = {
     getCentralFallbackLaunchCommand,
     getRunningCentralAgentPid,
     newCentralLearnerLaunchCommand,
+    persistedCentralFallback,
     prepareCentralReleaseRuntime,
     startCentralAgentIfNeeded,
     stopCentralAgentGracefully,
