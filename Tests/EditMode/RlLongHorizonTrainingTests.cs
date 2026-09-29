@@ -61,7 +61,7 @@ namespace Bees.Tests.EditMode
             Assert.That(methodEnd, Is.GreaterThan(methodStart));
 
             string method = agent.Substring(methodStart, methodEnd - methodStart);
-            Assert.That(method, Does.Contain("EndEpisode();"));
+            Assert.That(method, Does.Contain("EndGroupEpisode();"));
             Assert.That(method, Does.Not.Contain("EpisodeInterrupted();"));
         }
 
