@@ -160,6 +160,27 @@ class RunLifecycleTests(unittest.TestCase):
             ):
                 lifecycle.plan_run(assets, state, preserve_run=True)
 
+    def test_preserve_run_override_refuses_trainer_algorithm_change(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            assets = self._assets(root)
+            state = root / "current.json"
+            first = lifecycle.plan_run(assets, state)
+            lifecycle.commit_plan(state, first)
+
+            trainer = assets / "Training" / "rl_1v1_config.yaml"
+            trainer.write_text(
+                trainer.read_text(encoding="utf-8").replace(
+                    "trainer_type: ppo", "trainer_type: poca"
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(
+                ValueError,
+                "checkpoint compatibility changed: trainer_type",
+            ):
+                lifecycle.plan_run(assets, state, preserve_run=True)
+
     def test_force_new_creates_new_run_without_contract_change(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
