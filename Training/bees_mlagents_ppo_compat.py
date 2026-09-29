@@ -19,6 +19,8 @@ BEES_CONTINUOUS_ACTIONS = (
     + BEES_COMMUNICATION_CONTINUOUS_ACTIONS
 )
 BEES_DISCRETE_BRANCHES = (2,) * BEES_WEAPON_SLOTS + (5,)
+BEES_OBSERVATION_SIZE = 7614
+BEES_SELF_IS_MOBILE_INDEX = 16
 ACTION_ENTROPY_EPSILON = 1e-7
 
 _ORIGINAL_GAUSSIAN_FORWARD = None
@@ -75,6 +77,24 @@ def _build_bees_continuous_activity_mask(action_spec, masks, reference):
     return activity
 
 
+def _bees_movement_activity(policy, batch):
+    """Return 1 where the ship can use the policy movement outputs."""
+
+    import numpy as np
+    from mlagents.trainers.trajectory import ObsUtil
+
+    if not _is_bees_action_spec(policy.behavior_spec.action_spec):
+        return None
+    if len(policy.behavior_spec.observation_specs) != 1:
+        return None
+
+    observations = ObsUtil.from_buffer(batch, 1)
+    raw = np.asarray(observations[0].to_ndarray(), dtype=np.float32)
+    if raw.ndim != 2 or raw.shape[1] != BEES_OBSERVATION_SIZE:
+        return None
+    return (raw[:, BEES_SELF_IS_MOBILE_INDEX] > 0.5).astype(np.float32)
+
+
 def _bees_bc_weapon_activity(policy, mini_batch):
     """Return per-sample turret activity from the frozen self-weapon observation slots."""
 
@@ -111,8 +131,9 @@ def _bees_masked_behavioral_cloning_loss(
     log_probs,
     expert_actions,
     weapon_activity,
+    movement_activity=None,
 ):
-    """BC loss that excludes actions for weapon slots that do not contain turrets."""
+    """BC loss that excludes movement/weapon actions with no physical effect."""
 
     from mlagents.torch_utils import torch
     from mlagents.trainers.torch_entities.utils import ModelUtils
@@ -135,6 +156,16 @@ def _bees_masked_behavioral_cloning_loss(
     loss = reference.new_tensor(0.0)
     if action_spec.continuous_size > 0:
         continuous_mask = torch.ones_like(selected_actions.continuous_tensor)
+        if movement_activity is not None:
+            movement = torch.as_tensor(
+                movement_activity,
+                dtype=reference.dtype,
+                device=reference.device,
+            )
+            if movement.shape[0] == continuous_mask.shape[0]:
+                continuous_mask[:, :BEES_MOVEMENT_CONTINUOUS_ACTIONS] = (
+                    movement.unsqueeze(1)
+                )
         for slot in range(BEES_WEAPON_SLOTS):
             aim_start = (
                 BEES_MOVEMENT_CONTINUOUS_ACTIONS
@@ -207,6 +238,20 @@ def _masked_action_log_probs_and_entropy(action_model, actions, dists, masks):
             masks,
             continuous_log_prob,
         )
+        policy_dimension_mask = getattr(
+            _POLICY_DIMENSION_MASK_STATE,
+            "mask",
+            None,
+        )
+        if (
+            activity is not None
+            and policy_dimension_mask is not None
+            and policy_dimension_mask.shape[0] == activity.shape[0]
+            and policy_dimension_mask.shape[1] >= BEES_CONTINUOUS_ACTIONS
+        ):
+            activity = activity * policy_dimension_mask[
+                :, :BEES_CONTINUOUS_ACTIONS
+            ].to(activity.dtype)
         if activity is None:
             entropies.append(dists.continuous.entropy())
         else:
@@ -239,8 +284,12 @@ def _masked_action_log_probs_and_entropy(action_model, actions, dists, masks):
     return action_log_probs, entropy_sum
 
 
-def _build_bees_policy_dimension_mask(action_spec, action_masks):
-    """Build PPO loss weights that omit inactive continuous aim dimensions only."""
+def _build_bees_policy_dimension_mask(
+    action_spec,
+    action_masks,
+    movement_activity=None,
+):
+    """Build PPO loss weights that omit action dimensions with no physical effect."""
 
     from mlagents.torch_utils import torch
 
@@ -258,6 +307,16 @@ def _build_bees_policy_dimension_mask(action_spec, action_masks):
     )
     if continuous_activity is None:
         return None
+    if (
+        movement_activity is not None
+        and movement_activity.shape[0] == continuous_activity.shape[0]
+    ):
+        continuous_activity[:, :BEES_MOVEMENT_CONTINUOUS_ACTIONS] = (
+            movement_activity.to(
+                dtype=continuous_activity.dtype,
+                device=continuous_activity.device,
+            ).unsqueeze(1)
+        )
 
     # A masked fire branch has only "cease" available, so its selected log-probability
     # is effectively constant and has zero gradient. Exclude it from the loss denominator
@@ -421,10 +480,15 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             self.policy,
             mini_batch_demo,
         )
+        _BC_MASK_STATE.movement_activity = _bees_movement_activity(
+            self.policy,
+            mini_batch_demo,
+        )
         try:
             return original_bc_update_batch(self, mini_batch_demo, n_sequences)
         finally:
             _BC_MASK_STATE.weapon_activity = None
+            _BC_MASK_STATE.movement_activity = None
 
     def masked_bc_loss(self, selected_actions, log_probs, expert_actions):
         masked = _bees_masked_behavioral_cloning_loss(
@@ -433,6 +497,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             log_probs,
             expert_actions,
             getattr(_BC_MASK_STATE, "weapon_activity", None),
+            getattr(_BC_MASK_STATE, "movement_activity", None),
         )
         if masked is not None:
             return masked
@@ -575,9 +640,16 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
 
     def _set_dimension_mask(optimizer, batch):
         action_masks = ModelUtils.list_to_tensor(batch[BufferKey.ACTION_MASK])
+        movement_activity = _bees_movement_activity(
+            optimizer.policy,
+            batch,
+        )
+        if movement_activity is not None:
+            movement_activity = action_masks.new_tensor(movement_activity)
         dimension_mask = _build_bees_policy_dimension_mask(
             optimizer.policy.behavior_spec.action_spec,
             action_masks,
+            movement_activity=movement_activity,
         )
         _POLICY_DIMENSION_MASK_STATE.mask = dimension_mask
         return action_masks
@@ -664,6 +736,7 @@ def restore_inactive_continuous_action_masking() -> None:
     BCModule._behavioral_cloning_loss = _ORIGINAL_BC_LOSS
     _POLICY_DIMENSION_MASK_STATE.mask = None
     _BC_MASK_STATE.weapon_activity = None
+    _BC_MASK_STATE.movement_activity = None
     _POLICY_DIMENSION_MASK_STATE.sample_weights = None
 
     _ORIGINAL_ACTION_MODEL_FORWARD = None
