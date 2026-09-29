@@ -25,6 +25,15 @@ CONTRACT_FIELDS = (
     "scenario_schema_version",
 )
 
+CHECKPOINT_COMPATIBILITY_FIELDS = (
+    "behavior_name",
+    "policy_abi_version",
+    "policy_signature",
+    "observation_schema_version",
+    "action_schema_version",
+    "network_settings",
+)
+
 
 def _sha256_bytes(value: bytes) -> str:
     return hashlib.sha256(value).hexdigest()
@@ -256,10 +265,13 @@ def plan_run(
     now: Optional[datetime] = None,
     *,
     force_new: bool = False,
+    preserve_run: bool = False,
     build_id: Optional[str] = None,
     environment_args: Optional[Sequence[str]] = None,
 ) -> dict[str, Any]:
     now = now or _utc_now()
+    if force_new and preserve_run:
+        raise ValueError("force_new and preserve_run are mutually exclusive")
     if build_id is not None:
         if not isinstance(build_id, str) or not re.fullmatch(r"[A-Za-z0-9._-]+", build_id):
             raise ValueError("build_id must contain only safe release-id characters")
@@ -277,10 +289,32 @@ def plan_run(
     payload = contract_payload(assets_root)
     key = compatibility_key(payload)
     previous = _load_state(state_path)
-    incompatible = previous is not None and (
-        previous["compatibility_key"] != key or force_new
+    if preserve_run and previous is None:
+        raise ValueError("preserve_run requires an existing training run")
+
+    contract_changed = (
+        previous is not None and previous["compatibility_key"] != key
     )
-    new_run = previous is None or incompatible
+    preserve_run_override = bool(preserve_run and contract_changed)
+    if preserve_run_override:
+        previous_contract = previous.get("contract")
+        if not isinstance(previous_contract, Mapping):
+            raise ValueError(
+                "cannot preserve run because existing lifecycle state has no compatibility contract"
+            )
+        changed_checkpoint_fields = [
+            field
+            for field in CHECKPOINT_COMPATIBILITY_FIELDS
+            if previous_contract.get(field) != payload.get(field)
+        ]
+        if changed_checkpoint_fields:
+            raise ValueError(
+                "cannot preserve run because checkpoint compatibility changed: "
+                + ", ".join(changed_checkpoint_fields)
+            )
+
+    incompatible = previous is not None and (contract_changed or force_new)
+    new_run = previous is None or (incompatible and not preserve_run_override)
     run_id = _run_id(payload, key, now) if new_run else str(previous["run_id"])
     return {
         "schema_version": SCHEMA_VERSION,
@@ -294,6 +328,7 @@ def plan_run(
         "incompatible": incompatible,
         "new_run": new_run,
         "forced_new_run": bool(force_new),
+        "preserve_run_override": preserve_run_override,
         "build_id": build_id,
         "environment_args": normalized_environment_args,
         "contract": payload,
@@ -395,6 +430,14 @@ def _parser() -> argparse.ArgumentParser:
         help="Create a new run even when the compatibility contract is unchanged.",
     )
     plan.add_argument(
+        "--preserve-run",
+        action="store_true",
+        help=(
+            "Keep the existing run/checkpoint lineage across a semantic compatibility "
+            "change when the checkpoint ABI/network shape is unchanged."
+        ),
+    )
+    plan.add_argument(
         "--build-id",
         default=None,
         help="Bind a forced-new operation to the exact existing release build.",
@@ -448,6 +491,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             Path(args.assets_root),
             Path(args.state),
             force_new=bool(args.force_new),
+            preserve_run=bool(args.preserve_run),
             build_id=args.build_id,
             environment_args=environment_args,
         )
