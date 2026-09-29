@@ -213,6 +213,7 @@ async function startLocalActorIfNeeded(
         await stopConfiguredLocalActor(config, bootstrapPython);
         return null;
     }
+
     const prepared = prepareLocalActorReleaseRuntime(
         config,
         release,
@@ -244,14 +245,6 @@ async function startLocalActorIfNeeded(
     ];
     if (settings.autoTune) supervisorArgs.push('--auto-worker-envs');
 
-    const commandHash = localActorSupervisorCommandHash(
-        bootstrapPython,
-        agent,
-        supervisorArgs,
-        fallbackCommand,
-        fallbackRuntimeVersion,
-    );
-
     let existing = null;
     if (exists(paths.localActorStatePath)) {
         try { existing = readJson(paths.localActorStatePath); } catch (_) {}
@@ -271,7 +264,58 @@ async function startLocalActorIfNeeded(
                 }
             }
         }
-        if (existing && testManagedProcessIdentity(existing)) {
+    }
+
+    if (
+        canonicalBuild &&
+        canonicalBuild !== releaseBuild &&
+        existing &&
+        testManagedProcessIdentity(existing)
+    ) {
+        // The running stable supervisor already owns the canonical fallback command. The newly
+        // written runtime pointer prepares the pending build without mixing runtimes before its
+        // rollout turn.
+        return prepared.trainer_id;
+    }
+
+    let fallbackCommand = prepared.launch_command;
+    let fallbackRuntimeVersion = String(preparedRuntime.runtime_version || '');
+    let fallbackBuild = releaseBuild;
+
+    if (canonicalBuild && canonicalBuild !== releaseBuild) {
+        const persistedFallback = existing && Array.isArray(existing.fallback_launch_command)
+            ? existing.fallback_launch_command.map(String)
+            : null;
+        if (
+            String(existing && existing.fallback_build_id || '').trim() === canonicalBuild &&
+            persistedFallback &&
+            persistedFallback.length >= 2
+        ) {
+            fallbackCommand = persistedFallback;
+            fallbackRuntimeVersion = String(
+                existing.fallback_runtime_version || ''
+            );
+            fallbackBuild = canonicalBuild;
+        } else {
+            console.log(
+                'Local actor start deferred: canonical build ' + canonicalBuild +
+                ' differs from prepared build ' + releaseBuild +
+                ' and no verified canonical fallback command is available.'
+            );
+            return null;
+        }
+    }
+
+    const commandHash = localActorSupervisorCommandHash(
+        bootstrapPython,
+        agent,
+        supervisorArgs,
+        fallbackCommand,
+        fallbackRuntimeVersion,
+    );
+
+    if (existing) {
+        if (testManagedProcessIdentity(existing)) {
             if (
                 testManagedProcessIdentity(existing, bootstrapPython) &&
                 String(existing.command_hash || '') === commandHash
@@ -279,7 +323,7 @@ async function startLocalActorIfNeeded(
                 return prepared.trainer_id;
             }
             await stopLocalActorGracefully(existing, bootstrapPython);
-        } else if (existing) {
+        } else {
             const livePid = getStateReferencedLivePid(existing);
             if (livePid > 0) {
                 throw new Error(
@@ -290,45 +334,6 @@ async function startLocalActorIfNeeded(
         }
         removeIfExists(paths.localActorStatePath);
         removeIfExists(paths.localActorPidPath);
-    }
-
-    let fallbackCommand = prepared.launch_command;
-    let fallbackRuntimeVersion = String(preparedRuntime.runtime_version || '');
-    if (canonicalBuild && canonicalBuild !== releaseBuild) {
-        if (exists(paths.localActorRuntimeStatePath)) {
-            try {
-                const activeRuntime = readJson(paths.localActorRuntimeStatePath);
-                if (
-                    String(activeRuntime.build_id || '').trim() === canonicalBuild &&
-                    activeRuntime.python_executable &&
-                    activeRuntime.runtime_root
-                ) {
-                    fallbackCommand = buildLocalActorLaunchCommand(
-                        config,
-                        {
-                            learner_python: String(activeRuntime.python_executable),
-                            runtime_root: String(activeRuntime.runtime_root),
-                        },
-                        prepared.actor_key,
-                    );
-                    fallbackRuntimeVersion = String(activeRuntime.runtime_version || '');
-                } else {
-                    fallbackCommand = null;
-                }
-            } catch (_) {
-                fallbackCommand = null;
-            }
-        } else {
-            fallbackCommand = null;
-        }
-        if (!fallbackCommand) {
-            console.log(
-                'Local actor start deferred: canonical build ' + canonicalBuild +
-                ' differs from prepared build ' + releaseBuild +
-                ' and no verified local runtime for the canonical build is available.'
-            );
-            return null;
-        }
     }
 
     if (exists(paths.localActorPidPath)) {
@@ -354,7 +359,7 @@ async function startLocalActorIfNeeded(
         ...fallbackCommand,
     ];
     const launchIntent = {
-        schema_version: 1,
+        schema_version: 2,
         status: 'launching',
         owner_token: ownerToken,
         executable_path: path.resolve(bootstrapPython),
@@ -364,6 +369,9 @@ async function startLocalActorIfNeeded(
         runtime_cutover_pointer: paths.localActorRuntimePointerPath,
         runtime_ready_file: paths.localActorRuntimeReadyBuildPath,
         runtime_state_file: paths.localActorRuntimeStatePath,
+        fallback_build_id: fallbackBuild,
+        fallback_runtime_version: fallbackRuntimeVersion,
+        fallback_launch_command: [...fallbackCommand],
         started_utc: new Date().toISOString(),
     };
     writeJsonAtomic(paths.localActorStatePath, launchIntent);
