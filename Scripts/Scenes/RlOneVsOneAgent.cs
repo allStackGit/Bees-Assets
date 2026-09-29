@@ -1029,6 +1029,10 @@ internal sealed class RlOneVsOneAgent : Agent
         // stops requesting decisions, Python retains its last group observation/action and the
         // centralized critic continues to see a ghost teammate until the battle ends.
         bool endTrajectory = _hasParticipatedThisEpisode && _agentGroup != null;
+        bool sideEliminated =
+            _level != null &&
+            _level.State != null &&
+            _level.State.IsSideKilled(_side);
         _endingShipTrajectory = true;
         ReleaseShip();
         _hasBoundShip = false;
@@ -1040,6 +1044,16 @@ internal sealed class RlOneVsOneAgent : Agent
         if (!endTrajectory)
         {
             _hasParticipatedThisEpisode = false;
+            _endingShipTrajectory = false;
+            return;
+        }
+
+        if (sideEliminated)
+        {
+            // Level.Update completes elimination after Agent.FixedUpdate. Keep eliminated-side
+            // participants registered for that fraction of a frame so HandleEpisodeEnded can
+            // deliver the final loss/draw reward through EndGroupEpisode. There is no replacement
+            // to bind, and terminal observation collection will naturally emit zeros.
             _endingShipTrajectory = false;
             return;
         }
