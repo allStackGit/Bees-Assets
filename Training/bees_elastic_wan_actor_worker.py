@@ -136,6 +136,16 @@ class _StartupHealthHeartbeat:
                 self.actor_id = int(actor_id)
         self._publish()
 
+    def set_env_count(self, env_count: int) -> None:
+        value = int(env_count)
+        if not 1 <= value <= elastic.MAX_ENVS_PER_ACTOR:
+            raise ValueError(
+                f"startup health env_count must be in 1-{elastic.MAX_ENVS_PER_ACTOR}"
+            )
+        with self._lock:
+            self.env_count = value
+        self._publish()
+
     def mark_progress(self) -> None:
         # The rollout loop can advance many times per second. Signal progress without competing
         # with the health publisher; the publisher timestamps and persists it at bounded cadence.
@@ -657,9 +667,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         while not stop.is_set():
             actor_session = None
             session_started_monotonic: Optional[float] = None
+            session_env_count = int(client.env_count)
             startup_health = _StartupHealthHeartbeat(
                 actor_id=(args.actor_id if args.actor_id is not None else -1),
-                env_count=args.envs,
+                env_count=session_env_count,
             )
             startup_health.start()
             startup_health.set_ready("waiting-for-central")
@@ -675,7 +686,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 session, worker_offset, _capacity_envs = _elastic_session(
                     raw_session,
                     actor_id=actor_id,
-                    env_count=args.envs,
+                    env_count=session_env_count,
                 )
                 startup_health.set_ready("session-claimed", actor_id=actor_id)
                 startup_health.set_phase("starting-session")
@@ -691,9 +702,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     upload_queue_size=args.upload_queue,
                     startup_health=startup_health.set_phase,
                     runtime_progress=startup_health.mark_progress,
+                    env_count_changed=startup_health.set_env_count,
                 )
                 actor_session.worker_offset = worker_offset
-                actor_session.total_envs = int(raw_session["remote_worker_base"]) + args.envs
+                actor_session.total_envs = (
+                    int(raw_session["remote_worker_base"]) + session_env_count
+                )
                 actor_session._session_failure_telemetry = failure_telemetry
                 try:
                     actor_session.start()
