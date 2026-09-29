@@ -81,6 +81,8 @@ internal sealed class RlOneVsOneAgent : Agent
     private static readonly Dictionary<Ship, Vector4> ShipCommunications = new Dictionary<Ship, Vector4>();
     private static readonly Dictionary<Level, Dictionary<int, int>> AgentCounts =
         new Dictionary<Level, Dictionary<int, int>>();
+    private static readonly Dictionary<Level, Dictionary<int, SimpleMultiAgentGroup>> AgentGroups =
+        new Dictionary<Level, Dictionary<int, SimpleMultiAgentGroup>>();
     private static bool _invalidEnvironmentReported;
     private static int _lastProvisionFrame = -1;
 
@@ -94,6 +96,7 @@ internal sealed class RlOneVsOneAgent : Agent
     private bool _hasBoundShip;
     private bool _hasParticipatedThisEpisode;
     private long _boundRuntimeShipId;
+    private SimpleMultiAgentGroup _agentGroup;
     private float _nextMiningActionTime;
     private float _nextHealingActionTime;
     private readonly Vector2[] _weaponAimDirections = new Vector2[MaxWeaponSlots];
@@ -136,6 +139,7 @@ internal sealed class RlOneVsOneAgent : Agent
 
         RlPolicySchema.ValidateOrThrow();
         AgentCounts.Clear();
+        DisposeAgentGroups();
         _lastProvisionFrame = -1;
         _invalidEnvironmentReported = false;
 
@@ -235,6 +239,44 @@ internal sealed class RlOneVsOneAgent : Agent
         return count;
     }
 
+    private static SimpleMultiAgentGroup GetAgentGroup(Level level, int side, int teamId, bool create)
+    {
+        if (level == null)
+        {
+            return null;
+        }
+
+        if (!AgentGroups.TryGetValue(level, out Dictionary<int, SimpleMultiAgentGroup> groups))
+        {
+            if (!create)
+            {
+                return null;
+            }
+            groups = new Dictionary<int, SimpleMultiAgentGroup>();
+            AgentGroups[level] = groups;
+        }
+
+        int key = AgentCountKey(side, teamId);
+        if (!groups.TryGetValue(key, out SimpleMultiAgentGroup group) && create)
+        {
+            group = new SimpleMultiAgentGroup();
+            groups[key] = group;
+        }
+        return group;
+    }
+
+    private static void DisposeAgentGroups()
+    {
+        foreach (Dictionary<int, SimpleMultiAgentGroup> groups in AgentGroups.Values)
+        {
+            foreach (SimpleMultiAgentGroup group in groups.Values)
+            {
+                group?.Dispose();
+            }
+        }
+        AgentGroups.Clear();
+    }
+
     internal static int[] CreateDiscreteBranchSizes()
     {
         int[] branchSizes = new int[DiscreteBranchCount];
@@ -265,6 +307,7 @@ internal sealed class RlOneVsOneAgent : Agent
         agent._level = level;
         agent._side = side;
         agent._teamId = teamId;
+        agent.RegisterWithMultiAgentGroup();
         IncrementAgentCount(level, side, teamId);
     }
 
@@ -330,10 +373,22 @@ internal sealed class RlOneVsOneAgent : Agent
         }
     }
 
+    private void RegisterWithMultiAgentGroup()
+    {
+        if (_agentGroup != null || _level == null || _side == 0)
+        {
+            return;
+        }
+
+        _agentGroup = GetAgentGroup(_level, _side, _teamId, true);
+        _agentGroup?.RegisterAgent(this);
+    }
+
     public override void Initialize()
     {
         ResetWeaponAimDirections();
         Instances.Add(this);
+        RegisterWithMultiAgentGroup();
         RlOneVsOneEpisodeCoordinator.TsvRewardOccurred += HandleTsvRewardOccurred;
         RlOneVsOneEpisodeCoordinator.EpisodeEnded += HandleEpisodeEnded;
     }
@@ -343,6 +398,11 @@ internal sealed class RlOneVsOneAgent : Agent
         Instances.Remove(this);
         RlOneVsOneEpisodeCoordinator.TsvRewardOccurred -= HandleTsvRewardOccurred;
         RlOneVsOneEpisodeCoordinator.EpisodeEnded -= HandleEpisodeEnded;
+        if (_agentGroup != null)
+        {
+            _agentGroup.UnregisterAgent(this);
+            _agentGroup = null;
+        }
         ReleaseShip();
         if (_side != 0)
         {
@@ -750,11 +810,37 @@ internal sealed class RlOneVsOneAgent : Agent
         RlOneVsOneEpisodeCoordinator.RecordSuccessfulCapabilityOutcome(_ship, tsvValue);
     }
 
+    private bool IsGroupRewardRepresentative()
+    {
+        if (!IsCurrentController() || !_hasParticipatedThisEpisode)
+        {
+            return false;
+        }
+
+        int instanceId = GetInstanceID();
+        for (int i = 0; i < Instances.Count; i++)
+        {
+            RlOneVsOneAgent other = Instances[i];
+            if (other == null || other == this ||
+                other._level != _level || other._side != _side || other._teamId != _teamId ||
+                !other._hasParticipatedThisEpisode || !other.IsCurrentController())
+            {
+                continue;
+            }
+
+            if (other.GetInstanceID() < instanceId)
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
     private void HandleTsvRewardOccurred(Level level, int side, float reward)
     {
-        if (level == _level && side == _side && IsCurrentController() && _hasParticipatedThisEpisode)
+        if (level == _level && side == _side && IsGroupRewardRepresentative())
         {
-            AddReward(reward);
+            _agentGroup?.AddGroupReward(reward);
         }
     }
 
@@ -774,20 +860,22 @@ internal sealed class RlOneVsOneAgent : Agent
             return;
         }
 
-        _lastRewardedEpisode = result.EpisodeNumber;
         int assignedTeam = _side == ConfigData.Configuration.BeeSide ? result.BeeTeamId : result.HumanTeamId;
-        if (_teamId != assignedTeam || !_hasParticipatedThisEpisode)
+        if (_teamId != assignedTeam || !_hasParticipatedThisEpisode ||
+            !IsGroupRewardRepresentative())
         {
             return;
         }
 
-        AddReward(_side == ConfigData.Configuration.BeeSide
+        _lastRewardedEpisode = result.EpisodeNumber;
+        float terminalReward = _side == ConfigData.Configuration.BeeSide
             ? result.BeeTerminalReward + result.BeeTimeReward
-            : result.HumanTerminalReward + result.HumanTimeReward);
+            : result.HumanTerminalReward + result.HumanTimeReward;
+        _agentGroup?.AddGroupReward(terminalReward);
 
-        // Timeouts are explicit terminal losses in this environment, not external truncations.
-        // End normally so PPO does not bootstrap through a game-terminal state.
-        EndEpisode();
+        // The battle terminates for the complete cooperating side. MA-POCA receives the terminal
+        // group transition instead of N duplicated individual terminal rewards.
+        _agentGroup?.EndGroupEpisode();
     }
 
     private bool IsCurrentController()
@@ -1014,6 +1102,7 @@ internal sealed class RlOneVsOneAgent : Agent
 
         perception.Collect(ship, side, sensor, frameQuarterTurns);
         sensor.AddObservation(ship.Level != null ? ship.Level.GetNormalizedRlEpisodeProgress() : 0f);
+        sensor.AddObservation(side == ConfigData.Configuration.BeeSide ? 1f : -1f);
         AddZeroObservations(sensor, RlPolicySchema.ReservedObservationCount);
     }
 
