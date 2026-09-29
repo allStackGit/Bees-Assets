@@ -1,12 +1,13 @@
 {
   "schema_version": 3,
-  "build_id": "2026-09-29-064737-d0af3fb6c768",
-  "source_commit": "d0af3fb6c768",
-  "created_utc": "2026-09-29T10:55:15.398Z",
+  "build_id": "2026-09-29-074849-000d9ee114f5",
+  "source_commit": "000d9ee114f5",
+  "created_utc": "2026-09-29T11:55:00.316Z",
   "run_id": "bees-v20-r3-s1-20260929T104735Z-34b57ea7",
-  "previous_run_id": "bees-v20-r3-s1-20260928T231820Z-7147fa1c",
+  "previous_run_id": "bees-v20-r3-s1-20260929T104735Z-34b57ea7",
   "compatibility_key": "34b57ea70ba025bf26b258ce74de55eaab1b0b786d4d3e62202f6ac732668810",
-  "incompatible": true,
+  "incompatible": false,
+  "preserve_run_override": false,
   "contract": {
     "action_schema_version": 9,
     "agent_action_source_sha256": "955d09ed094864f360247084e30221013d261808bf1f8206e7eab427e87aaf14",
@@ -29,26 +30,24 @@
       "role": "dedicated",
       "platform": "WindowsPlayer",
       "folder": "B:\\Bees\\Builds\\2026-09-29 RL Windows",
-      "archive": "B:\\Bees\\Builds\\Packages\\2026-09-29-064737-d0af3fb6c768\\rl-windows.zip",
+      "archive": "B:\\Bees\\Builds\\Packages\\2026-09-29-074849-000d9ee114f5\\rl-windows.zip",
       "entrypoint": "Bees RL Training.exe"
     },
     {
       "role": "dedicated",
       "platform": "LinuxPlayer",
       "folder": "B:\\Bees\\Builds\\2026-09-29 RL Linux",
-      "archive": "B:\\Bees\\Builds\\Packages\\2026-09-29-064737-d0af3fb6c768\\rl-linux.zip",
+      "archive": "B:\\Bees\\Builds\\Packages\\2026-09-29-074849-000d9ee114f5\\rl-linux.zip",
       "entrypoint": "Bees RL Training.x86_64"
     }
   ],
   "training_runtime": {
-    "archive": "B:\\Bees\\Builds\\Packages\\2026-09-29-064737-d0af3fb6c768\\training-runtime-d2622c4dca28.zip",
-    "archive_sha256": "ec332815e9340c06e6ce5e0bd5cfd57e15005002462fc154a3696551dbfdb798",
-    "archive_size_bytes": 352350,
-    "build_id": "2026-09-29-064737-d0af3fb6c768",
-    "runtime_version": "be4965c908530c6a3cae2dc35935cd4177c58cb4d156b4f00e0f0d6286a65d05",
+    "archive": "B:\\Bees\\Builds\\Packages\\2026-09-29-074849-000d9ee114f5\\training-runtime.zip",
+    "archive_sha256": "81c30ee69dc42ffd9dd5239d6626b29623de9a38f088a7acbd6911139eb757a3",
+    "archive_size_bytes": 352332,
+    "build_id": "2026-09-29-074849-000d9ee114f5",
+    "runtime_version": "ce1ef422e180d55c36d5406f54d8598629c86d2ffb0756b79056919d45f0ee4e",
     "schema_version": 1,
-    "source_commit": "d2622c4dca28"
-  },
-  "runtime_source_commit": "d2622c4dca28",
-  "runtime_updated_utc": "2026-09-29T11:35:06.668Z"
+    "source_commit": "000d9ee114f5"
+  }
 }
