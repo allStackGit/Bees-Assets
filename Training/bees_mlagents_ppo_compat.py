@@ -258,14 +258,19 @@ def _build_bees_policy_dimension_mask(action_spec, action_masks):
     if continuous_activity is None:
         return None
 
-    # Preserve ML-Agents' existing treatment of discrete branches. This change is
-    # deliberately scoped to continuous weapon-aim outputs that have no physical
-    # effect for the current ship.
+    # A masked fire branch has only "cease" available, so its selected log-probability
+    # is effectively constant and has zero gradient. Exclude it from the loss denominator
+    # as well; otherwise ships with fewer turrets receive systematically smaller updates.
     discrete_activity = torch.ones(
         (action_masks.shape[0], action_spec.discrete_size),
         dtype=continuous_activity.dtype,
         device=continuous_activity.device,
     )
+    for slot in range(BEES_WEAPON_SLOTS):
+        fire_action_index = slot * 2 + 1
+        discrete_activity[:, slot] = (
+            action_masks[:, fire_action_index] > 0.5
+        ).to(discrete_activity.dtype)
     return torch.cat((continuous_activity, discrete_activity), dim=1)
 
 
