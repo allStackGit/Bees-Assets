@@ -147,8 +147,14 @@ namespace Assets.Scripts.Levels
             }
         }
 
+        private const float RlStaticObstacleMaximumAreaFraction = 0.25f;
+        private const int RlStaticObstacleMaximumCount = 4;
+        private const float RlStaticObstacleMinimumSize = Pathfinder.Scale;
+        private const float RlStaticObstacleBoundaryMargin = 1f;
+
         private StaticObstaclePool _staticObstaclePool;
         private bool _usesPooledStaticObstaclePrefabs;
+        private System.Random _rlEnvironmentRandom;
 
         private StaticObstaclePool GetStaticObstaclePool()
         {
@@ -182,6 +188,150 @@ namespace Assets.Scripts.Levels
             }
         }
 
+        private System.Random GetRlEnvironmentRandom()
+        {
+            if (_rlEnvironmentRandom == null)
+            {
+                _rlEnvironmentRandom = new System.Random(global::RlOneVsOneScenarioSeed.Create(
+                    this,
+                    global::RlOneVsOneScenarioSeed.EnvironmentStreamSalt));
+            }
+            return _rlEnvironmentRandom;
+        }
+
+        private void GenerateRlTrainingObstacles()
+        {
+            StaticObstaclePool obstaclePool = GetStaticObstaclePool();
+            System.Random random = GetRlEnvironmentRandom();
+            List<Rect> layout = BuildRlTrainingObstacleLayout(
+                MinX,
+                MaxX,
+                MinY,
+                MaxY,
+                random.Next());
+
+            for (int i = 0; i < layout.Count; i++)
+            {
+                Rect rect = layout[i];
+                StaticObstacle obstacle = obstaclePool.GetObstacle(Map.transform);
+                obstacle.KillsShipsOnContact = true;
+                obstacle.transform.localRotation = Quaternion.identity;
+                obstacle.transform.localPosition = rect.center;
+                obstacle.transform.localScale = rect.size;
+                obstacle.Collider.enabled = false;
+                obstacle.Collider.enabled = true;
+                ObstacleMap.Obstacles.Add(obstacle);
+            }
+        }
+
+        internal static List<Rect> BuildRlTrainingObstacleLayout(
+            float minX,
+            float maxX,
+            float minY,
+            float maxY,
+            int seed)
+        {
+            List<Rect> layout = new List<Rect>();
+            float playableWidth = Mathf.Max(0f, maxX - minX);
+            float playableHeight = Mathf.Max(0f, maxY - minY);
+            if (playableWidth <= 0f || playableHeight <= 0f)
+            {
+                return layout;
+            }
+
+            float maximumArea = playableWidth * playableHeight * RlStaticObstacleMaximumAreaFraction;
+            float centerX = (minX + maxX) * 0.5f;
+            float centerY = (minY + maxY) * 0.5f;
+
+            // Keep the middle half of the smaller playable dimension clear on both axes. The
+            // resulting full-width/full-height cross guarantees that corner obstacles cannot join
+            // into a wall that partitions the arena.
+            float corridorHalfWidth = Mathf.Min(playableWidth, playableHeight) * 0.25f;
+            Rect[] cells =
+            {
+                Rect.MinMaxRect(
+                    minX + RlStaticObstacleBoundaryMargin,
+                    minY + RlStaticObstacleBoundaryMargin,
+                    centerX - corridorHalfWidth,
+                    centerY - corridorHalfWidth),
+                Rect.MinMaxRect(
+                    centerX + corridorHalfWidth,
+                    minY + RlStaticObstacleBoundaryMargin,
+                    maxX - RlStaticObstacleBoundaryMargin,
+                    centerY - corridorHalfWidth),
+                Rect.MinMaxRect(
+                    minX + RlStaticObstacleBoundaryMargin,
+                    centerY + corridorHalfWidth,
+                    centerX - corridorHalfWidth,
+                    maxY - RlStaticObstacleBoundaryMargin),
+                Rect.MinMaxRect(
+                    centerX + corridorHalfWidth,
+                    centerY + corridorHalfWidth,
+                    maxX - RlStaticObstacleBoundaryMargin,
+                    maxY - RlStaticObstacleBoundaryMargin),
+            };
+
+            System.Random random = new System.Random(seed);
+            int[] cellOrder = { 0, 1, 2, 3 };
+            for (int i = cellOrder.Length - 1; i > 0; i--)
+            {
+                int swapIndex = random.Next(i + 1);
+                (cellOrder[i], cellOrder[swapIndex]) = (cellOrder[swapIndex], cellOrder[i]);
+            }
+
+            int desiredCount = random.Next(1, RlStaticObstacleMaximumCount + 1);
+            float usedArea = 0f;
+            for (int orderIndex = 0; orderIndex < cellOrder.Length && layout.Count < desiredCount; orderIndex++)
+            {
+                Rect cell = cells[cellOrder[orderIndex]];
+                if (cell.width < RlStaticObstacleMinimumSize || cell.height < RlStaticObstacleMinimumSize)
+                {
+                    continue;
+                }
+
+                float maximumWidth = Mathf.Max(
+                    RlStaticObstacleMinimumSize,
+                    Mathf.Min(cell.width, cell.width * 0.8f));
+                float maximumHeight = Mathf.Max(
+                    RlStaticObstacleMinimumSize,
+                    Mathf.Min(cell.height, cell.height * 0.8f));
+                float width = Mathf.Lerp(
+                    RlStaticObstacleMinimumSize,
+                    maximumWidth,
+                    (float)random.NextDouble());
+                float height = Mathf.Lerp(
+                    RlStaticObstacleMinimumSize,
+                    maximumHeight,
+                    (float)random.NextDouble());
+
+                float remainingArea = maximumArea - usedArea;
+                if (remainingArea < RlStaticObstacleMinimumSize * RlStaticObstacleMinimumSize)
+                {
+                    break;
+                }
+
+                float area = width * height;
+                if (area > remainingArea)
+                {
+                    float scale = Mathf.Sqrt(remainingArea / area);
+                    width *= scale;
+                    height *= scale;
+                    if (width < RlStaticObstacleMinimumSize || height < RlStaticObstacleMinimumSize)
+                    {
+                        continue;
+                    }
+                }
+
+                float x = Mathf.Lerp(cell.xMin, cell.xMax - width, (float)random.NextDouble());
+                float y = Mathf.Lerp(cell.yMin, cell.yMax - height, (float)random.NextDouble());
+                Rect obstacleRect = new Rect(x, y, width, height);
+                layout.Add(obstacleRect);
+                usedArea += obstacleRect.width * obstacleRect.height;
+            }
+
+            return layout;
+        }
+
         private void SpawnObstacles()
         {
             if (ObstacleMap == null)
@@ -199,7 +349,14 @@ namespace Assets.Scripts.Levels
                 if (CurrentLevelOptions.Obstacles == "" && CurrentLevelOptions.ObstacleList.Count == 0)
                 {
                     _usesPooledStaticObstaclePrefabs = true;
-                    GenerateRandomObstacles();
+                    if (global::RlOneVsOneTrainingBootstrap.IsActiveFor(Stage))
+                    {
+                        GenerateRlTrainingObstacles();
+                    }
+                    else
+                    {
+                        GenerateRandomObstacles();
+                    }
                 }
                 else if (CurrentLevelOptions.ObstacleList.Count > 0)
                 {
@@ -234,24 +391,36 @@ namespace Assets.Scripts.Levels
             {
                 Stage.HasAsteroids = true;
 
-                // Spawn timing belongs to this Level. Stage hosts many simultaneous training Levels,
-                // so do not mutate the serialized Stage baseline or share mutable Current* rates.
-                int minimumSpawnRate = Math.Max(1, Stage.AsteroidMinimumSpawnRate);
-                int maximumSpawnRate = Math.Max(minimumSpawnRate, Stage.AsteroidMaxSpawnRate);
-                if (CurrentLevelOptions.AsteroidOption == 2)
+                if (global::RlOneVsOneTrainingBootstrap.IsActiveFor(Stage))
                 {
-                    minimumSpawnRate = Math.Max(1, minimumSpawnRate / 2);
-                    maximumSpawnRate = Math.Max(minimumSpawnRate, maximumSpawnRate / 2);
+                    float spawnSeconds = global::RlOneVsOneTrainingBootstrap.CurrentCollisionAsteroidSpawnSeconds;
+                    if (spawnSeconds > 0f)
+                    {
+                        _asteroidSpawnTimer.Reuse(spawnSeconds, SpawnAsteroid, true);
+                        AddTimer(_asteroidSpawnTimer);
+                    }
                 }
-                else if (CurrentLevelOptions.AsteroidOption == 3)
+                else
                 {
-                    minimumSpawnRate = 1;
-                    maximumSpawnRate = Math.Max(minimumSpawnRate, maximumSpawnRate / 2);
-                }
+                    // Spawn timing belongs to this Level. Stage hosts many simultaneous training Levels,
+                    // so do not mutate the serialized Stage baseline or share mutable Current* rates.
+                    int minimumSpawnRate = Math.Max(1, Stage.AsteroidMinimumSpawnRate);
+                    int maximumSpawnRate = Math.Max(minimumSpawnRate, Stage.AsteroidMaxSpawnRate);
+                    if (CurrentLevelOptions.AsteroidOption == 2)
+                    {
+                        minimumSpawnRate = Math.Max(1, minimumSpawnRate / 2);
+                        maximumSpawnRate = Math.Max(minimumSpawnRate, maximumSpawnRate / 2);
+                    }
+                    else if (CurrentLevelOptions.AsteroidOption == 3)
+                    {
+                        minimumSpawnRate = 1;
+                        maximumSpawnRate = Math.Max(minimumSpawnRate, maximumSpawnRate / 2);
+                    }
 
-                int spawnRateRange = Math.Max(1, maximumSpawnRate - minimumSpawnRate);
-                _asteroidSpawnTimer.Reuse(minimumSpawnRate + Utilities.RandomInt(spawnRateRange), SpawnAsteroid, true);
-                AddTimer(_asteroidSpawnTimer);
+                    int spawnRateRange = Math.Max(1, maximumSpawnRate - minimumSpawnRate);
+                    _asteroidSpawnTimer.Reuse(minimumSpawnRate + Utilities.RandomInt(spawnRateRange), SpawnAsteroid, true);
+                    AddTimer(_asteroidSpawnTimer);
+                }
             }
         }
 
@@ -286,8 +455,23 @@ namespace Assets.Scripts.Levels
         private int _spawn_i;
         private void SpawnMiningAsteroids(int minimum = 1, int maximum = 5)
         {
-            MiningAsteroidSpawnDistance = new Vector2(HalfMapWidth - 64, HalfMapHeight - 64);
-            for (_spawn_i = 0; _spawn_i < Utilities.RandomInt((maximum + 1) - minimum) + minimum; _spawn_i++)
+            int asteroidCount;
+            if (global::RlOneVsOneTrainingBootstrap.IsActiveFor(Stage))
+            {
+                minimum = 0;
+                maximum = 6;
+                MiningAsteroidSpawnDistance = new Vector2(
+                    Mathf.Max(0f, HalfMapWidth - ConfigData.MapEdgePadding.x - 1f),
+                    Mathf.Max(0f, HalfMapHeight - ConfigData.MapEdgePadding.y - 1f));
+                asteroidCount = GetRlEnvironmentRandom().Next(minimum, maximum + 1);
+            }
+            else
+            {
+                MiningAsteroidSpawnDistance = new Vector2(HalfMapWidth - 64, HalfMapHeight - 64);
+                asteroidCount = Utilities.RandomInt((maximum + 1) - minimum) + minimum;
+            }
+
+            for (_spawn_i = 0; _spawn_i < asteroidCount; _spawn_i++)
             {
                 _spawn_miningAsteroid = Stage.Pool.GetMiningAsteroidFromPool();
                 _spawn_miningAsteroid.Setup(this);
