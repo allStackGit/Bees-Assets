@@ -1976,6 +1976,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             worker_started_monotonic = 0.0
             stale_recycle_grace_started_monotonic = 0.0
             runtime_cutover: Optional[Path] = None
+            worker_recycle_requested = False
             try:
                 tailnet, tailnet_log_thread = _start_logged_process(
                     _tailnet_forward_command(args)
@@ -2042,7 +2043,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     # occurred before the outer supervisor first sampled status and the worker is
                     # already stranded stopped waiting for desired state.
                     inner_control_stall_watchdog = _TransportWatchdog(10.0)
-                    worker_recycle_requested = False
                     while (
                         runtime_cutover is None
                         and worker is not None
