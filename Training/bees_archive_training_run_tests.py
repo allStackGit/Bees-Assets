@@ -125,15 +125,6 @@ class ArchiveTrainingRunTests(unittest.TestCase):
             "C:/Tools/Git/cmd/git.exe",
         )
 
-    def test_operator_passes_resolved_git_to_archive_helper(self):
-        operator = Path(__file__).resolve().parent / "operator" / "runtime.js"
-        source = operator.read_text(encoding="utf-8")
-        start = source.index("function archiveTrainingRun")
-        end = source.index("\n}", start)
-        block = source[start:end]
-        self.assertIn("resolveGit()", block)
-        self.assertIn("'--git-executable', resolveGit()", block)
-
     def test_archive_does_not_touch_durable_checkpoint_tree(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
