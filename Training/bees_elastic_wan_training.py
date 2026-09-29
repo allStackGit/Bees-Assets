@@ -25,6 +25,7 @@ from bees_process_safety import write_managed_health
 
 
 MAX_REMOTE_ACTORS = 12
+MAX_BROKER_ACTORS = MAX_REMOTE_ACTORS + 1
 MAX_ENVS_PER_ACTOR = 64
 DEFAULT_MAX_REMOTE_ACTORS = 12
 DEFAULT_MIN_REMOTE_ACTORS = 0
@@ -133,7 +134,7 @@ def extract_elastic_wan_options(argv: Sequence[str]) -> Tuple[List[str], Elastic
             WAN_ACTORS_FLAG,
             "max_actors",
             lambda value: _whole_number(
-                value, WAN_ACTORS_FLAG, minimum=1, maximum=MAX_REMOTE_ACTORS
+                value, WAN_ACTORS_FLAG, minimum=1, maximum=MAX_BROKER_ACTORS
             ),
         ),
         (
