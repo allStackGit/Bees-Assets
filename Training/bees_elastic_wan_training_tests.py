@@ -186,12 +186,12 @@ class ElasticActorLiveResizeTests(unittest.TestCase):
         new_worker.worker_id = 2
         new_worker.waiting = False
         new_worker.recv.side_effect = [
+            EnvironmentResponse(EnvironmentCommand.RESET, 2, {}),
             EnvironmentResponse(
                 EnvironmentCommand.BEHAVIOR_SPECS,
                 2,
                 {"BeesRL1v1?team=0": FakeBehaviorSpec()},
             ),
-            EnvironmentResponse(EnvironmentCommand.RESET, 2, {}),
         ]
         manager = SimpleNamespace(
             env_workers=list(existing),
@@ -218,6 +218,10 @@ class ElasticActorLiveResizeTests(unittest.TestCase):
             manager.step_queue,
             manager.env_factory,
             manager.run_options,
+        )
+        self.assertEqual(
+            [call.args[0] for call in new_worker.send.call_args_list[:2]],
+            [EnvironmentCommand.RESET, EnvironmentCommand.BEHAVIOR_SPECS],
         )
         self.assertEqual(session.env_count, 3)
         self.assertEqual(session.client.env_count, 3)
