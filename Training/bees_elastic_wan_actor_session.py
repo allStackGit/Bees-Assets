@@ -34,6 +34,39 @@ class ElasticActorSession(worker.ActorSession):
             Path(target_path).expanduser().resolve() if target_path else None
         )
         self._capacity_registration_pending = False
+        self._resize_failed_target = None
+        self._resize_failure = None
+
+    def _throughput_extra_metrics(self) -> Mapping[str, object]:
+        failure = self._resize_failure
+        if not isinstance(failure, Mapping):
+            return {}
+        return {
+            "env_resize_failed_target": int(failure["target_envs"]),
+            "env_resize_error": str(failure["error"]),
+            "env_resize_failure_unix_seconds": float(failure["unix_seconds"]),
+        }
+
+    def _record_resize_failure(self, target_envs: int, exc: Exception) -> None:
+        self._resize_failed_target = int(target_envs)
+        self._resize_failure = {
+            "target_envs": int(target_envs),
+            "error": f"{type(exc).__name__}: {' '.join(str(exc).split())[:240]}",
+            "unix_seconds": time.time(),
+        }
+        self._write_throughput_metrics(force=True)
+        print(
+            f"[Bees WAN actor] live resize to {target_envs} envs rejected; "
+            f"continuing with {self.env_count}: {self._resize_failure['error']}",
+            flush=True,
+        )
+
+    def _clear_resize_failure(self) -> None:
+        if self._resize_failure is None and self._resize_failed_target is None:
+            return
+        self._resize_failure = None
+        self._resize_failed_target = None
+        self._write_throughput_metrics(force=True)
 
     def _desired_env_count(self) -> int:
         path = self._env_target_path
@@ -237,6 +270,7 @@ class ElasticActorSession(worker.ActorSession):
                 self.env_count = previous_count
                 self.client.env_count = previous_count
                 return False
+            self._clear_resize_failure()
             self._report_env_count_changed()
             self._write_throughput_metrics(force=True)
             print(
@@ -245,7 +279,8 @@ class ElasticActorSession(worker.ActorSession):
                 flush=True,
             )
             return True
-        except BaseException:
+        except Exception as exc:
+            cleanup_error = None
             if manager.env_workers and manager.env_workers[-1] is new_worker:
                 try:
                     self._cleanup_worker_agent_state(self.worker_offset + local_worker_id)
@@ -253,9 +288,15 @@ class ElasticActorSession(worker.ActorSession):
                         self._close_tail_worker()
                     else:
                         new_worker.request_close()
-                except Exception:
-                    pass
-            raise
+                except Exception as cleanup_exc:
+                    cleanup_error = cleanup_exc
+            if cleanup_error is not None:
+                raise RuntimeError(
+                    "live resize candidate failed and could not be retired cleanly: "
+                    f"{type(cleanup_error).__name__}: {cleanup_error}"
+                ) from cleanup_error
+            self._record_resize_failure(local_worker_id + 1, exc)
+            return False
 
     def _scale_down_one(self) -> bool:
         if self.env_count <= 1:
@@ -287,7 +328,11 @@ class ElasticActorSession(worker.ActorSession):
         if self.manager is None or self._env_target_path is None:
             return False
         desired = self._desired_env_count()
+        if self._resize_failed_target is not None and desired != self._resize_failed_target:
+            self._clear_resize_failure()
         if desired > self.env_count:
+            if desired == self._resize_failed_target:
+                return False
             self._scale_up_one()
             return False
         if desired < self.env_count:
