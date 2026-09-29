@@ -150,6 +150,116 @@ class ElasticActorStaleResyncTests(unittest.TestCase):
         self.assertEqual(session.control_epoch, 1)
         session.manager.reset.assert_called_once_with(config={"difficulty": 2})
 
+class ElasticActorLiveResizeTests(unittest.TestCase):
+    def _session(self, manager, env_count: int):
+        session = actor_session.ElasticActorSession.__new__(
+            actor_session.ElasticActorSession
+        )
+        session.manager = manager
+        session.env_count = env_count
+        session.worker_offset = 64
+        session.client = mock.Mock()
+        session.client.env_count = env_count
+        session.session_id = "session"
+        session.actor_id = 1
+        session.control_epoch = 3
+        session._behavior_specs = {"BeesRL1v1?team=0": FakeBehaviorSpec()}
+        session._capacity_registration_pending = False
+        session._state_changed = threading.Event()
+        session.stop = threading.Event()
+        session._upload_queue = queue.Queue()
+        session._upload_idle = threading.Event()
+        session._upload_idle.set()
+        session._report_env_count_changed = mock.Mock()
+        session._write_throughput_metrics = mock.Mock()
+        return session
+
+    def test_scale_up_adds_only_tail_worker_and_preserves_existing_workers(self):
+        from mlagents.trainers.subprocess_env_manager import (
+            EnvironmentCommand,
+            EnvironmentResponse,
+        )
+
+        existing = [SimpleNamespace(worker_id=0), SimpleNamespace(worker_id=1)]
+        new_worker = mock.Mock()
+        new_worker.worker_id = 2
+        new_worker.waiting = False
+        new_worker.recv.side_effect = [
+            EnvironmentResponse(
+                EnvironmentCommand.BEHAVIOR_SPECS,
+                2,
+                {"BeesRL1v1?team=0": FakeBehaviorSpec()},
+            ),
+            EnvironmentResponse(EnvironmentCommand.RESET, 2, {}),
+        ]
+        manager = SimpleNamespace(
+            env_workers=list(existing),
+            step_queue=queue.Queue(),
+            env_factory=object(),
+            run_options=object(),
+            env_parameters={},
+            recent_restart_timestamps=[[], []],
+            restart_counts=[0, 0],
+            workers_alive=2,
+            agent_managers={},
+            create_worker=mock.Mock(return_value=new_worker),
+            process_steps=mock.Mock(),
+        )
+        session = self._session(manager, 2)
+
+        self.assertTrue(session._scale_up_one())
+
+        self.assertIs(manager.env_workers[0], existing[0])
+        self.assertIs(manager.env_workers[1], existing[1])
+        self.assertIs(manager.env_workers[2], new_worker)
+        manager.create_worker.assert_called_once_with(
+            2,
+            manager.step_queue,
+            manager.env_factory,
+            manager.run_options,
+        )
+        self.assertEqual(session.env_count, 3)
+        self.assertEqual(session.client.env_count, 3)
+        session.client.register.assert_called_once()
+        self.assertEqual(manager.workers_alive, 3)
+        self.assertEqual(len(manager.recent_restart_timestamps), 3)
+        self.assertEqual(len(manager.restart_counts), 3)
+
+    def test_scale_down_retires_only_tail_worker(self):
+        from mlagents.trainers.subprocess_env_manager import (
+            EnvironmentCommand,
+            EnvironmentResponse,
+        )
+
+        first = SimpleNamespace(worker_id=0)
+        second = SimpleNamespace(worker_id=1)
+        tail = mock.Mock()
+        tail.worker_id = 2
+        tail.waiting = False
+        tail.closed = False
+        tail.process.is_alive.return_value = False
+        step_queue = queue.Queue()
+        step_queue.put(EnvironmentResponse(EnvironmentCommand.CLOSED, 2, None))
+        manager = SimpleNamespace(
+            env_workers=[first, second, tail],
+            step_queue=step_queue,
+            recent_restart_timestamps=[[], [], []],
+            restart_counts=[0, 0, 0],
+            workers_alive=3,
+            agent_managers={},
+        )
+        session = self._session(manager, 3)
+
+        self.assertTrue(session._scale_down_one())
+
+        self.assertEqual(manager.env_workers, [first, second])
+        tail.request_close.assert_called_once_with()
+        self.assertEqual(manager.workers_alive, 2)
+        self.assertEqual(session.env_count, 2)
+        self.assertEqual(session.client.env_count, 2)
+        session.client.register.assert_called_once()
+
+
 class ElasticActorThroughputTests(unittest.TestCase):
     def test_consumed_step_updates_publish_recent_rate(self):
         session = actor_session.ElasticActorSession.__new__(
