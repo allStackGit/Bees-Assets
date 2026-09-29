@@ -26,7 +26,7 @@ const COMMANDS = new Set([
 function usage() {
     return [
         'Usage:',
-        '  node Training/bees_operator.js build [--full-game] [--force]',
+        '  node Training/bees_operator.js build [--full-game] [--force] [--preserve-run]',
         '  node Training/bees_operator.js runtime',
         '  node Training/bees_operator.js server',
         '  node Training/bees_operator.js start [--new-run] [--env-arg VALUE ...]',
@@ -74,6 +74,7 @@ function parseArgs(argv = process.argv.slice(2)) {
     const options = {
         fullGame: false,
         force: false,
+        preserveRun: false,
         newRun: false,
         envArgs: [],
         once: false,
@@ -92,6 +93,8 @@ function parseArgs(argv = process.argv.slice(2)) {
             options.fullGame = true;
         } else if (arg === '--force') {
             options.force = true;
+        } else if (arg === '--preserve-run') {
+            options.preserveRun = true;
         } else if (arg === '--new-run') {
             options.newRun = true;
         } else if (arg === '--env-arg') {
@@ -135,6 +138,9 @@ function parseArgs(argv = process.argv.slice(2)) {
         }
     }
 
+    if (options.preserveRun && command !== 'build') {
+        throw new Error('--preserve-run is only valid with the build command.');
+    }
     if (options.newRun && command !== 'start') {
         throw new Error('--new-run is only valid with the start command.');
     }
