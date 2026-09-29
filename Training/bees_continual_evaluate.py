@@ -99,7 +99,11 @@ class MatchSummary:
     def score_rate(self) -> float:
         if self.matches <= 0:
             return 0.0
-        return (self.wins + 0.5 * self.draws) / self.matches
+        # Training deliberately treats a timeout as a failure for both sides
+        # (terminal reward -1.1), so promotion must not award the candidate
+        # half-credit for stalling. Preserve 0.5 credit only for genuine draws.
+        non_timeout_draws = max(0, self.draws - self.timeouts)
+        return (self.wins + 0.5 * non_timeout_draws) / self.matches
 
     @property
     def win_rate(self) -> float:
