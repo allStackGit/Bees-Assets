@@ -1,10 +1,10 @@
-"""Narrow PPO diagnostics for the Bees RL 1v1 trainer.
+"""Narrow PPO/MA-POCA diagnostics for the Bees RL combat trainer.
 
 This wrapper imports Training/bees_mlagents_learn.py, then instruments ML-Agents
-1.1.0 without changing the environment or PPO algorithm. It samples:
+1.1.0 without changing the environment or on-policy training algorithm. It samples:
 
 * trajectory environment rewards, old value estimates, bootstrap value, GAE and returns;
-* current critic values and PPO value loss at update time;
+* current critic/value loss diagnostics at update time;
 * actor/critic observation-normalizer state and normalized observation ranges;
 * actor/critic parameter scale and Adam first/second moments after checkpoint load;
 * optional resume with policy/critic/checkpoint state intact but fresh Adam moments.
@@ -261,6 +261,9 @@ def _install_diagnostics(fresh_optimizer_state: bool, diagnostic_every: int):
     from mlagents.torch_utils import torch
     from mlagents.trainers.buffer import BufferKey, RewardSignalUtil
     from mlagents.trainers.model_saver.torch_model_saver import TorchModelSaver
+    from mlagents.trainers.poca.optimizer_torch import TorchPOCAOptimizer
+    from mlagents.trainers.poca.trainer import POCATrainer
+    import mlagents.trainers.poca.trainer as poca_trainer_module
     from mlagents.trainers.ppo.optimizer_torch import TorchPPOOptimizer
     from mlagents.trainers.ppo.trainer import PPOTrainer
     import mlagents.trainers.ppo.trainer as ppo_trainer_module
@@ -269,8 +272,11 @@ def _install_diagnostics(fresh_optimizer_state: bool, diagnostic_every: int):
 
     state = _DiagnosticState(diagnostic_every)
     original_get_gae = ppo_trainer_module.get_gae
-    original_process_trajectory = PPOTrainer._process_trajectory
-    original_update = TorchPPOOptimizer.update
+    original_poca_lambda_return = poca_trainer_module.lambda_return
+    original_ppo_process_trajectory = PPOTrainer._process_trajectory
+    original_poca_process_trajectory = POCATrainer._process_trajectory
+    original_ppo_update = TorchPPOOptimizer.update
+    original_poca_update = TorchPOCAOptimizer.update
     original_load_model = TorchModelSaver._load_model
 
     def diagnostic_process_trajectory(self, trajectory):
@@ -288,7 +294,12 @@ def _install_diagnostics(fresh_optimizer_state: bool, diagnostic_every: int):
             "interrupted": trajectory.interrupted,
         }
         try:
-            return original_process_trajectory(self, trajectory)
+            original = (
+                original_poca_process_trajectory
+                if isinstance(self, POCATrainer)
+                else original_ppo_process_trajectory
+            )
+            return original(self, trajectory)
         finally:
             state.active_trajectory = previous_context
             if trajectory.done_reached:
@@ -343,6 +354,44 @@ def _install_diagnostics(fresh_optimizer_state: bool, diagnostic_every: int):
                 f"gae_returns=({_array_stats(returns)})"
             )
         return advantages
+
+    def diagnostic_lambda_return(
+        r,
+        value_estimates,
+        gamma=0.99,
+        lambd=0.95,
+        value_next=0.0,
+    ):
+        returns = original_poca_lambda_return(
+            r=r,
+            value_estimates=value_estimates,
+            gamma=gamma,
+            lambd=lambd,
+            value_next=value_next,
+        )
+        state.trajectory_sample_index += 1
+        index = state.trajectory_sample_index
+        if _should_sample(index, state.every):
+            rewards = np.asarray(r, dtype=np.float64)
+            values = np.asarray(value_estimates, dtype=np.float64)
+            return_array = np.asarray(returns, dtype=np.float64)
+            context = state.active_trajectory or {}
+            print(
+                f"[Bees RL diag trajectory] sample={index} algorithm=ma-poca "
+                f"behavior={context.get('behavior', 'unknown')} "
+                f"agent={context.get('agent_id', 'unknown')} "
+                f"segment_steps={context.get('segment_steps', rewards.size)} "
+                f"episode_steps={context.get('episode_steps', 'open')} "
+                f"done={context.get('done', 'unknown')} "
+                f"interrupted={context.get('interrupted', 'unknown')} "
+                f"gamma={gamma:.6g} lambda={lambd:.6g} bootstrap={_scalar(value_next)}"
+            )
+            print(
+                f"[Bees RL diag trajectory] rewards=({_array_stats(rewards)}) "
+                f"old_values=({_array_stats(values)}) "
+                f"lambda_returns=({_array_stats(return_array)})"
+            )
+        return returns
 
     def diagnostic_update(self, batch, num_sequences):
         state.update_index += 1
@@ -413,7 +462,12 @@ def _install_diagnostics(fresh_optimizer_state: bool, diagnostic_every: int):
                     f"inspection_failed={type(exc).__name__}:{exc}"
                 )
 
-        result = original_update(self, batch, num_sequences)
+        original = (
+            original_poca_update
+            if isinstance(self, TorchPOCAOptimizer)
+            else original_ppo_update
+        )
+        result = original(self, batch, num_sequences)
 
         if sampled:
             print(
@@ -458,14 +512,20 @@ def _install_diagnostics(fresh_optimizer_state: bool, diagnostic_every: int):
         return result
 
     PPOTrainer._process_trajectory = diagnostic_process_trajectory
+    POCATrainer._process_trajectory = diagnostic_process_trajectory
     ppo_trainer_module.get_gae = diagnostic_get_gae
+    poca_trainer_module.lambda_return = diagnostic_lambda_return
     TorchPPOOptimizer.update = diagnostic_update
+    TorchPOCAOptimizer.update = diagnostic_update
     TorchModelSaver._load_model = diagnostic_load_model
 
     def restore() -> None:
-        PPOTrainer._process_trajectory = original_process_trajectory
+        PPOTrainer._process_trajectory = original_ppo_process_trajectory
+        POCATrainer._process_trajectory = original_poca_process_trajectory
         ppo_trainer_module.get_gae = original_get_gae
-        TorchPPOOptimizer.update = original_update
+        poca_trainer_module.lambda_return = original_poca_lambda_return
+        TorchPPOOptimizer.update = original_ppo_update
+        TorchPOCAOptimizer.update = original_poca_update
         TorchModelSaver._load_model = original_load_model
 
     return restore
