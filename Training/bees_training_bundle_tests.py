@@ -549,10 +549,17 @@ class TrainingBundleTests(unittest.TestCase):
 
             with zipfile.ZipFile(archive) as zipped:
                 manifest = json.loads(zipped.read("manifest.json"))
-                self.assertIsNone(manifest["latest_onnx"])
-                self.assertNotIn("model/BeesRL1v1-100.onnx", zipped.namelist())
+                self.assertEqual(
+                    manifest["latest_onnx"]["selection"],
+                    "stale-fallback",
+                )
+                self.assertFalse(manifest["latest_onnx"]["current_policy"])
+                self.assertIn("model/BeesRL1v1-100.onnx", zipped.namelist())
                 self.assertTrue(
                     any("live model snapshot timeout" in warning for warning in manifest["warnings"])
+                )
+                self.assertTrue(
+                    any("explicitly stale fallback" in warning for warning in manifest["warnings"])
                 )
 
     def test_missing_onnx_is_a_warning_not_a_bundle_failure(self) -> None:
