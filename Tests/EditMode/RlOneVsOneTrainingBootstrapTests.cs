@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Reflection;
+using System.Collections.Generic;
 using NUnit.Framework;
 using UnityEngine;
 
@@ -114,19 +115,62 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void FirstProofEnvironmentDisablesExtraDimensionsAndRandomizesFacing()
+        public void TrainingEnvironmentUsesRuntimeFlagsAndRandomizesFacing()
         {
             string setup = ReadSource("Scripts", "Levels", "Level.Setup.cs");
             Assert.That(setup, Does.Contain("RlOneVsOneArenaMapSizeState.ConfigureTrainingMap(this, Map)"));
-            Assert.That(setup, Does.Contain("CurrentLevelOptions.Mining = 0"));
-            Assert.That(setup, Does.Contain("CurrentLevelOptions.AsteroidOption = 0"));
-            Assert.That(setup, Does.Contain("CurrentLevelOptions.Obstacles = \"No\""));
+            Assert.That(setup, Does.Contain("CurrentStaticObstaclesEnabled"));
+            Assert.That(setup, Does.Contain("CurrentCollisionAsteroidSpawnSeconds"));
+            Assert.That(setup, Does.Contain("CurrentMiningAsteroidsEnabled"));
+
+            string environment = ReadSource("Scripts", "Levels", "Level.Environment.cs");
+            Assert.That(environment, Does.Contain("BuildRlTrainingObstacleLayout"));
+            Assert.That(environment, Does.Contain("CurrentCollisionAsteroidSpawnSeconds"));
+            Assert.That(environment, Does.Contain("maximum = 6"));
 
             string squadSetup = ReadSource("Scripts", "Levels", "Level.RandomSquadSetup.cs");
+            Assert.That(squadSetup, Does.Contain("TrySetRlOneVsOneSpawnPositions"));
             Assert.That(squadSetup, Does.Contain("RandomizeRlOneVsOneFacing(side)"));
             Assert.That(squadSetup, Does.Contain("Random.Range(0f, 360f)"));
             Assert.That(squadSetup, Does.Contain("ship.Rotation = ship.transform.eulerAngles.z"));
             Assert.That(squadSetup, Does.Contain("Rotation = ship.Turrets[turretIndex].PieceTransform.eulerAngles.z"));
+        }
+
+        [Test]
+        public void TrainingStaticObstacleLayoutStaysUnderAreaBudgetAndCannotPartitionTheArena()
+        {
+            Type levelType = RuntimeAssembly.GetType("Assets.Scripts.Levels.Level");
+            MethodInfo buildLayout = levelType.GetMethod(
+                "BuildRlTrainingObstacleLayout",
+                BindingFlags.Static | BindingFlags.NonPublic);
+            Assert.That(buildLayout, Is.Not.Null);
+
+            const float min = -11f;
+            const float max = 11f;
+            List<Rect> layout = (List<Rect>)buildLayout.Invoke(
+                null,
+                new object[] { min, max, min, max, 12345 });
+
+            Assert.That(layout, Is.Not.Empty);
+            float playableArea = (max - min) * (max - min);
+            float obstacleArea = 0f;
+            float corridorHalfWidth = (max - min) * 0.25f;
+            for (int i = 0; i < layout.Count; i++)
+            {
+                Rect obstacle = layout[i];
+                obstacleArea += obstacle.width * obstacle.height;
+
+                Assert.That(
+                    obstacle.xMax <= -corridorHalfWidth || obstacle.xMin >= corridorHalfWidth,
+                    Is.True,
+                    "Every static obstacle must stay outside the full-height central corridor.");
+                Assert.That(
+                    obstacle.yMax <= -corridorHalfWidth || obstacle.yMin >= corridorHalfWidth,
+                    Is.True,
+                    "Every static obstacle must stay outside the full-width central corridor.");
+            }
+
+            Assert.That(obstacleArea, Is.LessThanOrEqualTo(playableArea * 0.25f + 0.001f));
         }
 
         [Test]
