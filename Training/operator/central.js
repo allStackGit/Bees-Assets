@@ -450,6 +450,7 @@ function commandIdentity(
 ) {
     return sha256Text(
         path.resolve(bootstrapPython) + os.EOL +
+        path.resolve(agent) + os.EOL +
         sha256File(agent) + os.EOL +
         sha256File(paths.workerTokenPath) + os.EOL +
         supervisorArgs.map(String).join(os.EOL) + os.EOL +
@@ -460,10 +461,11 @@ function commandIdentity(
     );
 }
 
-function centralSupervisorLaunchContractMatches(state, commandHash) {
+function centralSupervisorLaunchContractMatches(state, commandHash, agent) {
     return Boolean(
         state &&
         String(state.command_hash || '') === String(commandHash || '') &&
+        samePath(String(state.supervisor_agent || ''), agent) &&
         Boolean(state.runtime_cutover_capable) &&
         String(state.argv_transport || '') === 'node-spawn-array-v1'
     );
@@ -541,7 +543,7 @@ async function startCentralAgentIfNeeded(
             if (testManagedProcessIdentity(existing)) {
                 if (
                     testManagedProcessIdentity(existing, bootstrapPython) &&
-                    centralSupervisorLaunchContractMatches(existing, commandHash)
+                    centralSupervisorLaunchContractMatches(existing, commandHash, agent)
                 ) {
                     return;
                 }
@@ -587,6 +589,7 @@ async function startCentralAgentIfNeeded(
         executable_path: path.resolve(bootstrapPython),
         command_hash: commandHash,
         supervisor_python: path.resolve(bootstrapPython),
+        supervisor_agent: path.resolve(agent),
         learner_python: String(preparedRuntime.learner_python),
         release_runtime_root: String(preparedRuntime.runtime_root),
         release_runtime_version: String(preparedRuntime.runtime_version),

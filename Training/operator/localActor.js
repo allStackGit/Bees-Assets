@@ -171,6 +171,7 @@ function localActorSupervisorCommandHash(
 ) {
     return sha256Text([
         path.resolve(bootstrapPython),
+        path.resolve(agent),
         sha256File(agent),
         ...supervisorArgs.map(String),
         String(runtimeVersion || ''),
@@ -331,7 +332,8 @@ async function startLocalActorIfNeeded(
         if (testManagedProcessIdentity(existing)) {
             if (
                 testManagedProcessIdentity(existing, bootstrapPython) &&
-                String(existing.command_hash || '') === commandHash
+                String(existing.command_hash || '') === commandHash &&
+                samePath(String(existing.supervisor_agent || ''), agent)
             ) {
                 return prepared.trainer_id;
             }
@@ -377,6 +379,7 @@ async function startLocalActorIfNeeded(
         owner_token: ownerToken,
         executable_path: path.resolve(bootstrapPython),
         command_hash: commandHash,
+        supervisor_agent: path.resolve(agent),
         trainer_id: prepared.trainer_id,
         release_runtime_version: String(preparedRuntime.runtime_version),
         runtime_cutover_pointer: paths.localActorRuntimePointerPath,

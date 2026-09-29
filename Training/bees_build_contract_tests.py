@@ -192,6 +192,38 @@ server.listen(0,'127.0.0.1',async()=>{
             self.assertEqual(completed.returncode, 0, msg=completed.stderr)
             self.assertEqual(Path(completed.stdout), agent)
 
+    def test_central_supervisor_launch_contract_rejects_legacy_source_path_state(self):
+        node = node_executable()
+        if not node:
+            self.skipTest("node is not available")
+        central = OPERATOR_ROOT / "central.js"
+        with tempfile.TemporaryDirectory() as temp:
+            runtime_root = Path(temp).resolve()
+            agent = runtime_root / "bees_training_worker_agent.py"
+            agent.write_text("# pinned central supervisor\n", encoding="utf-8")
+            script = (
+                "const c=require(process.argv[1]);"
+                "const agent=process.argv[2];"
+                "const legacy={command_hash:'hash',runtime_cutover_capable:true,argv_transport:'node-spawn-array-v1'};"
+                "const pinned={...legacy,supervisor_agent:agent};"
+                "process.stdout.write(JSON.stringify({"
+                "legacy:c.centralSupervisorLaunchContractMatches(legacy,'hash',agent),"
+                "pinned:c.centralSupervisorLaunchContractMatches(pinned,'hash',agent)"
+                "}));"
+            )
+            completed = subprocess.run(
+                [node, "-e", script, str(central), str(agent)],
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=False,
+            )
+            self.assertEqual(completed.returncode, 0, msg=completed.stderr)
+            result = json.loads(completed.stdout)
+            self.assertFalse(result["legacy"])
+            self.assertTrue(result["pinned"])
+
     def test_local_actor_supervisor_uses_prepared_immutable_runtime_copy(self):
         node = node_executable()
         if not node:
