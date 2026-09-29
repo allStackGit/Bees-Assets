@@ -27,6 +27,9 @@ internal sealed class RlOneVsOneTrainingOptions
     internal const string BeeShipTypesFlag = "--rl-bee-ship-types";
     internal const string HumanShipTypesFlag = "--rl-human-ship-types";
     internal const string MatchupModeFlag = "--rl-matchup-mode";
+    internal const string CollisionAsteroidSpawnSecondsFlag = "--rl-collision-asteroid-spawn-seconds";
+    internal const string StaticObstaclesFlag = "--rl-static-obstacles";
+    internal const string MiningAsteroidsFlag = "--rl-mining-asteroids";
     internal const string ValidationOnlyFlag = "--rl-validate-options-only";
 
     internal const float DefaultHealthRatio = 0.25f;
@@ -34,6 +37,7 @@ internal sealed class RlOneVsOneTrainingOptions
     internal const int DefaultEpisodeTimeoutSeconds = 120;
     internal const int DefaultShipsPerSide = 1;
     internal const int DefaultDecisionPeriod = 5;
+    internal const float DefaultCollisionAsteroidSpawnSeconds = 0f;
     internal const float MinimumMapSize = 10f;
     internal const RlOneVsOneMatchupMode DefaultMatchupMode = RlOneVsOneMatchupMode.Fixed;
 
@@ -88,6 +92,9 @@ internal sealed class RlOneVsOneTrainingOptions
     internal int EpisodeTimeoutSeconds { get; private set; }
     internal int ShipsPerSide { get; private set; }
     internal int DecisionPeriod { get; private set; }
+    internal float CollisionAsteroidSpawnSeconds { get; private set; }
+    internal bool StaticObstaclesEnabled { get; private set; }
+    internal bool MiningAsteroidsEnabled { get; private set; }
     internal RlOneVsOneMatchupMode MatchupMode { get; private set; }
     internal IReadOnlyList<ConfigData.ShipTypes> BeeShipTypes => _beeShipTypes;
     internal IReadOnlyList<ConfigData.ShipTypes> HumanShipTypes => _humanShipTypes;
@@ -101,6 +108,9 @@ internal sealed class RlOneVsOneTrainingOptions
         EpisodeTimeoutSeconds = DefaultEpisodeTimeoutSeconds;
         ShipsPerSide = DefaultShipsPerSide;
         DecisionPeriod = DefaultDecisionPeriod;
+        CollisionAsteroidSpawnSeconds = DefaultCollisionAsteroidSpawnSeconds;
+        StaticObstaclesEnabled = false;
+        MiningAsteroidsEnabled = false;
         MatchupMode = DefaultMatchupMode;
         _beeShipTypes = new List<ConfigData.ShipTypes> { ConfigData.ShipTypes.Wasp };
         _humanShipTypes = new List<ConfigData.ShipTypes> { ConfigData.ShipTypes.Gunship };
@@ -168,6 +178,18 @@ internal sealed class RlOneVsOneTrainingOptions
             {
                 options.MatchupMode = ParseMatchupMode(value);
             }
+            else if (TryReadOption(argument, CollisionAsteroidSpawnSecondsFlag, args, ref i, out value))
+            {
+                options.CollisionAsteroidSpawnSeconds = ParseFloat(value, CollisionAsteroidSpawnSecondsFlag);
+            }
+            else if (TryReadBooleanOption(argument, StaticObstaclesFlag, args, ref i, out bool staticObstacles))
+            {
+                options.StaticObstaclesEnabled = staticObstacles;
+            }
+            else if (TryReadBooleanOption(argument, MiningAsteroidsFlag, args, ref i, out bool miningAsteroids))
+            {
+                options.MiningAsteroidsEnabled = miningAsteroids;
+            }
             else if (argument.Equals(ValidationOnlyFlag, StringComparison.OrdinalIgnoreCase))
             {
                 // Validation-only is an operator/preflight control flag, not an environment value.
@@ -198,9 +220,15 @@ internal sealed class RlOneVsOneTrainingOptions
         string mapDescription = HasMapSizeRange
             ? $"map_size_range={FormatFloat(_mapSizeMinimum)}..{FormatFloat(_mapSizeMaximum)}"
             : $"map_size={FormatFloat(_mapSize)}";
+        string collisionAsteroidDescription = CollisionAsteroidSpawnSeconds > 0f
+            ? $"{FormatFloat(CollisionAsteroidSpawnSeconds)}s"
+            : "off";
         return $"health_ratio={FormatFloat(HealthRatio)} {mapDescription} " +
                $"episode_timeout={EpisodeTimeoutSeconds}s ships_per_side={ShipsPerSide} " +
                $"decision_period={DecisionPeriod} matchup_mode={MatchupMode.ToString().ToLowerInvariant()} " +
+               $"collision_asteroid_spawn={collisionAsteroidDescription} " +
+               $"static_obstacles={(StaticObstaclesEnabled ? "on" : "off")} " +
+               $"mining_asteroids={(MiningAsteroidsEnabled ? "on" : "off")} " +
                $"bee_ship_types={JoinShipTypes(_beeShipTypes)} human_ship_types={JoinShipTypes(_humanShipTypes)}";
     }
 
@@ -240,6 +268,12 @@ internal sealed class RlOneVsOneTrainingOptions
         if (DecisionPeriod <= 0)
         {
             throw new ArgumentException($"{DecisionPeriodFlag} must be a positive whole number of physics steps.");
+        }
+        if (float.IsNaN(CollisionAsteroidSpawnSeconds) ||
+            float.IsInfinity(CollisionAsteroidSpawnSeconds) ||
+            CollisionAsteroidSpawnSeconds < 0f)
+        {
+            throw new ArgumentException($"{CollisionAsteroidSpawnSecondsFlag} must be zero (off) or a positive number of seconds.");
         }
 
         if (MatchupMode == RlOneVsOneMatchupMode.Fixed)
@@ -378,6 +412,65 @@ internal sealed class RlOneVsOneTrainingOptions
 
         value = null;
         return false;
+    }
+
+    private static bool TryReadBooleanOption(
+        string argument,
+        string optionName,
+        string[] args,
+        ref int index,
+        out bool value)
+    {
+        if (argument.Equals(optionName, StringComparison.OrdinalIgnoreCase))
+        {
+            if (index + 1 < args.Length &&
+                !string.IsNullOrWhiteSpace(args[index + 1]) &&
+                !args[index + 1].StartsWith("--", StringComparison.Ordinal))
+            {
+                index++;
+                value = ParseBoolean(args[index], optionName);
+                return true;
+            }
+
+            value = true;
+            return true;
+        }
+
+        string prefix = optionName + "=";
+        if (argument.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        {
+            string rawValue = argument.Substring(prefix.Length);
+            if (string.IsNullOrWhiteSpace(rawValue))
+            {
+                throw new ArgumentException($"{optionName} requires true/false when '=' is used.");
+            }
+
+            value = ParseBoolean(rawValue, optionName);
+            return true;
+        }
+
+        value = false;
+        return false;
+    }
+
+    private static bool ParseBoolean(string value, string flag)
+    {
+        if (value.Equals("true", StringComparison.OrdinalIgnoreCase) ||
+            value.Equals("on", StringComparison.OrdinalIgnoreCase) ||
+            value.Equals("yes", StringComparison.OrdinalIgnoreCase) ||
+            value == "1")
+        {
+            return true;
+        }
+        if (value.Equals("false", StringComparison.OrdinalIgnoreCase) ||
+            value.Equals("off", StringComparison.OrdinalIgnoreCase) ||
+            value.Equals("no", StringComparison.OrdinalIgnoreCase) ||
+            value == "0")
+        {
+            return false;
+        }
+
+        throw new ArgumentException($"{flag} value '{value}' must be true/false, on/off, yes/no, or 1/0.");
     }
 
     private static float ParseFloat(string value, string flag)
