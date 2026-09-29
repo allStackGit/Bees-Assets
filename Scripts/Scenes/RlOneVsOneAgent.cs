@@ -759,6 +759,11 @@ internal sealed class RlOneVsOneAgent : Agent
         asteroid.Health -= amountMined;
         _ship.FleetShip.MineralsMinedThisLevel += amountMined;
         _ship.Tsv = Utilities.CalculateTsv(_ship);
+        RlOneVsOneEpisodeDiagnostics.RecordMiningOutcome(
+            _ship,
+            asteroid,
+            amountMined,
+            asteroid.Health <= 0);
         RewardSuccessfulCapabilityOutcome(_ship.Tsv - oldTsv);
 
         if (asteroid.Health <= 0 && !asteroid.IsDead)
