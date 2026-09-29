@@ -224,6 +224,37 @@ server.listen(0,'127.0.0.1',async()=>{
             self.assertFalse(result["legacy"])
             self.assertTrue(result["pinned"])
 
+    def test_central_supervisor_persists_exact_canonical_fallback_command(self):
+        node = node_executable()
+        if not node:
+            self.skipTest("node is not available")
+        central = OPERATOR_ROOT / "central.js"
+        script = (
+            "const c=require(process.argv[1]);"
+            "const state={runtime_cutover_capable:true,fallback_build_id:'stable-build',"
+            "fallback_launch_command:['python','stable-service.py','--env={env}']};"
+            "process.stdout.write(JSON.stringify({"
+            "match:c.persistedCentralFallback(state,'stable-build'),"
+            "mismatch:c.persistedCentralFallback(state,'other-build')"
+            "}));"
+        )
+        completed = subprocess.run(
+            [node, "-e", script, str(central)],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+        self.assertEqual(completed.returncode, 0, msg=completed.stderr)
+        result = json.loads(completed.stdout)
+        self.assertEqual(result["match"]["build_id"], "stable-build")
+        self.assertEqual(
+            result["match"]["launch_command"],
+            ["python", "stable-service.py", "--env={env}"],
+        )
+        self.assertIsNone(result["mismatch"])
+
     def test_local_actor_supervisor_uses_prepared_immutable_runtime_copy(self):
         node = node_executable()
         if not node:
