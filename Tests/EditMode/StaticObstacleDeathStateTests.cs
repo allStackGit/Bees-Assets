@@ -1,5 +1,5 @@
+using System;
 using System.IO;
-using Assets.Scripts.Entities;
 using NUnit.Framework;
 using UnityEngine;
 
@@ -12,15 +12,23 @@ namespace Bees.Tests.EditMode
         [Test]
         public void PooledStaticObstacleReuseClearsRlContactLethality()
         {
+            Type staticObstacleType = Type.GetType("Assets.Scripts.Entities.StaticObstacle, Assembly-CSharp");
+            Assert.That(staticObstacleType, Is.Not.Null);
+
             GameObject obstacleObject = new GameObject(nameof(PooledStaticObstacleReuseClearsRlContactLethality));
             try
             {
-                StaticObstacle obstacle = obstacleObject.AddComponent<StaticObstacle>();
-                obstacle.KillsShipsOnContact = true;
+                Component obstacle = obstacleObject.AddComponent(staticObstacleType);
+                var killsShipsOnContact = staticObstacleType.GetProperty("KillsShipsOnContact");
+                var resetForReuse = staticObstacleType.GetMethod("ResetForReuse");
 
-                obstacle.ResetForReuse();
+                Assert.That(killsShipsOnContact, Is.Not.Null);
+                Assert.That(resetForReuse, Is.Not.Null);
 
-                Assert.That(obstacle.KillsShipsOnContact, Is.False);
+                killsShipsOnContact.SetValue(obstacle, true);
+                resetForReuse.Invoke(obstacle, null);
+
+                Assert.That((bool)killsShipsOnContact.GetValue(obstacle), Is.False);
             }
             finally
             {
