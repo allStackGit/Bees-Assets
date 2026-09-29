@@ -837,9 +837,10 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
             source,
         )
         self.assertIn(
-            "private transport restored without restarting the managed worker",
+            '"[Bees remote] private transport restored without restarting "',
             source,
         )
+        self.assertIn('"the managed worker."', source)
         inner_loop = source[source.index("while (\n                        runtime_cutover is None"):]
         inner_loop = inner_loop[:inner_loop.index("            except KeyboardInterrupt:")]
         self.assertNotIn("and tailnet.poll() is None", inner_loop)
