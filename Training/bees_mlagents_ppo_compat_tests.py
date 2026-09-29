@@ -134,6 +134,7 @@ class InactiveContinuousActionMaskTests(unittest.TestCase):
         from mlagents.trainers.poca.optimizer_torch import TorchPOCAOptimizer
         from mlagents.trainers.ppo.optimizer_torch import TorchPPOOptimizer
         from mlagents.trainers.torch_entities.action_model import ActionModel
+        from mlagents.trainers.torch_entities.components.bc.module import BCModule
         from mlagents.trainers.torch_entities.utils import ModelUtils
 
         original_forward = ActionModel.forward
@@ -142,6 +143,8 @@ class InactiveContinuousActionMaskTests(unittest.TestCase):
         original_poca_update = TorchPOCAOptimizer.update
         original_policy_loss = ModelUtils.trust_region_policy_loss
         original_masked_mean = ModelUtils.masked_mean
+        original_bc_update = BCModule._update_batch
+        original_bc_loss = BCModule._behavioral_cloning_loss
 
         installed_original = compat.install_inactive_continuous_action_masking()
         self.assertIs(installed_original, original_forward)
@@ -151,6 +154,8 @@ class InactiveContinuousActionMaskTests(unittest.TestCase):
         self.assertIsNot(TorchPOCAOptimizer.update, original_poca_update)
         self.assertIsNot(ModelUtils.trust_region_policy_loss, original_policy_loss)
         self.assertIsNot(ModelUtils.masked_mean, original_masked_mean)
+        self.assertIsNot(BCModule._update_batch, original_bc_update)
+        self.assertIsNot(BCModule._behavioral_cloning_loss, original_bc_loss)
 
         compat.restore_inactive_continuous_action_masking()
         self.assertIs(ActionModel.forward, original_forward)
@@ -159,6 +164,63 @@ class InactiveContinuousActionMaskTests(unittest.TestCase):
         self.assertIs(TorchPOCAOptimizer.update, original_poca_update)
         self.assertIs(ModelUtils.trust_region_policy_loss, original_policy_loss)
         self.assertIs(ModelUtils.masked_mean, original_masked_mean)
+        self.assertIs(BCModule._update_batch, original_bc_update)
+        self.assertIs(BCModule._behavioral_cloning_loss, original_bc_loss)
+
+
+class BehavioralCloningWeaponMaskTests(unittest.TestCase):
+    @staticmethod
+    def _policy():
+        action_spec = SimpleNamespace(
+            continuous_size=compat.BEES_CONTINUOUS_ACTIONS,
+            discrete_branches=compat.BEES_DISCRETE_BRANCHES,
+            discrete_size=len(compat.BEES_DISCRETE_BRANCHES),
+        )
+        return SimpleNamespace(
+            behavior_spec=SimpleNamespace(action_spec=action_spec)
+        )
+
+    def test_inactive_weapon_aim_does_not_change_bc_loss(self):
+        import numpy as np
+        from mlagents.torch_utils import torch
+
+        policy = self._policy()
+        expert = SimpleNamespace(
+            continuous_tensor=torch.zeros((1, compat.BEES_CONTINUOUS_ACTIONS)),
+            discrete_tensor=torch.zeros(
+                (1, len(compat.BEES_DISCRETE_BRANCHES)),
+                dtype=torch.long,
+            ),
+        )
+        logits = torch.zeros((1, sum(compat.BEES_DISCRETE_BRANCHES)))
+        log_probs = SimpleNamespace(all_discrete_tensor=logits)
+        activity = np.ones((1, compat.BEES_WEAPON_SLOTS), dtype=np.float32)
+        activity[0, 0] = 0.0
+
+        baseline_actions = SimpleNamespace(
+            continuous_tensor=torch.zeros((1, compat.BEES_CONTINUOUS_ACTIONS))
+        )
+        inactive_changed = SimpleNamespace(
+            continuous_tensor=baseline_actions.continuous_tensor.clone()
+        )
+        inactive_changed.continuous_tensor[0, 2] = 10.0
+        active_changed = SimpleNamespace(
+            continuous_tensor=baseline_actions.continuous_tensor.clone()
+        )
+        active_changed.continuous_tensor[0, 4] = 10.0
+
+        baseline = compat._bees_masked_behavioral_cloning_loss(
+            policy, baseline_actions, log_probs, expert, activity
+        )
+        inactive = compat._bees_masked_behavioral_cloning_loss(
+            policy, inactive_changed, log_probs, expert, activity
+        )
+        active = compat._bees_masked_behavioral_cloning_loss(
+            policy, active_changed, log_probs, expert, activity
+        )
+
+        self.assertAlmostEqual(float(baseline.item()), float(inactive.item()), places=6)
+        self.assertGreater(float(active.item()), float(baseline.item()))
 
 
 class PocaGroupSizeWeightTests(unittest.TestCase):
