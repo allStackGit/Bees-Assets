@@ -269,7 +269,7 @@ namespace Bees.Tests.EditMode
         {
             string config = ReadSource("Training", "rl_1v1_config.yaml");
             Assert.That(config, Does.Contain("BeesRL1v1:"));
-            Assert.That(config, Does.Contain("trainer_type: ppo"));
+            Assert.That(config, Does.Contain("trainer_type: poca"));
             Assert.That(config, Does.Contain("learning_rate_schedule: constant"));
             Assert.That(config, Does.Contain("beta_schedule: constant"));
             Assert.That(config, Does.Contain("epsilon_schedule: constant"));
