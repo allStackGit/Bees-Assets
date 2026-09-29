@@ -1,9 +1,9 @@
-"""Synchronize one Bees training run's logs into Git-tracked history and push it.
+"""Snapshot one Bees training run's logs into local Git-ignored history.
 
-The history lives under TrainingHistory~ so Unity ignores it. Log files are always split into
-48 MiB chunks, keeping every tracked file below GitHub's per-file hard limit while preserving bytes.
-No checkpoint/model directory is copied or deleted; optimizer/checkpoint data remains in the durable
-B:\\Bees\\Training tree under its run id.
+The history lives under TrainingHistory~ so Unity ignores it and .gitignore keeps it out of source
+control. Log files are split into 48 MiB chunks while preserving bytes. No checkpoint/model
+directory is copied or deleted; optimizer/checkpoint data remains in the durable B:\\Bees\\Training
+tree under its run id. This helper never stages, commits, or pushes Git data.
 """
 
 from __future__ import annotations
@@ -13,9 +13,7 @@ import hashlib
 import json
 import os
 import shutil
-import subprocess
 import tempfile
-import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Optional, Sequence
@@ -170,100 +168,12 @@ def sync_run_history(assets_root: Path, bees_root: Path, run_id: str, reason: st
     return destination_root
 
 
-def _run_git(
-    assets_root: Path,
-    args: Sequence[str],
-    *,
-    git_executable: str = "git",
-    check: bool = True,
-) -> subprocess.CompletedProcess:
-    return subprocess.run(
-        [git_executable, *args],
-        cwd=str(assets_root),
-        check=check,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-    )
-
-
-def _push_with_retry(
-    assets_root: Path,
-    *,
-    git_executable: str,
-    attempts: int = 4,
-    sleeper=time.sleep,
-) -> None:
-    if attempts < 1:
-        raise ValueError("push attempts must be positive")
-    last_output = ""
-    for attempt in range(1, attempts + 1):
-        push = _run_git(
-            assets_root,
-            ["push", "origin", "HEAD"],
-            git_executable=git_executable,
-            check=False,
-        )
-        if push.returncode == 0:
-            return
-        last_output = push.stdout.strip()
-        if attempt < attempts:
-            sleeper(float(2 ** (attempt - 1)))
-    raise RuntimeError(
-        "training log commit was created locally but push to GitHub failed after "
-        f"{attempts} attempts; build is stopping so the archive is not silently "
-        f"left unprotected. {last_output}"
-    )
-
-
-def commit_and_push(
-    assets_root: Path,
-    history_root: Path,
-    run_id: str,
-    reason: str,
-    *,
-    git_executable: str = "git",
-) -> None:
-    relative = history_root.relative_to(assets_root)
-    _run_git(assets_root, ["add", "--", str(relative)], git_executable=git_executable)
-    status = _run_git(
-        assets_root,
-        ["diff", "--cached", "--quiet", "--", str(relative)],
-        git_executable=git_executable,
-        check=False,
-    )
-    if status.returncode == 0:
-        return
-    if status.returncode != 1:
-        raise RuntimeError("git diff failed: " + status.stdout.strip())
-
-    message = f"Archive training logs for {run_id} ({reason})"
-    commit = _run_git(
-        assets_root,
-        ["commit", "--only", "-m", message, "--", str(relative)],
-        git_executable=git_executable,
-        check=False,
-    )
-    if commit.returncode != 0:
-        raise RuntimeError("training log git commit failed: " + commit.stdout.strip())
-    _push_with_retry(
-        assets_root,
-        git_executable=git_executable,
-    )
-
-
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
     parser.add_argument("--assets-root", required=True)
     parser.add_argument("--bees-root", required=True)
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--reason", default="pre-build")
-    parser.add_argument(
-        "--git-executable",
-        default="git",
-        help="Git executable to use for archive commit/push. Defaults to git on PATH.",
-    )
-    parser.add_argument("--no-push", action="store_true")
     return parser
 
 
@@ -272,14 +182,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     assets = Path(args.assets_root).resolve()
     bees = Path(args.bees_root).resolve()
     history = sync_run_history(assets, bees, args.run_id, args.reason)
-    if not args.no_push:
-        commit_and_push(
-            assets,
-            history,
-            args.run_id,
-            args.reason,
-            git_executable=args.git_executable,
-        )
     print(history)
     return 0
 

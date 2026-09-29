@@ -13,7 +13,6 @@ const {
     readJson,
     readText,
     removeIfExists,
-    resolveGit,
     resolvePython,
     runChecked,
     sha256Text,
@@ -368,14 +367,13 @@ function archiveTrainingRun(python, runId, reason) {
     if (!exists(paths.archiveRunScript)) {
         throw new Error('Training log archive helper is missing: ' + paths.archiveRunScript);
     }
-    console.log('Archiving and pushing training logs for run ' + runId + ' (' + reason + ')...');
+    console.log('Archiving training logs locally for run ' + runId + ' (' + reason + ')...');
     runChecked(python, [
         paths.archiveRunScript,
         '--assets-root', paths.assetsRoot,
         '--bees-root', paths.beesRoot,
         '--run-id', String(runId),
         '--reason', String(reason),
-        '--git-executable', resolveGit(),
     ], paths.assetsRoot);
 }
 
