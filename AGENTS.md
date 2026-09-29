@@ -36,6 +36,7 @@ Optimize for a working, understandable system rather than documentation volume, 
 - Once the change is sufficiently understood, make it promptly. For multi-part work, preserve coherent completed changes rather than delaying everything for unrelated investigation.
 - After each coherent edit, inspect the touched code/diff and run the strongest practical focused validation. Broaden only when risk or evidence warrants it.
 - Never weaken, delete, or skip a valid test merely to pass. Add focused regression protection when it is useful and executable.
+- Prefer executable behavior/contract tests over source-text assertions. Do not add tests that depend on exact implementation strings, function ordering, formatting, comments, or incidental call shapes unless that text itself is the public contract. Remove or replace brittle representation tests when they create maintenance noise without detecting product regressions.
 - Never claim old logs/results validate changed source. Do not use GitHub Actions for development, testing, patching, builds, qualification, or verification.
 - If important validation cannot be executed, keep safe completed work, run what is available, and state exactly what remains unverified.
 
