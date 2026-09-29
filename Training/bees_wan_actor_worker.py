@@ -520,6 +520,7 @@ class ActorSession:
         upload_queue_size: int,
         startup_health: Optional[Callable[[str], None]] = None,
         runtime_progress: Optional[Callable[[], None]] = None,
+        env_count_changed: Optional[Callable[[int], None]] = None,
     ) -> None:
         self.client = client
         self.session = session
@@ -537,6 +538,7 @@ class ActorSession:
         self.policy_epoch = -1
         self.policy_versions: Dict[str, int] = {}
         self.templates: Dict[str, Any] = {}
+        self._behavior_specs: Dict[str, Any] = {}
         self.manager = None
         self._state_changed = threading.Event()
         self._session_changed = threading.Event()
@@ -544,6 +546,8 @@ class ActorSession:
         self._thread_error: queue.Queue = queue.Queue()
         self._upload_queue: queue.Queue = queue.Queue(maxsize=upload_queue_size)
         self._upload_stop = threading.Event()
+        self._upload_idle = threading.Event()
+        self._upload_idle.set()
         self._watcher: Optional[threading.Thread] = None
         self._uploader: Optional[threading.Thread] = None
         self._onnx_temp = tempfile.TemporaryDirectory(prefix=f"bees-wan-actor-{actor_id}-")
@@ -562,6 +566,7 @@ class ActorSession:
         self._session_failure_telemetry = None
         self._startup_health = startup_health
         self._runtime_progress = runtime_progress
+        self._env_count_changed = env_count_changed
 
     def _report_startup_phase(self, phase: str) -> None:
         callback = self._startup_health
@@ -572,6 +577,14 @@ class ActorSession:
         callback = self._runtime_progress
         if callback is not None:
             callback()
+
+    def _report_env_count_changed(self) -> None:
+        callback = self._env_count_changed
+        if callback is not None:
+            callback(int(self.env_count))
+
+    def _reconcile_env_count(self) -> None:
+        """Hook for elastic actors that resize their Unity worker pool in place."""
 
     def _retry_broker_unavailable(
         self,
@@ -778,6 +791,7 @@ class ActorSession:
         behavior_specs = self.manager.training_behaviors
         if not behavior_specs:
             raise RuntimeError("WAN actor Unity environments expose no trainable behaviors")
+        self._behavior_specs = dict(behavior_specs)
         for behavior_id, spec in behavior_specs.items():
             parsed = BehaviorIdentifiers.from_name_behavior_id(behavior_id)
             trainer_settings = options.behaviors[parsed.brain_name]
@@ -1026,26 +1040,30 @@ class ActorSession:
                 payload = self._upload_queue.get(timeout=0.5)
             except queue.Empty:
                 continue
-            while not self._upload_stop.is_set() and not self.stop.is_set():
-                try:
-                    self.client.trajectories(payload)
-                    trajectories = payload.get("trajectories", ())
-                    if isinstance(trajectories, Sequence):
-                        self._record_accepted_trajectories(trajectories)
-                    break
-                except BrokerBackpressure:
-                    time.sleep(0.25)
-                except BrokerStaleActor:
-                    self._stale.set()
-                    break
-                except BrokerSessionChanged:
-                    self._session_changed.set()
-                    return
-                except BrokerUnavailable:
-                    time.sleep(1.0)
-                except BaseException as exc:
-                    self._thread_error.put(exc)
-                    return
+            self._upload_idle.clear()
+            try:
+                while not self._upload_stop.is_set() and not self.stop.is_set():
+                    try:
+                        self.client.trajectories(payload)
+                        trajectories = payload.get("trajectories", ())
+                        if isinstance(trajectories, Sequence):
+                            self._record_accepted_trajectories(trajectories)
+                        break
+                    except BrokerBackpressure:
+                        time.sleep(0.25)
+                    except BrokerStaleActor:
+                        self._stale.set()
+                        break
+                    except BrokerSessionChanged:
+                        self._session_changed.set()
+                        return
+                    except BrokerUnavailable:
+                        time.sleep(1.0)
+                    except BaseException as exc:
+                        self._thread_error.put(exc)
+                        return
+            finally:
+                self._upload_idle.set()
 
     def _raise_thread_error(self) -> None:
         try:
@@ -1077,6 +1095,7 @@ class ActorSession:
                 self._report_runtime_progress()
                 continue
 
+            self._reconcile_env_count()
             local_steps = self.manager.get_steps()
             mapped_steps = _remap_completed_steps(self.manager, local_steps, self.worker_offset)
             self.manager.process_steps(mapped_steps)
@@ -1102,6 +1121,7 @@ class ActorSession:
                             self._raise_thread_error()
                             if self._session_changed.is_set() or self._state_changed.is_set():
                                 break
+            self._reconcile_env_count()
 
 
 def _parser() -> argparse.ArgumentParser:
