@@ -583,8 +583,9 @@ class ActorSession:
         if callback is not None:
             callback(int(self.env_count))
 
-    def _reconcile_env_count(self) -> None:
-        """Hook for elastic actors that resize their Unity worker pool in place."""
+    def _reconcile_env_count(self) -> bool:
+        """Return True when rollout should pause briefly while live capacity changes."""
+        return False
 
     def _retry_broker_unavailable(
         self,
@@ -1095,7 +1096,9 @@ class ActorSession:
                 self._report_runtime_progress()
                 continue
 
-            self._reconcile_env_count()
+            if self._reconcile_env_count():
+                self.stop.wait(0.05)
+                continue
             local_steps = self.manager.get_steps()
             mapped_steps = _remap_completed_steps(self.manager, local_steps, self.worker_offset)
             self.manager.process_steps(mapped_steps)
