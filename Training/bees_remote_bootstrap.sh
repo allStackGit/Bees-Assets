@@ -307,7 +307,7 @@ acquire_bootstrap_lock() {
 
     # Portable fallback for minimal systems without util-linux flock. The symlink target publishes
     # the owner PID atomically, so there is no mkdir/write gap that can leave an ownerless lock.
-    while ! ln -s "$" "$BOOTSTRAP_LOCK_LINK" 2>/dev/null; do
+    while ! ln -s "$$" "$BOOTSTRAP_LOCK_LINK" 2>/dev/null; do
         local owner=""
         owner="$(readlink "$BOOTSTRAP_LOCK_LINK" 2>/dev/null || true)"
         if [[ "$owner" =~ ^[0-9]+$ ]] && ! kill -0 "$owner" 2>/dev/null; then
@@ -330,7 +330,7 @@ release_bootstrap_lock() {
     elif [[ "$BOOTSTRAP_LOCK_METHOD" == "symlink" ]]; then
         local owner=""
         owner="$(readlink "$BOOTSTRAP_LOCK_LINK" 2>/dev/null || true)"
-        if [[ "$owner" == "$" ]]; then
+        if [[ "$owner" == "$$" ]]; then
             rm -f "$BOOTSTRAP_LOCK_LINK"
         fi
     fi
