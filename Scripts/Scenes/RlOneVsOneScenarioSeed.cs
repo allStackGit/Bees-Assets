@@ -14,6 +14,7 @@ internal static class RlOneVsOneScenarioSeed
     internal const int MatchupStreamSalt = 0x4D415443; // "MATC"
     internal const int MapSizeStreamSalt = 0x4D415053; // "MAPS"
     internal const int IdentityStreamSalt = 0x4944454E; // "IDEN"
+    internal const int EnvironmentStreamSalt = 0x454E5652; // "ENVR"
 
     private static int? _rootSeed;
 
