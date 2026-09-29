@@ -165,6 +165,7 @@ class InactiveContinuousActionMaskTests(unittest.TestCase):
 
     def test_install_and_restore_patch_action_model_and_ppo_loss(self):
         from mlagents.trainers.poca.optimizer_torch import TorchPOCAOptimizer
+        from mlagents.trainers.poca.trainer import POCATrainer
         from mlagents.trainers.ppo.optimizer_torch import TorchPPOOptimizer
         from mlagents.trainers.torch_entities.action_model import ActionModel
         from mlagents.trainers.torch_entities.components.bc.module import BCModule
@@ -174,6 +175,7 @@ class InactiveContinuousActionMaskTests(unittest.TestCase):
         original_evaluate = ActionModel.evaluate
         original_ppo_update = TorchPPOOptimizer.update
         original_poca_update = TorchPOCAOptimizer.update
+        original_poca_update_policy = POCATrainer._update_policy
         original_policy_loss = ModelUtils.trust_region_policy_loss
         original_masked_mean = ModelUtils.masked_mean
         original_bc_update = BCModule._update_batch
@@ -185,6 +187,7 @@ class InactiveContinuousActionMaskTests(unittest.TestCase):
         self.assertIsNot(ActionModel.evaluate, original_evaluate)
         self.assertIsNot(TorchPPOOptimizer.update, original_ppo_update)
         self.assertIsNot(TorchPOCAOptimizer.update, original_poca_update)
+        self.assertIsNot(POCATrainer._update_policy, original_poca_update_policy)
         self.assertIsNot(ModelUtils.trust_region_policy_loss, original_policy_loss)
         self.assertIsNot(ModelUtils.masked_mean, original_masked_mean)
         self.assertIsNot(BCModule._update_batch, original_bc_update)
@@ -195,6 +198,7 @@ class InactiveContinuousActionMaskTests(unittest.TestCase):
         self.assertIs(ActionModel.evaluate, original_evaluate)
         self.assertIs(TorchPPOOptimizer.update, original_ppo_update)
         self.assertIs(TorchPOCAOptimizer.update, original_poca_update)
+        self.assertIs(POCATrainer._update_policy, original_poca_update_policy)
         self.assertIs(ModelUtils.trust_region_policy_loss, original_policy_loss)
         self.assertIs(ModelUtils.masked_mean, original_masked_mean)
         self.assertIs(BCModule._update_batch, original_bc_update)
@@ -254,6 +258,48 @@ class BehavioralCloningWeaponMaskTests(unittest.TestCase):
 
         self.assertAlmostEqual(float(baseline.item()), float(inactive.item()), places=6)
         self.assertGreater(float(active.item()), float(baseline.item()))
+
+
+class PocaAdvantageNormalizationTests(unittest.TestCase):
+    def test_advantage_normalization_uses_inverse_group_size_weights(self):
+        import numpy as np
+        from mlagents.trainers.buffer import AgentBuffer, BufferKey
+        from mlagents.trainers.trajectory import GroupObsUtil
+
+        batch = AgentBuffer()
+        # Advantages 0 and 2 are single-agent timesteps; 10 is from a
+        # three-agent timestep and should carry only one-third weight.
+        for advantage, groupmates in (
+            (0.0, []),
+            (10.0, [
+                np.asarray([1.0], dtype=np.float32),
+                np.asarray([2.0], dtype=np.float32),
+            ]),
+            (2.0, []),
+        ):
+            batch[BufferKey.ADVANTAGES].append(advantage)
+            batch[BufferKey.MASKS].append(1.0)
+            batch[GroupObsUtil.get_name_at(0)].append(groupmates)
+
+        policy = SimpleNamespace(
+            behavior_spec=SimpleNamespace(observation_specs=[object()])
+        )
+        normalized = compat._normalize_poca_advantages(policy, batch)
+        weights = np.asarray([1.0, 1.0 / 3.0, 1.0], dtype=np.float32)
+
+        self.assertAlmostEqual(
+            float(np.sum(weights * normalized) / np.sum(weights)),
+            0.0,
+            places=6,
+        )
+        self.assertAlmostEqual(
+            float(
+                np.sum(weights * normalized * normalized)
+                / np.sum(weights)
+            ),
+            1.0,
+            places=5,
+        )
 
 
 class PocaGroupSizeWeightTests(unittest.TestCase):
