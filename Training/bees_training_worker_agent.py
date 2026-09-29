@@ -2117,6 +2117,22 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                             or managed.environment_args != environment_args
                             or managed.command != tuple(command)
                         )
+                        if (
+                            needs_restart
+                            and args.auto_worker_envs
+                            and launch_worker_env_count != worker_env_count
+                        ):
+                            # A real build/runtime/config restart should launch at the latest desired
+                            # capacity. Using the old launch count here would make the next heartbeat
+                            # see a command mismatch and restart the actor a second time.
+                            command = render_command(
+                                runtime_command_template,
+                                entrypoint,
+                                environment_args,
+                                str(active_build["build_id"]),
+                                run_id,
+                                worker_env_count,
+                            )
                         if needs_restart:
                             set_reconciliation_phase("launching managed actor")
                             managed.start(
