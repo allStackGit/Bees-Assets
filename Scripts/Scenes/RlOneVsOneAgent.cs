@@ -871,6 +871,9 @@ internal sealed class RlOneVsOneAgent : Agent
         float terminalReward = _side == ConfigData.Configuration.BeeSide
             ? result.BeeTerminalReward + result.BeeTimeReward
             : result.HumanTerminalReward + result.HumanTimeReward;
+
+        // Timeouts are explicit terminal losses in this environment, not interrupted trajectories.
+        // Route that terminal outcome through the same MA-POCA group channel as ordinary wins/losses.
         _agentGroup?.AddGroupReward(terminalReward);
 
         // The battle terminates for the complete cooperating side. MA-POCA receives the terminal
