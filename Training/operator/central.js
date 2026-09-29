@@ -33,6 +33,7 @@ const {
     installReleaseTrainingRuntime,
     pruneReleaseTrainingRuntimes,
 } = require('./runtime');
+const { localActorBrokerSlots } = require('./localActor');
 
 function buildCentralLearnerArgv(config, learnerPython, unity, runtimeRoot) {
     const service = path.join(runtimeRoot, 'bees_continual_elastic_wan_service.py');
@@ -60,7 +61,9 @@ function buildCentralLearnerArgv(config, learnerPython, unity, runtimeRoot) {
         '--generation-steps', String(config.generationSteps),
         '--num-envs', String(config.numLocalEnvs),
         '--platform', 'WindowsPlayer',
-        '--bees-wan-actors', String(config.maxRemoteActors),
+        '--bees-wan-actors', String(
+            Number(config.maxRemoteActors) + localActorBrokerSlots(config)
+        ),
         '--bees-wan-min-actors', String(config.minRemoteActors),
         '--bees-wan-broker-port', String(config.brokerPort),
         '--bees-wan-auth-token-file', paths.wanTokenPath,
