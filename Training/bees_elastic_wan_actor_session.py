@@ -279,14 +279,26 @@ class ElasticActorSession(worker.ActorSession):
         )
         return True
 
-    def _reconcile_env_count(self) -> None:
+    def _reconcile_env_count(self) -> bool:
         if self.manager is None or self._env_target_path is None:
-            return
+            return False
         desired = self._desired_env_count()
         if desired > self.env_count:
             self._scale_up_one()
-        elif desired < self.env_count:
-            self._scale_down_one()
+            return False
+        if desired < self.env_count:
+            target = self.manager.env_workers[-1]
+            if (
+                not target.waiting
+                and (not self._upload_queue.empty() or not self._upload_idle.is_set())
+            ):
+                # Keep the tail worker idle while already-produced trajectories finish uploading.
+                # Otherwise the next manager step would immediately make it busy again and could
+                # starve a requested downscale indefinitely under sustained rollout load.
+                return True
+            if self._scale_down_one():
+                return desired < self.env_count
+        return False
 
     def _heartbeat(self) -> bool:
         try:
