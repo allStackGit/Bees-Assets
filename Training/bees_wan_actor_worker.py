@@ -743,7 +743,10 @@ class ActorSession:
         self.manager = SubprocessEnvManager(factory, options, self.env_count)
 
         self._report_startup_phase("waiting-initial-control")
-        control = self._initial_control()
+        control = self._retry_broker_unavailable(
+            self._initial_control,
+            label="initial control",
+        )
         self.control_epoch = int(control["epoch"])
         self._current_env_config = control.get("config")
         print(
