@@ -29,6 +29,20 @@ const {
 
 const LOCAL_ACTOR_ENTRYPOINT = 'bees_elastic_wan_actor_worker.py';
 
+function localActorSupervisorAgentPath(preparedRuntime) {
+    const runtimeRootValue = String(
+        preparedRuntime && preparedRuntime.runtime_root || ''
+    ).trim();
+    if (!runtimeRootValue) {
+        throw new Error('Prepared local actor runtime root is missing.');
+    }
+    const agent = path.join(path.resolve(runtimeRootValue), 'bees_training_worker_agent.py');
+    if (!exists(agent)) {
+        throw new Error('Prepared local actor supervisor is missing: ' + agent);
+    }
+    return agent;
+}
+
 function localActorSettings(config) {
     const value = config && typeof config.localActor === 'object' && config.localActor
         ? config.localActor
@@ -223,8 +237,7 @@ async function startLocalActorIfNeeded(
     const canonicalBuild = String(
         options.canonicalBuildId || releaseBuild
     ).trim();
-    const agent = path.join(paths.assetsRoot, 'Training', 'bees_training_worker_agent.py');
-    if (!exists(agent)) throw new Error('Local actor worker supervisor is missing: ' + agent);
+    const agent = localActorSupervisorAgentPath(preparedRuntime);
 
     const supervisorArgs = [
         '-u', agent,
@@ -429,6 +442,7 @@ module.exports = {
     LOCAL_ACTOR_ENTRYPOINT,
     buildLocalActorLaunchCommand,
     localActorBrokerSlots,
+    localActorSupervisorAgentPath,
     localActorSettings,
     localActorTrainerId,
     prepareLocalActorReleaseRuntime,
