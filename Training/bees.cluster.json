@@ -17,5 +17,13 @@
   "remoteLinuxInstallRoot": ".local/share/bees-training",
   "remoteTransport": "tailnet",
   "tailnetLearnerName": "bees-learner",
-  "tailnetBootstrapPort": 7151
+  "tailnetBootstrapPort": 7151,
+  "localActor": {
+    "enabled": true,
+    "initialEnvs": 4,
+    "minEnvs": 1,
+    "maxEnvs": 8,
+    "autoTune": true,
+    "torchDevice": "cpu"
+  }
 }
