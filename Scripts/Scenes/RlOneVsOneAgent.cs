@@ -898,7 +898,7 @@ internal sealed class RlOneVsOneAgent : Agent
             return false;
         }
 
-        int instanceId = GetInstanceID();
+        EntityId entityId = GetEntityId();
         for (int i = 0; i < Instances.Count; i++)
         {
             RlOneVsOneAgent other = Instances[i];
@@ -910,7 +910,7 @@ internal sealed class RlOneVsOneAgent : Agent
                 continue;
             }
 
-            if (other.GetInstanceID() < instanceId)
+            if (other.GetEntityId() < entityId)
             {
                 return false;
             }
