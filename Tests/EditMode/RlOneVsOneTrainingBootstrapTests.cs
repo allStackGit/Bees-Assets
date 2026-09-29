@@ -265,7 +265,7 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void FirstTrainerConfigMatchesSharedBehaviorAndUsesLongRunPpoSelfPlay()
+        public void FirstTrainerConfigMatchesSharedBehaviorAndUsesLongRunPocaSelfPlay()
         {
             string config = ReadSource("Training", "rl_1v1_config.yaml");
             Assert.That(config, Does.Contain("BeesRL1v1:"));
