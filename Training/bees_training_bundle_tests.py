@@ -519,6 +519,42 @@ class TrainingBundleTests(unittest.TestCase):
         self.assertIn("--benchmark-json", operator)
         self.assertIn("'bundle'{Invoke-Bundle}", operator)
 
+    def test_failed_live_snapshot_does_not_substitute_stale_retained_model(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            run_id = "bees-v20-live-snapshot-failed"
+            bees_root, assets_root = self._layout(root, run_id)
+            results = bees_root / "Training" / "trainer-results" / run_id / "BeesRL1v1"
+            results.mkdir(parents=True)
+            (results / "BeesRL1v1-100.onnx").write_bytes(b"stale")
+            snapshot_json = root / "snapshot.json"
+            snapshot_json.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "status": "timeout",
+                        "run_id": run_id,
+                        "reason": "learner was busy updating",
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            archive = bundle.create_bundle(
+                bees_root=bees_root,
+                assets_root=assets_root,
+                log_percent=10.0,
+                snapshot_json=snapshot_json,
+            )
+
+            with zipfile.ZipFile(archive) as zipped:
+                manifest = json.loads(zipped.read("manifest.json"))
+                self.assertIsNone(manifest["latest_onnx"])
+                self.assertNotIn("model/BeesRL1v1-100.onnx", zipped.namelist())
+                self.assertTrue(
+                    any("live model snapshot timeout" in warning for warning in manifest["warnings"])
+                )
+
     def test_missing_onnx_is_a_warning_not_a_bundle_failure(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
