@@ -1969,6 +1969,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         compatibility_key=compatibility_key,
                         environment_args=environment_args,
                         worker_env_count=worker_env_count,
+                        allow_live_worker_env_resize=bool(args.auto_worker_envs),
                     )
 
                 if mode == "stopped":
