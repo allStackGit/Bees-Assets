@@ -97,16 +97,18 @@ namespace Assets.Scripts.Levels
             {
                 global::RlOneVsOneArenaMapSizeState.ConfigureTrainingMap(this, Map);
 
-                // The first learning proof deliberately excludes every environmental dimension
-                // except two ships and the map boundary. Prevent the generic training option path
-                // from accidentally enabling mining or another environment feature.
-                CurrentLevelOptions.Obstacles = "No";
-                CurrentLevelOptions.AsteroidOption = 0;
+                bool useStaticObstacles = global::RlOneVsOneTrainingBootstrap.CurrentStaticObstaclesEnabled;
+                bool useCollisionAsteroids =
+                    global::RlOneVsOneTrainingBootstrap.CurrentCollisionAsteroidSpawnSeconds > 0f;
+                bool useMiningAsteroids = global::RlOneVsOneTrainingBootstrap.CurrentMiningAsteroidsEnabled;
+
+                CurrentLevelOptions.Obstacles = useStaticObstacles ? "" : "No";
+                CurrentLevelOptions.AsteroidOption = useCollisionAsteroids ? 1 : 0;
                 CurrentLevelOptions.FogOfWar = 0;
-                CurrentLevelOptions.Mining = 0;
-                HasObstacles = false;
-                ActivateCollisionAsteroids = false;
-                ActivateMining = false;
+                CurrentLevelOptions.Mining = useMiningAsteroids ? 1 : 0;
+                HasObstacles = useStaticObstacles || useCollisionAsteroids;
+                ActivateCollisionAsteroids = useCollisionAsteroids;
+                ActivateMining = useMiningAsteroids;
                 ActivateFogOfWar = false;
             }
 
