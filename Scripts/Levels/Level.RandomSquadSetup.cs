@@ -76,6 +76,15 @@ namespace Assets.Scripts.Levels
         private void ConfigureRlOneVsOneSpawnPositions()
         {
             float spawnRadius = global::RlOneVsOneArenaMapSizeState.GetSpawnRadius(this);
+            if (!global::RlOneVsOneTrainingBootstrap.CurrentStaticObstaclesEnabled)
+            {
+                float angle = Random.Range(0f, Mathf.PI * 2f);
+                Vector2 offset = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * spawnRadius;
+                StartingPositions[ConfigData.Configuration.BeeSide - 1] = -offset;
+                StartingPositions[ConfigData.Configuration.HumanSide - 1] = offset;
+                return;
+            }
+
             for (int attempt = 0; attempt < 64; attempt++)
             {
                 float angle = Random.Range(0f, Mathf.PI * 2f);
