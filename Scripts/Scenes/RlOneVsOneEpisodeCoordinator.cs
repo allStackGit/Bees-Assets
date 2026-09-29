@@ -193,6 +193,32 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
     private long _humanHitsTotal;
     private long _humanDamageTotal;
     private float _totalDurationSeconds;
+    private int _staticObstacleEpisodes;
+    private int _collisionAsteroidEpisodes;
+    private int _miningAsteroidEpisodes;
+    private int _staticLayoutEmptyEpisodes;
+    private int _beeMiningSuccessEpisodes;
+    private int _humanMiningSuccessEpisodes;
+    private long _staticObstacleCountTotal;
+    private double _staticObstacleAreaFractionTotal;
+    private long _collisionAsteroidsSpawnedTotal;
+    private long _miningAsteroidsSpawnedTotal;
+    private long _beeStaticObstacleContactsTotal;
+    private long _humanStaticObstacleContactsTotal;
+    private long _beeStaticObstacleDeathsTotal;
+    private long _humanStaticObstacleDeathsTotal;
+    private long _beeCollisionAsteroidHitsTotal;
+    private long _humanCollisionAsteroidHitsTotal;
+    private long _beeCollisionAsteroidDamageTotal;
+    private long _humanCollisionAsteroidDamageTotal;
+    private long _beeCollisionAsteroidDeathsTotal;
+    private long _humanCollisionAsteroidDeathsTotal;
+    private long _beeResourcesMinedTotal;
+    private long _humanResourcesMinedTotal;
+    private long _beeMiningAsteroidsMinedTotal;
+    private long _humanMiningAsteroidsMinedTotal;
+    private long _beeMiningAsteroidsDepletedTotal;
+    private long _humanMiningAsteroidsDepletedTotal;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     private static void ResetCoordinatorRegistry()
@@ -1221,13 +1247,16 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
             humanTerminal, _humanTsvRewardThisEpisode, humanTimeReward);
         LastEpisodeResult = result;
 
-        UpdateRunningDiagnostics(result, beeSide, humanSide);
+        RlOneVsOneEpisodeDiagnostics.EnvironmentSnapshot environmentSnapshot =
+            RlOneVsOneEpisodeDiagnostics.GetEnvironmentSnapshot(level);
+        UpdateRunningDiagnostics(result, beeSide, humanSide, environmentSnapshot);
 
         string outcome = timedOut ? "timeout" : winningSide == 0 ? "draw" : $"side_{winningSide}_win";
         int beeSpawned = CountSpawnedShips(0);
         int humanSpawned = CountSpawnedShips(1);
         if (_completedEpisodes == 1 || _completedEpisodes % EpisodeMetricsLogInterval == 0)
         {
+            string environmentTelemetry = RlOneVsOneEpisodeDiagnostics.BuildEnvironmentEpisodeFields(level);
             string combatTelemetry = RlOneVsOneCombatTelemetry.BuildEpisodeFields(level);
             WriteTrainingDiagnostic(
                 $"RL 1v1 episode={result.EpisodeNumber} arena={GetArenaIndex()} outcome={outcome} bee_team={_beeTeamId} human_team={_humanTeamId} " +
@@ -1235,7 +1264,7 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
                 $"bee_tsv={_beeStartingTsv}->{beeFinalTsv} human_tsv={_humanStartingTsv}->{humanFinalTsv} " +
                 $"bee_fire_requests={_beeFireRequestsThisEpisode} bee_shots={_beeShotsThisEpisode} bee_hits={_beeHitsThisEpisode} bee_damage={_beeDamageThisEpisode} " +
                 $"human_fire_requests={_humanFireRequestsThisEpisode} human_shots={_humanShotsThisEpisode} human_hits={_humanHitsThisEpisode} human_damage={_humanDamageThisEpisode} " +
-                combatTelemetry);
+                environmentTelemetry + " " + combatTelemetry);
         }
 
         if (_completedEpisodes == 1 || _completedEpisodes % FullEpisodeDiagnosticsInterval == 0)
@@ -1272,7 +1301,11 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         RlPolicyCoordinateFrame.EndEpisode(level);
     }
 
-    private void UpdateRunningDiagnostics(EpisodeResult result, int beeSide, int humanSide)
+    private void UpdateRunningDiagnostics(
+        EpisodeResult result,
+        int beeSide,
+        int humanSide,
+        RlOneVsOneEpisodeDiagnostics.EnvironmentSnapshot environment)
     {
         _completedEpisodes++;
         _totalDurationSeconds += result.DurationSeconds;
@@ -1282,6 +1315,52 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         _humanShotsTotal += result.HumanShotsFired;
         _humanHitsTotal += result.HumanShotsHit;
         _humanDamageTotal += result.HumanDamageDealt;
+
+        if (environment.StaticObstaclesEnabled)
+        {
+            _staticObstacleEpisodes++;
+            _staticObstacleCountTotal += environment.StaticObstacleCount;
+            _staticObstacleAreaFractionTotal += environment.StaticObstacleAreaFraction;
+            if (environment.StaticLayoutEmpty)
+            {
+                _staticLayoutEmptyEpisodes++;
+            }
+        }
+        if (environment.CollisionAsteroidsEnabled)
+        {
+            _collisionAsteroidEpisodes++;
+        }
+        if (environment.MiningAsteroidsEnabled)
+        {
+            _miningAsteroidEpisodes++;
+            if (environment.BeeResourcesMined > 0)
+            {
+                _beeMiningSuccessEpisodes++;
+            }
+            if (environment.HumanResourcesMined > 0)
+            {
+                _humanMiningSuccessEpisodes++;
+            }
+        }
+
+        _collisionAsteroidsSpawnedTotal += environment.CollisionAsteroidsSpawned;
+        _miningAsteroidsSpawnedTotal += environment.MiningAsteroidsSpawned;
+        _beeStaticObstacleContactsTotal += environment.BeeStaticObstacleContacts;
+        _humanStaticObstacleContactsTotal += environment.HumanStaticObstacleContacts;
+        _beeStaticObstacleDeathsTotal += environment.BeeStaticObstacleDeaths;
+        _humanStaticObstacleDeathsTotal += environment.HumanStaticObstacleDeaths;
+        _beeCollisionAsteroidHitsTotal += environment.BeeCollisionAsteroidHits;
+        _humanCollisionAsteroidHitsTotal += environment.HumanCollisionAsteroidHits;
+        _beeCollisionAsteroidDamageTotal += environment.BeeCollisionAsteroidDamage;
+        _humanCollisionAsteroidDamageTotal += environment.HumanCollisionAsteroidDamage;
+        _beeCollisionAsteroidDeathsTotal += environment.BeeCollisionAsteroidDeaths;
+        _humanCollisionAsteroidDeathsTotal += environment.HumanCollisionAsteroidDeaths;
+        _beeResourcesMinedTotal += environment.BeeResourcesMined;
+        _humanResourcesMinedTotal += environment.HumanResourcesMined;
+        _beeMiningAsteroidsMinedTotal += environment.BeeMiningAsteroidsMined;
+        _humanMiningAsteroidsMinedTotal += environment.HumanMiningAsteroidsMined;
+        _beeMiningAsteroidsDepletedTotal += environment.BeeMiningAsteroidsDepleted;
+        _humanMiningAsteroidsDepletedTotal += environment.HumanMiningAsteroidsDepleted;
 
         if (result.TimedOut)
         {
@@ -1310,11 +1389,58 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         float averageDuration = _completedEpisodes > 0 ? _totalDurationSeconds / _completedEpisodes : 0f;
         float beeHitRate = _beeShotsTotal > 0 ? (float)_beeHitsTotal / _beeShotsTotal : 0f;
         float humanHitRate = _humanShotsTotal > 0 ? (float)_humanHitsTotal / _humanShotsTotal : 0f;
+        float averageStaticObstacleCount = _staticObstacleEpisodes > 0
+            ? (float)_staticObstacleCountTotal / _staticObstacleEpisodes
+            : 0f;
+        float averageStaticAreaFraction = _staticObstacleEpisodes > 0
+            ? (float)(_staticObstacleAreaFractionTotal / _staticObstacleEpisodes)
+            : 0f;
+        float averageCollisionAsteroidsSpawned = _collisionAsteroidEpisodes > 0
+            ? (float)_collisionAsteroidsSpawnedTotal / _collisionAsteroidEpisodes
+            : 0f;
+        float averageMiningAsteroidsSpawned = _miningAsteroidEpisodes > 0
+            ? (float)_miningAsteroidsSpawnedTotal / _miningAsteroidEpisodes
+            : 0f;
+        float beeStaticDeathsPerThousand = _staticObstacleEpisodes > 0
+            ? 1000f * _beeStaticObstacleDeathsTotal / _staticObstacleEpisodes
+            : 0f;
+        float humanStaticDeathsPerThousand = _staticObstacleEpisodes > 0
+            ? 1000f * _humanStaticObstacleDeathsTotal / _staticObstacleEpisodes
+            : 0f;
+        float beeAsteroidDeathsPerThousand = _collisionAsteroidEpisodes > 0
+            ? 1000f * _beeCollisionAsteroidDeathsTotal / _collisionAsteroidEpisodes
+            : 0f;
+        float humanAsteroidDeathsPerThousand = _collisionAsteroidEpisodes > 0
+            ? 1000f * _humanCollisionAsteroidDeathsTotal / _collisionAsteroidEpisodes
+            : 0f;
+        float beeMiningSuccessRate = _miningAsteroidEpisodes > 0
+            ? (float)_beeMiningSuccessEpisodes / _miningAsteroidEpisodes
+            : 0f;
+        float humanMiningSuccessRate = _miningAsteroidEpisodes > 0
+            ? (float)_humanMiningSuccessEpisodes / _miningAsteroidEpisodes
+            : 0f;
+        float beeAverageResourcesMined = _miningAsteroidEpisodes > 0
+            ? (float)_beeResourcesMinedTotal / _miningAsteroidEpisodes
+            : 0f;
+        float humanAverageResourcesMined = _miningAsteroidEpisodes > 0
+            ? (float)_humanResourcesMinedTotal / _miningAsteroidEpisodes
+            : 0f;
+
         WriteTrainingDiagnostic(
             $"RL 1v1 summary episodes={_completedEpisodes} arena={GetArenaIndex()} bee_record={_beeWins}-{_beeLosses} human_record={_humanWins}-{_humanLosses} " +
             $"draws={_draws} timeouts={_timeouts} avg_duration={averageDuration:F2}s " +
             $"bee_shots={_beeShotsTotal} bee_hits={_beeHitsTotal} bee_hit_rate={beeHitRate:P2} bee_damage={_beeDamageTotal} " +
-            $"human_shots={_humanShotsTotal} human_hits={_humanHitsTotal} human_hit_rate={humanHitRate:P2} human_damage={_humanDamageTotal}");
+            $"human_shots={_humanShotsTotal} human_hits={_humanHitsTotal} human_hit_rate={humanHitRate:P2} human_damage={_humanDamageTotal} " +
+            $"env_episodes=static:{_staticObstacleEpisodes},collision:{_collisionAsteroidEpisodes},mining:{_miningAsteroidEpisodes} " +
+            $"static_layout_empty={_staticLayoutEmptyEpisodes} avg_static_obstacles={averageStaticObstacleCount:F2} avg_static_area_pct={averageStaticAreaFraction:P2} " +
+            $"bee_static_contacts={_beeStaticObstacleContactsTotal} bee_static_deaths={_beeStaticObstacleDeathsTotal} bee_static_deaths_per_1k={beeStaticDeathsPerThousand:F2} " +
+            $"human_static_contacts={_humanStaticObstacleContactsTotal} human_static_deaths={_humanStaticObstacleDeathsTotal} human_static_deaths_per_1k={humanStaticDeathsPerThousand:F2} " +
+            $"collision_asteroids_spawned={_collisionAsteroidsSpawnedTotal} avg_collision_asteroids_spawned={averageCollisionAsteroidsSpawned:F2} " +
+            $"bee_asteroid_hits={_beeCollisionAsteroidHitsTotal} bee_asteroid_damage={_beeCollisionAsteroidDamageTotal} bee_asteroid_deaths={_beeCollisionAsteroidDeathsTotal} bee_asteroid_deaths_per_1k={beeAsteroidDeathsPerThousand:F2} " +
+            $"human_asteroid_hits={_humanCollisionAsteroidHitsTotal} human_asteroid_damage={_humanCollisionAsteroidDamageTotal} human_asteroid_deaths={_humanCollisionAsteroidDeathsTotal} human_asteroid_deaths_per_1k={humanAsteroidDeathsPerThousand:F2} " +
+            $"mining_asteroids_spawned={_miningAsteroidsSpawnedTotal} avg_mining_asteroids_spawned={averageMiningAsteroidsSpawned:F2} " +
+            $"bee_mining_success={_beeMiningSuccessEpisodes}/{_miningAsteroidEpisodes} bee_mining_success_rate={beeMiningSuccessRate:P2} bee_resources_mined={_beeResourcesMinedTotal} bee_avg_resources_mined={beeAverageResourcesMined:F2} bee_mining_asteroids_mined={_beeMiningAsteroidsMinedTotal} bee_mining_asteroids_depleted={_beeMiningAsteroidsDepletedTotal} " +
+            $"human_mining_success={_humanMiningSuccessEpisodes}/{_miningAsteroidEpisodes} human_mining_success_rate={humanMiningSuccessRate:P2} human_resources_mined={_humanResourcesMinedTotal} human_avg_resources_mined={humanAverageResourcesMined:F2} human_mining_asteroids_mined={_humanMiningAsteroidsMinedTotal} human_mining_asteroids_depleted={_humanMiningAsteroidsDepletedTotal}");
     }
 
     private static void WriteTrainingDiagnostic(string message)
