@@ -514,7 +514,7 @@ internal sealed class RlOneVsOneAgent : Agent
         }
 
         actionMask.SetActionEnabled(SpecialActionBranch, ShipSpecialAction,
-            canControl && HasSpecialAction(_ship));
+            canControl && CanUseShipSpecialAction(_ship));
         actionMask.SetActionEnabled(SpecialActionBranch, MiningAction,
             canControl && CanUseMiningAction(_ship));
         actionMask.SetActionEnabled(SpecialActionBranch, HealingAction,
@@ -653,7 +653,7 @@ internal sealed class RlOneVsOneAgent : Agent
         {
             fireBarge.Detonate();
         }
-        else if (_ship is Barge barge && !barge.HasStartedCharging && !barge.IsCharging)
+        else if (_ship is Barge barge && barge.IsRlChargeReady)
         {
             barge.StartCoroutine(barge.ChargeForward(FindNearestVisibleEnemy()));
         }
@@ -661,6 +661,31 @@ internal sealed class RlOneVsOneAgent : Agent
         {
             scout.DropBeacon();
         }
+    }
+
+    internal static bool CanUseShipSpecialAction(Ship ship)
+    {
+        if (ship == null || ship.IsDead)
+        {
+            return false;
+        }
+        if (ship is YellowJacket || ship is FireBarge)
+        {
+            return true;
+        }
+        if (ship is Striker striker)
+        {
+            return striker.IsBombReady;
+        }
+        if (ship is Barge barge)
+        {
+            return barge.IsRlChargeReady;
+        }
+        if (ship is Scout scout)
+        {
+            return scout.IsBeaconReady;
+        }
+        return false;
     }
 
     internal static bool CanUseMiningAction(Ship ship)
