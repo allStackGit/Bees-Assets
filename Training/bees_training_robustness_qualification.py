@@ -311,6 +311,45 @@ def _log_tail(path: Path, maximum_lines: int = 80, maximum_bytes: int = 256 * 10
     return "\n".join(lines[-maximum_lines:])
 
 
+def _log_error_excerpt(
+    path: Path,
+    maximum_lines: int = 80,
+    maximum_bytes: int = 2 * 1024 * 1024,
+) -> str:
+    """Return the compiler diagnostics that a short Unity log tail can hide."""
+    if not path.is_file():
+        return ""
+    try:
+        size = path.stat().st_size
+        with path.open("rb") as handle:
+            handle.seek(max(0, size - maximum_bytes))
+            data = handle.read()
+    except OSError:
+        return ""
+
+    text = data.decode("utf-8", errors="replace")
+    lines = text.splitlines()
+    if size > maximum_bytes and lines:
+        lines = lines[1:]
+
+    diagnostics: list[str] = []
+    seen: set[str] = set()
+    for line in lines:
+        lowered = line.lower()
+        if (
+            ": error cs" not in lowered
+            and ": error uac" not in lowered
+            and "scripts have compiler errors" not in lowered
+        ):
+            continue
+        if line in seen:
+            continue
+        seen.add(line)
+        diagnostics.append(line)
+
+    return "\n".join(diagnostics[-maximum_lines:])
+
+
 def _run_check(check: Check) -> tuple[bool, float]:
     if not check.command:
         if check.required:
@@ -390,6 +429,12 @@ def _run_check(check: Check) -> tuple[bool, float]:
                 flush=True,
             )
     if check.diagnostic_log is not None:
+        diagnostics = _log_error_excerpt(check.diagnostic_log)
+        if diagnostics:
+            print(
+                f"[ERR ] {check.name}: compiler diagnostics from {check.diagnostic_log}:\n{diagnostics}",
+                flush=True,
+            )
         tail = _log_tail(check.diagnostic_log)
         if tail:
             print(
