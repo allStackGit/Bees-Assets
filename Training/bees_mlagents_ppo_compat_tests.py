@@ -24,8 +24,8 @@ SPEC.loader.exec_module(compat)
 class InactiveContinuousActionMaskTests(unittest.TestCase):
     def test_action_layout_matches_current_five_weapon_policy(self):
         self.assertEqual(compat.BEES_WEAPON_SLOTS, 5)
-        self.assertEqual(compat.BEES_CONTINUOUS_ACTIONS, 12)
-        self.assertEqual(compat.BEES_DISCRETE_BRANCHES, (2,) * 5 + (5, 65, 65, 65))
+        self.assertEqual(compat.BEES_CONTINUOUS_ACTIONS, 16)
+        self.assertEqual(compat.BEES_DISCRETE_BRANCHES, (2,) * 5 + (5,))
 
     def tearDown(self):
         compat.restore_inactive_continuous_action_masking()
@@ -58,13 +58,14 @@ class InactiveContinuousActionMaskTests(unittest.TestCase):
         )
 
         self.assertIsNotNone(activity)
-        self.assertEqual(float(activity[0].sum().item()), 4.0)
-        self.assertEqual(float(activity[1].sum().item()), 10.0)
+        self.assertEqual(float(activity[0].sum().item()), 8.0)
+        self.assertEqual(float(activity[1].sum().item()), 14.0)
         self.assertTrue(torch.all(activity[:, :2] == 1.0))
         self.assertTrue(torch.all(activity[0, 2:4] == 1.0))
-        self.assertTrue(torch.all(activity[0, 4:] == 0.0))
+        self.assertTrue(torch.all(activity[0, 4:12] == 0.0))
         self.assertTrue(torch.all(activity[1, 2:10] == 1.0))
-        self.assertTrue(torch.all(activity[1, 10:] == 0.0))
+        self.assertTrue(torch.all(activity[1, 10:12] == 0.0))
+        self.assertTrue(torch.all(activity[:, 12:16] == 1.0))
 
     def test_policy_loss_ignores_masked_dimensions_but_uses_active_ones(self):
         from mlagents.torch_utils import torch
@@ -130,27 +131,71 @@ class InactiveContinuousActionMaskTests(unittest.TestCase):
         self.assertIsNone(activity)
 
     def test_install_and_restore_patch_action_model_and_ppo_loss(self):
+        from mlagents.trainers.poca.optimizer_torch import TorchPOCAOptimizer
         from mlagents.trainers.ppo.optimizer_torch import TorchPPOOptimizer
         from mlagents.trainers.torch_entities.action_model import ActionModel
         from mlagents.trainers.torch_entities.utils import ModelUtils
 
         original_forward = ActionModel.forward
         original_evaluate = ActionModel.evaluate
-        original_update = TorchPPOOptimizer.update
+        original_ppo_update = TorchPPOOptimizer.update
+        original_poca_update = TorchPOCAOptimizer.update
         original_policy_loss = ModelUtils.trust_region_policy_loss
+        original_masked_mean = ModelUtils.masked_mean
 
         installed_original = compat.install_inactive_continuous_action_masking()
         self.assertIs(installed_original, original_forward)
         self.assertIsNot(ActionModel.forward, original_forward)
         self.assertIsNot(ActionModel.evaluate, original_evaluate)
-        self.assertIsNot(TorchPPOOptimizer.update, original_update)
+        self.assertIsNot(TorchPPOOptimizer.update, original_ppo_update)
+        self.assertIsNot(TorchPOCAOptimizer.update, original_poca_update)
         self.assertIsNot(ModelUtils.trust_region_policy_loss, original_policy_loss)
+        self.assertIsNot(ModelUtils.masked_mean, original_masked_mean)
 
         compat.restore_inactive_continuous_action_masking()
         self.assertIs(ActionModel.forward, original_forward)
         self.assertIs(ActionModel.evaluate, original_evaluate)
-        self.assertIs(TorchPPOOptimizer.update, original_update)
+        self.assertIs(TorchPPOOptimizer.update, original_ppo_update)
+        self.assertIs(TorchPOCAOptimizer.update, original_poca_update)
         self.assertIs(ModelUtils.trust_region_policy_loss, original_policy_loss)
+        self.assertIs(ModelUtils.masked_mean, original_masked_mean)
+
+
+class PocaGroupSizeWeightTests(unittest.TestCase):
+    def test_inverse_group_size_uses_exact_groupmate_presence(self):
+        import numpy as np
+        from mlagents.torch_utils import torch
+        from mlagents.trainers.buffer import AgentBuffer, BufferKey
+        from mlagents.trainers.trajectory import GroupObsUtil
+
+        batch = AgentBuffer()
+        for groupmate_values in (
+            [],
+            [np.asarray([1.0], dtype=np.float32)],
+            [
+                np.asarray([2.0], dtype=np.float32),
+                np.asarray([3.0], dtype=np.float32),
+            ],
+        ):
+            batch[GroupObsUtil.get_name_at(0)].append(groupmate_values)
+            batch[BufferKey.MASKS].append(1.0)
+
+        policy = SimpleNamespace(
+            behavior_spec=SimpleNamespace(observation_specs=[object()])
+        )
+        reference = torch.ones((3, 1))
+        weights = compat._poca_inverse_group_size_weights(
+            policy,
+            batch,
+            reference,
+        )
+
+        np.testing.assert_allclose(
+            weights.detach().cpu().numpy(),
+            np.asarray([1.0, 0.5, 1.0 / 3.0], dtype=np.float32),
+            rtol=1e-6,
+            atol=1e-6,
+        )
 
 
 class FixedBetaCompatibilityTests(unittest.TestCase):
