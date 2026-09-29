@@ -72,6 +72,17 @@ namespace Bees.Tests.EditMode
             Assert.That(eventIndex, Is.GreaterThanOrEqualTo(0));
             Assert.That(frameCleanupIndex, Is.GreaterThan(eventIndex),
                 "The episode coordinate frame must remain stable until both MA-POCA groups have received their terminal transition.");
+
+            int inactiveObservationStart = agent.IndexOf("private void AddInactivePolicyObservations", StringComparison.Ordinal);
+            int inactiveObservationEnd = agent.IndexOf("public override void WriteDiscreteActionMask", inactiveObservationStart, StringComparison.Ordinal);
+            Assert.That(inactiveObservationStart, Is.GreaterThanOrEqualTo(0));
+            Assert.That(inactiveObservationEnd, Is.GreaterThan(inactiveObservationStart));
+            string inactiveObservation = agent.Substring(
+                inactiveObservationStart,
+                inactiveObservationEnd - inactiveObservationStart);
+            Assert.That(inactiveObservation, Does.Contain("RlPolicySchema.FactionObservationIndex"));
+            Assert.That(inactiveObservation, Does.Contain("sensor.AddObservation(faction);"),
+                "Partial-group terminal observations must preserve Bee/Human identity for MA-POCA bootstrapping.");
         }
 
         private static string ReadSource(params string[] parts)
