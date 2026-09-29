@@ -100,6 +100,23 @@ class InactiveContinuousActionMaskTests(unittest.TestCase):
         self.assertEqual(float(dimension_mask[0].sum().item()), 10.0)
         self.assertEqual(float(dimension_mask[1].sum().item()), 19.0)
 
+    def test_policy_dimension_mask_excludes_movement_for_immobile_ship(self):
+        from mlagents.torch_utils import torch
+
+        action_spec = self._bees_action_spec()
+        masks = torch.ones((2, sum(compat.BEES_DISCRETE_BRANCHES)))
+        movement_activity = torch.tensor([0.0, 1.0])
+
+        dimension_mask = compat._build_bees_policy_dimension_mask(
+            action_spec,
+            masks,
+            movement_activity=movement_activity,
+        )
+
+        self.assertTrue(torch.all(dimension_mask[0, :2] == 0.0))
+        self.assertTrue(torch.all(dimension_mask[1, :2] == 1.0))
+        self.assertTrue(torch.all(dimension_mask[:, 2:compat.BEES_CONTINUOUS_ACTIONS] == 1.0))
+
     def test_policy_loss_ignores_masked_dimensions_but_uses_active_ones(self):
         from mlagents.torch_utils import torch
 
@@ -258,6 +275,91 @@ class BehavioralCloningWeaponMaskTests(unittest.TestCase):
 
         self.assertAlmostEqual(float(baseline.item()), float(inactive.item()), places=6)
         self.assertGreater(float(active.item()), float(baseline.item()))
+
+    def test_immobile_movement_does_not_change_bc_loss(self):
+        import numpy as np
+        from mlagents.torch_utils import torch
+
+        policy = self._policy()
+        expert = SimpleNamespace(
+            continuous_tensor=torch.zeros((1, compat.BEES_CONTINUOUS_ACTIONS)),
+            discrete_tensor=torch.zeros(
+                (1, len(compat.BEES_DISCRETE_BRANCHES)),
+                dtype=torch.long,
+            ),
+        )
+        log_probs = SimpleNamespace(
+            all_discrete_tensor=torch.zeros(
+                (1, sum(compat.BEES_DISCRETE_BRANCHES))
+            )
+        )
+        weapon_activity = np.ones(
+            (1, compat.BEES_WEAPON_SLOTS),
+            dtype=np.float32,
+        )
+        immobile = np.asarray([0.0], dtype=np.float32)
+        mobile = np.asarray([1.0], dtype=np.float32)
+
+        baseline_actions = SimpleNamespace(
+            continuous_tensor=torch.zeros((1, compat.BEES_CONTINUOUS_ACTIONS))
+        )
+        changed = SimpleNamespace(
+            continuous_tensor=baseline_actions.continuous_tensor.clone()
+        )
+        changed.continuous_tensor[0, 0] = 10.0
+
+        baseline = compat._bees_masked_behavioral_cloning_loss(
+            policy,
+            baseline_actions,
+            log_probs,
+            expert,
+            weapon_activity,
+            immobile,
+        )
+        ignored = compat._bees_masked_behavioral_cloning_loss(
+            policy,
+            changed,
+            log_probs,
+            expert,
+            weapon_activity,
+            immobile,
+        )
+        active = compat._bees_masked_behavioral_cloning_loss(
+            policy,
+            changed,
+            log_probs,
+            expert,
+            weapon_activity,
+            mobile,
+        )
+
+        self.assertAlmostEqual(float(baseline.item()), float(ignored.item()), places=6)
+        self.assertGreater(float(active.item()), float(baseline.item()))
+
+    def test_movement_activity_uses_frozen_self_mobile_channel(self):
+        import numpy as np
+        from mlagents.trainers.buffer import AgentBuffer
+        from mlagents.trainers.trajectory import ObsUtil
+
+        batch = AgentBuffer()
+        for mobile in (0.0, 1.0):
+            observation = np.zeros(
+                compat.BEES_OBSERVATION_SIZE,
+                dtype=np.float32,
+            )
+            observation[compat.BEES_SELF_IS_MOBILE_INDEX] = mobile
+            batch[ObsUtil.get_name_at(0)].append(observation)
+
+        policy = self._policy()
+        policy.behavior_spec.observation_specs = [
+            SimpleNamespace(shape=(compat.BEES_OBSERVATION_SIZE,))
+        ]
+        activity = compat._bees_movement_activity(policy, batch)
+
+        np.testing.assert_array_equal(
+            activity,
+            np.asarray([0.0, 1.0], dtype=np.float32),
+        )
 
 
 class PocaAdvantageNormalizationTests(unittest.TestCase):
