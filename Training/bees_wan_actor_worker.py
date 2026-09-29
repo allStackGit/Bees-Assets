@@ -560,6 +560,29 @@ class ActorSession:
         if callback is not None:
             callback()
 
+    def _retry_broker_unavailable(
+        self,
+        operation: Callable[[], Any],
+        *,
+        label: str,
+    ) -> Any:
+        """Keep the live Unity session intact across transient broker transport loss."""
+        reported = False
+        while not self.stop.is_set():
+            try:
+                return operation()
+            except BrokerUnavailable as exc:
+                if not reported:
+                    print(
+                        f"[Bees WAN actor] {label} paused while central trainer is unavailable: "
+                        f"{exc}; keeping local Unity environments alive.",
+                        file=sys.stderr,
+                        flush=True,
+                    )
+                    reported = True
+                self.stop.wait(1.0)
+        raise KeyboardInterrupt
+
     def _write_throughput_metrics(self, *, force: bool = False) -> None:
         path = self._throughput_metrics_path
         if path is None:
@@ -762,23 +785,30 @@ class ActorSession:
             self.manager.set_policy(behavior_id, template)
 
         self._report_startup_phase("registering-session")
-        self.client.register(
-            {
-                "session_id": self.session_id,
-                "actor_id": self.actor_id,
-                "control_epoch": self.control_epoch,
-                "behavior_specs": dict(behavior_specs),
-            }
+        registration = {
+            "session_id": self.session_id,
+            "actor_id": self.actor_id,
+            "control_epoch": self.control_epoch,
+            "behavior_specs": dict(behavior_specs),
+        }
+        self._retry_broker_unavailable(
+            lambda: self.client.register(registration),
+            label="registration",
         )
-        self.client.reset_ack(
-            {
-                "session_id": self.session_id,
-                "actor_id": self.actor_id,
-                "control_epoch": self.control_epoch,
-            }
+        reset_ack = {
+            "session_id": self.session_id,
+            "actor_id": self.actor_id,
+            "control_epoch": self.control_epoch,
+        }
+        self._retry_broker_unavailable(
+            lambda: self.client.reset_ack(reset_ack),
+            label="initial reset acknowledgement",
         )
         self._report_startup_phase("synchronizing-policy")
-        self._synchronize_state(require_policy=True)
+        self._retry_broker_unavailable(
+            lambda: self._synchronize_state(require_policy=True),
+            label="initial policy synchronization",
+        )
 
         self._uploader = threading.Thread(target=self._upload_loop, name="bees-wan-upload", daemon=True)
         self._watcher = threading.Thread(target=self._watch_loop, name="bees-wan-watch", daemon=True)
@@ -1024,7 +1054,10 @@ class ActorSession:
             if self._session_changed.is_set():
                 raise BrokerSessionChanged("central WAN trainer session changed")
             if self._state_changed.is_set() or self._stale.is_set():
-                self._synchronize_state()
+                self._retry_broker_unavailable(
+                    self._synchronize_state,
+                    label="policy/control synchronization",
+                )
                 self._report_runtime_progress()
                 continue
 
