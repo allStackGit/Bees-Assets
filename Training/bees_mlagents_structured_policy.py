@@ -450,6 +450,11 @@ class BeesStructuredObservationEncoder(nn.Module):
                 "Bees structured policy received an unexpected observation size."
             )
 
+        # Variable slots are already emitted as bounded semantic features by Unity.
+        # Feed those raw values to the shared encoders so an identical entity or weapon
+        # has identical encoder inputs regardless of which absolute slot it occupies.
+        # The full-vector running normalizer remains useful for fixed-position global
+        # state (self, capability, objectives and grids).
         self_obs = normalized[:, SELF_START : SELF_START + SELF_SIZE]
         self_embedding = self.self_encoder(self_obs)
 
@@ -460,7 +465,7 @@ class BeesStructuredObservationEncoder(nn.Module):
             ]
         )
 
-        parent_norm = normalized[:, PARENT_START : PARENT_START + PARENT_SIZE].reshape(
+        parent_norm = raw[:, PARENT_START : PARENT_START + PARENT_SIZE].reshape(
             -1,
             1,
             PARENT_SIZE,
@@ -472,7 +477,7 @@ class BeesStructuredObservationEncoder(nn.Module):
         )
         parent = self._encode_entities(parent_norm, parent_raw)[:, 0, :]
 
-        ally_norm = normalized[
+        ally_norm = raw[
             :,
             ALLY_START : ALLY_START + ALLY_COUNT * ALLY_SIZE,
         ].reshape(-1, ALLY_COUNT, ALLY_SIZE)
@@ -498,7 +503,7 @@ class BeesStructuredObservationEncoder(nn.Module):
             ally_presence,
         )
 
-        enemy_norm = normalized[
+        enemy_norm = raw[
             :,
             ENEMY_START : ENEMY_START + ENEMY_COUNT * ENEMY_SIZE,
         ].reshape(-1, ENEMY_COUNT, ENEMY_SIZE)
@@ -514,7 +519,7 @@ class BeesStructuredObservationEncoder(nn.Module):
             enemy_presence,
         )
 
-        weapon_norm = normalized[
+        weapon_norm = raw[
             :,
             SELF_WEAPON_START :
             SELF_WEAPON_START + BEES_WEAPON_SLOTS * SELF_WEAPON_SIZE,
@@ -535,7 +540,7 @@ class BeesStructuredObservationEncoder(nn.Module):
             weapon_presence,
         )
 
-        mining_norm = normalized[
+        mining_norm = raw[
             :,
             MINING_START : MINING_START + MINING_COUNT * MINING_SIZE,
         ].reshape(-1, MINING_COUNT, MINING_SIZE)
@@ -554,7 +559,7 @@ class BeesStructuredObservationEncoder(nn.Module):
             mining_presence,
         )
 
-        map_norm = normalized[
+        map_norm = raw[
             :,
             MAP_OBJECT_START :
             MAP_OBJECT_START + MAP_OBJECT_COUNT * MAP_OBJECT_SIZE,
@@ -575,7 +580,7 @@ class BeesStructuredObservationEncoder(nn.Module):
             map_presence,
         )
 
-        collision_norm = normalized[
+        collision_norm = raw[
             :,
             COLLISION_START :
             COLLISION_START + COLLISION_COUNT * COLLISION_SIZE,
