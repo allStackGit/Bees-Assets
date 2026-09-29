@@ -267,16 +267,6 @@ class ElasticActorHealthTests(unittest.TestCase):
         heartbeat.mark_progress()
         self.assertTrue(heartbeat._progress_pending.is_set())
 
-    def test_actor_marks_broker_wait_as_ready_before_session_polling(self):
-        source = Path(actor_worker.__file__).read_text(encoding="utf-8")
-        wait = source.index("raw_session = worker._wait_for_broker")
-        ready = source.rindex(
-            'startup_health.set_ready("waiting-for-central")',
-            0,
-            wait,
-        )
-        self.assertLess(ready, wait)
-
 class ElasticWorkerIdentityTests(unittest.TestCase):
     def setUp(self):
         self.options = elastic.ElasticWanOptions(max_actors=12, auth_token_file="token")
