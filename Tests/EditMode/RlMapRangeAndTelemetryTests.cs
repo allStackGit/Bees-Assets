@@ -224,6 +224,99 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void EnvironmentTelemetryCountsHazardsMiningAndUniqueAsteroidsPerArena()
+        {
+            const BindingFlags flags = BindingFlags.Static | BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public;
+            Type diagnosticsType = RuntimeAssembly.GetType("RlOneVsOneEpisodeDiagnostics");
+            Type levelType = RuntimeAssembly.GetType("Assets.Scripts.Levels.Level");
+            Type shipType = RuntimeAssembly.GetType("Assets.Scripts.Entities.Ships.Ship");
+            Type miningAsteroidType = RuntimeAssembly.GetType("Assets.Scripts.Entities.MiningAsteroid");
+
+            MethodInfo setState = diagnosticsType.GetMethod("SetStateForTests", flags);
+            MethodInfo reset = diagnosticsType.GetMethod("ResetForTests", flags);
+            MethodInfo recordDamage = diagnosticsType.GetMethod("RecordUnattributedDamage", flags);
+            MethodInfo recordMining = diagnosticsType.GetMethod("RecordMiningOutcome", flags);
+            MethodInfo recordAsteroidSpawn = diagnosticsType.GetMethod("RecordCollisionAsteroidSpawned", flags);
+            MethodInfo buildEnvironment = diagnosticsType.GetMethod("BuildEnvironmentEpisodeFields", flags);
+            MethodInfo buildDetail = diagnosticsType.GetMethod("BuildEpisodeFields", flags);
+
+            Assert.That(setState, Is.Not.Null);
+            Assert.That(reset, Is.Not.Null);
+            Assert.That(recordDamage, Is.Not.Null);
+            Assert.That(recordMining, Is.Not.Null);
+            Assert.That(recordAsteroidSpawn, Is.Not.Null);
+            Assert.That(buildEnvironment, Is.Not.Null);
+            Assert.That(buildDetail, Is.Not.Null);
+
+            GameObject arenaObject = new GameObject("RL environment telemetry arena");
+            GameObject beeObject = new GameObject("RL telemetry bee ship");
+            GameObject humanObject = new GameObject("RL telemetry human ship");
+            GameObject asteroidObject = new GameObject("RL telemetry mining asteroid");
+            Component arena = arenaObject.AddComponent(levelType);
+            Component beeShip = beeObject.AddComponent(shipType);
+            Component humanShip = humanObject.AddComponent(shipType);
+            Component asteroid = asteroidObject.AddComponent(miningAsteroidType);
+
+            try
+            {
+                reset.Invoke(null, null);
+                setState.Invoke(null, new object[] { arena, 1, 2 });
+
+                SetField(beeShip, "Level", arena);
+                SetField(beeShip, "Side", 1);
+                SetField(beeShip, "Id", 101L);
+                SetField(beeShip, "Health", 0);
+
+                SetField(humanShip, "Level", arena);
+                SetField(humanShip, "Side", 2);
+                SetField(humanShip, "Id", 102L);
+                SetField(humanShip, "Health", 5);
+
+                SetField(asteroid, "Level", arena);
+                SetField(asteroid, "Id", 201);
+
+                recordDamage.Invoke(null, new object[] { beeShip, 30, "static_obstacle", false });
+                recordDamage.Invoke(null, new object[] { humanShip, 5, "collision_asteroid", false });
+                SetField(humanShip, "Health", 0);
+                recordDamage.Invoke(null, new object[] { humanShip, 10, "collision_asteroid", false });
+
+                recordMining.Invoke(null, new object[] { beeShip, asteroid, 12, false });
+                recordMining.Invoke(null, new object[] { beeShip, asteroid, 8, true });
+                recordAsteroidSpawn.Invoke(null, new object[] { arena });
+                recordAsteroidSpawn.Invoke(null, new object[] { arena });
+
+                string environment = (string)buildEnvironment.Invoke(null, new object[] { arena });
+                Assert.That(environment, Does.Contain("bee_static_contacts=1"));
+                Assert.That(environment, Does.Contain("bee_static_deaths=1"));
+                Assert.That(environment, Does.Contain("human_asteroid_hits=2"));
+                Assert.That(environment, Does.Contain("human_asteroid_damage=15"));
+                Assert.That(environment, Does.Contain("human_asteroid_deaths=1"));
+                Assert.That(environment, Does.Contain("collision_asteroids_spawned=2"));
+                Assert.That(environment, Does.Contain("bee_mining_events=2"));
+                Assert.That(environment, Does.Contain("bee_resources_mined=20"));
+                Assert.That(environment, Does.Contain("bee_mining_asteroids_mined=1"),
+                    "Repeated extraction from one asteroid must count that asteroid once.");
+                Assert.That(environment, Does.Contain("bee_mining_asteroids_depleted=1"));
+
+                string detail = (string)buildDetail.Invoke(null, new object[] { arena, false });
+                Assert.That(detail, Does.Not.Contain("bee_static_deaths_by_ship=none"));
+                Assert.That(detail, Does.Not.Contain("human_asteroid_deaths_by_ship=none"));
+                Assert.That(detail, Does.Contain("/static_obstacle:1"),
+                    "Lethal static contacts should become explicit ship outcomes.");
+                Assert.That(detail, Does.Contain("/collision_asteroid:1"),
+                    "Lethal asteroid contacts should become explicit ship outcomes.");
+            }
+            finally
+            {
+                reset.Invoke(null, null);
+                UnityEngine.Object.DestroyImmediate(asteroidObject);
+                UnityEngine.Object.DestroyImmediate(humanObject);
+                UnityEngine.Object.DestroyImmediate(beeObject);
+                UnityEngine.Object.DestroyImmediate(arenaObject);
+            }
+        }
+
+        [Test]
         public void EpisodeCoordinatorLogsDiagnosticsForEveryArena()
         {
             string coordinator = ReadSource("Scripts", "Scenes", "RlOneVsOneEpisodeCoordinator.cs");
@@ -268,6 +361,15 @@ namespace Bees.Tests.EditMode
         {
             TargetInvocationException exception = Assert.Throws<TargetInvocationException>(() => Parse(args));
             Assert.That(exception.InnerException, Is.TypeOf<ArgumentException>());
+        }
+
+        private static void SetField(object target, string fieldName, object value)
+        {
+            FieldInfo field = target.GetType().GetField(
+                fieldName,
+                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            Assert.That(field, Is.Not.Null, fieldName);
+            field.SetValue(target, value);
         }
 
         private static int CountOccurrences(string source, string value)
