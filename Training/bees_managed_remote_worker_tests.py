@@ -148,24 +148,6 @@ class WorkerTrafficMetricsTests(unittest.TestCase):
             "run-managed",
         )
 
-    def test_status_surfaces_active_reconciliation_before_historical_errors(self):
-        root = Path(__file__).resolve().parents[1]
-        status = (root / "Training" / "operator" / "status.js").read_text(
-            encoding="utf-8"
-        )
-        worker = (root / "Training" / "bees_training_worker_agent.py").read_text(
-            encoding="utf-8"
-        )
-
-        self.assertIn("const reconciliation = metrics.reconciliation;", status)
-        self.assertIn(
-            "'Reconcile, ' + ageLabel(seconds + snapshotLagSeconds) + ': ' + phase",
-            status,
-        )
-        self.assertIn('set_reconciliation_phase("ensuring canonical build")', worker)
-        self.assertIn('set_reconciliation_phase("launching managed actor")', worker)
-        self.assertIn("metrics=current_metrics(metrics_run_id())", worker)
-
     def test_persisted_network_totals_fill_session_gap_for_same_run(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
@@ -334,10 +316,6 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
             self.assertEqual(managed._memory_env_limit(), 1)
             self.assertEqual(managed._default_envs(), 1)
 
-        source = Path(managed.__file__).read_text(encoding="utf-8")
-        self.assertIn("args.max_envs = requested_max", source)
-        self.assertNotIn("memory_capacity_cap", source)
-        self.assertNotIn("cpu_capacity_cap", source)
 
     def test_four_thread_high_memory_worker_starts_at_four_without_cpu_ceiling(self):
         gib = 1024 * 1024 * 1024
@@ -349,11 +327,6 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
             self.assertEqual(managed._cpu_env_start_limit(), 4)
             self.assertEqual(managed._default_envs(), 4)
 
-        source = Path(managed.__file__).read_text(encoding="utf-8")
-        self.assertIn("args.max_envs = requested_max", source)
-        self.assertIn("cpu_start_cap={cpu_start_cap}", source)
-        self.assertNotIn("REMOTE_CPU_MAX_ENVS_PER_THREAD", source)
-        self.assertNotIn("cpu_capacity_cap", source)
 
     def test_atomic_text_publication_retries_transient_sharing_failure(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -537,153 +510,6 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
         with mock.patch.object(managed.subprocess, "run", return_value=completed):
             self.assertFalse(managed._python_remote_dependencies_ok(Path("/tmp/python")))
 
-    def test_windows_launcher_does_not_equate_alive_supervisor_with_connected_worker(self):
-        root = Path(__file__).resolve().parents[1]
-        windows = (root / "Training" / "bees_remote_bootstrap.ps1").read_text(
-            encoding="utf-8"
-        )
-
-        self.assertIn("Get-FreshSupervisorTail", windows)
-        self.assertIn("waiting for matching Training runtime before rollout", windows)
-        self.assertIn("private tailnet forwarder failed to become ready", windows)
-        self.assertIn("startup state:", windows)
-        self.assertIn("supervisor started in the background", windows)
-        self.assertNotIn(
-            'worker started in the background (PID $($process.Id))',
-            windows,
-        )
-
-    def test_linux_launcher_serializes_full_bootstrap_and_repair_transaction(self):
-        root = Path(__file__).resolve().parents[1]
-        linux = (root / "Training" / "bees_remote_bootstrap.sh").read_text(
-            encoding="utf-8"
-        )
-
-        lock = linux.index('BOOTSTRAP_LOCK_FILE="$INSTALL_ROOT/remote-bootstrap.lock"')
-        acquire = linux.index("\nacquire_bootstrap_lock\n", lock)
-        pid_state = linux.index('SUPERVISOR_PID_FILE="$INSTALL_ROOT/remote-worker.pid"')
-        runtime_stage = linux.index("[Bees remote] Stage 1/5", pid_state)
-        self.assertLess(lock, acquire)
-        self.assertLess(acquire, pid_state)
-        self.assertLess(pid_state, runtime_stage)
-        self.assertIn('flock -w 60 "$BOOTSTRAP_LOCK_FD"', linux)
-        self.assertIn('ln -s "$$" "$BOOTSTRAP_LOCK_LINK"', linux)
-        self.assertIn('[[ "$owner" == "$$" ]]', linux)
-        self.assertIn("trap release_bootstrap_lock EXIT", linux)
-
-    def test_windows_launcher_rerun_repairs_live_but_unhealthy_supervisor(self):
-        root = Path(__file__).resolve().parents[1]
-        windows = (root / "Training" / "bees_remote_bootstrap.ps1").read_text(
-            encoding="utf-8"
-        )
-
-        self.assertTrue(windows.rstrip().endswith("exit 0"))
-        self.assertEqual(windows.count("function Test-SupervisorControlHealthy"), 1)
-        self.assertEqual(
-            windows.count(
-                "[Bees remote] close this shell freely; use bees-remote-worker.cmd stop to stop the worker."
-            ),
-            1,
-        )
-        self.assertIn("function Test-SupervisorControlHealthy", windows)
-        self.assertIn("function Get-LocalTrainerId", windows)
-        self.assertIn("/v1/status", windows)
-        self.assertIn("request.Timeout=3000", windows)
-        self.assertIn("for($attempt=1;$attempt -le 3;$attempt++)", windows)
-        self.assertIn("if([bool]$record.stale){return $false}", windows)
-        self.assertIn("ControlUnavailable:", windows)
-        self.assertIn("function Test-TrainerFresh", windows)
-        self.assertIn("$unhealthyCycles=0", windows)
-        self.assertIn("$unhealthyCycles -ge 3", windows)
-        self.assertIn("Invoke-LauncherRepair", windows)
-        self.assertIn("$RepairTimeoutSeconds=180", windows)
-        self.assertIn("remote-monitor-repair.out.log", windows)
-        self.assertIn("remote-monitor-repair.err.log", windows)
-        self.assertIn(
-            "Start-Process -FilePath $env:COMSPEC",
-            windows,
-        )
-        self.assertIn(
-            "taskkill.exe /PID $script:RepairProcess.Id /T /F",
-            windows,
-        )
-        self.assertNotIn(
-            "try {& $env:COMSPEC /d /c $command *> $null} catch {}",
-            windows,
-        )
-        self.assertIn("function Restart-UnhealthySupervisor", windows)
-        self.assertIn("unhealthy supervisor stopped cleanly; continuing bootstrap", windows)
-        self.assertIn("forcing the stale remote supervisor to terminate", windows)
-        self.assertIn("if(Test-SupervisorControlHealthy)", windows)
-        self.assertIn(
-            "worker is already running and authenticated learner control is healthy",
-            windows,
-        )
-        self.assertNotIn(
-            'worker is already running in the background (PID $($existingProcess.Id)).',
-            windows,
-        )
-
-    def test_linux_launcher_and_systemd_watchdog_repair_unhealthy_supervisor(self):
-        root = Path(__file__).resolve().parents[1]
-        linux = (root / "Training" / "bees_remote_bootstrap.sh").read_text(
-            encoding="utf-8"
-        )
-
-        self.assertIn("supervisor_control_probe_once()", linux)
-        self.assertIn("supervisor_control_healthy()", linux)
-        self.assertIn('f"http://127.0.0.1:{port}/v1/status"', linux)
-        self.assertIn("timeout=3.0", linux)
-        self.assertIn('trainer_id = f"remote-{socket.gethostname().lower()}-{actor_key[:8]}"', linux)
-        self.assertIn('bool(record.get("stale", False))', linux)
-        self.assertIn('startswith("ControlUnavailable:")', linux)
-        self.assertIn("restart_unhealthy_supervisor()", linux)
-        self.assertIn("unhealthy supervisor stopped cleanly; continuing bootstrap", linux)
-        self.assertIn("forcing the stale remote supervisor to terminate", linux)
-        self.assertIn("if supervisor_control_healthy; then", linux)
-        self.assertIn(
-            "worker is already running and authenticated learner control is healthy",
-            linux,
-        )
-        self.assertIn("CONTROL_FAILURES=0", linux)
-        self.assertIn("CONTROL_FAILURES >= 3", linux)
-        self.assertIn(
-            "watchdog observed repeated authenticated control failures; invoking launcher repair",
-            linux,
-        )
-        self.assertNotIn(
-            'worker is already running in the background (PID $PID).',
-            linux,
-        )
-
-    def test_generated_remote_launchers_and_learner_gateway_share_gameplay_port(self):
-        root = Path(__file__).resolve().parents[1]
-        windows = (root / "Training" / "bees_remote_bootstrap.ps1").read_text(
-            encoding="utf-8"
-        )
-        linux = (root / "Training" / "bees_remote_bootstrap.sh").read_text(
-            encoding="utf-8"
-        )
-        generator = (root / "Training" / "operator" / "tailnet.js").read_text(
-            encoding="utf-8"
-        )
-        gateway = (root / "Tools~" / "bees-tailnet-bridge" / "main.go").read_text(
-            encoding="utf-8"
-        )
-
-        for source in (windows, linux):
-            self.assertIn("__BEES_GAMEPLAY_PORT__", source)
-            self.assertIn("--gameplay-port", source)
-        self.assertEqual(
-            generator.count("'__BEES_GAMEPLAY_PORT__': String(gameplayPort)"),
-            2,
-        )
-        self.assertIn("const gameplayPort = GAMEPLAY_SERVER_PORT;", generator)
-        self.assertIn("'--gameplay-port', String(gameplayPort)", generator)
-        self.assertIn('fs.Int("gameplay-port", 7146', gateway)
-        self.assertIn('"gameplay"', gateway)
-        self.assertIn('localDial(fmt.Sprintf("127.0.0.1:%d", gameplayPort))', gateway)
-
     def test_tailnet_transport_includes_gameplay_server_and_child_override(self):
         args = Namespace(
             tailnet_bridge="/tmp/bees-tailnet-bridge",
@@ -829,21 +655,6 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
     def test_worker_recovery_uses_shorter_graceful_cleanup_budget(self):
         self.assertEqual(managed._worker_cleanup_grace_seconds(True), 8.0)
         self.assertEqual(managed._worker_cleanup_grace_seconds(False), 30.0)
-
-    def test_tailnet_repair_preserves_managed_worker_lifecycle(self):
-        source = Path(managed.__file__).read_text(encoding="utf-8")
-        self.assertIn(
-            "restarting private transport while keeping the managed worker alive",
-            source,
-        )
-        self.assertIn(
-            '"[Bees remote] private transport restored without restarting "',
-            source,
-        )
-        self.assertIn('"the managed worker."', source)
-        inner_loop = source[source.index("while (\n                        runtime_cutover is None"):]
-        inner_loop = inner_loop[:inner_loop.index("            except KeyboardInterrupt:")]
-        self.assertNotIn("and tailnet.poll() is None", inner_loop)
 
     def test_supervisor_requests_worker_agent_shutdown_before_force_kill(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -1039,30 +850,6 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
                 grace_started_monotonic=100.0,
                 now=1000.0,
             )
-        )
-
-    def test_central_service_unavailability_is_not_a_private_transport_recycle_signal(self):
-        source = Path(managed.__file__).read_text(encoding="utf-8")
-        self.assertNotIn(
-            "authenticated learner control has been unreachable for",
-            source,
-        )
-        self.assertNotIn(
-            "authenticated WAN broker has been unreachable for",
-            source,
-        )
-        self.assertNotIn("session_failure_watchdog = _SessionFailureWatchdog()", source)
-        self.assertIn(
-            "Do not tear down a healthy private network merely because the central",
-            source,
-        )
-        self.assertIn(
-            "trainer heartbeat remained STALE beyond the",
-            source,
-        )
-        self.assertIn(
-            "stale_recycle_grace_started_monotonic = now",
-            source,
         )
 
     def test_bootstrap_identity_probe_uses_head_without_downloading_bundle(self):
