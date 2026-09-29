@@ -225,6 +225,18 @@ class ElasticActorLiveResizeTests(unittest.TestCase):
         self.assertEqual(len(manager.recent_restart_timestamps), 3)
         self.assertEqual(len(manager.restart_counts), 3)
 
+    def test_downscale_waits_for_upload_without_requeueing_idle_tail(self):
+        tail = SimpleNamespace(worker_id=2, waiting=False)
+        manager = SimpleNamespace(env_workers=[SimpleNamespace(worker_id=0), SimpleNamespace(worker_id=1), tail])
+        session = self._session(manager, 3)
+        session._env_target_path = mock.Mock()
+        session._desired_env_count = mock.Mock(return_value=2)
+        session._upload_queue.put({"trajectories": [object()]})
+        session._scale_down_one = mock.Mock()
+
+        self.assertTrue(session._reconcile_env_count())
+        session._scale_down_one.assert_not_called()
+
     def test_scale_down_retires_only_tail_worker(self):
         from mlagents.trainers.subprocess_env_manager import (
             EnvironmentCommand,
