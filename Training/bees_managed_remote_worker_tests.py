@@ -794,9 +794,23 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
         )
         process.kill.assert_called_once()
 
-    def test_transport_watchdog_recovery_uses_shorter_graceful_cleanup_budget(self):
+    def test_worker_recovery_uses_shorter_graceful_cleanup_budget(self):
         self.assertEqual(managed._worker_cleanup_grace_seconds(True), 8.0)
         self.assertEqual(managed._worker_cleanup_grace_seconds(False), 30.0)
+
+    def test_tailnet_repair_preserves_managed_worker_lifecycle(self):
+        source = Path(managed.__file__).read_text(encoding="utf-8")
+        self.assertIn(
+            "restarting private transport while keeping the managed worker alive",
+            source,
+        )
+        self.assertIn(
+            "private transport restored without restarting the managed worker",
+            source,
+        )
+        inner_loop = source[source.index("while (\n                        runtime_cutover is None"):]
+        inner_loop = inner_loop[:inner_loop.index("            except KeyboardInterrupt:")]
+        self.assertNotIn("and tailnet.poll() is None", inner_loop)
 
     def test_supervisor_requests_worker_agent_shutdown_before_force_kill(self):
         with tempfile.TemporaryDirectory() as temp:
