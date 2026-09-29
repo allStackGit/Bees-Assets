@@ -107,8 +107,17 @@ async function requestCentralDiagnosticModelSnapshot(status, targetRunId, output
         });
 
         console.log('Requesting current learner ONNX snapshot...');
-        const deadline = Date.now() + 60000;
+        // Snapshot export runs on the learner thread at a safe trainer boundary. A large PPO
+        // update can legitimately occupy that thread for several minutes, so the diagnostic
+        // request must outlive one slow update rather than incorrectly timing out after 60s.
+        const snapshotTimeoutMs = 10 * 60 * 1000;
+        const deadline = Date.now() + snapshotTimeoutMs;
         while (Date.now() < deadline) {
+            if (getRunningCentralAgentPid() <= 0) {
+                result.status = 'failed';
+                result.reason = 'managed central learner stopped while waiting for diagnostic model snapshot';
+                return;
+            }
             if (exists(paths.centralModelSnapshotResponsePath)) {
                 try {
                     const response = readJson(paths.centralModelSnapshotResponsePath);
@@ -122,7 +131,7 @@ async function requestCentralDiagnosticModelSnapshot(status, targetRunId, output
         }
         result.status = 'timeout';
         result.reason =
-            'live learner did not complete the diagnostic model snapshot within 60 seconds';
+            'live learner did not complete the diagnostic model snapshot within 10 minutes';
     } catch (error) {
         result.status = 'failed';
         result.reason = error.name + ': ' + error.message;
