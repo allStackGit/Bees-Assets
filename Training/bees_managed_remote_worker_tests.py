@@ -560,14 +560,15 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
         )
 
         lock = linux.index('BOOTSTRAP_LOCK_FILE="$INSTALL_ROOT/remote-bootstrap.lock"')
-        acquire = linux.index("acquire_bootstrap_lock", lock)
+        acquire = linux.index("\nacquire_bootstrap_lock\n", lock)
         pid_state = linux.index('SUPERVISOR_PID_FILE="$INSTALL_ROOT/remote-worker.pid"')
         runtime_stage = linux.index("[Bees remote] Stage 1/5", pid_state)
         self.assertLess(lock, acquire)
         self.assertLess(acquire, pid_state)
         self.assertLess(pid_state, runtime_stage)
         self.assertIn('flock -w 60 "$BOOTSTRAP_LOCK_FD"', linux)
-        self.assertIn('ln -s "$$" "$BOOTSTRAP_LOCK_LINK"', linux)
+        self.assertIn('ln -s "$" "$BOOTSTRAP_LOCK_LINK"', linux)
+        self.assertIn('[[ "$owner" == "$" ]]', linux)
         self.assertIn("trap release_bootstrap_lock EXIT", linux)
 
     def test_windows_launcher_rerun_repairs_live_but_unhealthy_supervisor(self):
