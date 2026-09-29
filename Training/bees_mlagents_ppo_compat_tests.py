@@ -117,6 +117,28 @@ class InactiveContinuousActionMaskTests(unittest.TestCase):
         self.assertTrue(torch.all(dimension_mask[1, :2] == 1.0))
         self.assertTrue(torch.all(dimension_mask[:, 2:compat.BEES_CONTINUOUS_ACTIONS] == 1.0))
 
+    def test_policy_dimension_mask_excludes_forced_noop_capability_branch(self):
+        from mlagents.torch_utils import torch
+
+        action_spec = self._bees_action_spec()
+        masks = torch.ones((1, sum(compat.BEES_DISCRETE_BRANCHES)))
+        special_start = sum(compat.BEES_DISCRETE_BRANCHES[:-1])
+        masks[
+            :,
+            special_start + 1 :
+            special_start + compat.BEES_DISCRETE_BRANCHES[-1],
+        ] = 0.0
+
+        dimension_mask = compat._build_bees_policy_dimension_mask(
+            action_spec,
+            masks,
+        )
+
+        self.assertEqual(
+            float(dimension_mask[0, compat.BEES_CONTINUOUS_ACTIONS + compat.BEES_WEAPON_SLOTS].item()),
+            0.0,
+        )
+
     def test_policy_loss_ignores_masked_dimensions_but_uses_active_ones(self):
         from mlagents.torch_utils import torch
 
@@ -350,6 +372,17 @@ class BehavioralCloningWeaponMaskTests(unittest.TestCase):
             observation[compat.BEES_SELF_IS_MOBILE_INDEX] = mobile
             batch[ObsUtil.get_name_at(0)].append(observation)
 
+        charging_barge = np.zeros(
+            compat.BEES_OBSERVATION_SIZE,
+            dtype=np.float32,
+        )
+        charging_barge[compat.BEES_SELF_IS_MOBILE_INDEX] = 1.0
+        charging_barge[compat.BEES_SELF_SHIP_TYPE_INDEX] = (
+            compat.BEES_BARGE_SHIP_TYPE_SCALAR
+        )
+        charging_barge[compat.BEES_CAPABILITY_SPECIAL_PHASE_INDEX] = 1.0 / 3.0
+        batch[ObsUtil.get_name_at(0)].append(charging_barge)
+
         policy = self._policy()
         policy.behavior_spec.observation_specs = [
             SimpleNamespace(shape=(compat.BEES_OBSERVATION_SIZE,))
@@ -358,8 +391,68 @@ class BehavioralCloningWeaponMaskTests(unittest.TestCase):
 
         np.testing.assert_array_equal(
             activity,
-            np.asarray([0.0, 1.0], dtype=np.float32),
+            np.asarray([0.0, 1.0, 0.0], dtype=np.float32),
         )
+
+    def test_inactive_capability_branch_does_not_change_bc_loss(self):
+        import numpy as np
+        from mlagents.torch_utils import torch
+
+        policy = self._policy()
+        expert = SimpleNamespace(
+            continuous_tensor=torch.zeros((1, compat.BEES_CONTINUOUS_ACTIONS)),
+            discrete_tensor=torch.zeros(
+                (1, len(compat.BEES_DISCRETE_BRANCHES)),
+                dtype=torch.long,
+            ),
+        )
+        selected = SimpleNamespace(
+            continuous_tensor=torch.zeros((1, compat.BEES_CONTINUOUS_ACTIONS))
+        )
+        weapon_activity = np.ones(
+            (1, compat.BEES_WEAPON_SLOTS),
+            dtype=np.float32,
+        )
+        movement_activity = np.ones((1,), dtype=np.float32)
+
+        baseline_logits = torch.zeros(
+            (1, sum(compat.BEES_DISCRETE_BRANCHES))
+        )
+        changed_logits = baseline_logits.clone()
+        special_start = sum(compat.BEES_DISCRETE_BRANCHES[:-1])
+        changed_logits[0, special_start] = -10.0
+        changed_logits[0, special_start + 1] = 10.0
+
+        baseline = compat._bees_masked_behavioral_cloning_loss(
+            policy,
+            selected,
+            SimpleNamespace(all_discrete_tensor=baseline_logits),
+            expert,
+            weapon_activity,
+            movement_activity,
+            np.asarray([0.0], dtype=np.float32),
+        )
+        ignored = compat._bees_masked_behavioral_cloning_loss(
+            policy,
+            selected,
+            SimpleNamespace(all_discrete_tensor=changed_logits),
+            expert,
+            weapon_activity,
+            movement_activity,
+            np.asarray([0.0], dtype=np.float32),
+        )
+        active = compat._bees_masked_behavioral_cloning_loss(
+            policy,
+            selected,
+            SimpleNamespace(all_discrete_tensor=changed_logits),
+            expert,
+            weapon_activity,
+            movement_activity,
+            np.asarray([1.0], dtype=np.float32),
+        )
+
+        self.assertAlmostEqual(float(baseline.item()), float(ignored.item()), places=6)
+        self.assertGreater(float(active.item()), float(baseline.item()))
 
 
 class PocaAdvantageNormalizationTests(unittest.TestCase):
