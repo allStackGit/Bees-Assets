@@ -641,9 +641,15 @@ def create_bundle(
                     )
 
         model = _snapshot_model(snapshot_value, results_root, warnings)
-        model_source = "live-snapshot" if model is not None else "latest-on-disk"
-        if model is None:
+        live_snapshot_requested = bool(snapshot_value)
+        model_source = "live-snapshot" if model is not None else "unavailable"
+        if model is None and not live_snapshot_requested:
+            # Historical/offline bundles have no live learner to query, so newest retained ONNX
+            # remains the correct best-available artifact. For an active live snapshot request,
+            # however, substituting an older ONNX would misrepresent the network at learner_step.
             model = latest_file(results_root, "*.onnx")
+            if model is not None:
+                model_source = "latest-on-disk"
 
         status_run = _run_from_status(status_json)
         same_live_run = not status_run or status_run == resolved_run
