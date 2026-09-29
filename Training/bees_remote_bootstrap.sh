@@ -284,6 +284,61 @@ EOF
 }
 
 mkdir -p "$INSTALL_ROOT"
+
+# Manual starts and the user-systemd watchdog can invoke this launcher concurrently. Serialize the
+# entire bootstrap/repair transaction so runtime extraction, token replacement, Tailnet state,
+# Python environment mutation, and supervisor stop/start cannot overlap.
+BOOTSTRAP_LOCK_FILE="$INSTALL_ROOT/remote-bootstrap.lock"
+BOOTSTRAP_LOCK_LINK="$INSTALL_ROOT/remote-bootstrap.lock.owner"
+BOOTSTRAP_LOCK_METHOD=""
+BOOTSTRAP_LOCK_FD=""
+
+acquire_bootstrap_lock() {
+    local deadline=$((SECONDS + 60))
+    if have flock; then
+        exec {BOOTSTRAP_LOCK_FD}>"$BOOTSTRAP_LOCK_FILE"
+        if ! flock -w 60 "$BOOTSTRAP_LOCK_FD"; then
+            echo "error: another Bees remote bootstrap/repair is still active after 60 seconds." >&2
+            exit 1
+        fi
+        BOOTSTRAP_LOCK_METHOD="flock"
+        return
+    fi
+
+    # Portable fallback for minimal systems without util-linux flock. The symlink target publishes
+    # the owner PID atomically, so there is no mkdir/write gap that can leave an ownerless lock.
+    while ! ln -s "$" "$BOOTSTRAP_LOCK_LINK" 2>/dev/null; do
+        local owner=""
+        owner="$(readlink "$BOOTSTRAP_LOCK_LINK" 2>/dev/null || true)"
+        if [[ "$owner" =~ ^[0-9]+$ ]] && ! kill -0 "$owner" 2>/dev/null; then
+            rm -f "$BOOTSTRAP_LOCK_LINK"
+            continue
+        fi
+        if (( SECONDS >= deadline )); then
+            echo "error: another Bees remote bootstrap/repair is still active after 60 seconds." >&2
+            exit 1
+        fi
+        sleep 0.25
+    done
+    BOOTSTRAP_LOCK_METHOD="symlink"
+}
+
+release_bootstrap_lock() {
+    if [[ "$BOOTSTRAP_LOCK_METHOD" == "flock" && -n "$BOOTSTRAP_LOCK_FD" ]]; then
+        flock -u "$BOOTSTRAP_LOCK_FD" >/dev/null 2>&1 || true
+        exec {BOOTSTRAP_LOCK_FD}>&-
+    elif [[ "$BOOTSTRAP_LOCK_METHOD" == "symlink" ]]; then
+        local owner=""
+        owner="$(readlink "$BOOTSTRAP_LOCK_LINK" 2>/dev/null || true)"
+        if [[ "$owner" == "$" ]]; then
+            rm -f "$BOOTSTRAP_LOCK_LINK"
+        fi
+    fi
+}
+
+acquire_bootstrap_lock
+trap release_bootstrap_lock EXIT
+
 SUPERVISOR_PID_FILE="$INSTALL_ROOT/remote-worker.pid"
 SHUTDOWN_REQUEST_FILE="$INSTALL_ROOT/remote-worker.stop"
 LOGS_ROOT="$INSTALL_ROOT/Logs"
