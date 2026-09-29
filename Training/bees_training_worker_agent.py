@@ -963,6 +963,7 @@ class ManagedProcess:
         self.restart_failure_streak = 0
         self.restart_not_before_monotonic = 0.0
         self.last_exit_code: Optional[int] = None
+        self.last_exit_error = ""
 
     def alive(self) -> bool:
         return self.process is not None and self.process.poll() is None
@@ -972,7 +973,7 @@ class ManagedProcess:
             return 0.0
         return max(0.0, self.restart_not_before_monotonic - time.monotonic())
 
-    def record_exit(self, code: Optional[int]) -> float:
+    def record_exit(self, code: Optional[int], error: str = "") -> float:
         now = time.monotonic()
         uptime = (
             max(0.0, now - self.started_monotonic)
@@ -989,6 +990,7 @@ class ManagedProcess:
         delay = MANAGED_RESTART_BACKOFF_SECONDS[index]
         self.restart_not_before_monotonic = now + delay
         self.last_exit_code = code
+        self.last_exit_error = str(error or "")
         self.process = None
         return delay
 
@@ -996,6 +998,7 @@ class ManagedProcess:
         self.restart_failure_streak = 0
         self.restart_not_before_monotonic = 0.0
         self.last_exit_code = None
+        self.last_exit_error = ""
 
     def health(self) -> Optional[dict[str, Any]]:
         if not self.health_required:
@@ -1136,9 +1139,16 @@ class ManagedProcess:
     ) -> None:
         restart_delay = self.restart_delay(command)
         if restart_delay > 0.0:
+            previous = (
+                f"; previous exit code {self.last_exit_code}"
+                if self.last_exit_code is not None
+                else ""
+            )
+            if self.last_exit_error:
+                previous += f"; child error: {self.last_exit_error}"
             raise RuntimeError(
                 "managed process restart deferred for "
-                f"{restart_delay:.1f}s after repeated early exits"
+                f"{restart_delay:.1f}s after repeated early exits{previous}"
             )
         command_changed = tuple(command) != self.command
         self.stop(progress_callback=stop_progress)
@@ -2217,7 +2227,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 if managed.process is not None and managed.process.poll() is not None:
                     code = managed.process.returncode
                     child_error = managed.terminal_health_error()
-                    restart_delay = managed.record_exit(code)
+                    restart_delay = managed.record_exit(code, child_error)
                     detail = f"; child error: {child_error}" if child_error else ""
                     last_error = (
                         f"managed process exited with code {code}{detail}; "
