@@ -1438,6 +1438,15 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--runtime-ready-file", default="")
     parser.add_argument("--runtime-cutover-pointer", default="")
     parser.add_argument("--runtime-state-file", default="")
+    parser.add_argument(
+        "--runtime-cutover-entrypoint",
+        choices=(
+            "bees_continual_elastic_wan_service.py",
+            "bees_elastic_wan_actor_worker.py",
+        ),
+        default="bees_continual_elastic_wan_service.py",
+        help=argparse.SUPPRESS,
+    )
     parser.add_argument("--heartbeat-seconds", type=float, default=5.0)
     parser.add_argument("--request-timeout-seconds", type=float, default=5.0)
     parser.add_argument("--shutdown-request-file", default="")
@@ -1471,7 +1480,10 @@ def _normalized_launch_command(values: Sequence[str]) -> list[str]:
     return command
 
 
-def _load_runtime_cutover_pointer(path_value: str) -> Optional[dict[str, Any]]:
+def _load_runtime_cutover_pointer(
+    path_value: str,
+    expected_entrypoint: str = "bees_continual_elastic_wan_service.py",
+) -> Optional[dict[str, Any]]:
     if not str(path_value).strip():
         return None
     path = Path(path_value).expanduser().resolve()
@@ -1519,14 +1531,22 @@ def _load_runtime_cutover_pointer(path_value: str) -> Optional[dict[str, Any]]:
         service_path is None
         or not service_path.is_file()
         or service_path.parent != runtime_root
-        or service_path.name != "bees_continual_elastic_wan_service.py"
+        or service_path.name != expected_entrypoint
     ):
         raise ValueError(
-            "runtime cutover launch_command does not use the pinned continual service"
+            "runtime cutover launch_command does not use the expected pinned entrypoint "
+            + expected_entrypoint
         )
     if not any(ENV_PLACEHOLDER in token for token in launch_command):
         raise ValueError(
             f"runtime cutover launch_command must contain {ENV_PLACEHOLDER}"
+        )
+    if (
+        expected_entrypoint == "bees_elastic_wan_actor_worker.py"
+        and not any(WORKER_ENVS_PLACEHOLDER in token for token in launch_command)
+    ):
+        raise ValueError(
+            f"actor runtime cutover launch_command must contain {WORKER_ENVS_PLACEHOLDER}"
         )
     return {
         "build_id": build_id,
@@ -1542,9 +1562,10 @@ def _runtime_launch_template(
     build_id: str,
     fallback: Sequence[str],
     cache: Optional[dict[str, list[str]]] = None,
+    expected_entrypoint: str = "bees_continual_elastic_wan_service.py",
 ) -> list[str]:
     target_build = str(build_id)
-    pointer = _load_runtime_cutover_pointer(pointer_path)
+    pointer = _load_runtime_cutover_pointer(pointer_path, expected_entrypoint)
     if pointer is not None:
         pointer_command = list(pointer["launch_command"])
         if cache is not None:
@@ -1824,7 +1845,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 elif args.runtime_cutover_pointer:
                     try:
                         runtime_pointer = _load_runtime_cutover_pointer(
-                            args.runtime_cutover_pointer
+                            args.runtime_cutover_pointer,
+                            args.runtime_cutover_entrypoint,
                         )
                         pointer_build = (
                             runtime_pointer["build_id"] if runtime_pointer else ""
@@ -1839,7 +1861,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         if not preparation_error:
                             preparation_error = (
                                 "Unity artifact is prepared for "
-                                f"{artifact_prepared_build_id}, but the central Python runtime "
+                                f"{artifact_prepared_build_id}, but the managed Python runtime "
                                 f"cutover is not ready: {type(exc).__name__}: {exc}"
                             )
                         prepared_build_id = ""
@@ -1957,6 +1979,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                             str(active_build["build_id"]),
                             command_template,
                             runtime_launch_commands,
+                            args.runtime_cutover_entrypoint,
                         )
                         command = render_command(
                             runtime_command_template,
@@ -2040,6 +2063,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                             str(active_build["build_id"]),
                             command_template,
                             runtime_launch_commands,
+                            args.runtime_cutover_entrypoint,
                         )
                         command = render_command(
                             runtime_command_template,
