@@ -56,6 +56,29 @@ class _SupervisorProcessRestartRequired(RuntimeError):
     """The current process must exit before recovery to avoid overlapping owned state."""
 
 
+def _acquire_posix_supervisor_lock(install_root: Path):
+    """Own one managed supervisor per POSIX install root.
+
+    The launcher and its OS watchdog can race each other. The PID file is diagnostic state, not a
+    mutual-exclusion primitive, so enforce ownership in the supervisor process itself before it can
+    overwrite the PID file or bind the local Tailnet forwarding ports.
+    """
+    if os.name == "nt":
+        return None
+
+    import fcntl
+
+    install_root.mkdir(parents=True, exist_ok=True)
+    lock_path = install_root / "remote-worker.lock"
+    handle = lock_path.open("a+", encoding="ascii")
+    try:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        handle.close()
+        return None
+    return handle
+
+
 class _RunScopedLogSink:
     """Mirror supervisor/child console output into the run-scoped uploaded log tree."""
 
@@ -1897,10 +1920,20 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             return 2
 
     install_root = Path(args.install_root).expanduser().resolve()
+    supervisor_lock = _acquire_posix_supervisor_lock(install_root)
+    if os.name != "nt" and supervisor_lock is None:
+        print(
+            "[Bees remote] another managed supervisor already owns this install root; "
+            "leaving the existing worker in control.",
+            flush=True,
+        )
+        return 0
     try:
         actor_key = _load_actor_key(install_root)
     except (OSError, ValueError) as exc:
         print(f"error: could not establish remote actor identity: {exc}", file=sys.stderr)
+        if supervisor_lock is not None:
+            supervisor_lock.close()
         return 2
 
     pid_file = install_root / REMOTE_PID_FILE
@@ -1909,6 +1942,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         _atomic_bytes(pid_file, f"{os.getpid()}\n".encode("ascii"), 0o600)
     except OSError as exc:
         print(f"error: could not record remote supervisor PID: {exc}", file=sys.stderr)
+        if supervisor_lock is not None:
+            supervisor_lock.close()
         return 2
 
     trainer_id = f"remote-{socket.gethostname().lower()}-{actor_key[:8]}"
@@ -2222,6 +2257,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         except FileNotFoundError:
             pass
         _clear_pid_file_if_owned(pid_file, os.getpid())
+        if supervisor_lock is not None:
+            supervisor_lock.close()
         signal.signal(signal.SIGINT, old_sigint)
         signal.signal(signal.SIGTERM, old_sigterm)
         sys.stdout = original_stdout
