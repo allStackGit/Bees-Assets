@@ -117,6 +117,39 @@ class InactiveContinuousActionMaskTests(unittest.TestCase):
         self.assertTrue(torch.all(dimension_mask[1, :2] == 1.0))
         self.assertTrue(torch.all(dimension_mask[:, 2:compat.BEES_CONTINUOUS_ACTIONS] == 1.0))
 
+    def test_policy_dimension_mask_excludes_solo_communication(self):
+        from mlagents.torch_utils import torch
+
+        action_spec = self._bees_action_spec()
+        masks = torch.ones((2, sum(compat.BEES_DISCRETE_BRANCHES)))
+        communication_activity = torch.tensor([0.0, 1.0])
+
+        dimension_mask = compat._build_bees_policy_dimension_mask(
+            action_spec,
+            masks,
+            communication_activity=communication_activity,
+        )
+        communication_start = (
+            compat.BEES_MOVEMENT_CONTINUOUS_ACTIONS
+            + compat.BEES_WEAPON_SLOTS
+            * compat.BEES_WEAPON_AIM_ACTIONS_PER_SLOT
+        )
+
+        self.assertTrue(torch.all(
+            dimension_mask[
+                0,
+                communication_start :
+                communication_start + compat.BEES_COMMUNICATION_CONTINUOUS_ACTIONS,
+            ] == 0.0
+        ))
+        self.assertTrue(torch.all(
+            dimension_mask[
+                1,
+                communication_start :
+                communication_start + compat.BEES_COMMUNICATION_CONTINUOUS_ACTIONS,
+            ] == 1.0
+        ))
+
     def test_policy_dimension_mask_excludes_forced_noop_capability_branch(self):
         from mlagents.torch_utils import torch
 
@@ -480,7 +513,7 @@ class BehavioralCloningWeaponMaskTests(unittest.TestCase):
             np.asarray([0.0, 1.0, 0.0], dtype=np.float32),
         )
 
-    def test_inactive_capability_branch_does_not_change_bc_loss(self):
+    def test_neutral_capability_frame_is_not_supervised(self):
         import numpy as np
         from mlagents.torch_utils import torch
 
@@ -500,6 +533,7 @@ class BehavioralCloningWeaponMaskTests(unittest.TestCase):
             dtype=np.float32,
         )
         movement_activity = np.ones((1,), dtype=np.float32)
+        special_activity = np.ones((1,), dtype=np.float32)
 
         baseline_logits = torch.zeros(
             (1, sum(compat.BEES_DISCRETE_BRANCHES))
@@ -516,29 +550,127 @@ class BehavioralCloningWeaponMaskTests(unittest.TestCase):
             expert,
             weapon_activity,
             movement_activity,
-            np.asarray([0.0], dtype=np.float32),
+            special_activity,
         )
-        ignored = compat._bees_masked_behavioral_cloning_loss(
+        changed = compat._bees_masked_behavioral_cloning_loss(
             policy,
             selected,
             SimpleNamespace(all_discrete_tensor=changed_logits),
             expert,
             weapon_activity,
             movement_activity,
-            np.asarray([0.0], dtype=np.float32),
-        )
-        active = compat._bees_masked_behavioral_cloning_loss(
-            policy,
-            selected,
-            SimpleNamespace(all_discrete_tensor=changed_logits),
-            expert,
-            weapon_activity,
-            movement_activity,
-            np.asarray([1.0], dtype=np.float32),
+            special_activity,
         )
 
-        self.assertAlmostEqual(float(baseline.item()), float(ignored.item()), places=6)
-        self.assertGreater(float(active.item()), float(baseline.item()))
+        self.assertAlmostEqual(float(baseline.item()), float(changed.item()), places=6)
+
+    def test_explicit_capability_event_is_supervised(self):
+        import numpy as np
+        from mlagents.torch_utils import torch
+
+        policy = self._policy()
+        expert_discrete = torch.zeros(
+            (1, len(compat.BEES_DISCRETE_BRANCHES)),
+            dtype=torch.long,
+        )
+        expert_discrete[0, compat.BEES_WEAPON_SLOTS] = 1
+        expert = SimpleNamespace(
+            continuous_tensor=torch.zeros((1, compat.BEES_CONTINUOUS_ACTIONS)),
+            discrete_tensor=expert_discrete,
+        )
+        selected = SimpleNamespace(
+            continuous_tensor=torch.zeros((1, compat.BEES_CONTINUOUS_ACTIONS))
+        )
+        weapon_activity = np.ones(
+            (1, compat.BEES_WEAPON_SLOTS),
+            dtype=np.float32,
+        )
+        movement_activity = np.ones((1,), dtype=np.float32)
+        special_activity = np.ones((1,), dtype=np.float32)
+
+        baseline_logits = torch.zeros(
+            (1, sum(compat.BEES_DISCRETE_BRANCHES))
+        )
+        wrong_logits = baseline_logits.clone()
+        special_start = sum(compat.BEES_DISCRETE_BRANCHES[:-1])
+        wrong_logits[0, special_start] = 10.0
+        wrong_logits[0, special_start + 1] = -10.0
+
+        baseline = compat._bees_masked_behavioral_cloning_loss(
+            policy,
+            selected,
+            SimpleNamespace(all_discrete_tensor=baseline_logits),
+            expert,
+            weapon_activity,
+            movement_activity,
+            special_activity,
+        )
+        wrong = compat._bees_masked_behavioral_cloning_loss(
+            policy,
+            selected,
+            SimpleNamespace(all_discrete_tensor=wrong_logits),
+            expert,
+            weapon_activity,
+            movement_activity,
+            special_activity,
+        )
+
+        self.assertGreater(float(wrong.item()), float(baseline.item()))
+
+    def test_demonstrations_do_not_supervise_private_communication(self):
+        import numpy as np
+        from mlagents.torch_utils import torch
+
+        policy = self._policy()
+        expert = SimpleNamespace(
+            continuous_tensor=torch.zeros((1, compat.BEES_CONTINUOUS_ACTIONS)),
+            discrete_tensor=torch.zeros(
+                (1, len(compat.BEES_DISCRETE_BRANCHES)),
+                dtype=torch.long,
+            ),
+        )
+        log_probs = SimpleNamespace(
+            all_discrete_tensor=torch.zeros(
+                (1, sum(compat.BEES_DISCRETE_BRANCHES))
+            )
+        )
+        weapon_activity = np.ones(
+            (1, compat.BEES_WEAPON_SLOTS),
+            dtype=np.float32,
+        )
+        movement_activity = np.ones((1,), dtype=np.float32)
+
+        baseline_actions = SimpleNamespace(
+            continuous_tensor=torch.zeros((1, compat.BEES_CONTINUOUS_ACTIONS))
+        )
+        changed_actions = SimpleNamespace(
+            continuous_tensor=baseline_actions.continuous_tensor.clone()
+        )
+        communication_start = (
+            compat.BEES_MOVEMENT_CONTINUOUS_ACTIONS
+            + compat.BEES_WEAPON_SLOTS
+            * compat.BEES_WEAPON_AIM_ACTIONS_PER_SLOT
+        )
+        changed_actions.continuous_tensor[0, communication_start] = 10.0
+
+        baseline = compat._bees_masked_behavioral_cloning_loss(
+            policy,
+            baseline_actions,
+            log_probs,
+            expert,
+            weapon_activity,
+            movement_activity,
+        )
+        changed = compat._bees_masked_behavioral_cloning_loss(
+            policy,
+            changed_actions,
+            log_probs,
+            expert,
+            weapon_activity,
+            movement_activity,
+        )
+
+        self.assertAlmostEqual(float(baseline.item()), float(changed.item()), places=6)
 
 
 class PocaAdvantageNormalizationTests(unittest.TestCase):
@@ -580,6 +712,38 @@ class PocaAdvantageNormalizationTests(unittest.TestCase):
             ),
             1.0,
             places=5,
+        )
+
+
+class PocaCommunicationActivityTests(unittest.TestCase):
+    def test_communication_is_active_only_with_groupmates(self):
+        import numpy as np
+        from mlagents.trainers.buffer import AgentBuffer
+        from mlagents.trainers.trajectory import GroupObsUtil
+
+        batch = AgentBuffer()
+        for groupmate_values in (
+            [],
+            [np.asarray([1.0], dtype=np.float32)],
+            [
+                np.asarray([2.0], dtype=np.float32),
+                np.asarray([3.0], dtype=np.float32),
+            ],
+        ):
+            batch[GroupObsUtil.get_name_at(0)].append(groupmate_values)
+
+        policy = SimpleNamespace(
+            behavior_spec=SimpleNamespace(observation_specs=[object()])
+        )
+        activity = compat._poca_communication_activity(
+            policy,
+            batch,
+            3,
+        )
+
+        np.testing.assert_array_equal(
+            activity,
+            np.asarray([0.0, 1.0, 1.0], dtype=np.float32),
         )
 
 
