@@ -2530,6 +2530,79 @@ test('expired incompatible remote that reconnects before promotion rejoins stop 
     });
 });
 
+test('incompatible release can preserve run id while atomically switching compatibility key', () => {
+    withTempDir(root => {
+        const store = new TrainingControlStore({
+            statePath: path.join(root, 'state.json'),
+            artifactRoot: path.join(root, 'artifacts'),
+        });
+        const oldSha = publishDedicatedBuild(store, root, 'preserve-run-old');
+        publishDedicatedBuild(store, root, 'preserve-run-new');
+
+        store.stageRelease({
+            buildId: 'preserve-run-old',
+            runId: 'preserve-run',
+            compatibilityKey: '7'.repeat(64),
+            incompatible: false,
+        });
+        store.setDesiredState({ training_enabled: true });
+        for (const trainerId of ['remote-a', 'central-learner']) {
+            heartbeatDedicated(store, trainerId, 'preserve-run-old', oldSha);
+        }
+
+        store.stageRelease({
+            buildId: 'preserve-run-new',
+            runId: 'preserve-run',
+            compatibilityKey: '8'.repeat(64),
+            incompatible: true,
+        });
+        for (const trainerId of ['remote-a', 'central-learner']) {
+            heartbeatDedicated(
+                store,
+                trainerId,
+                'preserve-run-old',
+                oldSha,
+                { preparedBuildId: 'preserve-run-new' },
+            );
+        }
+
+        assert.equal(store.state.pending_release.phase, 'stopping');
+        assert.equal(store.state.run_id, 'preserve-run');
+        assert.equal(store.state.compatibility_key, '7'.repeat(64));
+
+        const stoppingRevision = store.state.pending_release.phase_revision;
+        heartbeatDedicated(
+            store,
+            'remote-a',
+            'preserve-run-old',
+            oldSha,
+            {
+                processState: 'stopped',
+                preparedBuildId: 'preserve-run-new',
+                appliedRevision: stoppingRevision,
+            },
+        );
+        assert.equal(store.state.compatibility_key, '7'.repeat(64));
+
+        heartbeatDedicated(
+            store,
+            'central-learner',
+            'preserve-run-old',
+            oldSha,
+            {
+                processState: 'stopped',
+                preparedBuildId: 'preserve-run-new',
+                appliedRevision: stoppingRevision,
+            },
+        );
+
+        assert.equal(store.state.canonical_build_id, 'preserve-run-new');
+        assert.equal(store.state.run_id, 'preserve-run');
+        assert.equal(store.state.compatibility_key, '8'.repeat(64));
+        assert.equal(store.state.pending_release, null);
+    });
+});
+
 test('incompatible release waits for prestaging, stops all trainers, then switches run', () => {
     withTempDir(root => {
         const store = new TrainingControlStore({
