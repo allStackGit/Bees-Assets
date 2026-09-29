@@ -187,7 +187,6 @@ namespace Assets.Scripts.Entities.Ships
         {
             if (!Ship.Stage.IsTraining)
             {
-                Debug.Log($"{Ship.Name} Changing sprite loop, ready to warp");
             }
             UseSecondaryLoop = true;
             IsReadyToWarp = true; // this is called by the warp gate animation which makes the animation necessary for non-visual reasons

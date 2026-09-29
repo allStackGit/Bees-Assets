@@ -42,7 +42,6 @@ namespace Assets.Scripts.Levels
         private bool _hasEliminationSnapshot;
         private readonly bool[] _eliminationSnapshot = new bool[2];
         public int[] InitialTsv = { 0, 0 };
-        public List<SpottedShip>[] SpottedShips = { new List<SpottedShip>(), new List<SpottedShip>() };
         public int[] OriginalSquadCounts = { 0, 0 };
         public Level Level;
         public Stage Stage;
@@ -51,6 +50,22 @@ namespace Assets.Scripts.Levels
             new HashSet<Ship>(ReferenceIdentityComparer<Ship>.Instance),
             new HashSet<Ship>(ReferenceIdentityComparer<Ship>.Instance)
         };
+        public HashSet<MiningAsteroid>[] HiveMindMiningAsteroidCache =
+        {
+            new HashSet<MiningAsteroid>(ReferenceIdentityComparer<MiningAsteroid>.Instance),
+            new HashSet<MiningAsteroid>(ReferenceIdentityComparer<MiningAsteroid>.Instance)
+        };
+        public HashSet<Obstacle>[] HiveMindObstacleCache =
+        {
+            new HashSet<Obstacle>(ReferenceIdentityComparer<Obstacle>.Instance),
+            new HashSet<Obstacle>(ReferenceIdentityComparer<Obstacle>.Instance)
+        };
+        public HashSet<MapObject>[] HiveMindMapObjectCache =
+        {
+            new HashSet<MapObject>(ReferenceIdentityComparer<MapObject>.Instance),
+            new HashSet<MapObject>(ReferenceIdentityComparer<MapObject>.Instance)
+        };
+        internal readonly int[] HiveMindMapObjectRefreshFrame = { -1, -1 };
         public Dictionary<long, HashSet<Ship>>[] HivemindShips =
         {
             new Dictionary<long, HashSet<Ship>>(),
@@ -82,19 +97,6 @@ namespace Assets.Scripts.Levels
         public int PlayerNewShipsReceived;
         public int PlayerScore;
         public int PlayerMineralsReceived;
-
-        public List<string> __Squads, __SquadsAwaitingCommands, __PastCommands, __Obstacles;
-
-        public void UpdateDebugVariables()
-        {
-            __Squads = GetAllSquads().Select(squad => squad.ToString()).ToList();
-            __SquadsAwaitingCommands = SquadsAwaitingCommands.Select(squad => squad.ToString()).ToList();
-            __PastCommands = PastCommands.Select(command =>
-                $"Command #{command.OutcomeId} - {command.CommandType} against {command.Enemy} ended with {command.Tsv}" +
-                $" TSV due to \"{command.FinalizationCause}\" and took {command.Age} ticks").ToList();
-            __Obstacles = Obstacles.Select(obstacle =>
-                $"{obstacle.Name} at {obstacle.GetPosition()} with {obstacle.Health} health").ToList();
-        }
 
         public void Setup(Level level)
         {
@@ -183,14 +185,22 @@ namespace Assets.Scripts.Levels
             FogOfWarVisions.Clear();
             for (int side = 0; side < 2; side++)
             {
-                if (SpottedShips[side] == null) SpottedShips[side] = new List<SpottedShip>();
-                else SpottedShips[side].Clear();
                 InitialTsv[side] = 0;
                 OriginalSquadCounts[side] = 0;
                 if (HivemindShips[side] == null) HivemindShips[side] = new Dictionary<long, HashSet<Ship>>();
                 else HivemindShips[side].Clear();
                 if (VisionCache[side] == null) VisionCache[side] = new HashSet<Ship>(ReferenceIdentityComparer<Ship>.Instance);
                 else VisionCache[side].Clear();
+                if (HiveMindMiningAsteroidCache[side] == null)
+                    HiveMindMiningAsteroidCache[side] = new HashSet<MiningAsteroid>(ReferenceIdentityComparer<MiningAsteroid>.Instance);
+                else HiveMindMiningAsteroidCache[side].Clear();
+                if (HiveMindObstacleCache[side] == null)
+                    HiveMindObstacleCache[side] = new HashSet<Obstacle>(ReferenceIdentityComparer<Obstacle>.Instance);
+                else HiveMindObstacleCache[side].Clear();
+                if (HiveMindMapObjectCache[side] == null)
+                    HiveMindMapObjectCache[side] = new HashSet<MapObject>(ReferenceIdentityComparer<MapObject>.Instance);
+                else HiveMindMapObjectCache[side].Clear();
+                HiveMindMapObjectRefreshFrame[side] = -1;
                 ShipDamageStatuses[side].Clear();
                 ShipDamageStatusesById[side].Clear();
             }

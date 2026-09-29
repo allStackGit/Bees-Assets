@@ -54,6 +54,13 @@ namespace Assets.Scripts.Levels
 
         public void EasterEggTriggers()
         {
+            // Automated training deliberately omits player cutscene/UI setup and should not add
+            // nondeterministic cosmetic dialogue timers to an episode.
+            if (Stage.IsTraining)
+            {
+                return;
+            }
+
             Stage.CutsceneManager.Setup(() => { });
             _egg.Reuse(10f, () =>
             {
@@ -129,7 +136,6 @@ namespace Assets.Scripts.Levels
             {
                 if (!squad.IsImmobile && !squad.HasCommandQueue && !squad.HasCommand)
                 {
-                    Debug.Log($"Adding squad {squad} to hivemind command list");
                     squad.AddToCommandList();
                 }
             });
@@ -137,10 +143,8 @@ namespace Assets.Scripts.Levels
 
         public void PostSetupTest()
         {
-            Debug.Log("POST SETUP TEST HAS BEEN CALLED");
             Debug.LogWarning("POST SETUP TEST HAS BEEN CALLED");
             CreateHumanTarget(Vector2.zero);
-            Debug.Log("Placed Human Target");
         }
 
         public HumanTarget CreateHumanTarget(Vector2 position)
@@ -169,7 +173,11 @@ namespace Assets.Scripts.Levels
                 .FirstOrDefault(ship => ship.ShipType == ConfigData.ShipTypes.HumanTarget);
 
             humanTarget.Squad.CanAcceptUserInput = false;
-            Destroy(humanTarget.Squad.SquadTab.gameObject);
+            if (humanTarget.Squad.SquadTab != null)
+            {
+                Destroy(humanTarget.Squad.SquadTab.gameObject);
+                humanTarget.Squad.SquadTab = null;
+            }
             humanTarget.Squad.HasSquadTab = false;
             if (humanTarget.HasUserFogOfWarVision)
             {

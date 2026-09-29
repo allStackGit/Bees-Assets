@@ -11,7 +11,6 @@ namespace Assets.Scripts.Entities.Ships
 {
     public partial class Ship : Entity
     {
-        public bool ShowDebug;
         public int Health, MaxHealth, OriginalHealth, OriginalTsv, Sight, Clearance, MaxRange, HalfMaxRange;
         public float SizeClass, ProjectileValue, Speed, SpecialFirePower, CurrentSpeed, LongestSide;
         public GameObject ShipExplosion, HealthBar, MiniMapIcon, ShipAnimation, MovementMarker;
@@ -31,7 +30,8 @@ namespace Assets.Scripts.Entities.Ships
         public bool IsDead;
         public bool IsUserControlled;
         public bool IsMobile;
-        public bool HasBrain, IsHiveMindControlled, IsMinionShip, HasTargetCoordinates, IsMiningShip, IsWarpGate, IsBeehive,
+        public bool IsRlPolicyControlled;
+        public bool IsHiveMindControlled, IsMinionShip, HasTargetCoordinates, IsMiningShip, IsWarpGate, IsBeehive,
             HasTargetDirection, HasUserFogOfWarVision, HasProximityCollider, HasShipAnimation, HasRocketFlares,
             HasLeftRocketFlares, HasCenterRocketFlares, HasRightRocketFlares, HasOnlySideRocketFlares, HasMovementMarker,
             HasWaitingTargetCoordinates, HasRemainsShip, FireAtFrontOfShip, IsBomber;
@@ -43,7 +43,6 @@ namespace Assets.Scripts.Entities.Ships
         public List<GameObject> OriginalColoredPrefabs;
         public List<Sprite> OriginalSprites;
         public List<GameObject> WeaponPrefabs, LeftRocketFlares, CenterRocketFlares, RightRocketFlares;
-        public Brain Brain;
         public Queue<Vector2> DestinationQueue = new Queue<Vector2>();
         public List<CollisionAsteroid> NearbyAsteroids = new List<CollisionAsteroid>();
         public List<Turret> Turrets = new List<Turret>();
@@ -84,12 +83,7 @@ namespace Assets.Scripts.Entities.Ships
         public volatile HashSet<Pathfinder.MapNode> DebugWalkablePointNodes = new HashSet<Pathfinder.MapNode>();
         public volatile bool PrintDebugImage;
 
-        public int Direction;
-        public bool ShouldDetonate;
-        public ConfigData.ShootingStrategyTypes RLShootingStrategy;
-        public float RLSide;
-        public float RLHealth;
-        public float RLShipType;
+        public int RlMovementDirection = 360;
 
         private bool _combatTimer, _isInBounds;
         private Transform _healthBarFiller;

@@ -1,0 +1,6 @@
+[Bees RL] PPO value-estimate/return buffer key separation: enabled
+[Bees RL] Cross-worker policy inference batching: enabled
+[Bees RL] Slim subprocess action IPC: enabled
+[Bees RL] Worker timer transfer: every 64 steps
+[Bees RL] Blocking Unity-worker wait: enabled
+[Bees RL] Hybrid devices: trainer/optimizer uses --torch-device; environment inference uses synchronized CPU actor replicas

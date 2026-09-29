@@ -205,6 +205,9 @@ public class FullRetreat : Command
 
         if (!ship.IsDead)
         {
+            global::RlGameplayDemonstrationCapabilityCapture.Record(
+                ship,
+                global::RlOneVsOneAgent.WarpAction);
             if (ship.ShipType == ConfigData.ShipTypes.Striker || ship.ShipType == ConfigData.ShipTypes.Drone)
             {
                 Tsv -= ship.Tsv;

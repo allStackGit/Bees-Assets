@@ -4,7 +4,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
 {
     public partial class Turret : Weapon
     {
-        public bool ShouldFireAtFrontOfShip, IsAimedAtTarget;
+        public bool ShouldFireAtFrontOfShip, IsAlignedWithTargetPoint;
         public bool IsFiringManually, HasTargetingMarker;
         public bool ReadyToFire;
         public int TargetingPasses, PassesPerFire;
@@ -89,10 +89,10 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         public override void ClearData()
         {
             base.ClearData();
+            ClearRlControl();
             ResetRotation();
             TargetingPasses = 0;
-            IsAimedAtTarget = false;
-            IsFiringManually = false;
+            IsAlignedWithTargetPoint = false;
             ReadyToFire = false;
             TargetPoint = Vector2.zero;
             TargetAsteroid = null;

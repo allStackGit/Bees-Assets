@@ -1,0 +1,583 @@
+using Assets.Scripts;
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.Text;
+
+internal enum RlOneVsOneMatchupMode
+{
+    Fixed,
+    Sampled,
+}
+
+/// <summary>
+/// Immutable command-line configuration for the dedicated ML-Agents combat scene. ML-Agents passes
+/// these arguments to standalone Unity workers through --env-args, keeping curriculum/environment
+/// changes out of serialized scene state and out of the trainer YAML.
+/// </summary>
+internal sealed class RlOneVsOneTrainingOptions
+{
+    internal const string HealthRatioFlag = "--rl-health-ratio";
+    internal const string MapSizeFlag = "--rl-map-size";
+    internal const string MapSizeMinimumFlag = "--rl-map-size-min";
+    internal const string MapSizeMaximumFlag = "--rl-map-size-max";
+    internal const string EpisodeTimeoutFlag = "--rl-episode-timeout";
+    internal const string ShipsPerSideFlag = "--rl-ships-per-side";
+    internal const string DecisionPeriodFlag = "--rl-decision-period";
+    internal const string BeeShipTypesFlag = "--rl-bee-ship-types";
+    internal const string HumanShipTypesFlag = "--rl-human-ship-types";
+    internal const string MatchupModeFlag = "--rl-matchup-mode";
+    internal const string CollisionAsteroidSpawnSecondsFlag = "--rl-collision-asteroid-spawn-seconds";
+    internal const string StaticObstaclesFlag = "--rl-static-obstacles";
+    internal const string MiningAsteroidsFlag = "--rl-mining-asteroids";
+    internal const string ValidationOnlyFlag = "--rl-validate-options-only";
+
+    internal const float DefaultHealthRatio = 0.25f;
+    internal const float DefaultMapSize = 30f;
+    internal const int DefaultEpisodeTimeoutSeconds = 120;
+    internal const int DefaultShipsPerSide = 1;
+    internal const int DefaultDecisionPeriod = 5;
+    internal const float DefaultCollisionAsteroidSpawnSeconds = 0f;
+    internal const float MinimumMapSize = 10f;
+    internal const RlOneVsOneMatchupMode DefaultMatchupMode = RlOneVsOneMatchupMode.Fixed;
+
+    private static readonly ConfigData.ShipTypes[] DefaultSampledBeeShipTypes =
+    {
+        ConfigData.ShipTypes.Beehive,
+        ConfigData.ShipTypes.Bumblebee,
+        ConfigData.ShipTypes.CarpenterBee,
+        ConfigData.ShipTypes.Honeybee,
+        ConfigData.ShipTypes.Hornet,
+        ConfigData.ShipTypes.Leafcutter,
+        ConfigData.ShipTypes.Queen,
+        ConfigData.ShipTypes.Wasp,
+        ConfigData.ShipTypes.YellowJacket,
+    };
+
+    private static readonly ConfigData.ShipTypes[] DefaultSampledHumanShipTypes =
+    {
+        ConfigData.ShipTypes.Barge,
+        ConfigData.ShipTypes.Carrier,
+        ConfigData.ShipTypes.Cruiser,
+        ConfigData.ShipTypes.Dreadnought,
+        ConfigData.ShipTypes.Factory,
+        ConfigData.ShipTypes.FireBarge,
+        ConfigData.ShipTypes.Flagship,
+        ConfigData.ShipTypes.Frigate,
+        ConfigData.ShipTypes.Gunship,
+        ConfigData.ShipTypes.Scout,
+        ConfigData.ShipTypes.WarpGate,
+    };
+
+    private readonly List<ConfigData.ShipTypes> _beeShipTypes;
+    private readonly List<ConfigData.ShipTypes> _humanShipTypes;
+    private bool _beeShipTypesSpecified;
+    private bool _humanShipTypesSpecified;
+    private bool _mapSizeSpecified;
+    private bool _mapSizeMinimumSpecified;
+    private bool _mapSizeMaximumSpecified;
+    private float _mapSize;
+    private float _mapSizeMinimum;
+    private float _mapSizeMaximum;
+
+    internal float HealthRatio { get; private set; }
+
+    // A range has no single process-wide current value once multiple arenas reset independently.
+    // Return the conservative minimum for legacy/global callers; actual episode sizes are owned by
+    // RlOneVsOneArenaMapSizeState per Level.
+    internal float MapSize => HasMapSizeRange ? _mapSizeMinimum : _mapSize;
+    internal float MapSizeMinimum => HasMapSizeRange ? _mapSizeMinimum : _mapSize;
+    internal float MapSizeMaximum => HasMapSizeRange ? _mapSizeMaximum : _mapSize;
+    internal bool HasMapSizeRange => _mapSizeMinimumSpecified && _mapSizeMaximumSpecified;
+    internal int EpisodeTimeoutSeconds { get; private set; }
+    internal int ShipsPerSide { get; private set; }
+    internal int DecisionPeriod { get; private set; }
+    internal float CollisionAsteroidSpawnSeconds { get; private set; }
+    internal bool StaticObstaclesEnabled { get; private set; }
+    internal bool MiningAsteroidsEnabled { get; private set; }
+    internal RlOneVsOneMatchupMode MatchupMode { get; private set; }
+    internal IReadOnlyList<ConfigData.ShipTypes> BeeShipTypes => _beeShipTypes;
+    internal IReadOnlyList<ConfigData.ShipTypes> HumanShipTypes => _humanShipTypes;
+
+    private RlOneVsOneTrainingOptions()
+    {
+        HealthRatio = DefaultHealthRatio;
+        _mapSize = DefaultMapSize;
+        _mapSizeMinimum = DefaultMapSize;
+        _mapSizeMaximum = DefaultMapSize;
+        EpisodeTimeoutSeconds = DefaultEpisodeTimeoutSeconds;
+        ShipsPerSide = DefaultShipsPerSide;
+        DecisionPeriod = DefaultDecisionPeriod;
+        CollisionAsteroidSpawnSeconds = DefaultCollisionAsteroidSpawnSeconds;
+        StaticObstaclesEnabled = false;
+        MiningAsteroidsEnabled = false;
+        MatchupMode = DefaultMatchupMode;
+        _beeShipTypes = new List<ConfigData.ShipTypes> { ConfigData.ShipTypes.Wasp };
+        _humanShipTypes = new List<ConfigData.ShipTypes> { ConfigData.ShipTypes.Gunship };
+    }
+
+    internal static RlOneVsOneTrainingOptions Parse(string[] args)
+    {
+        RlOneVsOneTrainingOptions options = new RlOneVsOneTrainingOptions();
+        if (args == null)
+        {
+            return options;
+        }
+
+        for (int i = 0; i < args.Length; i++)
+        {
+            string argument = args[i];
+            if (string.IsNullOrWhiteSpace(argument))
+            {
+                continue;
+            }
+
+            string value;
+            if (TryReadOption(argument, HealthRatioFlag, args, ref i, out value))
+            {
+                options.HealthRatio = ParseFloat(value, HealthRatioFlag);
+            }
+            else if (TryReadOption(argument, MapSizeFlag, args, ref i, out value))
+            {
+                options._mapSize = ParseFloat(value, MapSizeFlag);
+                options._mapSizeSpecified = true;
+            }
+            else if (TryReadOption(argument, MapSizeMinimumFlag, args, ref i, out value))
+            {
+                options._mapSizeMinimum = ParseFloat(value, MapSizeMinimumFlag);
+                options._mapSizeMinimumSpecified = true;
+            }
+            else if (TryReadOption(argument, MapSizeMaximumFlag, args, ref i, out value))
+            {
+                options._mapSizeMaximum = ParseFloat(value, MapSizeMaximumFlag);
+                options._mapSizeMaximumSpecified = true;
+            }
+            else if (TryReadOption(argument, EpisodeTimeoutFlag, args, ref i, out value))
+            {
+                options.EpisodeTimeoutSeconds = ParseInt(value, EpisodeTimeoutFlag);
+            }
+            else if (TryReadOption(argument, ShipsPerSideFlag, args, ref i, out value))
+            {
+                options.ShipsPerSide = ParseInt(value, ShipsPerSideFlag);
+            }
+            else if (TryReadOption(argument, DecisionPeriodFlag, args, ref i, out value))
+            {
+                options.DecisionPeriod = ParseInt(value, DecisionPeriodFlag);
+            }
+            else if (TryReadOption(argument, BeeShipTypesFlag, args, ref i, out value))
+            {
+                ReplaceShipTypes(options._beeShipTypes, value, BeeShipTypesFlag);
+                options._beeShipTypesSpecified = true;
+            }
+            else if (TryReadOption(argument, HumanShipTypesFlag, args, ref i, out value))
+            {
+                ReplaceShipTypes(options._humanShipTypes, value, HumanShipTypesFlag);
+                options._humanShipTypesSpecified = true;
+            }
+            else if (TryReadOption(argument, MatchupModeFlag, args, ref i, out value))
+            {
+                options.MatchupMode = ParseMatchupMode(value);
+            }
+            else if (TryReadOption(argument, CollisionAsteroidSpawnSecondsFlag, args, ref i, out value))
+            {
+                options.CollisionAsteroidSpawnSeconds = ParseFloat(value, CollisionAsteroidSpawnSecondsFlag);
+            }
+            else if (TryReadBooleanOption(argument, StaticObstaclesFlag, args, ref i, out bool staticObstacles))
+            {
+                options.StaticObstaclesEnabled = staticObstacles;
+            }
+            else if (TryReadBooleanOption(argument, MiningAsteroidsFlag, args, ref i, out bool miningAsteroids))
+            {
+                options.MiningAsteroidsEnabled = miningAsteroids;
+            }
+            else if (argument.Equals(ValidationOnlyFlag, StringComparison.OrdinalIgnoreCase))
+            {
+                // Validation-only is an operator/preflight control flag, not an environment value.
+            }
+            else if (argument.StartsWith("--rl-", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new ArgumentException($"Unknown RL training option '{argument}'.");
+            }
+        }
+
+        options.ApplySampledRosterDefaults();
+        options.Validate();
+        return options;
+    }
+
+    internal ConfigData.ShipTypes GetBeeShipType(int shipIndex)
+    {
+        return GetShipType(_beeShipTypes, shipIndex);
+    }
+
+    internal ConfigData.ShipTypes GetHumanShipType(int shipIndex)
+    {
+        return GetShipType(_humanShipTypes, shipIndex);
+    }
+
+    internal string Describe()
+    {
+        string mapDescription = HasMapSizeRange
+            ? $"map_size_range={FormatFloat(_mapSizeMinimum)}..{FormatFloat(_mapSizeMaximum)}"
+            : $"map_size={FormatFloat(_mapSize)}";
+        string collisionAsteroidDescription = CollisionAsteroidSpawnSeconds > 0f
+            ? $"{FormatFloat(CollisionAsteroidSpawnSeconds)}s"
+            : "off";
+        return $"health_ratio={FormatFloat(HealthRatio)} {mapDescription} " +
+               $"episode_timeout={EpisodeTimeoutSeconds}s ships_per_side={ShipsPerSide} " +
+               $"decision_period={DecisionPeriod} matchup_mode={MatchupMode.ToString().ToLowerInvariant()} " +
+               $"collision_asteroid_spawn={collisionAsteroidDescription} " +
+               $"static_obstacles={(StaticObstaclesEnabled ? "on" : "off")} " +
+               $"mining_asteroids={(MiningAsteroidsEnabled ? "on" : "off")} " +
+               $"bee_ship_types={JoinShipTypes(_beeShipTypes)} human_ship_types={JoinShipTypes(_humanShipTypes)}";
+    }
+
+    private void ApplySampledRosterDefaults()
+    {
+        if (MatchupMode != RlOneVsOneMatchupMode.Sampled)
+        {
+            return;
+        }
+        if (!_beeShipTypesSpecified)
+        {
+            ReplaceShipTypes(_beeShipTypes, DefaultSampledBeeShipTypes);
+        }
+        if (!_humanShipTypesSpecified)
+        {
+            ReplaceShipTypes(_humanShipTypes, DefaultSampledHumanShipTypes);
+        }
+    }
+
+    private void Validate()
+    {
+        if (float.IsNaN(HealthRatio) || float.IsInfinity(HealthRatio) || HealthRatio <= 0f || HealthRatio > 1f)
+        {
+            throw new ArgumentException($"{HealthRatioFlag} must be greater than 0 and no greater than 1.");
+        }
+
+        ValidateMapSizeOptions();
+
+        if (EpisodeTimeoutSeconds <= 0)
+        {
+            throw new ArgumentException($"{EpisodeTimeoutFlag} must be a positive whole number of seconds.");
+        }
+        if (ShipsPerSide < 1)
+        {
+            throw new ArgumentException($"{ShipsPerSideFlag} must be a positive whole number.");
+        }
+        if (DecisionPeriod <= 0)
+        {
+            throw new ArgumentException($"{DecisionPeriodFlag} must be a positive whole number of physics steps.");
+        }
+        if (float.IsNaN(CollisionAsteroidSpawnSeconds) ||
+            float.IsInfinity(CollisionAsteroidSpawnSeconds) ||
+            CollisionAsteroidSpawnSeconds < 0f)
+        {
+            throw new ArgumentException($"{CollisionAsteroidSpawnSecondsFlag} must be zero (off) or a positive number of seconds.");
+        }
+
+        if (MatchupMode == RlOneVsOneMatchupMode.Fixed)
+        {
+            ValidateComposition(_beeShipTypes, BeeShipTypesFlag);
+            ValidateComposition(_humanShipTypes, HumanShipTypesFlag);
+            return;
+        }
+
+        if (ConfigData.Configuration == null || !ConfigData.Configuration.IsLoaded)
+        {
+            throw new InvalidOperationException("Sampled RL matchup validation requires loaded configuration settings.");
+        }
+
+        ValidateSampledCandidatePool(_beeShipTypes, ConfigData.Configuration.BeeSide, BeeShipTypesFlag);
+        ValidateSampledCandidatePool(_humanShipTypes, ConfigData.Configuration.HumanSide, HumanShipTypesFlag);
+    }
+
+    private void ValidateMapSizeOptions()
+    {
+        if (_mapSizeMinimumSpecified != _mapSizeMaximumSpecified)
+        {
+            throw new ArgumentException($"{MapSizeMinimumFlag} and {MapSizeMaximumFlag} must be specified together.");
+        }
+        if (_mapSizeSpecified && _mapSizeMinimumSpecified)
+        {
+            throw new ArgumentException($"{MapSizeFlag} cannot be combined with {MapSizeMinimumFlag}/{MapSizeMaximumFlag}.");
+        }
+
+        if (!HasMapSizeRange)
+        {
+            ValidateMapSize(_mapSize, MapSizeFlag);
+            _mapSizeMinimum = _mapSize;
+            _mapSizeMaximum = _mapSize;
+            return;
+        }
+
+        ValidateMapSize(_mapSizeMinimum, MapSizeMinimumFlag);
+        ValidateMapSize(_mapSizeMaximum, MapSizeMaximumFlag);
+        if (_mapSizeMaximum < _mapSizeMinimum)
+        {
+            throw new ArgumentException($"{MapSizeMaximumFlag} must be greater than or equal to {MapSizeMinimumFlag}.");
+        }
+    }
+
+    private static void ValidateMapSize(float value, string flag)
+    {
+        if (float.IsNaN(value) || float.IsInfinity(value) || value < MinimumMapSize)
+        {
+            throw new ArgumentException($"{flag} must be at least {MinimumMapSize.ToString("0", CultureInfo.InvariantCulture)}.");
+        }
+    }
+
+    private void ValidateComposition(List<ConfigData.ShipTypes> shipTypes, string flag)
+    {
+        if (shipTypes.Count != 1 && shipTypes.Count != ShipsPerSide)
+        {
+            throw new ArgumentException(
+                $"{flag} must contain either one type (repeated for every ship) or exactly {ShipsPerSide} comma-separated types.");
+        }
+    }
+
+    private static void ValidateSampledCandidatePool(List<ConfigData.ShipTypes> shipTypes, int expectedSide, string flag)
+    {
+        if (shipTypes.Count == 0)
+        {
+            throw new ArgumentException($"{flag} requires at least one ship type in sampled mode.");
+        }
+
+        bool hasArmedCandidate = false;
+        HashSet<ConfigData.ShipTypes> seen = new HashSet<ConfigData.ShipTypes>();
+        for (int i = 0; i < shipTypes.Count; i++)
+        {
+            ConfigData.ShipTypes shipType = shipTypes[i];
+            int actualSide;
+            if (!Utilities.ConvertShipTypeToSide.TryGetValue(shipType, out actualSide) || actualSide != expectedSide)
+            {
+                throw new ArgumentException($"{flag} contains {shipType}, which does not belong to side {expectedSide}.");
+            }
+            if (!seen.Add(shipType))
+            {
+                throw new ArgumentException($"{flag} contains duplicate sampled candidate {shipType}.");
+            }
+            if (!RlShipCombatCapability.IsWeaponless(shipType))
+            {
+                hasArmedCandidate = true;
+            }
+        }
+
+        if (!hasArmedCandidate)
+        {
+            throw new ArgumentException($"{flag} must contain at least one armed ship type in sampled mode.");
+        }
+    }
+
+    private static ConfigData.ShipTypes GetShipType(List<ConfigData.ShipTypes> shipTypes, int shipIndex)
+    {
+        if (shipIndex < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(shipIndex));
+        }
+        if (shipTypes.Count == 1)
+        {
+            return shipTypes[0];
+        }
+        if (shipIndex >= shipTypes.Count)
+        {
+            throw new ArgumentOutOfRangeException(nameof(shipIndex));
+        }
+        return shipTypes[shipIndex];
+    }
+
+    private static bool TryReadOption(string argument, string optionName, string[] args, ref int index, out string value)
+    {
+        if (argument.Equals(optionName, StringComparison.OrdinalIgnoreCase))
+        {
+            if (index + 1 >= args.Length || string.IsNullOrWhiteSpace(args[index + 1]) || args[index + 1].StartsWith("--"))
+            {
+                throw new ArgumentException($"{optionName} requires a value.");
+            }
+            index++;
+            value = args[index];
+            return true;
+        }
+
+        string prefix = optionName + "=";
+        if (argument.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        {
+            value = argument.Substring(prefix.Length);
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                throw new ArgumentException($"{optionName} requires a value.");
+            }
+            return true;
+        }
+
+        value = null;
+        return false;
+    }
+
+    private static bool TryReadBooleanOption(
+        string argument,
+        string optionName,
+        string[] args,
+        ref int index,
+        out bool value)
+    {
+        if (argument.Equals(optionName, StringComparison.OrdinalIgnoreCase))
+        {
+            if (index + 1 < args.Length &&
+                !string.IsNullOrWhiteSpace(args[index + 1]) &&
+                !args[index + 1].StartsWith("--", StringComparison.Ordinal))
+            {
+                index++;
+                value = ParseBoolean(args[index], optionName);
+                return true;
+            }
+
+            value = true;
+            return true;
+        }
+
+        string prefix = optionName + "=";
+        if (argument.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        {
+            string rawValue = argument.Substring(prefix.Length);
+            if (string.IsNullOrWhiteSpace(rawValue))
+            {
+                throw new ArgumentException($"{optionName} requires true/false when '=' is used.");
+            }
+
+            value = ParseBoolean(rawValue, optionName);
+            return true;
+        }
+
+        value = false;
+        return false;
+    }
+
+    private static bool ParseBoolean(string value, string flag)
+    {
+        if (value.Equals("true", StringComparison.OrdinalIgnoreCase) ||
+            value.Equals("on", StringComparison.OrdinalIgnoreCase) ||
+            value.Equals("yes", StringComparison.OrdinalIgnoreCase) ||
+            value == "1")
+        {
+            return true;
+        }
+        if (value.Equals("false", StringComparison.OrdinalIgnoreCase) ||
+            value.Equals("off", StringComparison.OrdinalIgnoreCase) ||
+            value.Equals("no", StringComparison.OrdinalIgnoreCase) ||
+            value == "0")
+        {
+            return false;
+        }
+
+        throw new ArgumentException($"{flag} value '{value}' must be true/false, on/off, yes/no, or 1/0.");
+    }
+
+    private static float ParseFloat(string value, string flag)
+    {
+        float parsed;
+        if (!float.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out parsed))
+        {
+            throw new ArgumentException($"{flag} value '{value}' is not a valid number.");
+        }
+        return parsed;
+    }
+
+    private static int ParseInt(string value, string flag)
+    {
+        int parsed;
+        if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out parsed))
+        {
+            throw new ArgumentException($"{flag} value '{value}' is not a valid whole number.");
+        }
+        return parsed;
+    }
+
+    private static RlOneVsOneMatchupMode ParseMatchupMode(string value)
+    {
+        if (value.Equals("fixed", StringComparison.OrdinalIgnoreCase))
+        {
+            return RlOneVsOneMatchupMode.Fixed;
+        }
+        if (value.Equals("sampled", StringComparison.OrdinalIgnoreCase))
+        {
+            return RlOneVsOneMatchupMode.Sampled;
+        }
+        throw new ArgumentException($"{MatchupModeFlag} value '{value}' must be 'fixed' or 'sampled'.");
+    }
+
+    private static void ReplaceShipTypes(List<ConfigData.ShipTypes> destination, string value, string flag)
+    {
+        destination.Clear();
+        string[] tokens = value.Split(',');
+        for (int i = 0; i < tokens.Length; i++)
+        {
+            string token = tokens[i].Trim();
+            if (token.Length == 0)
+            {
+                throw new ArgumentException($"{flag} contains an empty ship type.");
+            }
+
+            ConfigData.ShipTypes parsed;
+            if (!TryParseShipType(token, out parsed))
+            {
+                throw new ArgumentException($"{flag} contains unknown ship type '{token}'.");
+            }
+            destination.Add(parsed);
+        }
+        if (destination.Count == 0)
+        {
+            throw new ArgumentException($"{flag} requires at least one ship type.");
+        }
+    }
+
+    private static void ReplaceShipTypes(List<ConfigData.ShipTypes> destination, IReadOnlyList<ConfigData.ShipTypes> source)
+    {
+        destination.Clear();
+        for (int i = 0; i < source.Count; i++)
+        {
+            destination.Add(source[i]);
+        }
+    }
+
+    private static bool TryParseShipType(string value, out ConfigData.ShipTypes shipType)
+    {
+        string normalized = NormalizeShipTypeName(value);
+        string[] names = Enum.GetNames(typeof(ConfigData.ShipTypes));
+        for (int i = 0; i < names.Length; i++)
+        {
+            if (!NormalizeShipTypeName(names[i]).Equals(normalized, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+            shipType = (ConfigData.ShipTypes)Enum.Parse(typeof(ConfigData.ShipTypes), names[i]);
+            return true;
+        }
+        shipType = default(ConfigData.ShipTypes);
+        return false;
+    }
+
+    private static string NormalizeShipTypeName(string value)
+    {
+        return value.Replace("-", string.Empty).Replace("_", string.Empty).Replace(" ", string.Empty);
+    }
+
+    private static string JoinShipTypes(List<ConfigData.ShipTypes> shipTypes)
+    {
+        StringBuilder builder = new StringBuilder();
+        for (int i = 0; i < shipTypes.Count; i++)
+        {
+            if (i > 0)
+            {
+                builder.Append(',');
+            }
+            builder.Append(shipTypes[i]);
+        }
+        return builder.ToString();
+    }
+
+    private static string FormatFloat(float value)
+    {
+        return value.ToString("0.###", CultureInfo.InvariantCulture);
+    }
+}

@@ -1,0 +1,22 @@
+Processor: Intel(R) Core(TM) i5-2500 CPU @ 3.30GHz, 4 core(s) @ 3392 MHz 
+Available Memory: 3793 MB 
+Linux Kernel and distribution: Linux 6.1 Debian GNU/Linux 12 64bit
+System Language: en_US
+Keyboard Layout: us
+Mono path[0] = '/home/larry/.local/share/bees-training/ManagedBuilds/builds/dedicated-LinuxPlayer-2026-09-27-223013-448b726e1076-a44da809aada73c0/Bees RL Training_Data/Managed'
+Mono config path = '/home/larry/.local/share/bees-training/ManagedBuilds/builds/dedicated-LinuxPlayer-2026-09-27-223013-448b726e1076-a44da809aada73c0/Bees RL Training_Data/MonoBleedingEdge/etc'
+CodeReloadManager initialized
+Failed to open plugin: /home/larry/.local/share/bees-training/ManagedBuilds/builds/dedicated-LinuxPlayer-2026-09-27-223013-448b726e1076-a44da809aada73c0/Bees RL Training_Data/Plugins/x86_64/libAppUINativePlugin.so
+Input System module state changed to: Initialized.
+[Physics::Module] Initialized fallback backend.
+[Physics::Module] Id: 0xdecafbad
+Plugins: Couldn't open /home/larry/.local/share/bees-training/ManagedBuilds/builds/dedicated-LinuxPlayer-2026-09-27-223013-448b726e1076-a44da809aada73c0/Bees RL Training_Data/Plugins/x86_64/libAppUINativePlugin.so, error: libgtk-3.so.0: cannot open shared object file: No such file or directory
+Initialize engine version: 6000.5.4f1 (d550df8bd089)
+[Subsystems] Discovering subsystems at path /home/larry/.local/share/bees-training/ManagedBuilds/builds/dedicated-LinuxPlayer-2026-09-27-223013-448b726e1076-a44da809aada73c0/Bees RL Training_Data/UnitySubsystems
+Forcing GfxDevice: Null
+GfxDevice: creating device client; kGfxThreadingModeNonThreaded
+NullGfxDevice:
+    Version:  NULL 1.0 [1.0]
+    Renderer: Null Device
+    Vendor:   Unity Technologies
+Begin MonoManager ReloadAssembly

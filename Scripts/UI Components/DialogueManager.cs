@@ -11,9 +11,19 @@ using UnityEngine.UI;
 
 public class DialogueManager : MonoBehaviour
 {
+    private const int FirstCampaignLevelId = 0;
     private const float DialoguePresentationScale = 1.25f;
     private const float MinimumDialogueFontSize = 14f;
     private const float MinimumSpeakerFontSize = 16f;
+    private const float ContinuePromptFontSize = 11f;
+    private const string ProtectedSamuelOrdersLine = "What are your orders- oh";
+
+    private static readonly string[] ShipTypeNames =
+    {
+        "Barge", "Beacon", "Carrier", "Cruiser", "Dreadnought", "Drone", "Factory", "Fire Barge",
+        "Flagship", "Frigate", "Gunship", "Scout", "Striker", "Warp Gate", "Beehive", "Bumblebee",
+        "Carpenter Bee", "Honeybee", "Hornet", "Leafcutter", "Queen", "Wasp", "Yellow Jacket"
+    };
 
     public CutsceneManager CutsceneManager;
     public GameObject DialogueBox;
@@ -32,6 +42,9 @@ public class DialogueManager : MonoBehaviour
     private bool _isAdvancingDialogue;
     private bool _playIntercomWhenPresented;
     private bool _presentationConfigured;
+    private TMP_Text _continuePromptLabel;
+    private bool _continueInstructionClaimed;
+    private bool _showContinueInstructionForCurrentLine;
     private static bool _disabledLegacyCampaignDialogueGuard;
 
 
@@ -61,6 +74,8 @@ public class DialogueManager : MonoBehaviour
             SpeakerName.fontSize = Mathf.Max(SpeakerName.fontSize, MinimumSpeakerFontSize);
         }
 
+        ConfigureContinuePrompt();
+
         RectTransform dialogueRect = DialogueBox != null
             ? DialogueBox.GetComponent<RectTransform>()
             : null;
@@ -88,6 +103,49 @@ public class DialogueManager : MonoBehaviour
         }
 
         dialogueRect.localScale = newScale;
+    }
+
+    private void ConfigureContinuePrompt()
+    {
+        if (ContinueButton == null || SpacebarImage == null)
+        {
+            return;
+        }
+
+        Transform existing = ContinueButton.transform.Find("Continue Prompt Label");
+        if (existing != null)
+        {
+            _continuePromptLabel = existing.GetComponent<TMP_Text>();
+            if (_continuePromptLabel != null)
+            {
+                _continuePromptLabel.gameObject.SetActive(false);
+            }
+            return;
+        }
+
+        GameObject labelObject = new GameObject(
+            "Continue Prompt Label",
+            typeof(RectTransform),
+            typeof(CanvasRenderer),
+            typeof(TextMeshProUGUI));
+        labelObject.transform.SetParent(ContinueButton.transform, false);
+        RectTransform labelRect = labelObject.GetComponent<RectTransform>();
+        RectTransform spaceRect = SpacebarImage.rectTransform;
+        labelRect.anchorMin = spaceRect.anchorMin;
+        labelRect.anchorMax = spaceRect.anchorMax;
+        labelRect.pivot = new Vector2(1f, 0.5f);
+        labelRect.anchoredPosition = spaceRect.anchoredPosition + new Vector2(-spaceRect.rect.width * 0.55f - 6f, 0f);
+        labelRect.sizeDelta = new Vector2(150f, Mathf.Max(18f, spaceRect.rect.height));
+
+        TextMeshProUGUI label = labelObject.GetComponent<TextMeshProUGUI>();
+        label.text = "Press space bar to continue";
+        label.font = DialogueText != null ? DialogueText.font : null;
+        label.fontSize = ContinuePromptFontSize;
+        label.alignment = TextAlignmentOptions.MidlineRight;
+        label.color = DialogueText != null ? DialogueText.color : Color.white;
+        label.raycastTarget = false;
+        label.gameObject.SetActive(false);
+        _continuePromptLabel = label;
     }
 
     public void Update()
@@ -167,7 +225,6 @@ public class DialogueManager : MonoBehaviour
         {
             dialogueLines.Enqueue(line);
         }
-
         _playIntercomWhenPresented = dialogueLines.Count > 0;
 
         DialogueBox.SetActive(true);
@@ -196,6 +253,15 @@ public class DialogueManager : MonoBehaviour
             _currentLine.IsOver = false;
         }
         _currentLine = dialogueLines.Dequeue();
+        _showContinueInstructionForCurrentLine = ShouldShowContinueInstruction(_currentLine);
+        if (_showContinueInstructionForCurrentLine)
+        {
+            // Claim the one-time hint when the line begins, not when typing finishes. If the
+            // player is already holding Space, the hint must not migrate to the next message.
+            _continueInstructionClaimed = true;
+        }
+        SetContinueInstructionVisible(false);
+
         if (_currentLine != null)
         {
             StopAllCoroutines();
@@ -204,6 +270,28 @@ public class DialogueManager : MonoBehaviour
             StartCoroutine(TypeLine(_currentLine));
         }
 
+    }
+
+    private bool ShouldShowContinueInstruction(DialogueLine line)
+    {
+        return !_continueInstructionClaimed &&
+               line != null &&
+               line.Type == DialogueLine.DialogueType.Speaking &&
+               ConfigData.CurrentGameMode == ConfigData.GameModes.Campaign &&
+               ConfigData.UserProgressData != null &&
+               ConfigData.Configuration != null &&
+               ConfigData.UserProgressData.GetCurrentLevel(
+                   ConfigData.Configuration.UserSide,
+                   ConfigData.GameModes.Campaign) == FirstCampaignLevelId;
+    }
+
+    private void SetContinueInstructionVisible(bool continueControlVisible)
+    {
+        if (_continuePromptLabel != null)
+        {
+            _continuePromptLabel.gameObject.SetActive(
+                continueControlVisible && _showContinueInstructionForCurrentLine);
+        }
     }
 
     public void DisplayNextLineWithDelay(float delaySeconds = 2f)
@@ -242,16 +330,74 @@ public class DialogueManager : MonoBehaviour
             return string.Empty;
         }
 
+        string text = line.Text;
+        bool preserveMarkOrdersFeedback =
+            string.Equals(line.SpeakerName, "Samuel", System.StringComparison.OrdinalIgnoreCase) &&
+            text.StartsWith(ProtectedSamuelOrdersLine, System.StringComparison.Ordinal);
+
+        if (!preserveMarkOrdersFeedback)
+        {
+            text = NormalizeDialoguePunctuation(text);
+            text = NormalizeShipTypeCapitalization(text);
+        }
+
+        // Keep the continue affordance out of character dialogue. It is rendered beside the
+        // space/skip control instead.
+        text = text.Replace("Press space bar to continue", string.Empty).Trim();
+        text = text.Replace("Pluto airspace", "the space around Pluto");
+
         // Action/stage-direction lines are italicized in Mission Scripting. Do not add literal
         // asterisks around them: TMP rich text should own the visual formatting.
         return line.Type == DialogueLine.DialogueType.Action
-            ? $"<i>{line.Text}</i>"
-            : line.Text;
+            ? $"<i>{text}</i>"
+            : text;
+    }
+
+    private static string NormalizeDialoguePunctuation(string text)
+    {
+        return text
+            .Replace(" - ", " — ")
+            .Replace("- ", "— ");
+    }
+
+    private static string NormalizeShipTypeCapitalization(string text)
+    {
+        for (int i = 0; i < ShipTypeNames.Length; i++)
+        {
+            string shipType = ShipTypeNames[i];
+            text = text.Replace(shipType + "s", shipType.ToLowerInvariant() + "s");
+            text = text.Replace(shipType, shipType.ToLowerInvariant());
+        }
+
+        if (text.Length > 0 && char.IsLetter(text[0]))
+        {
+            text = char.ToUpperInvariant(text[0]) + text.Substring(1);
+        }
+
+        // Ship types stay lowercase in normal prose, but remain capitalized when they begin a
+        // later sentence in the same dialogue line.
+        for (int i = 0; i < ShipTypeNames.Length; i++)
+        {
+            string lower = ShipTypeNames[i].ToLowerInvariant();
+            string capitalized = char.ToUpperInvariant(lower[0]) + lower.Substring(1);
+            text = text.Replace(". " + lower, ". " + capitalized);
+            text = text.Replace("! " + lower, "! " + capitalized);
+            text = text.Replace("? " + lower, "? " + capitalized);
+            text = text.Replace("\n" + lower, "\n" + capitalized);
+        }
+        return text;
     }
 
     internal static string FormatInstructionText(string instructionText)
     {
         if (string.IsNullOrEmpty(instructionText))
+        {
+            return string.Empty;
+        }
+
+        string normalized = instructionText.Trim().Trim('[', ']').Trim();
+        if (string.Equals(normalized, "Press Space to Continue", System.StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(normalized, "Press Space Bar to Continue", System.StringComparison.OrdinalIgnoreCase))
         {
             return string.Empty;
         }
@@ -299,8 +445,7 @@ public class DialogueManager : MonoBehaviour
             }
 
             DialogueText.maxVisibleCharacters = characterIndex + 1;
-            if (characterIndex == visibleCharacterCount - 1 ||
-                line.Type != DialogueLine.DialogueType.Speaking)
+            if (characterIndex == visibleCharacterCount - 1 || line.Type != DialogueLine.DialogueType.Speaking)
             {
                 SetPortrait(line.PortraitA);
             }
@@ -326,7 +471,10 @@ public class DialogueManager : MonoBehaviour
         if (line.HasInstructionText)
         {
             yield return new WaitForSeconds(0.5f);
-            DialogueText.text = $"{formattedLine}<br><br>{FormatInstructionText(line.InstructionText)}";
+            string instruction = FormatInstructionText(line.InstructionText);
+            DialogueText.text = string.IsNullOrEmpty(instruction)
+                ? formattedLine
+                : $"{formattedLine}<br><br>{instruction}";
             DialogueText.maxVisibleCharacters = int.MaxValue;
         }
 
@@ -354,27 +502,28 @@ public class DialogueManager : MonoBehaviour
     {
         if (showOrHide && Input.GetKey(KeyCode.Space))
         {
+            SetContinueInstructionVisible(false);
             DisplayNextLine();
         }
         else if (showOrHide && _currentLine.Type == DialogueLine.DialogueType.Disappearing)
         {
+            SetContinueInstructionVisible(false);
             DisplayNextLineWithDelay(2f);
         }
         else
         {
             ContinueButton.SetActive(showOrHide);
+            SetContinueInstructionVisible(showOrHide);
         }
     }
 
     void EndDialogue()
     {
-        Debug.Log("Dialogue ended.");
         CutsceneManager.EndDialogue();
     }
     public void GoToNextLine()
     {
         SpacebarImage.sprite = PressedSpacebar;
-        Debug.Log($"Go to next line");
         EventSystem.GetComponent<UnityEngine.EventSystems.EventSystem>().SetSelectedGameObject(null);
         DisplayNextLineWithDelay(.5f);
     }

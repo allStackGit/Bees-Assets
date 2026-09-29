@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { createServer } = require('../server');
+const { createServer, shouldStartTrainingControl } = require('../server');
 
 function createRuntime() {
     const observed = {
@@ -58,6 +58,19 @@ function withoutBackgroundTimers(work) {
         global.setInterval = originalInterval;
     }
 }
+
+test('test mode keeps training control off unless the unified operator explicitly enables it', () => {
+    assert.equal(shouldStartTrainingControl({ test: true }, {}), false);
+    assert.equal(
+        shouldStartTrainingControl(
+            { test: true },
+            { BEES_TEST_TRAINING_CONTROL_ENABLED: '1' },
+        ),
+        true,
+    );
+    assert.equal(shouldStartTrainingControl({ test: false }, {}), true);
+    assert.equal(shouldStartTrainingControl({ test: false, trainingControl: false }, {}), false);
+});
 
 test('fixed test-mode startup wires isolated Database, HTTP and WebSocket', () => {
     const { observed, options } = createRuntime();

@@ -123,7 +123,6 @@ MonoBehaviour:
   Transform: {fileID: 2518675752222090672}
   OriginalRotation: 0
   Rotation: 0
-  ShowDebug: 0
   Health: 0
   MaxHealth: 0
   OriginalHealth: 0
@@ -226,49 +225,6 @@ MonoBehaviour:
   IsPathfinding: 0
   PathfindingThread: 0
   PrintDebugImage: 0
-  __Strategy: 
-  __Squad: 
-  __SavedSquad: 
-  __SquadStatus: 
-  __CommandStatus: 
-  __LastStopReason: 
-  __EnemySquad: 
-  __TargetEnemyShipToFollow: 
-  __SquadColor: 
-  __SquadShootingStrategy: 
-  __CommandDestination: {x: 0, y: 0}
-  __Velocity: {x: 0, y: 0}
-  __TargetCoordinates: {x: 0, y: 0}
-  __Firepower: 0
-  __DamagePerSecond: 0
-  __CurrentSpeed: 0
-  __DegreesToTargetCoordinates: 0
-  __DistanceToTargetCoordinates: 0
-  __TurningRadius: 0
-  __Width: 0
-  __Height: 0
-  __SquadWidth: 0
-  __SquadHeight: 0
-  __Tsv: 0
-  __CommandTsv: 0
-  __HasReachedDestination: 0
-  __SquadHasReachedDestination: 0
-  __IsInBounds: 0
-  __WeaponTargetShips: []
-  __SquadShips: []
-  __NearbyShips: []
-  __ShipsWarpingHere: []
-  __ShipsOnTopOf: []
-  __SortedTargetingQueue: []
-  __ShipsWithinRangeOfWeapons: []
-  __PastCommands: []
-  __BannedStrats: []
-  __DamageStatuses: []
-  __CommandTargetingQueue: []
-  __NearbyAsteroids: []
-  __HivemindShips: []
-  __RejectReasons: []
-  __Clearance: 0
   Direction: 0
   ShouldDetonate: 0
   RLShootingStrategy: 0

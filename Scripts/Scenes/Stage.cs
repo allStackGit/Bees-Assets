@@ -47,9 +47,10 @@ public class Stage : Scene
     /// </summary>
     public bool IsTraining;
     /// <summary>
-    /// Whether or not the AI is controlled by the Nueral Network
+    /// Whether ordinary gameplay AI sides may be controlled by the deployed RL policy.
+    /// This is independent from dedicated ML-Agents training.
     /// </summary>
-    public bool ActivateBrains;
+    public bool ActivateRlPolicy;
     /// <summary>
     /// Whether or not the Hive Mind is active and giving commands
     /// </summary>
@@ -316,10 +317,6 @@ public class Stage : Scene
     /// </summary>
     public Dictionary<(int, int), Pathfinder.Grid> PathfinderGrids = new Dictionary<(int, int), Pathfinder.Grid>();
     /// <summary>
-    /// Handles logging debug variables for the stage
-    /// </summary>
-    public DebugLogger DebugLogger;
-    /// <summary>
     /// Whether or not the player is controlling the ships or if there's a cut scene or something loading. 
     /// Only valid for levels that have a player
     /// </summary>
@@ -352,7 +349,6 @@ public class Stage : Scene
         //Debug.Log($"Start level stage");
         Name = "Level";
         base.Start();
-        DebugLogger.__CommandCounts = new int[21];
 
     }
     int _spawn_i;
@@ -576,12 +572,10 @@ public class Stage : Scene
             if (ConfigData.Configuration.AISide == ConfigData.Configuration.BeeSide)
             {
                 BeeShipTypes = new List<ConfigData.ShipTypes>() { BeeShipTypes[Utilities.RandomInt(BeeShipTypes.Count)] };
-                Debug.Log($"The user has selected randomized enemy ship type: {BeeShipTypes[0]}");
             }
             else
             {
                 HumanShipTypes = new List<ConfigData.ShipTypes>() { HumanShipTypes[Utilities.RandomInt(HumanShipTypes.Count)] };
-                Debug.Log($"The user has selected randomized enemy ship type: {HumanShipTypes[0]}");
             }
 
         }
@@ -617,7 +611,6 @@ public class Stage : Scene
             {
                 //Debug.Log($"Option: {level.CurrentLevelOptions.EnemyShipTypeOption}");
                 HumanShipTypes = new List<ConfigData.ShipTypes>() { HumanShipTypes[level.CurrentLevelOptions.EnemyShipTypeOption - 1] };
-                Debug.Log($"The user has selected enemy ship type: {HumanShipTypes[0]}");
             }
         }
     }
@@ -665,8 +658,6 @@ public class Stage : Scene
             _oldCameraPosition = Camera.transform.position;
 
         }
-
-        DebugLogger.LogData();
 
     }
     void FixedUpdate()

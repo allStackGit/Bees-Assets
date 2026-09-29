@@ -95,10 +95,18 @@ namespace Assets.Scripts.UI_Components
                 }
 
                 // Close the modal before executing its action. Some actions immediately load a new
-                // scene (the Space Cowboy campaign prompt is one example), and an exception or
-                // scene transition inside the action must never leave the old modal blocking input.
+                // scene (the Space Cowboy campaign prompt is one example). A hidden object does not
+                // get rendered until the frame ends, so defer only those campaign-loading actions by
+                // one frame; this guarantees the closed popup is actually presented before loading.
                 Hide();
-                action?.Invoke();
+                if (ShouldDeferUntilClosedFrame(action))
+                {
+                    DialogueDeferredActionRunner.InvokeNextFrame(action);
+                }
+                else
+                {
+                    action?.Invoke();
+                }
             });
             // Dialogue buttons are cloned after the scene-loaded scans, so apply both sound and
             // visual ownership directly when each control is created.
@@ -106,6 +114,17 @@ namespace Assets.Scripts.UI_Components
             GameHudLayoutGuard.ConfigureButtonStyle(button);
             buttonObject.SetActive(true);
             return buttonObject;
+        }
+
+        private static bool ShouldDeferUntilClosedFrame(UnityAction action)
+        {
+            if (action == null)
+            {
+                return false;
+            }
+
+            string methodName = action.Method.Name;
+            return methodName == "PlayCampaign" || methodName == "DisableTooltips";
         }
 
         public void Show()
@@ -156,6 +175,34 @@ namespace Assets.Scripts.UI_Components
             replacementButton.transform.SetSiblingIndex(siblingIndex);
             _buttons[index] = replacementButton;
             GameObject.Destroy(previousButton);
+        }
+    }
+
+    internal sealed class DialogueDeferredActionRunner : MonoBehaviour
+    {
+        private static DialogueDeferredActionRunner _instance;
+
+        public static void InvokeNextFrame(UnityAction action)
+        {
+            if (action == null)
+            {
+                return;
+            }
+
+            if (_instance == null)
+            {
+                GameObject host = new GameObject("Dialogue Deferred Action Runner");
+                DontDestroyOnLoad(host);
+                _instance = host.AddComponent<DialogueDeferredActionRunner>();
+            }
+
+            _instance.StartCoroutine(_instance.InvokeNextFrameCoroutine(action));
+        }
+
+        private IEnumerator InvokeNextFrameCoroutine(UnityAction action)
+        {
+            yield return null;
+            action?.Invoke();
         }
     }
 }

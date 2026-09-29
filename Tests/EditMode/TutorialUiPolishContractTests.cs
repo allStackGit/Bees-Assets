@@ -24,13 +24,64 @@ namespace Bees.Tests.EditMode
             Assert.That(source, Does.Contain("Tutorial Close Hit Area"));
             Assert.That(source, Does.Contain("button.onClick.AddListener(Hide)"));
             Assert.That(source, Does.Contain("Tutorial Info Tab"));
-            Assert.That(source, Does.Contain("rect.anchoredPosition = new Vector2(-InfoTabBorder, 0f)"));
-            Assert.That(source, Does.Contain("rect.sizeDelta = new Vector2(InfoTabWidth + InfoTabBorder, InfoTabHeight)"));
+            Assert.That(source, Does.Contain("rect.anchoredPosition = new Vector2(-(InfoTabBorder * 2f), 0f)"));
+            Assert.That(source, Does.Contain("rect.sizeDelta = new Vector2(InfoTabWidth + (InfoTabBorder * 2f), InfoTabHeight)"));
             Assert.That(source, Does.Contain("TutorialInfoTabGraphic"));
             Assert.That(source, Does.Contain("Input.GetKeyDown(KeyCode.Space)"));
             Assert.That(source, Does.Contain("_previousButton"));
             Assert.That(source, Does.Contain("_nextButton"));
             Assert.That(source, Does.Contain("_sequenceIndex + 1"));
+            Assert.That(source, Does.Contain("public bool IsSequenceActive => _sequenceActive;"));
+            Assert.That(source, Does.Not.Contain("TooltipText.ForceMeshUpdate(true)"));
+        }
+
+        [Test]
+        public void ActiveTooltipSequenceIsNotRewrittenOrRemeasuredByPollingPolishGuard()
+        {
+            string source = ReadSource("Scripts", "UI Components", "TutorialFeedbackPolishGuard.cs");
+            int sequenceGuard = source.IndexOf("if (!tooltip.IsSequenceActive)", System.StringComparison.Ordinal);
+            int rewrite = source.IndexOf("PutSentencesOnSeparateLines(tooltip.TooltipText.text)", sequenceGuard, System.StringComparison.Ordinal);
+            int remeasure = source.IndexOf("tooltip.TooltipText.GetPreferredValues", sequenceGuard, System.StringComparison.Ordinal);
+
+            Assert.That(sequenceGuard, Is.GreaterThanOrEqualTo(0));
+            Assert.That(rewrite, Is.GreaterThan(sequenceGuard));
+            Assert.That(remeasure, Is.GreaterThan(sequenceGuard));
+        }
+
+        [Test]
+        public void PlutoTwoSuppressesStaleDialogueForEntireTooltipSequence()
+        {
+            string mission = ReadSource("Scripts", "Levels", "Level.Campaign.Pluto.cs");
+            int plutoTwo = mission.IndexOf("public void Pluto2Reinforcements()", System.StringComparison.Ordinal);
+            int suppress = mission.IndexOf("SetDialoguePresentationSuppressed(true)", plutoTwo, System.StringComparison.Ordinal);
+            int sequence = mission.IndexOf("basicTooltip.ShowSequence", suppress, System.StringComparison.Ordinal);
+            int release = mission.IndexOf("SetDialoguePresentationSuppressed(false)", sequence, System.StringComparison.Ordinal);
+            int intendedDialogue = mission.IndexOf("PlayDialogueSection(Stage.CutsceneManager.PlutoLines_Reinforcements.GetRange(3, 2))", release, System.StringComparison.Ordinal);
+            string cutscene = ReadSource("Scripts", "UI Components", "CutsceneManager.cs");
+
+            Assert.That(suppress, Is.GreaterThan(plutoTwo));
+            Assert.That(sequence, Is.GreaterThan(suppress));
+            Assert.That(release, Is.GreaterThan(sequence));
+            Assert.That(intendedDialogue, Is.GreaterThan(release));
+            Assert.That(cutscene, Does.Contain("if (_dialoguePresentationSuppressed)"));
+            Assert.That(cutscene, Does.Contain("DialogueManager.gameObject.SetActive(false);"));
+        }
+
+        [Test]
+        public void AttackOnSightTutorialHighlightUsesNonBlockingRedBorder()
+        {
+            string source = ReadSource("Scripts", "UI Components", "UIHighlightBorderStyle.cs");
+            string prefab = ReadSource("Prefabs", "UI", "UI Highlight Tooltip.prefab");
+
+            Assert.That(source, Does.Contain("transform.parent != actionBox.AttackOnSightButton.transform"));
+            Assert.That(source, Does.Contain("fill.enabled = false"));
+            Assert.That(source, Does.Contain("\"Border Top\""));
+            Assert.That(source, Does.Contain("\"Border Bottom\""));
+            Assert.That(source, Does.Contain("\"Border Left\""));
+            Assert.That(source, Does.Contain("\"Border Right\""));
+            Assert.That(source, Does.Contain("edgeImage.color = Color.red"));
+            Assert.That(source, Does.Contain("edgeImage.raycastTarget = false"));
+            Assert.That(prefab, Does.Contain("guid: 45bbba90d8804d65be4da653db25e41b"));
         }
 
         [Test]
@@ -158,8 +209,19 @@ namespace Bees.Tests.EditMode
             Assert.That(tutorial, Is.GreaterThan(plutoTwo));
             Assert.That(combatGate, Is.GreaterThan(tutorial));
             Assert.That(enemySpawn, Is.GreaterThan(combatGate));
-            Assert.That(source, Does.Contain("holding <b>R</b>."));
-            Assert.That(source, Does.Contain("pressing <b>F</b>."));
+            Assert.That(source, Does.Contain("holding R."));
+            Assert.That(source, Does.Contain("pressing F."));
+            Assert.That(source, Does.Contain("bool openingDialogueStarted = false;"));
+            Assert.That(source, Does.Contain("() => openingDialogueStarted && Stage.CutsceneManager.HitDialogueBreak"));
+
+            int suppressDialogue = source.LastIndexOf(
+                "Stage.CutsceneManager.SetDialoguePresentationSuppressed(true);",
+                tutorial,
+                System.StringComparison.Ordinal);
+            Assert.That(suppressDialogue, Is.GreaterThan(plutoTwo),
+                "Pluto II must suppress stale dialogue presentation for the multi-page tutorial.");
+            Assert.That(suppressDialogue, Is.LessThan(tutorial));
+
             Assert.That(source, Does.Contain("(the exclamation point)"));
             Assert.That(source, Does.Not.Contain("(the red exclamation point)"));
         }
@@ -176,6 +238,7 @@ namespace Bees.Tests.EditMode
             int combatGate = source.IndexOf("() => hasSeenFleetMessages", tutorialComplete, System.StringComparison.Ordinal);
             int enemySpawn = source.IndexOf("AddReinforcementSquads(firstSquads", combatGate, System.StringComparison.Ordinal);
 
+            Assert.That(mission, Is.GreaterThanOrEqualTo(0));
             Assert.That(tutorial, Is.GreaterThan(mission));
             Assert.That(tutorialComplete, Is.GreaterThan(tutorial));
             Assert.That(combatGate, Is.GreaterThan(tutorialComplete));

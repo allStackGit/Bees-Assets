@@ -86,7 +86,6 @@ namespace Assets.Scripts.Server
             _websocketURL = websocketUrl;
             IsSecured = secured;
             Protocol = secured ? "wss" : "ws";
-            Debug.Log($"Trying to connect to {_websocketURL}");
             MakeSocket();
         }
 
@@ -195,7 +194,6 @@ namespace Assets.Scripts.Server
             if (HasClosed)
             {
                 HasClosed = false;
-                Debug.Log("Connection re-opened!");
                 OpenLevels.ForEach((level) =>
                 {
                     ConfigData.Socket.SendRequest(new ReconnectLevelRequest(
@@ -207,12 +205,10 @@ namespace Assets.Scripts.Server
                             level.ServerGameId),
                         ConfigData.StandardMaxTimeOnQueue,
                         level));
-                    Debug.Log($"Trying to reconnect {level.Name} to the server");
                 });
             }
             else
             {
-                Debug.Log($"Connection with {(_useWebSocketSharp ? "WebSocketSharp" : "NativeWebSocket")} open!");
             }
         }
 
@@ -456,7 +452,6 @@ namespace Assets.Scripts.Server
             if (_resends > 0)
             {
                 Debug.LogWarning($"Resending {_resends} timed-out requests");
-                ConfigData.__TotalResends += _resends;
             }
         }
 
@@ -616,7 +611,7 @@ namespace Assets.Scripts.Server
             {
                 _waitableRequests.Add(request);
             }
-            ConfigData.__PastServerRequests.Add(request);
+            ConfigData.RequestHistory.Add(request);
             if (isResendRequest)
             {
                 request.StartTime = ConfigData.Stopwatch.ElapsedMilliseconds;
@@ -802,7 +797,6 @@ namespace Assets.Scripts.Server
             }
             else
             {
-                Debug.Log($"Standing requests: {Utilities.ListToString(SnapshotStandingRequests())}");
                 Debug.LogError($"Couldn't find a matching request for {_settingsResponse_userData.Hash}");
             }
         }
@@ -1004,7 +998,6 @@ namespace Assets.Scripts.Server
                     _tempSquad.SetCommand(_handleStrategicCommandResponse_command);
                     if (!_handleStrategicCommandResponse_level.Stage.IsTraining)
                     {
-                        Debug.Log($"Command response for {_tempSquad} {_handleStrategicCommandResponse_command}");
                     }
 
                     if (_tempCommandType == ConfigData.CommandTypes.Aggressive)
@@ -1173,7 +1166,6 @@ namespace Assets.Scripts.Server
                 StandingRequests.Remove(handleReconnectLevelResponseStandingRequest);
                 handleReconnectLevelResponseLevel = handleReconnectLevelResponseStandingRequest.Level;
                 ApplyReconnectLevelResponse(handleReconnectLevelResponseLevel, _setupLevelResponse);
-                Debug.Log($"Reconnected {handleReconnectLevelResponseLevel.Name} to the server");
                 MarkStrandedRequestsForResending();
             }
             else
@@ -1198,7 +1190,6 @@ namespace Assets.Scripts.Server
             }
             else
             {
-                Debug.Log($"Couldn't find a matching request for {response.Hash}");
             }
         }
     }

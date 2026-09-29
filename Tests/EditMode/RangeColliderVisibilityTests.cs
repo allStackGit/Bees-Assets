@@ -145,7 +145,6 @@ namespace Bees.Tests.EditMode
         private ObjectFixture CreateMapObject(string name, object level, bool includeSecondCollider = false)
         {
             GameObject gameObject = CreateObject(name);
-            gameObject.tag = "Object";
             Collider2D collider = gameObject.AddComponent<BoxCollider2D>();
             Collider2D secondCollider = includeSecondCollider ? gameObject.AddComponent<CircleCollider2D>() : null;
             object mapObject = gameObject.AddComponent(RuntimeAssembly.GetType("MapObject"));

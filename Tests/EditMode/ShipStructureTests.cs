@@ -27,7 +27,6 @@ namespace Bees.Tests.EditMode
             AssertPartial("Ship.Combat.cs", "public static void LogAttackingDamage", "public virtual void Kill");
             AssertPartial("Ship.Geometry.cs", "public Collider2D GetObstacleInPath", "public static double GetAverageHealthPercent");
             AssertPartial("Ship.Visuals.cs", "public virtual void SetColor", "public void UpdateHealthBar");
-            AssertPartial("Ship.Debug.cs", "protected virtual void UpdateDebugProperties");
             AssertPartial("Ship.Interaction.cs", "public void Clicked", "OnTriggerEnter2D");
         }
 
@@ -46,12 +45,30 @@ namespace Bees.Tests.EditMode
         [Test]
         public void HealthNormalizationUsesFractionalDivisionAndEmptyGuard()
         {
-            string combat = File.ReadAllText(Path.Combine(_folder, "Ship.Combat.cs"));
+            string perception = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "Scenes", "RlCombatPerception.cs"));
             string geometry = File.ReadAllText(Path.Combine(_folder, "Ship.Geometry.cs"));
 
-            StringAssert.Contains("(float)target.Health / target.MaxHealth", combat);
+            StringAssert.Contains("Mathf.Clamp01((float)ship.Health / ship.MaxHealth)", perception);
+            StringAssert.Contains("sensor.AddObservation(GetHealthFraction(ship));", perception);
             StringAssert.Contains("ships == null || ships.Count == 0", geometry);
             StringAssert.Contains("(double)ship.Health / ship.OriginalHealth", geometry);
+        }
+
+        [Test]
+        public void DualCannonRecordsBothProjectilesInRlShotTelemetry()
+        {
+            string source = File.ReadAllText(Path.Combine(_folder, "Weapons", "DualCannon.cs"));
+            const string marker = "global::RlOneVsOneEpisodeCoordinator.RecordShotFired(Ship, this);";
+
+            StringAssert.Contains("Ship.FleetShip.ShotsFired += 2;", source);
+            int first = source.IndexOf(marker);
+            int second = source.IndexOf(marker, first + marker.Length);
+            int third = source.IndexOf(marker, second + marker.Length);
+
+            Assert.That(first, Is.GreaterThanOrEqualTo(0));
+            Assert.That(second, Is.GreaterThan(first));
+            Assert.That(third, Is.EqualTo(-1));
         }
 
         private void AssertPartial(string filename, params string[] markers)

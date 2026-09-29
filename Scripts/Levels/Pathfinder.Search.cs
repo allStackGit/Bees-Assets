@@ -676,7 +676,6 @@ namespace Assets.Scripts.Levels
                     }
                     catch (Exception e)
                     {
-                        Debug.Log($"Tried to start at ({startX}, {startY}) and end at ({endX}, {endY}) for {ship.Name} on thread #{threadIndex}");
                         throw e;
                     }
                     Ships[threadIndex] = ship;

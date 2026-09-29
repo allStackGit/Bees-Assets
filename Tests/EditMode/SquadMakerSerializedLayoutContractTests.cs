@@ -333,21 +333,37 @@ namespace Bees.Tests.EditMode
             AssertLayoutElement(footer, flexibleWidth: 1f, flexibleHeight: 0f);
             Assert.That(footer.GetComponent<LayoutElement>().preferredHeight, Is.EqualTo(51f).Within(0.01f));
 
-            AssertLayoutElement(shipSelector, flexibleWidth: 262f, flexibleHeight: 1f);
-            AssertLayoutElement(squadMaker, flexibleWidth: 620f, flexibleHeight: 1f);
+            AssertLayoutElement(shipSelector, flexibleWidth: 0f, flexibleHeight: 1f);
+            AssertWidthIntent(shipSelector, 262f);
+
+            AssertLayoutElement(squadMaker, flexibleWidth: 1f, flexibleHeight: 1f);
+            AssertWidthIntent(squadMaker, 620f);
+
             AssertLayoutElement(squadSettings, flexibleWidth: 1f, flexibleHeight: 0f);
             Assert.That(squadSettings.GetComponent<LayoutElement>().preferredHeight, Is.EqualTo(298f).Within(0.01f));
             AssertLayoutElement(squadComposition, flexibleWidth: 1f, flexibleHeight: 1f);
             Assert.That(squadComposition.GetComponent<LayoutElement>().preferredHeight, Is.EqualTo(420f).Within(0.01f));
-            AssertLayoutElement(squads, flexibleWidth: 484f, flexibleHeight: 1f);
+
+            AssertLayoutElement(squads, flexibleWidth: 0f, flexibleHeight: 1f);
+            AssertWidthIntent(squads, 484f);
+
             AssertLayoutElement(savedSquads, flexibleWidth: 262f, flexibleHeight: 1f);
+            AssertWidthIntent(savedSquads, 262f);
             AssertLayoutElement(chosenSquads, flexibleWidth: 222f, flexibleHeight: 1f);
+            AssertWidthIntent(chosenSquads, 222f);
         }
 
         private static void AssertColumnCrossAxisOwnership(VerticalLayoutGroup layout)
         {
             Assert.That(layout.childControlWidth, Is.True);
             Assert.That(layout.childForceExpandWidth, Is.True);
+        }
+
+        private static void AssertWidthIntent(RectTransform rect, float authoredWidth)
+        {
+            LayoutElement element = rect.GetComponent<LayoutElement>();
+            Assert.That(element.minWidth, Is.EqualTo(authoredWidth).Within(0.01f));
+            Assert.That(element.preferredWidth, Is.EqualTo(authoredWidth).Within(0.01f));
         }
 
         private static void ApplyAndAssertCoverage(
@@ -371,14 +387,13 @@ namespace Bees.Tests.EditMode
             canvas.sizeDelta = canvasSize;
             RuntimeAssembly.Invoke(guard, "ApplyViewportFill");
 
-            float horizontalScale = canvasSize.x / ReferenceResolution.x;
             float expectedBodyHeight = canvasSize.y - 51f;
             float expectedCompositionHeight = expectedBodyHeight - 298f;
-            float expectedShipSelectorWidth = 262f * horizontalScale;
-            float expectedCenterWidth = 620f * horizontalScale;
-            float expectedSquadsWidth = 484f * horizontalScale;
-            float expectedSavedSquadsWidth = 262f * horizontalScale;
-            float expectedChosenSquadsWidth = 222f * horizontalScale;
+            float expectedShipSelectorWidth = 262f;
+            float expectedSquadsWidth = 484f;
+            float expectedCenterWidth = Mathf.Max(0f, canvasSize.x - expectedShipSelectorWidth - expectedSquadsWidth);
+            float expectedSavedSquadsWidth = 262f;
+            float expectedChosenSquadsWidth = 222f;
 
             AssertSize(mainPanel, canvasSize.x, canvasSize.y);
             AssertSize(mainContainer, canvasSize.x, expectedBodyHeight);

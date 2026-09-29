@@ -1,0 +1,217 @@
+using Assets.Scripts;
+using Assets.Scripts.Entities.Ships;
+using System;
+using System.Collections.Generic;
+
+/// <summary>
+/// Frozen neural-policy ABI. A checkpoint is compatible only while this contract remains identical.
+/// Curriculum, rewards, maps, matchup distributions and non-architectural trainer hyperparameters
+/// may evolve without changing this schema; observation/action meaning, ordering, normalization,
+/// capacities, behavior identity and network architecture may not.
+/// </summary>
+internal static partial class RlPolicySchema
+{
+    internal const int Version = 21;
+    internal const string ExpectedBehaviorName = "BeesRL1v1";
+    internal const int PerceptionObservationSize = 7593;
+    internal const int EpisodeProgressObservationIndex = PerceptionObservationSize;
+    internal const int FactionObservationIndex = EpisodeProgressObservationIndex + 1;
+    internal const int ReservedObservationStartIndex = FactionObservationIndex + 1;
+    internal const int ReservedObservationCount = 19;
+    internal const int ReservedObservationEndExclusive = ReservedObservationStartIndex + ReservedObservationCount;
+    internal const int ExpectedObservationSize = ReservedObservationEndExclusive;
+    internal const int ExpectedContinuousActions = 16;
+    internal const int ExpectedWeaponFireBranchCount = 5;
+    internal const int ExpectedWeaponFireBranchSize = 2;
+    internal const int ExpectedDiscreteBranchCount = 6;
+    internal const int ExpectedSpecialActionBranchSize = 5;
+
+    internal const string Signature =
+        "bees-rl-v21|behavior=BeesRL1v1|trainer=ma-poca|network=structured-dual-faction-384x3|normalize=true|obs=7614|tail=episode-progress+faction+19-reserved|cont=16|disc=2x5,5|" +
+        "entity-encoder=shared-attention96|slot-normalization=raw-bounded-shared|weapon-encoder=shared-common32-slot64|weapon-head=shared-per-slot-faction-specific|team-gradient=inverse-active-group|" +
+        "coord-frame=team-episode-distinct-quarter-turn|weapon-aim=slotwise-xy|weapon-fire=slotwise-cease-or-fire|healing=weapon-exclusive|weapon-ready=rl-latched-until-fire|" +
+        "shiptype=fixed-scrambled-scalar24|weapontype=fixed-scrambled-scalar10|mapbits=4|shipmap=v1-0..23|weaponmap=v1-0..9|" +
+        "allies=64|enemies=64|weapons=5|entity-weapons=5|enemy-mounts=0|mining=8|map-objects=64|moving-asteroids=48|" +
+        "self=25|ship-id=episode-permuted-scalar23|capability=12|parent-carrier=40|entity-core=14|entity=40|ally=44-with-private-comm4|communication=4-continuous-private-allied|self-weapon=15|observed-weapon=5|weapon-observation=split-self-vs-observed|mining-slot=7|" +
+        "map-slot=12|moving-asteroid-slot=11|objective=16|grid=21x21-cell6|exploration-grid=16x16-team-shared-sight-recency|entity-order=distance,type,fleet-id,runtime-id";
+
+    internal static void ValidateOrThrow()
+    {
+        List<string> errors = new List<string>();
+        if (!string.Equals(RlOneVsOneAgent.BehaviorName, ExpectedBehaviorName, StringComparison.Ordinal))
+        {
+            errors.Add($"behavior expected {ExpectedBehaviorName} but was {RlOneVsOneAgent.BehaviorName}");
+        }
+
+        Check(errors, RlCombatPerception.ObservationSize, PerceptionObservationSize, "perception observation size");
+        Check(errors, FactionObservationIndex, 7594, "faction observation index");
+        Check(errors, ReservedObservationCount, 19, "reserved observation count");
+        Check(errors, RlOneVsOneAgent.ObservationSize, ExpectedObservationSize, "total observation size");
+        Check(errors, RlOneVsOneAgent.ContinuousActionCount, ExpectedContinuousActions, "continuous actions");
+        Check(errors, RlOneVsOneAgent.CommunicationContinuousActionCount, 4, "communication continuous actions");
+        Check(errors, RlOneVsOneAgent.CommunicationContinuousActionStart, 12, "communication continuous action start");
+        Check(errors, RlOneVsOneAgent.WeaponFireBranchCount, ExpectedWeaponFireBranchCount, "weapon fire branch count");
+        Check(errors, RlOneVsOneAgent.WeaponFireBranchSize, ExpectedWeaponFireBranchSize, "weapon fire branch size");
+        Check(errors, RlOneVsOneAgent.DiscreteBranchCount, ExpectedDiscreteBranchCount, "discrete branch count");
+        Check(errors, RlOneVsOneAgent.SpecialActionBranchSize, ExpectedSpecialActionBranchSize, "special branch");
+        ValidateDiscreteBranchSizes(errors);
+
+        Check(errors, RlCombatPerception.ShipTypeObservationSize, 1, "ship type observation size");
+        Check(errors, RlCombatPerception.WeaponTypeObservationSize, 1, "weapon type observation size");
+        Check(errors, RlCombatPerception.MapObjectTypeBitCount, 4, "map-object type bits");
+        Check(errors, RlCombatPerception.MaxObservedAllies, 64, "ally slots");
+        Check(errors, RlCombatPerception.MaxObservedEnemies, 64, "enemy slots");
+        Check(errors, RlCombatPerception.MaxWeaponSlots, 5, "weapon slots");
+        Check(errors, RlCombatPerception.MaxObservedEntityWeaponSlots, 5, "entity weapon slots");
+        Check(errors, RlCombatPerception.MaxObservedEnemyWeaponMounts, 0, "enemy weapon-mount slots");
+        Check(errors, RlCombatPerception.ShipIdentityObservationSize, 1, "ship identity observation size");
+        Check(errors, RlCombatPerception.CommunicationObservationSize, 4, "communication observation size");
+        Check(errors, RlCombatPerception.SelfObservationSize, 25, "self observation size");
+        Check(errors, RlCombatPerception.SelfWeaponObservationSize, 15, "self weapon observation size");
+        Check(errors, RlCombatPerception.ObservedWeaponObservationSize, 5, "observed weapon observation size");
+        Check(errors, RlCombatPerception.EntityObservationSize, 40, "entity observation size");
+        Check(errors, RlCombatPerception.AllyObservationSize, 44, "ally observation size");
+        Check(errors, RlCombatPerception.ParentCarrierObservationSize, 40, "parent-carrier observation size");
+        Check(errors, RlCombatPerception.ObjectiveObservationSize, 16, "objective channels");
+        Check(errors, RlCombatPerception.NavigationGridSize, 21, "navigation grid width");
+        Check(errors, RlCombatPerception.NavigationGridCellSize, 6f, "navigation grid cell size");
+        Check(errors, RlCombatPerception.ExplorationGridSize, 16, "exploration grid width");
+        Check(errors, RlCombatPerception.ExplorationGridCellCount, 256, "exploration grid cells");
+
+        ValidateFrozenEnumMappings(errors);
+
+        if (errors.Count > 0)
+        {
+            throw new InvalidOperationException(
+                "RL policy ABI v" + Version + " no longer matches its frozen contract: " +
+                string.Join("; ", errors));
+        }
+    }
+
+    internal static bool TryValidateShip(Ship ship, out string error)
+    {
+        if (ship == null)
+        {
+            error = "RL policy cannot bind a null ship.";
+            return false;
+        }
+
+        int shipType = (int)ship.ShipType;
+        if (shipType < 0 || shipType >= 24)
+        {
+            error = $"RL policy cannot encode ship type {ship.ShipType} ({shipType}); the frozen scalar vocabulary supports 0-23.";
+            return false;
+        }
+
+        if (ship.Weapons != null && ship.Weapons.Count > RlCombatPerception.MaxWeaponSlots)
+        {
+            error = $"RL policy ABI cannot control {ship.ShipType}: it has {ship.Weapons.Count} authored weapon slots, " +
+                    $"but the frozen policy supports {RlCombatPerception.MaxWeaponSlots}. " +
+                    "Increase the ABI before canonical training rather than aliasing excess weapons.";
+            return false;
+        }
+
+        if (ship.Weapons != null)
+        {
+            for (int i = 0; i < ship.Weapons.Count; i++)
+            {
+                if (ship.Weapons[i] == null)
+                {
+                    continue;
+                }
+                int weaponType = (int)ship.Weapons[i].Type;
+                if (weaponType < 0 || weaponType >= 10)
+                {
+                    error = $"RL policy cannot encode weapon type {ship.Weapons[i].Type} ({weaponType}) on {ship.ShipType}; the frozen scalar vocabulary supports 0-9.";
+                    return false;
+                }
+            }
+        }
+
+        error = null;
+        return true;
+    }
+
+    private static void ValidateDiscreteBranchSizes(List<string> errors)
+    {
+        int[] branchSizes = RlOneVsOneAgent.CreateDiscreteBranchSizes();
+        Check(errors, branchSizes.Length, ExpectedDiscreteBranchCount, "discrete branch array length");
+        if (branchSizes.Length != ExpectedDiscreteBranchCount)
+        {
+            return;
+        }
+
+        for (int slot = 0; slot < ExpectedWeaponFireBranchCount; slot++)
+        {
+            Check(errors, branchSizes[slot], ExpectedWeaponFireBranchSize, $"weapon fire branch {slot}");
+        }
+        Check(errors, branchSizes[RlOneVsOneAgent.SpecialActionBranch], ExpectedSpecialActionBranchSize, "special branch array entry");
+    }
+
+    private static void ValidateFrozenEnumMappings(List<string> errors)
+    {
+        // Existing enum identities are part of the v15 scalar policy vocabulary. Existing values
+        // must never be renumbered or remapped without an intentional policy ABI change.
+        CheckEnum(errors, ConfigData.ShipTypes.Barge, 0, "ship");
+        CheckEnum(errors, ConfigData.ShipTypes.Beacon, 1, "ship");
+        CheckEnum(errors, ConfigData.ShipTypes.Beehive, 2, "ship");
+        CheckEnum(errors, ConfigData.ShipTypes.Bumblebee, 3, "ship");
+        CheckEnum(errors, ConfigData.ShipTypes.CarpenterBee, 4, "ship");
+        CheckEnum(errors, ConfigData.ShipTypes.Carrier, 5, "ship");
+        CheckEnum(errors, ConfigData.ShipTypes.Cruiser, 6, "ship");
+        CheckEnum(errors, ConfigData.ShipTypes.Dreadnought, 7, "ship");
+        CheckEnum(errors, ConfigData.ShipTypes.Drone, 8, "ship");
+        CheckEnum(errors, ConfigData.ShipTypes.Factory, 9, "ship");
+        CheckEnum(errors, ConfigData.ShipTypes.FireBarge, 10, "ship");
+        CheckEnum(errors, ConfigData.ShipTypes.Flagship, 11, "ship");
+        CheckEnum(errors, ConfigData.ShipTypes.Frigate, 12, "ship");
+        CheckEnum(errors, ConfigData.ShipTypes.Gunship, 13, "ship");
+        CheckEnum(errors, ConfigData.ShipTypes.Honeybee, 14, "ship");
+        CheckEnum(errors, ConfigData.ShipTypes.Hornet, 15, "ship");
+        CheckEnum(errors, ConfigData.ShipTypes.Leafcutter, 16, "ship");
+        CheckEnum(errors, ConfigData.ShipTypes.Queen, 17, "ship");
+        CheckEnum(errors, ConfigData.ShipTypes.Scout, 18, "ship");
+        CheckEnum(errors, ConfigData.ShipTypes.Striker, 19, "ship");
+        CheckEnum(errors, ConfigData.ShipTypes.WarpGate, 20, "ship");
+        CheckEnum(errors, ConfigData.ShipTypes.Wasp, 21, "ship");
+        CheckEnum(errors, ConfigData.ShipTypes.YellowJacket, 22, "ship");
+        CheckEnum(errors, ConfigData.ShipTypes.HumanTarget, 23, "ship");
+
+        CheckEnum(errors, ConfigData.WeaponTypes.Bomb, 0, "weapon");
+        CheckEnum(errors, ConfigData.WeaponTypes.BeamCannon, 1, "weapon");
+        CheckEnum(errors, ConfigData.WeaponTypes.LightCannon, 2, "weapon");
+        CheckEnum(errors, ConfigData.WeaponTypes.Turret, 3, "weapon");
+        CheckEnum(errors, ConfigData.WeaponTypes.FullShipTurret, 4, "weapon");
+        CheckEnum(errors, ConfigData.WeaponTypes.RocketTurret, 5, "weapon");
+        CheckEnum(errors, ConfigData.WeaponTypes.DualCannon, 6, "weapon");
+        CheckEnum(errors, ConfigData.WeaponTypes.Eye, 7, "weapon");
+        CheckEnum(errors, ConfigData.WeaponTypes.QueenEye, 8, "weapon");
+        CheckEnum(errors, ConfigData.WeaponTypes.SplitShot, 9, "weapon");
+    }
+
+    private static void CheckEnum<T>(List<string> errors, T value, int expected, string label) where T : Enum
+    {
+        int actual = Convert.ToInt32(value);
+        if (actual != expected)
+        {
+            errors.Add($"{label} enum {value} expected id {expected} but was {actual}");
+        }
+    }
+
+    private static void Check(List<string> errors, int actual, int expected, string label)
+    {
+        if (actual != expected)
+        {
+            errors.Add($"{label} expected {expected} but was {actual}");
+        }
+    }
+
+    private static void Check(List<string> errors, float actual, float expected, string label)
+    {
+        if (actual != expected)
+        {
+            errors.Add($"{label} expected {expected} but was {actual}");
+        }
+    }
+
+}

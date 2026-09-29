@@ -1,0 +1,490 @@
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=stopped envs=4 build=2026-09-28-191821-4def6a77d811 rev=90 optimizer=stability-hold
+2026/09/29 07:00:27 [Bees tailnet] 127.0.0.1:7151 -> 100.80.169.87:7151 target unavailable: dial tcp 100.80.169.87:7151: connectex: A connection attempt failed because the connected party did not properly respond after a period of time, or established connection failed because connected host has failed to respond.
+2026/09/29 07:00:27 [Bees tailnet] 127.0.0.1:55051 -> 100.80.169.87:55051 target unavailable: dial tcp 100.80.169.87:55051: connectex: A connection attempt failed because the connected party did not properly respond after a period of time, or established connection failed because connected host has failed to respond.
+2026/09/29 07:00:27 [Bees tailnet] 127.0.0.1:7150 -> 100.80.169.87:7150 target unavailable: dial tcp 100.80.169.87:7150: connectex: A connection attempt failed because the connected party did not properly respond after a period of time, or established connection failed because connected host has failed to respond.
+2026/09/29 07:00:27 [Bees tailnet] 127.0.0.1:7150 -> 100.80.169.87:7150 target unavailable: dial tcp 100.80.169.87:7150: connectex: A connection attempt failed because the connected party did not properly respond after a period of time, or established connection failed because connected host has failed to respond.
+2026/09/29 07:00:27 [Bees tailnet] 127.0.0.1:7146 -> 100.80.169.87:7146 target unavailable: dial tcp 100.80.169.87:7146: connectex: A connection attempt failed because the connected party did not properly respond after a period of time, or established connection failed because connected host has failed to respond.
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=stopped envs=4 build=2026-09-28-191821-4def6a77d811 rev=90 optimizer=stability-hold
+[Bees WAN actor] waiting for central trainer: Remote end closed connection without response
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=stopped envs=4 build=2026-09-28-191821-4def6a77d811 rev=-1 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees WAN actor] learner assigned actor slot 0.
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees WAN actor] launching 4 Unity environments base_port=5005 logs=C:\Users\Seagrams Crown\AppData\Local\BeesTraining\ManagedBuilds\logs\bees-v20-r3-s1-20260929T104735Z-34b57ea7.
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=starting envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=starting envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=starting envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees WAN actor] synchronized policies={'BeesRL1v1?team=0': 1, 'BeesRL1v1?team=1': 1} control_epoch=1.
+[Bees WAN actor] joined session=1047b5818da1f833af1b0b1b049ab383498df344bbf4064c actor=0 workers=0-3 local_envs=4 total_envs=4 rollout_horizons={'BeesRL1v1?team=0': 2048, 'BeesRL1v1?team=1': 2048} device=cpu.
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+2026/09/29 07:05:21 [Bees tailnet] 127.0.0.1:7150 -> 100.80.169.87:7150 target unavailable: context deadline exceeded
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees WAN actor] synchronized policies={'BeesRL1v1?team=0': 1, 'BeesRL1v1?team=1': 2} control_epoch=1.
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees WAN actor] topology local_envs=0 remote_envs=8 total_envs=8 rollout_horizons={'BeesRL1v1?team=0': 2048, 'BeesRL1v1?team=1': 2048}.
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+2026/09/29 07:08:57 [Bees tailnet] 127.0.0.1:7150 -> 100.80.169.87:7150 target unavailable: context deadline exceeded
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees WAN actor] topology local_envs=0 remote_envs=4 total_envs=4 rollout_horizons={'BeesRL1v1?team=0': 2048, 'BeesRL1v1?team=1': 2048}.
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees WAN actor] synchronized policies={'BeesRL1v1?team=0': 1, 'BeesRL1v1?team=1': 3} control_epoch=1.
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees WAN actor] synchronized policies={'BeesRL1v1?team=0': 2, 'BeesRL1v1?team=1': 3} control_epoch=1.
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees WAN actor] synchronized policies={'BeesRL1v1?team=0': 2, 'BeesRL1v1?team=1': 4} control_epoch=1.
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+2026/09/29 07:14:29 [Bees tailnet] 127.0.0.1:55051 -> 100.80.169.87:55051 target unavailable: context deadline exceeded
+[Bees WAN actor] policy/control synchronization paused while central trainer is unavailable: [WinError 10054] An existing connection was forcibly closed by the remote host; keeping local Unity environments alive.
+[Bees WAN actor] topology local_envs=0 remote_envs=8 total_envs=8 rollout_horizons={'BeesRL1v1?team=0': 2048, 'BeesRL1v1?team=1': 2048}.
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+2026/09/29 07:15:02 [Bees tailnet] 127.0.0.1:55051 -> 100.80.169.87:55051 target unavailable: context deadline exceeded
+[Bees WAN actor] policy/control synchronization paused while central trainer is unavailable: [WinError 10054] An existing connection was forcibly closed by the remote host; keeping local Unity environments alive.
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold
+2026/09/29 07:15:35 [Bees tailnet] 127.0.0.1:55051 -> 100.80.169.87:55051 target unavailable: context deadline exceeded
+[Bees WAN actor] policy/control synchronization paused while central trainer is unavailable: [WinError 10054] An existing connection was forcibly closed by the remote host; keeping local Unity environments alive.
+[Bees WAN actor] synchronized policies={'BeesRL1v1?team=0': 3, 'BeesRL1v1?team=1': 4} control_epoch=1.
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=measuring
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=measuring
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=measuring
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=measuring
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=measuring
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=measuring
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=measuring
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=measuring
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=measuring
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=measuring
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=measuring
+[Bees WAN actor] synchronized policies={'BeesRL1v1?team=0': 3, 'BeesRL1v1?team=1': 5} control_epoch=1.
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=measuring
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=stopping envs=4->5 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=awaiting-restart learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=stopping envs=4->5 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=awaiting-restart learner_sps=65.0
+[Bees WAN actor] learner assigned actor slot 0.
+[Bees WAN actor] launching 5 Unity environments base_port=5005 logs=C:\Users\Seagrams Crown\AppData\Local\BeesTraining\ManagedBuilds\logs\bees-v20-r3-s1-20260929T104735Z-34b57ea7.
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=5 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=warmup learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=stopping envs=5->4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=awaiting-restart learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=stopping envs=5->4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=awaiting-restart learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=stopping envs=5->4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=awaiting-restart learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=stopping envs=5->4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=awaiting-restart learner_sps=65.0
+[Bees WAN actor] learner assigned actor slot 0.
+[Bees WAN actor] launching 4 Unity environments base_port=5005 logs=C:\Users\Seagrams Crown\AppData\Local\BeesTraining\ManagedBuilds\logs\bees-v20-r3-s1-20260929T104735Z-34b57ea7.
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=starting envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=starting envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees WAN actor] synchronized policies={'BeesRL1v1?team=0': 3, 'BeesRL1v1?team=1': 5} control_epoch=1.
+[Bees WAN actor] topology local_envs=0 remote_envs=8 total_envs=8 rollout_horizons={'BeesRL1v1?team=0': 2048, 'BeesRL1v1?team=1': 2048}.
+[Bees WAN actor] joined session=1047b5818da1f833af1b0b1b049ab383498df344bbf4064c actor=0 workers=0-3 local_envs=4 total_envs=8 rollout_horizons={'BeesRL1v1?team=0': 2048, 'BeesRL1v1?team=1': 2048} device=cpu.
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees WAN actor] synchronized policies={'BeesRL1v1?team=0': 4, 'BeesRL1v1?team=1': 5} control_epoch=1.
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees WAN actor] synchronized policies={'BeesRL1v1?team=0': 4, 'BeesRL1v1?team=1': 6} control_epoch=1.
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees WAN actor] synchronized policies={'BeesRL1v1?team=0': 5, 'BeesRL1v1?team=1': 6} control_epoch=1.
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees WAN actor] synchronized policies={'BeesRL1v1?team=0': 5, 'BeesRL1v1?team=1': 7} control_epoch=1.
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees WAN actor] synchronized policies={'BeesRL1v1?team=0': 5, 'BeesRL1v1?team=1': 7} control_epoch=2.
+[Bees WAN actor] synchronized policies={'BeesRL1v1?team=0': 5, 'BeesRL1v1?team=1': 8} control_epoch=2.
+[Bees WAN actor] synchronized policies={'BeesRL1v1?team=0': 6, 'BeesRL1v1?team=1': 8} control_epoch=2.
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees WAN actor] synchronized policies={'BeesRL1v1?team=0': 7, 'BeesRL1v1?team=1': 8} control_epoch=2.
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees WAN actor] synchronized policies={'BeesRL1v1?team=0': 7, 'BeesRL1v1?team=1': 9} control_epoch=2.
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees WAN actor] synchronized policies={'BeesRL1v1?team=0': 8, 'BeesRL1v1?team=1': 9} control_epoch=2.
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees WAN actor] synchronized policies={'BeesRL1v1?team=0': 8, 'BeesRL1v1?team=1': 10} control_epoch=2.
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees WAN actor] synchronized policies={'BeesRL1v1?team=0': 9, 'BeesRL1v1?team=1': 10} control_epoch=2.
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees WAN actor] synchronized policies={'BeesRL1v1?team=0': 9, 'BeesRL1v1?team=1': 11} control_epoch=2.
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees WAN actor] synchronized policies={'BeesRL1v1?team=0': 10, 'BeesRL1v1?team=1': 11} control_epoch=2.
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees WAN actor] topology local_envs=0 remote_envs=9 total_envs=9 rollout_horizons={'BeesRL1v1?team=0': 1821, 'BeesRL1v1?team=1': 1821}.
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: connecting to learner; trainer=remote-seagrams-2f9ebbaa envs=4
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+2026/09/29 07:32:09 [Bees tailnet] 127.0.0.1:7150 -> 100.80.169.87:7150 target unavailable: context deadline exceeded
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees WAN actor] topology local_envs=0 remote_envs=10 total_envs=10 rollout_horizons={'BeesRL1v1?team=0': 1639, 'BeesRL1v1?team=1': 1639}.
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees WAN actor] synchronized policies={'BeesRL1v1?team=0': 11, 'BeesRL1v1?team=1': 11} control_epoch=2.
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=warmup learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=warmup learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=warmup learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=warmup learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=measuring learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=measuring learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=measuring learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=measuring learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=measuring learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=measuring learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=measuring learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=measuring learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=measuring learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=measuring learner_sps=65.0
+[Bees WAN actor] topology local_envs=0 remote_envs=11 total_envs=11 rollout_horizons={'BeesRL1v1?team=0': 1490, 'BeesRL1v1?team=1': 1490}.
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=measuring learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=measuring learner_sps=65.0
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stable learner_sps=177.8
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stable learner_sps=177.8
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stable learner_sps=177.8
+[Bees WAN actor] synchronized policies={'BeesRL1v1?team=0': 12, 'BeesRL1v1?team=1': 11} control_epoch=2.
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stable learner_sps=177.8
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stable learner_sps=177.8
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stable learner_sps=177.8
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stable learner_sps=177.8
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stable learner_sps=177.8
+[Bees WAN actor] synchronized policies={'BeesRL1v1?team=0': 12, 'BeesRL1v1?team=1': 11} control_epoch=3.
+[Bees WAN actor] synchronized policies={'BeesRL1v1?team=0': 12, 'BeesRL1v1?team=1': 12} control_epoch=3.
+[Bees WAN actor] synchronized policies={'BeesRL1v1?team=0': 13, 'BeesRL1v1?team=1': 12} control_epoch=3.
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stable learner_sps=177.8
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stable learner_sps=177.8
+[Bees WAN actor] topology local_envs=0 remote_envs=10 total_envs=10 rollout_horizons={'BeesRL1v1?team=0': 1639, 'BeesRL1v1?team=1': 1639}.
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stable learner_sps=177.8
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stable learner_sps=177.8
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=stopping envs=4->5 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=awaiting-restart learner_sps=177.8
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=stopping envs=4->5 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=awaiting-restart learner_sps=177.8
+[Bees WAN actor] learner assigned actor slot 0.
+[Bees WAN actor] launching 5 Unity environments base_port=5005 logs=C:\Users\Seagrams Crown\AppData\Local\BeesTraining\ManagedBuilds\logs\bees-v20-r3-s1-20260929T104735Z-34b57ea7.
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=5 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=warmup learner_sps=177.8
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=stopping envs=5->4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=awaiting-restart learner_sps=177.8
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=stopping envs=5->4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=awaiting-restart learner_sps=177.8
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=stopping envs=5->4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=awaiting-restart learner_sps=177.8
+[Bees WAN actor] waiting for central trainer: Remote end closed connection without response
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=stopping envs=5->4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=awaiting-restart learner_sps=177.8
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=177.8
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=177.8
+[Bees WAN actor] learner assigned actor slot 0.
+[Bees WAN actor] launching 4 Unity environments base_port=5005 logs=C:\Users\Seagrams Crown\AppData\Local\BeesTraining\ManagedBuilds\logs\bees-v20-r3-s1-20260929T104735Z-34b57ea7.
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=177.8
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=starting envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=177.8
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=starting envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=177.8
+[Bees remote] updated managed launcher: C:\Users\Seagrams Crown\AppData\Local\BeesTraining\Launcher\bees-remote-worker.cmd
+[Bees remote] updated copied launcher in place: R:\RL\bees-remote-worker.cmd
+[Bees WAN actor] synchronized policies={'BeesRL1v1?team=0': 1, 'BeesRL1v1?team=1': 1} control_epoch=1.
+[Bees WAN actor] joined session=b56f084606115be9166f9ae3a25e5e5492c28d076e954bce actor=0 workers=0-3 local_envs=4 total_envs=4 rollout_horizons={'BeesRL1v1?team=0': 2048, 'BeesRL1v1?team=1': 2048} device=cpu.
+[Bees WAN actor] synchronized policies={'BeesRL1v1?team=0': 1, 'BeesRL1v1?team=1': 1} control_epoch=2.
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=starting envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=177.8
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=177.8
+[Bees remote] status: learner=connected trainer=remote-seagrams-2f9ebbaa state=running envs=4 build=2026-09-29-064737-d0af3fb6c768 rev=91 optimizer=stability-hold learner_sps=177.8

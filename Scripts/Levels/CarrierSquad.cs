@@ -50,7 +50,7 @@ namespace Assets.Scripts.Levels
 
             for (_shipIndex = 0; _shipIndex < _shipCount; _shipIndex++)
             {
-                _id = Utilities.GetNegativeFleetshipId();
+                _id = TransientIdAllocator.GetFleetShipId();
                 _ship = (CarrierShip)Level.LevelConstructor.InstantiateShip(CarrierSquadType);
                 _ship.IsCarrierShip = true;
 

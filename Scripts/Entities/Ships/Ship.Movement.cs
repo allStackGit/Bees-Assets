@@ -237,9 +237,9 @@ namespace Assets.Scripts.Entities.Ships
 
         private void Move()
         {
-            if (HasBrain && !Squad.IsUserControlled)
+            if (IsRlPolicyControlled && !Squad.IsUserControlled)
             {
-                NNDirectionalMovement();
+                RlDirectionalMovement();
             }
             else if (HasTargetCoordinates)
             {
@@ -253,16 +253,9 @@ namespace Assets.Scripts.Entities.Ships
             }
         }
 
-        private void NNDirectionalMovement()
+        private void RlDirectionalMovement()
         {
-            if (ShouldDetonate)
-            {
-                if (ShipType == ConfigData.ShipTypes.Striker) ((Striker)this).TryToDropBombs();
-                else if (ShipType == ConfigData.ShipTypes.YellowJacket) ((YellowJacket)this).TryToDetonate();
-                else if (ShipType == ConfigData.ShipTypes.FireBarge) ((FireBarge)this).Detonate();
-            }
-
-            if (Direction == 360)
+            if (RlMovementDirection == 360)
             {
                 Body.linearVelocity = Vector2.zero;
                 IsMoving = false;
@@ -270,10 +263,12 @@ namespace Assets.Scripts.Entities.Ships
             }
             if (!HasTargetCoordinates || DistanceToPoint(TargetCoordinates) > GetHeight())
             {
-                Utilities.TimedRotationDifference(this, Direction, RotationSpeed);
+                Utilities.TimedRotationDifference(this, RlMovementDirection, RotationSpeed);
             }
             _tempAngle = (Rotation - 180) * Mathf.Deg2Rad;
-            _tempVelocity = new Vector2(Speed * Mathf.Sin(_tempAngle), -Speed * Mathf.Cos(_tempAngle));
+            // Directional controllers must honor gameplay speed state just like the normal movement
+            // path. This is required for Barge charge speed and any other temporary speed changes.
+            _tempVelocity = new Vector2(CurrentSpeed * Mathf.Sin(_tempAngle), -CurrentSpeed * Mathf.Cos(_tempAngle));
             Body.linearVelocity = _tempVelocity;
             IsMoving = true;
         }
@@ -415,6 +410,12 @@ namespace Assets.Scripts.Entities.Ships
             FinalDestination = Vector2.zero;
             Body.linearVelocity = Vector2.zero;
             IsMoving = false;
+            // RL directional movement does not consume HasTargetCoordinates/HasTargetDirection.
+            // Reset its sentinel too so a gameplay StopMoving call actually stops an RL-controlled ship.
+            if (IsRlPolicyControlled && !Squad.IsUserControlled)
+            {
+                RlMovementDirection = 360;
+            }
             ClearPreviousDesintation();
             if (HasRocketFlares)
             {

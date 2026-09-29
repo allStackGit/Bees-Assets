@@ -12,6 +12,7 @@ namespace Assets.Scripts.Entities
         private int _frameCollisions;
         private Barge _barge;
         public bool IsPooledStaticLayoutObstacle { get; set; }
+        public bool KillsShipsOnContact { get; set; }
 
         public void ResetForReuse()
         {
@@ -20,6 +21,7 @@ namespace Assets.Scripts.Entities
             _collidingShip = null;
             _frameCollisions = 0;
             _barge = null;
+            KillsShipsOnContact = false;
         }
 
         public void Collision(Collider2D collider)
@@ -54,6 +56,17 @@ namespace Assets.Scripts.Entities
 
         public virtual void ShipCollision(Ship ship)
         {
+            if (ship == null || ship.IsDead)
+            {
+                return;
+            }
+
+            if (KillsShipsOnContact)
+            {
+                ship.LogDamage(ship.Health, "static_obstacle", true);
+                return;
+            }
+
             //Debug.Log($"{Name} was hit by {ship.Name}");
             if (ship.ShipType == ConfigData.ShipTypes.Barge)
             {

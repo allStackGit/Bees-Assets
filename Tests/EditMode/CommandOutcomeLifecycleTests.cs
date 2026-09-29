@@ -25,8 +25,6 @@ namespace Bees.Tests.EditMode
         {
             _stageObject = new GameObject(nameof(CommandOutcomeLifecycleTests) + " Stage");
             _stage = _stageObject.AddComponent(RuntimeAssembly.GetType("Stage"));
-            Component debugLogger = _stageObject.AddComponent(RuntimeAssembly.GetType("DebugLogger"));
-            RuntimeAssembly.SetField(_stage, "DebugLogger", debugLogger);
             RuntimeAssembly.SetField(_stage, "ActivateHiveMind", false);
 
             _levelObject = new GameObject(nameof(CommandOutcomeLifecycleTests) + " Level");

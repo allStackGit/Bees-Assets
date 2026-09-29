@@ -227,7 +227,6 @@ namespace Assets.Scripts.Levels
             CurrentLevelOptions.UserStartingPosition = Titania2Center;
             StartingPositions[userIndex] = Titania2Center;
             Stage.DefaultCameraPosition = Titania2Center;
-            Debug.Log($"Staged {userSquads.Count} Beenoculars human squads around Titania at {Titania2Center} while preserving saved formations.");
         }
 
         private Vector2 FindTitania2HumanSquadPlacement(

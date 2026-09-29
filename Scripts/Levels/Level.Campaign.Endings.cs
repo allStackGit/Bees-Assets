@@ -12,7 +12,6 @@ namespace Assets.Scripts.Levels
     {
         public void Pluto1Ending(SavedSquad gunshipSquad)
         {
-            Debug.Log("Level complete!");
             ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Gunship, 3);
             ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Scout, 1);
             State.PlayerNewShipsReceived += 4;
@@ -37,7 +36,6 @@ namespace Assets.Scripts.Levels
 
         public void Pluto2Ending()
         {
-            Debug.Log("Level 1 complete!");
             ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Scout, 1);
             ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Frigate, 3);
             ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Dreadnought, 3);
@@ -163,7 +161,6 @@ namespace Assets.Scripts.Levels
 
         public void Neptune1Ending()
         {
-            Debug.Log("Level 3 complete");
             if (WinningSide == ConfigData.Configuration.UserSide)
             {
                 ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Factory, 5);
@@ -225,7 +222,6 @@ namespace Assets.Scripts.Levels
 
         public void Neptune2Ending()
         {
-            Debug.Log("Level 4 complete");
             CollectMinedMineralsForPlayer();
             ConfigData.UserProgressData.CampaignScore += State.PlayerScore + State.PlayerMineralsReceived;
             ConfigData.UserProgressData.AdvanceToNextLevel();
@@ -236,7 +232,6 @@ namespace Assets.Scripts.Levels
 
         public void Neptune3Ending()
         {
-            Debug.Log("Level 5 complete");
             if (WinningSide == ConfigData.Configuration.AISide)
             {
                 CurrentShips.GetFleetShips()
@@ -261,7 +256,6 @@ namespace Assets.Scripts.Levels
 
         public void Uranus1Ending()
         {
-            Debug.Log("Level 6 complete");
 
             // The Cruiser/Fritz recruitment sequence is struck from the current mission script,
             // so Uranus I no longer grants or unlocks Cruisers here.

@@ -191,7 +191,7 @@ namespace Assets.Scripts.Server
                 // mutation so those sets cannot be corrupted by a changed GetHashCode().
                 long oldHash = request.Hash;
                 socket.StandingRequests.Remove(request);
-                ConfigData.__PastServerRequests.Remove(request);
+                ConfigData.RequestHistory.Remove(request);
                 socket.HandledRequests.Remove(oldHash);
 
                 request.Hash = Utilities.Hash();

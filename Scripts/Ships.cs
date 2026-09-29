@@ -296,7 +296,6 @@ namespace Assets.Scripts
 
             if (replaced)
             {
-                Debug.Log("Replaced dead ships");
                 SaveSquadData();
             }
 
@@ -320,7 +319,6 @@ namespace Assets.Scripts
                     squad.RemoveShipFromSquad(squadShip, false);
                     SquadShip newSquadShip = new SquadShip(replacement.Id, squadShip.ShipType, squadShip.Offset);
                     squad.AddShipToSquad(newSquadShip);
-                    Debug.Log($"Replaced dead {squadShip.GetFleetShip()} with {replacement} at {squadShip.Offset}/{newSquadShip.Offset}");
                     replaced = true;
                 }
                 //else
@@ -381,7 +379,6 @@ namespace Assets.Scripts
                 else
                 {
                     Debug.LogWarning($"Could not fully create {name} because there were only {i}/{shipCount} ships of {shipType}");
-                    Debug.Log(Utilities.ListToString(CurrentShips.GetFleetShips().Where((fs) => fs.Type == shipType).ToList()));
                 }
             }
             //Debug.Log($"Built {savedSquad}");
@@ -401,13 +398,9 @@ namespace Assets.Scripts
             {
                 if (!canHaveFewerShips && !canHaveMoreShips)
                 {
-                    Debug.Log($"Squads: {GetSavedSquads().Find((squad) => !squad.IsLoadedIntoLevel && squad.GetAliveSquadShips().Count == shipCount && squad.GetAliveSquadShips().All((s) => s.ShipType == shipType))}");
 
-                    Debug.Log($"Squads: {GetSavedSquads().Find((squad) => !squad.IsLoadedIntoLevel && squad.GetAliveSquadShips().Count == shipCount)}");
 
-                    Debug.Log($"Squads: {GetSavedSquads().Find((squad) => !squad.IsLoadedIntoLevel)}");
 
-                    Debug.Log($"Squads: {Utilities.ListToString(GetSavedSquadsBySide(Utilities.ConvertShipTypeToSide[shipType]))}");
                     Debug.LogError($"No squad found with {shipCount} ships of type {shipType}");
                 }
                 else if (canHaveFewerShips)
@@ -425,13 +418,9 @@ namespace Assets.Scripts
                 }
                 if (savedSquad == null)
                 {
-                    Debug.Log($"Squads: {GetSavedSquads().Find((squad) => !squad.IsLoadedIntoLevel && squad.GetAliveSquadShips().Count == shipCount && squad.GetAliveSquadShips().All((s) => s.ShipType == shipType))}");
 
-                    Debug.Log($"Squads: {GetSavedSquads().Find((squad) => !squad.IsLoadedIntoLevel && squad.GetAliveSquadShips().Count == shipCount)}");
 
-                    Debug.Log($"Squads: {GetSavedSquads().Find((squad) => !squad.IsLoadedIntoLevel)}");
 
-                    Debug.Log($"Squads: {Utilities.ListToString(GetSavedSquadsBySide(Utilities.ConvertShipTypeToSide[shipType]))}");
                     Debug.LogWarning($"No squad found with {(canHaveFewerShips ? "<=" : "")}{shipCount}{(canHaveMoreShips ? ">=" : "")} ships of type {shipType}");
                 }
             }

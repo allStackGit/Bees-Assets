@@ -1,4 +1,5 @@
 using System.IO;
+using Assets.Scripts.Entities;
 using NUnit.Framework;
 using UnityEngine;
 
@@ -8,6 +9,25 @@ namespace Bees.Tests.EditMode
     [Category("BeesFoundation")]
     public class StaticObstacleDeathStateTests
     {
+        [Test]
+        public void PooledStaticObstacleReuseClearsRlContactLethality()
+        {
+            GameObject obstacleObject = new GameObject(nameof(PooledStaticObstacleReuseClearsRlContactLethality));
+            try
+            {
+                StaticObstacle obstacle = obstacleObject.AddComponent<StaticObstacle>();
+                obstacle.KillsShipsOnContact = true;
+
+                obstacle.ResetForReuse();
+
+                Assert.That(obstacle.KillsShipsOnContact, Is.False);
+            }
+            finally
+            {
+                Object.DestroyImmediate(obstacleObject);
+            }
+        }
+
         [Test]
         public void BaseObstacleMarksDeadBeforeDeferredUnityDestroy()
         {

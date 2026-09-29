@@ -52,13 +52,16 @@ namespace Assets.Scripts.Entities.Ships
             }
         }
 
-        public void LogDamage(int damage)
+        public void LogDamage(int damage, string rlDamageSource = "unattributed", bool rlSelfInflicted = false)
         {
             if (Health <= 0) return;
             _oldTsv = Tsv;
-            Health -= math.min(damage, Health);
+            int appliedDamage = math.min(damage, Health);
+            Health -= appliedDamage;
             Tsv = Utilities.CalculateTsv(this);
             _tsvChange = Tsv - _oldTsv;
+            global::RlOneVsOneEpisodeDiagnostics.RecordUnattributedDamage(this, appliedDamage, rlDamageSource, rlSelfInflicted);
+            global::RlOneVsOneEpisodeCoordinator.RecordUnattributedTsvLoss(this, -_tsvChange);
             FleetShip.DamageReceived += -_tsvChange;
             Squad.SavedSquad.Stats.DamageReceived += -_tsvChange;
             if (Squad.HasCommand) Squad.GetCommand().Tsv += _tsvChange;
@@ -66,15 +69,49 @@ namespace Assets.Scripts.Entities.Ships
             else UpdateHealthBar();
         }
 
-        public static void LogAttackingDamage(int power, Ship attacker, FleetShip attackerFleetShip, SavedSquad attackerSavedSquad, Ship target, long attackerCommandOutcomeId = 0)
+        public static void LogAttackingDamage(
+            int power,
+            Ship attacker,
+            FleetShip attackerFleetShip,
+            SavedSquad attackerSavedSquad,
+            Ship target,
+            long attackerCommandOutcomeId = 0,
+            string rlDamageSource = "gun",
+            Ship rlDamageOwner = null,
+            bool rlSelfInflicted = false)
         {
             if (target.Health <= 0) return;
             if (target.Level.Stage.MakeShotsHarmless) power = 0;
             attacker.ShipsHit.Add(target);
+            int appliedDamage = math.min(power, target.Health);
             _targetOldTSV = target.Tsv;
-            target.Health -= math.min(power, target.Health);
+            target.Health -= appliedDamage;
             target.Tsv = Utilities.CalculateTsv(target);
             _targetTSVChange = target.Tsv - _targetOldTSV;
+
+            // Gameplay/learning attribution remains owned by the historical attacker path. RL
+            // diagnostics may identify a different physical source for recoil/self-damage without
+            // changing command TSV credit, rewards, kills, or any other gameplay behavior.
+            Ship diagnosticOwner = rlDamageOwner ?? attacker;
+            global::RlOneVsOneEpisodeDiagnostics.RecordAttributedDamage(
+                diagnosticOwner,
+                target,
+                appliedDamage,
+                rlDamageSource);
+
+            // Historical gameplay accounting may attribute reciprocal/recoil damage to the ship
+            // contacted by the self-damaging unit. RL reward must instead treat that physical
+            // self-damage as unattributed so an arbitrary opponent cannot receive positive credit.
+            if (rlSelfInflicted)
+            {
+                global::RlOneVsOneEpisodeCoordinator.RecordUnattributedTsvLoss(target, -_targetTSVChange);
+            }
+            else
+            {
+                // The exact combat TSV loss only exists after health and TSV have been recalculated.
+                // Emit RL hit shaping here so it is credited at impact rather than at episode timeout.
+                global::RlOneVsOneEpisodeCoordinator.RecordHit(attacker, target, appliedDamage, -_targetTSVChange);
+            }
             LogHitStats(attacker, attackerFleetShip, attackerSavedSquad, target, target.Squad, -_targetTSVChange, attackerCommandOutcomeId);
 
             if (target.Health == 0)
@@ -88,10 +125,6 @@ namespace Assets.Scripts.Entities.Ships
                 return;
             }
 
-            if (target.Level.Stage.IsTrainingNueralNetwork)
-            {
-                target.RLHealth = target.MaxHealth > 0 ? (float)target.Health / target.MaxHealth : 0f;
-            }
             target.UpdateHealthBar();
             if (attacker != null)
             {
@@ -264,6 +297,10 @@ namespace Assets.Scripts.Entities.Ships
         public virtual void Kill(Ship killer, FleetShip killerFleetShip, SavedSquad killerSavedSquad, bool endKill = false)
         {
             if (IsDead) return;
+            string rlDeathCause = this is YellowJacket yellowJacket && yellowJacket.HasCompletedRun
+                ? "self_detonate"
+                : null;
+            global::RlOneVsOneEpisodeDiagnostics.RecordShipDeath(this, killer, endKill, rlDeathCause);
             IsDead = true;
             if (!endKill)
             {

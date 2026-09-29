@@ -17,6 +17,13 @@ namespace Assets.Scripts.Entities.Ships
         public ChargingBar ChargingBar;
         public bool CanDropBeacons;
 
+        private float BeaconClock => Stage != null && Stage.IsTraining ? Time.time : Time.realtimeSinceStartup;
+
+        public bool IsBeaconReady =>
+            CanDropBeacons &&
+            BeaconsDropped < ConfigData.MaxBeaconsDroppedPerScout &&
+            BeaconClock - TimeSinceLastBeaconDropped > ConfigData.MinimumDelayPerBeacon;
+
         public override void Create(Stage stage)
         {
             base.Create(stage);
@@ -29,19 +36,20 @@ namespace Assets.Scripts.Entities.Ships
                 Destroy(ChargingBar.gameObject);
             }
         }
+
         public override void Setup(Level level, FleetShip fleetShip, Squad squad, Vector2 offsetFromCenter)
         {
             base.Setup(level, fleetShip, squad, offsetFromCenter);
-
             CanDropBeacons = true;
-            // A fresh Scout starts fully charged. Anchor the cooldown to this lifecycle rather
-            // than application uptime so its first beacon is immediately available every time.
-            TimeSinceLastBeaconDropped = Time.realtimeSinceStartup - ConfigData.MinimumDelayPerBeacon;
+            // A fresh Scout starts fully charged. Training uses scaled simulation time so accelerated
+            // ML-Agents workers do not wait real-world seconds for a gameplay cooldown.
+            TimeSinceLastBeaconDropped = BeaconClock - ConfigData.MinimumDelayPerBeacon;
             if (IsUserControlled)
             {
-                ChargingBar.Setup(); 
+                ChargingBar.Setup();
             }
         }
+
         public override void ClearData()
         {
             base.ClearData();
@@ -49,9 +57,9 @@ namespace Assets.Scripts.Entities.Ships
             BeaconsDropped = 0;
             MinionSquads.Clear();
         }
+
         private Squad CreateMinionSquad()
         {
-            // Create Squad
             Squad squad = Stage.Pool.GetSquadFromPool();
             squad.IsMinionSquad = true;
             squad.Setup(
@@ -62,7 +70,7 @@ namespace Assets.Scripts.Entities.Ships
                 Squad.IsMatchingSpeed,
                 Squad.ShouldChase(),
                 true,
-                Utilities.GetNegativeSavedSquadId(),
+                TransientIdAllocator.GetSavedSquadId(),
                 Squad.Side,
                 Level.State.OriginalSquadCounts[Side - 1] + 1,
                 $"{Name} - {MinionType} Spawn #{BeaconsDropped}",
@@ -73,57 +81,53 @@ namespace Assets.Scripts.Entities.Ships
             BeaconsDropped++;
             return squad;
         }
+
         public void DropBeacon()
         {
-            if (CanDropBeacons && Time.realtimeSinceStartup - TimeSinceLastBeaconDropped > ConfigData.MinimumDelayPerBeacon)
+            if (!IsBeaconReady)
             {
-                //Debug.Log($"{Name} is dropping a beacon");
-                TimeSinceLastBeaconDropped = Time.realtimeSinceStartup;
-
-                long id = Utilities.GetNegativeFleetshipId();
-                Beacon ship = (Beacon)Level.LevelConstructor.InstantiateShip(MinionType);
-
-
-                if (ship != null)
-                {
-                    Squad squad = CreateMinionSquad();
-                    ship.IsMinionShip = true;
-                    ship.Setup(
-                        Level,
-                        new FleetShip(id, MinionType, false, false, 0, 0, 0, 0, 0, 0, 0),
-                        squad,
-                        Vector2.zero
-                    );
-
-                    ship.SetColor();
-                    ship.FleetShip = FleetShip;
-                    ship.transform.localPosition = GetPosition();
-                    ship.MotherSquad = Squad;
-                    squad.AddShip(ship);
-                    squad.CanAcceptUserInput = false;
-                    ship.LookForShips();
-
-                    if (BeaconsDropped == ConfigData.MaxBeaconsDroppedPerScout)
-                    {
-                        if (IsUserControlled)
-                        {
-                            ChargingBar.gameObject.SetActive(false);
-                        }
-                        CanDropBeacons = false;
-                    }
-                    else if (IsUserControlled)
-                    {
-                        ChargingBar.DrainBar();
-                    }
-
-
-                }
+                return;
             }
-            //else
-            //{
-            //    Debug.Log($"{Name} cannot drop a beacon because not enough time ({ConfigData.MinimumDelayPerBeacon}s) has passed or it has already dropped" +
-            //        $"the max number of beacons ({BeaconsDropped}/{ConfigData.MaxBeaconsDroppedPerScout})");
-            //}
+
+            global::RlGameplayDemonstrationCapabilityCapture.Record(this, global::RlOneVsOneAgent.ShipSpecialAction);
+            TimeSinceLastBeaconDropped = BeaconClock;
+            long id = TransientIdAllocator.GetFleetShipId();
+            Beacon ship = (Beacon)Level.LevelConstructor.InstantiateShip(MinionType);
+            if (ship == null)
+            {
+                return;
+            }
+
+            Squad squad = CreateMinionSquad();
+            ship.IsMinionShip = true;
+            ship.Setup(
+                Level,
+                new FleetShip(id, MinionType, false, false, 0, 0, 0, 0, 0, 0, 0),
+                squad,
+                Vector2.zero
+            );
+
+            ship.SetColor();
+            ship.FleetShip = FleetShip;
+            ship.transform.localPosition = GetPosition();
+            ship.MotherSquad = Squad;
+            squad.AddShip(ship);
+            squad.CanAcceptUserInput = false;
+            ship.LookForShips();
+            global::RlOneVsOneEpisodeDiagnostics.RecordSpecialAction(this, "scout_beacon");
+
+            if (BeaconsDropped == ConfigData.MaxBeaconsDroppedPerScout)
+            {
+                if (IsUserControlled)
+                {
+                    ChargingBar.gameObject.SetActive(false);
+                }
+                CanDropBeacons = false;
+            }
+            else if (IsUserControlled)
+            {
+                ChargingBar.DrainBar();
+            }
         }
 
         public override void Deactivate()
@@ -144,6 +148,4 @@ namespace Assets.Scripts.Entities.Ships
             }
         }
     }
-
-
 }

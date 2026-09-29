@@ -18,7 +18,6 @@ namespace Assets.Scripts.Server
             Status = status;
             Hash = hash;
             ServerLatency = serverLatency;
-            Debug.Log($"{this}, {type}");
 
         }
 

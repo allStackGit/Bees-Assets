@@ -1,4 +1,6 @@
 using Assets.Scripts.Data;
+using Assets.Scripts.Entities;
+using Assets.Scripts.Entities.Ships;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -11,12 +13,25 @@ namespace Assets.Scripts.Levels
 
         private void SetupShipsForSide(int side)
         {
+            bool rlOneVsOneTraining = global::RlOneVsOneTrainingBootstrap.IsActiveFor(Stage);
+            if (rlOneVsOneTraining && side == ConfigData.Configuration.AISide)
+            {
+                // SetupShips always processes the AI side first. Advance this arena's balanced matchup
+                // cycle exactly once here so both sides use the same prepared pair for the whole episode.
+                global::RlOneVsOnePerArenaMatchups.PrepareEpisode(this);
+                ConfigureRlOneVsOneSpawnPositions();
+            }
+
             bool generateRandomSquads = Stage.IsTrainingNueralNetwork ||
                                         Stage.UseFullyRandomSquads ||
                                         ((Stage.UseFullyRandomEnemySquads || CurrentLevelOptions.EnemySquadGenerationCount > 0) &&
                                          side == ConfigData.Configuration.AISide);
 
-            if (generateRandomSquads)
+            if (rlOneVsOneTraining)
+            {
+                AddRlOneVsOneSquadForSetup(side);
+            }
+            else if (generateRandomSquads)
             {
                 AddRandomSquadsForSetup(side);
             }
@@ -50,6 +65,196 @@ namespace Assets.Scripts.Levels
                     StartingPositions[side - 1],
                     Vector2.zero,
                     false);
+            }
+
+            if (rlOneVsOneTraining)
+            {
+                RandomizeRlOneVsOneFacing(side);
+            }
+        }
+
+        private void ConfigureRlOneVsOneSpawnPositions()
+        {
+            float spawnRadius = global::RlOneVsOneArenaMapSizeState.GetSpawnRadius(this);
+            if (!global::RlOneVsOneTrainingBootstrap.CurrentStaticObstaclesEnabled)
+            {
+                float angle = Random.Range(0f, Mathf.PI * 2f);
+                Vector2 offset = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * spawnRadius;
+                StartingPositions[ConfigData.Configuration.BeeSide - 1] = -offset;
+                StartingPositions[ConfigData.Configuration.HumanSide - 1] = offset;
+                return;
+            }
+
+            for (int attempt = 0; attempt < 64; attempt++)
+            {
+                float angle = Random.Range(0f, Mathf.PI * 2f);
+                Vector2 offset = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * spawnRadius;
+                if (TrySetRlOneVsOneSpawnPositions(-offset, offset))
+                {
+                    return;
+                }
+            }
+
+            // Static RL obstacles preserve a clear full-width/full-height cross. A deterministic
+            // sweep guarantees we use that corridor even if all random attempts happened to miss it.
+            for (int direction = 0; direction < 64; direction++)
+            {
+                float angle = direction * Mathf.PI * 2f / 64f;
+                Vector2 offset = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * spawnRadius;
+                if (TrySetRlOneVsOneSpawnPositions(-offset, offset))
+                {
+                    return;
+                }
+            }
+
+            throw new System.InvalidOperationException(
+                "RL training could not find spawn positions that keep every configured ship outside static obstacles.");
+        }
+
+        private bool TrySetRlOneVsOneSpawnPositions(Vector2 beeCenter, Vector2 humanCenter)
+        {
+            if (!IsRlSpawnCenterClear(ConfigData.Configuration.BeeSide, beeCenter) ||
+                !IsRlSpawnCenterClear(ConfigData.Configuration.HumanSide, humanCenter))
+            {
+                return false;
+            }
+
+            StartingPositions[ConfigData.Configuration.BeeSide - 1] = beeCenter;
+            StartingPositions[ConfigData.Configuration.HumanSide - 1] = humanCenter;
+            return true;
+        }
+
+        private bool IsRlSpawnCenterClear(int side, Vector2 center)
+        {
+            int shipCount = global::RlOneVsOneTrainingBootstrap.CurrentShipsPerSide;
+            for (int shipIndex = 0; shipIndex < shipCount; shipIndex++)
+            {
+                ConfigData.ShipTypes shipType =
+                    global::RlOneVsOnePerArenaMatchups.GetShipType(this, side, shipIndex);
+                Vector2 shipSize = (Vector2)ConfigData.ShipSizes[shipType] / ConfigData.PixelsPerUnit;
+                float shipExtent = Mathf.Max(shipSize.x, shipSize.y) * 0.5f;
+                Vector2 shipPosition =
+                    center + global::RlOneVsOneArenaMapSizeState.GetShipFormationOffset(this, shipIndex);
+
+                if (!global::RlOneVsOneTrainingBootstrap.CurrentStaticObstaclesEnabled ||
+                    ObstacleMap == null ||
+                    ObstacleMap.Obstacles == null)
+                {
+                    continue;
+                }
+
+                for (int obstacleIndex = 0; obstacleIndex < ObstacleMap.Obstacles.Count; obstacleIndex++)
+                {
+                    StaticObstacle obstacle = ObstacleMap.Obstacles[obstacleIndex];
+                    if (obstacle == null || obstacle.IsDead || obstacle.Collider == null)
+                    {
+                        continue;
+                    }
+
+                    Bounds worldBounds = obstacle.Collider.bounds;
+                    Vector3 localMin = Map.Transform.InverseTransformPoint(worldBounds.min);
+                    Vector3 localMax = Map.Transform.InverseTransformPoint(worldBounds.max);
+                    float obstacleMinX = Mathf.Min(localMin.x, localMax.x);
+                    float obstacleMaxX = Mathf.Max(localMin.x, localMax.x);
+                    float obstacleMinY = Mathf.Min(localMin.y, localMax.y);
+                    float obstacleMaxY = Mathf.Max(localMin.y, localMax.y);
+
+                    if (shipPosition.x + shipExtent > obstacleMinX &&
+                        shipPosition.x - shipExtent < obstacleMaxX &&
+                        shipPosition.y + shipExtent > obstacleMinY &&
+                        shipPosition.y - shipExtent < obstacleMaxY)
+                    {
+                        return false;
+                    }
+                }
+            }
+
+            return true;
+        }
+
+        private void RandomizeRlOneVsOneFacing(int side)
+        {
+            List<Ship> ships = State.GetShips(side);
+            for (int i = 0; i < ships.Count; i++)
+            {
+                Ship ship = ships[i];
+                Vector3 euler = ship.transform.localEulerAngles;
+                euler.z = Random.Range(0f, 360f);
+                ship.transform.localEulerAngles = euler;
+
+                // Ship movement and turret aiming use their cached world rotations rather than
+                // reading the Transform every frame. Keep those caches synchronized with the
+                // randomized visual facing or the ship can physically travel tail-first.
+                ship.Rotation = ship.transform.eulerAngles.z;
+                for (int turretIndex = 0; turretIndex < ship.Turrets.Count; turretIndex++)
+                {
+                    ship.Turrets[turretIndex].Rotation = ship.Turrets[turretIndex].PieceTransform.eulerAngles.z;
+                }
+            }
+        }
+
+        private void AddRlOneVsOneSquadForSetup(int side)
+        {
+            int shipCount = global::RlOneVsOneTrainingBootstrap.CurrentShipsPerSide;
+
+            // Dedicated RL finalizes after server settings and deliberately never loads the player's
+            // fleet/profile facade. Hash() is already process-unique, so transient negative IDs do not
+            // need the CurrentShips collection-count salt used by ordinary player-facing generation.
+            long squadId = -Utilities.Hash();
+            SavedSquad savedSquad = new SavedSquad(
+                squadId,
+                side,
+                $"RL training squad #{squadId}",
+                Vector2.zero,
+                false,
+                false,
+                ConfigData.DefaultShootingStrategy,
+                ConfigData.UnsetColor,
+                null);
+
+            for (int shipIndex = 0; shipIndex < shipCount; shipIndex++)
+            {
+                ConfigData.ShipTypes type = global::RlOneVsOnePerArenaMatchups.GetShipType(this, side, shipIndex);
+                if (Utilities.ConvertShipTypeToSide[type] != side)
+                {
+                    throw new System.InvalidOperationException(
+                        $"RL training requires a ship belonging to side {side}; configured type at slot {shipIndex} was {type}.");
+                }
+
+                long fleetShipId = -Utilities.Hash();
+                FleetShip fleetShip = new FleetShip(
+                    fleetShipId,
+                    type,
+                    false,
+                    false,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0);
+
+                // Preserve the exact original spawn for the default 1v1. Larger teams use a compact,
+                // deterministic formation around the same side-specific squad starting position.
+                if (shipCount == 1)
+                {
+                    savedSquad.AddShipToSquad(new SquadShip(fleetShip, Vector2.zero));
+                }
+                else
+                {
+                    Vector2 shipOffset = global::RlOneVsOneArenaMapSizeState.GetShipFormationOffset(this, shipIndex);
+                    savedSquad.AddShipToSquad(new SquadShip(fleetShip, shipOffset));
+                }
+            }
+
+            if (side == ConfigData.Configuration.AISide)
+            {
+                CurrentLevelOptions.EnemySquads.Add(savedSquad);
+            }
+            else
+            {
+                CurrentLevelOptions.ChosenSquads.Add(savedSquad);
             }
         }
 

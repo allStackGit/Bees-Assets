@@ -7,6 +7,7 @@ const Database = require('./database');
 const { patchGame, invalidateStrategyCache } = require('./gamePersistence');
 const { patchOutcomeDurability } = require('./outcomeReservations');
 const { installCampaignCheckpoint } = require('./campaignCheckpoint');
+const { startTrainingControlFromEnvironment } = require('./trainingControl');
 
 const SOCKET_PATCHED = Symbol('beesSocketConnectionPatched');
 const CONNECTION_STATE_TAIL = Symbol('beesConnectionStateTail');
@@ -396,6 +397,12 @@ function parseLaunchOptions(argv = process.argv) {
     return { test, port };
 }
 
+function shouldStartTrainingControl(launch, env = process.env) {
+    if (launch.trainingControl === false) return false;
+    if (!launch.test) return true;
+    return launch.trainingControl === true || env.BEES_TEST_TRAINING_CONTROL_ENABLED === '1';
+}
+
 function createServer(options = {}) {
     const runtime = loadLegacyRuntime(options);
     installCampaignCheckpoint(runtime);
@@ -404,8 +411,23 @@ function createServer(options = {}) {
     server.db = databaseFromLegacyConfig(server.db, launch);
     patchServer(server, runtime);
     applyTestIsolation(server, launch);
-    if (launch.start !== false) server.start();
-    return { server, runtime };
+    let trainingControl = null;
+    if (launch.start !== false) {
+        try {
+            trainingControl = shouldStartTrainingControl(launch)
+                ? startTrainingControlFromEnvironment(launch.trainingControlOptions || {})
+                : null;
+            server.start();
+        } catch (error) {
+            try {
+                trainingControl?.server?.close();
+            } catch {
+                // Startup is already failing; control-listener cleanup is best-effort.
+            }
+            throw error;
+        }
+    }
+    return { server, runtime, trainingControl };
 }
 
 if (require.main === module) createServer();
@@ -416,5 +438,6 @@ module.exports = {
     patchSocketConnection,
     patchServer,
     applyTestIsolation,
+    shouldStartTrainingControl,
     pendingRequestKey,
 };

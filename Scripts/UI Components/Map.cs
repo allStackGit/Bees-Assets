@@ -35,7 +35,13 @@ namespace Assets.Scripts.UI_Components
 
             if (stage.IsTraining)
             {
-                Destroy(FogOfWar);
+                // Maps are pooled and SetupLevel reuses the FogOfWar reference every episode.
+                // Keep the object inactive instead of destroying the serialized reference; otherwise
+                // the first reset touches a destroyed GameObject and aborts ML-Agents stepping.
+                if (FogOfWar != null)
+                {
+                    FogOfWar.SetActive(false);
+                }
                 Decorations.ForEach(d => Destroy(d));
                 if (!stage.IsRendering)
                 {

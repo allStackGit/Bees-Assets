@@ -11,7 +11,6 @@ namespace Assets.Scripts.Entities.Ships
 {
     public class YellowJacket : Ship
     {
-
         public bool HasCompletedRun;
         public Ship ContactedShip, TouchingShip;
 
@@ -19,7 +18,7 @@ namespace Assets.Scripts.Entities.Ships
         public override void Create(Stage stage)
         {
             base.Create(stage);
-            Bomb = (Bomb) Weapons.First();
+            Bomb = (Bomb)Weapons.First();
             Destroy(Bomb.Piece);
             IsBomber = true;
         }
@@ -51,11 +50,10 @@ namespace Assets.Scripts.Entities.Ships
             {
                 TouchingShip = _collidingThing.GetComponent<Ship>();
 
-                if (TouchingShip.Side != Side && Squad.HasCommand && Bomb.TargetShip == TouchingShip)
+                if (TouchingShip != null && !TouchingShip.IsDead && TouchingShip.Side != Side && Squad.HasCommand && Bomb.TargetShip == TouchingShip)
                 {
                     ContactedShip = TouchingShip;
                     Detonate();
-
                 }
             }
         }
@@ -78,32 +76,43 @@ namespace Assets.Scripts.Entities.Ships
         }
         public void TryToDetonate()
         {
-            if (TouchingShip != null && TouchingShip.Side != Side)
+            if (TouchingShip != null && !TouchingShip.IsDead && TouchingShip.Side != Side)
             {
                 ContactedShip = TouchingShip;
                 Detonate();
-                return;
             }
-
         }
         private void Detonate()
         {
+            if (ContactedShip == null || ContactedShip.IsDead || ContactedShip.Side == Side)
+            {
+                ContactedShip = null;
+                return;
+            }
+
+            global::RlGameplayDemonstrationCapabilityCapture.Record(this, global::RlOneVsOneAgent.ShipSpecialAction);
             HasCompletedRun = true;
+            global::RlOneVsOneEpisodeDiagnostics.RecordSpecialAction(this, "yellow_jacket_detonate");
 
             // The selected bombing-run target is being resolved synchronously rather than
             // by a projectile, so release the inbound-damage reservation before applying it.
             Bomb.ReleaseTargetReservation();
 
-            LogDetonationDamage(Bomb.Power, this, ContactedShip);
-            LogDetonationDamage(Bomb.Power, ContactedShip, this);
+            LogDetonationDamage(Bomb.Power, this, ContactedShip, this);
+            // Existing gameplay accounting intentionally treats the contacted ship as the attacker
+            // for reciprocal damage. RL reward attribution is separate so this physical self-damage
+            // penalizes the Yellow Jacket side without rewarding the contacted opponent.
+            LogDetonationDamage(Bomb.Power, ContactedShip, this, this, rlSelfInflicted: true);
 
-            if (ContactedShip.Health <= 0)
+            Ship detonationTarget = ContactedShip;
+            FleetShip targetFleetShip = detonationTarget.FleetShip;
+            SavedSquad targetSavedSquad = detonationTarget.Squad.SavedSquad;
+            if (detonationTarget.Health <= 0)
             {
-                ContactedShip.Kill(this, FleetShip, Squad.SavedSquad);
+                detonationTarget.Kill(this, FleetShip, Squad.SavedSquad);
             }
 
-            Kill(ContactedShip, ContactedShip.FleetShip, ContactedShip.Squad.SavedSquad);
-
+            Kill(detonationTarget, targetFleetShip, targetSavedSquad);
         }
 
         public override void Kill(Ship killer, FleetShip killerFleetShip, SavedSquad killerSavedSquad, bool endKill = false)
@@ -113,20 +122,32 @@ namespace Assets.Scripts.Entities.Ships
         }
 
         private int _targetOldTSV, _targetTSVLoss;
-        private void LogDetonationDamage(int power, Ship attacker, Ship target) // [damage-method] [note]
+        private void LogDetonationDamage(int power, Ship attacker, Ship target, Ship diagnosticOwner, bool rlSelfInflicted = false) // [damage-method] [note]
         {
+            int appliedDamage = math.min(target.Health, power);
             _targetOldTSV = target.Tsv;
-            target.Health -= math.min(target.Health, power);
+            target.Health -= appliedDamage;
             target.Tsv = Utilities.CalculateTsv(target);
 
-
             _targetTSVLoss = target.Tsv - _targetOldTSV;
+
+            // Yellow Jacket detonation applies damage directly rather than through a Projectile, so
+            // emit the same immediate RL outcome signal used by ordinary weapon impacts. Outside the
+            // dedicated RL runtime the coordinator is inactive and this is a no-op.
+            global::RlOneVsOneEpisodeDiagnostics.RecordAttributedDamage(diagnosticOwner, target, appliedDamage, "bomb");
+            if (rlSelfInflicted)
+            {
+                global::RlOneVsOneEpisodeCoordinator.RecordUnattributedTsvLoss(target, -_targetTSVLoss);
+            }
+            else
+            {
+                global::RlOneVsOneEpisodeCoordinator.RecordHit(attacker, target, appliedDamage, -_targetTSVLoss);
+            }
+
             // LogHitStats owns attacker/target command TSV accounting as well as persistent
             // combat stats. Do not apply the same command reward/penalty again here.
             LogHitStats(attacker, attacker.FleetShip, attacker.Squad.SavedSquad, target, target.Squad, -_targetTSVLoss);
             target.UpdateHealthBar();
-
-
         }
     }
 }

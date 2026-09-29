@@ -1,0 +1,10 @@
+{
+  "deployment_id": "deploy-d1525f82d8df30c029a254b3",
+  "manifest_asset_source": "B:\\Bees\\Assets\\Resources\\RlPolicy\\BeesRL1v1Deployment.json",
+  "manifest_sha256": "7df738e3da728d809158b98d3d8514a31a9ad410af850dd2eff867ebd5133adc",
+  "model_asset_source": "B:\\Bees\\Assets\\Resources\\RlPolicy\\BeesRL1v1.onnx",
+  "model_id": "bees-rl-v20-efaf13ef893636c62abfb27e",
+  "model_sha256": "efaf13ef893636c62abfb27eff5d638090f70654e28d164190c6195bb68511b5",
+  "resources_manifest_path": "RlPolicy/BeesRL1v1Deployment",
+  "resources_model_path": "RlPolicy/BeesRL1v1"
+}

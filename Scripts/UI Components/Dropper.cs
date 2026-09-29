@@ -79,7 +79,6 @@ namespace Assets.Scripts.UIComponents
         public void PullNewDragIcon(ConfigData.ShipTypes shipType)
         {
             FleetShip fleetShip = ConfigData.CurrentShips.GetFirstAvailableShipOfType(shipType);
-            Debug.Log($"Pulled {fleetShip} for drag icon");
 
             if (fleetShip != null && !_isDragging && (!HasCurrentSquad || !CurrentSquad.HasMaxShips))
             {
@@ -87,7 +86,6 @@ namespace Assets.Scripts.UIComponents
             }
             else
             {
-                Debug.Log($"Couldn't make new drag icon for {shipType}, {fleetShip}, {!_isDragging}, {CurrentSquad}");
                 if (HasCurrentSquad && CurrentSquad.HasMaxShips)
                 {
                     Utilities.SetBadColor(_scene.SquadShipCount);
@@ -336,7 +334,6 @@ namespace Assets.Scripts.UIComponents
                 }
                 else
                 {
-                    Debug.Log("INVALID PLACEMENT. REMOVING DRAG ICON");
                     _currentDragIcon.RemoveDragIcon();
                 }
             }

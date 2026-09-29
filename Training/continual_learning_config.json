@@ -1,0 +1,60 @@
+{
+  "behavior_name": "BeesRL1v1",
+  "policy_abi_version": 21,
+  "policy_signature": "bees-rl-v21|behavior=BeesRL1v1|trainer=ma-poca|network=structured-dual-faction-384x3|normalize=true|obs=7614|tail=episode-progress+faction+19-reserved|cont=16|disc=2x5,5|entity-encoder=shared-attention96|slot-normalization=raw-bounded-shared|weapon-encoder=shared-common32-slot64|weapon-head=shared-per-slot-faction-specific|team-gradient=inverse-active-group|coord-frame=team-episode-distinct-quarter-turn|weapon-aim=slotwise-xy|weapon-fire=slotwise-cease-or-fire|healing=weapon-exclusive|weapon-ready=rl-latched-until-fire|shiptype=fixed-scrambled-scalar24|weapontype=fixed-scrambled-scalar10|mapbits=4|shipmap=v1-0..23|weaponmap=v1-0..9|allies=64|enemies=64|weapons=5|entity-weapons=5|enemy-mounts=0|mining=8|map-objects=64|moving-asteroids=48|self=25|ship-id=episode-permuted-scalar23|capability=12|parent-carrier=40|entity-core=14|entity=40|ally=44-with-private-comm4|communication=4-continuous-private-allied|self-weapon=15|observed-weapon=5|weapon-observation=split-self-vs-observed|mining-slot=7|map-slot=12|moving-asteroid-slot=11|objective=16|grid=21x21-cell6|exploration-grid=16x16-team-shared-sight-recency|entity-order=distance,type,fleet-id,runtime-id",
+  "observation_schema_version": 12,
+  "action_schema_version": 9,
+  "reward_schema_version": 4,
+  "scenario_schema_version": 1,
+  "promotion": {
+    "min_matches_vs_champion": 100,
+    "min_win_rate_vs_champion": 0.52,
+    "max_critical_regressions": 0,
+    "max_historical_regression": 0.15,
+    "min_historical_matches_per_opponent": 50,
+    "min_competency_cases": 1,
+    "max_inference_batch_milliseconds": 100,
+    "bootstrap_competency_cases": [
+      {
+        "name": "generation-zero-broad-regression-baseline",
+        "matches": 100,
+        "metric": "score_rate",
+        "critical": true,
+        "env_args": []
+      }
+    ]
+  },
+  "historical_league": {
+    "base_weight": 1,
+    "weakness_trigger_regression": 0.05,
+    "weakness_bonus_scale": 10,
+    "max_weight_multiplier": 4,
+    "training_ratio": 0.2,
+    "training_onnx_provider": "CPUExecutionProvider",
+    "training_policy_cache_size": 4
+  },
+  "human_imitation": {
+    "strength": 0.05,
+    "steps": 500000,
+    "batch_size": 512,
+    "public_min_quality_score": 0.5,
+    "public_max_batches_per_contributor": 8
+  },
+  "public_live_telemetry": {
+    "max_batches_per_contributor": 16
+  },
+  "ingestion": {
+    "max_payload_bytes": 16777216,
+    "max_steps_per_match": 100000,
+    "telemetry_observation_size": 7614,
+    "telemetry_continuous_action_count": 16,
+    "telemetry_discrete_branch_sizes": [
+      2,
+      2,
+      2,
+      2,
+      2,
+      5
+    ]
+  }
+}

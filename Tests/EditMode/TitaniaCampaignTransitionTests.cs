@@ -69,8 +69,8 @@ namespace Bees.Tests.EditMode
 
             StringAssert.Contains("CampaignMissionCatalog.IsCampaignComplete(targetLevel)", advanceSource);
             StringAssert.Contains("CampaignMissionCatalog.IsCampaignComplete(fallbackTargetLevel)", advanceSource);
-            StringAssert.Contains("currently available campaign", advanceSource);
-            StringAssert.Contains("terminal level", advanceSource);
+            StringAssert.Contains("SetCurrentLevel(targetLevel);", advanceSource);
+            StringAssert.Contains("SetCurrentLevel(fallbackTargetLevel);", advanceSource);
         }
 
         private static string ReadBeenocularsSource()

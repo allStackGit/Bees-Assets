@@ -118,7 +118,6 @@ public class SteamManager : MonoBehaviour {
 			// preserve Steamworks.NET's normal restart behavior. Failure to load/initialize Steam,
 			// however, is not fatal to Bees and is handled below.
 			if (SteamAPI.RestartAppIfNecessary(AppId_t.Invalid)) {
-				Debug.Log("[Steamworks.NET] Shutting down because RestartAppIfNecessary returned true. Steam will restart the application.");
 
 				Application.Quit();
 				return;

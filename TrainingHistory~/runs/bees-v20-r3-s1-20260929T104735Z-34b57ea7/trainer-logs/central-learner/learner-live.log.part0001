@@ -1,0 +1,421 @@
+[Bees RL] PPO value-estimate/return buffer key separation: enabled
+
+            ┐  ╖
+        ╓╖╬│╡  ││╬╖╖
+    ╓╖╬│││││┘  ╬│││││╬╖
+ ╖╬│││││╬╜        ╙╬│││││╖╖                               ╗╗╗
+ ╬╬╬╬╖││╦╖        ╖╬││╗╣╣╣╬      ╟╣╣╬    ╟╣╣╣             ╜╜╜  ╟╣╣
+ ╬╬╬╬╬╬╬╬╖│╬╖╖╓╬╪│╓╣╣╣╣╣╣╣╬      ╟╣╣╬    ╟╣╣╣ ╒╣╣╖╗╣╣╣╗   ╣╣╣ ╣╣╣╣╣╣ ╟╣╣╖   ╣╣╣
+ ╬╬╬╬┐  ╙╬╬╬╬│╓╣╣╣╝╜  ╫╣╣╣╬      ╟╣╣╬    ╟╣╣╣ ╟╣╣╣╙ ╙╣╣╣  ╣╣╣ ╙╟╣╣╜╙  ╫╣╣  ╟╣╣
+ ╬╬╬╬┐     ╙╬╬╣╣      ╫╣╣╣╬      ╟╣╣╬    ╟╣╣╣ ╟╣╣╬   ╣╣╣  ╣╣╣  ╟╣╣     ╣╣╣┌╣╣╜
+ ╬╬╬╜       ╬╬╣╣      ╙╝╣╣╬      ╙╣╣╣╗╖╓╗╣╣╣╜ ╟╣╣╬   ╣╣╣  ╣╣╣  ╟╣╣╦╓    ╣╣╣╣╣
+ ╙   ╓╦╖    ╬╬╣╣   ╓╗╗╖            ╙╝╣╣╣╣╝╜   ╘╝╝╜   ╝╝╝  ╝╝╝   ╙╣╣╣    ╟╣╣╣
+   ╩╬╬╬╬╬╬╦╦╬╬╣╣╗╣╣╣╣╣╣╣╝                                             ╫╣╣╣╣
+      ╙╬╬╬╬╬╬╬╣╣╣╣╣╣╝╜
+          ╙╬╬╬╣╣╣╜
+             ╙
+        
+ Version information:
+  ml-agents: 1.1.0,
+  ml-agents-envs: 1.1.0,
+  Communicator API: 1.5.0,
+  PyTorch: 2.1.1+cpu
+[Bees WAN] actor broker listening only on 127.0.0.1:55051; remote machines must use the managed authenticated private forward.
+[Bees WAN] Exeter local_envs=0: PPO learner-only mode enabled; waiting for remote rollout actors.
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees WAN capacity] remote_actors=0 remote_envs=0 trainer_steps_per_sec=warming remote_rollout_steps_per_sec=0.0 queue=0/32 backpressure_total=0 backpressure_60s=0 backpressure_per_min=0.0.
+[Bees WAN capacity] topology local_envs=0 remote_actors=1 remote_envs=4 total_envs=4.
+[INFO] Hyperparameters for behavior name BeesRL1v1: 
+	trainer_type:	ppo
+	hyperparameters:	
+	  batch_size:	512
+	  buffer_size:	16384
+	  learning_rate:	0.0003
+	  beta:	0.00125
+	  epsilon:	0.15
+	  lambd:	0.95
+	  num_epoch:	3
+	  shared_critic:	False
+	  learning_rate_schedule:	constant
+	  beta_schedule:	constant
+	  epsilon_schedule:	constant
+	checkpoint_interval:	2000000
+	network_settings:	
+	  normalize:	True
+	  hidden_units:	128
+	  num_layers:	3
+	  vis_encode_type:	simple
+	  memory:	None
+	  goal_conditioning_type:	hyper
+	  deterministic:	False
+	reward_signals:	
+	  extrinsic:	
+	    gamma:	1.0
+	    strength:	1.0
+	    network_settings:	
+	      normalize:	False
+	      hidden_units:	128
+	      num_layers:	2
+	      vis_encode_type:	simple
+	      memory:	None
+	      goal_conditioning_type:	hyper
+	      deterministic:	False
+	init_path:	None
+	keep_checkpoints:	250
+	even_checkpoints:	False
+	max_steps:	20000000
+	time_horizon:	2048
+	summary_freq:	5000
+	threaded:	False
+	self_play:	
+	  save_steps:	20000
+	  team_change:	100000
+	  swap_steps:	20000
+	  window:	30
+	  play_against_latest_model_ratio:	0.2
+	  initial_elo:	1200.0
+	behavioral_cloning:	None
+[Bees WAN] policy BeesRL1v1?team=1 version=1
+[Bees WAN] policy BeesRL1v1?team=0 version=1
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN capacity] remote_actors=1 remote_envs=4 trainer_steps_per_sec=62.0 remote_rollout_steps_per_sec=121.9 queue=0/32 backpressure_total=0 backpressure_60s=0 backpressure_per_min=0.0.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[INFO] BeesRL1v1. Step: 5000. Time Elapsed: 92.689 s. Mean Reward: -0.318. Std of Reward: 0.785. Training. ELO: 1193.179.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN capacity] remote_actors=1 remote_envs=4 trainer_steps_per_sec=80.2 remote_rollout_steps_per_sec=240.9 queue=0/32 backpressure_total=0 backpressure_60s=0 backpressure_per_min=0.0.
+[INFO] BeesRL1v1. Step: 10000. Time Elapsed: 134.146 s. Mean Reward: 0.570. Std of Reward: 0.824. Training. ELO: 1200.121.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN capacity] remote_actors=1 remote_envs=4 trainer_steps_per_sec=90.7 remote_rollout_steps_per_sec=192.4 queue=0/32 backpressure_total=0 backpressure_60s=0 backpressure_per_min=0.0.
+[INFO] BeesRL1v1. Step: 15000. Time Elapsed: 189.281 s. Mean Reward: -0.054. Std of Reward: 0.974. Training. ELO: 1210.168.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] policy BeesRL1v1?team=1 version=2
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN capacity] remote_actors=1 remote_envs=4 trainer_steps_per_sec=85.0 remote_rollout_steps_per_sec=201.3 queue=0/32 backpressure_total=0 backpressure_60s=0 backpressure_per_min=0.0.
+[Bees WAN capacity] marginal-test remote_envs=0->4 gain=unknown status=warming-up.
+[Bees WAN capacity] topology local_envs=0 remote_actors=2 remote_envs=8 total_envs=8.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] policy BeesRL1v1?team=0 version=1
+[INFO] BeesRL1v1. Step: 20000. Time Elapsed: 278.320 s. Mean Reward: -0.093. Std of Reward: 0.915. Training. ELO: 1200.642.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN capacity] remote_actors=2 remote_envs=8 trainer_steps_per_sec=74.6 remote_rollout_steps_per_sec=220.6 queue=0/32 backpressure_total=0 backpressure_60s=0 backpressure_per_min=0.0.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[INFO] BeesRL1v1. Step: 25000. Time Elapsed: 336.887 s. Mean Reward: -0.047. Std of Reward: 1.010. Training. ELO: 1194.863.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN capacity] remote_actors=2 remote_envs=8 trainer_steps_per_sec=71.3 remote_rollout_steps_per_sec=184.0 queue=0/32 backpressure_total=0 backpressure_60s=0 backpressure_per_min=0.0.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN capacity] topology local_envs=0 remote_actors=1 remote_envs=4 total_envs=4.
+[INFO] BeesRL1v1. Step: 30000. Time Elapsed: 403.553 s. Mean Reward: -0.136. Std of Reward: 1.033. Training. ELO: 1191.333.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] policy BeesRL1v1?team=1 version=3
+[Bees WAN capacity] remote_actors=1 remote_envs=4 trainer_steps_per_sec=83.1 remote_rollout_steps_per_sec=184.0 queue=0/32 backpressure_total=0 backpressure_60s=0 backpressure_per_min=0.0.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[INFO] BeesRL1v1. Step: 35000. Time Elapsed: 476.651 s. Mean Reward: 0.023. Std of Reward: 0.851. Training. ELO: 1188.663.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN capacity] remote_actors=1 remote_envs=4 trainer_steps_per_sec=73.3 remote_rollout_steps_per_sec=154.4 queue=0/32 backpressure_total=0 backpressure_60s=0 backpressure_per_min=0.0.
+[Bees WAN] policy BeesRL1v1?team=0 version=2
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[INFO] BeesRL1v1. Step: 40000. Time Elapsed: 537.020 s. Mean Reward: -0.008. Std of Reward: 1.054. Training. ELO: 1184.008.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN capacity] remote_actors=1 remote_envs=4 trainer_steps_per_sec=74.5 remote_rollout_steps_per_sec=152.5 queue=0/32 backpressure_total=0 backpressure_60s=0 backpressure_per_min=0.0.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[INFO] BeesRL1v1. Step: 45000. Time Elapsed: 586.197 s. Mean Reward: 0.316. Std of Reward: 0.881. Training. ELO: 1182.610.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN capacity] remote_actors=1 remote_envs=4 trainer_steps_per_sec=90.0 remote_rollout_steps_per_sec=193.8 queue=0/32 backpressure_total=0 backpressure_60s=0 backpressure_per_min=0.0.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] policy BeesRL1v1?team=1 version=4
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN capacity] topology local_envs=0 remote_actors=2 remote_envs=8 total_envs=8.
+[Bees WAN capacity] remote_actors=2 remote_envs=8 trainer_steps_per_sec=65.8 remote_rollout_steps_per_sec=112.1 queue=0/32 backpressure_total=0 backpressure_60s=0 backpressure_per_min=0.0.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[INFO] BeesRL1v1. Step: 50000. Time Elapsed: 695.375 s. Mean Reward: 0.040. Std of Reward: 1.044. Training. ELO: 1190.480.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[INFO] BeesRL1v1. Step: 55000. Time Elapsed: 722.692 s. Mean Reward: 0.337. Std of Reward: 0.949. Training. ELO: 1190.591.
+[Bees WAN] policy BeesRL1v1?team=0 version=3
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN capacity] remote_actors=2 remote_envs=8 trainer_steps_per_sec=85.6 remote_rollout_steps_per_sec=311.5 queue=0/32 backpressure_total=0 backpressure_60s=0 backpressure_per_min=0.0.
+[INFO] BeesRL1v1. Step: 60000. Time Elapsed: 762.491 s. Mean Reward: -0.476. Std of Reward: 0.864. Training. ELO: 1194.967.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[INFO] BeesRL1v1. Step: 65000. Time Elapsed: 787.441 s. Mean Reward: 0.083. Std of Reward: 0.893. Training. ELO: 1193.305.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] policy BeesRL1v1?team=1 version=5
+[Bees WAN capacity] remote_actors=2 remote_envs=8 trainer_steps_per_sec=84.6 remote_rollout_steps_per_sec=419.8 queue=0/32 backpressure_total=9 backpressure_60s=9 backpressure_per_min=9.0.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[INFO] BeesRL1v1. Step: 70000. Time Elapsed: 865.979 s. Mean Reward: 0.038. Std of Reward: 0.957. Training. ELO: 1193.305.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN capacity] remote_actors=2 remote_envs=8 trainer_steps_per_sec=109.9 remote_rollout_steps_per_sec=238.6 queue=0/32 backpressure_total=9 backpressure_60s=0 backpressure_per_min=0.0.
+[Bees WAN capacity] marginal-test remote_envs=4->8 gain=+42.0% status=beneficial.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[INFO] BeesRL1v1. Step: 75000. Time Elapsed: 905.719 s. Mean Reward: -0.727. Std of Reward: 0.794. Training. ELO: 1193.305.
+[Bees WAN] policy BeesRL1v1?team=0 version=4
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[INFO] BeesRL1v1. Step: 80000. Time Elapsed: 936.726 s. Mean Reward: -0.432. Std of Reward: 0.887. Training. ELO: 1190.910.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] policy BeesRL1v1?team=1 version=6
+[Bees WAN capacity] remote_actors=2 remote_envs=8 trainer_steps_per_sec=91.6 remote_rollout_steps_per_sec=489.4 queue=0/32 backpressure_total=9 backpressure_60s=0 backpressure_per_min=0.0.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[INFO] BeesRL1v1. Step: 85000. Time Elapsed: 1010.679 s. Mean Reward: 0.599. Std of Reward: 0.806. Training. ELO: 1203.338.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN capacity] remote_actors=2 remote_envs=8 trainer_steps_per_sec=101.8 remote_rollout_steps_per_sec=148.4 queue=0/32 backpressure_total=9 backpressure_60s=0 backpressure_per_min=0.0.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[INFO] BeesRL1v1. Step: 90000. Time Elapsed: 1058.266 s. Mean Reward: -0.051. Std of Reward: 1.026. Training. ELO: 1211.593.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[INFO] BeesRL1v1. Step: 95000. Time Elapsed: 1094.225 s. Mean Reward: 0.451. Std of Reward: 0.899. Training. ELO: 1222.652.
+[Bees WAN capacity] remote_actors=2 remote_envs=8 trainer_steps_per_sec=105.7 remote_rollout_steps_per_sec=237.3 queue=0/32 backpressure_total=9 backpressure_60s=0 backpressure_per_min=0.0.
+[Bees WAN] policy BeesRL1v1?team=0 version=5
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] policy BeesRL1v1?team=1 version=7
+[Bees WAN capacity] remote_actors=2 remote_envs=8 trainer_steps_per_sec=91.5 remote_rollout_steps_per_sec=204.2 queue=0/32 backpressure_total=9 backpressure_60s=0 backpressure_per_min=0.0.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[INFO] BeesRL1v1. Step: 100000. Time Elapsed: 1175.193 s. Mean Reward: -0.011. Std of Reward: 1.009. Training. ELO: 1223.084.
+[Bees WAN] policy BeesRL1v1?team=1 version=8
+[Bees WAN] policy BeesRL1v1?team=0 version=6
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN capacity] remote_actors=2 remote_envs=8 trainer_steps_per_sec=91.7 remote_rollout_steps_per_sec=234.5 queue=0/32 backpressure_total=9 backpressure_60s=0 backpressure_per_min=0.0.
+[INFO] BeesRL1v1. Step: 105000. Time Elapsed: 1223.212 s. Mean Reward: -0.051. Std of Reward: 1.006. Training. ELO: 1217.735.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[INFO] BeesRL1v1. Step: 110000. Time Elapsed: 1241.410 s. Mean Reward: 0.239. Std of Reward: 0.932. Training. ELO: 1211.657.
+[INFO] BeesRL1v1. Step: 115000. Time Elapsed: 1255.223 s. Mean Reward: 0.706. Std of Reward: 0.746. Training. ELO: 1232.011.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] policy BeesRL1v1?team=0 version=7
+[Bees WAN capacity] remote_actors=2 remote_envs=8 trainer_steps_per_sec=105.4 remote_rollout_steps_per_sec=592.3 queue=0/32 backpressure_total=11 backpressure_60s=2 backpressure_per_min=2.0.
+[Bees WAN] policy BeesRL1v1?team=1 version=9
+[INFO] BeesRL1v1. Step: 120000. Time Elapsed: 1318.540 s. Mean Reward: 0.501. Std of Reward: 0.859. Training. ELO: 1248.002.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[INFO] BeesRL1v1. Step: 125000. Time Elapsed: 1344.757 s. Mean Reward: 0.343. Std of Reward: 0.975. Training. ELO: 1253.437.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN capacity] remote_actors=2 remote_envs=8 trainer_steps_per_sec=154.7 remote_rollout_steps_per_sec=397.5 queue=0/32 backpressure_total=11 backpressure_60s=0 backpressure_per_min=0.0.
+[INFO] BeesRL1v1. Step: 130000. Time Elapsed: 1362.589 s. Mean Reward: -0.111. Std of Reward: 1.021. Training. ELO: 1247.977.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] policy BeesRL1v1?team=0 version=8
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN capacity] remote_actors=2 remote_envs=8 trainer_steps_per_sec=146.0 remote_rollout_steps_per_sec=444.5 queue=0/32 backpressure_total=11 backpressure_60s=0 backpressure_per_min=0.0.
+[INFO] BeesRL1v1. Step: 135000. Time Elapsed: 1422.212 s. Mean Reward: -0.041. Std of Reward: 1.039. Training. ELO: 1238.639.
+[Bees WAN] policy BeesRL1v1?team=1 version=10
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[INFO] BeesRL1v1. Step: 140000. Time Elapsed: 1451.360 s. Mean Reward: -0.276. Std of Reward: 0.986. Training. ELO: 1239.961.
+[INFO] BeesRL1v1. Step: 145000. Time Elapsed: 1469.297 s. Mean Reward: 0.445. Std of Reward: 0.890. Training. ELO: 1238.322.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN capacity] remote_actors=2 remote_envs=8 trainer_steps_per_sec=173.7 remote_rollout_steps_per_sec=483.1 queue=0/32 backpressure_total=11 backpressure_60s=0 backpressure_per_min=0.0.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] policy BeesRL1v1?team=0 version=9
+[INFO] BeesRL1v1. Step: 150000. Time Elapsed: 1530.113 s. Mean Reward: 0.535. Std of Reward: 0.867. Training. ELO: 1238.322.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN capacity] remote_actors=2 remote_envs=8 trainer_steps_per_sec=127.3 remote_rollout_steps_per_sec=416.2 queue=0/32 backpressure_total=11 backpressure_60s=0 backpressure_per_min=0.0.
+[INFO] BeesRL1v1. Step: 155000. Time Elapsed: 1554.893 s. Mean Reward: -0.686. Std of Reward: 0.834. Training. ELO: 1238.322.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] policy BeesRL1v1?team=1 version=11
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[INFO] BeesRL1v1. Step: 160000. Time Elapsed: 1594.903 s. Mean Reward: 0.204. Std of Reward: 0.992. Training. ELO: 1241.202.
+[Bees WAN capacity] remote_actors=2 remote_envs=8 trainer_steps_per_sec=146.7 remote_rollout_steps_per_sec=269.8 queue=0/32 backpressure_total=11 backpressure_60s=0 backpressure_per_min=0.0.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[INFO] BeesRL1v1. Step: 165000. Time Elapsed: 1628.636 s. Mean Reward: 0.331. Std of Reward: 0.753. Training. ELO: 1250.581.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] policy BeesRL1v1?team=0 version=10
+[Bees WAN capacity] remote_actors=2 remote_envs=8 trainer_steps_per_sec=90.2 remote_rollout_steps_per_sec=185.4 queue=0/32 backpressure_total=11 backpressure_60s=0 backpressure_per_min=0.0.
+[Bees WAN capacity] topology local_envs=0 remote_actors=2 remote_envs=9 total_envs=9.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[INFO] BeesRL1v1. Step: 170000. Time Elapsed: 1697.328 s. Mean Reward: 0.339. Std of Reward: 0.848. Training. ELO: 1261.417.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[INFO] BeesRL1v1. Step: 175000. Time Elapsed: 1716.249 s. Mean Reward: -0.426. Std of Reward: 0.590. Training. ELO: 1250.904.
+[Bees WAN capacity] remote_actors=2 remote_envs=9 trainer_steps_per_sec=134.2 remote_rollout_steps_per_sec=410.1 queue=0/32 backpressure_total=11 backpressure_60s=0 backpressure_per_min=0.0.
+[Bees WAN] policy BeesRL1v1?team=1 version=11
+[INFO] BeesRL1v1. Step: 180000. Time Elapsed: 1737.674 s. Mean Reward: 0.373. Std of Reward: 0.954. Training. ELO: 1250.496.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN capacity] topology local_envs=0 remote_actors=2 remote_envs=10 total_envs=10.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] policy BeesRL1v1?team=0 version=11
+[Bees WAN capacity] remote_actors=2 remote_envs=10 trainer_steps_per_sec=115.2 remote_rollout_steps_per_sec=417.0 queue=0/32 backpressure_total=11 backpressure_60s=0 backpressure_per_min=0.0.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[INFO] BeesRL1v1. Step: 185000. Time Elapsed: 1805.262 s. Mean Reward: 0.263. Std of Reward: 0.958. Training. ELO: 1259.045.
+[INFO] BeesRL1v1. Step: 190000. Time Elapsed: 1825.521 s. Mean Reward: -0.453. Std of Reward: 0.902. Training. ELO: 1250.580.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[INFO] BeesRL1v1. Step: 195000. Time Elapsed: 1847.373 s. Mean Reward: 0.387. Std of Reward: 0.922. Training. ELO: 1252.854.
+[Bees WAN capacity] remote_actors=2 remote_envs=10 trainer_steps_per_sec=177.2 remote_rollout_steps_per_sec=521.9 queue=0/32 backpressure_total=11 backpressure_60s=0 backpressure_per_min=0.0.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN capacity] topology local_envs=0 remote_actors=2 remote_envs=11 total_envs=11.
+[Bees WAN] policy BeesRL1v1?team=0 version=12
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] policy BeesRL1v1?team=1 version=11
+[INFO] BeesRL1v1. Step: 200000. Time Elapsed: 1910.140 s. Mean Reward: 0.273. Std of Reward: 0.982. Training. ELO: 1265.716.
+[Bees WAN capacity] remote_actors=2 remote_envs=11 trainer_steps_per_sec=123.3 remote_rollout_steps_per_sec=322.7 queue=0/32 backpressure_total=12 backpressure_60s=1 backpressure_per_min=1.0.
+[Bees WAN] policy BeesRL1v1?team=1 version=12
+[Bees WAN] policy BeesRL1v1?team=0 version=13
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN capacity] topology local_envs=0 remote_actors=2 remote_envs=10 total_envs=10.
+[INFO] Learning was interrupted. Please wait while the graph is generated.
+B:\Bees\Runtime\LearnerPython\86ad40ad719a4af952fbd09fecc417c171a621f656da54d8e619b6061e79f0c7\lib\site-packages\torch\onnx\utils.py:631: UserWarning: ONNX Preprocess - Removing mutation from node aten::clamp_ on block input: 'action_model._continuous_distribution.log_sigma'. This changes graph semantics. (Triggered internally at ..\torch\csrc\jit\passes\onnx\remove_inplace_ops_for_onnx.cpp:355.)
+  _C._jit_pass_onnx_remove_inplace_ops_for_onnx(graph, module)
+[INFO] Exported B:\Bees\Training\trainer-results\bees-v20-r3-s1-20260929T104735Z-34b57ea7\BeesRL1v1\BeesRL1v1-204105.onnx
+[INFO] Copied B:\Bees\Training\trainer-results\bees-v20-r3-s1-20260929T104735Z-34b57ea7\BeesRL1v1\BeesRL1v1-204105.onnx to B:\Bees\Training\trainer-results\bees-v20-r3-s1-20260929T104735Z-34b57ea7\BeesRL1v1.onnx.
+[Bees RL] PPO value-estimate/return buffer key separation: enabled
+
+            ┐  ╖
+        ╓╖╬│╡  ││╬╖╖
+    ╓╖╬│││││┘  ╬│││││╬╖
+ ╖╬│││││╬╜        ╙╬│││││╖╖                               ╗╗╗
+ ╬╬╬╬╖││╦╖        ╖╬││╗╣╣╣╬      ╟╣╣╬    ╟╣╣╣             ╜╜╜  ╟╣╣
+ ╬╬╬╬╬╬╬╬╖│╬╖╖╓╬╪│╓╣╣╣╣╣╣╣╬      ╟╣╣╬    ╟╣╣╣ ╒╣╣╖╗╣╣╣╗   ╣╣╣ ╣╣╣╣╣╣ ╟╣╣╖   ╣╣╣
+ ╬╬╬╬┐  ╙╬╬╬╬│╓╣╣╣╝╜  ╫╣╣╣╬      ╟╣╣╬    ╟╣╣╣ ╟╣╣╣╙ ╙╣╣╣  ╣╣╣ ╙╟╣╣╜╙  ╫╣╣  ╟╣╣
+ ╬╬╬╬┐     ╙╬╬╣╣      ╫╣╣╣╬      ╟╣╣╬    ╟╣╣╣ ╟╣╣╬   ╣╣╣  ╣╣╣  ╟╣╣     ╣╣╣┌╣╣╜
+ ╬╬╬╜       ╬╬╣╣      ╙╝╣╣╬      ╙╣╣╣╗╖╓╗╣╣╣╜ ╟╣╣╬   ╣╣╣  ╣╣╣  ╟╣╣╦╓    ╣╣╣╣╣
+ ╙   ╓╦╖    ╬╬╣╣   ╓╗╗╖            ╙╝╣╣╣╣╝╜   ╘╝╝╜   ╝╝╝  ╝╝╝   ╙╣╣╣    ╟╣╣╣
+   ╩╬╬╬╬╬╬╦╦╬╬╣╣╗╣╣╣╣╣╣╣╝                                             ╫╣╣╣╣
+      ╙╬╬╬╬╬╬╬╣╣╣╣╣╣╝╜
+          ╙╬╬╬╣╣╣╜
+             ╙
+        
+ Version information:
+  ml-agents: 1.1.0,
+  ml-agents-envs: 1.1.0,
+  Communicator API: 1.5.0,
+  PyTorch: 2.1.1+cpu
+[Bees WAN] actor broker listening only on 127.0.0.1:55051; remote machines must use the managed authenticated private forward.
+[Bees WAN] Exeter local_envs=0: PPO learner-only mode enabled; waiting for remote rollout actors.
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees WAN capacity] remote_actors=0 remote_envs=0 trainer_steps_per_sec=warming remote_rollout_steps_per_sec=0.0 queue=0/32 backpressure_total=0 backpressure_60s=0 backpressure_per_min=0.0.
+[INFO] Learning was interrupted. Please wait while the graph is generated.
+[Bees RL] PPO value-estimate/return buffer key separation: enabled
+
+            ┐  ╖
+        ╓╖╬│╡  ││╬╖╖
+    ╓╖╬│││││┘  ╬│││││╬╖
+ ╖╬│││││╬╜        ╙╬│││││╖╖                               ╗╗╗
+ ╬╬╬╬╖││╦╖        ╖╬││╗╣╣╣╬      ╟╣╣╬    ╟╣╣╣             ╜╜╜  ╟╣╣
+ ╬╬╬╬╬╬╬╬╖│╬╖╖╓╬╪│╓╣╣╣╣╣╣╣╬      ╟╣╣╬    ╟╣╣╣ ╒╣╣╖╗╣╣╣╗   ╣╣╣ ╣╣╣╣╣╣ ╟╣╣╖   ╣╣╣
+ ╬╬╬╬┐  ╙╬╬╬╬│╓╣╣╣╝╜  ╫╣╣╣╬      ╟╣╣╬    ╟╣╣╣ ╟╣╣╣╙ ╙╣╣╣  ╣╣╣ ╙╟╣╣╜╙  ╫╣╣  ╟╣╣
+ ╬╬╬╬┐     ╙╬╬╣╣      ╫╣╣╣╬      ╟╣╣╬    ╟╣╣╣ ╟╣╣╬   ╣╣╣  ╣╣╣  ╟╣╣     ╣╣╣┌╣╣╜
+ ╬╬╬╜       ╬╬╣╣      ╙╝╣╣╬      ╙╣╣╣╗╖╓╗╣╣╣╜ ╟╣╣╬   ╣╣╣  ╣╣╣  ╟╣╣╦╓    ╣╣╣╣╣
+ ╙   ╓╦╖    ╬╬╣╣   ╓╗╗╖            ╙╝╣╣╣╣╝╜   ╘╝╝╜   ╝╝╝  ╝╝╝   ╙╣╣╣    ╟╣╣╣
+   ╩╬╬╬╬╬╬╦╦╬╬╣╣╗╣╣╣╣╣╣╣╝                                             ╫╣╣╣╣
+      ╙╬╬╬╬╬╬╬╣╣╣╣╣╣╝╜
+          ╙╬╬╬╣╣╣╜
+             ╙
+        
+ Version information:
+  ml-agents: 1.1.0,
+  ml-agents-envs: 1.1.0,
+  Communicator API: 1.5.0,
+  PyTorch: 2.1.1+cpu
+[Bees WAN] actor broker listening only on 127.0.0.1:55051; remote machines must use the managed authenticated private forward.
+[Bees WAN] Exeter local_envs=0: PPO learner-only mode enabled; waiting for remote rollout actors.
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees WAN capacity] remote_actors=0 remote_envs=0 trainer_steps_per_sec=warming remote_rollout_steps_per_sec=0.0 queue=0/32 backpressure_total=0 backpressure_60s=0 backpressure_per_min=0.0.
+[Bees WAN capacity] topology local_envs=0 remote_actors=1 remote_envs=4 total_envs=4.
+[INFO] Hyperparameters for behavior name BeesRL1v1: 
+	trainer_type:	ppo
+	hyperparameters:	
+	  batch_size:	512
+	  buffer_size:	16384
+	  learning_rate:	0.0003
+	  beta:	0.00125
+	  epsilon:	0.15
+	  lambd:	0.95
+	  num_epoch:	3
+	  shared_critic:	False
+	  learning_rate_schedule:	constant
+	  beta_schedule:	constant
+	  epsilon_schedule:	constant
+	checkpoint_interval:	2000000
+	network_settings:	
+	  normalize:	True
+	  hidden_units:	128
+	  num_layers:	3
+	  vis_encode_type:	simple
+	  memory:	None
+	  goal_conditioning_type:	hyper
+	  deterministic:	False
+	reward_signals:	
+	  extrinsic:	
+	    gamma:	1.0
+	    strength:	1.0
+	    network_settings:	
+	      normalize:	False
+	      hidden_units:	128
+	      num_layers:	2
+	      vis_encode_type:	simple
+	      memory:	None
+	      goal_conditioning_type:	hyper
+	      deterministic:	False
+	init_path:	None
+	keep_checkpoints:	250
+	even_checkpoints:	False
+	max_steps:	20000000
+	time_horizon:	2048
+	summary_freq:	5000
+	threaded:	False
+	self_play:	
+	  save_steps:	20000
+	  team_change:	100000
+	  swap_steps:	20000
+	  window:	30
+	  play_against_latest_model_ratio:	0.2
+	  initial_elo:	1200.0
+	behavioral_cloning:	None
+[INFO] Resuming from B:\Bees\Training\trainer-results\bees-v20-r3-s1-20260929T104735Z-34b57ea7\BeesRL1v1.
+[INFO] Resuming training from step 204105.
+[Bees WAN] policy BeesRL1v1?team=0 version=1
+[Bees WAN] policy BeesRL1v1?team=1 version=1
+[Bees WAN] policy BeesRL1v1?team=0 version=1
+[Bees WAN] policy BeesRL1v1?team=1 version=1
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN capacity] remote_actors=1 remote_envs=4 trainer_steps_per_sec=warming remote_rollout_steps_per_sec=0.1 queue=0/32 backpressure_total=0 backpressure_60s=0 backpressure_per_min=0.0.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[INFO] BeesRL1v1. Step: 205000. Time Elapsed: 113.765 s. Mean Reward: 0.143. Std of Reward: 0.976. Training. ELO: 1257.339.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN capacity] remote_actors=1 remote_envs=4 trainer_steps_per_sec=46.3 remote_rollout_steps_per_sec=82.1 queue=0/32 backpressure_total=0 backpressure_60s=0 backpressure_per_min=0.0.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[INFO] BeesRL1v1. Step: 210000. Time Elapsed: 158.833 s. Mean Reward: 0.626. Std of Reward: 0.810. Training. ELO: 1268.481.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN capacity] remote_actors=1 remote_envs=4 trainer_steps_per_sec=61.0 remote_rollout_steps_per_sec=184.6 queue=0/32 backpressure_total=0 backpressure_60s=0 backpressure_per_min=0.0.
+[Bees WAN capacity] marginal-test remote_envs=0->4 gain=unknown status=warming-up.
+[INFO] BeesRL1v1. Step: 215000. Time Elapsed: 211.002 s. Mean Reward: 0.126. Std of Reward: 1.011. Training. ELO: 1279.102.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[INFO] BeesRL1v1. Step: 220000. Time Elapsed: 254.758 s. Mean Reward: 0.544. Std of Reward: 0.837. Training. ELO: 1288.293.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] policy BeesRL1v1?team=1 version=2
+[Bees WAN capacity] remote_actors=1 remote_envs=4 trainer_steps_per_sec=90.2 remote_rollout_steps_per_sec=231.5 queue=0/32 backpressure_total=0 backpressure_60s=0 backpressure_per_min=0.0.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN capacity] topology local_envs=0 remote_actors=2 remote_envs=10 total_envs=10.
+[INFO] BeesRL1v1. Step: 225000. Time Elapsed: 337.946 s. Mean Reward: 0.602. Std of Reward: 0.828. Training. ELO: 1307.794.
+[Bees WAN capacity] remote_actors=2 remote_envs=10 trainer_steps_per_sec=87.9 remote_rollout_steps_per_sec=175.2 queue=0/32 backpressure_total=0 backpressure_60s=0 backpressure_per_min=0.0.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[INFO] BeesRL1v1. Step: 230000. Time Elapsed: 371.325 s. Mean Reward: 0.727. Std of Reward: 0.721. Training. ELO: 1321.539.
+[Bees WAN] policy BeesRL1v1?team=0 version=2
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[INFO] BeesRL1v1. Step: 235000. Time Elapsed: 400.206 s. Mean Reward: 0.209. Std of Reward: 0.866. Training. ELO: 1329.148.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] policy BeesRL1v1?team=1 version=3
+[Bees WAN capacity] remote_actors=2 remote_envs=10 trainer_steps_per_sec=102.9 remote_rollout_steps_per_sec=404.0 queue=0/32 backpressure_total=0 backpressure_60s=0 backpressure_per_min=0.0.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[INFO] BeesRL1v1. Step: 240000. Time Elapsed: 460.863 s. Mean Reward: 0.606. Std of Reward: 0.805. Training. ELO: 1329.148.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN capacity] remote_actors=2 remote_envs=10 trainer_steps_per_sec=124.5 remote_rollout_steps_per_sec=321.7 queue=0/32 backpressure_total=0 backpressure_60s=0 backpressure_per_min=0.0.
+[INFO] BeesRL1v1. Step: 245000. Time Elapsed: 499.832 s. Mean Reward: -0.500. Std of Reward: 0.779. Training. ELO: 1329.148.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] policy BeesRL1v1?team=0 version=3
+[INFO] BeesRL1v1. Step: 250000. Time Elapsed: 529.902 s. Mean Reward: 0.610. Std of Reward: 0.817. Training. ELO: 1330.421.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN capacity] remote_actors=2 remote_envs=10 trainer_steps_per_sec=127.5 remote_rollout_steps_per_sec=298.1 queue=0/32 backpressure_total=0 backpressure_60s=0 backpressure_per_min=0.0.
+[Bees WAN capacity] marginal-test remote_envs=4->10 gain=+55.7% status=beneficial.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] policy BeesRL1v1?team=1 version=4
+[Bees WAN capacity] remote_actors=2 remote_envs=10 trainer_steps_per_sec=98.4 remote_rollout_steps_per_sec=387.3 queue=0/32 backpressure_total=27 backpressure_60s=27 backpressure_per_min=27.0.
+[INFO] BeesRL1v1. Step: 255000. Time Elapsed: 622.816 s. Mean Reward: 0.166. Std of Reward: 0.944. Training. ELO: 1333.872.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[INFO] BeesRL1v1. Step: 260000. Time Elapsed: 675.770 s. Mean Reward: -0.165. Std of Reward: 0.974. Training. ELO: 1320.547.
+[Bees WAN capacity] remote_actors=2 remote_envs=10 trainer_steps_per_sec=83.7 remote_rollout_steps_per_sec=224.0 queue=0/32 backpressure_total=27 backpressure_60s=0 backpressure_per_min=0.0.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] policy BeesRL1v1?team=0 version=3
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[INFO] BeesRL1v1. Step: 265000. Time Elapsed: 723.074 s. Mean Reward: 0.539. Std of Reward: 0.806. Training. ELO: 1327.067.
+[Bees WAN capacity] remote_actors=2 remote_envs=10 trainer_steps_per_sec=72.3 remote_rollout_steps_per_sec=223.3 queue=0/32 backpressure_total=27 backpressure_60s=0 backpressure_per_min=0.0.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0

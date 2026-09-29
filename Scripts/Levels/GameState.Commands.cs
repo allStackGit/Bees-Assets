@@ -34,7 +34,6 @@ namespace Assets.Scripts.Levels
                 OutcomeIdToPastCommandIndex.Add(command.OutcomeId, PastCommands.Count - 1);
             }
             AICommands++;
-            Stage.DebugLogger.__HivemindCommands++;
             return true;
         }
 
