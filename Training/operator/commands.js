@@ -64,6 +64,10 @@ const {
 const { assertRlEnvironmentArgsValid } = require('./validation');
 const { invokeBuild } = require('./build');
 const { showStatus } = require('./status');
+const {
+    prepareLocalActorReleaseRuntime,
+    startLocalActorIfNeeded,
+} = require('./localActor');
 
 function getEnvironmentArgs(config, options) {
     if (Array.isArray(options.envArgs) && options.envArgs.length) {
@@ -106,6 +110,13 @@ async function reconcilePersistedTrainingAfterServerStart(config, admin) {
         config,
         bootstrapPython,
         unity,
+        release,
+        preparedRuntime,
+    );
+    prepareLocalActorReleaseRuntime(config, release, preparedRuntime);
+    await startLocalActorIfNeeded(
+        config,
+        bootstrapPython,
         release,
         preparedRuntime,
     );
@@ -220,6 +231,13 @@ async function invokeRuntime() {
         config,
         python,
         unity,
+        updatedRelease,
+        preparedRuntime,
+    );
+    prepareLocalActorReleaseRuntime(config, updatedRelease, preparedRuntime);
+    await startLocalActorIfNeeded(
+        config,
+        python,
         updatedRelease,
         preparedRuntime,
     );
@@ -477,6 +495,7 @@ async function invokeStart(options = {}) {
     await startCentralAgentIfNeeded(
         config, bootstrapPython, unity, release, centralRuntime
     );
+    prepareLocalActorReleaseRuntime(config, release, centralRuntime);
 
     let staged;
     let desired;
@@ -547,6 +566,13 @@ async function invokeStart(options = {}) {
             'Forced new-run cutover complete. Active run: ' + release.run_id
         );
     }
+
+    await startLocalActorIfNeeded(
+        config,
+        bootstrapPython,
+        release,
+        centralRuntime,
+    );
 
     console.log(
         'Training requested: build=' + release.build_id +
