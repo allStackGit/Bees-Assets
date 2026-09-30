@@ -18,6 +18,7 @@ internal static class RlOneVsOneArenaMapSizeState
     private const float BorderHalfThickness = BorderThickness / 2f;
     private const float BorderOverhang = BorderThickness * 2f;
     private const int MapSizeStep = 4;
+    internal const float SpawnSafetyMargin = 1f;
 
     private static readonly Dictionary<Level, float> EpisodeMapSizes = new Dictionary<Level, float>();
     private static readonly Dictionary<Level, System.Random> MapSizeRandoms =
@@ -71,8 +72,19 @@ internal static class RlOneVsOneArenaMapSizeState
             else
             {
                 RlOneVsOneTrainingOptions options = Options;
+                float minimumSafeMapSize = GetMinimumSafeMapSizeForPreparedMatchup(level);
+                if (options.MapSizeMaximum + 0.001f < minimumSafeMapSize)
+                {
+                    throw new InvalidOperationException(
+                        $"RL map maximum {options.MapSizeMaximum:0.###} cannot safely contain the prepared matchup; " +
+                        $"at least {minimumSafeMapSize:0.###} is required.");
+                }
                 mapSize = options.HasMapSizeRange
-                    ? SampleMapSizeForLevel(level, options.MapSizeMinimum, options.MapSizeMaximum)
+                    ? SampleMapSizeForLevel(
+                        level,
+                        options.MapSizeMinimum,
+                        options.MapSizeMaximum,
+                        minimumSafeMapSize)
                     : options.MapSize;
             }
             EpisodeMapSizes[level] = mapSize;
@@ -110,6 +122,41 @@ internal static class RlOneVsOneArenaMapSizeState
         return mapSize / 4f;
     }
 
+    internal static float GetRotationSafeShipRadius(ConfigData.ShipTypes shipType)
+    {
+        Vector2 shipSize = (Vector2)ConfigData.ShipSizes[shipType] / ConfigData.PixelsPerUnit;
+        return 0.5f * Mathf.Sqrt(shipSize.x * shipSize.x + shipSize.y * shipSize.y) +
+               SpawnSafetyMargin;
+    }
+
+    internal static float GetMinimumSafeMapSizeForShip(ConfigData.ShipTypes shipType)
+    {
+        float edgePadding = Mathf.Max(ConfigData.MapEdgePadding.x, ConfigData.MapEdgePadding.y);
+        return 2f * (GetRotationSafeShipRadius(shipType) + edgePadding) + 0.01f;
+    }
+
+    private static float GetMinimumSafeMapSizeForPreparedMatchup(Level level)
+    {
+        float required = 0f;
+        int shipCount = RlOneVsOneTrainingBootstrap.CurrentShipsPerSide;
+        int[] sides =
+        {
+            ConfigData.Configuration.BeeSide,
+            ConfigData.Configuration.HumanSide,
+        };
+        for (int sideIndex = 0; sideIndex < sides.Length; sideIndex++)
+        {
+            for (int shipIndex = 0; shipIndex < shipCount; shipIndex++)
+            {
+                required = Mathf.Max(
+                    required,
+                    GetMinimumSafeMapSizeForShip(
+                        RlOneVsOnePerArenaMatchups.GetShipType(level, sides[sideIndex], shipIndex)));
+            }
+        }
+        return required;
+    }
+
     internal static Vector2 GetShipFormationOffset(Level level, int shipIndex)
     {
         int shipCount = RlOneVsOneTrainingBootstrap.CurrentShipsPerSide;
@@ -133,9 +180,17 @@ internal static class RlOneVsOneArenaMapSizeState
         return new Vector2(x, y);
     }
 
-    internal static float SampleMapSizeForLevel(Level level, float minimum, float maximum)
+    internal static float SampleMapSizeForLevel(
+        Level level,
+        float minimum,
+        float maximum,
+        float requiredMinimum = 0f)
     {
-        return SampleSteppedMapSize(GetMapSizeRandom(level), minimum, maximum);
+        return SampleSteppedMapSize(
+            GetMapSizeRandom(level),
+            minimum,
+            maximum,
+            requiredMinimum);
     }
 
     // Retain the focused sampler contract used by existing EditMode coverage. Runtime map sampling
@@ -143,10 +198,14 @@ internal static class RlOneVsOneArenaMapSizeState
     internal static float SampleMapSize(float minimum, float maximum)
     {
         System.Random random = new System.Random(0x524C4D50); // "RLMP" test-only stable stream.
-        return SampleSteppedMapSize(random, minimum, maximum);
+        return SampleSteppedMapSize(random, minimum, maximum, 0f);
     }
 
-    private static float SampleSteppedMapSize(System.Random random, float minimum, float maximum)
+    private static float SampleSteppedMapSize(
+        System.Random random,
+        float minimum,
+        float maximum,
+        float requiredMinimum)
     {
         if (maximum <= minimum)
         {
@@ -154,7 +213,11 @@ internal static class RlOneVsOneArenaMapSizeState
         }
 
         int maximumStep = Mathf.FloorToInt((maximum - minimum) / MapSizeStep);
-        int selectedStep = random.Next(maximumStep + 1);
+        int minimumStep = Mathf.Clamp(
+            Mathf.CeilToInt((Mathf.Max(minimum, requiredMinimum) - minimum) / MapSizeStep),
+            0,
+            maximumStep);
+        int selectedStep = random.Next(minimumStep, maximumStep + 1);
         return minimum + selectedStep * MapSizeStep;
     }
 
