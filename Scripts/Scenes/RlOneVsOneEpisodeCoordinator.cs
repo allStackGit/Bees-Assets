@@ -47,10 +47,14 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         internal readonly float BeeTerminalReward;
         internal readonly float BeeTsvReward;
         internal readonly float BeeTimeReward;
+        internal readonly float BeeEconomicReward;
+        internal readonly float BeeRetainedMiningReward;
         internal readonly float BeeTotalReward;
         internal readonly float HumanTerminalReward;
         internal readonly float HumanTsvReward;
         internal readonly float HumanTimeReward;
+        internal readonly float HumanEconomicReward;
+        internal readonly float HumanRetainedMiningReward;
         internal readonly float HumanTotalReward;
 
         internal EpisodeResult(
@@ -73,9 +77,13 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
             float beeTerminalReward,
             float beeTsvReward,
             float beeTimeReward,
+            float beeEconomicReward,
+            float beeRetainedMiningReward,
             float humanTerminalReward,
             float humanTsvReward,
-            float humanTimeReward)
+            float humanTimeReward,
+            float humanEconomicReward,
+            float humanRetainedMiningReward)
         {
             EpisodeNumber = episodeNumber;
             BeeTeamId = beeTeamId;
@@ -96,15 +104,20 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
             BeeTerminalReward = beeTerminalReward;
             BeeTsvReward = beeTsvReward;
             BeeTimeReward = beeTimeReward;
-            BeeTotalReward = beeTerminalReward + beeTsvReward + beeTimeReward;
+            BeeEconomicReward = beeEconomicReward;
+            BeeRetainedMiningReward = beeRetainedMiningReward;
+            BeeTotalReward = beeTerminalReward + beeTsvReward + beeTimeReward + beeEconomicReward;
             HumanTerminalReward = humanTerminalReward;
             HumanTsvReward = humanTsvReward;
             HumanTimeReward = humanTimeReward;
-            HumanTotalReward = humanTerminalReward + humanTsvReward + humanTimeReward;
+            HumanEconomicReward = humanEconomicReward;
+            HumanRetainedMiningReward = humanRetainedMiningReward;
+            HumanTotalReward = humanTerminalReward + humanTsvReward + humanTimeReward + humanEconomicReward;
         }
     }
 
     internal static event Action<Level, int, float> TsvRewardOccurred;
+    internal static event Action<Level, int, float> EconomicRewardOccurred;
     internal static event Action<Level, EpisodeResult> EpisodeEnded;
     internal static EpisodeResult LastEpisodeResult { get; private set; }
 
@@ -131,6 +144,12 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
     private int _humanDamageThisEpisode;
     private float _beeTsvRewardThisEpisode;
     private float _humanTsvRewardThisEpisode;
+    private float _beeEconomicRewardThisEpisode;
+    private float _humanEconomicRewardThisEpisode;
+    private int _beeDestroyedMinedTsvThisEpisode;
+    private int _humanDestroyedMinedTsvThisEpisode;
+    private int _beeRetainedMinedTsvThisEpisode;
+    private int _humanRetainedMinedTsvThisEpisode;
     private float _beeFirstContactSeconds;
     private float _humanFirstContactSeconds;
     private float _beeFirstFireSeconds;
@@ -178,6 +197,12 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
     private readonly HashSet<int>[] _rewardedMiningAsteroidDiscoveryIds = { new HashSet<int>(), new HashSet<int>() };
     private readonly HashSet<int>[] _rewardedObstacleDiscoveryIds = { new HashSet<int>(), new HashSet<int>() };
     private readonly HashSet<int>[] _rewardedMapObjectDiscoveryIds = { new HashSet<int>(), new HashSet<int>() };
+
+    // Mined resources remain attached to the individual mining ship until that ship is safely
+    // retained. Destroyed miners forfeit their cargo; end-killed/warped ships remain retained.
+    private readonly Dictionary<long, int> _minedTsvByShipId = new Dictionary<long, int>();
+    private readonly Dictionary<long, int> _miningShipSideById = new Dictionary<long, int>();
+    private readonly HashSet<long> _forfeitedMiningShipIds = new HashSet<long>();
 
     private int _completedEpisodes;
     private int _beeWins;
