@@ -214,6 +214,38 @@ function installReleaseTrainingRuntime(python, release, allowLegacyPin = false) 
     ]);
 }
 
+function installPackagedReleaseTrainingRuntime(python, buildId) {
+    const normalizedBuildId = String(buildId || '').trim();
+    if (!/^[A-Za-z0-9._-]+$/.test(normalizedBuildId)) {
+        throw new Error('Packaged training runtime recovery requires a valid build id.');
+    }
+    const archive = path.join(
+        paths.buildsRoot,
+        'Packages',
+        normalizedBuildId,
+        'training-runtime.zip',
+    );
+    if (!exists(archive)) {
+        throw new Error(
+            'Canonical training runtime package is missing for build ' +
+            normalizedBuildId + ': ' + archive
+        );
+    }
+    const verified = invokePythonJson(python, [
+        paths.releaseRuntimeScript, 'verify',
+        '--archive', archive,
+        '--expected-build-id', normalizedBuildId,
+    ]);
+    return invokePythonJson(python, [
+        paths.releaseRuntimeScript, 'install',
+        '--archive', archive,
+        '--destination-root', paths.releaseRuntimeInstallRoot,
+        '--expected-sha256', String(verified.archive_sha256),
+        '--expected-version', String(verified.runtime_version),
+        '--expected-build-id', normalizedBuildId,
+    ]);
+}
+
 function releaseRuntimeKeepRoots(extraRoots = []) {
     const keep = new Set(extraRoots.filter(Boolean).map(String));
     for (const statePath of [
@@ -388,6 +420,7 @@ module.exports = {
     getPendingForcedNewRunPlan,
     getTrainingCompatibilityFingerprint,
     installReleaseTrainingRuntime,
+    installPackagedReleaseTrainingRuntime,
     newReleaseTrainingRuntime,
     newTrainingRunPlan,
     pruneLearnerPythonRuntimes,
