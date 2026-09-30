@@ -1,2 +1,6 @@
--r bees_remote_requirements.txt
+--extra-index-url https://download.pytorch.org/whl/cu121
+setuptools>=41,<82
+mlagents==1.1.0
+torch==2.1.1+cu121
+numpy<2
 onnxruntime==1.15.1
