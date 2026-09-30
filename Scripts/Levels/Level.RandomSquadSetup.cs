@@ -8,15 +8,12 @@ namespace Assets.Scripts.Levels
 {
     public partial class Level
     {
-        private const float RlSpawnSafetyMargin = 1f;
         private readonly List<SavedSquad> _randomSquadBuffer = new List<SavedSquad>();
         private int _randomQueenCount;
 
         private static float GetRlShipClearanceRadius(ConfigData.ShipTypes shipType)
         {
-            Vector2 shipSize = (Vector2)ConfigData.ShipSizes[shipType] / ConfigData.PixelsPerUnit;
-            return 0.5f * Mathf.Sqrt(shipSize.x * shipSize.x + shipSize.y * shipSize.y) +
-                   RlSpawnSafetyMargin;
+            return global::RlOneVsOneArenaMapSizeState.GetRotationSafeShipRadius(shipType);
         }
 
         private static float GetRlShipClearanceRadius(Ship ship)
@@ -24,7 +21,7 @@ namespace Assets.Scripts.Levels
             float halfWidth = Mathf.Max(0f, ship.GetHalfWidth());
             float halfHeight = Mathf.Max(0f, ship.GetHalfHeight());
             return Mathf.Sqrt(halfWidth * halfWidth + halfHeight * halfHeight) +
-                   RlSpawnSafetyMargin;
+                   global::RlOneVsOneArenaMapSizeState.SpawnSafetyMargin;
         }
 
         private void SetupShipsForSide(int side)
@@ -122,8 +119,12 @@ namespace Assets.Scripts.Levels
                 }
             }
 
-            throw new System.InvalidOperationException(
-                "RL training could not find spawn positions that keep every configured ship clear of the map border and lethal obstacles.");
+            // The generic squad placer may not preserve this requested formation around very
+            // large mixed fleets. Use the ordinary opposing centers as a harmless seed and let the
+            // authoritative post-spawn pass place any unsafe ship individually.
+            Vector2 fallback = Vector2.right * preferredRadius;
+            StartingPositions[ConfigData.Configuration.BeeSide - 1] = -fallback;
+            StartingPositions[ConfigData.Configuration.HumanSide - 1] = fallback;
         }
 
         private bool TrySetRlOneVsOneSpawnPositions(Vector2 beeCenter, Vector2 humanCenter)
@@ -163,9 +164,55 @@ namespace Assets.Scripts.Levels
         private void EnsureRlSpawnedShipsAreHazardClear(int side)
         {
             List<Ship> ships = State.GetShips(side);
-            if (ships.Count == 0 || AreRlSpawnedShipsHazardClear(ships, Vector2.zero))
+            if (ships.Count == 0)
             {
                 return;
+            }
+
+            HashSet<Squad> movedSquads = new HashSet<Squad>();
+            for (int shipIndex = 0; shipIndex < ships.Count; shipIndex++)
+            {
+                Ship ship = ships[shipIndex];
+                if (ship == null || ship.IsDead)
+                {
+                    continue;
+                }
+
+                float clearance = GetRlShipClearanceRadius(ship);
+                Vector2 current = ship.transform.localPosition;
+                if (IsRlShipPositionHazardClear(current, clearance))
+                {
+                    continue;
+                }
+
+                if (!TryFindNearestRlHazardClearPosition(current, clearance, out Vector2 safePosition))
+                {
+                    throw new System.InvalidOperationException(
+                        $"RL training could not place {ship.ShipType} on side {side} clear of the map border and lethal obstacles.");
+                }
+
+                ship.transform.localPosition = safePosition;
+                if (ship.Squad != null)
+                {
+                    movedSquads.Add(ship.Squad);
+                }
+            }
+
+            foreach (Squad squad in movedSquads)
+            {
+                squad.SetOffsets();
+            }
+        }
+
+        private bool TryFindNearestRlHazardClearPosition(
+            Vector2 requested,
+            float clearance,
+            out Vector2 safePosition)
+        {
+            if (IsRlShipPositionHazardClear(requested, clearance))
+            {
+                safePosition = requested;
+                return true;
             }
 
             int step = Mathf.Max(1, Pathfinder.Scale);
@@ -173,7 +220,7 @@ namespace Assets.Scripts.Levels
             int maxRadius = Mathf.CeilToInt((float)maxSearchDistance / step);
             for (int radius = 1; radius <= maxRadius; radius++)
             {
-                Vector2 bestOffset = Vector2.zero;
+                Vector2 best = Vector2.zero;
                 float bestDistance = float.MaxValue;
                 bool found = false;
                 for (int x = -radius; x <= radius; x++)
@@ -185,66 +232,40 @@ namespace Assets.Scripts.Levels
                             continue;
                         }
 
-                        Vector2 candidateOffset = new Vector2(x * step, y * step);
-                        if (!AreRlSpawnedShipsHazardClear(ships, candidateOffset))
+                        Vector2 candidate = requested + new Vector2(x * step, y * step);
+                        if (!IsRlShipPositionHazardClear(candidate, clearance))
                         {
                             continue;
                         }
 
-                        float distance = candidateOffset.sqrMagnitude;
+                        float distance = (candidate - requested).sqrMagnitude;
                         if (!found || distance < bestDistance)
                         {
                             found = true;
                             bestDistance = distance;
-                            bestOffset = candidateOffset;
+                            best = candidate;
                         }
                     }
                 }
 
-                if (!found)
+                if (found)
                 {
-                    continue;
+                    safePosition = best;
+                    return true;
                 }
-
-                HashSet<Squad> movedSquads = new HashSet<Squad>();
-                for (int shipIndex = 0; shipIndex < ships.Count; shipIndex++)
-                {
-                    Ship ship = ships[shipIndex];
-                    ship.transform.localPosition += (Vector3)bestOffset;
-                    if (ship.Squad != null)
-                    {
-                        movedSquads.Add(ship.Squad);
-                    }
-                }
-                foreach (Squad squad in movedSquads)
-                {
-                    squad.SetOffsets();
-                }
-                return;
             }
 
-            throw new System.InvalidOperationException(
-                $"RL training could not place side {side} without a ship touching the map border or a lethal obstacle.");
-        }
-
-        private bool AreRlSpawnedShipsHazardClear(List<Ship> ships, Vector2 offset)
-        {
-            for (int shipIndex = 0; shipIndex < ships.Count; shipIndex++)
+            // The RL obstacle generator always leaves the center cross clear. Checking the center
+            // explicitly also covers coarse Pathfinder-scale searches on maps where a very large
+            // ship has only a narrow valid center region.
+            if (IsRlShipPositionHazardClear(Vector2.zero, clearance))
             {
-                Ship ship = ships[shipIndex];
-                if (ship == null || ship.IsDead)
-                {
-                    continue;
-                }
-
-                if (!IsRlShipPositionHazardClear(
-                    (Vector2)ship.transform.localPosition + offset,
-                    GetRlShipClearanceRadius(ship)))
-                {
-                    return false;
-                }
+                safePosition = Vector2.zero;
+                return true;
             }
-            return true;
+
+            safePosition = requested;
+            return false;
         }
 
         private bool IsRlShipPositionHazardClear(Vector2 shipPosition, float shipExtent)
