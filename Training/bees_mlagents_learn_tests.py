@@ -104,6 +104,25 @@ class BeesOptionParsingTests(unittest.TestCase):
         )
 
 
+class ExplicitOutcomeEloTests(unittest.TestCase):
+    def test_terminal_markers_decode_explicit_outcomes_and_strip_before_training(self):
+        cases = (
+            (launcher.ELO_WIN_MARKER + 0.25, 1.0, 0.25),
+            (launcher.ELO_DRAW_MARKER - 0.5, 0.5, -0.5),
+            (launcher.ELO_LOSS_MARKER + 0.75, 0.0, 0.75),
+        )
+        for reward, expected_result, expected_stripped in cases:
+            result, stripped = launcher._decode_explicit_outcome_marker(reward)
+            self.assertEqual(result, expected_result)
+            self.assertAlmostEqual(stripped, expected_stripped)
+
+    def test_ordinary_rewards_are_not_reclassified_as_elo_outcomes(self):
+        for reward in (-4.0, -1.0, 0.0, 1.0, 4.0, 50.0):
+            result, stripped = launcher._decode_explicit_outcome_marker(reward)
+            self.assertIsNone(result)
+            self.assertEqual(stripped, reward)
+
+
 class ManagedLiveLogTests(unittest.TestCase):
     def test_managed_live_log_tees_stdout_and_stderr_to_run_scoped_sidecar(self):
         with tempfile.TemporaryDirectory() as temp:
