@@ -1649,6 +1649,23 @@ def _load_runtime_cutover_pointer(
     }
 
 
+def _runtime_version_for_heartbeat(
+    pointer_path: str,
+    active_build_id: str,
+    expected_entrypoint: str,
+) -> str:
+    """Expose the runtime selected for the active build before child telemetry exists."""
+    if not str(pointer_path).strip() or not str(active_build_id).strip():
+        return ""
+    try:
+        pointer = _load_runtime_cutover_pointer(pointer_path, expected_entrypoint)
+    except (OSError, ValueError, json.JSONDecodeError):
+        return ""
+    if pointer is None or pointer["build_id"] != str(active_build_id).strip():
+        return ""
+    return str(pointer["runtime_version"])
+
+
 def _runtime_launch_template(
     pointer_path: str,
     build_id: str,
@@ -1820,6 +1837,33 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             )
             if throughput:
                 snapshot["throughput"] = throughput
+
+        # Optimizer state must see a runtime cutover before it can issue a stale env-count
+        # decision to the newly launched worker. Actor throughput telemetry appears only after
+        # the child starts, so expose the active build's pinned runtime identity immediately.
+        active_build_id = (
+            str(active_build.get("build_id", "")).strip()
+            if isinstance(active_build, Mapping)
+            else ""
+        )
+        heartbeat_runtime_version = _runtime_version_for_heartbeat(
+            args.runtime_cutover_pointer,
+            active_build_id,
+            args.runtime_cutover_entrypoint,
+        )
+        if heartbeat_runtime_version:
+            existing_throughput = snapshot.get("throughput")
+            merged_throughput = (
+                dict(existing_throughput)
+                if isinstance(existing_throughput, Mapping)
+                else {}
+            )
+            merged_throughput.setdefault(
+                "runtime_version",
+                heartbeat_runtime_version,
+            )
+            snapshot["throughput"] = merged_throughput
+
         _add_persisted_network_traffic(
             snapshot,
             managed.throughput_metrics_file,
