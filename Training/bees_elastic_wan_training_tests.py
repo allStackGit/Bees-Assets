@@ -353,6 +353,7 @@ class ElasticActorFailureTelemetryTests(unittest.TestCase):
             telemetry = actor_worker._SessionFailureTelemetry(
                 state_path=state_path,
                 run_id="run-a",
+                runtime_version="a" * 64,
             )
             with mock.patch.object(actor_worker.time, "time", return_value=100.0):
                 telemetry.record(RuntimeError("simulated failure"))
@@ -360,6 +361,7 @@ class ElasticActorFailureTelemetryTests(unittest.TestCase):
             restarted = actor_worker._SessionFailureTelemetry(
                 state_path=state_path,
                 run_id="run-a",
+                runtime_version="a" * 64,
             )
             with mock.patch.object(actor_worker.time, "time", return_value=106.0):
                 snapshot = restarted.snapshot()
@@ -372,9 +374,19 @@ class ElasticActorFailureTelemetryTests(unittest.TestCase):
                 "simulated failure",
             )
 
+            next_runtime = actor_worker._SessionFailureTelemetry(
+                state_path=state_path,
+                run_id="run-a",
+                runtime_version="b" * 64,
+            )
+            self.assertEqual(next_runtime.snapshot()["session_failures_total"], 0)
+            self.assertEqual(next_runtime.snapshot()["last_session_failure_type"], "")
+            self.assertEqual(next_runtime.snapshot()["last_session_failure_message"], "")
+
             next_run = actor_worker._SessionFailureTelemetry(
                 state_path=state_path,
                 run_id="run-b",
+                runtime_version="b" * 64,
             )
             self.assertEqual(next_run.snapshot()["session_failures_total"], 0)
             self.assertEqual(next_run.snapshot()["last_session_failure_type"], "")
