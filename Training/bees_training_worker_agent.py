@@ -936,16 +936,26 @@ class TrainingLogUploader:
                     or not mismatch.expected_sha256
                     or local_prefix_sha256 != mismatch.expected_sha256
                 ):
-                    if remote_relative != relative:
-                        raise ControlRejected(
-                            "preserved training log generation conflicts with its "
-                            "existing remote copy"
-                        ) from mismatch
-                    self._remote_paths[log_path] = self._generation_remote_path(
+                    next_remote_relative = self._generation_remote_path(
                         log_path,
                         relative,
                         size,
                     )
+                    if next_remote_relative == remote_relative:
+                        # The deterministic generation identity says this is the same
+                        # complete local snapshot, yet its remote prefix differs. That is
+                        # genuine remote corruption/collision rather than another local
+                        # log replacement, so fail closed instead of overwriting it.
+                        raise ControlRejected(
+                            "preserved training log generation conflicts with its "
+                            "existing remote copy"
+                        ) from mismatch
+                    # The local path can be replaced/truncated again after it has already
+                    # moved under generations/. Windows may preserve the file identity
+                    # across that rewrite, and the replacement can regrow beyond our old
+                    # cursor before the next scan. Advance to a fresh deterministic
+                    # generation path rather than retrying the stale preserved path forever.
+                    self._remote_paths[log_path] = next_remote_relative
                     self._positions[log_path] = 0
                     continue
                 self._positions[log_path] = expected_offset
