@@ -702,6 +702,40 @@ test('healthy worker clears legacy stability hold caused only by ControlUnavaila
     assert.match(state.decision, /collecting fresh baseline/);
 });
 
+test('healthy worker clears stability hold caused by a resolved rollout stall', () => {
+    const optimizer = new TrainingEnvOptimizer({
+        warmupMs: 0,
+        measurementMs: 1000,
+        cooldownMs: 0,
+        instabilityHoldMs: 10_000,
+    });
+
+    update(optimizer, 'remote-a', 8, 0, 0, { max: 16 });
+    const internal = optimizer.states.get('remote-a');
+    internal.phase = 'stability-hold';
+    internal.instability_hold_until_ms = 20_000;
+    internal.last_instability_reason =
+        'worker-reported error: managed child rollout has made no progress for 1902.6 seconds';
+    internal.last_instability_ms = 1_000;
+
+    const state = update(
+        optimizer,
+        'remote-a',
+        8,
+        100,
+        5_000,
+        {
+            max: 16,
+            processState: 'running',
+            lastError: '',
+        },
+    );
+
+    assert.equal(state.phase, 'settling');
+    assert.equal(state.stability_hold_until_ms, 5_000);
+    assert.match(state.decision, /collecting fresh baseline/);
+});
+
 test('recent internal WAN actor failure holds probes without extending the hold each heartbeat', () => {
     const optimizer = new TrainingEnvOptimizer({
         warmupMs: 0,
