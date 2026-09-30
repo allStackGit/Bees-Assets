@@ -123,7 +123,7 @@ function initialStep(envs) {
 
 function cycleAwareStep(envs) {
     // Complete-cycle measurements are reliable enough to expand geometrically. Keep the old
-    // conservative step for actors that have not yet rolled onto policy-epoch telemetry.
+    // conservative step for actors that have not yet rolled onto completed-cycle telemetry.
     return Math.max(1, Math.min(16, Math.floor(envs)));
 }
 
