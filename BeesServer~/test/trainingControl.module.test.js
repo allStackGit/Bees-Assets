@@ -1225,6 +1225,62 @@ test('staging an incompatible release while training is already disabled does no
     });
 });
 
+test('disabled training recovers a persisted incompatible preparing barrier once all required trainers are stopped', () => {
+    withTempDir(root => {
+        const store = new TrainingControlStore({
+            statePath: path.join(root, 'state.json'),
+            artifactRoot: path.join(root, 'artifacts'),
+        });
+        const oldSha = publishDedicatedBuild(store, root, 'recover-preparing-old');
+        publishDedicatedBuild(store, root, 'recover-preparing-new');
+
+        store.stageRelease({
+            buildId: 'recover-preparing-old',
+            runId: 'recover-preparing-old-run',
+            compatibilityKey: '1'.repeat(64),
+            incompatible: false,
+        });
+        store.setDesiredState({ training_enabled: true });
+        for (const trainerId of ['remote-a', 'central-learner']) {
+            heartbeatDedicated(store, trainerId, 'recover-preparing-old', oldSha);
+        }
+
+        store.stageRelease({
+            buildId: 'recover-preparing-new',
+            runId: 'recover-preparing-new-run',
+            compatibilityKey: '2'.repeat(64),
+            incompatible: true,
+        });
+        assert.equal(store.state.pending_release.phase, 'preparing');
+
+        let desired = store.setDesiredState({ training_enabled: false });
+        assert.equal(desired.canonical_build_id, 'recover-preparing-old');
+        assert.equal(desired.pending_release.phase, 'preparing');
+
+        desired = heartbeatDedicated(
+            store,
+            'remote-a',
+            'recover-preparing-old',
+            oldSha,
+            { processState: 'stopped' },
+        );
+        assert.equal(desired.canonical_build_id, 'recover-preparing-old');
+        assert.equal(desired.pending_release.phase, 'preparing');
+
+        desired = heartbeatDedicated(
+            store,
+            'central-learner',
+            'recover-preparing-old',
+            oldSha,
+            { processState: 'stopped' },
+        );
+        assert.equal(desired.training_enabled, false);
+        assert.equal(desired.canonical_build_id, 'recover-preparing-new');
+        assert.equal(desired.run_id, 'recover-preparing-new-run');
+        assert.equal(desired.pending_release, null);
+    });
+});
+
 test('disabling training never bypasses an incompatible stopping barrier', () => {
     withTempDir(root => {
         const store = new TrainingControlStore({
