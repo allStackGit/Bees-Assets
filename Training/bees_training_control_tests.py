@@ -991,6 +991,76 @@ class TrainingControlClientTests(unittest.TestCase):
             ]
             self.assertEqual(preserved_after_restart, preserved)
 
+    def test_training_log_uploader_recovers_when_preserved_path_is_rewritten_again(self):
+        class UploadClient:
+            def __init__(self):
+                self.files = {
+                    ("worker-a", "run", "Player-0.log"): b"remote-old-generation"
+                }
+
+            def upload_log_chunk(
+                self,
+                *,
+                trainer_id,
+                run_id,
+                relative_path,
+                offset,
+                data,
+                reset=False,
+            ):
+                key = (trainer_id, run_id, relative_path)
+                current = self.files.get(key, b"")
+                if reset:
+                    current = b""
+                if len(current) != offset:
+                    raise control.TrainingLogOffsetMismatch(
+                        len(current),
+                        hashlib.sha256(current).hexdigest(),
+                    )
+                current += data
+                self.files[key] = current
+                return len(current)
+
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            run = root / "run"
+            run.mkdir()
+            local = run / "Player-0.log"
+            first = b"local-generation-one"
+            second = b"local-generation-two-is-longer-than-the-first"
+            local.write_bytes(first)
+            client = UploadClient()
+            uploader = agent.TrainingLogUploader(root)
+
+            uploader.flush_all(client, trainer_id="worker-a", run_id="run")
+            first_remote = uploader._remote_paths[local]
+            self.assertNotEqual(first_remote, "Player-0.log")
+            self.assertEqual(
+                client.files[("worker-a", "run", first_remote)],
+                first,
+            )
+
+            # Rewriting the same path can preserve st_dev/st_ino on Windows and POSIX.
+            # The replacement also regrows beyond the old cursor before the next scan,
+            # so inode/size checks alone cannot detect the generation change.
+            local.write_bytes(second)
+            uploader.flush_all(client, trainer_id="worker-a", run_id="run")
+
+            second_remote = uploader._remote_paths[local]
+            self.assertNotEqual(second_remote, first_remote)
+            self.assertEqual(
+                client.files[("worker-a", "run", first_remote)],
+                first,
+            )
+            self.assertEqual(
+                client.files[("worker-a", "run", second_remote)],
+                second,
+            )
+            self.assertEqual(
+                client.files[("worker-a", "run", "Player-0.log")],
+                b"remote-old-generation",
+            )
+
     def test_log_finalization_keeps_lease_alive_during_blocked_upload(self):
         class SlowUploadClient:
             def upload_log_chunk(

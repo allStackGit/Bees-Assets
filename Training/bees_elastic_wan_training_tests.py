@@ -177,6 +177,24 @@ class ElasticActorLiveResizeTests(unittest.TestCase):
         session._write_throughput_metrics = mock.Mock()
         return session
 
+    def test_transient_env_target_read_failure_keeps_current_capacity(self):
+        session = self._session(mock.Mock(), 8)
+        session._env_target_path = mock.Mock()
+        session._env_target_path.read_text.side_effect = PermissionError(
+            13,
+            "file temporarily unavailable",
+        )
+
+        self.assertEqual(session._desired_env_count(), 8)
+
+    def test_malformed_env_target_remains_a_hard_error(self):
+        session = self._session(mock.Mock(), 8)
+        session._env_target_path = mock.Mock()
+        session._env_target_path.read_text.return_value = "not-an-integer"
+
+        with self.assertRaisesRegex(RuntimeError, "not an integer"):
+            session._desired_env_count()
+
     def test_scale_up_adds_only_tail_worker_and_preserves_existing_workers(self):
         from mlagents.trainers.subprocess_env_manager import (
             EnvironmentCommand,
