@@ -28,9 +28,8 @@ internal static class RlOneVsOneReward
     internal const float CollisionAsteroidDiscoveryBudget = 0.0025f;
 
     /// <summary>
-    /// Converts a real positive TSV-valued outcome into immediate shaping. This is shared by enemy
-    /// damage, restored health, mined resources and successful ship preservation so all of those
-    /// outcomes use the same value scale instead of rewarding the attempted action itself.
+    /// Converts an ordinary positive TSV-valued tactical outcome into bounded immediate shaping.
+    /// Mined campaign value is deliberately excluded and uses CalculateEconomicValueReward instead.
     /// </summary>
     internal static float CalculateTsvValueReward(int tsvValue, int combinedStartingTsv)
     {
