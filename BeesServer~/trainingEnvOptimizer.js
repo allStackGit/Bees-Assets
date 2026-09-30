@@ -666,6 +666,19 @@ class TrainingEnvOptimizer {
             );
         }
 
+        if (
+            processState === 'running' &&
+            !optimizerError &&
+            typeof state.last_instability_reason === 'string' &&
+            state.last_instability_reason.startsWith(
+                'worker-reported error: managed child rollout has made no progress')
+        ) {
+            state.instability_hold_until_ms = Math.min(
+                state.instability_hold_until_ms,
+                timestamp,
+            );
+        }
+
         // Reaching the requested env count does not mean a newly launched worker is ready yet.
         // Live env-count changes do not restart the actor, but release/runtime cutovers can.
         // Start the settling clock only after the managed process reports "running".
