@@ -302,9 +302,9 @@ class TrainingEnvOptimizer {
 
     _startProbe(state, capacity, now, direction) {
         if (this.activeProbeTrainerId && this.activeProbeTrainerId !== state.trainer_id) {
-            state.phase = 'stable';
-            state.retest_after_ms = Math.max(state.retest_after_ms, now + this.cooldownMs);
-            state.last_decision = 'waiting for another worker probe';
+            state.desired_envs = state.baseline_envs ?? capacity.current_envs;
+            state.phase = 'waiting';
+            state.last_decision = 'waiting for another worker capacity search';
             return false;
         }
         const target = this._target(state, capacity, direction);
@@ -321,7 +321,8 @@ class TrainingEnvOptimizer {
         state.measurement_start_steps = null;
         state.measurement_start_produced_steps = null;
         state.source_steps = null;
-        state.last_decision = 'probing ' + state.baseline_envs + '->' + target;
+        state.last_decision = 'resizing for throughput probe ' +
+            state.baseline_envs + '->' + target;
         return true;
     }
 
@@ -334,38 +335,31 @@ class TrainingEnvOptimizer {
             return;
         }
         if (this.activeProbeTrainerId && this.activeProbeTrainerId !== state.trainer_id) {
-            state.desired_envs = state.baseline_envs;
-            state.phase = 'stable';
-            state.retest_after_ms = Math.max(state.retest_after_ms, now + this.cooldownMs);
-            state.last_decision = 'waiting for another worker probe';
+            state.desired_envs = state.baseline_envs ?? capacity.current_envs;
+            state.phase = 'waiting';
+            state.last_decision = 'waiting for another worker capacity search';
             return;
         }
-        if (
-            !this.activeProbeTrainerId &&
-            this.lastCompletedProbeTrainerId === state.trainer_id &&
-            this._hasReadyAlternateProbe(state.trainer_id, now)
-        ) {
-            state.desired_envs = state.baseline_envs;
-            state.phase = 'stable';
-            state.retest_after_ms = Math.max(state.retest_after_ms, now + this.cooldownMs);
-            state.last_decision = 'yielding probe slot to another ready worker';
-            return;
-        }
+
         const preferred = state.direction;
         const alternate = -preferred;
-        if (!this._directionBlocked(state, preferred) &&
-            this._startProbe(state, capacity, now, preferred)) {
-            return;
+        if (!this._directionBlocked(state, preferred)) {
+            if (state.direction !== preferred || state.step < 1) {
+                state.step = this._stepForDirection(state, preferred);
+            }
+            if (this._startProbe(state, capacity, now, preferred)) return;
         }
-        if (!this._directionBlocked(state, alternate) &&
-            this._startProbe(state, capacity, now, alternate)) {
-            return;
+        if (!this._directionBlocked(state, alternate)) {
+            state.direction = alternate;
+            state.step = this._stepForDirection(state, alternate);
+            if (this._startProbe(state, capacity, now, alternate)) return;
         }
-        this._releaseProbe(state.trainer_id);
+
+        this._completeProbe(state.trainer_id);
         state.desired_envs = state.baseline_envs;
         state.phase = 'stable';
         state.retest_after_ms = now + this.retestMs;
-        state.last_decision = 'stable near measured optimum';
+        state.last_decision = 'stable near measured throughput optimum';
     }
 
     _abortProbe(state, capacity, now, reason) {
@@ -421,16 +415,17 @@ class TrainingEnvOptimizer {
     _finishMeasurement(state, capacity, now, sps) {
         state.last_sps = sps;
         state.consecutive_baseline_session_failures = 0;
+
         if (state.baseline_envs === null || state.baseline_sps === null) {
             state.baseline_envs = capacity.current_envs;
             state.baseline_sps = sps;
             state.desired_envs = capacity.current_envs;
-            state.step = state.cycle_aware
-                ? cycleAwareStep(capacity.current_envs)
-                : initialStep(capacity.current_envs);
-            state.blocked_up = false;
-            state.blocked_down = false;
-            state.last_decision = 'baseline ' + sps.toFixed(1) + ' steps/s';
+            state.direction = capacity.current_envs >= capacity.max_envs ? -1 : 1;
+            state.step = this._stepForDirection(state, state.direction);
+            state.moved_direction = 0;
+            state.blocked_up = capacity.current_envs >= capacity.max_envs;
+            state.blocked_down = capacity.current_envs <= capacity.min_envs;
+            state.last_decision = 'baseline ' + sps.toFixed(1) + ' global learner steps/s';
             this._chooseProbe(state, capacity, now);
             return;
         }
@@ -438,7 +433,8 @@ class TrainingEnvOptimizer {
         if (capacity.current_envs === state.baseline_envs) {
             state.baseline_sps = sps;
             state.desired_envs = state.baseline_envs;
-            state.last_decision = 'baseline refreshed at ' + sps.toFixed(1) + ' steps/s';
+            state.last_decision =
+                'baseline refreshed at ' + sps.toFixed(1) + ' global learner steps/s';
             this._chooseProbe(state, capacity, now);
             return;
         }
@@ -446,50 +442,76 @@ class TrainingEnvOptimizer {
         const baseline = Math.max(0.000001, state.baseline_sps);
         const ratio = (sps - baseline) / baseline;
         const direction = capacity.current_envs > state.baseline_envs ? 1 : -1;
+        const previousBaseline = state.baseline_envs;
+
         if (ratio >= this.minImprovementRatio) {
             state.baseline_envs = capacity.current_envs;
             state.baseline_sps = sps;
             state.desired_envs = capacity.current_envs;
             state.direction = direction;
-            state.step = state.cycle_aware
-                ? cycleAwareStep(capacity.current_envs)
-                : initialStep(capacity.current_envs);
-            state.blocked_up = false;
-            state.blocked_down = false;
+            state.step = this._stepForDirection(state, direction);
+            state.moved_direction = direction;
+            if (direction > 0) {
+                state.blocked_up = capacity.current_envs >= capacity.max_envs;
+                state.blocked_down = true;
+            } else {
+                state.blocked_down = capacity.current_envs <= capacity.min_envs;
+                state.blocked_up = true;
+            }
             state.last_decision =
-                'accepted ' + capacity.current_envs + ' envs at ' + sps.toFixed(1) + ' steps/s';
-            this._completeProbe(state.trainer_id);
+                'accepted ' + capacity.current_envs + ' envs at ' +
+                sps.toFixed(1) + ' global learner steps/s';
+            this._invalidateOtherMeasurements(state.trainer_id);
+
+            if (
+                (direction > 0 && capacity.current_envs >= capacity.max_envs) ||
+                (direction < 0 && capacity.current_envs <= capacity.min_envs)
+            ) {
+                this._blockDirection(state, direction);
+            }
             this._chooseProbe(state, capacity, now);
             return;
         }
 
         const materiallyWorse = ratio <= -this.regressionRatio;
-        if (state.step > 1) {
-            state.step = Math.max(1, Math.floor(state.step / 2));
+        const distance = Math.abs(capacity.current_envs - state.baseline_envs);
+        if (materiallyWorse && distance > 1) {
+            state.step = Math.max(1, Math.floor(distance / 2));
+            state.direction = direction;
         } else {
             this._blockDirection(state, direction);
+            if (state.moved_direction === direction) {
+                // We already measured an improvement moving into the accepted baseline from
+                // the opposite side, so once this side is exhausted the baseline is bracketed.
+                this._blockDirection(state, -direction);
+            } else if (!this._directionBlocked(state, -direction)) {
+                state.direction = -direction;
+                state.step = this._stepForDirection(state, -direction);
+            }
         }
+
         state.desired_envs = state.baseline_envs;
-        state.direction = -direction;
         state.phase = 'awaiting-restart';
         state.phase_started_ms = now;
-        state.cooldown_until_ms = now + this.cooldownMs;
+        state.cooldown_until_ms = 0;
         state.measurement_started_ms = null;
         state.measurement_start_steps = null;
         state.measurement_start_produced_steps = null;
         state.source_steps = null;
-        state.last_decision = (materiallyWorse ? 'backing off' : 'no material gain') +
-            ' from ' + capacity.current_envs + ' envs (' + sps.toFixed(1) + ' vs ' +
-            state.baseline_sps.toFixed(1) + ' steps/s)';
-        // Keep the cluster-wide probe lock until this worker has actually returned to the
-        // accepted baseline. Otherwise another worker could begin a probe during restart/backoff.
+        state.last_decision =
+            (materiallyWorse ? 'throughput regressed' : 'no material throughput gain') +
+            ' at ' + capacity.current_envs + ' envs (' + sps.toFixed(1) + ' vs ' +
+            state.baseline_sps.toFixed(1) + '); returning to ' +
+            previousBaseline + ' envs';
+        // Keep the cluster-wide search lock until the accepted baseline is restored,
+        // settled, and remeasured. No other worker may contaminate this comparison.
     }
 
     update(record, context = {}) {
         const now = Number(context.now);
         const timestamp = Number.isFinite(now) ? now : Date.now();
         const capacity = normalizeCapacity(record && record.worker_capacity);
-        const totalSteps = learnerConsumedSteps(record && record.metrics);
+        const totalSteps = optimizationSteps(record && record.metrics);
         const producedSteps = producerAcceptedSteps(record && record.metrics);
         const currentPolicyCycle = policyCycle(record && record.metrics);
         const currentRuntimeVersion = runtimeVersion(record && record.metrics);
