@@ -37,7 +37,7 @@ internal sealed class RlCombatPerception
     internal const int CommunicationObservationSize = 4;
     internal const int SelfObservationSize = 24 + ShipIdentityObservationSize;
     internal const int CapabilityObservationSize = 12;
-    internal const int EntityCoreObservationSize = 14;
+    internal const int EntityCoreObservationSize = 15;
     internal const int SelfWeaponObservationSize = 15;
     internal const int ObservedWeaponObservationSize = 5;
     internal const int MaxObservedEntityWeaponSlots = MaxWeaponSlots;
@@ -150,13 +150,14 @@ internal sealed class RlCombatPerception
     internal void Collect(Ship ship, int side, VectorSensor sensor, int frameQuarterTurns)
     {
         Vector2 origin = ship.GetPosition();
+        int sideStartingTsv = RlOneVsOneEpisodeCoordinator.GetStartingTsv(ship.Level, side);
         AddSelfObservations(ship, side, sensor, origin, frameQuarterTurns);
-        AddCapabilityObservations(ship, sensor);
-        AddParentCarrierObservations(ship, sensor, origin, frameQuarterTurns);
+        AddCapabilityObservations(ship, sensor, sideStartingTsv);
+        AddParentCarrierObservations(ship, sensor, origin, frameQuarterTurns, sideStartingTsv);
         CollectAllies(ship, side, origin);
-        AddAllySlots(sensor, _allyCandidates, MaxObservedAllies, origin, frameQuarterTurns);
+        AddAllySlots(sensor, _allyCandidates, MaxObservedAllies, origin, frameQuarterTurns, sideStartingTsv);
         CollectVisibleEnemies(ship, side, origin);
-        AddEntitySlots(sensor, _enemyCandidates, MaxObservedEnemies, origin, frameQuarterTurns);
+        AddEntitySlots(sensor, _enemyCandidates, MaxObservedEnemies, origin, frameQuarterTurns, sideStartingTsv);
         AddWeaponSlots(ship, sensor, frameQuarterTurns);
         CollectVisibleMiningAsteroids(ship, side, origin);
         AddMiningAsteroidSlots(sensor, origin, frameQuarterTurns);
@@ -215,6 +216,11 @@ internal sealed class RlCombatPerception
         sensor.AddObservation(NormalizePositive(CountLiveShips(state.GetAllEnemyShips(side)), 64f));
     }
 
+    private static int GetShipMinedTsv(Ship ship)
+    {
+        return ship?.FleetShip != null ? Mathf.Max(0, ship.FleetShip.MineralsMinedThisLevel) : 0;
+    }
+
     private static int CountLiveShips(IEnumerable<Ship> ships)
     {
         int count = 0;
@@ -233,7 +239,7 @@ internal sealed class RlCombatPerception
         return count;
     }
 
-    private static void AddCapabilityObservations(Ship ship, VectorSensor sensor)
+    private static void AddCapabilityObservations(Ship ship, VectorSensor sensor, int sideStartingTsv)
     {
         bool isCarrierChild = ship is CarrierShip;
         bool hasLiveCarrier = isCarrierChild && ((CarrierShip)ship).Carrier != null && !((CarrierShip)ship).Carrier.IsDead;
@@ -248,19 +254,22 @@ internal sealed class RlCombatPerception
         sensor.AddObservation(RlOneVsOneAgent.CanUseWarpAction(ship) ? 1f : 0f);
         sensor.AddObservation(isCarrierChild ? 1f : 0f);
         sensor.AddObservation(hasLiveCarrier ? 1f : 0f);
-        sensor.AddObservation(0f); // Reserved capability channel.
-        sensor.AddObservation(0f); // Reserved capability channel.
+        sensor.AddObservation(NormalizePositive(GetShipMinedTsv(ship), sideStartingTsv));
+        sensor.AddObservation(NormalizePositive(
+            RlOneVsOneEpisodeCoordinator.GetRetainableMinedTsv(ship.Level, ship.Side),
+            sideStartingTsv));
     }
 
     private static void AddParentCarrierObservations(
         Ship ship,
         VectorSensor sensor,
         Vector2 origin,
-        int frameQuarterTurns)
+        int frameQuarterTurns,
+        int sideStartingTsv)
     {
         if (ship is CarrierShip carrierShip && carrierShip.Carrier != null && !carrierShip.Carrier.IsDead)
         {
-            AddEntityObservation(sensor, carrierShip.Carrier, origin, frameQuarterTurns);
+            AddEntityObservation(sensor, carrierShip.Carrier, origin, frameQuarterTurns, sideStartingTsv);
             return;
         }
         AddZeroObservations(sensor, ParentCarrierObservationSize);
@@ -321,7 +330,8 @@ internal sealed class RlCombatPerception
         List<Ship> ships,
         int slots,
         Vector2 origin,
-        int frameQuarterTurns)
+        int frameQuarterTurns,
+        int sideStartingTsv)
     {
         for (int slot = 0; slot < slots; slot++)
         {
@@ -332,7 +342,7 @@ internal sealed class RlCombatPerception
             }
 
             Ship ally = ships[slot];
-            AddEntityObservation(sensor, ally, origin, frameQuarterTurns);
+            AddEntityObservation(sensor, ally, origin, frameQuarterTurns, sideStartingTsv);
             RlOneVsOneAgent.AddCommunicationObservations(sensor, ally);
         }
     }
@@ -342,7 +352,8 @@ internal sealed class RlCombatPerception
         List<Ship> ships,
         int slots,
         Vector2 origin,
-        int frameQuarterTurns)
+        int frameQuarterTurns,
+        int sideStartingTsv)
     {
         for (int slot = 0; slot < slots; slot++)
         {
@@ -351,7 +362,7 @@ internal sealed class RlCombatPerception
                 AddZeroObservations(sensor, EntityObservationSize);
                 continue;
             }
-            AddEntityObservation(sensor, ships[slot], origin, frameQuarterTurns);
+            AddEntityObservation(sensor, ships[slot], origin, frameQuarterTurns, sideStartingTsv);
         }
     }
 
@@ -359,7 +370,8 @@ internal sealed class RlCombatPerception
         VectorSensor sensor,
         Ship observed,
         Vector2 origin,
-        int frameQuarterTurns)
+        int frameQuarterTurns,
+        int sideStartingTsv)
     {
         Vector2 relative = RlPolicyCoordinateFrame.WorldToPolicy(
             observed.GetPosition() - origin,
@@ -377,6 +389,7 @@ internal sealed class RlCombatPerception
         sensor.AddObservation(NormalizePositive(observed.Firepower, 200f));
         sensor.AddObservation(observed.IsMobile ? 1f : 0f);
         sensor.AddObservation(observed.IsBomber ? 1f : 0f);
+        sensor.AddObservation(NormalizePositive(GetShipMinedTsv(observed), sideStartingTsv));
         AddShipTypeObservation(sensor, observed.ShipType);
         AddEntityWeaponSlots(observed, sensor);
     }
