@@ -58,10 +58,46 @@ function spawnValidationProcess(executable, args, cwd) {
         stdio: 'ignore',
     });
     child.beesSpawnError = null;
+    child.beesClosed = false;
     child.on('error', error => {
         child.beesSpawnError = error;
     });
+    child.once('close', () => {
+        child.beesClosed = true;
+    });
     return child;
+}
+
+async function stopValidationProcess(child, timeoutMs = 5000) {
+    if (!child) return;
+
+    if (child.exitCode === null && child.signalCode === null) {
+        killProcessTree(child);
+    }
+
+    const deadline = Date.now() + timeoutMs;
+    while (!child.beesClosed && Date.now() < deadline) {
+        await sleep(50);
+    }
+}
+
+function cleanupValidationCandidate(candidate) {
+    try {
+        removeIfExists(candidate, {
+            recursive: true,
+            maxRetries: 300,
+            retryDelay: 100,
+        });
+    } catch (error) {
+        if (error && ['EPERM', 'EBUSY', 'ENOTEMPTY'].includes(error.code)) {
+            console.warn(
+                'RL environment validation completed, but Windows still holds the temporary validation directory; ' +
+                'leaving it for later cleanup: ' + candidate
+            );
+            return;
+        }
+        throw error;
+    }
 }
 
 async function waitForExitOrMarker(child, logPath, timeoutMs, marker) {
@@ -140,6 +176,7 @@ async function assertRlEnvironmentArgsValid(config, release, environmentArgs, py
     removeIfExists(candidate, { recursive: true });
 
     const activePython = python || resolvePython(config);
+    let child = null;
     try {
         extractZip(activePython, archivePath, candidate);
         const executable = path.join(candidate, entrypoint);
@@ -167,7 +204,7 @@ async function assertRlEnvironmentArgsValid(config, release, environmentArgs, py
             '--rl-validate-options-only',
             ...args,
         ];
-        let child = spawnValidationProcess(executable, validationArgs, candidate);
+        child = spawnValidationProcess(executable, validationArgs, candidate);
         let outcome = await waitForExitOrMarker(
             child,
             log,
@@ -271,7 +308,8 @@ async function assertRlEnvironmentArgsValid(config, release, environmentArgs, py
             'release_validation_key=' + proof + os.EOL,
         );
     } finally {
-        removeIfExists(candidate, { recursive: true });
+        await stopValidationProcess(child);
+        cleanupValidationCandidate(candidate);
     }
 
     return proof;
