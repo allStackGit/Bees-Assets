@@ -1082,6 +1082,11 @@ class TrainingControlClientTests(unittest.TestCase):
                         "session_failures_total": 3,
                         "seconds_since_last_session_failure": 7.5,
                         "last_session_failure_type": "IndexError",
+                        "policy_cycle": 7,
+                        "runtime_version": "a" * 64,
+                        "env_resize_failed_target": 18,
+                        "env_resize_error": "RuntimeError: resize failed",
+                        "env_resize_failure_unix_seconds": 1234.5,
                     }
                 ),
                 encoding="utf-8",
@@ -1099,6 +1104,11 @@ class TrainingControlClientTests(unittest.TestCase):
             self.assertEqual(metrics["session_failures_total"], 3)
             self.assertEqual(metrics["seconds_since_last_session_failure"], 7.5)
             self.assertEqual(metrics["last_session_failure_type"], "IndexError")
+            self.assertEqual(metrics["policy_cycle"], 7)
+            self.assertEqual(metrics["runtime_version"], "a" * 64)
+            self.assertEqual(metrics["env_resize_failed_target"], 18)
+            self.assertEqual(metrics["env_resize_error"], "RuntimeError: resize failed")
+            self.assertEqual(metrics["env_resize_failure_unix_seconds"], 1234.5)
             self.assertEqual(
                 agent.read_throughput_metrics(path, expected_pid=999),
                 {},
