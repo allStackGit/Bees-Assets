@@ -42,6 +42,7 @@ MANAGED_STOP_FILE_ENV = "BEES_TRAINING_STOP_FILE"
 MODEL_SNAPSHOT_REQUEST_FILE_ENV = "BEES_TRAINING_MODEL_SNAPSHOT_REQUEST_FILE"
 MODEL_SNAPSHOT_RESPONSE_FILE_ENV = "BEES_TRAINING_MODEL_SNAPSHOT_RESPONSE_FILE"
 MANAGED_STOP_POLL_SECONDS = 0.25
+MANAGED_LEARNER_PROGRESS_FILE_NAME = "learner-progress.json"
 MANAGED_LOG_DIR_ENV = "BEES_TRAINING_LOG_DIR"
 LIVE_LEARNER_LOG_NAME = "learner-live.log"
 LIVE_LEARNER_LOG_MAX_BYTES = 16 * 1024 * 1024
@@ -692,6 +693,79 @@ def _atomic_json(path: Path, value) -> None:
     os.replace(temporary, path)
 
 
+def _managed_learner_progress_path() -> Optional[Path]:
+    stop_value = os.environ.get(MANAGED_STOP_FILE_ENV, "").strip()
+    if not stop_value:
+        return None
+    return (
+        Path(stop_value)
+        .expanduser()
+        .resolve()
+        .with_name(MANAGED_LEARNER_PROGRESS_FILE_NAME)
+    )
+
+
+def _install_managed_learner_progress_marker():
+    """Persist one proof that this run has advanced beyond learner step zero.
+
+    The continual-service shutdown path may safely retire a trainer that hangs while
+    shutting down before any optimizer progress exists. Once a positive trainer step
+    has ever been observed for this run, the marker remains durable across supervisor
+    restarts so shutdown stays fail-closed and preserves that optimizer lineage.
+    """
+
+    path = _managed_learner_progress_path()
+    if path is None:
+        return None
+
+    from mlagents.trainers.trainer_controller import TrainerController
+
+    original = TrainerController.advance
+    run_id = os.environ.get("BEES_TRAINING_RUN_ID", "").strip()
+    marker_written = False
+    try:
+        existing = json.loads(path.read_text(encoding="utf-8"))
+        marker_written = (
+            isinstance(existing, dict)
+            and str(existing.get("run_id", "")).strip() == run_id
+            and isinstance(existing.get("step"), int)
+            and not isinstance(existing.get("step"), bool)
+            and int(existing["step"]) > 0
+        )
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        pass
+
+    def advance_with_progress(controller, env_manager):
+        nonlocal marker_written
+        result = original(controller, env_manager)
+        if marker_written:
+            return result
+
+        steps = []
+        for trainer in controller.trainers.values():
+            try:
+                step = int(trainer.get_step)
+            except Exception:
+                continue
+            if step > 0:
+                steps.append(step)
+        if steps:
+            _atomic_json(
+                path,
+                {
+                    "schema_version": 1,
+                    "run_id": run_id,
+                    "step": max(steps),
+                    "updated_unix_seconds": time.time(),
+                },
+            )
+            marker_written = True
+        return result
+
+    TrainerController.advance = advance_with_progress
+    return original
+
+
 def _handle_model_snapshot_request(trainer, request_path: Path, response_path: Path) -> bool:
     """Export the current in-memory policy at a trainer-thread trajectory boundary."""
 
@@ -923,6 +997,7 @@ def main() -> None:
     previous_sigbreak_handler = _install_windows_break_interrupt()
     managed_stop_event, managed_stop_watcher = _start_managed_stop_watcher()
     original_maybe_save_model = _install_model_snapshot_requests()
+    original_trainer_advance = _install_managed_learner_progress_marker()
     torch_utils.torch.load = device_safe_torch_load
     sys.argv = [previous_argv[0], *trainer_args]
     try:
@@ -939,6 +1014,9 @@ def main() -> None:
         if original_maybe_save_model is not None:
             from mlagents.trainers.trainer.rl_trainer import RLTrainer
             RLTrainer._maybe_save_model = original_maybe_save_model
+        if original_trainer_advance is not None:
+            from mlagents.trainers.trainer_controller import TrainerController
+            TrainerController.advance = original_trainer_advance
         torch_utils.torch.load = original_torch_load
         restore_continuous_sigma_guard(original_sigma_forward)
         restore_inactive_continuous_action_masking()
