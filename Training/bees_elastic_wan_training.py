@@ -394,6 +394,7 @@ class ElasticWanBroker(base.WanActorBroker):
         self.options = options
         self.local_envs = int(local_envs)
         self.remote_worker_base = self.local_envs
+        self._policy_cycle = 0
         build_id = os.environ.get(BUILD_ID_ENV, "").strip()
         compatibility_key = os.environ.get(COMPATIBILITY_KEY_ENV, "").strip().lower()
         environment_id = os.environ.get(ENVIRONMENT_ID_ENV, "").strip().lower()
@@ -697,6 +698,7 @@ class ElasticWanBroker(base.WanActorBroker):
             return {
                 "session_id": self.session_id,
                 "policy_epoch": self._policy_epoch,
+                "policy_cycle": self._policy_cycle,
                 "control_epoch": self._control_epoch,
                 "topology_epoch": self._topology_epoch,
                 "policy_versions": self._policy_versions_locked(),
@@ -873,6 +875,18 @@ class ElasticWanBroker(base.WanActorBroker):
     def publish_policy(self, behavior_name: str, policy: Any) -> int:
         return super().publish_policy(behavior_name, policy)
 
+    def policy_publication_epoch(self) -> int:
+        with self._condition:
+            return int(self._policy_epoch)
+
+    def complete_policy_cycle(self, starting_policy_epoch: int) -> None:
+        with self._condition:
+            if self._policy_epoch > int(starting_policy_epoch):
+                # TrainerController.advance() is synchronous. Any one or many behavior policy
+                # publications made inside that call belong to one completed learner update.
+                self._policy_cycle += 1
+                self._condition.notify_all()
+
     def observe_trainer_step(self, step: int) -> None:
         self.diagnostics.observe_trainer_step(step)
 
@@ -1033,9 +1047,13 @@ def install_elastic_wan_env_manager(options: ElasticWanOptions) -> Optional[Elas
             )
 
     def monitored_advance(controller: Any, env_manager: Any) -> int:
-        result = original_advance(controller, env_manager)
         broker = getattr(env_manager, "_bees_wan_broker", None)
+        starting_policy_epoch = (
+            broker.policy_publication_epoch() if broker is not None else 0
+        )
+        result = original_advance(controller, env_manager)
         if broker is not None:
+            broker.complete_policy_cycle(starting_policy_epoch)
             steps = []
             for trainer in controller.trainers.values():
                 try:
