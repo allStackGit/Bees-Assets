@@ -757,6 +757,12 @@ class ActorSession:
         options = self._remote_run_options()
         run_logs_dir = self._run_logs_dir(options)
         set_torch_config(options.torch_settings)
+        # ML-Agents 1.1.0 switches PyTorch's global default device to CUDA during
+        # module initialization when CUDA is available, but its CPU reconfiguration
+        # path does not switch that global default back. Actors may intentionally
+        # perform inference on CPU even when the host has CUDA, so make the actual
+        # PyTorch tensor-allocation default agree with the actor device.
+        torch.set_default_device(str(options.torch_settings.device or "cpu"))
         np.random.seed(int(options.env_settings.seed))
         torch.manual_seed(int(options.env_settings.seed))
 
