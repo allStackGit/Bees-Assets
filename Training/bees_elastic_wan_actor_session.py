@@ -28,6 +28,7 @@ class ElasticActorSession(worker.ActorSession):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self.topology_epoch = -1
+        self.policy_cycle = -1
         self._last_consumed_sample = None
         target_path = os.environ.get(WORKER_ENVS_TARGET_ENV, "").strip()
         self._env_target_path = (
@@ -39,13 +40,18 @@ class ElasticActorSession(worker.ActorSession):
 
     def _throughput_extra_metrics(self) -> Mapping[str, object]:
         failure = self._resize_failure
-        if not isinstance(failure, Mapping):
-            return {}
-        return {
-            "env_resize_failed_target": int(failure["target_envs"]),
-            "env_resize_error": str(failure["error"]),
-            "env_resize_failure_unix_seconds": float(failure["unix_seconds"]),
-        }
+        payload: dict[str, object] = {}
+        if self.policy_cycle >= 0:
+            payload["policy_cycle"] = int(self.policy_cycle)
+        if isinstance(failure, Mapping):
+            payload.update(
+                {
+                    "env_resize_failed_target": int(failure["target_envs"]),
+                    "env_resize_error": str(failure["error"]),
+                    "env_resize_failure_unix_seconds": float(failure["unix_seconds"]),
+                }
+            )
+        return payload
 
     def _record_resize_failure(self, target_envs: int, exc: Exception) -> None:
         self._resize_failed_target = int(target_envs)
@@ -366,6 +372,15 @@ class ElasticActorSession(worker.ActorSession):
             return False
 
     def _apply_central_throughput(self, state: Mapping[str, Any]) -> None:
+        cycle = state.get("policy_cycle")
+        if (
+            not isinstance(cycle, int)
+            or isinstance(cycle, bool)
+            or cycle < 0
+        ):
+            raise RuntimeError("Elastic WAN central state has malformed policy-cycle metadata")
+        self.policy_cycle = int(cycle)
+
         consumed = state.get("consumed_steps_by_actor")
         if not isinstance(consumed, Mapping):
             raise RuntimeError("Elastic WAN central state is missing consumed-step metrics")
