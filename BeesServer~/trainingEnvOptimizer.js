@@ -192,17 +192,14 @@ class TrainingEnvOptimizer {
                 ? downwardStep(capacity.current_envs)
                 : initialStep(capacity.current_envs),
             moved_direction: 0,
-            cycle_aware: false,
             runtime_version: '',
             blocked_up: false,
             blocked_down: false,
             phase: 'settling',
             phase_started_ms: now,
-            warmup_policy_cycle: null,
             measurement_started_ms: null,
             measurement_start_steps: null,
             measurement_start_produced_steps: null,
-            measurement_start_policy_cycle: null,
             source_steps: null,
             last_sps: null,
             last_decision: 'settling before baseline measurement',
@@ -254,11 +251,9 @@ class TrainingEnvOptimizer {
     _resetMeasurement(state, now, totalSteps, reason) {
         state.phase = 'settling';
         state.phase_started_ms = now;
-        state.warmup_policy_cycle = null;
         state.measurement_started_ms = null;
         state.measurement_start_steps = null;
         state.measurement_start_produced_steps = null;
-        state.measurement_start_policy_cycle = null;
         state.source_steps = totalSteps;
         if (reason) state.last_decision = reason;
     }
@@ -534,7 +529,6 @@ class TrainingEnvOptimizer {
         const capacity = normalizeCapacity(record && record.worker_capacity);
         const totalSteps = optimizationSteps(record && record.metrics);
         const producedSteps = producerAcceptedSteps(record && record.metrics);
-        const currentPolicyCycle = policyCycle(record && record.metrics);
         const currentRuntimeVersion = runtimeVersion(record && record.metrics);
         const sessionFailureAgeSeconds = recentSessionFailureAgeSeconds(
             record && record.metrics);
@@ -590,9 +584,6 @@ class TrainingEnvOptimizer {
             state.runtime_version = currentRuntimeVersion;
         }
         state.last_update_ms = timestamp;
-        if (currentPolicyCycle !== null) {
-            state.cycle_aware = true;
-        }
         let newSessionFailure = false;
         if (sessionFailuresTotal !== null) {
             if (
@@ -838,6 +829,11 @@ class TrainingEnvOptimizer {
             this.activeProbeTrainerId &&
             this.activeProbeTrainerId !== state.trainer_id
         ) {
+            if (state.phase === 'stable' && state.baseline_sps !== null) {
+                state.last_decision =
+                    'holding stable env count while another worker capacity search runs';
+                return this.snapshot(record.trainer_id);
+            }
             state.desired_envs = state.baseline_envs ?? capacity.current_envs;
             state.phase = 'waiting';
             state.measurement_started_ms = null;
@@ -928,7 +924,6 @@ class TrainingEnvOptimizer {
             state.measurement_started_ms = timestamp;
             state.measurement_start_steps = totalSteps;
             state.measurement_start_produced_steps = producedSteps;
-            state.measurement_start_policy_cycle = null;
             state.last_decision =
                 'measuring global learner throughput for ' +
                 Math.round(this.measurementMs / 1000) + ' seconds';
