@@ -29,6 +29,7 @@ class ElasticActorSession(worker.ActorSession):
         super().__init__(*args, **kwargs)
         self.topology_epoch = -1
         self.policy_cycle = -1
+        self.learner_step = -1
         self._last_consumed_sample = None
         target_path = os.environ.get(WORKER_ENVS_TARGET_ENV, "").strip()
         self._env_target_path = (
@@ -43,6 +44,8 @@ class ElasticActorSession(worker.ActorSession):
         payload: dict[str, object] = {}
         if self.policy_cycle >= 0:
             payload["policy_cycle"] = int(self.policy_cycle)
+        if self.learner_step >= 0:
+            payload["learner_step_total"] = int(self.learner_step)
         if isinstance(failure, Mapping):
             payload.update(
                 {
@@ -380,6 +383,15 @@ class ElasticActorSession(worker.ActorSession):
         ):
             raise RuntimeError("Elastic WAN central state has malformed policy-cycle metadata")
         self.policy_cycle = int(cycle)
+
+        trainer_step = state.get("trainer_step")
+        if (
+            not isinstance(trainer_step, int)
+            or isinstance(trainer_step, bool)
+            or trainer_step < 0
+        ):
+            raise RuntimeError("Elastic WAN central state has malformed learner-step metadata")
+        self.learner_step = int(trainer_step)
 
         consumed = state.get("consumed_steps_by_actor")
         if not isinstance(consumed, Mapping):
