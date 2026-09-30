@@ -83,10 +83,13 @@ class ElasticActorSession(worker.ActorSession):
             return int(self.env_count)
         try:
             raw = path.read_text(encoding="ascii").strip()
-        except FileNotFoundError:
+        except (FileNotFoundError, OSError):
+            # The supervisor rewrites this live-control file atomically. On Windows a
+            # replacement can briefly lose a race with a reader because of filesystem,
+            # antivirus, or indexing handles. Missing/unreadable for one reconciliation
+            # tick therefore means "keep the current capacity and retry", not "kill the
+            # WAN actor session". Malformed content below remains a hard error.
             return int(self.env_count)
-        except OSError as exc:
-            raise RuntimeError(f"could not read live worker env target: {exc}") from exc
         try:
             value = int(raw)
         except ValueError as exc:
