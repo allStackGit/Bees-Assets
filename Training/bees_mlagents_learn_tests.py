@@ -307,6 +307,25 @@ class WorkerTimerSamplerTests(unittest.TestCase):
         self.assertEqual(len(resets), 2)
 
 
+    def test_sampled_worker_installer_is_idempotent(self):
+        import mlagents.trainers.subprocess_env_manager as subprocess_env_manager
+
+        original_worker = subprocess_env_manager.worker
+        original_saved_worker = launcher._ORIGINAL_MLAGENTS_WORKER
+        try:
+            first = launcher._install_sampled_worker_timers()
+            second = launcher._install_sampled_worker_timers()
+            self.assertIs(first, original_worker)
+            self.assertIsNone(second)
+            self.assertIs(
+                subprocess_env_manager.worker,
+                launcher._bees_sampled_worker,
+            )
+        finally:
+            subprocess_env_manager.worker = original_worker
+            launcher._ORIGINAL_MLAGENTS_WORKER = original_saved_worker
+
+
 class BatchedInferenceTests(unittest.TestCase):
     def setUp(self):
         from mlagents.trainers.subprocess_env_manager import SubprocessEnvManager
