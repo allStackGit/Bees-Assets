@@ -1754,7 +1754,10 @@ class TrainingControlStore {
         ) {
             return false;
         }
-        if (!pending.required_trainers.some(
+        const requiredTrainers = Array.isArray(pending.required_trainers)
+            ? pending.required_trainers
+            : [];
+        if (!requiredTrainers.some(
             spec => spec && spec.trainer_id === trainerId
         )) {
             return false;
