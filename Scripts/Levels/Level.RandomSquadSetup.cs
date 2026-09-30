@@ -77,6 +77,7 @@ namespace Assets.Scripts.Levels
 
             if (rlOneVsOneTraining)
             {
+                EnsureRlSpawnedShipsAreHazardClear(side);
                 RandomizeRlOneVsOneFacing(side);
             }
         }
@@ -137,48 +138,146 @@ namespace Assets.Scripts.Levels
             {
                 ConfigData.ShipTypes shipType =
                     global::RlOneVsOnePerArenaMatchups.GetShipType(this, side, shipIndex);
-                float shipExtent = GetRlShipClearanceRadius(shipType);
                 Vector2 shipPosition =
                     center + global::RlOneVsOneArenaMapSizeState.GetShipFormationOffset(this, shipIndex);
 
-                if (shipPosition.x - shipExtent <= MinX ||
-                    shipPosition.x + shipExtent >= MaxX ||
-                    shipPosition.y - shipExtent <= MinY ||
-                    shipPosition.y + shipExtent >= MaxY)
+                if (!IsRlShipPositionHazardClear(shipType, shipPosition))
                 {
                     return false;
                 }
+            }
 
-                if (!global::RlOneVsOneTrainingBootstrap.CurrentStaticObstaclesEnabled ||
-                    ObstacleMap == null ||
-                    ObstacleMap.Obstacles == null)
+            return true;
+        }
+
+        private void EnsureRlSpawnedShipsAreHazardClear(int side)
+        {
+            List<Ship> ships = State.GetShips(side);
+            if (ships.Count == 0 || AreRlSpawnedShipsHazardClear(ships, Vector2.zero))
+            {
+                return;
+            }
+
+            int step = Mathf.Max(1, Pathfinder.Scale);
+            int maxSearchDistance = Mathf.Max(MapWidth, MapHeight);
+            int maxRadius = Mathf.CeilToInt((float)maxSearchDistance / step);
+            for (int radius = 1; radius <= maxRadius; radius++)
+            {
+                Vector2 bestOffset = Vector2.zero;
+                float bestDistance = float.MaxValue;
+                bool found = false;
+                for (int x = -radius; x <= radius; x++)
+                {
+                    for (int y = -radius; y <= radius; y++)
+                    {
+                        if (Mathf.Abs(x) != radius && Mathf.Abs(y) != radius)
+                        {
+                            continue;
+                        }
+
+                        Vector2 candidateOffset = new Vector2(x * step, y * step);
+                        if (!AreRlSpawnedShipsHazardClear(ships, candidateOffset))
+                        {
+                            continue;
+                        }
+
+                        float distance = candidateOffset.sqrMagnitude;
+                        if (!found || distance < bestDistance)
+                        {
+                            found = true;
+                            bestDistance = distance;
+                            bestOffset = candidateOffset;
+                        }
+                    }
+                }
+
+                if (!found)
                 {
                     continue;
                 }
 
-                for (int obstacleIndex = 0; obstacleIndex < ObstacleMap.Obstacles.Count; obstacleIndex++)
+                HashSet<Squad> movedSquads = new HashSet<Squad>();
+                for (int shipIndex = 0; shipIndex < ships.Count; shipIndex++)
                 {
-                    StaticObstacle obstacle = ObstacleMap.Obstacles[obstacleIndex];
-                    if (obstacle == null || obstacle.IsDead || obstacle.Collider == null)
+                    Ship ship = ships[shipIndex];
+                    ship.transform.localPosition += (Vector3)bestOffset;
+                    if (ship.Squad != null)
                     {
-                        continue;
+                        movedSquads.Add(ship.Squad);
                     }
+                }
+                foreach (Squad squad in movedSquads)
+                {
+                    squad.SetOffsets();
+                }
+                return;
+            }
 
-                    Bounds worldBounds = obstacle.Collider.bounds;
-                    Vector3 localMin = Map.Transform.InverseTransformPoint(worldBounds.min);
-                    Vector3 localMax = Map.Transform.InverseTransformPoint(worldBounds.max);
-                    float obstacleMinX = Mathf.Min(localMin.x, localMax.x);
-                    float obstacleMaxX = Mathf.Max(localMin.x, localMax.x);
-                    float obstacleMinY = Mathf.Min(localMin.y, localMax.y);
-                    float obstacleMaxY = Mathf.Max(localMin.y, localMax.y);
+            throw new System.InvalidOperationException(
+                $"RL training could not place side {side} without a ship touching the map border or a lethal obstacle.");
+        }
 
-                    if (shipPosition.x + shipExtent > obstacleMinX &&
-                        shipPosition.x - shipExtent < obstacleMaxX &&
-                        shipPosition.y + shipExtent > obstacleMinY &&
-                        shipPosition.y - shipExtent < obstacleMaxY)
-                    {
-                        return false;
-                    }
+        private bool AreRlSpawnedShipsHazardClear(List<Ship> ships, Vector2 offset)
+        {
+            for (int shipIndex = 0; shipIndex < ships.Count; shipIndex++)
+            {
+                Ship ship = ships[shipIndex];
+                if (ship == null || ship.IsDead)
+                {
+                    continue;
+                }
+
+                if (!IsRlShipPositionHazardClear(
+                    ship.ShipType,
+                    (Vector2)ship.transform.localPosition + offset))
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        private bool IsRlShipPositionHazardClear(ConfigData.ShipTypes shipType, Vector2 shipPosition)
+        {
+            float shipExtent = GetRlShipClearanceRadius(shipType);
+            if (shipPosition.x - shipExtent <= MinX ||
+                shipPosition.x + shipExtent >= MaxX ||
+                shipPosition.y - shipExtent <= MinY ||
+                shipPosition.y + shipExtent >= MaxY)
+            {
+                return false;
+            }
+
+            if (!global::RlOneVsOneTrainingBootstrap.CurrentStaticObstaclesEnabled ||
+                ObstacleMap == null ||
+                ObstacleMap.Obstacles == null)
+            {
+                return true;
+            }
+
+            for (int obstacleIndex = 0; obstacleIndex < ObstacleMap.Obstacles.Count; obstacleIndex++)
+            {
+                StaticObstacle obstacle = ObstacleMap.Obstacles[obstacleIndex];
+                if (obstacle == null || obstacle.IsDead || !obstacle.KillsShipsOnContact ||
+                    obstacle.Collider == null)
+                {
+                    continue;
+                }
+
+                Bounds worldBounds = obstacle.Collider.bounds;
+                Vector3 localMin = Map.Transform.InverseTransformPoint(worldBounds.min);
+                Vector3 localMax = Map.Transform.InverseTransformPoint(worldBounds.max);
+                float obstacleMinX = Mathf.Min(localMin.x, localMax.x);
+                float obstacleMaxX = Mathf.Max(localMin.x, localMax.x);
+                float obstacleMinY = Mathf.Min(localMin.y, localMax.y);
+                float obstacleMaxY = Mathf.Max(localMin.y, localMax.y);
+
+                if (shipPosition.x + shipExtent > obstacleMinX &&
+                    shipPosition.x - shipExtent < obstacleMaxX &&
+                    shipPosition.y + shipExtent > obstacleMinY &&
+                    shipPosition.y - shipExtent < obstacleMaxY)
+                {
+                    return false;
                 }
             }
 
