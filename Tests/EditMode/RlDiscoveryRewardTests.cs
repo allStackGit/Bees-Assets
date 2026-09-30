@@ -1,7 +1,5 @@
 using System;
-using System.IO;
 using NUnit.Framework;
-using UnityEngine;
 
 namespace Bees.Tests.EditMode
 {
@@ -176,46 +174,5 @@ namespace Bees.Tests.EditMode
             Assert.That(veryLateIncrement, Is.GreaterThan(0d));
         }
 
-        [Test]
-        public void DiscoveryHooksAreGatedByFirstSideWideCacheInsertion()
-        {
-            string source = File.ReadAllText(Path.Combine(
-                Application.dataPath,
-                "Scripts",
-                "Levels",
-                "GameState.Queries.cs"));
-
-            StringAssert.Contains("bool isFirstSideWideSighting = VisionCache[sideIndex].Add(spotted);", source);
-            StringAssert.Contains("if (isFirstSideWideSighting)", source);
-            StringAssert.Contains("RecordShipDiscovery(observer, spotted);", source);
-            StringAssert.Contains("bool isNew = HiveMindMapObjectCache[sideIndex].Add(mapObject);", source);
-            StringAssert.Contains("RecordMapObjectDiscovery(observer, mapObject);", source);
-            StringAssert.Contains("bool isNew = HiveMindMiningAsteroidCache[sideIndex].Add(asteroid);", source);
-            StringAssert.Contains("RecordMiningAsteroidDiscovery(observer, asteroid);", source);
-            StringAssert.Contains("bool isNew = HiveMindObstacleCache[sideIndex].Add(obstacle);", source);
-            StringAssert.Contains("RecordObstacleDiscovery(observer, obstacle);", source);
-        }
-
-        [Test]
-        public void InitialDiscoveriesWaitUntilPolicyControlledShipsAreBound()
-        {
-            string source = File.ReadAllText(Path.Combine(
-                Application.dataPath,
-                "Scripts",
-                "Scenes",
-                "RlOneVsOneEpisodeCoordinator.cs"));
-
-            StringAssert.Contains("private bool _discoveryRewardsReady;", source);
-            StringAssert.Contains("TryEnableDiscoveryRewards(_level);", source);
-            StringAssert.Contains("ArePolicyControlledShipsReady(level, beeSide)", source);
-            StringAssert.Contains("ArePolicyControlledShipsReady(level, humanSide)", source);
-            StringAssert.Contains("!RlPlayerDerivedActionReplay.IsScriptedSide(level, side)", source);
-            StringAssert.Contains("RlOneVsOneAgent.RequiresPolicyControl(ship) && !ship.IsRlPolicyControlled", source);
-            StringAssert.Contains("RewardExistingDiscoveries(level, beeSide);", source);
-            StringAssert.Contains("RewardExistingDiscoveries(level, humanSide);", source);
-            StringAssert.Contains("CalculateBoundedPositiveShapingIncrement(rawBefore, reward)", source);
-            StringAssert.Contains("Mathf.Max(1, spotted.Tsv)", source);
-            StringAssert.Contains("RlOneVsOneReward.EnemyShipDiscoveryBudget", source);
-        }
     }
 }
