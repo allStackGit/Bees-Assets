@@ -301,6 +301,7 @@ namespace Assets.Scripts.Entities.Ships
                 ? "self_detonate"
                 : null;
             global::RlOneVsOneEpisodeDiagnostics.RecordShipDeath(this, killer, endKill, rlDeathCause);
+            global::RlOneVsOneEpisodeCoordinator.RecordMiningShipExit(this, killer, endKill);
             IsDead = true;
             if (!endKill)
             {
