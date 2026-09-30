@@ -123,6 +123,25 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void RotationSafeSpawnSizingRaisesLargeShipEpisodesWithinConfiguredRange()
+        {
+            Type mapStateType = RuntimeAssembly.GetType("RlOneVsOneArenaMapSizeState");
+            Type shipTypesType = RuntimeAssembly.GetType("Assets.Scripts.ConfigData+ShipTypes");
+            MethodInfo requiredSize = mapStateType.GetMethod(
+                "GetMinimumSafeMapSizeForShip",
+                BindingFlags.Static | BindingFlags.NonPublic);
+            Assert.That(requiredSize, Is.Not.Null);
+
+            object beehive = Enum.Parse(shipTypesType, "Beehive");
+            float minimum = (float)requiredSize.Invoke(null, new[] { beehive });
+
+            Assert.That(minimum, Is.GreaterThan(48f),
+                "A Beehive must not be sampled onto the 48-unit map where its rotation-safe footprint cannot fit.");
+            Assert.That(minimum, Is.LessThanOrEqualTo(64f),
+                "The current 48..64 curriculum must still be able to train Beehive episodes at its safe upper step.");
+        }
+
+        [Test]
         public void RewardWeightsKeepVictoryDominant()
         {
             Type rewardType = RuntimeAssembly.GetType("RlOneVsOneReward");
