@@ -864,7 +864,7 @@ class TrainingEnvOptimizer {
             if (state.measurement_start_policy_cycle !== null) {
                 if (currentPolicyCycle === null) {
                     state.last_decision =
-                        'waiting for policy-epoch telemetry to complete measurement';
+                        'waiting for completed policy-cycle telemetry to complete measurement';
                     return this.snapshot(record.trainer_id);
                 }
                 if (currentPolicyCycle < state.measurement_start_policy_cycle) {
