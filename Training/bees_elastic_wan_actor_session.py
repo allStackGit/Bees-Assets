@@ -83,7 +83,7 @@ class ElasticActorSession(worker.ActorSession):
             return int(self.env_count)
         try:
             raw = path.read_text(encoding="ascii").strip()
-        except (FileNotFoundError, OSError):
+        except OSError:
             # The supervisor rewrites this live-control file atomically. On Windows a
             # replacement can briefly lose a race with a reader because of filesystem,
             # antivirus, or indexing handles. Missing/unreadable for one reconciliation
