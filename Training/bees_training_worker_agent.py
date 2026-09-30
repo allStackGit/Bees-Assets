@@ -869,6 +869,30 @@ class TrainingLogUploader:
             relative_path
         )
 
+    def _conflict_remote_path(
+        self,
+        log_path: Path,
+        relative_path: str,
+        size: int,
+        expected_offset: int,
+        expected_sha256: str,
+    ) -> str:
+        capped_size = min(max(0, int(size)), self.MAX_FILE_UPLOAD_BYTES)
+        digest = _sha256_prefix(log_path, capped_size)
+        if digest is None:
+            raise ControlRejected(
+                "could not fingerprint conflicting local training log generation"
+            )
+        remote_identity = hashlib.sha256(
+            (str(expected_offset) + ":" + str(expected_sha256 or "")).encode("utf-8")
+        ).hexdigest()[:16]
+        return (
+            "generations/" +
+            digest[:24] + "-" + str(capped_size) +
+            "-conflict-" + remote_identity + "/" +
+            relative_path
+        )
+
     def flush_once(
         self,
         client: TrainingControlClient,
@@ -993,14 +1017,17 @@ class TrainingLogUploader:
                         size,
                     )
                     if next_remote_relative == remote_relative:
-                        # The deterministic generation identity says this is the same
-                        # complete local snapshot, yet its remote prefix differs. That is
-                        # genuine remote corruption/collision rather than another local
-                        # log replacement, so fail closed instead of overwriting it.
-                        raise ControlRejected(
-                            "preserved training log generation conflicts with its "
-                            "existing remote copy"
-                        ) from mismatch
+                        # Preserve both copies instead of retrying a permanently divergent
+                        # remote generation forever. The alternate path is deterministic for
+                        # the local snapshot plus the conflicting remote identity, so a
+                        # supervisor restart rediscovers the same safe destination.
+                        next_remote_relative = self._conflict_remote_path(
+                            log_path,
+                            relative,
+                            size,
+                            expected_offset,
+                            mismatch.expected_sha256,
+                        )
                     # The local path can be replaced/truncated again after it has already
                     # moved under generations/. Windows may preserve the file identity
                     # across that rewrite, and the replacement can regrow beyond our old
