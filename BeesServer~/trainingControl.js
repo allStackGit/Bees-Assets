@@ -1632,6 +1632,19 @@ class TrainingControlStore {
         };
     }
 
+    _pruneExpiredOptimizerStates(now = this.now()) {
+        const cutoff = now - this.leaseSeconds * 1000;
+        for (const [trainerId, record] of this.trainers) {
+            if (
+                record.role === 'dedicated' &&
+                trainerId !== 'central-learner' &&
+                record.last_seen_ms < cutoff
+            ) {
+                this.envOptimizer.remove(trainerId);
+            }
+        }
+    }
+
     heartbeat(payload) {
         if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
             throw Object.assign(new Error('heartbeat payload must be an object'), { statusCode: 400 });
@@ -1640,6 +1653,7 @@ class TrainingControlStore {
         const role = requireRole(payload.role);
         const platform = requireString(payload.platform, 'platform', 64);
         const now = this.now();
+        this._pruneExpiredOptimizerStates(now);
         const record = {
             trainer_id: trainerId,
             role,
@@ -1709,6 +1723,7 @@ class TrainingControlStore {
     status() {
         this._advanceRollout();
         const now = this.now();
+        this._pruneExpiredOptimizerStates(now);
         const staleAfter = this.leaseSeconds * 1000;
         const trainers = [...this.trainers.values()]
             .map(record => ({
