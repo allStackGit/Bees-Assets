@@ -1186,6 +1186,45 @@ test('disabling training during compatible rolling promotes the fully prepared r
     });
 });
 
+test('staging an incompatible release while training is already disabled does not wait on stopped trainers', () => {
+    withTempDir(root => {
+        const store = new TrainingControlStore({
+            statePath: path.join(root, 'state.json'),
+            artifactRoot: path.join(root, 'artifacts'),
+        });
+        const oldSha = publishDedicatedBuild(store, root, 'disabled-incompatible-old');
+        publishDedicatedBuild(store, root, 'disabled-incompatible-new');
+
+        store.stageRelease({
+            buildId: 'disabled-incompatible-old',
+            runId: 'disabled-incompatible-old-run',
+            compatibilityKey: 'd'.repeat(64),
+            incompatible: false,
+        });
+        for (const trainerId of ['remote-a', 'central-learner']) {
+            heartbeatDedicated(
+                store,
+                trainerId,
+                'disabled-incompatible-old',
+                oldSha,
+                { processState: 'stopped' },
+            );
+        }
+
+        const desired = store.stageRelease({
+            buildId: 'disabled-incompatible-new',
+            runId: 'disabled-incompatible-new-run',
+            compatibilityKey: 'e'.repeat(64),
+            incompatible: true,
+        });
+
+        assert.equal(desired.training_enabled, false);
+        assert.equal(desired.canonical_build_id, 'disabled-incompatible-new');
+        assert.equal(desired.run_id, 'disabled-incompatible-new-run');
+        assert.equal(desired.pending_release, null);
+    });
+});
+
 test('disabling training never bypasses an incompatible stopping barrier', () => {
     withTempDir(root => {
         const store = new TrainingControlStore({
