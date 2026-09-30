@@ -19,6 +19,14 @@ namespace Assets.Scripts.Levels
                    RlSpawnSafetyMargin;
         }
 
+        private static float GetRlShipClearanceRadius(Ship ship)
+        {
+            float halfWidth = Mathf.Max(0f, ship.GetHalfWidth());
+            float halfHeight = Mathf.Max(0f, ship.GetHalfHeight());
+            return Mathf.Sqrt(halfWidth * halfWidth + halfHeight * halfHeight) +
+                   RlSpawnSafetyMargin;
+        }
+
         private void SetupShipsForSide(int side)
         {
             bool rlOneVsOneTraining = global::RlOneVsOneTrainingBootstrap.IsActiveFor(Stage);
@@ -141,7 +149,9 @@ namespace Assets.Scripts.Levels
                 Vector2 shipPosition =
                     center + global::RlOneVsOneArenaMapSizeState.GetShipFormationOffset(this, shipIndex);
 
-                if (!IsRlShipPositionHazardClear(shipType, shipPosition))
+                if (!IsRlShipPositionHazardClear(
+                    shipPosition,
+                    GetRlShipClearanceRadius(shipType)))
                 {
                     return false;
                 }
@@ -228,8 +238,8 @@ namespace Assets.Scripts.Levels
                 }
 
                 if (!IsRlShipPositionHazardClear(
-                    ship.ShipType,
-                    (Vector2)ship.transform.localPosition + offset))
+                    (Vector2)ship.transform.localPosition + offset,
+                    GetRlShipClearanceRadius(ship)))
                 {
                     return false;
                 }
@@ -237,9 +247,8 @@ namespace Assets.Scripts.Levels
             return true;
         }
 
-        private bool IsRlShipPositionHazardClear(ConfigData.ShipTypes shipType, Vector2 shipPosition)
+        private bool IsRlShipPositionHazardClear(Vector2 shipPosition, float shipExtent)
         {
-            float shipExtent = GetRlShipClearanceRadius(shipType);
             if (shipPosition.x - shipExtent <= MinX ||
                 shipPosition.x + shipExtent >= MaxX ||
                 shipPosition.y - shipExtent <= MinY ||
