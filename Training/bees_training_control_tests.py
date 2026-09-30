@@ -590,7 +590,7 @@ class TrainingControlClientTests(unittest.TestCase):
                             "component": "elastic-wan-actor",
                             "phase": "running",
                             "phase_started_unix_seconds": 2500.0,
-                            "progress_unix_seconds": 2800.0,
+                            "progress_unix_seconds": 3000.0,
                         },
                     }
                 ),
@@ -602,7 +602,7 @@ class TrainingControlClientTests(unittest.TestCase):
                     "",
                 )
 
-            with mock.patch.object(agent.time, "time", return_value=3000.0):
+            with mock.patch.object(agent.time, "time", return_value=3121.0):
                 self.assertIn(
                     "rollout has made no progress",
                     managed.health_error(),
