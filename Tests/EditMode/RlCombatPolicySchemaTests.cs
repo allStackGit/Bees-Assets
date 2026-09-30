@@ -16,7 +16,7 @@ namespace Bees.Tests.EditMode
             Type agentType = RuntimeAssembly.GetType("RlOneVsOneAgent");
             Type schemaType = RuntimeAssembly.GetType("RlPolicySchema");
 
-            Assert.That(RuntimeAssembly.GetStaticField(schemaType, "Version"), Is.EqualTo(21));
+            Assert.That(RuntimeAssembly.GetStaticField(schemaType, "Version"), Is.EqualTo(23));
             Assert.That((string)RuntimeAssembly.GetStaticField(schemaType, "Signature"),
                 Does.Contain("healing=weapon-exclusive"));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "MaxObservedAllies"), Is.EqualTo(64));
@@ -31,13 +31,13 @@ namespace Bees.Tests.EditMode
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "MaxWeaponSlots"), Is.EqualTo(5));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "SelfObservationSize"), Is.EqualTo(25));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "CapabilityObservationSize"), Is.EqualTo(12));
-            Assert.That(RuntimeAssembly.GetStaticField(agentType, "ParentCarrierObservationSize"), Is.EqualTo(40));
-            Assert.That(RuntimeAssembly.GetStaticField(agentType, "AllyObservationSize"), Is.EqualTo(44));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "ParentCarrierObservationSize"), Is.EqualTo(41));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "AllyObservationSize"), Is.EqualTo(45));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "CommunicationObservationSize"), Is.EqualTo(4));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "MiningAsteroidObservationSize"), Is.EqualTo(7));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "MapObjectObservationSize"), Is.EqualTo(12));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "CollisionAsteroidObservationSize"), Is.EqualTo(11));
-            Assert.That(RuntimeAssembly.GetStaticField(agentType, "ObservationSize"), Is.EqualTo(7614));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "ObservationSize"), Is.EqualTo(7743));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "CommunicationContinuousActionCount"), Is.EqualTo(4));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "CommunicationContinuousActionStart"), Is.EqualTo(12));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "ContinuousActionCount"), Is.EqualTo(16));
