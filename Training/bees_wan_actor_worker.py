@@ -627,7 +627,6 @@ class ActorSession:
                 "accepted_steps_total": self._accepted_steps_total,
                 "accepted_trajectories_total": self._accepted_trajectories_total,
                 "learner_consumed_steps_total": self._learner_consumed_steps_total,
-                "policy_epoch": int(getattr(self, "policy_epoch", -1)),
                 "upload_queue_depth": self._upload_queue.qsize(),
             }
             if self._learner_consumed_steps_per_sec is not None:
