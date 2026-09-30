@@ -103,6 +103,15 @@ function sessionFailureType(metrics) {
         : '';
 }
 
+function sessionFailureMessage(metrics) {
+    if (!metrics || typeof metrics !== 'object' || Array.isArray(metrics)) return '';
+    const throughput = metrics.throughput;
+    if (!throughput || typeof throughput !== 'object' || Array.isArray(throughput)) return '';
+    return typeof throughput.last_session_failure_message === 'string'
+        ? throughput.last_session_failure_message.trim()
+        : '';
+}
+
 function envResizeFailure(metrics) {
     if (!metrics || typeof metrics !== 'object' || Array.isArray(metrics)) return null;
     const throughput = metrics.throughput;
@@ -510,6 +519,7 @@ class TrainingEnvOptimizer {
             record && record.metrics);
         const sessionFailuresTotal = sessionFailureCount(record && record.metrics);
         const lastSessionFailureType = sessionFailureType(record && record.metrics);
+        const lastSessionFailureMessage = sessionFailureMessage(record && record.metrics);
         const resizeFailure = envResizeFailure(record && record.metrics);
         const contextKey = String(context.contextKey || '');
         if (this.activeProbeTrainerId && this.activeProbeTrainerId !== record?.trainer_id) {
@@ -647,7 +657,8 @@ class TrainingEnvOptimizer {
         if (
             processState === 'running' &&
             lastSessionFailureType === 'BrokerStaleActor' &&
-            state.last_instability_reason === 'WAN actor session failure'
+            typeof state.last_instability_reason === 'string' &&
+            state.last_instability_reason.startsWith('WAN actor session failure')
         ) {
             state.instability_hold_until_ms = Math.min(
                 state.instability_hold_until_ms,
@@ -716,10 +727,15 @@ class TrainingEnvOptimizer {
             const holdUntil = useSessionFailureTime
                 ? timestamp + Math.max(0, this.instabilityHoldMs - sessionFailureAgeMs)
                 : timestamp + this.instabilityHoldMs;
+            const sessionFailureDetail = [
+                lastSessionFailureType,
+                lastSessionFailureMessage,
+            ].filter(Boolean).join(': ');
             const instabilityReason = optimizerError
                 ? 'worker-reported error: ' + optimizerError
                 : recentSessionFailure
-                    ? 'WAN actor session failure'
+                    ? 'WAN actor session failure' +
+                        (sessionFailureDetail ? ': ' + sessionFailureDetail : '')
                     : 'worker process state ' + (processState || 'unknown');
             if (
                 state.last_instability_ms === null ||
@@ -993,6 +1009,7 @@ module.exports = {
     recentSessionFailureAgeSeconds,
     sessionFailureCount,
     sessionFailureType,
+    sessionFailureMessage,
     envResizeFailure,
     initialStep,
     cycleAwareStep,
