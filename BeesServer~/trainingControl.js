@@ -1040,6 +1040,21 @@ class TrainingControlStore {
         this._pruneExpiredIncompatibleRemoteTrainers(pending);
 
         if (pending.phase === 'preparing') {
+            // Recovery case for a release that was staged while training was active but
+            // whose managed trainers are already stopped after training was disabled.
+            // The stopped heartbeat is the safety acknowledgement here: incompatible
+            // workers flush their outgoing run logs before reporting this state. Requiring
+            // them to download the pending artifact first can otherwise strand a persisted
+            // preparation barrier forever.
+            if (
+                !this.state.training_enabled &&
+                pending.incompatible &&
+                pending.required_trainers.length > 0 &&
+                pending.required_trainers.every(
+                    spec => this._trainerStoppedForPending(spec, pending))
+            ) {
+                return this._promotePendingRelease();
+            }
             if (!this._allDedicatedPrepared(pending)) return false;
             if (pending.required_trainers.length === 0) {
                 if (this._remotePlatformCoverageSatisfied(pending)) {
