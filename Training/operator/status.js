@@ -248,10 +248,18 @@ function statusError(record) {
     const instabilityReason = String(
         optimizer && (optimizer.last_instability_reason || optimizer.decision) || ''
     ).trim();
+    const processState = String(record.process_state || '').trim();
+    const recoveredProcessInstability =
+        processState === 'running' &&
+        (
+            instabilityReason === 'worker process state stopped' ||
+            instabilityReason === 'worker process state stopping'
+        );
     if (
         Number.isFinite(instabilityMs) &&
         instabilityMs >= 0 &&
         instabilityReason &&
+        !recoveredProcessInstability &&
         !(staleActorResync && instabilityReason === 'WAN actor session failure')
     ) {
         const ageSeconds = Math.max(0, (Date.now() - instabilityMs) / 1000);
