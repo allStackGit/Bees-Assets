@@ -147,7 +147,7 @@ function downwardStep(envs) {
 
 class TrainingEnvOptimizer {
     constructor(options = {}) {
-        this.warmupMs = Number(options.warmupMs ?? DEFAULT_WARMUP_MS);
+        this.warmupMs = Number(options.settleMs ?? options.warmupMs ?? DEFAULT_WARMUP_MS);
         this.measurementMs = Number(options.measurementMs ?? DEFAULT_MEASUREMENT_MS);
         this.cooldownMs = Number(options.cooldownMs ?? DEFAULT_COOLDOWN_MS);
         this.retestMs = Number(options.retestMs ?? DEFAULT_RETEST_MS);
@@ -196,7 +196,7 @@ class TrainingEnvOptimizer {
             runtime_version: '',
             blocked_up: false,
             blocked_down: false,
-            phase: 'warmup',
+            phase: 'settling',
             phase_started_ms: now,
             warmup_policy_cycle: null,
             measurement_started_ms: null,
@@ -252,7 +252,7 @@ class TrainingEnvOptimizer {
     }
 
     _resetMeasurement(state, now, totalSteps, reason) {
-        state.phase = 'warmup';
+        state.phase = 'settling';
         state.phase_started_ms = now;
         state.warmup_policy_cycle = null;
         state.measurement_started_ms = null;
@@ -272,7 +272,7 @@ class TrainingEnvOptimizer {
     _invalidateOtherMeasurements(trainerId) {
         for (const [candidateId, candidate] of this.states) {
             if (candidateId === trainerId) continue;
-            if (!['stable', 'warmup', 'measuring', 'waiting'].includes(candidate.phase)) continue;
+            if (!['stable', 'settling', 'measuring', 'waiting'].includes(candidate.phase)) continue;
             candidate.baseline_sps = null;
             candidate.last_sps = null;
             candidate.desired_envs = candidate.baseline_envs ?? candidate.desired_envs;
@@ -363,25 +363,46 @@ class TrainingEnvOptimizer {
     }
 
     _abortProbe(state, capacity, now, reason) {
-        if (state.baseline_envs === null || capacity.current_envs === state.baseline_envs) {
+        if (state.baseline_envs === null) {
             this._releaseProbe(state.trainer_id);
+            state.desired_envs = capacity.current_envs;
             this._resetMeasurement(state, now, null, reason);
             return;
         }
-        const direction = capacity.current_envs > state.baseline_envs ? 1 : -1;
+
+        const direction = capacity.current_envs === state.baseline_envs
+            ? (state.desired_envs > state.baseline_envs ? 1 : -1)
+            : (capacity.current_envs > state.baseline_envs ? 1 : -1);
         this._blockDirection(state, direction);
-        state.direction = -direction;
+        if (state.moved_direction === direction) {
+            this._blockDirection(state, -direction);
+        } else if (!this._directionBlocked(state, -direction)) {
+            state.direction = -direction;
+            state.step = this._stepForDirection(state, -direction);
+        }
+
         state.desired_envs = state.baseline_envs;
-        state.phase = 'resizing';
-        state.phase_started_ms = now;
-        state.cooldown_until_ms = now + this.cooldownMs;
-        state.measurement_started_ms = null;
-        state.measurement_start_steps = null;
-        state.measurement_start_produced_steps = null;
-        state.source_steps = null;
+        if (capacity.current_envs === state.baseline_envs) {
+            this._resetMeasurement(
+                state,
+                now,
+                null,
+                reason + '; settling again at ' + state.baseline_envs + ' envs',
+            );
+        } else {
+            state.phase = 'resizing';
+            state.phase_started_ms = now;
+            state.measurement_started_ms = null;
+            state.measurement_start_steps = null;
+            state.measurement_start_produced_steps = null;
+            state.source_steps = null;
+            state.last_decision =
+                reason + '; backing off to ' + state.baseline_envs + ' envs';
+        }
+        state.cooldown_until_ms = 0;
         state.metrics_missing_since_ms = null;
-        state.last_decision = reason + '; backing off to ' + state.baseline_envs + ' envs';
-        // Keep the cluster-wide probe lock until the worker reports the accepted baseline again.
+        // Keep the cluster-wide search lock until the accepted baseline is restored,
+        // settled, and remeasured.
     }
 
     _backoffRepeatedSessionFailure(state, capacity, now, totalSteps) {
@@ -671,11 +692,15 @@ class TrainingEnvOptimizer {
         // Live env-count changes do not restart the actor, but release/runtime cutovers can.
         // Start the settling clock only after the managed process reports "running".
         if (
-            state.phase === 'resizing' &&
             processState === 'starting' &&
-            !optimizerError
+            !optimizerError &&
+            (
+                state.phase === 'resizing' ||
+                (state.phase === 'settling' && state.baseline_envs === null)
+            )
         ) {
-            state.last_decision = 'waiting for planned worker restart to become running';
+            state.phase_started_ms = timestamp;
+            state.last_decision = 'waiting for managed worker to become running before settling';
             return this.snapshot(record.trainer_id);
         }
         const recentSessionFailure =
@@ -895,7 +920,7 @@ class TrainingEnvOptimizer {
             return this.snapshot(record.trainer_id);
         }
 
-        if (state.phase === 'warmup') {
+        if (state.phase === 'settling') {
             if (timestamp - state.phase_started_ms < this.warmupMs) {
                 return this.snapshot(record.trainer_id);
             }
@@ -991,6 +1016,8 @@ module.exports = {
     TrainingEnvOptimizer,
     normalizeCapacity,
     learnerConsumedSteps,
+    learnerStep,
+    optimizationSteps,
     producerAcceptedSteps,
     runtimeVersion,
     policyCycle,
