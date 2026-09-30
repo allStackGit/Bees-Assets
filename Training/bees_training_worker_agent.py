@@ -790,7 +790,26 @@ class TrainingLogUploader:
         self.root = root
         self._positions: dict[Path, int] = {}
         self._file_identities: dict[Path, Optional[tuple[int, int]]] = {}
+        self._remote_paths: dict[Path, str] = {}
         self._next_path: Optional[Path] = None
+
+    def _generation_remote_path(
+        self,
+        log_path: Path,
+        relative_path: str,
+        size: int,
+    ) -> str:
+        capped_size = min(max(0, int(size)), self.MAX_FILE_UPLOAD_BYTES)
+        digest = _sha256_prefix(log_path, capped_size)
+        if digest is None:
+            raise ControlRejected(
+                "could not fingerprint divergent local training log generation"
+            )
+        return (
+            "generations/" +
+            digest[:24] + "-" + str(capped_size) + "/" +
+            relative_path
+        )
 
     def flush_once(
         self,
@@ -823,6 +842,7 @@ class TrainingLogUploader:
             ):
                 continue
             relative = log_path.relative_to(run_root).as_posix()
+            remote_relative = self._remote_paths.get(log_path, relative)
             try:
                 file_stat = log_path.stat()
                 size = file_stat.st_size
@@ -837,18 +857,18 @@ class TrainingLogUploader:
             )
             position = self._positions.get(log_path, 0)
             if identity_changed or size < position:
-                next_offset = client.upload_log_chunk(
-                    trainer_id=trainer_id,
-                    run_id=run_id,
-                    relative_path=relative,
-                    offset=0,
-                    data=b"",
-                    reset=True,
+                # Unity can replace/truncate Player-N.log when an actor generation restarts.
+                # Preserve the already-uploaded generation instead of destructively resetting
+                # its server copy. The replacement continues under a deterministic generation
+                # path so both byte streams remain available.
+                remote_relative = self._generation_remote_path(
+                    log_path,
+                    relative,
+                    size,
                 )
-                if next_offset < 0:
-                    next_offset = -next_offset - 1
-                position = next_offset
-                self._positions[log_path] = position
+                self._remote_paths[log_path] = remote_relative
+                position = 0
+                self._positions[log_path] = 0
             self._file_identities[log_path] = identity
             if size <= position or position >= self.MAX_FILE_UPLOAD_BYTES:
                 continue
@@ -874,7 +894,7 @@ class TrainingLogUploader:
                 next_offset = client.upload_log_chunk(
                     trainer_id=trainer_id,
                     run_id=run_id,
-                    relative_path=relative,
+                    relative_path=remote_relative,
                     offset=position,
                     data=data,
                 )
@@ -893,10 +913,18 @@ class TrainingLogUploader:
                     or not mismatch.expected_sha256
                     or local_prefix_sha256 != mismatch.expected_sha256
                 ):
-                    raise ControlRejected(
-                        "remote training log prefix differs from the local file; "
-                        "refusing to append or overwrite either copy"
-                    ) from mismatch
+                    if remote_relative != relative:
+                        raise ControlRejected(
+                            "preserved training log generation conflicts with its "
+                            "existing remote copy"
+                        ) from mismatch
+                    self._remote_paths[log_path] = self._generation_remote_path(
+                        log_path,
+                        relative,
+                        size,
+                    )
+                    self._positions[log_path] = 0
+                    continue
                 self._positions[log_path] = expected_offset
                 continue
             self._positions[log_path] = next_offset
