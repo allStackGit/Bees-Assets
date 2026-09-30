@@ -243,10 +243,9 @@ namespace Assets.Scripts.Levels
                 {
                     ConfigData.ShipTypes shipType =
                         global::RlOneVsOnePerArenaMatchups.GetShipType(this, sides[sideIndex], shipIndex);
-                    Vector2 shipSize = (Vector2)ConfigData.ShipSizes[shipType] / ConfigData.PixelsPerUnit;
                     largestShipExtent = Mathf.Max(
                         largestShipExtent,
-                        Mathf.Max(shipSize.x, shipSize.y) * 0.5f);
+                        GetRlShipClearanceRadius(shipType));
                 }
             }
 
