@@ -108,8 +108,12 @@ function recentSessionFailureAgeSeconds(metrics) {
 }
 
 function initialStep(envs) {
-    // Explore capacity geometrically so a capable machine can reach its useful range in a
-    // handful of probes instead of crawling upward one environment at a time.
+    return Math.max(1, Math.min(4, Math.round(envs / 8)));
+}
+
+function cycleAwareStep(envs) {
+    // Complete-cycle measurements are reliable enough to expand geometrically. Keep the old
+    // conservative step for actors that have not yet rolled onto policy-epoch telemetry.
     return Math.max(1, Math.min(16, Math.floor(envs)));
 }
 
@@ -157,6 +161,7 @@ class TrainingEnvOptimizer {
             baseline_sps: null,
             direction: capacity.current_envs >= capacity.max_envs ? -1 : 1,
             step: initialStep(capacity.current_envs),
+            cycle_aware: false,
             blocked_up: false,
             blocked_down: false,
             phase: 'warmup',
@@ -365,7 +370,9 @@ class TrainingEnvOptimizer {
             state.baseline_envs = capacity.current_envs;
             state.baseline_sps = sps;
             state.desired_envs = capacity.current_envs;
-            state.step = initialStep(capacity.current_envs);
+            state.step = state.cycle_aware
+                ? cycleAwareStep(capacity.current_envs)
+                : initialStep(capacity.current_envs);
             state.blocked_up = false;
             state.blocked_down = false;
             state.last_decision = 'baseline ' + sps.toFixed(1) + ' steps/s';
@@ -389,7 +396,9 @@ class TrainingEnvOptimizer {
             state.baseline_sps = sps;
             state.desired_envs = capacity.current_envs;
             state.direction = direction;
-            state.step = initialStep(capacity.current_envs);
+            state.step = state.cycle_aware
+                ? cycleAwareStep(capacity.current_envs)
+                : initialStep(capacity.current_envs);
             state.blocked_up = false;
             state.blocked_down = false;
             state.last_decision =
@@ -469,6 +478,9 @@ class TrainingEnvOptimizer {
             this.states.set(record.trainer_id, state);
         }
         state.last_update_ms = timestamp;
+        if (currentPolicyEpoch !== null) {
+            state.cycle_aware = true;
+        }
         let newSessionFailure = false;
         if (sessionFailuresTotal !== null) {
             if (
@@ -754,7 +766,9 @@ class TrainingEnvOptimizer {
             if (timestamp < state.retest_after_ms) return this.snapshot(record.trainer_id);
             state.blocked_up = false;
             state.blocked_down = false;
-            state.step = initialStep(state.baseline_envs || capacity.current_envs);
+            state.step = state.cycle_aware
+                ? cycleAwareStep(state.baseline_envs || capacity.current_envs)
+                : initialStep(state.baseline_envs || capacity.current_envs);
             state.direction = capacity.current_envs >= capacity.max_envs ? -1 : 1;
             this._chooseProbe(state, capacity, timestamp);
             return this.snapshot(record.trainer_id);
@@ -914,4 +928,5 @@ module.exports = {
     sessionFailureType,
     envResizeFailure,
     initialStep,
+    cycleAwareStep,
 };
