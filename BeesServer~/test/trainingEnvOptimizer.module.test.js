@@ -811,14 +811,13 @@ test('repeated WAN failures at an accepted baseline back off the environment cou
 
 test('failed live resize probe keeps the running baseline and backs off without restart', () => {
     const optimizer = new TrainingEnvOptimizer({
-        warmupMs: 0,
+        settleMs: 0,
         measurementMs: 1000,
-        cooldownMs: 20_000,
         instabilityHoldMs: 10_000,
     });
 
-    update(optimizer, 'remote-a', 3, 0, 0, { max: 8 });
-    let state = update(optimizer, 'remote-a', 3, 300, 1000, { max: 8 });
+    update(optimizer, 'remote-a', 3, 0, 0, { max: 4 });
+    let state = update(optimizer, 'remote-a', 3, 300, 1000, { max: 4 });
     assert.equal(state.baseline_envs, 3);
     assert.equal(state.desired_envs, 4);
     assert.equal(state.probing, true);
@@ -830,7 +829,7 @@ test('failed live resize probe keeps the running baseline and backs off without 
         320,
         1100,
         {
-            max: 8,
+            max: 4,
             processState: 'running',
             resizeFailedTarget: 4,
             resizeError: 'RuntimeError: candidate spec mismatch',
@@ -838,10 +837,10 @@ test('failed live resize probe keeps the running baseline and backs off without 
     );
 
     assert.equal(state.desired_envs, 3);
-    assert.equal(state.phase, 'cooldown');
-    assert.equal(state.probing, false);
+    assert.equal(state.phase, 'settling');
+    assert.equal(state.probing, true);
     assert.equal(state.stability_hold_until_ms, 0);
-    assert.match(state.decision, /live resize probe failed; retained 3 envs/);
+    assert.match(state.decision, /live resize failed/);
     assert.equal(optimizer.states.get('remote-a').blocked_up, true);
 });
 
@@ -891,24 +890,23 @@ test('runtime cutover clears old optimizer instability and baseline state', () =
 
 test('recent WAN failure aborts a probe with the correct reason', () => {
     const optimizer = new TrainingEnvOptimizer({
-        warmupMs: 0,
+        settleMs: 0,
         measurementMs: 1000,
-        cooldownMs: 0,
         instabilityHoldMs: 10_000,
     });
 
-    update(optimizer, 'remote-a', 8, 0, 0, { max: 16 });
-    let state = update(optimizer, 'remote-a', 8, 1000, 1000, { max: 16 });
+    update(optimizer, 'remote-a', 8, 0, 0, { max: 9 });
+    let state = update(optimizer, 'remote-a', 8, 1000, 1000, { max: 9 });
     assert.equal(state.desired_envs, 9);
 
     state = update(
         optimizer,
         'remote-a',
         9,
-        0,
+        1010,
         1010,
         {
-            max: 16,
+            max: 9,
             processState: 'running',
             sessionFailures: 1,
             failureAgeSeconds: 1,
@@ -921,7 +919,7 @@ test('recent WAN failure aborts a probe with the correct reason', () => {
 
 test('fresh worker startup does not create an instability hold before a baseline exists', () => {
     const optimizer = new TrainingEnvOptimizer({
-        warmupMs: 1000,
+        settleMs: 1000,
         measurementMs: 1000,
         instabilityHoldMs: 10_000,
     });
@@ -938,62 +936,50 @@ test('fresh worker startup does not create an instability hold before a baseline
     assert.equal(state.phase, 'settling');
     assert.equal(state.stability_hold_until_ms, 0);
     assert.equal(state.last_instability_ms, null);
-    assert.match(state.decision, /collecting baseline/);
+    assert.match(state.decision, /waiting for managed worker/);
 });
 
-test('planned env-count transition does not create an instability hold', () => {
+test('live env-count transition stays in resizing until the requested count is reached', () => {
     const optimizer = new TrainingEnvOptimizer({
-        warmupMs: 0,
+        settleMs: 0,
         measurementMs: 1000,
-        cooldownMs: 0,
         instabilityHoldMs: 10_000,
     });
 
     update(optimizer, 'remote-a', 8, 0, 0, { max: 16 });
     let state = update(optimizer, 'remote-a', 8, 1000, 1000, { max: 16 });
-    assert.equal(state.desired_envs, 9);
+    assert.equal(state.desired_envs, 16);
 
     state = update(
         optimizer,
         'remote-a',
-        8,
-        1000,
+        9,
+        1050,
         1001,
-        { max: 16, processState: 'stopped' },
+        { max: 16, processState: 'running' },
     );
     assert.equal(state.phase, 'resizing');
+    assert.equal(state.desired_envs, 16);
     assert.equal(state.stability_hold_until_ms, 0);
 
     state = update(
         optimizer,
         'remote-a',
-        9,
-        0,
+        15,
+        1100,
+        1002,
+        { max: 16, processState: 'running' },
+    );
+    assert.equal(state.phase, 'resizing');
+    assert.equal(state.desired_envs, 16);
+    assert.equal(state.stability_hold_until_ms, 0);
+
+    state = update(
+        optimizer,
+        'remote-a',
+        16,
+        1150,
         1010,
-        { max: 16, processState: 'starting' },
-    );
-    assert.equal(state.phase, 'resizing');
-    assert.equal(state.stability_hold_until_ms, 0);
-    assert.match(state.decision, /waiting for planned worker restart/);
-
-    state = update(
-        optimizer,
-        'remote-a',
-        9,
-        0,
-        1011,
-        { max: 16, processState: 'starting' },
-    );
-    assert.equal(state.phase, 'resizing');
-    assert.equal(state.stability_hold_until_ms, 0);
-    assert.equal(state.last_instability_ms, null);
-
-    state = update(
-        optimizer,
-        'remote-a',
-        9,
-        0,
-        1012,
         { max: 16, processState: 'running' },
     );
     assert.equal(state.phase, 'settling');
@@ -1009,7 +995,7 @@ test('optimizer resets safely when a worker advertises new env bounds', () => {
 
     update(optimizer, 'remote-a', 8, 0, 0, { max: 16 });
     let state = update(optimizer, 'remote-a', 8, 1000, 1000, { max: 16 });
-    assert.equal(state.desired_envs, 9);
+    assert.equal(state.desired_envs, 16);
 
     state = update(optimizer, 'remote-a', 6, 0, 1010, { max: 6 });
     assert.equal(state.desired_envs, 6);
