@@ -786,6 +786,40 @@ class BackgroundBuildPreparer:
             return self.prepared_build_id, self.last_error
 
 
+def _sampled_prefix_anchor(
+    path: Path,
+    byte_count: int,
+    sample_bytes: int = 4096,
+) -> Optional[str]:
+    """Cheaply detect replacement of an already-uploaded append-only prefix."""
+    if byte_count < 0 or sample_bytes <= 0:
+        return None
+    digest = hashlib.sha256()
+    digest.update(str(int(byte_count)).encode("ascii"))
+    if byte_count == 0:
+        return digest.hexdigest()
+    window = min(int(sample_bytes), int(byte_count))
+    offsets = sorted(
+        {
+            0,
+            max(0, int(byte_count) // 2 - window // 2),
+            max(0, int(byte_count) - window),
+        }
+    )
+    try:
+        with path.open("rb") as handle:
+            for offset in offsets:
+                handle.seek(offset)
+                data = handle.read(min(window, int(byte_count) - offset))
+                if not data:
+                    return None
+                digest.update(offset.to_bytes(8, "little", signed=False))
+                digest.update(data)
+    except OSError:
+        return None
+    return digest.hexdigest()
+
+
 def _sha256_prefix(path: Path, byte_count: int) -> Optional[str]:
     if byte_count < 0:
         return None
@@ -813,6 +847,7 @@ class TrainingLogUploader:
         self.root = root
         self._positions: dict[Path, int] = {}
         self._file_identities: dict[Path, Optional[tuple[int, int]]] = {}
+        self._prefix_anchors: dict[Path, tuple[int, str]] = {}
         self._remote_paths: dict[Path, str] = {}
         self._next_path: Optional[Path] = None
 
@@ -879,11 +914,23 @@ class TrainingLogUploader:
                 and previous_identity != identity
             )
             position = self._positions.get(log_path, 0)
-            if identity_changed or size < position:
+            prefix_replaced = False
+            known_anchor = self._prefix_anchors.get(log_path)
+            if (
+                position > 0
+                and known_anchor is not None
+                and known_anchor[0] == position
+                and size >= position
+            ):
+                current_anchor = _sampled_prefix_anchor(log_path, position)
+                prefix_replaced = (
+                    current_anchor is None or current_anchor != known_anchor[1]
+                )
+            if identity_changed or size < position or prefix_replaced:
                 # Unity can replace/truncate Player-N.log when an actor generation restarts.
-                # Preserve the already-uploaded generation instead of destructively resetting
-                # its server copy. The replacement continues under a deterministic generation
-                # path so both byte streams remain available.
+                # File identity alone is insufficient on Windows because a restarted process can
+                # truncate and regrow the same path without changing its file id. Preserve the
+                # already-uploaded generation and restart upload under the replacement's identity.
                 remote_relative = self._generation_remote_path(
                     log_path,
                     relative,
@@ -892,6 +939,7 @@ class TrainingLogUploader:
                 self._remote_paths[log_path] = remote_relative
                 position = 0
                 self._positions[log_path] = 0
+                self._prefix_anchors.pop(log_path, None)
             self._file_identities[log_path] = identity
             if size <= position or position >= self.MAX_FILE_UPLOAD_BYTES:
                 continue
@@ -957,10 +1005,21 @@ class TrainingLogUploader:
                     # generation path rather than retrying the stale preserved path forever.
                     self._remote_paths[log_path] = next_remote_relative
                     self._positions[log_path] = 0
+                    self._prefix_anchors.pop(log_path, None)
                     continue
                 self._positions[log_path] = expected_offset
+                anchor = _sampled_prefix_anchor(log_path, expected_offset)
+                if anchor is not None:
+                    self._prefix_anchors[log_path] = (expected_offset, anchor)
+                else:
+                    self._prefix_anchors.pop(log_path, None)
                 continue
             self._positions[log_path] = next_offset
+            anchor = _sampled_prefix_anchor(log_path, next_offset)
+            if anchor is not None:
+                self._prefix_anchors[log_path] = (next_offset, anchor)
+            else:
+                self._prefix_anchors.pop(log_path, None)
             budget -= len(data)
             uploaded += len(data)
             self._next_path = log_paths[(path_index + 1) % len(log_paths)]
