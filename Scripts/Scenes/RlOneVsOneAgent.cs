@@ -95,6 +95,7 @@ internal sealed class RlOneVsOneAgent : Agent
     private int _teamId;
     private int _decisionCounter;
     private int _lastRewardedEpisode;
+    private int _lastOutcomeMarkedEpisode;
     private bool _hasBoundShip;
     private bool _hasParticipatedThisEpisode;
     private bool _endingShipTrajectory;
@@ -979,23 +980,28 @@ internal sealed class RlOneVsOneAgent : Agent
             return;
         }
 
-        if (result.EpisodeNumber <= _lastRewardedEpisode)
+        int assignedTeam = _side == ConfigData.Configuration.BeeSide ? result.BeeTeamId : result.HumanTeamId;
+        if (_teamId != assignedTeam || !_hasParticipatedThisEpisode)
         {
             return;
         }
 
-        int assignedTeam = _side == ConfigData.Configuration.BeeSide ? result.BeeTeamId : result.HumanTeamId;
-        if (_teamId != assignedTeam || !_hasParticipatedThisEpisode ||
+        // Every participating terminal trajectory gets the explicit outcome marker because the
+        // GhostTrainer may inspect any one of them for ELO. The learner removes this marker before
+        // PPO consumes the trajectory.
+        if (result.EpisodeNumber > _lastOutcomeMarkedEpisode)
+        {
+            _lastOutcomeMarkedEpisode = result.EpisodeNumber;
+            AddReward(GetExplicitOutcomeMarker(_side, result));
+        }
+
+        if (result.EpisodeNumber <= _lastRewardedEpisode ||
             !IsGroupRewardRepresentative(requireCurrentController: false))
         {
             return;
         }
 
         _lastRewardedEpisode = result.EpisodeNumber;
-        // ML-Agents' stock GhostTrainer infers ELO from the final-step reward sign. Add an
-        // individual outcome marker here; the Bees learner strips it before PPO sees the trajectory
-        // and uses it only to classify ELO from the explicit battle outcome.
-        AddReward(GetExplicitOutcomeMarker(_side, result));
 
         float terminalReward = _side == ConfigData.Configuration.BeeSide
             ? result.BeeTerminalReward + result.BeeTimeReward + result.BeeRetainedMiningReward
