@@ -491,17 +491,29 @@ async function invokeStart(options = {}) {
 
     const performForcedNewRun = Boolean(options.newRun || resumeForcedNewRun);
     const unity = resolveUnityEditor(config);
-    const centralRuntime = prepareCentralReleaseRuntime(
-        config, bootstrapPython, unity, release
-    );
+    let centralRuntime = null;
+
+    // For an ordinary same-run start, preserve the existing hot-runtime behavior. A forced new
+    // run is different: do not publish a new runtime pointer while training-control still names
+    // the outgoing run, or a live supervisor can briefly launch the new trainer config against
+    // the old run's immutable generation directory.
+    if (!performForcedNewRun) {
+        centralRuntime = prepareCentralReleaseRuntime(
+            config, bootstrapPython, unity, release
+        );
+    }
+
     ensureTailnetIdentity(config);
     prepareRemoteBootstrap(config, python, release);
     await publishRelease(config, admin, release);
     await startTailnetGatewayIfNeeded(config);
-    await startCentralAgentIfNeeded(
-        config, bootstrapPython, unity, release, centralRuntime
-    );
-    prepareLocalActorReleaseRuntime(config, release, centralRuntime);
+
+    if (!performForcedNewRun) {
+        await startCentralAgentIfNeeded(
+            config, bootstrapPython, unity, release, centralRuntime
+        );
+        prepareLocalActorReleaseRuntime(config, release, centralRuntime);
+    }
 
     let staged;
     let desired;
@@ -510,6 +522,16 @@ async function invokeStart(options = {}) {
             config, admin, release, envArgs, environmentValidationKey
         );
         desired = await setDesiredState(config, admin, { training_enabled: true });
+
+        // The control plane now owns the new run identity. Only now expose the matching pinned
+        // trainer runtime to the stable central/local supervisors.
+        centralRuntime = prepareCentralReleaseRuntime(
+            config, bootstrapPython, unity, release
+        );
+        await startCentralAgentIfNeeded(
+            config, bootstrapPython, unity, release, centralRuntime
+        );
+        prepareLocalActorReleaseRuntime(config, release, centralRuntime);
     } else {
         const preEnvironmentStatus = await getStatus(config, admin);
         const pending = preEnvironmentStatus.desired &&
