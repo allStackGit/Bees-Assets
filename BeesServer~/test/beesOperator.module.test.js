@@ -449,10 +449,13 @@ test('central learner uses a managed Python environment with required training i
     assert.ok(source.includes("bees-requirements.sha256"));
 });
 
-test('learner requirements include ML-Agents stack and ONNX Runtime', () => {
+test('learner requirements pin the CUDA ML-Agents stack independently of remote workers', () => {
     const requirementsPath = path.resolve(__dirname, '..', '..', 'Training', 'bees_learner_requirements.txt');
     const source = fs.readFileSync(requirementsPath, 'utf8');
-    assert.match(source, /-r bees_remote_requirements\.txt/);
+    assert.doesNotMatch(source, /-r bees_remote_requirements\.txt/);
+    assert.match(source, /mlagents==1\.1\.0/);
+    assert.match(source, /torch==2\.1\.1\+cu121/);
+    assert.match(source, /download\.pytorch\.org\/whl\/cu121/);
     assert.match(source, /onnxruntime==1\.15\.1/);
 });
 
