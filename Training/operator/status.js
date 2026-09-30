@@ -471,7 +471,7 @@ async function getStatusFrameLines(config, adminToken) {
                 State: record.stale ? 'STALE' : String(record.process_state || '-'),
                 Envs: envDisplay,
                 'LiveExp/s': liveExpRate,
-                'OptExp/s': expRate,
+                'OptStep/s': expRate,
                 SentGiB: throughput.network_sent_bytes_total != null
                     ? number(Number(throughput.network_sent_bytes_total) / (1024 ** 3), 3)
                     : '-',
@@ -504,7 +504,7 @@ async function getStatusFrameLines(config, adminToken) {
 
         if (rows.length) {
             lines.push(...table(rows, [
-                'Trainer', 'Role', 'Platform', 'State', 'Envs', 'LiveExp/s', 'OptExp/s',
+                'Trainer', 'Role', 'Platform', 'State', 'Envs', 'LiveExp/s', 'OptStep/s',
                 'SentGiB', 'RecvGiB', 'MiB/s', 'Opt', 'Build', 'Rev', 'Age',
                 'Timeout', 'BWin', 'HWin', 'Draw', 'Dur', 'BHit/Sh', 'HHit/Sh',
                 'BAim', 'HAim', 'B<5', 'H<5', 'BAligned', 'HAligned', 'Error',
@@ -530,7 +530,7 @@ async function getStatusFrameLines(config, adminToken) {
             '  LearnerLiveStep/s=' + (learner.LiveStepsPerSecond == null ? '-' : number(learner.LiveStepsPerSecond, 1))
         );
         lines.push(
-            'Rates: LiveExp/s is recent per-worker learner-consumed experience; OptExp/s is the optimizer measurement-window sample; learner Step/s is the global ML-Agents training-step rate.'
+            'Rates: LiveExp/s is recent per-worker learner-consumed experience; OptStep/s is the optimizer five-minute global ML-Agents learner-step sample; learner Step/s is the global ML-Agents training-step rate.'
         );
         lines.push(
             'Network: SentGiB/RecvGiB are cumulative per-run WAN payload bytes; MiB/s is the current payload rate when a live actor session is available.'
