@@ -171,6 +171,28 @@ class ContinualServiceTests(unittest.TestCase):
             self.assertEqual(service.generation_target_steps(options, 0), 250_000)
             self.assertEqual(service.generation_target_steps(options, 3), 1_000_000)
 
+    def test_active_generation_allows_device_only_revision_without_mutating_original(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            options = self._options(root, generation_steps=100)
+            original = service.write_generation_config(options, 0)
+            original_bytes = original.read_bytes()
+
+            options.trainer_config.write_text(
+                options.trainer_config.read_text(encoding="utf-8").replace(
+                    "device: cpu",
+                    "device: cuda",
+                ),
+                encoding="utf-8",
+            )
+            revised = service.write_generation_config(options, 0)
+
+            self.assertNotEqual(revised, original)
+            self.assertEqual(original.read_bytes(), original_bytes)
+            self.assertEqual(revised.name, "generation-00000000-device-cuda.yaml")
+            self.assertIn("device: cuda", revised.read_text(encoding="utf-8"))
+            self.assertEqual(service.write_generation_config(options, 0), revised)
+
     def test_active_generation_target_extension_preserves_original_immutable_config(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
