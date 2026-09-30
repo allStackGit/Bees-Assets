@@ -6,6 +6,8 @@ const {
     TrainingEnvOptimizer,
     normalizeCapacity,
     learnerConsumedSteps,
+    learnerStep,
+    optimizationSteps,
     producerAcceptedSteps,
     runtimeVersion,
     policyCycle,
@@ -29,6 +31,7 @@ function record(
         resizeError = '',
         policyCycleValue = null,
         runtimeVersionValue = '',
+        learnerStepValue = consumed,
         reconciliationPhase = '',
     } = {},
 ) {
@@ -46,6 +49,7 @@ function record(
         metrics: {
             throughput: {
                 learner_consumed_steps_total: consumed,
+                learner_step_total: learnerStepValue,
                 accepted_steps_total: accepted,
                 policy_cycle: policyCycleValue,
                 runtime_version: runtimeVersionValue,
@@ -90,6 +94,17 @@ test('capacity and learner-consumed-step metrics reject malformed values', () =>
         learnerConsumedSteps({ throughput: { accepted_steps_total: 999999 } }),
         null,
     );
+    assert.equal(learnerStep({ throughput: { learner_step_total: 21 } }), 21);
+    assert.equal(learnerStep({ throughput: { learner_step_total: -1 } }), null);
+    assert.equal(
+        optimizationSteps({
+            throughput: {
+                learner_step_total: 21,
+                learner_consumed_steps_total: 420,
+            },
+        }),
+        21,
+    );
     assert.equal(
         producerAcceptedSteps({ throughput: { accepted_steps_total: 77 } }),
         77,
@@ -104,11 +119,10 @@ test('capacity and learner-consumed-step metrics reject malformed values', () =>
     assert.equal(runtimeVersion({ throughput: { runtime_version: 'not-a-hash' } }), '');
 });
 
-test('optimizer measures complete policy cycles and expands capacity geometrically', () => {
+test('optimizer uses wall-clock settling and measurement instead of policy-cycle gating', () => {
     const optimizer = new TrainingEnvOptimizer({
-        warmupMs: 0,
-        measurementMs: 1000,
-        cooldownMs: 0,
+        settleMs: 1000,
+        measurementMs: 5000,
         retestMs: 60_000,
     });
 
@@ -120,37 +134,35 @@ test('optimizer measures complete policy cycles and expands capacity geometrical
         0,
         { max: 48, policyCycleValue: 10 },
     );
-    assert.equal(state.phase, 'warmup');
-    assert.match(state.decision, /complete learner policy cycle/);
+    assert.equal(state.phase, 'settling');
 
     state = update(
         optimizer,
         'remote-a',
         4,
-        900,
-        60_000,
+        50,
+        999,
         { max: 48, policyCycleValue: 10 },
     );
-    assert.equal(state.phase, 'warmup');
+    assert.equal(state.phase, 'settling');
 
     state = update(
         optimizer,
         'remote-a',
         4,
+        100,
         1000,
-        70_000,
-        { max: 48, policyCycleValue: 11 },
+        { max: 48, policyCycleValue: 10 },
     );
     assert.equal(state.phase, 'measuring');
 
-    // Even a full minute of learner activity does not end the sample mid-policy-cycle.
     state = update(
         optimizer,
         'remote-a',
         4,
-        1600,
-        130_000,
-        { max: 48, policyCycleValue: 11 },
+        1099,
+        5999,
+        { max: 48, policyCycleValue: 10 },
     );
     assert.equal(state.phase, 'measuring');
     assert.equal(state.baseline_envs, null);
@@ -159,53 +171,83 @@ test('optimizer measures complete policy cycles and expands capacity geometrical
         optimizer,
         'remote-a',
         4,
-        2000,
-        170_000,
-        { max: 48, policyCycleValue: 12 },
+        1100,
+        6000,
+        { max: 48, policyCycleValue: 10 },
     );
     assert.equal(state.baseline_envs, 4);
+    assert.equal(state.baseline_sps, 200);
     assert.equal(state.desired_envs, 8);
+    assert.equal(state.phase, 'resizing');
     assert.equal(state.probing, true);
-    assert.match(state.decision, /probing 4->8/);
+
+    state = update(
+        optimizer,
+        'remote-a',
+        8,
+        1200,
+        6010,
+        { max: 48, policyCycleValue: 10 },
+    );
+    assert.equal(state.phase, 'settling');
+
+    state = update(
+        optimizer,
+        'remote-a',
+        8,
+        1400,
+        7010,
+        { max: 48, policyCycleValue: 10 },
+    );
+    assert.equal(state.phase, 'measuring');
+
+    state = update(
+        optimizer,
+        'remote-a',
+        8,
+        2600,
+        12010,
+        { max: 48, policyCycleValue: 10 },
+    );
+    assert.equal(state.baseline_envs, 8);
+    assert.equal(state.desired_envs, 16);
+    assert.equal(state.probing, true);
 });
 
-test('optimizer measures learner-consumed steps, increases envs, and keeps an improvement', () => {
+test('optimizer doubles capacity while global learner throughput improves', () => {
     const optimizer = new TrainingEnvOptimizer({
-        warmupMs: 0,
+        settleMs: 0,
         measurementMs: 1000,
-        cooldownMs: 0,
         retestMs: 60_000,
         minImprovementRatio: 0.03,
         regressionRatio: 0.05,
     });
 
-    let state = update(optimizer, 'remote-a', 8, 0, 0, { max: 16 });
+    let state = update(optimizer, 'remote-a', 8, 0, 0, { max: 32 });
     assert.equal(state.phase, 'measuring');
 
-    state = update(optimizer, 'remote-a', 8, 1000, 1000, { max: 16 });
+    state = update(optimizer, 'remote-a', 8, 1000, 1000, { max: 32 });
     assert.equal(state.baseline_envs, 8);
     assert.equal(state.baseline_sps, 1000);
-    assert.equal(state.desired_envs, 9);
-    assert.equal(state.probing, true);
+    assert.equal(state.desired_envs, 16);
+    assert.equal(state.phase, 'resizing');
 
-    // The process restarts at the requested count, resetting its learner-consumed counter.
-    state = update(optimizer, 'remote-a', 9, 0, 1010, { max: 16 });
-    assert.equal(state.phase, 'warmup');
-    state = update(optimizer, 'remote-a', 9, 0, 1011, { max: 16 });
+    state = update(optimizer, 'remote-a', 16, 1010, 1010, { max: 32 });
+    assert.equal(state.phase, 'settling');
+    state = update(optimizer, 'remote-a', 16, 1011, 1011, { max: 32 });
     assert.equal(state.phase, 'measuring');
 
-    state = update(optimizer, 'remote-a', 9, 1100, 2011, { max: 16 });
-    assert.equal(state.baseline_envs, 9);
+    state = update(optimizer, 'remote-a', 16, 2111, 2011, { max: 32 });
+    assert.equal(state.baseline_envs, 16);
     assert.equal(state.baseline_sps, 1100);
-    assert.equal(state.desired_envs, 10);
-    assert.match(state.decision, /probing 9->10/);
+    assert.equal(state.desired_envs, 32);
+    assert.match(state.decision, /32/);
 });
 
 test('optimizer retries a starved sample instead of treating producer activity as zero useful throughput', () => {
     const optimizer = new TrainingEnvOptimizer({
-        warmupMs: 0,
+        settleMs: 0,
         measurementMs: 1000,
-        cooldownMs: 0,
         retestMs: 60_000,
     });
 
@@ -222,8 +264,8 @@ test('optimizer retries a starved sample instead of treating producer activity a
     assert.equal(state.baseline_envs, null);
     assert.equal(state.baseline_sps, null);
     assert.equal(state.desired_envs, 8);
-    assert.equal(state.phase, 'warmup');
-    assert.match(state.decision, /produced rollouts but none were learner-consumed/);
+    assert.equal(state.phase, 'settling');
+    assert.match(state.decision, /global learner did not advance/);
 
     state = update(
         optimizer,
@@ -245,14 +287,13 @@ test('optimizer retries a starved sample instead of treating producer activity a
     );
     assert.equal(state.baseline_envs, 8);
     assert.equal(state.baseline_sps, 850);
-    assert.equal(state.desired_envs, 9);
+    assert.equal(state.desired_envs, 16);
 });
 
-test('successful worker yields the next probe to another ready worker', () => {
+test('one worker owns the capacity search while other workers wait', () => {
     const optimizer = new TrainingEnvOptimizer({
-        warmupMs: 0,
+        settleMs: 0,
         measurementMs: 1000,
-        cooldownMs: 0,
         retestMs: 60_000,
         minImprovementRatio: 0.03,
     });
@@ -264,59 +305,55 @@ test('successful worker yields the next probe to another ready worker', () => {
     assert.equal(stateA.desired_envs, 2);
     assert.equal(stateA.probing, true);
 
-    let stateB = update(optimizer, 'remote-b', 1, 800, 1000, { max: 16 });
+    let stateB = update(optimizer, 'remote-b', 1, 1000, 1000, { max: 16 });
     assert.equal(stateB.desired_envs, 1);
-    assert.equal(stateB.phase, 'stable');
-    assert.match(stateB.decision, /waiting for another worker probe/);
+    assert.equal(stateB.phase, 'waiting');
+    assert.equal(stateB.probing, false);
 
-    update(optimizer, 'remote-a', 2, 0, 1010, { max: 16 });
-    update(optimizer, 'remote-a', 2, 0, 1011, { max: 16 });
-    stateA = update(optimizer, 'remote-a', 2, 1200, 2011, { max: 16 });
+    update(optimizer, 'remote-a', 2, 1010, 1010, { max: 16 });
+    update(optimizer, 'remote-a', 2, 1011, 1011, { max: 16 });
+    stateA = update(optimizer, 'remote-a', 2, 2211, 2011, { max: 16 });
     assert.equal(stateA.baseline_envs, 2);
-    assert.equal(stateA.desired_envs, 2);
-    assert.equal(stateA.probing, false);
-    assert.match(stateA.decision, /yielding probe slot/);
+    assert.equal(stateA.desired_envs, 4);
+    assert.equal(stateA.probing, true);
 
-    stateB = update(optimizer, 'remote-b', 1, 1600, 2012, { max: 16 });
-    assert.equal(stateB.desired_envs, 2);
-    assert.equal(stateB.probing, true);
-    assert.match(stateB.decision, /probing 1->2/);
+    stateB = update(optimizer, 'remote-b', 1, 2200, 2012, { max: 16 });
+    assert.equal(stateB.phase, 'waiting');
+    assert.equal(stateB.desired_envs, 1);
 });
 
-test('optimizer backs off a slower probe before another worker may probe', () => {
+test('optimizer rolls back a slower probe before another worker may measure', () => {
     const optimizer = new TrainingEnvOptimizer({
-        warmupMs: 0,
+        settleMs: 0,
         measurementMs: 1000,
-        cooldownMs: 0,
         retestMs: 60_000,
         minImprovementRatio: 0.03,
         regressionRatio: 0.05,
     });
 
-    update(optimizer, 'remote-a', 8, 0, 0, { max: 16 });
-    let stateA = update(optimizer, 'remote-a', 8, 1000, 1000, { max: 16 });
+    update(optimizer, 'remote-a', 8, 0, 0, { max: 9 });
+    let stateA = update(optimizer, 'remote-a', 8, 1000, 1000, { max: 9 });
     assert.equal(stateA.desired_envs, 9);
 
-    // A second worker can establish a baseline, but cannot begin a simultaneous cluster probe.
     update(optimizer, 'remote-b', 6, 0, 1001, { max: 16 });
     const stateB = update(optimizer, 'remote-b', 6, 800, 2001, { max: 16 });
     assert.equal(stateB.desired_envs, 6);
-    assert.equal(stateB.probing, false);
+    assert.equal(stateB.phase, 'waiting');
 
-    update(optimizer, 'remote-a', 9, 0, 2010, { max: 16 });
-    update(optimizer, 'remote-a', 9, 0, 2011, { max: 16 });
-    stateA = update(optimizer, 'remote-a', 9, 900, 3011, { max: 16 });
+    update(optimizer, 'remote-a', 9, 1010, 2010, { max: 9 });
+    update(optimizer, 'remote-a', 9, 1011, 2011, { max: 9 });
+    stateA = update(optimizer, 'remote-a', 9, 1911, 3011, { max: 9 });
     assert.equal(stateA.desired_envs, 8);
     assert.equal(stateA.probing, true);
-    assert.match(stateA.decision, /backing off/);
+    assert.match(stateA.decision, /throughput regressed/);
 
-    // The probe lock remains with A until its process has actually returned to the baseline.
     const waitingB = update(optimizer, 'remote-b', 6, 1600, 3012, { max: 16 });
-    assert.equal(waitingB.desired_envs, 6);
+    assert.equal(waitingB.phase, 'waiting');
     assert.equal(waitingB.probing, false);
 
-    stateA = update(optimizer, 'remote-a', 8, 0, 3020, { max: 16 });
-    assert.equal(stateA.probing, false);
+    stateA = update(optimizer, 'remote-a', 8, 1920, 3020, { max: 9 });
+    assert.equal(stateA.phase, 'settling');
+    assert.equal(stateA.probing, true);
 });
 
 test('optimizer backs off immediately when a probed worker process stops', () => {
@@ -366,7 +403,7 @@ test('optimizer backs off a probe that never produces learner-consumed-step metr
     state = update(optimizer, 'remote-a', 9, null, 1111, { max: 16 });
     assert.equal(state.desired_envs, 8);
     assert.equal(state.probing, true);
-    assert.match(state.decision, /no learner-consumed-step metrics/);
+    assert.match(state.decision, /no global learner-step metrics/);
 
     state = update(optimizer, 'remote-a', 8, 0, 1120, { max: 16 });
     assert.equal(state.probing, false);
@@ -401,7 +438,7 @@ test('optimizer holds a recovered worker before probing again after a reported f
     assert.equal(state.probing, false);
 
     state = update(optimizer, 'remote-a', 8, 1000, 10_001, { max: 16 });
-    assert.equal(state.phase, 'warmup');
+    assert.equal(state.phase, 'settling');
     assert.match(state.decision, /collecting fresh baseline/);
 
     state = update(optimizer, 'remote-a', 8, 1000, 10_002, { max: 16 });
@@ -541,7 +578,7 @@ test('healthy worker clears legacy hold caused by BrokerStaleActor resyncs', () 
         },
     );
 
-    assert.equal(state.phase, 'warmup');
+    assert.equal(state.phase, 'settling');
     assert.equal(state.stability_hold_until_ms, 5_000);
     assert.match(state.decision, /collecting fresh baseline/);
 });
@@ -612,7 +649,7 @@ test('healthy worker clears legacy stability hold caused only by ControlUnavaila
         },
     );
 
-    assert.equal(state.phase, 'warmup');
+    assert.equal(state.phase, 'settling');
     assert.equal(state.stability_hold_until_ms, 5_000);
     assert.match(state.decision, /collecting fresh baseline/);
 });
@@ -669,7 +706,7 @@ test('recent internal WAN actor failure holds probes without extending the hold 
             failureAgeSeconds: 10.001,
         },
     );
-    assert.equal(state.phase, 'warmup');
+    assert.equal(state.phase, 'settling');
     assert.match(state.decision, /collecting fresh baseline/);
 });
 
@@ -720,7 +757,7 @@ test('repeated WAN failures at an accepted baseline back off the environment cou
             failureAgeSeconds: 0,
         },
     );
-    assert.equal(state.phase, 'awaiting-restart');
+    assert.equal(state.phase, 'resizing');
     assert.equal(state.desired_envs, 4);
     assert.equal(state.baseline_envs, 4);
     assert.match(state.decision, /repeated WAN actor session failures at 5 envs/);
@@ -829,7 +866,7 @@ test('runtime cutover clears old optimizer instability and baseline state', () =
         { max: 48, runtimeVersionValue: newRuntime },
     );
 
-    assert.equal(state.phase, 'warmup');
+    assert.equal(state.phase, 'settling');
     assert.equal(state.baseline_envs, null);
     assert.equal(state.desired_envs, 4);
     assert.equal(state.stability_hold_until_ms, 0);
@@ -882,7 +919,7 @@ test('fresh worker startup does not create an instability hold before a baseline
         { max: 16, processState: 'starting' },
     );
 
-    assert.equal(state.phase, 'warmup');
+    assert.equal(state.phase, 'settling');
     assert.equal(state.stability_hold_until_ms, 0);
     assert.equal(state.last_instability_ms, null);
     assert.match(state.decision, /collecting baseline/);
@@ -908,7 +945,7 @@ test('planned env-count transition does not create an instability hold', () => {
         1001,
         { max: 16, processState: 'stopped' },
     );
-    assert.equal(state.phase, 'awaiting-restart');
+    assert.equal(state.phase, 'resizing');
     assert.equal(state.stability_hold_until_ms, 0);
 
     state = update(
@@ -919,7 +956,7 @@ test('planned env-count transition does not create an instability hold', () => {
         1010,
         { max: 16, processState: 'starting' },
     );
-    assert.equal(state.phase, 'awaiting-restart');
+    assert.equal(state.phase, 'resizing');
     assert.equal(state.stability_hold_until_ms, 0);
     assert.match(state.decision, /waiting for planned worker restart/);
 
@@ -931,7 +968,7 @@ test('planned env-count transition does not create an instability hold', () => {
         1011,
         { max: 16, processState: 'starting' },
     );
-    assert.equal(state.phase, 'awaiting-restart');
+    assert.equal(state.phase, 'resizing');
     assert.equal(state.stability_hold_until_ms, 0);
     assert.equal(state.last_instability_ms, null);
 
@@ -943,7 +980,7 @@ test('planned env-count transition does not create an instability hold', () => {
         1012,
         { max: 16, processState: 'running' },
     );
-    assert.equal(state.phase, 'warmup');
+    assert.equal(state.phase, 'settling');
     assert.equal(state.stability_hold_until_ms, 0);
 });
 
