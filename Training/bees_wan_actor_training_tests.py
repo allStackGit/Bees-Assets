@@ -605,21 +605,28 @@ class WanOptionTests(unittest.TestCase):
                 return "default-run-logs"
 
         options = SimpleNamespace(checkpoint_settings=ReadOnlyCheckpointSettings())
+        session = object.__new__(actor.ActorSession)
+        session.actor_id = 2
+        session.session_id = "managed-session"
         with tempfile.TemporaryDirectory() as temp:
             managed = Path(temp) / "managed-logs"
             with mock.patch.dict(os.environ, {"BEES_TRAINING_LOG_DIR": str(managed)}):
-                resolved = actor.ActorSession._run_logs_dir(options)
-            self.assertEqual(Path(resolved), managed.resolve())
-            self.assertTrue(managed.is_dir())
+                resolved = Path(session._run_logs_dir(options))
+            self.assertEqual(resolved.parent, managed.resolve())
+            self.assertTrue(resolved.is_dir())
+            self.assertTrue(resolved.name.startswith("actor-2-session-"))
             self.assertEqual(options.checkpoint_settings.run_logs_dir, "default-run-logs")
 
     def test_actor_uses_checkpoint_log_directory_without_managed_override(self):
         options = SimpleNamespace(
             checkpoint_settings=SimpleNamespace(run_logs_dir="default-run-logs")
         )
+        session = object.__new__(actor.ActorSession)
+        session.actor_id = 2
+        session.session_id = "fallback-session"
         with mock.patch.dict(os.environ, {}, clear=True):
             self.assertEqual(
-                actor.ActorSession._run_logs_dir(options),
+                session._run_logs_dir(options),
                 "default-run-logs",
             )
 
