@@ -293,9 +293,13 @@ def install_elastic_wan_env_manager(
             )
 
     def monitored_advance(controller: Any, env_manager: Any) -> int:
-        result = original_advance(controller, env_manager)
         broker = getattr(env_manager, "_bees_wan_broker", None)
+        starting_policy_epoch = (
+            broker.policy_publication_epoch() if broker is not None else 0
+        )
+        result = original_advance(controller, env_manager)
         if broker is not None:
+            broker.complete_policy_cycle(starting_policy_epoch)
             steps = []
             for trainer in controller.trainers.values():
                 try:
