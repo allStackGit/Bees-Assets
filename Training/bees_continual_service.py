@@ -180,6 +180,54 @@ def _max_steps_from_config(text: str) -> int:
     return int(matches[0][1])
 
 
+def _torch_device_from_config(text: str) -> str:
+    lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    in_torch_settings = False
+    torch_indent = -1
+    for line in lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        indent = len(line) - len(line.lstrip())
+        if not in_torch_settings:
+            if re.fullmatch(r"torch_settings:\s*(?:#.*)?", stripped):
+                in_torch_settings = True
+                torch_indent = indent
+            continue
+        if indent <= torch_indent:
+            break
+        match = re.fullmatch(r"device:\s*([^#\s]+)\s*(?:#.*)?", stripped)
+        if match:
+            return match.group(1)
+    raise ValueError("Trainer config torch_settings block has no device")
+
+
+def _normalize_runtime_device(text: str) -> str:
+    lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    in_torch_settings = False
+    torch_indent = -1
+    normalized = []
+    replaced = False
+    for line in lines:
+        stripped = line.strip()
+        indent = len(line) - len(line.lstrip())
+        if not in_torch_settings and re.fullmatch(r"torch_settings:\s*(?:#.*)?", stripped):
+            in_torch_settings = True
+            torch_indent = indent
+            normalized.append(line)
+            continue
+        if in_torch_settings and stripped and indent <= torch_indent:
+            in_torch_settings = False
+        if in_torch_settings and re.fullmatch(r"device:\s*([^#\s]+)\s*(?:#.*)?", stripped):
+            normalized.append(" " * indent + "device: <runtime-device>")
+            replaced = True
+        else:
+            normalized.append(line)
+    if not replaced:
+        raise ValueError("Trainer config torch_settings block has no device")
+    return "\n".join(normalized)
+
+
 def _write_immutable_generation_config(path: Path, body: bytes) -> Path:
     if path.exists():
         if path.read_bytes() != body:
@@ -213,6 +261,28 @@ def write_generation_config(options: ServiceOptions, index: int) -> Path:
     # revision instead of mutating history.
     existing_text = destination.read_text(encoding="utf-8")
     existing_target = _max_steps_from_config(existing_text)
+    candidate_text = body.decode("utf-8")
+
+    # Execution device is not part of checkpoint/learning semantics. Preserve the immutable
+    # original audit record, but allow a device-specific immutable revision so a CPU<->CUDA
+    # deployment can resume the same generation/checkpoint lineage.
+    comparison_existing = existing_text
+    if target_steps > existing_target:
+        comparison_existing = rewrite_max_steps(existing_text, target_steps)
+    if (
+        target_steps >= existing_target
+        and _normalize_runtime_device(comparison_existing)
+        == _normalize_runtime_device(candidate_text)
+    ):
+        device = _torch_device_from_config(candidate_text)
+        suffix = (
+            f"-target-{target_steps}-device-{device}"
+            if target_steps != existing_target
+            else f"-device-{device}"
+        )
+        revised = config_root / f"{generation_id(index)}{suffix}.yaml"
+        return _write_immutable_generation_config(revised, body)
+
     if target_steps <= existing_target:
         raise ValueError(f"Immutable generation trainer config conflict: {destination}")
     if rewrite_max_steps(existing_text, target_steps).encode("utf-8") != body:
