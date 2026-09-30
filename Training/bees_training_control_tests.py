@@ -1185,6 +1185,7 @@ class TrainingControlClientTests(unittest.TestCase):
                         "accepted_steps_total": 4567,
                         "accepted_trajectories_total": 89,
                         "learner_consumed_steps_total": 4321,
+                        "learner_step_total": 2160,
                         "upload_queue_depth": 2,
                         "network_sent_bytes_total": 3 * 1024 * 1024,
                         "network_received_bytes_total": 5 * 1024 * 1024,
@@ -1208,6 +1209,7 @@ class TrainingControlClientTests(unittest.TestCase):
             )
             self.assertEqual(metrics["accepted_steps_total"], 4567)
             self.assertEqual(metrics["learner_consumed_steps_total"], 4321)
+            self.assertEqual(metrics["learner_step_total"], 2160)
             self.assertEqual(metrics["network_sent_bytes_total"], 3 * 1024 * 1024)
             self.assertEqual(metrics["network_received_bytes_total"], 5 * 1024 * 1024)
             self.assertEqual(metrics["network_mib_per_s"], 1.75)
