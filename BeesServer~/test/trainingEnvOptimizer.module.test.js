@@ -7,6 +7,7 @@ const {
     normalizeCapacity,
     learnerConsumedSteps,
     producerAcceptedSteps,
+    runtimeVersion,
     policyCycle,
 } = require('../trainingEnvOptimizer');
 
@@ -27,6 +28,7 @@ function record(
         resizeFailedTarget = null,
         resizeError = '',
         policyCycleValue = null,
+        runtimeVersionValue = '',
         reconciliationPhase = '',
     } = {},
 ) {
@@ -46,6 +48,7 @@ function record(
                 learner_consumed_steps_total: consumed,
                 accepted_steps_total: accepted,
                 policy_cycle: policyCycleValue,
+                runtime_version: runtimeVersionValue,
                 session_failures_total: sessionFailures,
                 seconds_since_last_session_failure: failureAgeSeconds,
                 last_session_failure_type: failureType,
@@ -97,6 +100,8 @@ test('capacity and learner-consumed-step metrics reject malformed values', () =>
     );
     assert.equal(policyCycle({ throughput: { policy_cycle: 7 } }), 7);
     assert.equal(policyCycle({ throughput: { policy_cycle: -1 } }), null);
+    assert.equal(runtimeVersion({ throughput: { runtime_version: 'a'.repeat(64) } }), 'a'.repeat(64));
+    assert.equal(runtimeVersion({ throughput: { runtime_version: 'not-a-hash' } }), '');
 });
 
 test('optimizer measures complete policy cycles and expands capacity geometrically', () => {
@@ -785,6 +790,50 @@ test('failed live resize probe keeps the running baseline and backs off without 
     assert.equal(state.stability_hold_until_ms, 0);
     assert.match(state.decision, /live resize probe failed; retained 3 envs/);
     assert.equal(optimizer.states.get('remote-a').blocked_up, true);
+});
+
+test('runtime cutover clears old optimizer instability and baseline state', () => {
+    const optimizer = new TrainingEnvOptimizer({
+        warmupMs: 1000,
+        measurementMs: 1000,
+        instabilityHoldMs: 60_000,
+    });
+    const oldRuntime = 'a'.repeat(64);
+    const newRuntime = 'b'.repeat(64);
+
+    update(
+        optimizer,
+        'remote-a',
+        4,
+        100,
+        0,
+        { max: 48, runtimeVersionValue: oldRuntime },
+    );
+    const internal = optimizer.states.get('remote-a');
+    Object.assign(internal, {
+        baseline_envs: 4,
+        baseline_sps: 100,
+        desired_envs: 4,
+        phase: 'stability-hold',
+        instability_hold_until_ms: 60_000,
+        last_instability_ms: 0,
+        last_instability_reason: 'WAN actor session failure',
+    });
+
+    const state = update(
+        optimizer,
+        'remote-a',
+        4,
+        100,
+        1000,
+        { max: 48, runtimeVersionValue: newRuntime },
+    );
+
+    assert.equal(state.phase, 'warmup');
+    assert.equal(state.baseline_envs, null);
+    assert.equal(state.desired_envs, 4);
+    assert.equal(state.stability_hold_until_ms, 0);
+    assert.match(state.decision, /worker runtime changed/);
 });
 
 test('recent WAN failure aborts a probe with the correct reason', () => {
