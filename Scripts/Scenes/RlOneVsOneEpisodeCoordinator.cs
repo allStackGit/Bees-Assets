@@ -515,7 +515,10 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
 
         bool isEnemyDamage = attacker.Side != target.Side;
         int appliedDamage = Mathf.Max(0, damage);
-        int appliedTsvLoss = HasPersistentFleetValue(target) ? Mathf.Max(0, tsvLoss) : 0;
+        int minedCargoForfeit = target.Health <= 0 ? GetShipMinedTsv(target) : 0;
+        int appliedTsvLoss = HasPersistentFleetValue(target)
+            ? Mathf.Max(0, tsvLoss - minedCargoForfeit)
+            : 0;
 
         if (isEnemyDamage && appliedDamage > 0)
         {
@@ -578,7 +581,10 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
             return;
         }
 
-        int appliedTsvLoss = HasPersistentFleetValue(target) ? Mathf.Max(0, tsvLoss) : 0;
+        int minedCargoForfeit = target.Health <= 0 ? GetShipMinedTsv(target) : 0;
+        int appliedTsvLoss = HasPersistentFleetValue(target)
+            ? Mathf.Max(0, tsvLoss - minedCargoForfeit)
+            : 0;
         if (appliedTsvLoss <= 0)
         {
             return;
@@ -587,6 +593,137 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         int combinedStartingTsv = Mathf.Max(1, coordinator._beeStartingTsv + coordinator._humanStartingTsv);
         float reward = RlOneVsOneReward.CalculateTsvLossReward(appliedTsvLoss, combinedStartingTsv);
         coordinator.ApplyImmediateTsvReward(target.Side, -reward);
+    }
+
+    private static int GetShipMinedTsv(Ship ship)
+    {
+        return ship?.FleetShip != null ? Mathf.Max(0, ship.FleetShip.MineralsMinedThisLevel) : 0;
+    }
+
+    internal static int GetStartingTsv(Level level, int side)
+    {
+        RlOneVsOneEpisodeCoordinator coordinator = GetCoordinator(level, false);
+        if (coordinator != null && coordinator._episodeActive && ConfigData.Configuration != null)
+        {
+            if (side == ConfigData.Configuration.BeeSide)
+            {
+                return Mathf.Max(1, coordinator._beeStartingTsv);
+            }
+            if (side == ConfigData.Configuration.HumanSide)
+            {
+                return Mathf.Max(1, coordinator._humanStartingTsv);
+            }
+        }
+
+        if (level?.State?.InitialTsv != null && side > 0 && side <= level.State.InitialTsv.Length)
+        {
+            return Mathf.Max(1, level.State.InitialTsv[side - 1]);
+        }
+        return 1;
+    }
+
+    internal static int GetRetainableMinedTsv(Level level, int side)
+    {
+        RlOneVsOneEpisodeCoordinator coordinator = GetCoordinator(level, false);
+        if (coordinator != null && coordinator._episodeActive)
+        {
+            int tracked = 0;
+            foreach (KeyValuePair<long, int> entry in coordinator._minedTsvByShipId)
+            {
+                if (coordinator._forfeitedMiningShipIds.Contains(entry.Key) ||
+                    !coordinator._miningShipSideById.TryGetValue(entry.Key, out int trackedSide) ||
+                    trackedSide != side)
+                {
+                    continue;
+                }
+                tracked += Mathf.Max(0, entry.Value);
+            }
+            return tracked;
+        }
+
+        int total = 0;
+        List<Ship> ships = level?.State?.GetShips(side);
+        if (ships == null)
+        {
+            return 0;
+        }
+        for (int i = 0; i < ships.Count; i++)
+        {
+            Ship ship = ships[i];
+            if (ship != null && !ship.IsDead)
+            {
+                total += GetShipMinedTsv(ship);
+            }
+        }
+        return total;
+    }
+
+    internal static void RecordMiningValueUpdated(Ship ship)
+    {
+        if (!TryGetTrackedSide(ship, out RlOneVsOneEpisodeCoordinator coordinator, out _))
+        {
+            return;
+        }
+
+        int minedTsv = GetShipMinedTsv(ship);
+        if (minedTsv <= 0)
+        {
+            return;
+        }
+
+        coordinator._minedTsvByShipId[ship.Id] = minedTsv;
+        coordinator._miningShipSideById[ship.Id] = ship.Side;
+        coordinator._forfeitedMiningShipIds.Remove(ship.Id);
+    }
+
+    internal static void RecordMiningShipExit(Ship ship, Ship killer, bool safelyRetained)
+    {
+        if (!TryGetTrackedSide(ship, out RlOneVsOneEpisodeCoordinator coordinator, out _))
+        {
+            return;
+        }
+
+        int minedTsv = Mathf.Max(
+            GetShipMinedTsv(ship),
+            coordinator._minedTsvByShipId.TryGetValue(ship.Id, out int tracked) ? tracked : 0);
+        if (minedTsv <= 0)
+        {
+            return;
+        }
+
+        coordinator._minedTsvByShipId[ship.Id] = minedTsv;
+        coordinator._miningShipSideById[ship.Id] = ship.Side;
+        if (safelyRetained)
+        {
+            return;
+        }
+
+        // This cargo can no longer earn a terminal retained-mining reward.
+        if (!coordinator._forfeitedMiningShipIds.Add(ship.Id))
+        {
+            return;
+        }
+
+        if (killer == null || killer.Side == ship.Side ||
+            ConfigData.Configuration == null ||
+            (killer.Side != ConfigData.Configuration.BeeSide &&
+             killer.Side != ConfigData.Configuration.HumanSide))
+        {
+            return;
+        }
+
+        float reward = RlOneVsOneReward.CalculateEconomicValueReward(
+            minedTsv,
+            GetStartingTsv(ship.Level, killer.Side));
+        coordinator.ApplyEconomicReward(killer.Side, reward);
+        if (killer.Side == ConfigData.Configuration.BeeSide)
+        {
+            coordinator._beeDestroyedMinedTsvThisEpisode += minedTsv;
+        }
+        else
+        {
+            coordinator._humanDestroyedMinedTsvThisEpisode += minedTsv;
+        }
     }
 
     internal static void RecordSuccessfulCapabilityOutcome(Ship ship, int tsvValue)
@@ -838,6 +975,15 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         _humanDamageThisEpisode = 0;
         _beeTsvRewardThisEpisode = 0f;
         _humanTsvRewardThisEpisode = 0f;
+        _beeEconomicRewardThisEpisode = 0f;
+        _humanEconomicRewardThisEpisode = 0f;
+        _beeDestroyedMinedTsvThisEpisode = 0;
+        _humanDestroyedMinedTsvThisEpisode = 0;
+        _beeRetainedMinedTsvThisEpisode = 0;
+        _humanRetainedMinedTsvThisEpisode = 0;
+        _minedTsvByShipId.Clear();
+        _miningShipSideById.Clear();
+        _forfeitedMiningShipIds.Clear();
         _beeFirstContactSeconds = -1f;
         _humanFirstContactSeconds = -1f;
         _beeFirstFireSeconds = -1f;
@@ -1241,6 +1387,34 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         TsvRewardOccurred?.Invoke(_level, side, emittedReward);
     }
 
+    private void ApplyEconomicReward(int side, float reward)
+    {
+        if (reward <= 0f)
+        {
+            return;
+        }
+
+        if (side == ConfigData.Configuration.BeeSide)
+        {
+            _beeEconomicRewardThisEpisode += reward;
+        }
+        else if (side == ConfigData.Configuration.HumanSide)
+        {
+            _humanEconomicRewardThisEpisode += reward;
+        }
+        else
+        {
+            return;
+        }
+
+        EconomicRewardOccurred?.Invoke(_level, side, reward);
+    }
+
+    private int GetRetainedMiningTsvForWinningSide(int side, int winningSide)
+    {
+        return side == winningSide ? GetRetainableMinedTsv(_level, side) : 0;
+    }
+
     private void CompleteEpisode(Level level, int winningSide, bool timedOut)
     {
         if (!_episodeActive || level != _level)
@@ -1270,13 +1444,24 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         float beeTimeReward = winningSide == beeSide ? RlOneVsOneReward.CalculateTimePenalty(durationSeconds) : 0f;
         float humanTimeReward = winningSide == humanSide ? RlOneVsOneReward.CalculateTimePenalty(durationSeconds) : 0f;
 
+        _beeRetainedMinedTsvThisEpisode = GetRetainedMiningTsvForWinningSide(beeSide, winningSide);
+        _humanRetainedMinedTsvThisEpisode = GetRetainedMiningTsvForWinningSide(humanSide, winningSide);
+        float beeRetainedMiningReward = RlOneVsOneReward.CalculateEconomicValueReward(
+            _beeRetainedMinedTsvThisEpisode, _beeStartingTsv);
+        float humanRetainedMiningReward = RlOneVsOneReward.CalculateEconomicValueReward(
+            _humanRetainedMinedTsvThisEpisode, _humanStartingTsv);
+        _beeEconomicRewardThisEpisode += beeRetainedMiningReward;
+        _humanEconomicRewardThisEpisode += humanRetainedMiningReward;
+
         EpisodeResult result = new EpisodeResult(
             _episodeNumber, _beeTeamId, _humanTeamId, winningSide, timedOut, durationSeconds,
             _beeStartingTsv, beeFinalTsv, _humanStartingTsv, humanFinalTsv,
             _beeShotsThisEpisode, _beeHitsThisEpisode, _beeDamageThisEpisode,
             _humanShotsThisEpisode, _humanHitsThisEpisode, _humanDamageThisEpisode,
             beeTerminal, _beeTsvRewardThisEpisode, beeTimeReward,
-            humanTerminal, _humanTsvRewardThisEpisode, humanTimeReward);
+            _beeEconomicRewardThisEpisode, beeRetainedMiningReward,
+            humanTerminal, _humanTsvRewardThisEpisode, humanTimeReward,
+            _humanEconomicRewardThisEpisode, humanRetainedMiningReward);
         LastEpisodeResult = result;
 
         RlOneVsOneEpisodeDiagnostics.EnvironmentSnapshot environmentSnapshot =
@@ -1308,12 +1493,14 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
                 $"bee_contact_to_fire={FormatTime(beeFirstContactToFire)} bee_contact_to_end={FormatTime(beeFirstContactToEnd)} " +
                 $"bee_contact_losses={_beeContactLossCount} bee_lost_contact={_beeLostContactSeconds:F2}s bee_first_fire={FormatTime(_beeFirstFireSeconds)} bee_first_hit={FormatTime(_beeFirstHitSeconds)} " +
                 $"bee_spawned={beeSpawned} bee_agent_coverage={_policyControlledShipIds[0].Count}/{_policyEligibleShipIds[0].Count} bee_weapons={FormatWeaponActivity(0)} " +
-                $"bee_rewards=terminal:{beeTerminal:F4},tsv:{_beeTsvRewardThisEpisode:F4},time:{beeTimeReward:F4},total:{result.BeeTotalReward:F4} " +
+                $"bee_rewards=terminal:{beeTerminal:F4},tsv:{_beeTsvRewardThisEpisode:F4},economic:{_beeEconomicRewardThisEpisode:F4},time:{beeTimeReward:F4},total:{result.BeeTotalReward:F4} " +
+                $"bee_mined_retained_tsv={_beeRetainedMinedTsvThisEpisode} bee_enemy_mined_destroyed_tsv={_beeDestroyedMinedTsvThisEpisode} " +
                 $"human_first_contact={FormatTime(_humanFirstContactSeconds)} human_no_enemy_visible={_humanNoEnemyVisibleSeconds:F2}s human_no_enemy_visible_pct={humanNoEnemyVisibleFraction:P2} " +
                 $"human_contact_to_fire={FormatTime(humanFirstContactToFire)} human_contact_to_end={FormatTime(humanFirstContactToEnd)} " +
                 $"human_contact_losses={_humanContactLossCount} human_lost_contact={_humanLostContactSeconds:F2}s human_first_fire={FormatTime(_humanFirstFireSeconds)} human_first_hit={FormatTime(_humanFirstHitSeconds)} " +
                 $"human_spawned={humanSpawned} human_agent_coverage={_policyControlledShipIds[1].Count}/{_policyEligibleShipIds[1].Count} human_weapons={FormatWeaponActivity(1)} " +
-                $"human_rewards=terminal:{humanTerminal:F4},tsv:{_humanTsvRewardThisEpisode:F4},time:{humanTimeReward:F4},total:{result.HumanTotalReward:F4} " +
+                $"human_rewards=terminal:{humanTerminal:F4},tsv:{_humanTsvRewardThisEpisode:F4},economic:{_humanEconomicRewardThisEpisode:F4},time:{humanTimeReward:F4},total:{result.HumanTotalReward:F4} " +
+                $"human_mined_retained_tsv={_humanRetainedMinedTsvThisEpisode} human_enemy_mined_destroyed_tsv={_humanDestroyedMinedTsvThisEpisode} " +
                 behaviorDiagnostics);
         }
         RlOneVsOneEpisodeDiagnostics.End(level);
