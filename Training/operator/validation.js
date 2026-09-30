@@ -81,6 +81,37 @@ async function stopValidationProcess(child, timeoutMs = 5000) {
     }
 }
 
+const STALE_VALIDATION_CANDIDATE_MS = 10 * 60 * 1000;
+
+function cleanupStaleValidationCandidates(validationRoot, nowMs = Date.now()) {
+    if (!exists(validationRoot)) return 0;
+    let removed = 0;
+    for (const entry of fs.readdirSync(validationRoot, { withFileTypes: true })) {
+        if (!entry.isDirectory() || !entry.name.startsWith('candidate-')) continue;
+        const candidate = path.join(validationRoot, entry.name);
+        let stat;
+        try {
+            stat = fs.statSync(candidate);
+        } catch (_) {
+            continue;
+        }
+        if (nowMs - stat.mtimeMs < STALE_VALIDATION_CANDIDATE_MS) continue;
+        try {
+            removeIfExists(candidate, {
+                recursive: true,
+                maxRetries: 20,
+                retryDelay: 100,
+            });
+            removed++;
+        } catch (error) {
+            if (!error || !['EPERM', 'EBUSY', 'ENOTEMPTY'].includes(error.code)) {
+                throw error;
+            }
+        }
+    }
+    return removed;
+}
+
 function cleanupValidationCandidate(candidate) {
     try {
         removeIfExists(candidate, {
@@ -167,6 +198,7 @@ async function assertRlEnvironmentArgsValid(config, release, environmentArgs, py
     if (exists(stamp)) return proof;
 
     ensureDir(validationRoot);
+    cleanupStaleValidationCandidates(validationRoot);
     ensureDir(path.join(paths.logsRoot, 'Training'));
     const candidate = path.join(
         validationRoot,
@@ -317,6 +349,7 @@ async function assertRlEnvironmentArgsValid(config, release, environmentArgs, py
 
 module.exports = {
     assertRlEnvironmentArgsValid,
+    cleanupStaleValidationCandidates,
     extractZip,
     killProcessTree,
     validationIdentity,
