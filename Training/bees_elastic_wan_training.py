@@ -427,6 +427,7 @@ class ElasticWanBroker(base.WanActorBroker):
         self._reference_signatures: Optional[Dict[str, Any]] = None
         self._claims: Dict[str, Dict[str, Any]] = {}
         self._consumed_steps_by_actor: Dict[int, int] = collections.defaultdict(int)
+        self._trainer_step = 0
         self._fair_drain_cursor = 0
         self._topology_epoch = 0
         self.diagnostics = CapacityDiagnostics(self.local_envs)
@@ -705,6 +706,7 @@ class ElasticWanBroker(base.WanActorBroker):
                 "registered_actors": sorted(active),
                 "remote_envs": sum(active.values()),
                 "local_envs": self.local_envs,
+                "trainer_step": int(self._trainer_step),
                 "consumed_steps_by_actor": {
                     str(actor_id): int(self._consumed_steps_by_actor.get(actor_id, 0))
                     for actor_id in active
@@ -888,6 +890,11 @@ class ElasticWanBroker(base.WanActorBroker):
                 self._condition.notify_all()
 
     def observe_trainer_step(self, step: int) -> None:
+        if not isinstance(step, int) or isinstance(step, bool) or step < 0:
+            return
+        with self._condition:
+            if step >= self._trainer_step:
+                self._trainer_step = int(step)
         self.diagnostics.observe_trainer_step(step)
 
     def report_capacity(self) -> None:
