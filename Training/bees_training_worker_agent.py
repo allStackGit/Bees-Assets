@@ -442,6 +442,11 @@ def read_throughput_metrics(
     session_failures = value.get("session_failures_total")
     failure_age = value.get("seconds_since_last_session_failure")
     failure_type = value.get("last_session_failure_type")
+    policy_cycle = value.get("policy_cycle")
+    runtime_version = value.get("runtime_version")
+    resize_failed_target = value.get("env_resize_failed_target")
+    resize_error = value.get("env_resize_error")
+    resize_failure_time = value.get("env_resize_failure_unix_seconds")
     if (
         not isinstance(pid, int)
         or isinstance(pid, bool)
@@ -495,6 +500,44 @@ def read_throughput_metrics(
     ):
         return {}
 
+    policy_cycle_present = policy_cycle is not None
+    if policy_cycle_present and (
+        not isinstance(policy_cycle, int)
+        or isinstance(policy_cycle, bool)
+        or policy_cycle < 0
+    ):
+        return {}
+
+    runtime_version_present = runtime_version is not None
+    if runtime_version_present and (
+        not isinstance(runtime_version, str)
+        or len(runtime_version.strip()) != 64
+        or any(ch not in "0123456789abcdef" for ch in runtime_version.strip().lower())
+    ):
+        return {}
+
+    resize_present = any(
+        item is not None
+        for item in (resize_failed_target, resize_error, resize_failure_time)
+    )
+    if resize_present and (
+        not isinstance(resize_failed_target, int)
+        or isinstance(resize_failed_target, bool)
+        or not 1 <= resize_failed_target <= 64
+        or not isinstance(resize_error, str)
+        or not resize_error.strip()
+        or (
+            resize_failure_time is not None
+            and (
+                not isinstance(resize_failure_time, (int, float))
+                or isinstance(resize_failure_time, bool)
+                or not math.isfinite(float(resize_failure_time))
+                or float(resize_failure_time) < 0.0
+            )
+        )
+    ):
+        return {}
+
     traffic_present = any(
         item is not None for item in (network_sent, network_received, network_rate)
     )
@@ -525,6 +568,15 @@ def read_throughput_metrics(
     }
     if learner_consumed_rate is not None:
         result["learner_consumed_steps_per_sec"] = float(learner_consumed_rate)
+    if policy_cycle_present:
+        result["policy_cycle"] = int(policy_cycle)
+    if runtime_version_present:
+        result["runtime_version"] = runtime_version.strip().lower()
+    if resize_present:
+        result["env_resize_failed_target"] = int(resize_failed_target)
+        result["env_resize_error"] = resize_error.strip()
+        if resize_failure_time is not None:
+            result["env_resize_failure_unix_seconds"] = float(resize_failure_time)
     if failure_present:
         result.update(
             {
