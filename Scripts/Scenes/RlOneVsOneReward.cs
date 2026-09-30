@@ -43,6 +43,18 @@ internal static class RlOneVsOneReward
         return CalculateTsvValueReward(tsvLost, combinedStartingTsv);
     }
 
+    internal static float CalculateEconomicValueReward(int economicTsv, int receivingSideStartingTsv)
+    {
+        if (economicTsv <= 0 || receivingSideStartingTsv <= 0)
+        {
+            return 0f;
+        }
+
+        // Campaign economic value is intentionally linear and uncapped: preserving or destroying
+        // mined resources can legitimately be worth more than the battle itself.
+        return (float)economicTsv / receivingSideStartingTsv;
+    }
+
     /// <summary>
     /// Gives a first-discovery reward proportional to this object's strategic value. If the entire
     /// episode-start category is eventually discovered, its raw rewards sum to at most the category
