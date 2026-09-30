@@ -344,42 +344,62 @@ class BeesStructuredObservationEncoder(nn.Module):
         raw: torch.Tensor,
     ) -> torch.Tensor:
         batch = normalized.shape[0]
+        entity_count = normalized.shape[1]
         weapons = normalized[:, :, ENTITY_BASE_SIZE:].reshape(
             batch,
-            normalized.shape[1],
+            entity_count,
             ENTITY_WEAPON_COUNT,
             OBSERVED_WEAPON_SIZE,
         )
         raw_weapons = raw[:, :, ENTITY_BASE_SIZE:].reshape(
             batch,
-            raw.shape[1],
+            entity_count,
             ENTITY_WEAPON_COUNT,
             OBSERVED_WEAPON_SIZE,
         )
         flat = weapons.reshape(-1, OBSERVED_WEAPON_SIZE)
-        embedded = self.weapon_common_encoder(flat).reshape(
+        flat_presence = torch.clamp(
+            raw_weapons[:, :, :, 0].reshape(-1),
+            0.0,
+            1.0,
+        )
+        embedded_flat = flat.new_zeros((flat.shape[0], WEAPON_COMMON_EMBED))
+        active = torch.nonzero(flat_presence > 0.0, as_tuple=False).squeeze(1)
+        if active.numel() > 0:
+            active_embedding = self.weapon_common_encoder(
+                flat.index_select(0, active)
+            )
+            active_embedding = active_embedding * flat_presence.index_select(
+                0,
+                active,
+            ).unsqueeze(1)
+            embedded_flat = embedded_flat.index_copy(
+                0,
+                active,
+                active_embedding,
+            )
+        embedded = embedded_flat.reshape(
             batch,
-            normalized.shape[1],
+            entity_count,
             ENTITY_WEAPON_COUNT,
             WEAPON_COMMON_EMBED,
         )
-        presence = raw_weapons[:, :, :, 0]
-        embedded = embedded * torch.clamp(
-            presence,
-            0.0,
-            1.0,
-        ).unsqueeze(3)
+        presence = flat_presence.reshape(
+            batch,
+            entity_count,
+            ENTITY_WEAPON_COUNT,
+        )
         pooled = self.entity_weapon_pool(
             embedded.reshape(
-                batch * normalized.shape[1],
+                batch * entity_count,
                 ENTITY_WEAPON_COUNT,
                 WEAPON_COMMON_EMBED,
             ),
-            presence.reshape(batch * normalized.shape[1], ENTITY_WEAPON_COUNT),
+            presence.reshape(batch * entity_count, ENTITY_WEAPON_COUNT),
         )
         return pooled.reshape(
             batch,
-            normalized.shape[1],
+            entity_count,
             WEAPON_COMMON_EMBED,
         )
 
@@ -388,52 +408,115 @@ class BeesStructuredObservationEncoder(nn.Module):
         normalized: torch.Tensor,
         raw: torch.Tensor,
     ) -> torch.Tensor:
-        base = self.entity_base_encoder(normalized[:, :, :ENTITY_BASE_SIZE])
-        weapons = self._entity_weapon_embeddings(normalized, raw)
-        embedded = self.entity_fuse(torch.cat([base, weapons], dim=2))
-        return embedded * torch.clamp(raw[:, :, 0], 0.0, 1.0).unsqueeze(2)
+        batch = normalized.shape[0]
+        entity_count = normalized.shape[1]
+        presence = torch.clamp(raw[:, :, 0], 0.0, 1.0)
+        flat_presence = presence.reshape(-1)
+        active = torch.nonzero(flat_presence > 0.0, as_tuple=False).squeeze(1)
+        output = normalized.new_zeros((batch * entity_count, ENTITY_EMBED))
+        if active.numel() == 0:
+            return output.reshape(batch, entity_count, ENTITY_EMBED)
+
+        flat_normalized = normalized.reshape(-1, normalized.shape[2])
+        flat_raw = raw.reshape(-1, raw.shape[2])
+        active_normalized = flat_normalized.index_select(0, active)
+        active_raw = flat_raw.index_select(0, active)
+        base = self.entity_base_encoder(
+            active_normalized[:, :ENTITY_BASE_SIZE]
+        )
+        weapons = self._entity_weapon_embeddings(
+            active_normalized.unsqueeze(1),
+            active_raw.unsqueeze(1),
+        )[:, 0, :]
+        embedded = self.entity_fuse(torch.cat([base, weapons], dim=1))
+        embedded = embedded * flat_presence.index_select(
+            0,
+            active,
+        ).unsqueeze(1)
+        output = output.index_copy(0, active, embedded)
+        return output.reshape(batch, entity_count, ENTITY_EMBED)
+
+    def _encode_allies(
+        self,
+        normalized: torch.Tensor,
+        raw: torch.Tensor,
+    ):
+        batch = normalized.shape[0]
+        ally_count = normalized.shape[1]
+        presence = torch.clamp(raw[:, :, 0], 0.0, 1.0)
+        flat_presence = presence.reshape(-1)
+        active = torch.nonzero(flat_presence > 0.0, as_tuple=False).squeeze(1)
+        output = normalized.new_zeros((batch * ally_count, ENTITY_EMBED))
+        if active.numel() == 0:
+            return output.reshape(batch, ally_count, ENTITY_EMBED), presence
+
+        flat_normalized = normalized.reshape(-1, normalized.shape[2])
+        flat_raw = raw.reshape(-1, raw.shape[2])
+        active_normalized = flat_normalized.index_select(0, active)
+        active_raw = flat_raw.index_select(0, active)
+        entity = self._encode_entities(
+            active_normalized[:, :ENEMY_SIZE].unsqueeze(1),
+            active_raw[:, :ENEMY_SIZE].unsqueeze(1),
+        )[:, 0, :]
+        communication = self.ally_communication_encoder(
+            active_normalized[:, ENEMY_SIZE:ALLY_SIZE]
+        )
+        embedded = self.ally_fuse(
+            torch.cat([entity, communication], dim=1)
+        )
+        embedded = embedded * flat_presence.index_select(
+            0,
+            active,
+        ).unsqueeze(1)
+        output = output.index_copy(0, active, embedded)
+        return output.reshape(batch, ally_count, ENTITY_EMBED), presence
 
     def _encode_self_weapons(
         self,
         normalized: torch.Tensor,
         raw: torch.Tensor,
     ) -> torch.Tensor:
-        common = torch.stack(
-            [
-                normalized[:, :, 0],
-                normalized[:, :, 1],
-                normalized[:, :, 4],
-                normalized[:, :, 5],
-                normalized[:, :, 6],
-            ],
-            dim=2,
-        )
-        specific = torch.stack(
-            [
-                normalized[:, :, 2],
-                normalized[:, :, 3],
-                normalized[:, :, 7],
-                normalized[:, :, 8],
-                normalized[:, :, 9],
-                normalized[:, :, 10],
-                normalized[:, :, 11],
-                normalized[:, :, 12],
-                normalized[:, :, 13],
-                normalized[:, :, 14],
-            ],
-            dim=2,
-        )
+        batch = normalized.shape[0]
+        weapon_count = normalized.shape[1]
+        presence = torch.clamp(raw[:, :, 0], 0.0, 1.0)
+        flat_presence = presence.reshape(-1)
+        active = torch.nonzero(flat_presence > 0.0, as_tuple=False).squeeze(1)
+        output = normalized.new_zeros((batch * weapon_count, WEAPON_SLOT_EMBED))
+        if active.numel() == 0:
+            return output.reshape(batch, weapon_count, WEAPON_SLOT_EMBED)
+
+        flat = normalized.reshape(-1, SELF_WEAPON_SIZE)
+        active_values = flat.index_select(0, active)
+        common = active_values[:, [0, 1, 4, 5, 6]]
+        specific = active_values[:, [2, 3, 7, 8, 9, 10, 11, 12, 13, 14]]
         common_embedding = self.weapon_common_encoder(common)
         specific_embedding = self.self_weapon_specific_encoder(specific)
         embedded = self.self_weapon_fuse(
-            torch.cat([common_embedding, specific_embedding], dim=2)
+            torch.cat([common_embedding, specific_embedding], dim=1)
         )
-        return embedded * torch.clamp(raw[:, :, 0], 0.0, 1.0).unsqueeze(2)
+        embedded = embedded * flat_presence.index_select(
+            0,
+            active,
+        ).unsqueeze(1)
+        output = output.index_copy(0, active, embedded)
+        return output.reshape(batch, weapon_count, WEAPON_SLOT_EMBED)
 
-    def _encode_set(self, normalized, raw, encoder):
-        embedded = encoder(normalized)
+    def _encode_set(self, normalized, raw, encoder, output_size: int):
+        batch = normalized.shape[0]
+        slot_count = normalized.shape[1]
         presence = torch.clamp(raw[:, :, 0], 0.0, 1.0)
-        return embedded * presence.unsqueeze(2), presence
+        flat_presence = presence.reshape(-1)
+        active = torch.nonzero(flat_presence > 0.0, as_tuple=False).squeeze(1)
+        output = normalized.new_zeros((batch * slot_count, output_size))
+        if active.numel() > 0:
+            flat = normalized.reshape(-1, normalized.shape[2])
+            embedded = encoder(flat.index_select(0, active))
+            embedded = embedded * flat_presence.index_select(
+                0,
+                active,
+            ).unsqueeze(1)
+            output = output.index_copy(0, active, embedded)
+        return output.reshape(batch, slot_count, output_size), presence
 
     def forward(self, inputs):
         if self._fallback is not None:
@@ -485,18 +568,10 @@ class BeesStructuredObservationEncoder(nn.Module):
             :,
             ALLY_START : ALLY_START + ALLY_COUNT * ALLY_SIZE,
         ].reshape(-1, ALLY_COUNT, ALLY_SIZE)
-        ally_entity = self._encode_entities(
-            ally_norm[:, :, :ENEMY_SIZE],
-            ally_raw[:, :, :ENEMY_SIZE],
+        ally_embedding, ally_presence = self._encode_allies(
+            ally_norm,
+            ally_raw,
         )
-        ally_comm = self.ally_communication_encoder(
-            ally_norm[:, :, ENEMY_SIZE:ALLY_SIZE]
-        )
-        ally_embedding = self.ally_fuse(
-            torch.cat([ally_entity, ally_comm], dim=2)
-        )
-        ally_presence = torch.clamp(ally_raw[:, :, 0], 0.0, 1.0)
-        ally_embedding = ally_embedding * ally_presence.unsqueeze(2)
         allies = self.ally_pool(
             self_embedding,
             ally_embedding,
@@ -552,6 +627,7 @@ class BeesStructuredObservationEncoder(nn.Module):
             mining_norm,
             mining_raw,
             self.mining_encoder,
+            48,
         )
         mining = self.mining_pool(
             self_embedding,
@@ -573,6 +649,7 @@ class BeesStructuredObservationEncoder(nn.Module):
             map_norm,
             map_raw,
             self.map_object_encoder,
+            64,
         )
         map_objects = self.map_object_pool(
             self_embedding,
@@ -594,6 +671,7 @@ class BeesStructuredObservationEncoder(nn.Module):
             collision_norm,
             collision_raw,
             self.collision_encoder,
+            64,
         )
         collisions = self.collision_pool(
             self_embedding,
@@ -801,34 +879,91 @@ class BeesStructuredNetworkBody(nn.Module):
             )
 
         raw_faction = inputs[0][:, FACTION_INDEX : FACTION_INDEX + 1]
-        bee_mask = torch.clamp((raw_faction + 1.0) * 0.5, 0.0, 1.0)
-
-        bee_structured = self.bee_observation_encoder(inputs)
-        human_structured = self.human_observation_encoder(inputs)
-        structured = (
-            bee_structured * bee_mask
-            + human_structured * (1.0 - bee_mask)
-        )
-
-        context = structured[:, :CONTEXT_SIZE]
+        bee_weight = torch.clamp((raw_faction + 1.0) * 0.5, 0.0, 1.0)
+        batch_size = raw_faction.shape[0]
+        output = inputs[0].new_zeros((batch_size, ACTION_ENCODING_SIZE))
         weapon_start = CONTEXT_SIZE
         weapon_end = weapon_start + BEES_WEAPON_SLOTS * WEAPON_SLOT_EMBED
-        weapon_embeddings = structured[:, weapon_start:weapon_end]
-        faction = raw_faction
 
-        bee_encoding = self.bee_trunk(context)
-        human_encoding = self.human_trunk(context)
-        faction_encoding = (
-            bee_encoding * bee_mask
-            + human_encoding * (1.0 - bee_mask)
-        )
-        return (
-            torch.cat(
-                [faction_encoding, weapon_embeddings, faction],
+        def encode_rows(indices, observation_encoder, trunk):
+            subset_inputs = [
+                value.index_select(0, indices)
+                for value in inputs
+            ]
+            structured = observation_encoder(subset_inputs)
+            context = structured[:, :CONTEXT_SIZE]
+            weapons = structured[:, weapon_start:weapon_end]
+            faction_encoding = trunk(context)
+            faction = raw_faction.index_select(0, indices)
+            return torch.cat(
+                [faction_encoding, weapons, faction],
                 dim=1,
-            ),
-            memories,
-        )
+            )
+
+        pure_bee = torch.nonzero(
+            bee_weight[:, 0] >= 1.0,
+            as_tuple=False,
+        ).squeeze(1)
+        pure_human = torch.nonzero(
+            bee_weight[:, 0] <= 0.0,
+            as_tuple=False,
+        ).squeeze(1)
+        mixed = torch.nonzero(
+            (bee_weight[:, 0] > 0.0) & (bee_weight[:, 0] < 1.0),
+            as_tuple=False,
+        ).squeeze(1)
+
+        if pure_bee.numel() > 0:
+            output = output.index_copy(
+                0,
+                pure_bee,
+                encode_rows(
+                    pure_bee,
+                    self.bee_observation_encoder,
+                    self.bee_trunk,
+                ),
+            )
+        if pure_human.numel() > 0:
+            output = output.index_copy(
+                0,
+                pure_human,
+                encode_rows(
+                    pure_human,
+                    self.human_observation_encoder,
+                    self.human_trunk,
+                ),
+            )
+        if mixed.numel() > 0:
+            subset_inputs = [
+                value.index_select(0, mixed)
+                for value in inputs
+            ]
+            weights = bee_weight.index_select(0, mixed)
+            bee_structured = self.bee_observation_encoder(subset_inputs)
+            human_structured = self.human_observation_encoder(subset_inputs)
+            structured = (
+                bee_structured * weights
+                + human_structured * (1.0 - weights)
+            )
+            context = structured[:, :CONTEXT_SIZE]
+            weapons = structured[:, weapon_start:weapon_end]
+            bee_encoding = self.bee_trunk(context)
+            human_encoding = self.human_trunk(context)
+            faction_encoding = (
+                bee_encoding * weights
+                + human_encoding * (1.0 - weights)
+            )
+            faction = raw_faction.index_select(0, mixed)
+            output = output.index_copy(
+                0,
+                mixed,
+                torch.cat(
+                    [faction_encoding, weapons, faction],
+                    dim=1,
+                ),
+            )
+
+        return output, memories
 
 
 class BeesStructuredActionModel(_OriginalActionModel):
