@@ -64,16 +64,16 @@ internal static class RlOneVsOneArenaMapSizeState
 
         if (!EpisodeMapSizes.TryGetValue(level, out float mapSize))
         {
+            float minimumSafeMapSize = GetMinimumSafeMapSizeForPreparedMatchup(level);
             if (RlPlayerDerivedTacticalGeometry.TryGetCurrent(
                 level,
                 out RlPlayerDerivedTacticalGeometry geometry))
             {
-                mapSize = geometry.MapSize;
+                mapSize = Mathf.Max(geometry.MapSize, minimumSafeMapSize);
             }
             else
             {
                 RlOneVsOneTrainingOptions options = Options;
-                float minimumSafeMapSize = GetMinimumSafeMapSizeForPreparedMatchup(level);
                 if (options.MapSizeMaximum + 0.001f < minimumSafeMapSize)
                 {
                     throw new InvalidOperationException(
