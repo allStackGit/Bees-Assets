@@ -1,5 +1,5 @@
 torch_settings:
-  device: cpu
+  device: cuda
 behaviors:
   BeesRL1v1:
     trainer_type: poca
