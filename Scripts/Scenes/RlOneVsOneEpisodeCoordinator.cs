@@ -210,6 +210,10 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
     private long _humanStaticObstacleContactsTotal;
     private long _beeStaticObstacleDeathsTotal;
     private long _humanStaticObstacleDeathsTotal;
+    private long _beeMapBorderContactsTotal;
+    private long _humanMapBorderContactsTotal;
+    private long _beeMapBorderDeathsTotal;
+    private long _humanMapBorderDeathsTotal;
     private long _beeCollisionAsteroidHitsTotal;
     private long _humanCollisionAsteroidHitsTotal;
     private long _beeCollisionAsteroidDamageTotal;
@@ -1364,6 +1368,10 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         _humanStaticObstacleContactsTotal += environment.HumanStaticObstacleContacts;
         _beeStaticObstacleDeathsTotal += environment.BeeStaticObstacleDeaths;
         _humanStaticObstacleDeathsTotal += environment.HumanStaticObstacleDeaths;
+        _beeMapBorderContactsTotal += environment.BeeMapBorderContacts;
+        _humanMapBorderContactsTotal += environment.HumanMapBorderContacts;
+        _beeMapBorderDeathsTotal += environment.BeeMapBorderDeaths;
+        _humanMapBorderDeathsTotal += environment.HumanMapBorderDeaths;
         _beeCollisionAsteroidHitsTotal += environment.BeeCollisionAsteroidHits;
         _humanCollisionAsteroidHitsTotal += environment.HumanCollisionAsteroidHits;
         _beeCollisionAsteroidDamageTotal += environment.BeeCollisionAsteroidDamage;
@@ -1451,6 +1459,8 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
             $"static_layout_empty={_staticLayoutEmptyEpisodes} avg_static_obstacles={averageStaticObstacleCount:F2} avg_static_area_pct={averageStaticAreaFraction:P2} " +
             $"bee_static_contacts={_beeStaticObstacleContactsTotal} bee_static_deaths={_beeStaticObstacleDeathsTotal} bee_static_deaths_per_1k={beeStaticDeathsPerThousand:F2} " +
             $"human_static_contacts={_humanStaticObstacleContactsTotal} human_static_deaths={_humanStaticObstacleDeathsTotal} human_static_deaths_per_1k={humanStaticDeathsPerThousand:F2} " +
+            $"bee_border_contacts={_beeMapBorderContactsTotal} bee_border_deaths={_beeMapBorderDeathsTotal} " +
+            $"human_border_contacts={_humanMapBorderContactsTotal} human_border_deaths={_humanMapBorderDeathsTotal} " +
             $"collision_asteroids_spawned={_collisionAsteroidsSpawnedTotal} avg_collision_asteroids_spawned={averageCollisionAsteroidsSpawned:F2} " +
             $"bee_asteroid_hits={_beeCollisionAsteroidHitsTotal} bee_asteroid_damage={_beeCollisionAsteroidDamageTotal} bee_asteroid_deaths={_beeCollisionAsteroidDeathsTotal} bee_asteroid_deaths_per_1k={beeAsteroidDeathsPerThousand:F2} " +
             $"human_asteroid_hits={_humanCollisionAsteroidHitsTotal} human_asteroid_damage={_humanCollisionAsteroidDamageTotal} human_asteroid_deaths={_humanCollisionAsteroidDeathsTotal} human_asteroid_deaths_per_1k={humanAsteroidDeathsPerThousand:F2} " +
