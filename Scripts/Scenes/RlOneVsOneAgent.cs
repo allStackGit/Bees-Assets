@@ -95,7 +95,6 @@ internal sealed class RlOneVsOneAgent : Agent
     private int _teamId;
     private int _decisionCounter;
     private int _lastRewardedEpisode;
-    private int _lastOutcomeMarkedEpisode;
     private bool _hasBoundShip;
     private bool _hasParticipatedThisEpisode;
     private bool _endingShipTrajectory;
@@ -981,21 +980,8 @@ internal sealed class RlOneVsOneAgent : Agent
         }
 
         int assignedTeam = _side == ConfigData.Configuration.BeeSide ? result.BeeTeamId : result.HumanTeamId;
-        if (_teamId != assignedTeam || !_hasParticipatedThisEpisode)
-        {
-            return;
-        }
-
-        // Every participating terminal trajectory gets the explicit outcome marker because the
-        // GhostTrainer may inspect any one of them for ELO. The learner removes this marker before
-        // PPO consumes the trajectory.
-        if (result.EpisodeNumber > _lastOutcomeMarkedEpisode)
-        {
-            _lastOutcomeMarkedEpisode = result.EpisodeNumber;
-            AddReward(GetExplicitOutcomeMarker(_side, result));
-        }
-
-        if (result.EpisodeNumber <= _lastRewardedEpisode ||
+        if (_teamId != assignedTeam || !_hasParticipatedThisEpisode ||
+            result.EpisodeNumber <= _lastRewardedEpisode ||
             !IsGroupRewardRepresentative(requireCurrentController: false))
         {
             return;
@@ -1007,8 +993,13 @@ internal sealed class RlOneVsOneAgent : Agent
             ? result.BeeTerminalReward + result.BeeTimeReward + result.BeeRetainedMiningReward
             : result.HumanTerminalReward + result.HumanTimeReward + result.HumanRetainedMiningReward;
 
+        // Stock ML-Agents self-play derives ELO from the sign of the final reward. Put a large
+        // explicit-outcome marker in the terminal group reward so every group trajectory carries
+        // the same battle result; the Bees learner strips this marker before PPO sees it.
+        _agentGroup?.AddGroupReward(GetExplicitOutcomeMarker(_side, result));
+
         // Timeouts are explicit terminal losses in this environment, not interrupted trajectories.
-        // Route that terminal outcome through the same MA-POCA group channel as ordinary wins/losses.
+        // Route the real terminal/economic return through the ordinary MA-POCA group channel.
         _agentGroup?.AddGroupReward(terminalReward);
 
         // The battle terminates for the complete cooperating side. MA-POCA receives the terminal
@@ -1021,9 +1012,9 @@ internal sealed class RlOneVsOneAgent : Agent
         ReleaseAgentGroup(_level, _side, _teamId);
     }
 
-    internal const float EloWinMarker = 1000f;
-    internal const float EloDrawMarker = 2000f;
-    internal const float EloLossMarker = -1000f;
+    internal const float EloWinMarker = 1000000f;
+    internal const float EloDrawMarker = 2000000f;
+    internal const float EloLossMarker = -1000000f;
 
     private static float GetExplicitOutcomeMarker(
         int side,
