@@ -315,7 +315,7 @@ class TrainingEnvOptimizer {
         this.activeProbeTrainerId = state.trainer_id;
         state.direction = direction;
         state.desired_envs = target;
-        state.phase = 'awaiting-restart';
+        state.phase = 'resizing';
         state.phase_started_ms = now;
         state.measurement_started_ms = null;
         state.measurement_start_steps = null;
@@ -372,7 +372,7 @@ class TrainingEnvOptimizer {
         this._blockDirection(state, direction);
         state.direction = -direction;
         state.desired_envs = state.baseline_envs;
-        state.phase = 'awaiting-restart';
+        state.phase = 'resizing';
         state.phase_started_ms = now;
         state.cooldown_until_ms = now + this.cooldownMs;
         state.measurement_started_ms = null;
@@ -397,7 +397,7 @@ class TrainingEnvOptimizer {
         state.blocked_up = true;
         state.blocked_down = false;
         state.desired_envs = target;
-        state.phase = 'awaiting-restart';
+        state.phase = 'resizing';
         state.phase_started_ms = now;
         state.cooldown_until_ms = now + this.cooldownMs;
         state.measurement_started_ms = null;
@@ -491,7 +491,7 @@ class TrainingEnvOptimizer {
         }
 
         state.desired_envs = state.baseline_envs;
-        state.phase = 'awaiting-restart';
+        state.phase = 'resizing';
         state.phase_started_ms = now;
         state.cooldown_until_ms = 0;
         state.measurement_started_ms = null;
@@ -596,40 +596,14 @@ class TrainingEnvOptimizer {
             return this.snapshot(record.trainer_id);
         }
 
-        if (
-            resizeFailure &&
-            capacity.current_envs !== state.desired_envs &&
-            resizeFailure.target_envs === state.desired_envs
-        ) {
-            const direction = state.desired_envs > capacity.current_envs ? 1 : -1;
-            this._blockDirection(state, direction);
-            this._releaseProbe(state.trainer_id);
-            if (state.baseline_envs === null) {
-                state.baseline_envs = capacity.current_envs;
-            }
-            state.desired_envs = state.baseline_envs;
-            state.phase = 'cooldown';
-            state.phase_started_ms = timestamp;
-            state.cooldown_until_ms = timestamp + this.cooldownMs;
-            state.measurement_started_ms = null;
-            state.measurement_start_steps = null;
-            state.measurement_start_produced_steps = null;
-            state.source_steps = totalSteps;
-            state.metrics_missing_since_ms = null;
-            state.last_decision =
-                'live resize probe failed; retained ' + capacity.current_envs +
-                ' envs: ' + resizeFailure.error;
-            return this.snapshot(record.trainer_id);
-        }
-
-        if (capacity.current_envs !== state.desired_envs) {
-            state.metrics_missing_since_ms = null;
-            state.phase = 'awaiting-restart';
-            state.phase_started_ms = timestamp;
-            state.measurement_started_ms = null;
-            state.measurement_start_steps = null;
-            state.measurement_start_produced_steps = null;
-            state.source_steps = totalSteps;
+        if (resizeFailure && capacity.current_envs !== state.desired_envs) {
+            this._abortProbe(
+                state,
+                capacity,
+                timestamp,
+                'live resize failed while targeting ' + state.desired_envs +
+                    ' envs: ' + resizeFailure.error,
+            );
             return this.snapshot(record.trainer_id);
         }
 
@@ -693,11 +667,11 @@ class TrainingEnvOptimizer {
             );
         }
 
-        // Reaching the requested env count does not mean the restarted worker is ready yet.
-        // Keep a planned env-count transition in awaiting-restart while child health still
-        // reports "starting"; begin warmup only after the process reports "running".
+        // Reaching the requested env count does not mean a newly launched worker is ready yet.
+        // Live env-count changes do not restart the actor, but release/runtime cutovers can.
+        // Start the settling clock only after the managed process reports "running".
         if (
-            state.phase === 'awaiting-restart' &&
+            state.phase === 'resizing' &&
             processState === 'starting' &&
             !optimizerError
         ) {
@@ -711,7 +685,7 @@ class TrainingEnvOptimizer {
             processState === 'starting' &&
             !optimizerError &&
             (
-                state.phase === 'awaiting-restart' ||
+                state.phase === 'resizing' ||
                 state.baseline_envs === null
             );
         const expectedTransition = expectedStarting || reconciliationTransition;
@@ -821,6 +795,45 @@ class TrainingEnvOptimizer {
             return this.snapshot(record.trainer_id);
         }
 
+        if (capacity.current_envs !== state.desired_envs) {
+            state.metrics_missing_since_ms = null;
+            state.phase = 'resizing';
+            state.phase_started_ms = timestamp;
+            state.measurement_started_ms = null;
+            state.measurement_start_steps = null;
+            state.measurement_start_produced_steps = null;
+            state.source_steps = totalSteps;
+            state.last_decision =
+                'resizing Unity environments ' + capacity.current_envs +
+                '->' + state.desired_envs;
+            return this.snapshot(record.trainer_id);
+        }
+
+        if (
+            this.activeProbeTrainerId &&
+            this.activeProbeTrainerId !== state.trainer_id
+        ) {
+            state.desired_envs = state.baseline_envs ?? capacity.current_envs;
+            state.phase = 'waiting';
+            state.measurement_started_ms = null;
+            state.measurement_start_steps = null;
+            state.measurement_start_produced_steps = null;
+            state.source_steps = totalSteps;
+            state.last_decision =
+                'waiting for another worker capacity search before measuring global throughput';
+            return this.snapshot(record.trainer_id);
+        }
+
+        if (state.phase === 'waiting') {
+            this._resetMeasurement(
+                state,
+                timestamp,
+                totalSteps,
+                'settling before refreshing global learner baseline',
+            );
+            return this.snapshot(record.trainer_id);
+        }
+
         if (totalSteps === null) {
             if (probingAwayFromBaseline) {
                 if (state.metrics_missing_since_ms === null) {
@@ -832,12 +845,12 @@ class TrainingEnvOptimizer {
                         state,
                         capacity,
                         timestamp,
-                        'probe produced no learner-consumed-step metrics',
+                        'probe produced no global learner-step metrics',
                     );
                     return this.snapshot(record.trainer_id);
                 }
             }
-            this._resetMeasurement(state, timestamp, null, 'waiting for learner-consumed-step metrics');
+            this._resetMeasurement(state, timestamp, null, 'waiting for global learner-step metrics');
             return this.snapshot(record.trainer_id);
         }
         state.metrics_missing_since_ms = null;
@@ -855,63 +868,34 @@ class TrainingEnvOptimizer {
 
         if (state.phase === 'stable') {
             if (timestamp < state.retest_after_ms) return this.snapshot(record.trainer_id);
-            state.blocked_up = false;
-            state.blocked_down = false;
-            state.step = state.cycle_aware
-                ? cycleAwareStep(state.baseline_envs || capacity.current_envs)
-                : initialStep(state.baseline_envs || capacity.current_envs);
-            state.direction = capacity.current_envs >= capacity.max_envs ? -1 : 1;
+            const preferred = state.moved_direction < 0 ? -1 : 1;
+            if (
+                (preferred > 0 && state.baseline_envs >= capacity.max_envs) ||
+                (preferred < 0 && state.baseline_envs <= capacity.min_envs)
+            ) {
+                state.retest_after_ms = timestamp + this.retestMs;
+                state.last_decision = 'stable at worker capacity boundary';
+                return this.snapshot(record.trainer_id);
+            }
+            state.direction = preferred;
+            state.step = 1;
+            if (preferred > 0) state.blocked_up = false;
+            else state.blocked_down = false;
             this._chooseProbe(state, capacity, timestamp);
             return this.snapshot(record.trainer_id);
         }
 
-        if (state.phase === 'awaiting-restart' || state.phase === 'cooldown') {
-            if (
-                state.baseline_envs !== null &&
-                state.desired_envs === state.baseline_envs &&
-                capacity.current_envs === state.baseline_envs
-            ) {
-                this._completeProbe(state.trainer_id);
-            }
-            this._resetMeasurement(state, timestamp, totalSteps, 'warming after env change');
+        if (state.phase === 'resizing' || state.phase === 'cooldown') {
+            this._resetMeasurement(
+                state,
+                timestamp,
+                totalSteps,
+                'settling for 60 seconds after env count reached ' + capacity.current_envs,
+            );
             return this.snapshot(record.trainer_id);
         }
 
         if (state.phase === 'warmup') {
-            if (currentPolicyCycle !== null) {
-                if (state.warmup_policy_cycle === null) {
-                    state.warmup_policy_cycle = currentPolicyCycle;
-                    state.last_decision =
-                        'waiting for a complete learner policy cycle before measuring';
-                    return this.snapshot(record.trainer_id);
-                }
-                if (currentPolicyCycle < state.warmup_policy_cycle) {
-                    state.warmup_policy_cycle = currentPolicyCycle;
-                    state.phase_started_ms = timestamp;
-                    state.last_decision =
-                        'learner policy cycle restarted; waiting for a fresh complete cycle';
-                    return this.snapshot(record.trainer_id);
-                }
-                if (timestamp - state.phase_started_ms < this.warmupMs) {
-                    if (currentPolicyCycle > state.warmup_policy_cycle) {
-                        state.warmup_policy_cycle = currentPolicyCycle;
-                    }
-                    return this.snapshot(record.trainer_id);
-                }
-                if (currentPolicyCycle === state.warmup_policy_cycle) {
-                    return this.snapshot(record.trainer_id);
-                }
-                state.phase = 'measuring';
-                state.measurement_started_ms = timestamp;
-                state.measurement_start_steps = totalSteps;
-                state.measurement_start_produced_steps = producedSteps;
-                state.measurement_start_policy_cycle = currentPolicyCycle;
-                state.last_decision =
-                    'measuring learner-consumed throughput across a complete policy cycle';
-                return this.snapshot(record.trainer_id);
-            }
-
-            // Compatibility path for an older actor during a rolling runtime cutover.
             if (timestamp - state.phase_started_ms < this.warmupMs) {
                 return this.snapshot(record.trainer_id);
             }
@@ -920,32 +904,15 @@ class TrainingEnvOptimizer {
             state.measurement_start_steps = totalSteps;
             state.measurement_start_produced_steps = producedSteps;
             state.measurement_start_policy_cycle = null;
-            state.last_decision = 'measuring learner-consumed steps';
+            state.last_decision =
+                'measuring global learner throughput for ' +
+                Math.round(this.measurementMs / 1000) + ' seconds';
             return this.snapshot(record.trainer_id);
         }
 
         if (state.phase === 'measuring') {
             const elapsed = timestamp - state.measurement_started_ms;
-
-            if (state.measurement_start_policy_cycle !== null) {
-                if (currentPolicyCycle === null) {
-                    state.last_decision =
-                        'waiting for completed policy-cycle telemetry to complete measurement';
-                    return this.snapshot(record.trainer_id);
-                }
-                if (currentPolicyCycle < state.measurement_start_policy_cycle) {
-                    this._resetMeasurement(
-                        state,
-                        timestamp,
-                        totalSteps,
-                        'learner policy cycle restarted',
-                    );
-                    return this.snapshot(record.trainer_id);
-                }
-                if (currentPolicyCycle === state.measurement_start_policy_cycle) {
-                    return this.snapshot(record.trainer_id);
-                }
-            } else if (elapsed < this.measurementMs) {
+            if (elapsed < this.measurementMs) {
                 return this.snapshot(record.trainer_id);
             }
 
@@ -969,7 +936,7 @@ class TrainingEnvOptimizer {
                     state,
                     timestamp,
                     totalSteps,
-                    'worker produced rollouts but none were learner-consumed; retrying fair measurement',
+                    'worker produced rollouts but the global learner did not advance; retrying measurement',
                 );
                 return this.snapshot(record.trainer_id);
             }
