@@ -443,6 +443,7 @@ def read_throughput_metrics(
     session_failures = value.get("session_failures_total")
     failure_age = value.get("seconds_since_last_session_failure")
     failure_type = value.get("last_session_failure_type")
+    failure_message = value.get("last_session_failure_message")
     policy_cycle = value.get("policy_cycle")
     runtime_version = value.get("runtime_version")
     resize_failed_target = value.get("env_resize_failed_target")
@@ -487,7 +488,13 @@ def read_throughput_metrics(
     ):
         return {}
     failure_present = any(
-        item is not None for item in (session_failures, failure_age, failure_type)
+        item is not None
+        for item in (
+            session_failures,
+            failure_age,
+            failure_type,
+            failure_message,
+        )
     )
     if failure_present and (
         not isinstance(session_failures, int)
@@ -505,6 +512,10 @@ def read_throughput_metrics(
         or (
             failure_type is not None
             and not isinstance(failure_type, str)
+        )
+        or (
+            failure_message is not None
+            and not isinstance(failure_message, str)
         )
     ):
         return {}
@@ -596,6 +607,7 @@ def read_throughput_metrics(
                     None if failure_age is None else float(failure_age)
                 ),
                 "last_session_failure_type": str(failure_type or ""),
+                "last_session_failure_message": str(failure_message or "").strip(),
             }
         )
     if traffic_present:
@@ -1173,8 +1185,15 @@ class ManagedProcess:
         updated = health.get("updated_unix_seconds")
         if isinstance(updated, (int, float)) and not isinstance(updated, bool):
             age = max(0.0, now - float(updated))
+            # Once rollout is running, actual rollout progress is the health signal.
+            # The sidecar health-file writer is diagnostic and can be delayed briefly by host
+            # scheduling or filesystem activity without implying that Unity rollout is stalled.
+            # Keep the short heartbeat deadline for startup/wait phases, then use the separate
+            # rollout-progress deadline below for active sessions.
             requires_ready_heartbeat = (
-                state == "ready" and component == "elastic-wan-actor"
+                state == "ready"
+                and component == "elastic-wan-actor"
+                and phase != "running"
             )
             if (
                 state == "starting" or requires_ready_heartbeat

@@ -487,6 +487,45 @@ class WanOptionTests(unittest.TestCase):
             ):
                 session._synchronize_state(require_policy=True)
 
+    def test_control_record_advancing_during_sync_resynchronizes_in_place(self):
+        session = object.__new__(actor.ActorSession)
+        session.central_run_options = SimpleNamespace(
+            env_settings=SimpleNamespace(timeout_wait=30.0)
+        )
+        session.stop = actor.threading.Event()
+        session.client = mock.Mock()
+        session.client.state.return_value = {
+            "control_epoch": 2,
+            "policy_epoch": 0,
+            "policy_versions": {},
+        }
+        session.client.control.return_value = {
+            "epoch": 3,
+            "kind": "parameters",
+            "config": {"difficulty": 3},
+        }
+        session.session_id = "session-a"
+        session.control_epoch = 1
+        session.policy_epoch = 0
+        session.policy_versions = {}
+        session.templates = {}
+        session.manager = mock.Mock()
+        session.worker_offset = 0
+        session._upload_queue = queue.Queue()
+        session._state_changed = actor.threading.Event()
+        session._stale = actor.threading.Event()
+
+        with (
+            mock.patch.object(actor, "_drain_inflight_without_training"),
+            mock.patch.object(actor, "_clear_partial_trajectories"),
+        ):
+            session._synchronize_state()
+
+        self.assertEqual(session.control_epoch, 1)
+        self.assertTrue(session._state_changed.is_set())
+        session.manager.reset.assert_not_called()
+        session.manager.set_env_parameters.assert_not_called()
+
     def test_partial_wrong_policy_set_remains_protocol_failure(self):
         session = object.__new__(actor.ActorSession)
         session.central_run_options = SimpleNamespace(

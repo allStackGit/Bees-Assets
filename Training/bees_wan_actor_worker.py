@@ -984,7 +984,11 @@ class ActorSession:
         if control_changed:
             record = self.client.control(self.session_id, self.control_epoch)
             if record is None or int(record.get("epoch", -1)) != new_control:
-                raise RuntimeError("WAN actor could not obtain the new central control record")
+                # Central control can advance again after the state snapshot but before this
+                # control-record fetch. That is a normal freshness race, not a broken actor
+                # session. Leave the old epoch unapplied and immediately synchronize again.
+                self._state_changed.set()
+                return
             kind = record.get("kind")
             config = record.get("config")
             if kind == "reset":
