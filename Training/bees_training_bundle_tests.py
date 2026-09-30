@@ -12,6 +12,11 @@ import bees_training_bundle as bundle
 
 
 class TrainingBundleTests(unittest.TestCase):
+    def test_text_log_tail_is_capped_for_large_historical_logs(self) -> None:
+        size = 120 * 1024 * 1024
+        offset = bundle.tail_offset(size, 10.0)
+        self.assertEqual(size - bundle.MAX_TEXT_LOG_TAIL_BYTES, offset)
+
     def _layout(self, root: Path, run_id: str) -> tuple[Path, Path]:
         bees_root = root / "Bees"
         assets_root = bees_root / "Assets"
