@@ -358,55 +358,71 @@ test('optimizer rolls back a slower probe before another worker may measure', ()
 
 test('optimizer backs off immediately when a probed worker process stops', () => {
     const optimizer = new TrainingEnvOptimizer({
-        warmupMs: 0,
+        settleMs: 0,
         measurementMs: 1000,
         cooldownMs: 0,
     });
 
-    update(optimizer, 'remote-a', 8, 0, 0, { max: 16 });
-    let state = update(optimizer, 'remote-a', 8, 1000, 1000, { max: 16 });
+    update(optimizer, 'remote-a', 8, 0, 0, { max: 9 });
+    let state = update(optimizer, 'remote-a', 8, 1000, 1000, { max: 9 });
     assert.equal(state.desired_envs, 9);
 
     state = update(
         optimizer,
         'remote-a',
         9,
-        0,
         1010,
-        { max: 16, processState: 'stopped' },
+        1010,
+        { max: 9, processState: 'stopped' },
     );
     assert.equal(state.desired_envs, 8);
     assert.equal(state.probing, true);
     assert.match(state.decision, /not running/);
 
-    state = update(optimizer, 'remote-a', 8, 0, 1020, { max: 16 });
-    assert.equal(state.probing, false);
+    state = update(optimizer, 'remote-a', 8, 1020, 1020, { max: 9 });
+    assert.equal(state.phase, 'settling');
+    assert.equal(state.probing, true);
 });
 
-test('optimizer backs off a probe that never produces learner-consumed-step metrics', () => {
+test('optimizer backs off a probe that never produces global learner-step metrics', () => {
     const optimizer = new TrainingEnvOptimizer({
-        warmupMs: 0,
+        settleMs: 0,
         measurementMs: 1000,
         cooldownMs: 0,
         metricsTimeoutMs: 100,
     });
 
-    update(optimizer, 'remote-a', 8, 0, 0, { max: 16 });
-    let state = update(optimizer, 'remote-a', 8, 1000, 1000, { max: 16 });
+    update(optimizer, 'remote-a', 8, 0, 0, { max: 9 });
+    let state = update(optimizer, 'remote-a', 8, 1000, 1000, { max: 9 });
     assert.equal(state.desired_envs, 9);
     assert.equal(state.probing, true);
 
-    state = update(optimizer, 'remote-a', 9, null, 1010, { max: 16 });
+    state = update(
+        optimizer,
+        'remote-a',
+        9,
+        null,
+        1010,
+        { max: 9, learnerStepValue: null },
+    );
     assert.equal(state.desired_envs, 9);
     assert.equal(state.probing, true);
 
-    state = update(optimizer, 'remote-a', 9, null, 1111, { max: 16 });
+    state = update(
+        optimizer,
+        'remote-a',
+        9,
+        null,
+        1111,
+        { max: 9, learnerStepValue: null },
+    );
     assert.equal(state.desired_envs, 8);
     assert.equal(state.probing, true);
     assert.match(state.decision, /no global learner-step metrics/);
 
-    state = update(optimizer, 'remote-a', 8, 0, 1120, { max: 16 });
-    assert.equal(state.probing, false);
+    state = update(optimizer, 'remote-a', 8, 1000, 1120, { max: 9 });
+    assert.equal(state.phase, 'settling');
+    assert.equal(state.probing, true);
 });
 
 test('optimizer holds a recovered worker before probing again after a reported failure', () => {
@@ -424,7 +440,7 @@ test('optimizer holds a recovered worker before probing again after a reported f
         8,
         0,
         0,
-        { max: 16, lastError: 'Unity communicator stopped' },
+        { max: 9, lastError: 'Unity communicator stopped' },
     );
     assert.equal(state.phase, 'stability-hold');
     assert.equal(state.desired_envs, 8);
@@ -432,18 +448,18 @@ test('optimizer holds a recovered worker before probing again after a reported f
     assert.equal(state.stability_hold_until_ms, 10_000);
     assert.match(state.last_instability_reason, /Unity communicator stopped/);
 
-    state = update(optimizer, 'remote-a', 8, 500, 5_000, { max: 16 });
+    state = update(optimizer, 'remote-a', 8, 500, 5_000, { max: 9 });
     assert.equal(state.phase, 'stability-hold');
     assert.equal(state.desired_envs, 8);
     assert.equal(state.probing, false);
 
-    state = update(optimizer, 'remote-a', 8, 1000, 10_001, { max: 16 });
+    state = update(optimizer, 'remote-a', 8, 1000, 10_001, { max: 9 });
     assert.equal(state.phase, 'settling');
     assert.match(state.decision, /collecting fresh baseline/);
 
-    state = update(optimizer, 'remote-a', 8, 1000, 10_002, { max: 16 });
+    state = update(optimizer, 'remote-a', 8, 1000, 10_002, { max: 9 });
     assert.equal(state.phase, 'measuring');
-    state = update(optimizer, 'remote-a', 8, 2000, 11_002, { max: 16 });
+    state = update(optimizer, 'remote-a', 8, 2000, 11_002, { max: 9 });
     assert.equal(state.baseline_envs, 8);
     assert.equal(state.desired_envs, 9);
     assert.equal(state.probing, true);
