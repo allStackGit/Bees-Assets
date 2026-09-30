@@ -684,7 +684,17 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
 
     internal static void RecordMiningShipExit(Ship ship, Ship killer, bool safelyRetained)
     {
-        if (!TryGetTrackedSide(ship, out RlOneVsOneEpisodeCoordinator coordinator, out _))
+        if (ship == null || ConfigData.Configuration == null)
+        {
+            return;
+        }
+
+        // Ship cleanup can happen after CompleteEpisode. Do not let a reset-time EndKill
+        // accidentally start a fresh episode merely to settle cargo from the completed one.
+        RlOneVsOneEpisodeCoordinator coordinator = GetCoordinator(ship.Level, false);
+        if (coordinator == null || !coordinator._episodeActive || ship.Level != coordinator._level ||
+            (ship.Side != ConfigData.Configuration.BeeSide &&
+             ship.Side != ConfigData.Configuration.HumanSide))
         {
             return;
         }
