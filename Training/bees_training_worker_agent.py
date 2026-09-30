@@ -434,6 +434,7 @@ def read_throughput_metrics(
     accepted_steps = value.get("accepted_steps_total")
     accepted_trajectories = value.get("accepted_trajectories_total")
     learner_consumed_steps = value.get("learner_consumed_steps_total")
+    learner_step_total = value.get("learner_step_total")
     learner_consumed_rate = value.get("learner_consumed_steps_per_sec")
     queue_depth = value.get("upload_queue_depth")
     network_sent = value.get("network_sent_bytes_total")
@@ -463,6 +464,14 @@ def read_throughput_metrics(
         or not isinstance(learner_consumed_steps, int)
         or isinstance(learner_consumed_steps, bool)
         or learner_consumed_steps < 0
+        or (
+            learner_step_total is not None
+            and (
+                not isinstance(learner_step_total, int)
+                or isinstance(learner_step_total, bool)
+                or learner_step_total < 0
+            )
+        )
         or (
             learner_consumed_rate is not None
             and (
@@ -566,6 +575,8 @@ def read_throughput_metrics(
         "learner_consumed_steps_total": learner_consumed_steps,
         "upload_queue_depth": queue_depth,
     }
+    if learner_step_total is not None:
+        result["learner_step_total"] = int(learner_step_total)
     if learner_consumed_rate is not None:
         result["learner_consumed_steps_per_sec"] = float(learner_consumed_rate)
     if policy_cycle_present:
