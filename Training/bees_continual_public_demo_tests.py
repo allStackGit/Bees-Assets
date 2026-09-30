@@ -30,7 +30,7 @@ contributors = _load("bees_continual_demo_contributors")
 public = _load("bees_continual_public_demo")
 
 
-OBSERVATION_SIZE = 7614
+OBSERVATION_SIZE = 7743
 CONTINUOUS_ACTIONS = 16
 DISCRETE_BRANCHES = [2] * 5 + [5]
 
