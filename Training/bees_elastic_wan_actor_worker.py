@@ -36,6 +36,18 @@ MANAGED_STOP_FILE_ENV = "BEES_TRAINING_STOP_FILE"
 MAX_RECONNECT_BACKOFF_SECONDS = 30.0
 HEALTHY_SESSION_RESET_SECONDS = 60.0
 SESSION_FAILURE_STATE_FILE = "worker-session-failures.json"
+RUNTIME_VERSION_FILE = "bees-runtime-version.txt"
+
+
+def _runtime_version_identity() -> str:
+    path = Path(__file__).resolve().with_name(RUNTIME_VERSION_FILE)
+    try:
+        value = path.read_text(encoding="ascii").strip().lower()
+    except OSError:
+        return ""
+    if len(value) != 64 or any(ch not in "0123456789abcdef" for ch in value):
+        return ""
+    return value
 
 
 class _ReconnectBackoff:
@@ -177,10 +189,12 @@ class _SessionFailureTelemetry:
         *,
         state_path: Optional[Path] = None,
         run_id: str = "",
+        runtime_version: str = "",
     ) -> None:
         self._lock = threading.Lock()
         self._state_path = state_path
         self._run_id = str(run_id or "")
+        self._runtime_version = str(runtime_version or "").strip().lower()
         self._count = 0
         self._last_failure_unix_seconds: Optional[float] = None
         self._last_failure_type = ""
@@ -199,7 +213,12 @@ class _SessionFailureTelemetry:
             return False
         if not isinstance(value, Mapping):
             return False
-        if value.get("schema_version") != 1 or str(value.get("run_id") or "") != self._run_id:
+        if (
+            value.get("schema_version") != 2
+            or str(value.get("run_id") or "") != self._run_id
+            or str(value.get("runtime_version") or "").strip().lower()
+            != self._runtime_version
+        ):
             return False
         count = value.get("session_failures_total")
         last_failure = value.get("last_failure_unix_seconds")
@@ -235,8 +254,9 @@ class _SessionFailureTelemetry:
         if path is None or not self._run_id:
             return
         payload = {
-            "schema_version": 1,
+            "schema_version": 2,
             "run_id": self._run_id,
+            "runtime_version": self._runtime_version,
             "session_failures_total": self._count,
             "last_failure_unix_seconds": self._last_failure_unix_seconds,
             "last_session_failure_type": self._last_failure_type,
@@ -650,6 +670,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         failure_telemetry = _SessionFailureTelemetry(
             state_path=failure_state_path,
             run_id=telemetry_run_id,
+            runtime_version=_runtime_version_identity(),
         )
         reconnect_backoff = _ReconnectBackoff(args.reconnect_seconds)
         client = ElasticBrokerClient(
