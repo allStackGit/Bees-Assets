@@ -216,6 +216,13 @@ internal sealed class RlCombatPerception
         sensor.AddObservation(NormalizePositive(CountLiveShips(state.GetAllEnemyShips(side)), 64f));
     }
 
+    internal static float NormalizeMinedValueForPolicy(int minedTsv, int receivingSideStartingTsv)
+    {
+        // Monotonic bounded encoding of the same ratio used by the economic reward:
+        // equal-to-starting value => 0.5, 3x starting value => 0.75.
+        return NormalizePositive(Mathf.Max(0, minedTsv), Mathf.Max(1, receivingSideStartingTsv));
+    }
+
     private static int GetShipMinedTsv(Ship ship)
     {
         return ship?.FleetShip != null ? Mathf.Max(0, ship.FleetShip.MineralsMinedThisLevel) : 0;
@@ -254,8 +261,8 @@ internal sealed class RlCombatPerception
         sensor.AddObservation(RlOneVsOneAgent.CanUseWarpAction(ship) ? 1f : 0f);
         sensor.AddObservation(isCarrierChild ? 1f : 0f);
         sensor.AddObservation(hasLiveCarrier ? 1f : 0f);
-        sensor.AddObservation(NormalizePositive(GetShipMinedTsv(ship), sideStartingTsv));
-        sensor.AddObservation(NormalizePositive(
+        sensor.AddObservation(NormalizeMinedValueForPolicy(GetShipMinedTsv(ship), sideStartingTsv));
+        sensor.AddObservation(NormalizeMinedValueForPolicy(
             RlOneVsOneEpisodeCoordinator.GetRetainableMinedTsv(ship.Level, ship.Side),
             sideStartingTsv));
     }
@@ -389,7 +396,7 @@ internal sealed class RlCombatPerception
         sensor.AddObservation(NormalizePositive(observed.Firepower, 200f));
         sensor.AddObservation(observed.IsMobile ? 1f : 0f);
         sensor.AddObservation(observed.IsBomber ? 1f : 0f);
-        sensor.AddObservation(NormalizePositive(GetShipMinedTsv(observed), sideStartingTsv));
+        sensor.AddObservation(NormalizeMinedValueForPolicy(GetShipMinedTsv(observed), sideStartingTsv));
         AddShipTypeObservation(sensor, observed.ShipType);
         AddEntityWeaponSlots(observed, sensor);
     }
