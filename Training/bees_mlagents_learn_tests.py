@@ -409,6 +409,9 @@ class BatchedInferenceTests(unittest.TestCase):
 
         return FakeTorchPolicy()
 
+    def test_batch_installer_is_idempotent(self):
+        self.assertIsNone(launcher._install_batched_inference())
+
     def test_same_behavior_workers_are_evaluated_once_and_ipc_is_slim(self):
         from mlagents.trainers.behavior_id_utils import get_global_agent_id
         from mlagents.trainers.subprocess_env_manager import EnvironmentCommand
@@ -556,6 +559,12 @@ class FastEnvManagerTests(unittest.TestCase):
     def tearDown(self):
         self.SubprocessEnvManager._step = self.original_step
         self.EnvManager._process_step_infos = self.original_process_step_infos
+
+    def test_fast_env_manager_installer_is_idempotent(self):
+        self.assertEqual(
+            launcher._install_fast_env_manager(),
+            (None, None),
+        )
 
     def test_blocking_first_result_then_drains_ready_workers(self):
         from queue import Empty
