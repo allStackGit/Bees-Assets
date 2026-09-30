@@ -80,7 +80,7 @@ namespace Assets.Scripts.Entities
                 // authoritative fallback for large/rotated ships that clip into the border trigger.
                 if (global::RlOneVsOneTrainingBootstrap.IsActiveFor(Stage))
                 {
-                    _collidingShip.LogDamage(_collidingShip.Health, "static_obstacle");
+                    _collidingShip.LogDamage(_collidingShip.Health, "map_border");
                     return;
                 }
 
