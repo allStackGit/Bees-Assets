@@ -53,11 +53,11 @@ namespace Bees.Tests.EditMode
             Assert.That(perception, Does.Contain("internal const int ObjectiveObservationSize = 16;"));
             Assert.That(perception, Does.Contain("internal const int ObservationSize = SelfObservationSize +"));
 
-            Assert.That(schema, Does.Contain("internal const int Version = 21;"));
+            Assert.That(schema, Does.Contain("internal const int Version = 22;"));
             Assert.That(schema, Does.Contain("internal const int PerceptionObservationSize = 7593;"));
             Assert.That(schema, Does.Contain("internal const int ReservedObservationCount = 19;"));
             Assert.That(schema, Does.Contain("internal const int ExpectedObservationSize = ReservedObservationEndExclusive;"));
-            Assert.That(schema, Does.Contain("bees-rl-v21"));
+            Assert.That(schema, Does.Contain("bees-rl-v22"));
             Assert.That(schema, Does.Contain("obs=7614"));
             Assert.That(schema, Does.Contain("tail=episode-progress+faction+19-reserved"));
             Assert.That(schema, Does.Contain("trainer=ma-poca"));
@@ -86,13 +86,13 @@ namespace Bees.Tests.EditMode
             string config = Read("Training", "continual_learning_config.json");
             string schema = Read("Scripts", "Scenes", "RlPolicySchema.cs");
 
-            Assert.That(config, Does.Contain("\"policy_abi_version\": 21"));
+            Assert.That(config, Does.Contain("\"policy_abi_version\": 22"));
             Assert.That(config, Does.Contain("\"observation_schema_version\": 12"));
             Assert.That(config, Does.Contain("\"telemetry_observation_size\": 7614"));
-            Assert.That(config, Does.Contain("bees-rl-v21"));
+            Assert.That(config, Does.Contain("bees-rl-v22"));
             Assert.That(config, Does.Contain("obs=7614"));
             Assert.That(config, Does.Contain("grid=21x21-cell6"));
-            Assert.That(schema, Does.Contain("internal const int Version = 21;"));
+            Assert.That(schema, Does.Contain("internal const int Version = 22;"));
             Assert.That(schema, Does.Contain("internal const int ExpectedObservationSize = ReservedObservationEndExclusive;"));
         }
 
@@ -104,10 +104,10 @@ namespace Bees.Tests.EditMode
 
             Assert.That(trainer, Does.Contain("trainer_type: poca"));
             Assert.That(trainer, Does.Contain("normalize: true"));
-            Assert.That(trainer, Does.Contain("hidden_units: 384"));
+            Assert.That(trainer, Does.Contain("hidden_units: 128"));
             Assert.That(trainer, Does.Contain("num_layers: 3"));
             Assert.That(trainer, Does.Not.Contain("memory:"));
-            Assert.That(schema, Does.Contain("network=structured-dual-faction-384x3"));
+            Assert.That(schema, Does.Contain("network=structured-dual-faction-128x3"));
             Assert.That(schema, Does.Contain("normalize=true"));
         }
 
