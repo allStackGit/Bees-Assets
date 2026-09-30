@@ -385,13 +385,14 @@ class ElasticActorSession(worker.ActorSession):
         self.policy_cycle = int(cycle)
 
         trainer_step = state.get("trainer_step")
-        if (
-            not isinstance(trainer_step, int)
-            or isinstance(trainer_step, bool)
-            or trainer_step < 0
-        ):
-            raise RuntimeError("Elastic WAN central state has malformed learner-step metadata")
-        self.learner_step = int(trainer_step)
+        if trainer_step is not None:
+            if (
+                not isinstance(trainer_step, int)
+                or isinstance(trainer_step, bool)
+                or trainer_step < 0
+            ):
+                raise RuntimeError("Elastic WAN central state has malformed learner-step metadata")
+            self.learner_step = int(trainer_step)
 
         consumed = state.get("consumed_steps_by_actor")
         if not isinstance(consumed, Mapping):
