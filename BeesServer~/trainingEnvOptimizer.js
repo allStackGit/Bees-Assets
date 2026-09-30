@@ -175,7 +175,6 @@ class TrainingEnvOptimizer {
         }
         this.states = new Map();
         this.activeProbeTrainerId = null;
-        this.lastCompletedProbeTrainerId = null;
     }
 
     _newState(trainerId, contextKey, capacity, now) {
@@ -222,30 +221,7 @@ class TrainingEnvOptimizer {
     }
 
     _completeProbe(trainerId) {
-        if (this.activeProbeTrainerId === trainerId) {
-            this.activeProbeTrainerId = null;
-            this.lastCompletedProbeTrainerId = trainerId;
-        }
-    }
-
-    _stateCanProbe(state, now) {
-        if (!state || state.phase !== 'stable' || state.baseline_envs === null) return false;
-        if (now < state.retest_after_ms || now < state.instability_hold_until_ms) return false;
-        const canProbeUp =
-            !state.blocked_up &&
-            state.baseline_envs < state.max_envs;
-        const canProbeDown =
-            !state.blocked_down &&
-            state.baseline_envs > state.min_envs;
-        return canProbeUp || canProbeDown;
-    }
-
-    _hasReadyAlternateProbe(trainerId, now) {
-        for (const candidate of this.states.values()) {
-            if (candidate.trainer_id === trainerId) continue;
-            if (this._stateCanProbe(candidate, now)) return true;
-        }
-        return false;
+        this._releaseProbe(trainerId);
     }
 
     _resetMeasurement(state, now, totalSteps, reason) {
@@ -911,7 +887,8 @@ class TrainingEnvOptimizer {
                 state,
                 timestamp,
                 totalSteps,
-                'settling for 60 seconds after env count reached ' + capacity.current_envs,
+                'settling for ' + Math.round(this.warmupMs / 1000) +
+                    ' seconds after env count reached ' + capacity.current_envs,
             );
             return this.snapshot(record.trainer_id);
         }
@@ -974,9 +951,6 @@ class TrainingEnvOptimizer {
         const removed = this.states.delete(trainerId);
         if (this.activeProbeTrainerId === trainerId) {
             this.activeProbeTrainerId = null;
-        }
-        if (this.lastCompletedProbeTrainerId === trainerId) {
-            this.lastCompletedProbeTrainerId = null;
         }
         return removed;
     }
