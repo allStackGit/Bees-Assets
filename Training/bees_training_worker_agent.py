@@ -957,7 +957,10 @@ class TrainingLogUploader:
                         continue
                     handle.seek(position)
                     data = handle.read(amount)
-            except OSError:
+            except (OSError, MemoryError):
+                # A runaway Unity log can coincide with severe host memory pressure.
+                # Log preservation is best-effort; never take down the worker supervisor
+                # because one bounded chunk allocation temporarily fails.
                 continue
             if not data:
                 continue
