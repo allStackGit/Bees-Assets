@@ -195,10 +195,10 @@ async function assertRlEnvironmentArgsValid(config, release, environmentArgs, py
     const validationKey = validationIdentity(release, archiveSha, args);
     const validationRoot = path.join(paths.runtimeRoot, 'RlEnvironmentValidation');
     const stamp = path.join(validationRoot, validationKey + '.ok');
-    if (exists(stamp)) return proof;
-
     ensureDir(validationRoot);
     cleanupStaleValidationCandidates(validationRoot);
+    if (exists(stamp)) return proof;
+
     ensureDir(path.join(paths.logsRoot, 'Training'));
     const candidate = path.join(
         validationRoot,
