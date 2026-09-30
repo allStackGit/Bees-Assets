@@ -78,7 +78,8 @@ namespace Assets.Scripts.Entities
                 // contact must have the same consequence as the lethal static obstacles used in
                 // training. The arena guard still prevents ordinary contacts; this is the
                 // authoritative fallback for large/rotated ships that clip into the border trigger.
-                if (global::RlOneVsOneTrainingBootstrap.IsActiveFor(Stage))
+                if (global::RlOneVsOneTrainingBootstrap.IsActiveFor(Stage) &&
+                    global::RlOneVsOneTrainingBootstrap.CurrentStaticObstaclesEnabled)
                 {
                     _collidingShip.LogDamage(_collidingShip.Health, "map_border");
                     return;
