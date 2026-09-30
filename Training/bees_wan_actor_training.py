@@ -266,9 +266,16 @@ def _policy_wire_payload(policy: Any) -> Mapping[str, Any]:
     from mlagents.trainers.policy.torch_policy import TorchPolicy
 
     if isinstance(policy, TorchPolicy):
+        # Policy snapshots cross machine/device boundaries. Never pickle CUDA-resident tensors:
+        # CPU rollout actors must be able to load a central CUDA learner snapshot directly.
+        raw_weights = policy.get_weights()
+        weights = {
+            name: value.detach().cpu() if hasattr(value, "detach") else value
+            for name, value in raw_weights.items()
+        }
         return {
             "kind": "torch",
-            "weights": policy.get_weights(),
+            "weights": weights,
             "step": int(policy.get_current_step()),
         }
 
