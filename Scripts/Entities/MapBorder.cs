@@ -74,6 +74,16 @@ namespace Assets.Scripts.Entities
                     return;
                 }
 
+                // The RL policy perceives the map border as an obstacle, so an actual border
+                // contact must have the same consequence as the lethal static obstacles used in
+                // training. The arena guard still prevents ordinary contacts; this is the
+                // authoritative fallback for large/rotated ships that clip into the border trigger.
+                if (global::RlOneVsOneTrainingBootstrap.IsActiveFor(Stage))
+                {
+                    _collidingShip.LogDamage(_collidingShip.Health, "static_obstacle");
+                    return;
+                }
+
                 // Scripted exits deliberately opt out of the playable-map clamp. Keep the camera
                 // attached to non-interactive cutscene ships (such as Pluto I's Scout) while they
                 // leave. If an override-bounds ship is still user-controllable, release the camera
