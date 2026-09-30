@@ -270,6 +270,46 @@ class TrainingControlClientTests(unittest.TestCase):
                 new_command,
             )
 
+    def test_runtime_version_for_heartbeat_uses_active_build_pointer_before_child_metrics(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            _runtime_root, _python_executable, command = self._runtime_pointer_fixture(
+                root,
+                "build-a",
+                "d" * 64,
+            )
+            pointer = root / "runtime-pointer.json"
+            pointer.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "build_id": "build-a",
+                        "runtime_version": "d" * 64,
+                        "runtime_root": str(Path(command[1]).resolve().parent),
+                        "python_executable": str(Path(command[0]).resolve()),
+                        "launch_command": command,
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            self.assertEqual(
+                agent._runtime_version_for_heartbeat(
+                    str(pointer),
+                    "build-a",
+                    "bees_continual_elastic_wan_service.py",
+                ),
+                "d" * 64,
+            )
+            self.assertEqual(
+                agent._runtime_version_for_heartbeat(
+                    str(pointer),
+                    "build-b",
+                    "bees_continual_elastic_wan_service.py",
+                ),
+                "",
+            )
+
     def test_runtime_state_records_actual_active_child_runtime(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
