@@ -1,9 +1,10 @@
-"""Focused tests for the Bees v21 structured MA-POCA actor architecture."""
+"""Focused tests for the Bees v22 structured MA-POCA actor architecture."""
 
 from __future__ import annotations
 
 from types import SimpleNamespace
 import unittest
+from unittest import mock
 
 
 from bees_mlagents_structured_policy import (
@@ -164,6 +165,33 @@ class StructuredPolicyArchitectureTests(unittest.TestCase):
         self.assertEqual(calls["bee_trunk"], 1)
         self.assertEqual(calls["human_encoder"], 0)
         self.assertEqual(calls["human_trunk"], 0)
+
+    def test_sparse_runtime_path_matches_dense_export_semantics(self):
+        from mlagents.torch_utils import torch
+
+        torch.manual_seed(7)
+        body = BeesStructuredNetworkBody(
+            self._observation_specs(),
+            self._network_settings(),
+        )
+        observations = torch.randn((4, BEES_OBSERVATION_SIZE)) * 0.2
+        observations[:2, FACTION_INDEX] = 1.0
+        observations[2:, FACTION_INDEX] = -1.0
+
+        runtime_output, _ = body([observations])
+        with mock.patch.object(
+            torch.onnx,
+            "is_in_onnx_export",
+            return_value=True,
+        ):
+            dense_output, _ = body([observations])
+
+        torch.testing.assert_close(
+            runtime_output,
+            dense_output,
+            rtol=1.0e-5,
+            atol=1.0e-6,
+        )
 
     def test_bee_and_human_actor_encoders_and_trunks_are_independent(self):
         from mlagents.torch_utils import torch
