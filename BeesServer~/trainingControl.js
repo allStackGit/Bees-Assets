@@ -1296,7 +1296,14 @@ class TrainingControlStore {
             }
         }
 
-        const requiredTrainers = this._releaseBarrierTrainers();
+        // A release staged while training is already disabled has no active trainer
+        // lineage to protect. Do not let recently known stopped supervisors become a
+        // preparation barrier; they can reconcile to the new canonical release when
+        // training is started again. This does not weaken an incompatible barrier that
+        // was created while training was active.
+        const requiredTrainers = this.state.training_enabled
+            ? this._releaseBarrierTrainers()
+            : [];
         const requiredRemotePlatforms = [...new Set(
             requiredTrainers
                 .filter(trainer => trainer.trainer_id !== 'central-learner')
