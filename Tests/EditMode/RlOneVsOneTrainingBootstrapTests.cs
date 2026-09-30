@@ -159,7 +159,7 @@ namespace Bees.Tests.EditMode
         [Test]
         public void TrainingSceneProvidesStaticObstaclePoolPrefabs()
         {
-            string scenePath = ReadPath("Scenes", "RL 1v1 Training.unity");
+            const string scenePath = "Assets/Scenes/RL 1v1 Training.unity";
             Scene scene = EditorSceneManager.OpenScene(scenePath, OpenSceneMode.Additive);
             try
             {
