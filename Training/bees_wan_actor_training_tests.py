@@ -113,21 +113,19 @@ class WanActorPolicyConstructionTests(unittest.TestCase):
 
 class WanPolicyWirePayloadTests(unittest.TestCase):
     def test_torch_policy_payload_moves_tensor_weights_to_cpu(self):
-        from mlagents.trainers.policy.torch_policy import TorchPolicy
         import torch
+        import mlagents.trainers.policy.torch_policy as torch_policy_module
 
-        policy = mock.Mock(spec=TorchPolicy)
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        policy.get_weights.return_value = {
-            "weight": torch.ones(2, device=device),
-        }
-        policy.get_current_step.return_value = 7
+        class FakeTorchPolicy:
+            def get_weights(self):
+                device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+                return {"weight": torch.ones(2, device=device)}
 
-        with mock.patch(
-            "mlagents.trainers.policy.torch_policy.TorchPolicy",
-            TorchPolicy,
-        ):
-            payload = wan._policy_wire_payload(policy)
+            def get_current_step(self):
+                return 7
+
+        with mock.patch.object(torch_policy_module, "TorchPolicy", FakeTorchPolicy):
+            payload = wan._policy_wire_payload(FakeTorchPolicy())
 
         self.assertEqual(payload["kind"], "torch")
         self.assertEqual(payload["step"], 7)
