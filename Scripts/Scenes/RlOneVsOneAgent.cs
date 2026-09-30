@@ -531,11 +531,11 @@ internal sealed class RlOneVsOneAgent : Agent
         actionMask.SetActionEnabled(SpecialActionBranch, ShipSpecialAction,
             canControl && CanUseShipSpecialAction(_ship));
         actionMask.SetActionEnabled(SpecialActionBranch, MiningAction,
-            canControl && CanUseMiningAction(_ship));
+            canControl && CanApplyMiningActionNow());
         actionMask.SetActionEnabled(SpecialActionBranch, HealingAction,
-            canControl && CanUseHealingAction(_ship));
+            canControl && CanApplyHealingActionNow());
         actionMask.SetActionEnabled(SpecialActionBranch, WarpAction,
-            canControl && CanUseWarpAction(_ship));
+            canControl && CanApplyWarpActionNow());
 
     }
 
@@ -732,6 +732,38 @@ internal sealed class RlOneVsOneAgent : Agent
         return ship != null && !ship.IsDead && ConfigData.Configuration != null &&
                ship.Side == ConfigData.Configuration.HumanSide &&
                ship.ShipType != ConfigData.ShipTypes.WarpGate;
+    }
+
+    private bool CanApplyMiningActionNow()
+    {
+        return CanUseMiningAction(_ship) &&
+               Time.time >= _nextMiningActionTime &&
+               _ship.Level != null &&
+               _ship.Level.State != null &&
+               _ship.Collider != null &&
+               _ship.FleetShip != null &&
+               FindTouchingMiningAsteroid() != null;
+    }
+
+    private bool CanApplyHealingActionNow()
+    {
+        return CanUseHealingAction(_ship) &&
+               Time.time >= _nextHealingActionTime &&
+               _ship.Health < _ship.MaxHealth &&
+               _ship.Level != null &&
+               _ship.Level.State != null &&
+               _ship.Collider != null &&
+               _ship.FleetShip != null &&
+               FindTouchingBeehive() != null;
+    }
+
+    private bool CanApplyWarpActionNow()
+    {
+        return CanUseWarpAction(_ship) &&
+               _ship.Level != null &&
+               _ship.Level.State != null &&
+               _ship.Collider != null &&
+               FindTouchingWarpGate() != null;
     }
 
     private void TryApplyMiningAction()
