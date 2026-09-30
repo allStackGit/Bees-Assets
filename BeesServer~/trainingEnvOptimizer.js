@@ -52,6 +52,16 @@ function producerAcceptedSteps(metrics) {
     return total;
 }
 
+function runtimeVersion(metrics) {
+    if (!metrics || typeof metrics !== 'object' || Array.isArray(metrics)) return '';
+    const throughput = metrics.throughput;
+    if (!throughput || typeof throughput !== 'object' || Array.isArray(throughput)) return '';
+    const value = typeof throughput.runtime_version === 'string'
+        ? throughput.runtime_version.trim().toLowerCase()
+        : '';
+    return /^[0-9a-f]{64}$/.test(value) ? value : '';
+}
+
 function policyCycle(metrics) {
     if (!metrics || typeof metrics !== 'object' || Array.isArray(metrics)) return null;
     const throughput = metrics.throughput;
@@ -162,6 +172,7 @@ class TrainingEnvOptimizer {
             direction: capacity.current_envs >= capacity.max_envs ? -1 : 1,
             step: initialStep(capacity.current_envs),
             cycle_aware: false,
+            runtime_version: '',
             blocked_up: false,
             blocked_down: false,
             phase: 'warmup',
@@ -437,6 +448,7 @@ class TrainingEnvOptimizer {
         const totalSteps = learnerConsumedSteps(record && record.metrics);
         const producedSteps = producerAcceptedSteps(record && record.metrics);
         const currentPolicyCycle = policyCycle(record && record.metrics);
+        const currentRuntimeVersion = runtimeVersion(record && record.metrics);
         const sessionFailureAgeSeconds = recentSessionFailureAgeSeconds(
             record && record.metrics);
         const sessionFailuresTotal = sessionFailureCount(record && record.metrics);
@@ -476,6 +488,19 @@ class TrainingEnvOptimizer {
                 state.last_decision = 'worker capacity changed; collecting new baseline';
             }
             this.states.set(record.trainer_id, state);
+        }
+        if (
+            currentRuntimeVersion &&
+            state.runtime_version &&
+            currentRuntimeVersion !== state.runtime_version
+        ) {
+            this._releaseProbe(record.trainer_id);
+            state = this._newState(record.trainer_id, contextKey, capacity, timestamp);
+            state.runtime_version = currentRuntimeVersion;
+            state.last_decision = 'worker runtime changed; collecting new baseline';
+            this.states.set(record.trainer_id, state);
+        } else if (currentRuntimeVersion && !state.runtime_version) {
+            state.runtime_version = currentRuntimeVersion;
         }
         state.last_update_ms = timestamp;
         if (currentPolicyCycle !== null) {
@@ -922,6 +947,7 @@ module.exports = {
     normalizeCapacity,
     learnerConsumedSteps,
     producerAcceptedSteps,
+    runtimeVersion,
     policyCycle,
     recentSessionFailureAgeSeconds,
     sessionFailureCount,
