@@ -52,13 +52,13 @@ function producerAcceptedSteps(metrics) {
     return total;
 }
 
-function policyEpoch(metrics) {
+function policyCycle(metrics) {
     if (!metrics || typeof metrics !== 'object' || Array.isArray(metrics)) return null;
     const throughput = metrics.throughput;
     if (!throughput || typeof throughput !== 'object' || Array.isArray(throughput)) return null;
-    const epoch = throughput.policy_epoch;
-    if (!finiteInteger(epoch) || epoch < 0) return null;
-    return epoch;
+    const cycle = throughput.policy_cycle;
+    if (!finiteInteger(cycle) || cycle < 0) return null;
+    return cycle;
 }
 
 function sessionFailureCount(metrics) {
@@ -166,11 +166,11 @@ class TrainingEnvOptimizer {
             blocked_down: false,
             phase: 'warmup',
             phase_started_ms: now,
-            warmup_policy_epoch: null,
+            warmup_policy_cycle: null,
             measurement_started_ms: null,
             measurement_start_steps: null,
             measurement_start_produced_steps: null,
-            measurement_start_policy_epoch: null,
+            measurement_start_policy_cycle: null,
             source_steps: null,
             last_sps: null,
             last_decision: 'collecting baseline',
@@ -222,11 +222,11 @@ class TrainingEnvOptimizer {
     _resetMeasurement(state, now, totalSteps, reason) {
         state.phase = 'warmup';
         state.phase_started_ms = now;
-        state.warmup_policy_epoch = null;
+        state.warmup_policy_cycle = null;
         state.measurement_started_ms = null;
         state.measurement_start_steps = null;
         state.measurement_start_produced_steps = null;
-        state.measurement_start_policy_epoch = null;
+        state.measurement_start_policy_cycle = null;
         state.source_steps = totalSteps;
         if (reason) state.last_decision = reason;
     }
@@ -436,7 +436,7 @@ class TrainingEnvOptimizer {
         const capacity = normalizeCapacity(record && record.worker_capacity);
         const totalSteps = learnerConsumedSteps(record && record.metrics);
         const producedSteps = producerAcceptedSteps(record && record.metrics);
-        const currentPolicyEpoch = policyEpoch(record && record.metrics);
+        const currentPolicyCycle = policyCycle(record && record.metrics);
         const sessionFailureAgeSeconds = recentSessionFailureAgeSeconds(
             record && record.metrics);
         const sessionFailuresTotal = sessionFailureCount(record && record.metrics);
@@ -478,7 +478,7 @@ class TrainingEnvOptimizer {
             this.states.set(record.trainer_id, state);
         }
         state.last_update_ms = timestamp;
-        if (currentPolicyEpoch !== null) {
+        if (currentPolicyCycle !== null) {
             state.cycle_aware = true;
         }
         let newSessionFailure = false;
@@ -787,34 +787,34 @@ class TrainingEnvOptimizer {
         }
 
         if (state.phase === 'warmup') {
-            if (currentPolicyEpoch !== null) {
-                if (state.warmup_policy_epoch === null) {
-                    state.warmup_policy_epoch = currentPolicyEpoch;
+            if (currentPolicyCycle !== null) {
+                if (state.warmup_policy_cycle === null) {
+                    state.warmup_policy_cycle = currentPolicyCycle;
                     state.last_decision =
                         'waiting for a complete learner policy cycle before measuring';
                     return this.snapshot(record.trainer_id);
                 }
-                if (currentPolicyEpoch < state.warmup_policy_epoch) {
-                    state.warmup_policy_epoch = currentPolicyEpoch;
+                if (currentPolicyCycle < state.warmup_policy_cycle) {
+                    state.warmup_policy_cycle = currentPolicyCycle;
                     state.phase_started_ms = timestamp;
                     state.last_decision =
-                        'learner policy epoch restarted; waiting for a fresh complete cycle';
+                        'learner policy cycle restarted; waiting for a fresh complete cycle';
                     return this.snapshot(record.trainer_id);
                 }
                 if (timestamp - state.phase_started_ms < this.warmupMs) {
-                    if (currentPolicyEpoch > state.warmup_policy_epoch) {
-                        state.warmup_policy_epoch = currentPolicyEpoch;
+                    if (currentPolicyCycle > state.warmup_policy_cycle) {
+                        state.warmup_policy_cycle = currentPolicyCycle;
                     }
                     return this.snapshot(record.trainer_id);
                 }
-                if (currentPolicyEpoch === state.warmup_policy_epoch) {
+                if (currentPolicyCycle === state.warmup_policy_cycle) {
                     return this.snapshot(record.trainer_id);
                 }
                 state.phase = 'measuring';
                 state.measurement_started_ms = timestamp;
                 state.measurement_start_steps = totalSteps;
                 state.measurement_start_produced_steps = producedSteps;
-                state.measurement_start_policy_epoch = currentPolicyEpoch;
+                state.measurement_start_policy_cycle = currentPolicyCycle;
                 state.last_decision =
                     'measuring learner-consumed throughput across a complete policy cycle';
                 return this.snapshot(record.trainer_id);
@@ -828,7 +828,7 @@ class TrainingEnvOptimizer {
             state.measurement_started_ms = timestamp;
             state.measurement_start_steps = totalSteps;
             state.measurement_start_produced_steps = producedSteps;
-            state.measurement_start_policy_epoch = null;
+            state.measurement_start_policy_cycle = null;
             state.last_decision = 'measuring learner-consumed steps';
             return this.snapshot(record.trainer_id);
         }
@@ -836,22 +836,22 @@ class TrainingEnvOptimizer {
         if (state.phase === 'measuring') {
             const elapsed = timestamp - state.measurement_started_ms;
 
-            if (state.measurement_start_policy_epoch !== null) {
-                if (currentPolicyEpoch === null) {
+            if (state.measurement_start_policy_cycle !== null) {
+                if (currentPolicyCycle === null) {
                     state.last_decision =
                         'waiting for policy-epoch telemetry to complete measurement';
                     return this.snapshot(record.trainer_id);
                 }
-                if (currentPolicyEpoch < state.measurement_start_policy_epoch) {
+                if (currentPolicyCycle < state.measurement_start_policy_cycle) {
                     this._resetMeasurement(
                         state,
                         timestamp,
                         totalSteps,
-                        'learner policy epoch restarted',
+                        'learner policy cycle restarted',
                     );
                     return this.snapshot(record.trainer_id);
                 }
-                if (currentPolicyEpoch === state.measurement_start_policy_epoch) {
+                if (currentPolicyCycle === state.measurement_start_policy_cycle) {
                     return this.snapshot(record.trainer_id);
                 }
             } else if (elapsed < this.measurementMs) {
@@ -922,7 +922,7 @@ module.exports = {
     normalizeCapacity,
     learnerConsumedSteps,
     producerAcceptedSteps,
-    policyEpoch,
+    policyCycle,
     recentSessionFailureAgeSeconds,
     sessionFailureCount,
     sessionFailureType,
