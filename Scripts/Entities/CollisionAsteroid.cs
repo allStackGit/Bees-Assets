@@ -72,7 +72,10 @@ namespace Assets.Scripts.Entities
             HasDroppedDestructionAnimation = false;
             HasEnteredMap = false;
             IsDelayKilled = false;
-            SpriteRenderer.sprite = OriginalSprite;
+            if (SpriteRenderer != null)
+            {
+                SpriteRenderer.sprite = OriginalSprite;
+            }
         }
 
         private Vector2 _randomPoint;
@@ -136,7 +139,10 @@ namespace Assets.Scripts.Entities
 
         public void SwitchToCrackedSprite()
         {
-            SpriteRenderer.sprite = CrackedSprite;
+            if (SpriteRenderer != null)
+            {
+                SpriteRenderer.sprite = CrackedSprite;
+            }
         }
 
         private void DelayKill()
