@@ -2,10 +2,10 @@
 
 const DEFAULT_MIN_ENVS = 1;
 const DEFAULT_MAX_ENVS = 64;
-const DEFAULT_WARMUP_MS = 20_000;
-const DEFAULT_MEASUREMENT_MS = 60_000;
-const DEFAULT_COOLDOWN_MS = 20_000;
-const DEFAULT_RETEST_MS = 5 * 60_000;
+const DEFAULT_WARMUP_MS = 60_000;
+const DEFAULT_MEASUREMENT_MS = 5 * 60_000;
+const DEFAULT_COOLDOWN_MS = 0;
+const DEFAULT_RETEST_MS = 30 * 60_000;
 const DEFAULT_INSTABILITY_HOLD_MS = 15 * 60_000;
 const DEFAULT_METRICS_TIMEOUT_MS = 3 * 60_000;
 const DEFAULT_MIN_IMPROVEMENT_RATIO = 0.03;
@@ -41,6 +41,20 @@ function learnerConsumedSteps(metrics) {
     const total = throughput.learner_consumed_steps_total;
     if (!finiteInteger(total) || total < 0) return null;
     return total;
+}
+
+function learnerStep(metrics) {
+    if (!metrics || typeof metrics !== 'object' || Array.isArray(metrics)) return null;
+    const throughput = metrics.throughput;
+    if (!throughput || typeof throughput !== 'object' || Array.isArray(throughput)) return null;
+    const total = throughput.learner_step_total;
+    if (!finiteInteger(total) || total < 0) return null;
+    return total;
+}
+
+function optimizationSteps(metrics) {
+    const globalStep = learnerStep(metrics);
+    return globalStep === null ? learnerConsumedSteps(metrics) : globalStep;
 }
 
 function producerAcceptedSteps(metrics) {
@@ -118,13 +132,17 @@ function recentSessionFailureAgeSeconds(metrics) {
 }
 
 function initialStep(envs) {
-    return Math.max(1, Math.min(4, Math.round(envs / 8)));
+    return Math.max(1, Math.floor(envs));
 }
 
 function cycleAwareStep(envs) {
-    // Complete-cycle measurements are reliable enough to expand geometrically. Keep the old
-    // conservative step for actors that have not yet rolled onto completed-cycle telemetry.
-    return Math.max(1, Math.min(16, Math.floor(envs)));
+    // Retained as a compatibility export. Throughput probes no longer wait for policy cycles;
+    // both old and new telemetry use the same geometric capacity search.
+    return initialStep(envs);
+}
+
+function downwardStep(envs) {
+    return Math.max(1, Math.floor(envs / 2));
 }
 
 class TrainingEnvOptimizer {
@@ -170,7 +188,10 @@ class TrainingEnvOptimizer {
             baseline_envs: null,
             baseline_sps: null,
             direction: capacity.current_envs >= capacity.max_envs ? -1 : 1,
-            step: initialStep(capacity.current_envs),
+            step: capacity.current_envs >= capacity.max_envs
+                ? downwardStep(capacity.current_envs)
+                : initialStep(capacity.current_envs),
+            moved_direction: 0,
             cycle_aware: false,
             runtime_version: '',
             blocked_up: false,
@@ -184,7 +205,7 @@ class TrainingEnvOptimizer {
             measurement_start_policy_cycle: null,
             source_steps: null,
             last_sps: null,
-            last_decision: 'collecting baseline',
+            last_decision: 'settling before baseline measurement',
             cooldown_until_ms: 0,
             retest_after_ms: 0,
             instability_hold_until_ms: 0,
@@ -240,6 +261,29 @@ class TrainingEnvOptimizer {
         state.measurement_start_policy_cycle = null;
         state.source_steps = totalSteps;
         if (reason) state.last_decision = reason;
+    }
+
+    _stepForDirection(state, direction) {
+        return direction > 0
+            ? initialStep(state.baseline_envs)
+            : downwardStep(state.baseline_envs);
+    }
+
+    _invalidateOtherMeasurements(trainerId) {
+        for (const [candidateId, candidate] of this.states) {
+            if (candidateId === trainerId) continue;
+            if (!['stable', 'warmup', 'measuring', 'waiting'].includes(candidate.phase)) continue;
+            candidate.baseline_sps = null;
+            candidate.last_sps = null;
+            candidate.desired_envs = candidate.baseline_envs ?? candidate.desired_envs;
+            candidate.phase = 'waiting';
+            candidate.measurement_started_ms = null;
+            candidate.measurement_start_steps = null;
+            candidate.measurement_start_produced_steps = null;
+            candidate.source_steps = null;
+            candidate.last_decision =
+                'cluster capacity changed; waiting to refresh global learner baseline';
+        }
     }
 
     _target(state, capacity, direction) {
