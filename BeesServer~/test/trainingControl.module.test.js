@@ -3580,6 +3580,124 @@ test('trainer logs append by verified offset under their run and trainer namespa
 });
 
 
+test('incompatible stop preserves an old trainer log generation before accepting offset zero', () => {
+    withTempDir(root => {
+        const logRoot = path.join(root, 'logs');
+        const store = new TrainingControlStore({
+            statePath: path.join(root, 'state.json'),
+            artifactRoot: path.join(root, 'artifacts'),
+            logRoot,
+        });
+        store.state.run_id = 'run-old';
+        store.state.pending_release = {
+            incompatible: true,
+            phase: 'stopping',
+            required_trainers: [
+                { trainer_id: 'trainer-a', platform: 'WindowsPlayer' },
+            ],
+        };
+        store.trainers.set('trainer-a', {
+            trainer_id: 'trainer-a',
+            role: 'dedicated',
+            platform: 'WindowsPlayer',
+            process_state: 'stopped',
+        });
+
+        const original = Buffer.from('old-generation');
+        const replacement = Buffer.from('new-generation');
+        let result = store.appendTrainerLog({
+            trainerId: 'trainer-a',
+            runId: 'run-old',
+            relativePath: 'Player-0.log',
+            offset: 0,
+            reset: false,
+            data: original,
+        });
+        assert.equal(result.next_offset, original.length);
+
+        result = store.appendTrainerLog({
+            trainerId: 'trainer-a',
+            runId: 'run-old',
+            relativePath: 'Player-0.log',
+            offset: 0,
+            reset: false,
+            data: replacement,
+        });
+        assert.equal(result.next_offset, replacement.length);
+
+        const trainerRoot = path.join(logRoot, 'run-old', 'trainer-a');
+        assert.deepEqual(
+            fs.readFileSync(path.join(trainerRoot, 'Player-0.log')),
+            replacement,
+        );
+        const generationsRoot = path.join(trainerRoot, 'generations');
+        const generationDirs = fs.readdirSync(generationsRoot);
+        assert.equal(generationDirs.length, 1);
+        assert.deepEqual(
+            fs.readFileSync(
+                path.join(
+                    generationsRoot,
+                    generationDirs[0],
+                    'Player-0.log',
+                )
+            ),
+            original,
+        );
+    });
+});
+
+test('ordinary trainer log offset mismatch remains fail closed', () => {
+    withTempDir(root => {
+        const logRoot = path.join(root, 'logs');
+        const store = new TrainingControlStore({
+            statePath: path.join(root, 'state.json'),
+            artifactRoot: path.join(root, 'artifacts'),
+            logRoot,
+        });
+        store.state.run_id = 'run-old';
+        store.trainers.set('trainer-a', {
+            trainer_id: 'trainer-a',
+            role: 'dedicated',
+            platform: 'WindowsPlayer',
+            process_state: 'running',
+        });
+
+        store.appendTrainerLog({
+            trainerId: 'trainer-a',
+            runId: 'run-old',
+            relativePath: 'Player-0.log',
+            offset: 0,
+            reset: false,
+            data: Buffer.from('existing'),
+        });
+
+        assert.throws(
+            () => store.appendTrainerLog({
+                trainerId: 'trainer-a',
+                runId: 'run-old',
+                relativePath: 'Player-0.log',
+                offset: 0,
+                reset: false,
+                data: Buffer.from('replacement'),
+            }),
+            error => error.statusCode === 409 && error.expectedOffset === 8,
+        );
+        assert.equal(
+            fs.readFileSync(
+                path.join(logRoot, 'run-old', 'trainer-a', 'Player-0.log'),
+                'utf8',
+            ),
+            'existing',
+        );
+        assert.equal(
+            fs.existsSync(
+                path.join(logRoot, 'run-old', 'trainer-a', 'generations')
+            ),
+            false,
+        );
+    });
+});
+
 test('training control returns per-worker env targets from learner-consumed optimization', () => {
     withTempDir(root => {
         let now = 0;

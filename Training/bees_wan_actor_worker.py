@@ -690,11 +690,16 @@ class ActorSession:
         options.torch_settings.device = self.torch_device
         return options
 
-    @staticmethod
-    def _run_logs_dir(options: Any) -> str:
+    def _run_logs_dir(self, options: Any) -> str:
         managed_log_dir = os.environ.get("BEES_TRAINING_LOG_DIR", "").strip()
         if managed_log_dir:
-            log_dir = Path(managed_log_dir).expanduser().resolve()
+            run_root = Path(managed_log_dir).expanduser().resolve()
+            session_key = hashlib.sha256(
+                self.session_id.encode("utf-8")
+            ).hexdigest()[:16]
+            log_dir = run_root / (
+                f"actor-{self.actor_id}-session-{session_key}"
+            )
             log_dir.mkdir(parents=True, exist_ok=True)
             return str(log_dir)
         return str(options.checkpoint_settings.run_logs_dir)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import signal
@@ -914,6 +915,75 @@ class TrainingControlClientTests(unittest.TestCase):
                 b"old-data",
             )
             self.assertNotIn(("worker-a", "run-new", "Player-0.log"), client.files)
+
+    def test_training_log_uploader_preserves_divergent_remote_generation(self):
+        class UploadClient:
+            def __init__(self):
+                self.files = {
+                    ("worker-a", "run", "Player-0.log"): b"remote-old-generation"
+                }
+
+            def upload_log_chunk(
+                self,
+                *,
+                trainer_id,
+                run_id,
+                relative_path,
+                offset,
+                data,
+                reset=False,
+            ):
+                key = (trainer_id, run_id, relative_path)
+                current = self.files.get(key, b"")
+                if reset:
+                    current = b""
+                if len(current) != offset:
+                    raise control.TrainingLogOffsetMismatch(
+                        len(current),
+                        hashlib.sha256(current).hexdigest(),
+                    )
+                current += data
+                self.files[key] = current
+                return len(current)
+
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            run = root / "run"
+            run.mkdir()
+            local = run / "Player-0.log"
+            local.write_bytes(b"local-replacement-generation")
+            client = UploadClient()
+
+            uploader = agent.TrainingLogUploader(root)
+            uploader.flush_all(client, trainer_id="worker-a", run_id="run")
+
+            self.assertEqual(
+                client.files[("worker-a", "run", "Player-0.log")],
+                b"remote-old-generation",
+            )
+            preserved = [
+                (key, value)
+                for key, value in client.files.items()
+                if key[0:2] == ("worker-a", "run")
+                and key[2].startswith("generations/")
+            ]
+            self.assertEqual(len(preserved), 1)
+            self.assertEqual(
+                preserved[0][1],
+                b"local-replacement-generation",
+            )
+
+            # A supervisor restart loses in-memory offsets. The same local generation
+            # must rediscover the same preservation path and resume safely.
+            restarted = agent.TrainingLogUploader(root)
+            restarted.flush_all(client, trainer_id="worker-a", run_id="run")
+            preserved_after_restart = [
+                (key, value)
+                for key, value in client.files.items()
+                if key[0:2] == ("worker-a", "run")
+                and key[2].startswith("generations/")
+            ]
+            self.assertEqual(preserved_after_restart, preserved)
 
     def test_log_finalization_keeps_lease_alive_during_blocked_upload(self):
         class SlowUploadClient:

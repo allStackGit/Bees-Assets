@@ -1742,6 +1742,94 @@ class TrainingControlStore {
         return this._catalogForRole(role)[platform]?.[buildId] || null;
     }
 
+    _canPreserveTrainerLogGeneration(trainerId, runId, relativePath) {
+        const pending = this.state.pending_release;
+        if (
+            !pending ||
+            !pending.incompatible ||
+            pending.phase !== 'stopping' ||
+            runId !== this.state.run_id ||
+            relativePath === 'generations' ||
+            relativePath.startsWith('generations/')
+        ) {
+            return false;
+        }
+        const requiredTrainers = Array.isArray(pending.required_trainers)
+            ? pending.required_trainers
+            : [];
+        if (!requiredTrainers.some(
+            spec => spec && spec.trainer_id === trainerId
+        )) {
+            return false;
+        }
+        const trainer = this.trainers.get(trainerId);
+        return Boolean(
+            trainer &&
+            trainer.role === 'dedicated' &&
+            trainer.process_state === 'stopped'
+        );
+    }
+
+    _preserveTrainerLogGeneration({
+        trainerId,
+        runId,
+        relativePath,
+        destination,
+        currentSize,
+    }) {
+        const digest = sha256File(destination);
+        const generationParts = [
+            runId,
+            trainerId,
+            'generations',
+            digest + '-' + currentSize,
+            ...relativePath.split('/'),
+        ];
+        let parent = this.logRoot;
+        for (const part of generationParts.slice(0, -1)) {
+            parent = path.join(parent, part);
+            try {
+                const stats = fs.lstatSync(parent);
+                if (stats.isSymbolicLink() || !stats.isDirectory()) {
+                    throw Object.assign(
+                        new Error(
+                            'trainer log generation path traverses a non-directory or symlink'
+                        ),
+                        { statusCode: 400 },
+                    );
+                }
+            } catch (error) {
+                if (error.code !== 'ENOENT') throw error;
+                fs.mkdirSync(parent);
+            }
+        }
+
+        const preserved = path.join(
+            parent,
+            generationParts[generationParts.length - 1],
+        );
+        if (fs.existsSync(preserved)) {
+            const stats = fs.lstatSync(preserved);
+            if (
+                stats.isSymbolicLink() ||
+                !stats.isFile() ||
+                stats.size !== currentSize ||
+                sha256File(preserved) !== digest
+            ) {
+                throw Object.assign(
+                    new Error(
+                        'existing preserved trainer log generation does not match source'
+                    ),
+                    { statusCode: 409 },
+                );
+            }
+            fs.unlinkSync(destination);
+        } else {
+            fs.renameSync(destination, preserved);
+        }
+        return preserved;
+    }
+
     appendTrainerLog({ trainerId, runId, relativePath, offset, reset, data }) {
         trainerId = requireString(trainerId, 'trainer_id', 128);
         runId = requireString(runId, 'run_id', 128);
@@ -1797,6 +1885,31 @@ class TrainingControlStore {
                 new Error('trainer log file exceeds the 64 MiB limit'),
                 { statusCode: 413 });
         }
+
+        // An older worker supervisor can lose its in-memory upload cursor while the same
+        // run's Unity log path has already been replaced by a newer actor generation.
+        // During the strict incompatible-stop barrier, preserve the server's existing
+        // generation before accepting a fresh offset-0 stream from that stopped trainer.
+        // This is deliberately narrow: ordinary offset mismatches still fail closed.
+        if (
+            current > 0 &&
+            offset === 0 &&
+            this._canPreserveTrainerLogGeneration(
+                trainerId,
+                runId,
+                relativePath,
+            )
+        ) {
+            this._preserveTrainerLogGeneration({
+                trainerId,
+                runId,
+                relativePath,
+                destination,
+                currentSize: current,
+            });
+            current = 0;
+        }
+
         if (reset) {
             if (offset !== 0) {
                 const error = Object.assign(
