@@ -89,76 +89,11 @@ namespace Assets.Scripts.Levels
 
         private void ConfigureRlOneVsOneSpawnPositions()
         {
-            float preferredRadius = global::RlOneVsOneArenaMapSizeState.GetSpawnRadius(this);
-
-            // Preserve the normal separation whenever possible, while allowing unusually large
-            // formations to move inward rather than spawning against the border. Every candidate
-            // is validated against the full rotation-independent ship footprint.
-            for (int radiusStep = 0; radiusStep <= 16; radiusStep++)
-            {
-                float radius = preferredRadius * (1f - radiusStep / 16f);
-
-                for (int attempt = 0; attempt < 16; attempt++)
-                {
-                    float angle = Random.Range(0f, Mathf.PI * 2f);
-                    Vector2 offset = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * radius;
-                    if (TrySetRlOneVsOneSpawnPositions(-offset, offset))
-                    {
-                        return;
-                    }
-                }
-
-                for (int direction = 0; direction < 64; direction++)
-                {
-                    float angle = direction * Mathf.PI * 2f / 64f;
-                    Vector2 offset = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * radius;
-                    if (TrySetRlOneVsOneSpawnPositions(-offset, offset))
-                    {
-                        return;
-                    }
-                }
-            }
-
-            // The generic squad placer may not preserve this requested formation around very
-            // large mixed fleets. Use the ordinary opposing centers as a harmless seed and let the
-            // authoritative post-spawn pass place any unsafe ship individually.
-            Vector2 fallback = Vector2.right * preferredRadius;
-            StartingPositions[ConfigData.Configuration.BeeSide - 1] = -fallback;
-            StartingPositions[ConfigData.Configuration.HumanSide - 1] = fallback;
-        }
-
-        private bool TrySetRlOneVsOneSpawnPositions(Vector2 beeCenter, Vector2 humanCenter)
-        {
-            if (!IsRlSpawnCenterClear(ConfigData.Configuration.BeeSide, beeCenter) ||
-                !IsRlSpawnCenterClear(ConfigData.Configuration.HumanSide, humanCenter))
-            {
-                return false;
-            }
-
-            StartingPositions[ConfigData.Configuration.BeeSide - 1] = beeCenter;
-            StartingPositions[ConfigData.Configuration.HumanSide - 1] = humanCenter;
-            return true;
-        }
-
-        private bool IsRlSpawnCenterClear(int side, Vector2 center)
-        {
-            int shipCount = global::RlOneVsOneTrainingBootstrap.CurrentShipsPerSide;
-            for (int shipIndex = 0; shipIndex < shipCount; shipIndex++)
-            {
-                ConfigData.ShipTypes shipType =
-                    global::RlOneVsOnePerArenaMatchups.GetShipType(this, side, shipIndex);
-                Vector2 shipPosition =
-                    center + global::RlOneVsOneArenaMapSizeState.GetShipFormationOffset(this, shipIndex);
-
-                if (!IsRlShipPositionHazardClear(
-                    shipPosition,
-                    GetRlShipClearanceRadius(shipType)))
-                {
-                    return false;
-                }
-            }
-
-            return true;
+            float spawnRadius = global::RlOneVsOneArenaMapSizeState.GetSpawnRadius(this);
+            float angle = Random.Range(0f, Mathf.PI * 2f);
+            Vector2 offset = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * spawnRadius;
+            StartingPositions[ConfigData.Configuration.BeeSide - 1] = -offset;
+            StartingPositions[ConfigData.Configuration.HumanSide - 1] = offset;
         }
 
         private void EnsureRlSpawnedShipsAreHazardClear(int side)
