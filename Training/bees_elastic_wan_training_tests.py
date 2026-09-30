@@ -340,11 +340,13 @@ class ElasticActorThroughputTests(unittest.TestCase):
             session._apply_central_throughput(
                 {
                     "policy_cycle": 7,
+                    "trainer_step": 600,
                     "consumed_steps_by_actor": {"0": 1200},
                 }
             )
 
         self.assertEqual(session.policy_cycle, 7)
+        self.assertEqual(session.learner_step, 600)
         self.assertEqual(session._learner_consumed_steps_total, 1200)
         self.assertAlmostEqual(session._learner_consumed_steps_per_sec, 100.0)
         session._write_throughput_metrics.assert_called_once_with()
@@ -638,6 +640,12 @@ class ElasticBrokerTests(unittest.TestCase):
         self.assertEqual(state["consumed_steps_by_actor"]["1"], 7)
         self.assertEqual(state["trajectory_queue_depth"], 4)
         self.assertEqual(state["policy_cycle"], 0)
+        self.assertEqual(state["trainer_step"], 0)
+        broker.observe_trainer_step(321)
+        self.assertEqual(
+            broker.wait_state(broker._policy_epoch, broker.control_epoch, 0.0)["trainer_step"],
+            321,
+        )
 
         starting_epoch = broker.policy_publication_epoch()
         with broker._condition:
