@@ -184,6 +184,32 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void CollisionAsteroidPresentationIsOptionalForHeadlessLifecycle()
+        {
+            const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public;
+            Type asteroidType = RuntimeAssembly.GetType("Assets.Scripts.Entities.CollisionAsteroid");
+            MethodInfo clearData = asteroidType.GetMethod("ClearData", flags);
+            MethodInfo switchToCracked = asteroidType.GetMethod("SwitchToCrackedSprite", flags);
+
+            Assert.That(clearData, Is.Not.Null);
+            Assert.That(switchToCracked, Is.Not.Null);
+
+            GameObject asteroidObject = new GameObject("Headless collision asteroid");
+            Component asteroid = asteroidObject.AddComponent(asteroidType);
+            try
+            {
+                Assert.DoesNotThrow(() => clearData.Invoke(asteroid, null),
+                    "Headless asteroid reset must not require a SpriteRenderer.");
+                Assert.DoesNotThrow(() => switchToCracked.Invoke(asteroid, null),
+                    "Headless asteroid damage lifecycle must not require a SpriteRenderer.");
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(asteroidObject);
+            }
+        }
+
+        [Test]
         public void EnvironmentTelemetryCountsHazardsMiningAndUniqueAsteroidsPerArena()
         {
             const BindingFlags flags = BindingFlags.Static | BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public;
@@ -211,10 +237,12 @@ namespace Bees.Tests.EditMode
             GameObject arenaObject = new GameObject("RL environment telemetry arena");
             GameObject beeObject = new GameObject("RL telemetry bee ship");
             GameObject humanObject = new GameObject("RL telemetry human ship");
+            GameObject borderObject = new GameObject("RL telemetry border ship");
             GameObject asteroidObject = new GameObject("RL telemetry mining asteroid");
             Component arena = arenaObject.AddComponent(levelType);
             Component beeShip = beeObject.AddComponent(shipType);
             Component humanShip = humanObject.AddComponent(shipType);
+            Component borderShip = borderObject.AddComponent(shipType);
             Component asteroid = asteroidObject.AddComponent(miningAsteroidType);
 
             try
@@ -232,10 +260,16 @@ namespace Bees.Tests.EditMode
                 SetField(humanShip, "Id", 102L);
                 SetField(humanShip, "Health", 5);
 
+                SetField(borderShip, "Level", arena);
+                SetField(borderShip, "Side", 1);
+                SetField(borderShip, "Id", 103L);
+                SetField(borderShip, "Health", 0);
+
                 SetField(asteroid, "Level", arena);
                 SetField(asteroid, "Id", 201);
 
                 recordDamage.Invoke(null, new object[] { beeShip, 30, "static_obstacle", false });
+                recordDamage.Invoke(null, new object[] { borderShip, 30, "map_border", false });
                 recordDamage.Invoke(null, new object[] { humanShip, 5, "collision_asteroid", false });
                 SetField(humanShip, "Health", 0);
                 recordDamage.Invoke(null, new object[] { humanShip, 10, "collision_asteroid", false });
@@ -248,6 +282,8 @@ namespace Bees.Tests.EditMode
                 string environment = (string)buildEnvironment.Invoke(null, new object[] { arena });
                 Assert.That(environment, Does.Contain("bee_static_contacts=1"));
                 Assert.That(environment, Does.Contain("bee_static_deaths=1"));
+                Assert.That(environment, Does.Contain("bee_border_contacts=1"));
+                Assert.That(environment, Does.Contain("bee_border_deaths=1"));
                 Assert.That(environment, Does.Contain("human_asteroid_hits=2"));
                 Assert.That(environment, Does.Contain("human_asteroid_damage=15"));
                 Assert.That(environment, Does.Contain("human_asteroid_deaths=1"));
@@ -261,8 +297,11 @@ namespace Bees.Tests.EditMode
                 string detail = (string)buildDetail.Invoke(null, new object[] { arena, false });
                 Assert.That(detail, Does.Not.Contain("bee_static_deaths_by_ship=none"));
                 Assert.That(detail, Does.Not.Contain("human_asteroid_deaths_by_ship=none"));
+                Assert.That(detail, Does.Not.Contain("bee_border_deaths_by_ship=none"));
                 Assert.That(detail, Does.Contain("/static_obstacle:1"),
                     "Lethal static contacts should become explicit ship outcomes.");
+                Assert.That(detail, Does.Contain("/map_border:1"),
+                    "Lethal map-border contacts should remain distinct from static obstacles.");
                 Assert.That(detail, Does.Contain("/collision_asteroid:1"),
                     "Lethal asteroid contacts should become explicit ship outcomes.");
             }
@@ -270,6 +309,7 @@ namespace Bees.Tests.EditMode
             {
                 reset.Invoke(null, null);
                 UnityEngine.Object.DestroyImmediate(asteroidObject);
+                UnityEngine.Object.DestroyImmediate(borderObject);
                 UnityEngine.Object.DestroyImmediate(humanObject);
                 UnityEngine.Object.DestroyImmediate(beeObject);
                 UnityEngine.Object.DestroyImmediate(arenaObject);
