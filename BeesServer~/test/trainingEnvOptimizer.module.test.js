@@ -380,8 +380,8 @@ test('optimizer backs off immediately when a probed worker process stops', () =>
     assert.match(state.decision, /not running/);
 
     state = update(optimizer, 'remote-a', 8, 1020, 1020, { max: 9 });
-    assert.equal(state.phase, 'settling');
-    assert.equal(state.probing, true);
+    assert.equal(state.phase, 'stability-hold');
+    assert.equal(state.probing, false);
 });
 
 test('optimizer backs off a probe that never produces global learner-step metrics', () => {
