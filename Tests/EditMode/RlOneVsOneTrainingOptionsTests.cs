@@ -138,6 +138,22 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void MapValidationRejectsLargeShipsOnlyWhenConfiguredMaximumCannotFitThem()
+        {
+            AssertParseFails(
+                "--rl-map-size=48",
+                "--rl-bee-ship-types=Beehive");
+
+            object options = Parse(
+                "--rl-map-size-min=48",
+                "--rl-map-size-max=64",
+                "--rl-bee-ship-types=Beehive");
+
+            Assert.That(GetProperty(options, "MapSizeMinimum"), Is.EqualTo(48f));
+            Assert.That(GetProperty(options, "MapSizeMaximum"), Is.EqualTo(64f));
+        }
+
+        [Test]
         public void InvalidOrAmbiguousRlOptionsFailInsteadOfSilentlyUsingDefaults()
         {
             AssertParseFails("--rl-health-ratio", "1.5");
