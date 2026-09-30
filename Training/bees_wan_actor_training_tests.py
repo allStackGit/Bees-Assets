@@ -45,6 +45,37 @@ def fake_run_options():
     )
 
 
+class WanActorLogGenerationTests(unittest.TestCase):
+    def test_managed_actor_logs_are_scoped_to_broker_session(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            options = SimpleNamespace(
+                checkpoint_settings=SimpleNamespace(
+                    run_logs_dir=str(root / "fallback")
+                )
+            )
+            session = object.__new__(actor.ActorSession)
+            session.actor_id = 3
+
+            with mock.patch.dict(
+                os.environ,
+                {"BEES_TRAINING_LOG_DIR": str(root)},
+                clear=False,
+            ):
+                session.session_id = "session-a"
+                first = Path(session._run_logs_dir(options))
+                session.session_id = "session-b"
+                second = Path(session._run_logs_dir(options))
+
+            self.assertNotEqual(first, second)
+            self.assertEqual(first.parent, root)
+            self.assertEqual(second.parent, root)
+            self.assertTrue(first.name.startswith("actor-3-session-"))
+            self.assertTrue(second.name.startswith("actor-3-session-"))
+            self.assertTrue(first.is_dir())
+            self.assertTrue(second.is_dir())
+
+
 class WanActorPolicyConstructionTests(unittest.TestCase):
     def tearDown(self):
         from bees_mlagents_ppo_compat import (
