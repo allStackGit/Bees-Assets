@@ -7,6 +7,7 @@ const {
     normalizeCapacity,
     learnerConsumedSteps,
     producerAcceptedSteps,
+    policyEpoch,
 } = require('../trainingEnvOptimizer');
 
 function record(
@@ -25,6 +26,7 @@ function record(
         failureType = '',
         resizeFailedTarget = null,
         resizeError = '',
+        policyEpochValue = null,
         reconciliationPhase = '',
     } = {},
 ) {
@@ -43,6 +45,7 @@ function record(
             throughput: {
                 learner_consumed_steps_total: consumed,
                 accepted_steps_total: accepted,
+                policy_epoch: policyEpochValue,
                 session_failures_total: sessionFailures,
                 seconds_since_last_session_failure: failureAgeSeconds,
                 last_session_failure_type: failureType,
@@ -92,6 +95,73 @@ test('capacity and learner-consumed-step metrics reject malformed values', () =>
         producerAcceptedSteps({ throughput: { accepted_steps_total: -1 } }),
         null,
     );
+    assert.equal(policyEpoch({ throughput: { policy_epoch: 7 } }), 7);
+    assert.equal(policyEpoch({ throughput: { policy_epoch: -1 } }), null);
+});
+
+test('optimizer measures complete policy cycles and expands capacity geometrically', () => {
+    const optimizer = new TrainingEnvOptimizer({
+        warmupMs: 0,
+        measurementMs: 1000,
+        cooldownMs: 0,
+        retestMs: 60_000,
+    });
+
+    let state = update(
+        optimizer,
+        'remote-a',
+        4,
+        0,
+        0,
+        { max: 48, policyEpochValue: 10 },
+    );
+    assert.equal(state.phase, 'warmup');
+    assert.match(state.decision, /complete learner policy cycle/);
+
+    state = update(
+        optimizer,
+        'remote-a',
+        4,
+        900,
+        60_000,
+        { max: 48, policyEpochValue: 10 },
+    );
+    assert.equal(state.phase, 'warmup');
+
+    state = update(
+        optimizer,
+        'remote-a',
+        4,
+        1000,
+        70_000,
+        { max: 48, policyEpochValue: 11 },
+    );
+    assert.equal(state.phase, 'measuring');
+
+    // Even a full minute of learner activity does not end the sample mid-policy-cycle.
+    state = update(
+        optimizer,
+        'remote-a',
+        4,
+        1600,
+        130_000,
+        { max: 48, policyEpochValue: 11 },
+    );
+    assert.equal(state.phase, 'measuring');
+    assert.equal(state.baseline_envs, null);
+
+    state = update(
+        optimizer,
+        'remote-a',
+        4,
+        2000,
+        170_000,
+        { max: 48, policyEpochValue: 12 },
+    );
+    assert.equal(state.baseline_envs, 4);
+    assert.equal(state.desired_envs, 8);
+    assert.equal(state.probing, true);
+    assert.match(state.decision, /probing 4->8/);
 });
 
 test('optimizer measures learner-consumed steps, increases envs, and keeps an improvement', () => {
