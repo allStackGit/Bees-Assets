@@ -3720,6 +3720,62 @@ test('training control pauses env optimization during a release cutover', () => 
     });
 });
 
+test('lease-expired workers remain visible in status but cannot occupy optimizer probe state', () => {
+    withTempDir(root => {
+        let now = 0;
+        const store = new TrainingControlStore({
+            statePath: path.join(root, 'state.json'),
+            artifactRoot: path.join(root, 'artifacts'),
+            leaseSeconds: 1,
+            now: () => now,
+            envOptimizer: {
+                warmupMs: 0,
+                measurementMs: 1000,
+                cooldownMs: 0,
+            },
+        });
+        const buildSha = publishDedicatedBuild(store, root, 'optimizer-lease');
+        activateTestRelease(store, 'optimizer-lease');
+        store.setDesiredState({ training_enabled: true });
+
+        store.heartbeat({
+            trainer_id: 'remote-stale',
+            role: 'dedicated',
+            platform: 'WindowsPlayer',
+            process_state: 'running',
+            applied_revision: store.state.revision,
+            build_id: 'optimizer-lease',
+            build_sha256: buildSha,
+            environment_id: environmentArgsIdentity(store.state.environment_args),
+            worker_capacity: {
+                auto: true,
+                current_envs: 4,
+                min_envs: 1,
+                max_envs: 48,
+            },
+            metrics: {
+                throughput: {
+                    learner_consumed_steps_total: 0,
+                },
+            },
+        });
+
+        assert.ok(store.envOptimizer.snapshot('remote-stale'));
+        store.envOptimizer.activeProbeTrainerId = 'remote-stale';
+        store.envOptimizer.lastCompletedProbeTrainerId = 'remote-stale';
+
+        now = 1001;
+        const status = store.status();
+        const stale = status.trainers.find(
+            record => record.trainer_id === 'remote-stale');
+
+        assert.equal(stale.stale, true);
+        assert.equal(store.envOptimizer.snapshot('remote-stale'), null);
+        assert.equal(store.envOptimizer.activeProbeTrainerId, null);
+        assert.equal(store.envOptimizer.lastCompletedProbeTrainerId, null);
+    });
+});
+
 test('training control leaves explicit fixed worker env counts unchanged', () => {
     withTempDir(root => {
         const store = new TrainingControlStore({
