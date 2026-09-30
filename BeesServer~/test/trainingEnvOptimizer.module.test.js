@@ -119,6 +119,29 @@ test('capacity and learner-consumed-step metrics reject malformed values', () =>
     assert.equal(runtimeVersion({ throughput: { runtime_version: 'not-a-hash' } }), '');
 });
 
+test('optimizer defaults to 60 seconds settling and five minutes measuring', () => {
+    const optimizer = new TrainingEnvOptimizer();
+
+    let state = update(optimizer, 'remote-a', 4, 0, 0, { max: 48 });
+    assert.equal(state.phase, 'settling');
+
+    state = update(optimizer, 'remote-a', 4, 1000, 59_999, { max: 48 });
+    assert.equal(state.phase, 'settling');
+
+    state = update(optimizer, 'remote-a', 4, 1200, 60_000, { max: 48 });
+    assert.equal(state.phase, 'measuring');
+
+    state = update(optimizer, 'remote-a', 4, 7199, 359_999, { max: 48 });
+    assert.equal(state.phase, 'measuring');
+    assert.equal(state.baseline_envs, null);
+
+    state = update(optimizer, 'remote-a', 4, 7200, 360_000, { max: 48 });
+    assert.equal(state.baseline_envs, 4);
+    assert.equal(state.baseline_sps, 20);
+    assert.equal(state.desired_envs, 8);
+    assert.equal(state.phase, 'resizing');
+});
+
 test('optimizer uses wall-clock settling and measurement instead of policy-cycle gating', () => {
     const optimizer = new TrainingEnvOptimizer({
         settleMs: 1000,
