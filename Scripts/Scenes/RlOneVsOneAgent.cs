@@ -430,6 +430,7 @@ internal sealed class RlOneVsOneAgent : Agent
         ResetWeaponAimDirections();
         Instances.Add(this);
         RlOneVsOneEpisodeCoordinator.TsvRewardOccurred += HandleTsvRewardOccurred;
+        RlOneVsOneEpisodeCoordinator.EconomicRewardOccurred += HandleEconomicRewardOccurred;
         RlOneVsOneEpisodeCoordinator.EpisodeEnded += HandleEpisodeEnded;
     }
 
@@ -437,6 +438,7 @@ internal sealed class RlOneVsOneAgent : Agent
     {
         Instances.Remove(this);
         RlOneVsOneEpisodeCoordinator.TsvRewardOccurred -= HandleTsvRewardOccurred;
+        RlOneVsOneEpisodeCoordinator.EconomicRewardOccurred -= HandleEconomicRewardOccurred;
         RlOneVsOneEpisodeCoordinator.EpisodeEnded -= HandleEpisodeEnded;
         if (_agentGroup != null)
         {
@@ -787,16 +789,15 @@ internal sealed class RlOneVsOneAgent : Agent
         }
 
         _nextMiningActionTime = Time.time + MiningActionIntervalSeconds;
-        int oldTsv = _ship.Tsv;
         asteroid.Health -= amountMined;
         _ship.FleetShip.MineralsMinedThisLevel += amountMined;
         _ship.Tsv = Utilities.CalculateTsv(_ship);
+        RlOneVsOneEpisodeCoordinator.RecordMiningValueUpdated(_ship);
         RlOneVsOneEpisodeDiagnostics.RecordMiningOutcome(
             _ship,
             asteroid,
             amountMined,
             asteroid.Health <= 0);
-        RewardSuccessfulCapabilityOutcome(_ship.Tsv - oldTsv);
 
         if (asteroid.Health <= 0 && !asteroid.IsDead)
         {
@@ -963,6 +964,14 @@ internal sealed class RlOneVsOneAgent : Agent
         }
     }
 
+    private void HandleEconomicRewardOccurred(Level level, int side, float reward)
+    {
+        if (level == _level && side == _side && IsGroupRewardRepresentative())
+        {
+            _agentGroup?.AddGroupReward(reward);
+        }
+    }
+
     private void HandleEpisodeEnded(Level level, RlOneVsOneEpisodeCoordinator.EpisodeResult result)
     {
         if (level != _level)
@@ -983,9 +992,14 @@ internal sealed class RlOneVsOneAgent : Agent
         }
 
         _lastRewardedEpisode = result.EpisodeNumber;
+        // ML-Agents' stock GhostTrainer infers ELO from the final-step reward sign. Add an
+        // individual outcome marker here; the Bees learner strips it before PPO sees the trajectory
+        // and uses it only to classify ELO from the explicit battle outcome.
+        AddReward(GetExplicitOutcomeMarker(_side, result));
+
         float terminalReward = _side == ConfigData.Configuration.BeeSide
-            ? result.BeeTerminalReward + result.BeeTimeReward
-            : result.HumanTerminalReward + result.HumanTimeReward;
+            ? result.BeeTerminalReward + result.BeeTimeReward + result.BeeRetainedMiningReward
+            : result.HumanTerminalReward + result.HumanTimeReward + result.HumanRetainedMiningReward;
 
         // Timeouts are explicit terminal losses in this environment, not interrupted trajectories.
         // Route that terminal outcome through the same MA-POCA group channel as ordinary wins/losses.
@@ -999,6 +1013,25 @@ internal sealed class RlOneVsOneAgent : Agent
         // registered-agent set. Dispose only after it returns, then create a fresh group when
         // participating agents bind in the next episode.
         ReleaseAgentGroup(_level, _side, _teamId);
+    }
+
+    internal const float EloWinMarker = 1000f;
+    internal const float EloDrawMarker = 2000f;
+    internal const float EloLossMarker = -1000f;
+
+    private static float GetExplicitOutcomeMarker(
+        int side,
+        RlOneVsOneEpisodeCoordinator.EpisodeResult result)
+    {
+        if (result.TimedOut)
+        {
+            return EloLossMarker;
+        }
+        if (result.WinningSide == 0)
+        {
+            return EloDrawMarker;
+        }
+        return result.WinningSide == side ? EloWinMarker : EloLossMarker;
     }
 
     private bool IsCurrentController()
