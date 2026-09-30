@@ -25,7 +25,7 @@ class StructuredPolicyArchitectureTests(unittest.TestCase):
 
         return NetworkSettings(
             normalize=False,
-            hidden_units=384,
+            hidden_units=128,
             num_layers=3,
         )
 
