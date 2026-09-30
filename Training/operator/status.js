@@ -244,9 +244,18 @@ function statusError(record) {
     }
 
     const optimizer = record.env_optimizer;
-    const instabilityMs = Number(optimizer && optimizer.last_instability_ms);
+    const rawInstabilityMs = optimizer && optimizer.last_instability_ms;
+    const instabilityMs = (
+        rawInstabilityMs !== null &&
+        rawInstabilityMs !== undefined &&
+        Number.isFinite(Number(rawInstabilityMs)) &&
+        Number(rawInstabilityMs) >= 0
+    ) ? Number(rawInstabilityMs) : null;
     const instabilityReason = String(
-        optimizer && (optimizer.last_instability_reason || optimizer.decision) || ''
+        optimizer && optimizer.last_instability_reason || ''
+    ).trim();
+    const optimizerDecision = String(
+        optimizer && optimizer.decision || ''
     ).trim();
     const processState = String(record.process_state || '').trim();
     const recoveredProcessInstability =
@@ -270,7 +279,8 @@ function statusError(record) {
     }
 
     historical.sort((left, right) => left.ageSeconds - right.ageSeconds);
-    return historical.length ? historical[0].text : '';
+    if (historical.length) return historical[0].text;
+    return optimizerDecision ? 'Optimizer: ' + optimizerDecision : '';
 }
 
 function table(rows, columns) {
