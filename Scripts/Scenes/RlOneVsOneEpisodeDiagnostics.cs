@@ -28,6 +28,10 @@ internal static class RlOneVsOneEpisodeDiagnostics
         internal readonly int HumanStaticObstacleContacts;
         internal readonly int BeeStaticObstacleDeaths;
         internal readonly int HumanStaticObstacleDeaths;
+        internal readonly int BeeMapBorderContacts;
+        internal readonly int HumanMapBorderContacts;
+        internal readonly int BeeMapBorderDeaths;
+        internal readonly int HumanMapBorderDeaths;
         internal readonly int BeeCollisionAsteroidHits;
         internal readonly int HumanCollisionAsteroidHits;
         internal readonly int BeeCollisionAsteroidDamage;
@@ -57,6 +61,10 @@ internal static class RlOneVsOneEpisodeDiagnostics
             HumanStaticObstacleContacts = state.StaticObstacleContacts[1];
             BeeStaticObstacleDeaths = state.StaticObstacleDeaths[0];
             HumanStaticObstacleDeaths = state.StaticObstacleDeaths[1];
+            BeeMapBorderContacts = state.MapBorderContacts[0];
+            HumanMapBorderContacts = state.MapBorderContacts[1];
+            BeeMapBorderDeaths = state.MapBorderDeaths[0];
+            HumanMapBorderDeaths = state.MapBorderDeaths[1];
             BeeCollisionAsteroidHits = state.CollisionAsteroidHits[0];
             HumanCollisionAsteroidHits = state.CollisionAsteroidHits[1];
             BeeCollisionAsteroidDamage = state.CollisionAsteroidDamage[0];
@@ -140,12 +148,19 @@ internal static class RlOneVsOneEpisodeDiagnostics
         internal readonly int[] UnattributedDamage = new int[2];
         internal readonly int[] StaticObstacleContacts = new int[2];
         internal readonly int[] StaticObstacleDeaths = new int[2];
+        internal readonly int[] MapBorderContacts = new int[2];
+        internal readonly int[] MapBorderDeaths = new int[2];
         internal readonly int[] CollisionAsteroidHits = new int[2];
         internal readonly int[] CollisionAsteroidDamage = new int[2];
         internal readonly int[] CollisionAsteroidDeaths = new int[2];
         internal readonly int[] MiningEvents = new int[2];
         internal readonly int[] ResourcesMined = new int[2];
         internal readonly Dictionary<string, int>[] StaticObstacleDeathsByShipType =
+        {
+            new Dictionary<string, int>(StringComparer.Ordinal),
+            new Dictionary<string, int>(StringComparer.Ordinal)
+        };
+        internal readonly Dictionary<string, int>[] MapBorderDeathsByShipType =
         {
             new Dictionary<string, int>(StringComparer.Ordinal),
             new Dictionary<string, int>(StringComparer.Ordinal)
@@ -318,6 +333,16 @@ internal static class RlOneVsOneEpisodeDiagnostics
                 RecordEnvironmentDeathCause(state, target, sideIndex, "static_obstacle");
             }
         }
+        else if (string.Equals(source, "map_border", StringComparison.Ordinal))
+        {
+            state.MapBorderContacts[sideIndex]++;
+            if (target.Health <= 0)
+            {
+                state.MapBorderDeaths[sideIndex]++;
+                Increment(state.MapBorderDeathsByShipType[sideIndex], target.ShipType.ToString(), 1);
+                RecordEnvironmentDeathCause(state, target, sideIndex, "map_border");
+            }
+        }
         else if (string.Equals(source, "collision_asteroid", StringComparison.Ordinal))
         {
             state.CollisionAsteroidHits[sideIndex]++;
@@ -380,6 +405,7 @@ internal static class RlOneVsOneEpisodeDiagnostics
             return "env_static=0 env_collision=0 env_mining=0 static_obstacles=0 static_obstacle_area_fraction=0.0000 static_layout_empty=0 " +
                    "collision_asteroids_spawned=0 mining_asteroids_spawned=0 " +
                    "bee_static_contacts=0 human_static_contacts=0 bee_static_deaths=0 human_static_deaths=0 " +
+                   "bee_border_contacts=0 human_border_contacts=0 bee_border_deaths=0 human_border_deaths=0 " +
                    "bee_asteroid_hits=0 human_asteroid_hits=0 bee_asteroid_damage=0 human_asteroid_damage=0 bee_asteroid_deaths=0 human_asteroid_deaths=0 " +
                    "bee_mining_events=0 human_mining_events=0 bee_resources_mined=0 human_resources_mined=0 " +
                    "bee_mining_asteroids_mined=0 human_mining_asteroids_mined=0 bee_mining_asteroids_depleted=0 human_mining_asteroids_depleted=0";
@@ -390,6 +416,8 @@ internal static class RlOneVsOneEpisodeDiagnostics
                $"collision_asteroids_spawned={state.CollisionAsteroidsSpawned} mining_asteroids_spawned={state.MiningAsteroidsSpawned} " +
                $"bee_static_contacts={state.StaticObstacleContacts[0]} human_static_contacts={state.StaticObstacleContacts[1]} " +
                $"bee_static_deaths={state.StaticObstacleDeaths[0]} human_static_deaths={state.StaticObstacleDeaths[1]} " +
+               $"bee_border_contacts={state.MapBorderContacts[0]} human_border_contacts={state.MapBorderContacts[1]} " +
+               $"bee_border_deaths={state.MapBorderDeaths[0]} human_border_deaths={state.MapBorderDeaths[1]} " +
                $"bee_asteroid_hits={state.CollisionAsteroidHits[0]} human_asteroid_hits={state.CollisionAsteroidHits[1]} " +
                $"bee_asteroid_damage={state.CollisionAsteroidDamage[0]} human_asteroid_damage={state.CollisionAsteroidDamage[1]} " +
                $"bee_asteroid_deaths={state.CollisionAsteroidDeaths[0]} human_asteroid_deaths={state.CollisionAsteroidDeaths[1]} " +
@@ -488,6 +516,7 @@ internal static class RlOneVsOneEpisodeDiagnostics
                $"bee_friendly_damage={state.FriendlyDamage[0]} human_friendly_damage={state.FriendlyDamage[1]} " +
                $"bee_unattributed_damage={state.UnattributedDamage[0]} human_unattributed_damage={state.UnattributedDamage[1]} " +
                $"bee_static_deaths_by_ship={FormatCounts(state.StaticObstacleDeathsByShipType[0])} human_static_deaths_by_ship={FormatCounts(state.StaticObstacleDeathsByShipType[1])} " +
+               $"bee_border_deaths_by_ship={FormatCounts(state.MapBorderDeathsByShipType[0])} human_border_deaths_by_ship={FormatCounts(state.MapBorderDeathsByShipType[1])} " +
                $"bee_asteroid_deaths_by_ship={FormatCounts(state.CollisionAsteroidDeathsByShipType[0])} human_asteroid_deaths_by_ship={FormatCounts(state.CollisionAsteroidDeathsByShipType[1])} " +
                $"bee_specials={FormatCounts(state.SpecialActions[0])} human_specials={FormatCounts(state.SpecialActions[1])} " +
                $"bee_root_outcomes={FormatRootOutcomes(state, 0, timedOut)} human_root_outcomes={FormatRootOutcomes(state, 1, timedOut)} " +
