@@ -3,7 +3,9 @@ using System.IO;
 using System.Reflection;
 using System.Collections.Generic;
 using NUnit.Framework;
+using UnityEditor.SceneManagement;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 namespace Bees.Tests.EditMode
 {
@@ -152,6 +154,34 @@ namespace Bees.Tests.EditMode
         {
             string scenePath = ReadPath("Scenes", "RL 1v1 Training.unity");
             Assert.That(File.Exists(scenePath), Is.True);
+        }
+
+        [Test]
+        public void TrainingSceneProvidesStaticObstaclePoolPrefabs()
+        {
+            string scenePath = ReadPath("Scenes", "RL 1v1 Training.unity");
+            Scene scene = EditorSceneManager.OpenScene(scenePath, OpenSceneMode.Additive);
+            try
+            {
+                Type prefabsType = RuntimeAssembly.GetType("Assets.Scripts.Levels.Prefabs");
+                Component prefabs = null;
+                foreach (GameObject root in scene.GetRootGameObjects())
+                {
+                    prefabs = root.GetComponentInChildren(prefabsType, true);
+                    if (prefabs != null)
+                    {
+                        break;
+                    }
+                }
+
+                Assert.That(prefabs, Is.Not.Null);
+                Assert.That(RuntimeAssembly.GetField(prefabs, "ObstaclePrefab"), Is.Not.Null);
+                Assert.That(RuntimeAssembly.GetField(prefabs, "ObstacleBackgroundPrefab"), Is.Not.Null);
+            }
+            finally
+            {
+                EditorSceneManager.CloseScene(scene, true);
+            }
         }
 
         private void ApplyBootstrap()
