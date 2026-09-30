@@ -916,6 +916,18 @@ class TrainingEnvOptimizer {
         return this.snapshot(record.trainer_id);
     }
 
+    remove(trainerId) {
+        if (typeof trainerId !== 'string' || !trainerId) return false;
+        const removed = this.states.delete(trainerId);
+        if (this.activeProbeTrainerId === trainerId) {
+            this.activeProbeTrainerId = null;
+        }
+        if (this.lastCompletedProbeTrainerId === trainerId) {
+            this.lastCompletedProbeTrainerId = null;
+        }
+        return removed;
+    }
+
     snapshot(trainerId) {
         const state = this.states.get(trainerId);
         if (!state) return null;
