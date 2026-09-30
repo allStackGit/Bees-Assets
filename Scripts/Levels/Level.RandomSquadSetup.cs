@@ -8,8 +8,16 @@ namespace Assets.Scripts.Levels
 {
     public partial class Level
     {
+        private const float RlSpawnSafetyMargin = 1f;
         private readonly List<SavedSquad> _randomSquadBuffer = new List<SavedSquad>();
         private int _randomQueenCount;
+
+        private static float GetRlShipClearanceRadius(ConfigData.ShipTypes shipType)
+        {
+            Vector2 shipSize = (Vector2)ConfigData.ShipSizes[shipType] / ConfigData.PixelsPerUnit;
+            return 0.5f * Mathf.Sqrt(shipSize.x * shipSize.x + shipSize.y * shipSize.y) +
+                   RlSpawnSafetyMargin;
+        }
 
         private void SetupShipsForSide(int side)
         {
@@ -75,40 +83,38 @@ namespace Assets.Scripts.Levels
 
         private void ConfigureRlOneVsOneSpawnPositions()
         {
-            float spawnRadius = global::RlOneVsOneArenaMapSizeState.GetSpawnRadius(this);
-            if (!global::RlOneVsOneTrainingBootstrap.CurrentStaticObstaclesEnabled)
-            {
-                float angle = Random.Range(0f, Mathf.PI * 2f);
-                Vector2 offset = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * spawnRadius;
-                StartingPositions[ConfigData.Configuration.BeeSide - 1] = -offset;
-                StartingPositions[ConfigData.Configuration.HumanSide - 1] = offset;
-                return;
-            }
+            float preferredRadius = global::RlOneVsOneArenaMapSizeState.GetSpawnRadius(this);
 
-            for (int attempt = 0; attempt < 64; attempt++)
+            // Preserve the normal separation whenever possible, while allowing unusually large
+            // formations to move inward rather than spawning against the border. Every candidate
+            // is validated against the full rotation-independent ship footprint.
+            for (int radiusStep = 0; radiusStep <= 16; radiusStep++)
             {
-                float angle = Random.Range(0f, Mathf.PI * 2f);
-                Vector2 offset = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * spawnRadius;
-                if (TrySetRlOneVsOneSpawnPositions(-offset, offset))
+                float radius = preferredRadius * (1f - radiusStep / 16f);
+
+                for (int attempt = 0; attempt < 16; attempt++)
                 {
-                    return;
+                    float angle = Random.Range(0f, Mathf.PI * 2f);
+                    Vector2 offset = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * radius;
+                    if (TrySetRlOneVsOneSpawnPositions(-offset, offset))
+                    {
+                        return;
+                    }
                 }
-            }
 
-            // Static RL obstacles preserve a clear full-width/full-height cross. A deterministic
-            // sweep guarantees we use that corridor even if all random attempts happened to miss it.
-            for (int direction = 0; direction < 64; direction++)
-            {
-                float angle = direction * Mathf.PI * 2f / 64f;
-                Vector2 offset = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * spawnRadius;
-                if (TrySetRlOneVsOneSpawnPositions(-offset, offset))
+                for (int direction = 0; direction < 64; direction++)
                 {
-                    return;
+                    float angle = direction * Mathf.PI * 2f / 64f;
+                    Vector2 offset = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * radius;
+                    if (TrySetRlOneVsOneSpawnPositions(-offset, offset))
+                    {
+                        return;
+                    }
                 }
             }
 
             throw new System.InvalidOperationException(
-                "RL training could not find spawn positions that keep every configured ship outside static obstacles.");
+                "RL training could not find spawn positions that keep every configured ship clear of the map border and lethal obstacles.");
         }
 
         private bool TrySetRlOneVsOneSpawnPositions(Vector2 beeCenter, Vector2 humanCenter)
@@ -131,10 +137,17 @@ namespace Assets.Scripts.Levels
             {
                 ConfigData.ShipTypes shipType =
                     global::RlOneVsOnePerArenaMatchups.GetShipType(this, side, shipIndex);
-                Vector2 shipSize = (Vector2)ConfigData.ShipSizes[shipType] / ConfigData.PixelsPerUnit;
-                float shipExtent = Mathf.Max(shipSize.x, shipSize.y) * 0.5f;
+                float shipExtent = GetRlShipClearanceRadius(shipType);
                 Vector2 shipPosition =
                     center + global::RlOneVsOneArenaMapSizeState.GetShipFormationOffset(this, shipIndex);
+
+                if (shipPosition.x - shipExtent <= MinX ||
+                    shipPosition.x + shipExtent >= MaxX ||
+                    shipPosition.y - shipExtent <= MinY ||
+                    shipPosition.y + shipExtent >= MaxY)
+                {
+                    return false;
+                }
 
                 if (!global::RlOneVsOneTrainingBootstrap.CurrentStaticObstaclesEnabled ||
                     ObstacleMap == null ||
