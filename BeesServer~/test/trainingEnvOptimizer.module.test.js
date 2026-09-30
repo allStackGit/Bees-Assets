@@ -7,7 +7,7 @@ const {
     normalizeCapacity,
     learnerConsumedSteps,
     producerAcceptedSteps,
-    policyEpoch,
+    policyCycle,
 } = require('../trainingEnvOptimizer');
 
 function record(
@@ -26,7 +26,7 @@ function record(
         failureType = '',
         resizeFailedTarget = null,
         resizeError = '',
-        policyEpochValue = null,
+        policyCycleValue = null,
         reconciliationPhase = '',
     } = {},
 ) {
@@ -45,7 +45,7 @@ function record(
             throughput: {
                 learner_consumed_steps_total: consumed,
                 accepted_steps_total: accepted,
-                policy_epoch: policyEpochValue,
+                policy_cycle: policyCycleValue,
                 session_failures_total: sessionFailures,
                 seconds_since_last_session_failure: failureAgeSeconds,
                 last_session_failure_type: failureType,
@@ -95,8 +95,8 @@ test('capacity and learner-consumed-step metrics reject malformed values', () =>
         producerAcceptedSteps({ throughput: { accepted_steps_total: -1 } }),
         null,
     );
-    assert.equal(policyEpoch({ throughput: { policy_epoch: 7 } }), 7);
-    assert.equal(policyEpoch({ throughput: { policy_epoch: -1 } }), null);
+    assert.equal(policyCycle({ throughput: { policy_cycle: 7 } }), 7);
+    assert.equal(policyCycle({ throughput: { policy_cycle: -1 } }), null);
 });
 
 test('optimizer measures complete policy cycles and expands capacity geometrically', () => {
@@ -113,7 +113,7 @@ test('optimizer measures complete policy cycles and expands capacity geometrical
         4,
         0,
         0,
-        { max: 48, policyEpochValue: 10 },
+        { max: 48, policyCycleValue: 10 },
     );
     assert.equal(state.phase, 'warmup');
     assert.match(state.decision, /complete learner policy cycle/);
@@ -124,7 +124,7 @@ test('optimizer measures complete policy cycles and expands capacity geometrical
         4,
         900,
         60_000,
-        { max: 48, policyEpochValue: 10 },
+        { max: 48, policyCycleValue: 10 },
     );
     assert.equal(state.phase, 'warmup');
 
@@ -134,7 +134,7 @@ test('optimizer measures complete policy cycles and expands capacity geometrical
         4,
         1000,
         70_000,
-        { max: 48, policyEpochValue: 11 },
+        { max: 48, policyCycleValue: 11 },
     );
     assert.equal(state.phase, 'measuring');
 
@@ -145,7 +145,7 @@ test('optimizer measures complete policy cycles and expands capacity geometrical
         4,
         1600,
         130_000,
-        { max: 48, policyEpochValue: 11 },
+        { max: 48, policyCycleValue: 11 },
     );
     assert.equal(state.phase, 'measuring');
     assert.equal(state.baseline_envs, null);
@@ -156,7 +156,7 @@ test('optimizer measures complete policy cycles and expands capacity geometrical
         4,
         2000,
         170_000,
-        { max: 48, policyEpochValue: 12 },
+        { max: 48, policyCycleValue: 12 },
     );
     assert.equal(state.baseline_envs, 4);
     assert.equal(state.desired_envs, 8);
