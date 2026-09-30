@@ -338,9 +338,13 @@ class ElasticActorThroughputTests(unittest.TestCase):
 
         with mock.patch.object(actor_session.time, "monotonic", return_value=102.0):
             session._apply_central_throughput(
-                {"consumed_steps_by_actor": {"0": 1200}}
+                {
+                    "policy_cycle": 7,
+                    "consumed_steps_by_actor": {"0": 1200},
+                }
             )
 
+        self.assertEqual(session.policy_cycle, 7)
         self.assertEqual(session._learner_consumed_steps_total, 1200)
         self.assertAlmostEqual(session._learner_consumed_steps_per_sec, 100.0)
         session._write_throughput_metrics.assert_called_once_with()
@@ -633,6 +637,18 @@ class ElasticBrokerTests(unittest.TestCase):
         self.assertEqual(state["consumed_steps_by_actor"]["0"], 10)
         self.assertEqual(state["consumed_steps_by_actor"]["1"], 7)
         self.assertEqual(state["trajectory_queue_depth"], 4)
+        self.assertEqual(state["policy_cycle"], 0)
+
+        starting_epoch = broker.policy_publication_epoch()
+        with broker._condition:
+            broker._policy_epoch = starting_epoch + 2
+        broker.complete_policy_cycle(starting_epoch)
+        completed = broker.wait_state(
+            broker._policy_epoch,
+            broker.control_epoch,
+            0.0,
+        )
+        self.assertEqual(completed["policy_cycle"], 1)
 
     def test_fair_drain_rotates_first_actor_between_calls(self):
         broker, specs = self._broker()
