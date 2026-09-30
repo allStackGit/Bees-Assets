@@ -54,6 +54,33 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void EconomicMiningValueIsLinearUncappedAndRelativeToReceivingSide()
+        {
+            float equalToStarting = (float)RuntimeAssembly.InvokeStatic(
+                _rewardType,
+                "CalculateEconomicValueReward",
+                500,
+                500);
+            float tripleStarting = (float)RuntimeAssembly.InvokeStatic(
+                _rewardType,
+                "CalculateEconomicValueReward",
+                1500,
+                500);
+            float sameCargoForLargerSide = (float)RuntimeAssembly.InvokeStatic(
+                _rewardType,
+                "CalculateEconomicValueReward",
+                1500,
+                1500);
+
+            Assert.That(equalToStarting, Is.EqualTo(1f));
+            Assert.That(tripleStarting, Is.EqualTo(3f));
+            Assert.That(sameCargoForLargerSide, Is.EqualTo(1f));
+            Assert.That(tripleStarting, Is.GreaterThan(
+                (float)RuntimeAssembly.GetStaticField(_rewardType, "WinReward")),
+                "Campaign economic value must be allowed to outweigh one battle victory.");
+        }
+
+        [Test]
         public void StaticDiscoveryRewardIsValueScaledAndCategoryBounded()
         {
             const float budget = 0.2f;
