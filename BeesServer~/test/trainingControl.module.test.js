@@ -3698,7 +3698,7 @@ test('ordinary trainer log offset mismatch remains fail closed', () => {
     });
 });
 
-test('training control returns per-worker env targets from learner-consumed optimization', () => {
+test('training control returns per-worker env targets from global learner-step optimization', () => {
     withTempDir(root => {
         let now = 0;
         const archive = path.join(root, 'linux.zip');
@@ -3742,6 +3742,7 @@ test('training control returns per-worker env targets from learner-consumed opti
             metrics: {
                 throughput: {
                     learner_consumed_steps_total: consumedSteps,
+                    learner_step_total: consumedSteps,
                 },
             },
         });
@@ -3752,14 +3753,14 @@ test('training control returns per-worker env targets from learner-consumed opti
 
         now = 1000;
         desired = heartbeat(1000);
-        assert.equal(desired.worker_env_count, 9);
+        assert.equal(desired.worker_env_count, 16);
         assert.equal(desired.env_optimizer.baseline_sps, 1000);
         assert.equal(desired.env_optimizer.probing, true);
 
         const trainer = store.status().trainers.find(
             record => record.trainer_id === 'remote-linux');
         assert.equal(trainer.worker_capacity.current_envs, 8);
-        assert.equal(trainer.env_optimizer.desired_envs, 9);
+        assert.equal(trainer.env_optimizer.desired_envs, 16);
     });
 });
 
@@ -3813,6 +3814,7 @@ test('training control pauses env optimization during a release cutover', () => 
             metrics: {
                 throughput: {
                     learner_consumed_steps_total: consumedSteps,
+                    learner_step_total: consumedSteps,
                 },
             },
         });
@@ -3820,7 +3822,7 @@ test('training control pauses env optimization during a release cutover', () => 
         heartbeat(0);
         now = 1000;
         let desired = heartbeat(1000);
-        assert.equal(desired.worker_env_count, 9);
+        assert.equal(desired.worker_env_count, 16);
         assert.equal(desired.env_optimizer.probing, true);
 
         store.stageRelease({
