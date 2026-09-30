@@ -44,6 +44,108 @@ class ContinualServiceTests(unittest.TestCase):
             self.assertTrue(popen.call_args.kwargs["start_new_session"])
             self.assertEqual(popen.call_args.args[0], ["python", "trainer.py"])
 
+    def test_managed_stop_force_retires_hung_zero_step_training_child(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            options = self._options(root)
+            stop_file = root / "managed-stop.request"
+            fake = mock.Mock()
+            fake.pid = 6262
+            fake.poll.return_value = None
+            fake.wait.return_value = 0
+
+            with (
+                mock.patch.object(service.os, "name", "posix"),
+                mock.patch.dict(
+                    os.environ,
+                    {
+                        service.MANAGED_STOP_FILE_ENV: str(stop_file),
+                        "BEES_TRAINING_RUN_ID": options.run_id,
+                    },
+                    clear=False,
+                ),
+                mock.patch.object(
+                    service,
+                    "_managed_stop_requested",
+                    side_effect=[False, True],
+                ),
+                mock.patch.object(service, "popen_owned", return_value=fake),
+                mock.patch.object(service.time, "monotonic", return_value=100.0),
+                mock.patch.object(
+                    service,
+                    "MANAGED_ZERO_PROGRESS_STOP_SECONDS",
+                    0.0,
+                ),
+                mock.patch.object(
+                    service,
+                    "_stop_interruptible_managed_child",
+                ) as stop_child,
+            ):
+                with self.assertRaises(KeyboardInterrupt):
+                    service._run_managed_subprocess(
+                        ["python", "trainer.py"],
+                        options,
+                    )
+
+            stop_child.assert_called_once_with(fake)
+
+    def test_managed_stop_preserves_positive_progress_without_checkpoint(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            options = self._options(root)
+            stop_file = root / "managed-stop.request"
+            progress_file = root / service.MANAGED_LEARNER_PROGRESS_FILE_NAME
+            progress_file.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "run_id": options.run_id,
+                        "step": 1,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            fake = mock.Mock()
+            fake.pid = 6363
+            fake.poll.side_effect = [None, None, 0]
+            fake.wait.return_value = 0
+
+            with (
+                mock.patch.object(service.os, "name", "posix"),
+                mock.patch.dict(
+                    os.environ,
+                    {
+                        service.MANAGED_STOP_FILE_ENV: str(stop_file),
+                        "BEES_TRAINING_RUN_ID": options.run_id,
+                    },
+                    clear=False,
+                ),
+                mock.patch.object(
+                    service,
+                    "_managed_stop_requested",
+                    side_effect=[False, True, True],
+                ),
+                mock.patch.object(service, "popen_owned", return_value=fake),
+                mock.patch.object(service.time, "monotonic", return_value=100.0),
+                mock.patch.object(service.time, "sleep"),
+                mock.patch.object(
+                    service,
+                    "MANAGED_ZERO_PROGRESS_STOP_SECONDS",
+                    0.0,
+                ),
+                mock.patch.object(
+                    service,
+                    "_stop_interruptible_managed_child",
+                ) as stop_child,
+            ):
+                with self.assertRaises(KeyboardInterrupt):
+                    service._run_managed_subprocess(
+                        ["python", "trainer.py"],
+                        options,
+                    )
+
+            stop_child.assert_not_called()
+
     def test_managed_stop_interrupts_release_child_without_waiting_for_checkpoint(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             options = self._options(Path(temp_dir))

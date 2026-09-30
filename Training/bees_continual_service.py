@@ -42,6 +42,8 @@ DEFAULT_NUM_ENVS = 4
 DEFAULT_RETRY_SECONDS = 30.0
 MANAGED_STOP_FILE_ENV = "BEES_TRAINING_STOP_FILE"
 MANAGED_CHILD_POLL_SECONDS = 0.25
+MANAGED_ZERO_PROGRESS_STOP_SECONDS = 15.0
+MANAGED_LEARNER_PROGRESS_FILE_NAME = "learner-progress.json"
 MANAGED_INTERRUPTIBLE_STOP_SECONDS = OWNED_CHILD_TERMINATION_GRACE_SECONDS + 5.0
 PLATFORM_BUILD_TARGETS = {
     "WindowsPlayer": "StandaloneWindows64",
@@ -469,6 +471,33 @@ def _managed_stop_requested() -> bool:
     return path is not None and path.is_file()
 
 
+def _managed_learner_progress_step() -> int:
+    """Return durable positive learner progress for this managed run, or zero."""
+
+    stop_path = _managed_stop_file()
+    if stop_path is None:
+        return 0
+    progress_path = stop_path.with_name(MANAGED_LEARNER_PROGRESS_FILE_NAME)
+    try:
+        value = json.loads(progress_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return 0
+    if not isinstance(value, Mapping) or value.get("schema_version") != 1:
+        return 0
+
+    active_run = os.environ.get("BEES_TRAINING_RUN_ID", "").strip()
+    if str(value.get("run_id", "")).strip() != active_run:
+        return 0
+    step = value.get("step")
+    if (
+        not isinstance(step, int)
+        or isinstance(step, bool)
+        or step <= 0
+    ):
+        return 0
+    return int(step)
+
+
 def _stop_interruptible_managed_child(process: subprocess.Popen) -> None:
     """Stop non-training phase work that cannot contain newer optimizer state."""
     if process.poll() is not None:
@@ -593,23 +622,48 @@ def _run_managed_subprocess(
     child_tree_retired = False
     try:
         stop_requested = False
+        stop_requested_at: Optional[float] = None
         while process.poll() is None:
-            if _managed_stop_requested() and not stop_requested:
-                stop_requested = True
-                if interruptible_on_stop:
+            if _managed_stop_requested():
+                if not stop_requested:
+                    stop_requested = True
+                    stop_requested_at = time.monotonic()
+                    if interruptible_on_stop:
+                        print(
+                            "[Bees continuous] managed shutdown requested during durable "
+                            "release/publish work; stopping the active phase.",
+                            flush=True,
+                        )
+                        _stop_interruptible_managed_child(process)
+                        child_tree_retired = True
+                        break
                     print(
-                        "[Bees continuous] managed shutdown requested during durable "
-                        "release/publish work; stopping the active phase.",
+                        "[Bees continuous] managed shutdown requested during training; "
+                        "waiting for the trainer to finalize checkpoint/model output.",
+                        flush=True,
+                    )
+
+                # ML-Agents 1.1 can hang in graph generation when interrupted before
+                # the first usable rollout ever registered a trainer. In that exact
+                # zero-progress case there is no optimizer lineage to preserve. Give
+                # normal cleanup a short grace period, then retire the owned process
+                # tree rather than leaving the operator stop blocked indefinitely.
+                if (
+                    not interruptible_on_stop
+                    and stop_requested_at is not None
+                    and time.monotonic() - stop_requested_at
+                    >= MANAGED_ZERO_PROGRESS_STOP_SECONDS
+                    and _managed_learner_progress_step() <= 0
+                    and not training_checkpoint_exists(options)
+                ):
+                    print(
+                        "[Bees continuous] trainer shutdown is stuck before any "
+                        "learner progress/checkpoint; retiring the zero-step process tree.",
                         flush=True,
                     )
                     _stop_interruptible_managed_child(process)
                     child_tree_retired = True
                     break
-                print(
-                    "[Bees continuous] managed shutdown requested during training; "
-                    "waiting for the trainer to finalize checkpoint/model output.",
-                    flush=True,
-                )
             time.sleep(MANAGED_CHILD_POLL_SECONDS)
 
         return_code = int(process.wait())
