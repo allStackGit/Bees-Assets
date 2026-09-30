@@ -52,7 +52,7 @@ function localActorSettings(config) {
         enabled,
         initialEnvs: Number(value.initialEnvs ?? 4),
         minEnvs: Number(value.minEnvs ?? 1),
-        maxEnvs: Number(value.maxEnvs ?? 8),
+        maxEnvs: Number(value.maxEnvs ?? 64),
         autoTune: value.autoTune !== false,
         torchDevice: String(value.torchDevice || 'cpu'),
     };
