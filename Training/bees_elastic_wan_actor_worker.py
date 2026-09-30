@@ -288,6 +288,7 @@ class _SessionFailureTelemetry:
                 else max(0.0, time.time() - self._last_failure_unix_seconds)
             )
             return {
+                "runtime_version": self._runtime_version,
                 "session_failures_total": self._count,
                 "seconds_since_last_session_failure": age,
                 "last_session_failure_type": self._last_failure_type,
