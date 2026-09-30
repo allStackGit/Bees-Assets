@@ -104,6 +104,27 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void MinedValueEncodingTracksEconomicValueWithoutUnboundedObservations()
+        {
+            Type perceptionType = RuntimeAssembly.GetType("RlCombatPerception");
+            float equalToStarting = (float)RuntimeAssembly.InvokeStatic(
+                perceptionType,
+                "NormalizeMinedValueForPolicy",
+                500,
+                500);
+            float tripleStarting = (float)RuntimeAssembly.InvokeStatic(
+                perceptionType,
+                "NormalizeMinedValueForPolicy",
+                1500,
+                500);
+
+            Assert.That(equalToStarting, Is.EqualTo(0.5f).Within(0.0001f));
+            Assert.That(tripleStarting, Is.EqualTo(0.75f).Within(0.0001f));
+            Assert.That(tripleStarting, Is.GreaterThan(equalToStarting));
+            Assert.That(tripleStarting, Is.LessThan(1f));
+        }
+
+        [Test]
         public void PassiveVisionOnlyShipsDoNotRequirePolicyAgents()
         {
             Type agentType = RuntimeAssembly.GetType("RlOneVsOneAgent");
