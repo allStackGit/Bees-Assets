@@ -596,6 +596,12 @@ class TrainingControlClientTests(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
+            with mock.patch.object(agent.time, "time", return_value=3031.0):
+                self.assertEqual(
+                    managed.health_error(),
+                    "",
+                )
+
             with mock.patch.object(agent.time, "time", return_value=3000.0):
                 self.assertIn(
                     "rollout has made no progress",
@@ -1193,6 +1199,7 @@ class TrainingControlClientTests(unittest.TestCase):
                         "session_failures_total": 3,
                         "seconds_since_last_session_failure": 7.5,
                         "last_session_failure_type": "IndexError",
+                        "last_session_failure_message": "background upload failed",
                         "policy_cycle": 7,
                         "runtime_version": "a" * 64,
                         "env_resize_failed_target": 18,
@@ -1216,6 +1223,10 @@ class TrainingControlClientTests(unittest.TestCase):
             self.assertEqual(metrics["session_failures_total"], 3)
             self.assertEqual(metrics["seconds_since_last_session_failure"], 7.5)
             self.assertEqual(metrics["last_session_failure_type"], "IndexError")
+            self.assertEqual(
+                metrics["last_session_failure_message"],
+                "background upload failed",
+            )
             self.assertEqual(metrics["policy_cycle"], 7)
             self.assertEqual(metrics["runtime_version"], "a" * 64)
             self.assertEqual(metrics["env_resize_failed_target"], 18)
