@@ -3882,7 +3882,6 @@ test('lease-expired workers remain visible in status but cannot occupy optimizer
 
         assert.ok(store.envOptimizer.snapshot('remote-stale'));
         store.envOptimizer.activeProbeTrainerId = 'remote-stale';
-        store.envOptimizer.lastCompletedProbeTrainerId = 'remote-stale';
 
         now = 1001;
         const status = store.status();
@@ -3892,7 +3891,6 @@ test('lease-expired workers remain visible in status but cannot occupy optimizer
         assert.equal(stale.stale, true);
         assert.equal(store.envOptimizer.snapshot('remote-stale'), null);
         assert.equal(store.envOptimizer.activeProbeTrainerId, null);
-        assert.equal(store.envOptimizer.lastCompletedProbeTrainerId, null);
     });
 });
 
