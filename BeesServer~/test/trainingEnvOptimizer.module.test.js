@@ -11,6 +11,7 @@ const {
     producerAcceptedSteps,
     runtimeVersion,
     policyCycle,
+    sessionFailureMessage,
 } = require('../trainingEnvOptimizer');
 
 function record(
@@ -27,6 +28,7 @@ function record(
         sessionFailures = 0,
         failureAgeSeconds = null,
         failureType = '',
+        failureMessage = '',
         resizeFailedTarget = null,
         resizeError = '',
         policyCycleValue = null,
@@ -56,6 +58,7 @@ function record(
                 session_failures_total: sessionFailures,
                 seconds_since_last_session_failure: failureAgeSeconds,
                 last_session_failure_type: failureType,
+                last_session_failure_message: failureMessage,
                 env_resize_failed_target: resizeFailedTarget,
                 env_resize_error: resizeError,
             },
@@ -115,6 +118,12 @@ test('capacity and learner-consumed-step metrics reject malformed values', () =>
     );
     assert.equal(policyCycle({ throughput: { policy_cycle: 7 } }), 7);
     assert.equal(policyCycle({ throughput: { policy_cycle: -1 } }), null);
+    assert.equal(
+        sessionFailureMessage({
+            throughput: { last_session_failure_message: ' background watcher failed ' },
+        }),
+        'background watcher failed',
+    );
     assert.equal(runtimeVersion({ throughput: { runtime_version: 'a'.repeat(64) } }), 'a'.repeat(64));
     assert.equal(runtimeVersion({ throughput: { runtime_version: 'not-a-hash' } }), '');
 });
@@ -711,12 +720,18 @@ test('recent internal WAN actor failure holds probes without extending the hold 
             max: 16,
             sessionFailures: 2,
             failureAgeSeconds: 4,
+            failureType: 'RuntimeError',
+            failureMessage: 'WAN actor background task failed: ValueError: bad state',
         },
     );
     assert.equal(state.phase, 'stability-hold');
     assert.equal(state.stability_hold_until_ms, 26_000);
     assert.match(state.decision, /WAN actor session failure/);
-    assert.equal(state.last_instability_reason, 'WAN actor session failure');
+    assert.equal(
+        state.last_instability_reason,
+        'WAN actor session failure: RuntimeError: ' +
+            'WAN actor background task failed: ValueError: bad state',
+    );
 
     state = update(
         optimizer,
