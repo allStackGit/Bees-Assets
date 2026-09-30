@@ -502,6 +502,7 @@ internal static class RlOneVsOneEpisodeDiagnostics
                    "bee_self_damage=0 human_self_damage=0 bee_friendly_damage=0 human_friendly_damage=0 " +
                    "bee_unattributed_damage=0 human_unattributed_damage=0 " +
                    "bee_static_deaths_by_ship=none human_static_deaths_by_ship=none " +
+                   "bee_border_deaths_by_ship=none human_border_deaths_by_ship=none " +
                    "bee_asteroid_deaths_by_ship=none human_asteroid_deaths_by_ship=none " +
                    "bee_specials=none human_specials=none bee_root_outcomes=none human_root_outcomes=none " +
                    environmentTelemetry + " " + combatTelemetry;
