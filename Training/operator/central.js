@@ -30,6 +30,7 @@ const {
 const { getStatus } = require('./control');
 const {
     ensureLearnerPython,
+    installPackagedReleaseTrainingRuntime,
     installReleaseTrainingRuntime,
     pruneReleaseTrainingRuntimes,
 } = require('./runtime');
@@ -139,7 +140,7 @@ function prepareCentralReleaseRuntime(config, bootstrapPython, unity, release) {
     };
 }
 
-async function getCentralFallbackLaunchCommand(config, unity, preparedRuntime) {
+async function getCentralFallbackLaunchCommand(config, bootstrapPython, unity, preparedRuntime) {
     if (!exists(paths.adminTokenPath)) {
         throw new Error(
             'Cannot choose a safe central fallback runtime because the training-control admin token is missing.'
@@ -227,11 +228,31 @@ async function getCentralFallbackLaunchCommand(config, unity, preparedRuntime) {
         }
     }
 
-    throw new Error(
-        'Cannot safely restart the central supervisor while canonical build ' + canonicalBuild +
-        ' differs from prepared build ' + preparedRuntime.build_id +
-        ': no verified launch command bound to the canonical runtime is available.'
-    );
+    try {
+        const installed = installPackagedReleaseTrainingRuntime(
+            bootstrapPython,
+            canonicalBuild,
+        );
+        const runtimeRoot = path.resolve(String(installed.installed_root));
+        const learnerPython = path.resolve(ensureLearnerPython(config, runtimeRoot));
+        return {
+            build_id: canonicalBuild,
+            launch_command: newCentralLearnerLaunchCommand(
+                config,
+                learnerPython,
+                unity,
+                runtimeRoot,
+            ),
+        };
+    } catch (error) {
+        throw new Error(
+            'Cannot safely restart the central supervisor while canonical build ' + canonicalBuild +
+            ' differs from prepared build ' + preparedRuntime.build_id +
+            ': no verified launch command bound to the canonical runtime is available, and ' +
+            'recovery from its retained immutable training-runtime package failed: ' +
+            error.message
+        );
+    }
 }
 
 function getRunningCentralAgentPid() {
@@ -521,7 +542,12 @@ async function startCentralAgentIfNeeded(
         throw new Error('Central training supervisor requires Python 3.10: ' + bootstrapPython);
     }
 
-    const fallback = await getCentralFallbackLaunchCommand(config, unity, preparedRuntime);
+    const fallback = await getCentralFallbackLaunchCommand(
+        config,
+        bootstrapPython,
+        unity,
+        preparedRuntime,
+    );
     const supervisorArgs = [
         '-u', agent,
         '--server-url', String(config.controlUrl),
