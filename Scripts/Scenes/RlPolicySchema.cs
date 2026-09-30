@@ -11,7 +11,7 @@ using System.Collections.Generic;
 /// </summary>
 internal static partial class RlPolicySchema
 {
-    internal const int Version = 21;
+    internal const int Version = 22;
     internal const string ExpectedBehaviorName = "BeesRL1v1";
     internal const int PerceptionObservationSize = 7593;
     internal const int EpisodeProgressObservationIndex = PerceptionObservationSize;
@@ -27,7 +27,7 @@ internal static partial class RlPolicySchema
     internal const int ExpectedSpecialActionBranchSize = 5;
 
     internal const string Signature =
-        "bees-rl-v21|behavior=BeesRL1v1|trainer=ma-poca|network=structured-dual-faction-384x3|normalize=true|obs=7614|tail=episode-progress+faction+19-reserved|cont=16|disc=2x5,5|" +
+        "bees-rl-v22|behavior=BeesRL1v1|trainer=ma-poca|network=structured-dual-faction-128x3|normalize=true|obs=7614|tail=episode-progress+faction+19-reserved|cont=16|disc=2x5,5|" +
         "entity-encoder=shared-attention96|slot-normalization=raw-bounded-shared|weapon-encoder=shared-common32-slot64|weapon-head=shared-per-slot-faction-specific|team-gradient=inverse-active-group|" +
         "coord-frame=team-episode-distinct-quarter-turn|weapon-aim=slotwise-xy|weapon-fire=slotwise-cease-or-fire|healing=weapon-exclusive|weapon-ready=rl-latched-until-fire|" +
         "shiptype=fixed-scrambled-scalar24|weapontype=fixed-scrambled-scalar10|mapbits=4|shipmap=v1-0..23|weaponmap=v1-0..9|" +
