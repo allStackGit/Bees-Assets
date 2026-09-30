@@ -101,7 +101,7 @@ class WanActorPolicyConstructionTests(unittest.TestCase):
         behavior_spec = BehaviorSpec(
             observation_specs=[
                 ObservationSpec(
-                    shape=(7614,),
+                    shape=(7743,),
                     dimension_property=(DimensionProperty.NONE,),
                     observation_type=ObservationType.DEFAULT,
                     name="vector",
