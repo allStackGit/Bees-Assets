@@ -280,6 +280,8 @@ internal sealed class RlOneVsOneTrainingOptions
         {
             ValidateComposition(_beeShipTypes, BeeShipTypesFlag);
             ValidateComposition(_humanShipTypes, HumanShipTypesFlag);
+            ValidateMapCanContainCandidates(_beeShipTypes, BeeShipTypesFlag);
+            ValidateMapCanContainCandidates(_humanShipTypes, HumanShipTypesFlag);
             return;
         }
 
@@ -290,6 +292,26 @@ internal sealed class RlOneVsOneTrainingOptions
 
         ValidateSampledCandidatePool(_beeShipTypes, ConfigData.Configuration.BeeSide, BeeShipTypesFlag);
         ValidateSampledCandidatePool(_humanShipTypes, ConfigData.Configuration.HumanSide, HumanShipTypesFlag);
+        ValidateMapCanContainCandidates(_beeShipTypes, BeeShipTypesFlag);
+        ValidateMapCanContainCandidates(_humanShipTypes, HumanShipTypesFlag);
+    }
+
+    private void ValidateMapCanContainCandidates(
+        IReadOnlyList<ConfigData.ShipTypes> shipTypes,
+        string flag)
+    {
+        float maximum = MapSizeMaximum;
+        for (int i = 0; i < shipTypes.Count; i++)
+        {
+            float required = RlOneVsOneArenaMapSizeState.GetMinimumSafeMapSizeForShip(shipTypes[i]);
+            if (maximum + 0.001f < required)
+            {
+                throw new ArgumentException(
+                    $"{flag} contains {shipTypes[i]}, which requires an RL map of at least " +
+                    $"{required.ToString("0.###", CultureInfo.InvariantCulture)} for rotation-safe spawn clearance; " +
+                    $"configured maximum is {maximum.ToString("0.###", CultureInfo.InvariantCulture)}.");
+            }
+        }
     }
 
     private void ValidateMapSizeOptions()
