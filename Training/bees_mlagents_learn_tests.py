@@ -307,6 +307,25 @@ class WorkerTimerSamplerTests(unittest.TestCase):
         self.assertEqual(len(resets), 2)
 
 
+    def test_sampled_worker_installer_is_idempotent(self):
+        import mlagents.trainers.subprocess_env_manager as subprocess_env_manager
+
+        original_worker = subprocess_env_manager.worker
+        original_saved_worker = launcher._ORIGINAL_MLAGENTS_WORKER
+        try:
+            first = launcher._install_sampled_worker_timers()
+            second = launcher._install_sampled_worker_timers()
+            self.assertIs(first, original_worker)
+            self.assertIsNone(second)
+            self.assertIs(
+                subprocess_env_manager.worker,
+                launcher._bees_sampled_worker,
+            )
+        finally:
+            subprocess_env_manager.worker = original_worker
+            launcher._ORIGINAL_MLAGENTS_WORKER = original_saved_worker
+
+
 class BatchedInferenceTests(unittest.TestCase):
     def setUp(self):
         from mlagents.trainers.subprocess_env_manager import SubprocessEnvManager
@@ -408,6 +427,9 @@ class BatchedInferenceTests(unittest.TestCase):
                 self.checked_actions.append(action)
 
         return FakeTorchPolicy()
+
+    def test_batch_installer_is_idempotent(self):
+        self.assertIsNone(launcher._install_batched_inference())
 
     def test_same_behavior_workers_are_evaluated_once_and_ipc_is_slim(self):
         from mlagents.trainers.behavior_id_utils import get_global_agent_id
@@ -556,6 +578,12 @@ class FastEnvManagerTests(unittest.TestCase):
     def tearDown(self):
         self.SubprocessEnvManager._step = self.original_step
         self.EnvManager._process_step_infos = self.original_process_step_infos
+
+    def test_fast_env_manager_installer_is_idempotent(self):
+        self.assertEqual(
+            launcher._install_fast_env_manager(),
+            (None, None),
+        )
 
     def test_blocking_first_result_then_drains_ready_workers(self):
         from queue import Empty

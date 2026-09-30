@@ -346,7 +346,10 @@ def _install_sampled_worker_timers():
 
     global _ORIGINAL_MLAGENTS_WORKER
     original_worker = subprocess_env_manager.worker
-    _ORIGINAL_MLAGENTS_WORKER = original_worker
+    if original_worker is _bees_sampled_worker:
+        return None
+    if _ORIGINAL_MLAGENTS_WORKER is None:
+        _ORIGINAL_MLAGENTS_WORKER = original_worker
     subprocess_env_manager.worker = _bees_sampled_worker
     return original_worker
 
@@ -369,6 +372,15 @@ def _install_batched_inference(cpu_inference: bool = False):
     from mlagents_envs.timers import hierarchical_timer
 
     original_queue_steps = SubprocessEnvManager._queue_steps
+    if getattr(original_queue_steps, "_bees_batched_inference", False):
+        configured_cpu_inference = bool(
+            getattr(original_queue_steps, "_bees_cpu_inference", False)
+        )
+        if configured_cpu_inference != bool(cpu_inference):
+            raise RuntimeError(
+                "Bees batched inference is already installed with a different device mode."
+            )
+        return None
     cpu_actor_cache = _CpuInferenceActorCache() if cpu_inference else None
     cpu_device = torch.device("cpu")
 
@@ -578,6 +590,8 @@ def _install_batched_inference(cpu_inference: bool = False):
                 worker.send(EnvironmentCommand.STEP, ipc_action_info)
                 worker.waiting = True
 
+    batched_queue_steps._bees_batched_inference = True
+    batched_queue_steps._bees_cpu_inference = bool(cpu_inference)
     SubprocessEnvManager._queue_steps = batched_queue_steps
     return original_queue_steps
 
@@ -596,6 +610,18 @@ def _install_fast_env_manager():
 
     original_step = SubprocessEnvManager._step
     original_process_step_infos = EnvManager._process_step_infos
+    step_installed = bool(getattr(original_step, "_bees_fast_env_manager", False))
+    process_installed = bool(
+        getattr(
+            original_process_step_infos,
+            "_bees_fast_env_manager",
+            False,
+        )
+    )
+    if step_installed or process_installed:
+        if step_installed and process_installed:
+            return None, None
+        raise RuntimeError("Bees fast environment-manager patch is only partially installed.")
 
     def fast_step(self):
         self._queue_steps()
@@ -642,6 +668,8 @@ def _install_fast_env_manager():
         with hierarchical_timer("BeesEnv.process_step_infos"):
             return original_process_step_infos(self, step_infos)
 
+    fast_step._bees_fast_env_manager = True
+    timed_process_step_infos._bees_fast_env_manager = True
     SubprocessEnvManager._step = fast_step
     EnvManager._process_step_infos = timed_process_step_infos
     return original_step, original_process_step_infos

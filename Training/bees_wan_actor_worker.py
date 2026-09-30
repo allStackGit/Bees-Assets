@@ -747,12 +747,20 @@ class ActorSession:
         from mlagents.trainers.behavior_id_utils import BehaviorIdentifiers
         from mlagents.trainers.stats import StatsReporter
         from mlagents.trainers.subprocess_env_manager import SubprocessEnvManager
+        from bees_mlagents_learn import (
+            _install_batched_inference,
+            _install_fast_env_manager,
+            _install_sampled_worker_timers,
+        )
 
         if mlagents.trainers.__version__ != wan.EXPECTED_MLAGENTS_VERSION:
             raise RuntimeError(
                 f"WAN actor requires ML-Agents {wan.EXPECTED_MLAGENTS_VERSION}; "
                 f"installed={mlagents.trainers.__version__}."
             )
+        _install_sampled_worker_timers()
+        _install_batched_inference(cpu_inference=False)
+        _install_fast_env_manager()
         self._report_startup_phase("preparing-session")
         options = self._remote_run_options()
         run_logs_dir = self._run_logs_dir(options)

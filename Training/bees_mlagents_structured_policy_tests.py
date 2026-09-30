@@ -1,9 +1,10 @@
-"""Focused tests for the Bees v21 structured MA-POCA actor architecture."""
+"""Focused tests for the Bees v22 structured MA-POCA actor architecture."""
 
 from __future__ import annotations
 
 from types import SimpleNamespace
 import unittest
+from unittest import mock
 
 
 from bees_mlagents_structured_policy import (
@@ -69,6 +70,128 @@ class StructuredPolicyArchitectureTests(unittest.TestCase):
         self.assertEqual(encoded.shape[1], 833)
         self.assertEqual(float(encoded[0, -1].item()), 1.0)
         self.assertEqual(float(encoded[1, -1].item()), -1.0)
+
+    def test_empty_padded_slots_skip_slot_mlps(self):
+        from mlagents.torch_utils import torch
+
+        encoder = BeesStructuredObservationEncoder(
+            self._observation_specs(),
+            128,
+            self._network_settings().vis_encode_type,
+            normalize=False,
+        )
+        calls = {
+            "entity_base": 0,
+            "weapon_common": 0,
+            "self_weapon_specific": 0,
+            "ally_comm": 0,
+            "ally_fuse": 0,
+            "mining": 0,
+            "map_object": 0,
+            "collision": 0,
+        }
+
+        def count(name):
+            def hook(_module, _inputs, _output):
+                calls[name] += 1
+            return hook
+
+        handles = [
+            encoder.entity_base_encoder.register_forward_hook(count("entity_base")),
+            encoder.weapon_common_encoder.register_forward_hook(count("weapon_common")),
+            encoder.self_weapon_specific_encoder.register_forward_hook(
+                count("self_weapon_specific")
+            ),
+            encoder.ally_communication_encoder.register_forward_hook(count("ally_comm")),
+            encoder.ally_fuse.register_forward_hook(count("ally_fuse")),
+            encoder.mining_encoder.register_forward_hook(count("mining")),
+            encoder.map_object_encoder.register_forward_hook(count("map_object")),
+            encoder.collision_encoder.register_forward_hook(count("collision")),
+        ]
+        try:
+            observations = torch.zeros((2, BEES_OBSERVATION_SIZE))
+            observations[0, FACTION_INDEX] = 1.0
+            observations[1, FACTION_INDEX] = -1.0
+            encoded = encoder([observations])
+        finally:
+            for handle in handles:
+                handle.remove()
+
+        self.assertEqual(encoded.shape, (2, encoder.total_enc_size))
+        self.assertEqual(
+            calls,
+            {name: 0 for name in calls},
+        )
+
+    def test_pure_faction_batch_executes_only_matching_encoder_and_trunk(self):
+        from mlagents.torch_utils import torch
+
+        body = BeesStructuredNetworkBody(
+            self._observation_specs(),
+            self._network_settings(),
+        )
+        calls = {
+            "bee_encoder": 0,
+            "human_encoder": 0,
+            "bee_trunk": 0,
+            "human_trunk": 0,
+        }
+
+        def count(name):
+            def hook(_module, _inputs, _output):
+                calls[name] += 1
+            return hook
+
+        handles = [
+            body.bee_observation_encoder.register_forward_hook(
+                count("bee_encoder")
+            ),
+            body.human_observation_encoder.register_forward_hook(
+                count("human_encoder")
+            ),
+            body.bee_trunk.register_forward_hook(count("bee_trunk")),
+            body.human_trunk.register_forward_hook(count("human_trunk")),
+        ]
+        try:
+            observations = torch.zeros((3, BEES_OBSERVATION_SIZE))
+            observations[:, FACTION_INDEX] = 1.0
+            output, _ = body([observations])
+        finally:
+            for handle in handles:
+                handle.remove()
+
+        self.assertEqual(output.shape, (3, ACTION_ENCODING_SIZE))
+        self.assertEqual(calls["bee_encoder"], 1)
+        self.assertEqual(calls["bee_trunk"], 1)
+        self.assertEqual(calls["human_encoder"], 0)
+        self.assertEqual(calls["human_trunk"], 0)
+
+    def test_sparse_runtime_path_matches_dense_export_semantics(self):
+        from mlagents.torch_utils import torch
+
+        torch.manual_seed(7)
+        body = BeesStructuredNetworkBody(
+            self._observation_specs(),
+            self._network_settings(),
+        )
+        observations = torch.randn((4, BEES_OBSERVATION_SIZE)) * 0.2
+        observations[:2, FACTION_INDEX] = 1.0
+        observations[2:, FACTION_INDEX] = -1.0
+
+        runtime_output, _ = body([observations])
+        with mock.patch.object(
+            torch.onnx,
+            "is_in_onnx_export",
+            return_value=True,
+        ):
+            dense_output, _ = body([observations])
+
+        torch.testing.assert_close(
+            runtime_output,
+            dense_output,
+            rtol=1.0e-5,
+            atol=1.0e-6,
+        )
 
     def test_bee_and_human_actor_encoders_and_trunks_are_independent(self):
         from mlagents.torch_utils import torch
