@@ -48,6 +48,70 @@ LIVE_LEARNER_LOG_NAME = "learner-live.log"
 LIVE_LEARNER_LOG_MAX_BYTES = 16 * 1024 * 1024
 _ORIGINAL_MLAGENTS_WORKER = None
 
+# Unity terminal marker values mirrored from RlOneVsOneAgent. They exist only to make stock
+# ML-Agents GhostTrainer ELO follow the explicit battle outcome; the markers are removed before
+# the wrapped PPO/POCA trainer receives each trajectory.
+ELO_WIN_MARKER = 1000.0
+ELO_DRAW_MARKER = 2000.0
+ELO_LOSS_MARKER = -1000.0
+ELO_MARKER_TOLERANCE = 100.0
+
+
+def _decode_explicit_outcome_marker(reward: float):
+    value = float(reward)
+    for marker, result in (
+        (ELO_DRAW_MARKER, 0.5),
+        (ELO_WIN_MARKER, 1.0),
+        (ELO_LOSS_MARKER, 0.0),
+    ):
+        if abs(value - marker) < ELO_MARKER_TOLERANCE:
+            return result, value - marker
+    return None, value
+
+
+def _install_explicit_outcome_elo():
+    from mlagents.trainers.ghost.trainer import GhostTrainer
+
+    original = GhostTrainer._process_trajectory
+
+    def process_trajectory_from_explicit_outcome(self, trajectory):
+        if not trajectory.steps:
+            return original(self, trajectory)
+
+        explicit_result, stripped_reward = _decode_explicit_outcome_marker(
+            trajectory.steps[-1].reward
+        )
+        if explicit_result is None:
+            return original(self, trajectory)
+
+        # Trajectory is a NamedTuple containing a mutable steps list; replacing the final
+        # AgentExperience here also changes the same trajectory already queued for the inner
+        # trainer, ensuring PPO never trains on the ELO-only marker.
+        trajectory.steps[-1] = trajectory.steps[-1]._replace(reward=stripped_reward)
+
+        if (
+            trajectory.done_reached
+            and trajectory.all_group_dones_reached
+            and not trajectory.interrupted
+        ):
+            change = self.controller.compute_elo_rating_changes(
+                self.current_elo, explicit_result
+            )
+            self.change_current_elo(change)
+            self._stats_reporter.add_stat("Self-play/ELO", self.current_elo)
+
+    GhostTrainer._process_trajectory = process_trajectory_from_explicit_outcome
+    return original
+
+
+def _restore_explicit_outcome_elo(original) -> None:
+    if original is None:
+        return
+    from mlagents.trainers.ghost.trainer import GhostTrainer
+
+    GhostTrainer._process_trajectory = original
+
+
 
 class _LiveLogSink:
     def __init__(self, path: Path) -> None:
@@ -942,6 +1006,7 @@ def main() -> None:
         )
 
     structured_policy_state = install_structured_policy()
+    original_explicit_outcome_elo = _install_explicit_outcome_elo()
     original_value_estimate_key = None
     original_sigma_forward = None
     try:
@@ -952,6 +1017,7 @@ def main() -> None:
         restore_continuous_sigma_guard(original_sigma_forward)
         restore_inactive_continuous_action_masking()
         restore_value_estimate_key(original_value_estimate_key)
+        _restore_explicit_outcome_elo(original_explicit_outcome_elo)
         restore_structured_policy(structured_policy_state)
         raise
     print("[Bees RL] Structured dual-faction entity/weapon policy: enabled")
@@ -959,6 +1025,7 @@ def main() -> None:
     print("[Bees RL] Inactive weapon-action masking: enabled")
     print("[Bees RL] Continuous sigma guard: enabled")
     print("[Bees RL] PPO/POCA value-estimate/return buffer key separation: enabled")
+    print("[Bees RL] Self-play ELO explicit battle-outcome classification: enabled")
 
     if torch_threads is not None:
         torch_utils.torch.set_num_threads(torch_threads)
@@ -1021,6 +1088,7 @@ def main() -> None:
         restore_continuous_sigma_guard(original_sigma_forward)
         restore_inactive_continuous_action_masking()
         restore_value_estimate_key(original_value_estimate_key)
+        _restore_explicit_outcome_elo(original_explicit_outcome_elo)
         restore_structured_policy(structured_policy_state)
         if original_queue_steps is not None:
             SubprocessEnvManager._queue_steps = original_queue_steps
