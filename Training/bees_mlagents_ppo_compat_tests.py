@@ -714,6 +714,36 @@ class PocaAdvantageNormalizationTests(unittest.TestCase):
         )
 
 
+class StructuredTrainingSlotLimitTests(unittest.TestCase):
+    def test_slot_limits_keep_highest_live_prefix_across_agent_and_groupmate(self):
+        import numpy as np
+        from mlagents.trainers.buffer import AgentBuffer
+        from mlagents.trainers.trajectory import GroupObsUtil, ObsUtil
+        from bees_mlagents_structured_policy import (
+            ALLY_SIZE,
+            ALLY_START,
+            BEES_OBSERVATION_SIZE,
+            ENEMY_SIZE,
+            ENEMY_START,
+        )
+
+        batch = AgentBuffer()
+        current = np.zeros(BEES_OBSERVATION_SIZE, dtype=np.float32)
+        current[ALLY_START + ALLY_SIZE] = 1.0
+        groupmate = np.zeros(BEES_OBSERVATION_SIZE, dtype=np.float32)
+        groupmate[ENEMY_START + 2 * ENEMY_SIZE] = 1.0
+        batch[ObsUtil.get_name_at(0)].append(current)
+        batch[GroupObsUtil.get_name_at(0)].append([groupmate])
+
+        policy = SimpleNamespace(
+            behavior_spec=SimpleNamespace(observation_specs=[object()])
+        )
+        limits = compat._structured_training_slot_limits(policy, batch)
+
+        self.assertEqual(limits["allies"], 2)
+        self.assertEqual(limits["enemies"], 3)
+
+
 class PocaCommunicationActivityTests(unittest.TestCase):
     def test_communication_is_active_only_with_groupmates(self):
         import numpy as np
