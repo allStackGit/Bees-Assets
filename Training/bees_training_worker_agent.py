@@ -841,6 +841,7 @@ def _sha256_prefix(path: Path, byte_count: int) -> Optional[str]:
 class TrainingLogUploader:
     CHUNK_BYTES = 1024 * 1024
     MAX_FILE_UPLOAD_BYTES = 64 * 1024 * 1024
+    GENERATION_FINGERPRINT_BYTES = 1024
     FINALIZE_KEEPALIVE_SECONDS = 5.0
 
     def __init__(self, root: Path) -> None:
@@ -858,14 +859,15 @@ class TrainingLogUploader:
         size: int,
     ) -> str:
         capped_size = min(max(0, int(size)), self.MAX_FILE_UPLOAD_BYTES)
-        digest = _sha256_prefix(log_path, capped_size)
+        fingerprint_size = min(capped_size, self.GENERATION_FINGERPRINT_BYTES)
+        digest = _sha256_prefix(log_path, fingerprint_size)
         if digest is None:
             raise ControlRejected(
                 "could not fingerprint divergent local training log generation"
             )
         return (
             "generations/" +
-            digest[:24] + "-" + str(capped_size) + "/" +
+            digest[:24] + "-" + str(fingerprint_size) + "/" +
             relative_path
         )
 
@@ -879,7 +881,8 @@ class TrainingLogUploader:
         expected_sha256: str,
     ) -> str:
         capped_size = min(max(0, int(size)), self.MAX_FILE_UPLOAD_BYTES)
-        digest = _sha256_prefix(log_path, capped_size)
+        fingerprint_size = min(capped_size, self.GENERATION_FINGERPRINT_BYTES)
+        digest = _sha256_prefix(log_path, fingerprint_size)
         if digest is None:
             raise ControlRejected(
                 "could not fingerprint conflicting local training log generation"
@@ -893,7 +896,7 @@ class TrainingLogUploader:
         ).hexdigest()[:16]
         return (
             "generations/" +
-            digest[:24] + "-" + str(capped_size) +
+            digest[:24] + "-" + str(fingerprint_size) +
             "-conflict-" + remote_identity + "/" +
             relative_path
         )
