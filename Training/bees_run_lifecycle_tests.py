@@ -86,6 +86,50 @@ class RunLifecycleTests(unittest.TestCase):
                 first["compatibility_key"],
             )
 
+    def test_legacy_full_source_key_migrates_without_new_run(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            assets = self._assets(root)
+            state = root / "current.json"
+
+            payload = lifecycle.contract_payload(assets)
+            legacy_key = lifecycle._sha256_bytes(
+                json.dumps(
+                    dict(payload),
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    ensure_ascii=True,
+                ).encode("utf-8")
+            )
+            state.write_text(
+                json.dumps(
+                    {
+                        "schema_version": lifecycle.SCHEMA_VERSION,
+                        "run_id": "bees-existing-run",
+                        "compatibility_key": legacy_key,
+                        "contract": payload,
+                        "created_utc": "2026-09-24T12:00:00+00:00",
+                        "last_build_utc": "2026-09-24T12:00:00+00:00",
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            plan = lifecycle.plan_run(
+                assets,
+                state,
+                datetime(2026, 9, 24, 13, 0, tzinfo=timezone.utc),
+            )
+
+            self.assertFalse(plan["incompatible"])
+            self.assertFalse(plan["new_run"])
+            self.assertEqual(plan["run_id"], "bees-existing-run")
+            self.assertEqual(
+                plan["compatibility_key"],
+                lifecycle.compatibility_key(payload),
+            )
+            self.assertNotEqual(plan["compatibility_key"], legacy_key)
+
     def test_trainer_python_implementation_change_keeps_same_run_identity(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
