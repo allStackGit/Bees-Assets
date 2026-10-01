@@ -532,59 +532,6 @@ if ! have base64 || ! have nohup || { ! have sha256sum && ! have shasum; }; then
     exit 2
 fi
 
-have_libgtk3() {
-    local ldconfig_bin=""
-    for candidate in "$(command -v ldconfig 2>/dev/null || true)" /sbin/ldconfig /usr/sbin/ldconfig; do
-        if [[ -n "$candidate" && -x "$candidate" ]]; then
-            ldconfig_bin="$candidate"
-            break
-        fi
-    done
-    if [[ -n "$ldconfig_bin" ]] && "$ldconfig_bin" -p 2>/dev/null | grep -q 'libgtk-3\.so\.0'; then
-        return 0
-    fi
-    for candidate in         /usr/lib/x86_64-linux-gnu/libgtk-3.so.0         /usr/lib64/libgtk-3.so.0         /usr/lib/libgtk-3.so.0         /lib/x86_64-linux-gnu/libgtk-3.so.0; do
-        [[ -e "$candidate" ]] && return 0
-    done
-    return 1
-}
-
-optional_root_cmd() {
-    if [[ "$(id -u)" -eq 0 ]]; then
-        "$@"
-    elif have sudo && sudo -n true >/dev/null 2>&1; then
-        sudo -n "$@"
-    else
-        return 1
-    fi
-}
-
-install_unity_native_prerequisites() {
-    if have apt-get; then
-        optional_root_cmd apt-get update &&
-            optional_root_cmd apt-get install -y libgtk-3-0
-    elif have dnf; then
-        optional_root_cmd dnf install -y gtk3
-    elif have yum; then
-        optional_root_cmd yum install -y gtk3
-    elif have zypper; then
-        optional_root_cmd zypper --non-interactive install gtk3
-    elif have pacman; then
-        optional_root_cmd pacman -Sy --noconfirm gtk3
-    else
-        return 1
-    fi
-}
-
-if ! have_libgtk3; then
-    echo "[Bees remote] libgtk-3.so.0 is missing; attempting to repair the Unity native runtime prerequisite..."
-    if install_unity_native_prerequisites && have_libgtk3; then
-        echo "[Bees remote] installed libgtk-3.so.0 successfully."
-    else
-        echo "warning: libgtk-3.so.0 is still unavailable; Unity server training will continue, but AppUI native loading may report errors." >&2
-    fi
-fi
-
 echo "[Bees remote] Stage 1/5: preparing local worker files..."
 RUNTIME_ROOT="$INSTALL_ROOT/Runtime"
 SECRETS_ROOT="$INSTALL_ROOT/Secrets"
