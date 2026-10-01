@@ -51,10 +51,10 @@ _ORIGINAL_MLAGENTS_WORKER = None
 # Unity terminal marker values mirrored from RlOneVsOneAgent. They exist only to make stock
 # ML-Agents GhostTrainer ELO follow the explicit battle outcome; the markers are removed before
 # the wrapped PPO/POCA trainer receives each trajectory.
-ELO_WIN_MARKER = 1000000.0
-ELO_DRAW_MARKER = 2000000.0
-ELO_LOSS_MARKER = -1000000.0
-ELO_MARKER_TOLERANCE = 100000.0
+ELO_WIN_MARKER = 4096.0
+ELO_DRAW_MARKER = 8192.0
+ELO_LOSS_MARKER = -4096.0
+ELO_MARKER_TOLERANCE = 512.0
 
 
 def _decode_explicit_outcome_marker(reward: float):
