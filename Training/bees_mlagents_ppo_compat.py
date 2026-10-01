@@ -1075,15 +1075,20 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             1,
         )
 
+        update_started = time.perf_counter()
+        _POCA_TIMING_STATE.timing_totals = {}
+        _POCA_TIMING_STATE.timing_counts = {}
+        normalization_started = time.perf_counter()
         _normalize_poca_advantages(self.policy, self.update_buffer)
+        _poca_record_timing(
+            "advantage_normalization",
+            time.perf_counter() - normalization_started,
+        )
 
         num_epoch = self.hyperparameters.num_epoch
         batch_update_stats = defaultdict(list)
         max_num_batch = buffer_length // batch_size
         total_minibatches = num_epoch * max_num_batch
-        update_started = time.perf_counter()
-        _POCA_TIMING_STATE.timing_totals = {}
-        _POCA_TIMING_STATE.timing_counts = {}
         print(
             "[Bees PPO timing] update begin "
             f"buffer={buffer_length} batch={batch_size} epochs={num_epoch} "
@@ -1122,6 +1127,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             "[Bees PPO timing] update end "
             f"minibatches={completed_minibatches}/{total_minibatches} "
             f"seconds={update_seconds:.6f} "
+            f"normalize={_poca_average_timing('advantage_normalization'):.6f} "
             f"avg_minibatch={_poca_average_timing('minibatch_total'):.6f} "
             f"prepare={_poca_average_timing('prepare'):.6f} "
             f"actor={_poca_average_timing('actor_get_stats'):.6f} "
