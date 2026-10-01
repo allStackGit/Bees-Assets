@@ -24,6 +24,6 @@
     "minEnvs": 1,
     "maxEnvs": 48,
     "autoTune": true,
-    "torchDevice": "cuda"
+    "torchDevice": "cpu"
   }
 }
