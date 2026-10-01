@@ -30,6 +30,19 @@ Optimize for a working, understandable system rather than documentation volume, 
 - A passing qualification/unit/static suite proves only what it actually exercises. Do not infer live-system stability, autonomous recovery, deployment readiness, or multi-machine correctness from narrower evidence.
 - Keep normal user-facing responses concise. Do not bury weak evidence or unresolved uncertainty in long explanations.
 
+
+## Runtime and infrastructure failure protocol
+
+For distributed training, networking, process lifecycle, checkpointing, rollout, worker, learner, supervisor, status/telemetry, build/release, stop/restart, and diagnostic-bundle failures:
+
+- Do not patch the first plausible cause. Trace the affected end-to-end path and identify the earliest failure point actually supported by evidence.
+- Correlate all symptoms from the same run before treating them as independent bugs. Classify each as root cause, contributing cause, downstream symptom, or still unresolved.
+- When a diagnostic bundle is provided, inspect the run as a whole for correlated failures before changing code; do not stop at the first obvious error.
+- Prefer removing faulty complexity or fixing ownership/state/lifecycle design over adding retries, watchdogs, guards, exception swallowing, compatibility branches, or recovery logic around symptoms.
+- Do not add brittle source-coupled regression tests merely to mirror implementation. Add automated protection only when it exercises a durable behavior/contract and is practical in the available environment.
+- If the root cause is not established, continue investigating and report the unresolved hypotheses rather than presenting a speculative patch as the solution.
+- Before handing a runtime/infrastructure change back for operator validation, state: what failed; the evidence for the diagnosed cause; what changed; what material behavior remains unverified because the live Unity/multi-machine environment is unavailable; and the specific next-run observation that would confirm or falsify the diagnosis.
+
 ## Change and validation rules
 
 - Before behavior changes, understand the relevant contracts, dependencies, ownership/lifecycle, and any persistence/network/UI/physics/performance implications that actually apply.
