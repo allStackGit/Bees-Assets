@@ -597,16 +597,19 @@ class TrainingControlClientTests(unittest.TestCase):
                 encoding="utf-8",
             )
             with mock.patch.object(agent.time, "time", return_value=3031.0):
-                self.assertEqual(
-                    managed.health_error(),
-                    "",
-                )
+                self.assertEqual(managed.health_error(), "")
+                self.assertFalse(managed.rollout_stalled())
 
-            with mock.patch.object(agent.time, "time", return_value=3121.0):
+            with mock.patch.object(
+                agent.time,
+                "time",
+                return_value=3000.0 + agent.CHILD_HEALTH_PROGRESS_STALE_SECONDS + 1.0,
+            ):
                 self.assertIn(
                     "rollout has made no progress",
                     managed.health_error(),
                 )
+                self.assertTrue(managed.rollout_stalled())
 
     def test_one_shot_central_learner_ready_health_is_not_misclassified_as_remote_stale(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -641,6 +644,7 @@ class TrainingControlClientTests(unittest.TestCase):
 
             with mock.patch.object(agent.time, "time", return_value=5000.0):
                 self.assertEqual(managed.health_error(), "")
+                self.assertFalse(managed.rollout_stalled())
 
     def test_managed_process_uses_separate_posix_process_group_and_stops_tree(self):
         fake = mock.Mock()
