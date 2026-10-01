@@ -1295,7 +1295,8 @@ class ActorSession:
                         "policy_versions": dict(self.policy_versions),
                         "trajectories": trajectories[start : start + MAX_TRAJECTORIES_PER_UPLOAD],
                     }
-                    self._enqueue_upload(payload)
+                    if not self._enqueue_upload(payload):
+                        break
             self._reconcile_env_count()
 
 
