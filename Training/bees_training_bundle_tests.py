@@ -507,6 +507,70 @@ class TrainingBundleTests(unittest.TestCase):
                     )
                 )
 
+    def test_timestamped_run_separates_current_and_historical_generic_logs(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            run_id = "bees-v23-r5-s1-20261001T113736Z-d5784e0e"
+            bees_root, assets_root = self._layout(root, run_id)
+            server_logs = bees_root / "Logs" / "Server"
+            server_logs.mkdir(parents=True)
+            old_log = server_logs / "old.log"
+            current_log = server_logs / "current.log"
+            old_log.write_text("historical-only\n", encoding="utf-8")
+            current_log.write_text("current-only\n", encoding="utf-8")
+            cutoff = bundle._run_start_epoch(run_id)
+            self.assertIsNotNone(cutoff)
+            os.utime(old_log, (cutoff - 10, cutoff - 10))
+            os.utime(current_log, (cutoff + 10, cutoff + 10))
+
+            archive = bundle.create_bundle(
+                bees_root=bees_root,
+                assets_root=assets_root,
+                log_percent=100.0,
+            )
+
+            with zipfile.ZipFile(archive) as zipped:
+                combined = zipped.read("combined-logs.txt").decode("utf-8")
+                historical = zipped.read("historical-logs.txt").decode("utf-8")
+                self.assertIn("current-only", combined)
+                self.assertNotIn("historical-only", combined)
+                self.assertIn("historical-only", historical)
+                self.assertNotIn("current-only", historical)
+                self.assertIn("logs/server/current.log", zipped.namelist())
+                self.assertIn(
+                    "logs/historical/server/old.log",
+                    zipped.namelist(),
+                )
+
+    def test_run_scoped_learner_step_ignores_pre_run_logs(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            logs = root / "logs"
+            logs.mkdir()
+            old_log = logs / "old.log"
+            current_log = logs / "current.log"
+            old_log.write_text(
+                "[INFO] BeesRL1v1. Step: 999,999. Time Elapsed: 10.0 s.\n",
+                encoding="utf-8",
+            )
+            current_log.write_text(
+                "[INFO] BeesRL1v1. Step: 1,234. Time Elapsed: 10.0 s.\n",
+                encoding="utf-8",
+            )
+            cutoff = 2_000_000_000.0
+            os.utime(old_log, (cutoff - 10, cutoff - 10))
+            os.utime(current_log, (cutoff + 10, cutoff + 10))
+
+            self.assertEqual(
+                bundle._learner_step(
+                    None,
+                    logs,
+                    None,
+                    minimum_log_mtime=cutoff,
+                ),
+                1234,
+            )
+
     def test_unified_operator_exposes_bundle_command(self) -> None:
         operator = (
             Path(__file__).resolve().parents[1] / "bees.ps1"
