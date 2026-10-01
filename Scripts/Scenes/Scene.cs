@@ -246,10 +246,13 @@ namespace Assets.Scripts.Scenes
         // Update is called once per frame
         protected virtual void Update()
         {
-            // WebSocketSharp dispatches open/error/close events through Socket.Update's bounded
-            // main-thread queue. Keep pumping it even when RL no longer depends on the server so
-            // IsOpen/HasClosed and any already-arrived response state remain truthful.
-            SocketTimer.Update();
+            // Pump startup/server traffic until dedicated RL has all required settings. After
+            // dedicated training permanently closes the gameplay socket, there is nothing useful
+            // left to dispatch from this transport.
+            if (!_dedicatedTrainingSocketDisabled)
+            {
+                SocketTimer.Update();
+            }
 
             bool canRunWithoutServer = CanRunWithoutServer();
             if (canRunWithoutServer && !_dedicatedTrainingSocketDisabled)
