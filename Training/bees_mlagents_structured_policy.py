@@ -134,7 +134,11 @@ def _use_dense_structured_path() -> bool:
     dense masked computation while no-grad rollout inference keeps the sparse path.
     """
 
-    return bool(torch.is_grad_enabled() or torch.onnx.is_in_onnx_export())
+    return bool(
+        torch.is_grad_enabled()
+        or torch.onnx.is_in_onnx_export()
+        or _TRAINING_SLOT_LIMITS.get()
+    )
 
 
 def _is_bees_observation_specs(observation_specs) -> bool:
