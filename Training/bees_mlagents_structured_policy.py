@@ -394,11 +394,17 @@ class BeesStructuredObservationEncoder(nn.Module):
             OBSERVED_WEAPON_SIZE,
         )
         if _use_dense_structured_path():
+            weapon_count = _slot_limit(
+                "entity_weapons",
+                ENTITY_WEAPON_COUNT,
+            )
+            weapons = weapons[:, :, :weapon_count, :]
+            raw_weapons = raw_weapons[:, :, :weapon_count, :]
             flat = weapons.reshape(-1, OBSERVED_WEAPON_SIZE)
             embedded = self.weapon_common_encoder(flat).reshape(
                 batch,
                 entity_count,
-                ENTITY_WEAPON_COUNT,
+                weapon_count,
                 WEAPON_COMMON_EMBED,
             )
             presence = raw_weapons[:, :, :, 0]
@@ -410,10 +416,10 @@ class BeesStructuredObservationEncoder(nn.Module):
             pooled = self.entity_weapon_pool(
                 embedded.reshape(
                     batch * entity_count,
-                    ENTITY_WEAPON_COUNT,
+                    weapon_count,
                     WEAPON_COMMON_EMBED,
                 ),
-                presence.reshape(batch * entity_count, ENTITY_WEAPON_COUNT),
+                presence.reshape(batch * entity_count, weapon_count),
             )
             return pooled.reshape(
                 batch,
@@ -691,14 +697,15 @@ class BeesStructuredObservationEncoder(nn.Module):
         )
         parent = self._encode_entities(parent_norm, parent_raw)[:, 0, :]
 
+        ally_count = _slot_limit("allies", ALLY_COUNT)
         ally_norm = raw[
             :,
             ALLY_START : ALLY_START + ALLY_COUNT * ALLY_SIZE,
-        ].reshape(-1, ALLY_COUNT, ALLY_SIZE)
+        ].reshape(-1, ALLY_COUNT, ALLY_SIZE)[:, :ally_count, :]
         ally_raw = raw[
             :,
             ALLY_START : ALLY_START + ALLY_COUNT * ALLY_SIZE,
-        ].reshape(-1, ALLY_COUNT, ALLY_SIZE)
+        ].reshape(-1, ALLY_COUNT, ALLY_SIZE)[:, :ally_count, :]
         ally_embedding, ally_presence = self._encode_allies(
             ally_norm,
             ally_raw,
@@ -709,14 +716,15 @@ class BeesStructuredObservationEncoder(nn.Module):
             ally_presence,
         )
 
+        enemy_count = _slot_limit("enemies", ENEMY_COUNT)
         enemy_norm = raw[
             :,
             ENEMY_START : ENEMY_START + ENEMY_COUNT * ENEMY_SIZE,
-        ].reshape(-1, ENEMY_COUNT, ENEMY_SIZE)
+        ].reshape(-1, ENEMY_COUNT, ENEMY_SIZE)[:, :enemy_count, :]
         enemy_raw = raw[
             :,
             ENEMY_START : ENEMY_START + ENEMY_COUNT * ENEMY_SIZE,
-        ].reshape(-1, ENEMY_COUNT, ENEMY_SIZE)
+        ].reshape(-1, ENEMY_COUNT, ENEMY_SIZE)[:, :enemy_count, :]
         enemy_embedding = self._encode_entities(enemy_norm, enemy_raw)
         enemy_presence = torch.clamp(enemy_raw[:, :, 0], 0.0, 1.0)
         enemies = self.enemy_pool(
@@ -746,14 +754,15 @@ class BeesStructuredObservationEncoder(nn.Module):
             weapon_presence,
         )
 
+        mining_count = _slot_limit("mining", MINING_COUNT)
         mining_norm = raw[
             :,
             MINING_START : MINING_START + MINING_COUNT * MINING_SIZE,
-        ].reshape(-1, MINING_COUNT, MINING_SIZE)
+        ].reshape(-1, MINING_COUNT, MINING_SIZE)[:, :mining_count, :]
         mining_raw = raw[
             :,
             MINING_START : MINING_START + MINING_COUNT * MINING_SIZE,
-        ].reshape(-1, MINING_COUNT, MINING_SIZE)
+        ].reshape(-1, MINING_COUNT, MINING_SIZE)[:, :mining_count, :]
         mining_entities, mining_presence = self._encode_set(
             mining_norm,
             mining_raw,
@@ -766,16 +775,17 @@ class BeesStructuredObservationEncoder(nn.Module):
             mining_presence,
         )
 
+        map_count = _slot_limit("map_objects", MAP_OBJECT_COUNT)
         map_norm = raw[
             :,
             MAP_OBJECT_START :
             MAP_OBJECT_START + MAP_OBJECT_COUNT * MAP_OBJECT_SIZE,
-        ].reshape(-1, MAP_OBJECT_COUNT, MAP_OBJECT_SIZE)
+        ].reshape(-1, MAP_OBJECT_COUNT, MAP_OBJECT_SIZE)[:, :map_count, :]
         map_raw = raw[
             :,
             MAP_OBJECT_START :
             MAP_OBJECT_START + MAP_OBJECT_COUNT * MAP_OBJECT_SIZE,
-        ].reshape(-1, MAP_OBJECT_COUNT, MAP_OBJECT_SIZE)
+        ].reshape(-1, MAP_OBJECT_COUNT, MAP_OBJECT_SIZE)[:, :map_count, :]
         map_entities, map_presence = self._encode_set(
             map_norm,
             map_raw,
@@ -788,16 +798,20 @@ class BeesStructuredObservationEncoder(nn.Module):
             map_presence,
         )
 
+        collision_count = _slot_limit(
+            "collisions",
+            COLLISION_COUNT,
+        )
         collision_norm = raw[
             :,
             COLLISION_START :
             COLLISION_START + COLLISION_COUNT * COLLISION_SIZE,
-        ].reshape(-1, COLLISION_COUNT, COLLISION_SIZE)
+        ].reshape(-1, COLLISION_COUNT, COLLISION_SIZE)[:, :collision_count, :]
         collision_raw = raw[
             :,
             COLLISION_START :
             COLLISION_START + COLLISION_COUNT * COLLISION_SIZE,
-        ].reshape(-1, COLLISION_COUNT, COLLISION_SIZE)
+        ].reshape(-1, COLLISION_COUNT, COLLISION_SIZE)[:, :collision_count, :]
         collision_entities, collision_presence = self._encode_set(
             collision_norm,
             collision_raw,
