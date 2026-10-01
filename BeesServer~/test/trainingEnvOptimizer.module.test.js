@@ -990,6 +990,52 @@ test('failed live resize probe keeps the running baseline and backs off without 
     assert.equal(optimizer.states.get('remote-a').blocked_up, true);
 });
 
+test('failed rollback to prior baseline reconciles to live capacity and releases probe lock', () => {
+    const optimizer = new TrainingEnvOptimizer({
+        settleMs: 0,
+        measurementMs: 1000,
+        instabilityHoldMs: 10_000,
+    });
+
+    update(optimizer, 'remote-a', 4, 0, 0, { max: 16 });
+    let state = update(optimizer, 'remote-a', 4, 400, 1000, { max: 16 });
+    assert.equal(state.baseline_envs, 4);
+    assert.equal(state.desired_envs, 8);
+    assert.equal(state.probing, true);
+
+    // The probe reached 8, measured worse, and requested a rollback to the old baseline.
+    const internal = optimizer.states.get('remote-a');
+    Object.assign(internal, {
+        baseline_envs: 4,
+        baseline_sps: 500,
+        desired_envs: 4,
+        phase: 'resizing',
+        moved_direction: 1,
+    });
+    optimizer.activeProbeTrainerId = 'remote-a';
+
+    state = update(
+        optimizer,
+        'remote-a',
+        8,
+        450,
+        1100,
+        {
+            max: 16,
+            processState: 'running',
+            resizeFailedTarget: 4,
+            resizeError: 'TimeoutError: pending uploads did not drain',
+        },
+    );
+
+    assert.equal(state.desired_envs, 8);
+    assert.equal(state.baseline_envs, null);
+    assert.equal(state.phase, 'settling');
+    assert.equal(state.probing, false);
+    assert.equal(optimizer.activeProbeTrainerId, null);
+    assert.match(state.decision, /accepting live 8 envs and collecting a fresh baseline/);
+});
+
 test('runtime cutover clears old optimizer instability and baseline state', () => {
     const optimizer = new TrainingEnvOptimizer({
         warmupMs: 1000,
