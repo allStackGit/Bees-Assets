@@ -112,7 +112,8 @@ class StructuredPolicyArchitectureTests(unittest.TestCase):
             observations = torch.zeros((2, BEES_OBSERVATION_SIZE))
             observations[0, FACTION_INDEX] = 1.0
             observations[1, FACTION_INDEX] = -1.0
-            encoded = encoder([observations])
+            with torch.no_grad():
+                encoded = encoder([observations])
         finally:
             for handle in handles:
                 handle.remove()
@@ -155,7 +156,8 @@ class StructuredPolicyArchitectureTests(unittest.TestCase):
         try:
             observations = torch.zeros((3, BEES_OBSERVATION_SIZE))
             observations[:, FACTION_INDEX] = 1.0
-            output, _ = body([observations])
+            with torch.no_grad():
+                output, _ = body([observations])
         finally:
             for handle in handles:
                 handle.remove()
@@ -178,7 +180,8 @@ class StructuredPolicyArchitectureTests(unittest.TestCase):
         observations[:2, FACTION_INDEX] = 1.0
         observations[2:, FACTION_INDEX] = -1.0
 
-        runtime_output, _ = body([observations])
+        with torch.no_grad():
+            runtime_output, _ = body([observations])
         with mock.patch.object(
             torch.onnx,
             "is_in_onnx_export",
@@ -192,6 +195,29 @@ class StructuredPolicyArchitectureTests(unittest.TestCase):
             rtol=1.0e-5,
             atol=1.0e-6,
         )
+
+    def test_gradient_update_path_avoids_sparse_nonzero_selection(self):
+        from mlagents.torch_utils import torch
+
+        body = BeesStructuredNetworkBody(
+            self._observation_specs(),
+            self._network_settings(),
+        )
+        observations = torch.zeros((4, BEES_OBSERVATION_SIZE))
+        observations[:2, FACTION_INDEX] = 1.0
+        observations[2:, FACTION_INDEX] = -1.0
+
+        with mock.patch.object(
+            torch,
+            "nonzero",
+            side_effect=AssertionError(
+                "gradient structured path must not use synchronizing sparse selection"
+            ),
+        ):
+            output, _ = body([observations])
+            output.sum().backward()
+
+        self.assertEqual(output.shape, (4, ACTION_ENCODING_SIZE))
 
     def test_bee_and_human_actor_encoders_and_trunks_are_independent(self):
         from mlagents.torch_utils import torch
