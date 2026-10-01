@@ -1012,9 +1012,12 @@ internal sealed class RlOneVsOneAgent : Agent
         ReleaseAgentGroup(_level, _side, _teamId);
     }
 
-    internal const float EloWinMarker = 1000000f;
-    internal const float EloDrawMarker = 2000000f;
-    internal const float EloLossMarker = -1000000f;
+    // Keep the transport-only marker large relative to any plausible campaign return, but small
+    // enough that float32 group rewards retain sub-0.01 terminal economics before the learner
+    // strips the marker.
+    internal const float EloWinMarker = 4096f;
+    internal const float EloDrawMarker = 8192f;
+    internal const float EloLossMarker = -4096f;
 
     private static float GetExplicitOutcomeMarker(
         int side,
