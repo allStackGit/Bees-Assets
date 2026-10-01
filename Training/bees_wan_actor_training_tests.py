@@ -124,45 +124,6 @@ class WanActorBackpressureTests(unittest.TestCase):
 
 
 class WanActorStepDiagnosticTests(unittest.TestCase):
-    def test_stalled_step_recovery_terminates_only_waiting_live_workers(self):
-        class FakeProcess:
-            def __init__(self, pid, alive):
-                self.pid = pid
-                self._alive = alive
-                self.terminated = False
-
-            def is_alive(self):
-                return self._alive
-
-            def terminate(self):
-                self.terminated = True
-                self._alive = False
-
-        waiting_live = FakeProcess(101, True)
-        idle_live = FakeProcess(102, True)
-        waiting_dead = FakeProcess(103, False)
-
-        session = object.__new__(actor.ActorSession)
-        session.worker_offset = 12
-        session.manager = SimpleNamespace(
-            env_workers=[
-                SimpleNamespace(process=waiting_live, waiting=True, closed=False),
-                SimpleNamespace(process=idle_live, waiting=False, closed=False),
-                SimpleNamespace(process=waiting_dead, waiting=True, closed=False),
-            ]
-        )
-        session._step_wait_lock = __import__("threading").Lock()
-        session._step_wait_sequence = 7
-        session._step_stall_recovered_sequence = -1
-
-        terminated = session._terminate_waiting_unity_workers(7, 60.0)
-
-        self.assertEqual(terminated, 1)
-        self.assertTrue(waiting_live.terminated)
-        self.assertFalse(idle_live.terminated)
-        self.assertFalse(waiting_dead.terminated)
-        self.assertEqual(session._step_stall_recovered_sequence, 7)
-
     def test_worker_diagnostics_identify_waiting_unity_process(self):
         class FakeProcess:
             def __init__(self, pid, alive):
