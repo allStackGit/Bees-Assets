@@ -76,6 +76,39 @@ class WanActorLogGenerationTests(unittest.TestCase):
             self.assertTrue(second.is_dir())
 
 
+class WanActorStepDiagnosticTests(unittest.TestCase):
+    def test_worker_diagnostics_identify_waiting_unity_process(self):
+        class FakeProcess:
+            def __init__(self, pid, alive):
+                self.pid = pid
+                self._alive = alive
+
+            def is_alive(self):
+                return self._alive
+
+        session = object.__new__(actor.ActorSession)
+        session.worker_offset = 12
+        session.manager = SimpleNamespace(
+            env_workers=[
+                SimpleNamespace(
+                    process=FakeProcess(101, True),
+                    waiting=False,
+                    closed=False,
+                ),
+                SimpleNamespace(
+                    process=FakeProcess(102, True),
+                    waiting=True,
+                    closed=False,
+                ),
+            ]
+        )
+
+        diagnostics = session._unity_worker_diagnostics()
+
+        self.assertIn("worker=12 local=0 pid=101 alive=True waiting=False", diagnostics)
+        self.assertIn("worker=13 local=1 pid=102 alive=True waiting=True", diagnostics)
+
+
 class WanActorPolicyConstructionTests(unittest.TestCase):
     def tearDown(self):
         from bees_mlagents_ppo_compat import (
