@@ -101,6 +101,19 @@ _STRUCTURED_ENCODER_MARKER = "bees_structured_v23"
 _INSTALLED_STATE = None
 
 
+def _use_dense_structured_path() -> bool:
+    """Use fixed-shape CUDA work for gradient updates and ONNX export.
+
+    The sparse rollout path skips empty padded slots with torch.nonzero(), which is useful for
+    small no-grad inference batches. On CUDA, nonzero() synchronizes the host with the device;
+    POCA invokes the structured encoder many times per optimizer minibatch, so those synchronizing
+    sparse selections can dominate gradient-update time. Training therefore uses the equivalent
+    dense masked computation while no-grad rollout inference keeps the sparse path.
+    """
+
+    return bool(torch.is_grad_enabled() or torch.onnx.is_in_onnx_export())
+
+
 def _is_bees_observation_specs(observation_specs) -> bool:
     return (
         len(observation_specs) == 1
@@ -357,7 +370,7 @@ class BeesStructuredObservationEncoder(nn.Module):
             ENTITY_WEAPON_COUNT,
             OBSERVED_WEAPON_SIZE,
         )
-        if torch.onnx.is_in_onnx_export():
+        if _use_dense_structured_path():
             flat = weapons.reshape(-1, OBSERVED_WEAPON_SIZE)
             embedded = self.weapon_common_encoder(flat).reshape(
                 batch,
@@ -436,7 +449,7 @@ class BeesStructuredObservationEncoder(nn.Module):
         normalized: torch.Tensor,
         raw: torch.Tensor,
     ) -> torch.Tensor:
-        if torch.onnx.is_in_onnx_export():
+        if _use_dense_structured_path():
             base = self.entity_base_encoder(
                 normalized[:, :, :ENTITY_BASE_SIZE]
             )
@@ -481,7 +494,7 @@ class BeesStructuredObservationEncoder(nn.Module):
         normalized: torch.Tensor,
         raw: torch.Tensor,
     ):
-        if torch.onnx.is_in_onnx_export():
+        if _use_dense_structured_path():
             entity = self._encode_entities(
                 normalized[:, :, :ENEMY_SIZE],
                 raw[:, :, :ENEMY_SIZE],
@@ -530,7 +543,7 @@ class BeesStructuredObservationEncoder(nn.Module):
         normalized: torch.Tensor,
         raw: torch.Tensor,
     ) -> torch.Tensor:
-        if torch.onnx.is_in_onnx_export():
+        if _use_dense_structured_path():
             common = torch.stack(
                 [
                     normalized[:, :, 0],
@@ -594,7 +607,7 @@ class BeesStructuredObservationEncoder(nn.Module):
 
     def _encode_set(self, normalized, raw, encoder, output_size: int):
         presence = torch.clamp(raw[:, :, 0], 0.0, 1.0)
-        if torch.onnx.is_in_onnx_export():
+        if _use_dense_structured_path():
             embedded = encoder(normalized)
             return embedded * presence.unsqueeze(2), presence
 
@@ -975,7 +988,7 @@ class BeesStructuredNetworkBody(nn.Module):
 
         raw_faction = inputs[0][:, FACTION_INDEX : FACTION_INDEX + 1]
         bee_weight = torch.clamp((raw_faction + 1.0) * 0.5, 0.0, 1.0)
-        if torch.onnx.is_in_onnx_export():
+        if _use_dense_structured_path():
             bee_structured = self.bee_observation_encoder(inputs)
             human_structured = self.human_observation_encoder(inputs)
             structured = (
