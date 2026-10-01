@@ -27,6 +27,7 @@ LEARNER_SUMMARY_RE = re.compile(
     re.IGNORECASE,
 )
 MODEL_STEP_RE = re.compile(r"-(\d+)(?:-[^.]+)?\.onnx$", re.IGNORECASE)
+RUN_TIMESTAMP_RE = re.compile(r"(\d{8}T\d{6}Z)")
 
 
 def _json(path: Path) -> Optional[dict[str, Any]]:
@@ -77,6 +78,19 @@ def resolve_run_id(
             raise ValueError(f"unsafe training run id: {run_id!r}")
         return run_id
     raise ValueError("could not determine a training run id")
+
+
+def _run_start_epoch(run_id: str) -> Optional[float]:
+    match = RUN_TIMESTAMP_RE.search(str(run_id or ""))
+    if not match:
+        return None
+    try:
+        return datetime.strptime(
+            match.group(1),
+            "%Y%m%dT%H%M%SZ",
+        ).replace(tzinfo=timezone.utc).timestamp()
+    except ValueError:
+        return None
 
 
 def latest_file(root: Path, pattern: str) -> Optional[Path]:
@@ -176,14 +190,22 @@ def _collect_log_group(
     combined,
     records: list[dict[str, Any]],
     warnings: list[str],
+    *,
+    minimum_mtime: Optional[float] = None,
+    maximum_mtime: Optional[float] = None,
 ) -> None:
     if not source_root.is_dir():
         return
     for source in _iter_log_files(source_root):
         try:
-            size = source.stat().st_size
+            stat = source.stat()
+            size = stat.st_size
         except OSError as exc:
             warnings.append(f"could not stat log {source}: {exc}")
+            continue
+        if minimum_mtime is not None and stat.st_mtime < minimum_mtime:
+            continue
+        if maximum_mtime is not None and stat.st_mtime >= maximum_mtime:
             continue
         rel = _safe_rel(source, source_root)
         suffix = source.suffix.lower()
@@ -470,6 +492,7 @@ def create_bundle(
     records: list[dict[str, Any]] = []
     generated_utc = datetime.now(timezone.utc)
     timestamp = generated_utc.strftime("%Y%m%dT%H%M%SZ")
+    run_start_epoch = _run_start_epoch(resolved_run)
     status_value = _json(status_json) if status_json else None
     snapshot_value = _json(snapshot_json) if snapshot_json else None
     benchmark_value = _json(benchmark_json) if benchmark_json else None
@@ -505,13 +528,25 @@ def create_bundle(
     ) as temporary:
         staging = Path(temporary)
         combined_path = staging / "combined-logs.txt"
-        with combined_path.open("wb") as combined:
+        historical_path = staging / "historical-logs.txt"
+        with (
+            combined_path.open("wb") as combined,
+            historical_path.open("wb") as historical,
+        ):
             combined.write(
                 (
                     "Bees training diagnostic logs\n"
                     f"Run: {resolved_run}\n"
                     f"Generated UTC: {datetime.now(timezone.utc).isoformat()}\n"
                     f"Tail percentage per text log: {log_percent:g}%\n"
+                    "Generic server/learner logs are limited to files modified during this run.\n"
+                ).encode("utf-8")
+            )
+            historical.write(
+                (
+                    "Bees historical diagnostic logs\n"
+                    f"Current run: {resolved_run}\n"
+                    "These files predate the current run and are retained only for historical context.\n"
                 ).encode("utf-8")
             )
             _collect_log_group(
@@ -522,6 +557,17 @@ def create_bundle(
                 combined,
                 records,
                 warnings,
+                minimum_mtime=run_start_epoch,
+            )
+            _collect_log_group(
+                bees_root / "Logs" / "Server",
+                staging,
+                "logs/historical/server",
+                log_percent,
+                historical,
+                records,
+                warnings,
+                maximum_mtime=run_start_epoch,
             )
             _collect_log_group(
                 bees_root / "Logs" / "Training",
@@ -531,6 +577,17 @@ def create_bundle(
                 combined,
                 records,
                 warnings,
+                minimum_mtime=run_start_epoch,
+            )
+            _collect_log_group(
+                bees_root / "Logs" / "Training",
+                staging,
+                "logs/historical/learner",
+                log_percent,
+                historical,
+                records,
+                warnings,
+                maximum_mtime=run_start_epoch,
             )
             _collect_log_group(
                 trainer_logs_root,
