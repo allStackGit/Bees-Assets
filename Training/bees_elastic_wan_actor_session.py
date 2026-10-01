@@ -14,6 +14,7 @@ import bees_wan_actor_worker as worker
 WORKER_ENVS_TARGET_ENV = "BEES_TRAINING_WORKER_ENVS_FILE"
 MAX_DYNAMIC_ENVS = 64
 WORKER_CLOSE_SECONDS = 10.0
+DOWNSCALE_DRAIN_SECONDS = 15.0
 
 
 class ElasticActorSession(worker.ActorSession):
@@ -38,6 +39,7 @@ class ElasticActorSession(worker.ActorSession):
         self._capacity_registration_pending = False
         self._resize_failed_target = None
         self._resize_failure = None
+        self._downscale_drain_started_monotonic = None
 
     def _throughput_extra_metrics(self) -> Mapping[str, object]:
         failure = self._resize_failure
@@ -340,25 +342,55 @@ class ElasticActorSession(worker.ActorSession):
         if self.manager is None or self._env_target_path is None:
             return False
         desired = self._desired_env_count()
-        if self._resize_failed_target is not None and desired != self._resize_failed_target:
-            self._clear_resize_failure()
-        if desired > self.env_count:
-            if desired == self._resize_failed_target:
+        if self._resize_failed_target is not None:
+            if desired != self._resize_failed_target:
+                self._clear_resize_failure()
+            else:
+                # A rejected target stays rejected until BeesServer chooses a different count.
+                # Continuing rollout at the current capacity is safer than repeatedly entering
+                # the same failed transition on every actor-loop iteration.
+                self._downscale_drain_started_monotonic = None
                 return False
+        if desired >= self.env_count:
+            self._downscale_drain_started_monotonic = None
+        if desired > self.env_count:
             self._scale_up_one()
             return False
         if desired < self.env_count:
             target = self.manager.env_workers[-1]
-            if (
-                not target.waiting
-                and (not self._upload_queue.empty() or not self._upload_idle.is_set())
-            ):
-                # Keep the tail worker idle while already-produced trajectories finish uploading.
-                # Otherwise the next manager step would immediately make it busy again and could
-                # starve a requested downscale indefinitely under sustained rollout load.
+            upload_busy = not self._upload_queue.empty() or not self._upload_idle.is_set()
+            if not target.waiting and upload_busy:
+                # Keep the tail worker idle while already-produced trajectories finish uploading,
+                # but never pause all rollout indefinitely. Under learner backpressure the queue
+                # may remain non-empty for minutes; a capacity probe must fail and resume the old
+                # capacity rather than deadlock useful training.
+                now = time.monotonic()
+                if self._downscale_drain_started_monotonic is None:
+                    self._downscale_drain_started_monotonic = now
+                elif (
+                    now - self._downscale_drain_started_monotonic
+                    >= DOWNSCALE_DRAIN_SECONDS
+                ):
+                    self._downscale_drain_started_monotonic = None
+                    self._record_resize_failure(
+                        desired,
+                        TimeoutError(
+                            "timed out waiting for pending trajectory uploads "
+                            "before live downscale"
+                        ),
+                    )
+                    return False
                 return True
-            if self._scale_down_one():
-                return desired < self.env_count
+            self._downscale_drain_started_monotonic = None
+            try:
+                if self._scale_down_one():
+                    return desired < self.env_count
+            except Exception as exc:
+                # A failed single-worker retirement must not take down the whole WAN actor.
+                # Publish the existing resize-failure contract so BeesServer aborts the probe
+                # and the actor continues at the capacity that is still actually alive.
+                self._record_resize_failure(desired, exc)
+                return False
         return False
 
     def _heartbeat(self) -> bool:
