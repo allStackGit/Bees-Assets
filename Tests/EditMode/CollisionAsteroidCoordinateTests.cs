@@ -31,5 +31,22 @@ namespace Bees.Tests.EditMode
             Assert.That(source, Does.Contain("_originalColor = SpriteRenderer.color"));
             Assert.That(source, Does.Contain("SpriteRenderer.color = _originalColor"));
         }
+
+        [Test]
+        public void AsteroidPieceDeathTimerWorksWithoutRenderer()
+        {
+            GameObject gameObject = new GameObject("headless-asteroid-piece");
+            try
+            {
+                AsteroidPiece piece = gameObject.AddComponent<AsteroidPiece>();
+
+                Assert.DoesNotThrow(piece.DeathTimer);
+                Assert.That(piece.HalfSeconds, Is.EqualTo(1));
+            }
+            finally
+            {
+                Object.DestroyImmediate(gameObject);
+            }
+        }
     }
 }
