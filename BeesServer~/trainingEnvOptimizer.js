@@ -220,6 +220,10 @@ class TrainingEnvOptimizer {
             consecutive_baseline_session_failures: 0,
             last_update_ms: now,
             metrics_missing_since_ms: null,
+            producer_sample_ms: null,
+            producer_sample_steps: null,
+            producer_sps: null,
+            producer_efficiency: null,
         };
     }
 
@@ -306,6 +310,58 @@ class TrainingEnvOptimizer {
         return true;
     }
 
+    _updateProducerRate(state, capacity, producedSteps, now) {
+        if (producedSteps === null) return;
+        if (
+            state.producer_sample_ms !== null &&
+            state.producer_sample_steps !== null &&
+            producedSteps >= state.producer_sample_steps &&
+            now > state.producer_sample_ms
+        ) {
+            const elapsedSeconds = (now - state.producer_sample_ms) / 1000;
+            const rate = (producedSteps - state.producer_sample_steps) / elapsedSeconds;
+            state.producer_sps = rate;
+            state.producer_efficiency = rate / Math.max(1, capacity.current_envs);
+        }
+        state.producer_sample_ms = now;
+        state.producer_sample_steps = producedSteps;
+    }
+
+    _producerRanks() {
+        return [...this.states.values()]
+            .filter(candidate =>
+                candidate.producer_efficiency !== null &&
+                Number.isFinite(candidate.producer_efficiency))
+            .sort((left, right) =>
+                right.producer_efficiency - left.producer_efficiency ||
+                left.trainer_id.localeCompare(right.trainer_id));
+    }
+
+    _preferredDirection(state, capacity) {
+        const ranked = this._producerRanks();
+        if (ranked.length < 2 || state.producer_efficiency === null) {
+            return state.direction;
+        }
+
+        const best = ranked[0];
+        const worst = ranked[ranked.length - 1];
+        if (
+            state.trainer_id === worst.trainer_id &&
+            capacity.current_envs > capacity.min_envs &&
+            worst.producer_efficiency < best.producer_efficiency * 0.25
+        ) {
+            return -1;
+        }
+        if (
+            state.direction > 0 &&
+            state.trainer_id !== best.trainer_id &&
+            capacity.current_envs < capacity.max_envs
+        ) {
+            return -1;
+        }
+        return state.direction;
+    }
+
     _chooseProbe(state, capacity, now) {
         if (now < state.instability_hold_until_ms) {
             this._releaseProbe(state.trainer_id);
@@ -321,7 +377,7 @@ class TrainingEnvOptimizer {
             return;
         }
 
-        const preferred = state.direction;
+        const preferred = this._preferredDirection(state, capacity);
         const alternate = -preferred;
         if (!this._directionBlocked(state, preferred)) {
             if (state.direction !== preferred || state.step < 1) {
@@ -569,6 +625,7 @@ class TrainingEnvOptimizer {
         } else if (currentRuntimeVersion && !state.runtime_version) {
             state.runtime_version = currentRuntimeVersion;
         }
+        this._updateProducerRate(state, capacity, producedSteps, timestamp);
         state.last_update_ms = timestamp;
         let newSessionFailure = false;
         if (sessionFailuresTotal !== null) {
@@ -704,7 +761,13 @@ class TrainingEnvOptimizer {
                 state.phase === 'resizing' ||
                 state.baseline_envs === null
             );
-        const expectedTransition = expectedStarting || reconciliationTransition;
+        const freshCutoverTransition =
+            (processState === 'stopped' || processState === 'stopping') &&
+            !optimizerError &&
+            state.baseline_envs === null &&
+            timestamp - state.phase_started_ms < this.warmupMs;
+        const expectedTransition =
+            expectedStarting || reconciliationTransition || freshCutoverTransition;
         const currentProcessFailure =
             (processState &&
                 processState !== 'running' &&
@@ -1001,6 +1064,12 @@ class TrainingEnvOptimizer {
             stability_hold_until_ms: state.instability_hold_until_ms,
             last_instability_ms: state.last_instability_ms,
             last_instability_reason: state.last_instability_reason,
+            producer_sps: state.producer_sps === null
+                ? null
+                : Number(state.producer_sps.toFixed(2)),
+            producer_efficiency: state.producer_efficiency === null
+                ? null
+                : Number(state.producer_efficiency.toFixed(3)),
         };
     }
 
