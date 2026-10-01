@@ -1065,6 +1065,87 @@ class TrainingControlClientTests(unittest.TestCase):
                 conflict_paths,
             )
 
+    def test_training_log_uploader_advances_past_multiple_conflicting_preserved_copies(self):
+        class UploadClient:
+            def __init__(self):
+                self.files = {
+                    ("worker-a", "run", "Player-0.log"): b"remote-old-generation"
+                }
+
+            def upload_log_chunk(
+                self,
+                *,
+                trainer_id,
+                run_id,
+                relative_path,
+                offset,
+                data,
+                reset=False,
+            ):
+                key = (trainer_id, run_id, relative_path)
+                current = self.files.get(key, b"")
+                if reset:
+                    current = b""
+                if len(current) != offset:
+                    raise control.TrainingLogOffsetMismatch(
+                        len(current),
+                        hashlib.sha256(current).hexdigest(),
+                    )
+                current += data
+                self.files[key] = current
+                return len(current)
+
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            run = root / "run"
+            run.mkdir()
+            local = run / "Player-0.log"
+            payload = b"local-replacement-generation"
+            local.write_bytes(payload)
+            client = UploadClient()
+            uploader = agent.TrainingLogUploader(root)
+
+            base_remote = uploader._generation_remote_path(
+                local,
+                "Player-0.log",
+                len(payload),
+            )
+            base_payload = b"corrupt-preserved-copy"
+            client.files[("worker-a", "run", base_remote)] = base_payload
+            conflict_remote = uploader._conflict_remote_path(
+                local,
+                "Player-0.log",
+                len(payload),
+                base_remote,
+                len(base_payload),
+                hashlib.sha256(base_payload).hexdigest(),
+            )
+            client.files[("worker-a", "run", conflict_remote)] = b"another-corrupt-copy"
+
+            uploader.flush_all(client, trainer_id="worker-a", run_id="run")
+
+            matching = [
+                (key, value)
+                for key, value in client.files.items()
+                if key[0:2] == ("worker-a", "run")
+                and key[2].startswith("generations/")
+                and value == payload
+            ]
+            self.assertEqual(len(matching), 1)
+            self.assertNotEqual(matching[0][0][2], base_remote)
+            self.assertNotEqual(matching[0][0][2], conflict_remote)
+
+            restarted = agent.TrainingLogUploader(root)
+            restarted.flush_all(client, trainer_id="worker-a", run_id="run")
+            matching_after_restart = [
+                (key, value)
+                for key, value in client.files.items()
+                if key[0:2] == ("worker-a", "run")
+                and key[2].startswith("generations/")
+                and value == payload
+            ]
+            self.assertEqual(matching_after_restart, matching)
+
     def test_training_log_uploader_recovers_when_preserved_path_is_rewritten_again(self):
         class UploadClient:
             def __init__(self):
