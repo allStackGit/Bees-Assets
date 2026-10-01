@@ -220,6 +220,9 @@ func tailnetPeerSnapshot(ctx context.Context, s *tsnet.Server, targets []string)
 	peers := make([]string, 0)
 	for _, peer := range status.Peer {
 		matched := len(wanted) == 0
+		if len(wanted) == 0 && !peer.Active {
+			continue
+		}
 		for _, ip := range peer.TailscaleIPs {
 			if wanted[ip] {
 				matched = true
