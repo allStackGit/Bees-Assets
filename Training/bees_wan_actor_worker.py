@@ -43,6 +43,7 @@ DEFAULT_LOCAL_UPLOAD_QUEUE = 8
 DEFAULT_STATE_WAIT_SECONDS = 20.0
 MAX_TRAJECTORIES_PER_UPLOAD = 256
 MAX_UNITY_SEED = (1 << 31) - 1
+STEP_STALL_DIAGNOSTIC_SECONDS = 30.0
 THROUGHPUT_METRICS_ENV = "BEES_TRAINING_THROUGHPUT_FILE"
 TRAINING_RUN_ID_ENV = "BEES_TRAINING_RUN_ID"
 NETWORK_TRAFFIC_STATE_FILE = "worker-network-traffic.json"
@@ -567,6 +568,12 @@ class ActorSession:
         self._startup_health = startup_health
         self._runtime_progress = runtime_progress
         self._env_count_changed = env_count_changed
+        self._step_wait_lock = threading.Lock()
+        self._step_wait_started_monotonic: Optional[float] = None
+        self._step_wait_sequence = 0
+        self._step_stall_reported_sequence = -1
+        self._step_diagnostic_stop = threading.Event()
+        self._step_diagnostic_thread: Optional[threading.Thread] = None
 
     def _report_startup_phase(self, phase: str) -> None:
         callback = self._startup_health
@@ -577,6 +584,60 @@ class ActorSession:
         callback = self._runtime_progress
         if callback is not None:
             callback()
+
+    def _begin_step_wait(self) -> int:
+        with self._step_wait_lock:
+            self._step_wait_sequence += 1
+            sequence = self._step_wait_sequence
+            self._step_wait_started_monotonic = time.monotonic()
+            return sequence
+
+    def _end_step_wait(self, sequence: int) -> None:
+        with self._step_wait_lock:
+            if sequence == self._step_wait_sequence:
+                self._step_wait_started_monotonic = None
+
+    def _unity_worker_diagnostics(self) -> str:
+        manager = self.manager
+        if manager is None:
+            return "manager=none"
+        details = []
+        for local_worker_id, env_worker in enumerate(getattr(manager, "env_workers", ())):
+            process = getattr(env_worker, "process", None)
+            pid = getattr(process, "pid", None)
+            try:
+                alive = bool(process is not None and process.is_alive())
+            except Exception:
+                alive = False
+            waiting = bool(getattr(env_worker, "waiting", False))
+            closed = bool(getattr(env_worker, "closed", False))
+            details.append(
+                f"worker={local_worker_id + self.worker_offset} local={local_worker_id} "
+                f"pid={pid if pid is not None else '-'} alive={alive} "
+                f"waiting={waiting} closed={closed}"
+            )
+        return "; ".join(details) if details else "workers=none"
+
+    def _step_diagnostic_loop(self) -> None:
+        while not self._step_diagnostic_stop.wait(5.0):
+            with self._step_wait_lock:
+                started = self._step_wait_started_monotonic
+                sequence = self._step_wait_sequence
+                already_reported = self._step_stall_reported_sequence == sequence
+            if started is None or already_reported:
+                continue
+            age = time.monotonic() - started
+            if age < STEP_STALL_DIAGNOSTIC_SECONDS:
+                continue
+            print(
+                f"[Bees WAN actor] manager.get_steps blocked for {age:.1f}s; " +
+                self._unity_worker_diagnostics(),
+                file=sys.stderr,
+                flush=True,
+            )
+            with self._step_wait_lock:
+                if self._step_wait_sequence == sequence:
+                    self._step_stall_reported_sequence = sequence
 
     def _report_env_count_changed(self) -> None:
         callback = self._env_count_changed
@@ -658,6 +719,7 @@ class ActorSession:
 
     def close(self) -> None:
         self._upload_stop.set()
+        self._step_diagnostic_stop.set()
         if self.manager is not None:
             try:
                 self.manager.close()
@@ -668,6 +730,8 @@ class ActorSession:
             self._watcher.join(timeout=2.0)
         if self._uploader is not None:
             self._uploader.join(timeout=2.0)
+        if self._step_diagnostic_thread is not None:
+            self._step_diagnostic_thread.join(timeout=2.0)
         self._write_throughput_metrics(force=True)
         self._onnx_temp.cleanup()
 
@@ -866,8 +930,14 @@ class ActorSession:
 
         self._uploader = threading.Thread(target=self._upload_loop, name="bees-wan-upload", daemon=True)
         self._watcher = threading.Thread(target=self._watch_loop, name="bees-wan-watch", daemon=True)
+        self._step_diagnostic_thread = threading.Thread(
+            target=self._step_diagnostic_loop,
+            name="bees-wan-step-diagnostic",
+            daemon=True,
+        )
         self._uploader.start()
         self._watcher.start()
+        self._step_diagnostic_thread.start()
         print(
             f"[Bees WAN actor] joined session={self.session_id} actor={self.actor_id} "
             f"workers={self.worker_offset}-{self.worker_offset + self.env_count - 1} "
@@ -1126,7 +1196,11 @@ class ActorSession:
             if self._reconcile_env_count():
                 self.stop.wait(0.05)
                 continue
-            local_steps = self.manager.get_steps()
+            step_wait_sequence = self._begin_step_wait()
+            try:
+                local_steps = self.manager.get_steps()
+            finally:
+                self._end_step_wait(step_wait_sequence)
             mapped_steps = _remap_completed_steps(self.manager, local_steps, self.worker_offset)
             self.manager.process_steps(mapped_steps)
             self._report_runtime_progress()
