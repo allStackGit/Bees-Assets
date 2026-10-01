@@ -122,6 +122,17 @@ class ExplicitOutcomeEloTests(unittest.TestCase):
             self.assertIsNone(result)
             self.assertEqual(stripped, reward)
 
+    def test_float32_marker_transport_preserves_small_terminal_economics(self):
+        for marker, expected_result in (
+            (launcher.ELO_WIN_MARKER, 1.0),
+            (launcher.ELO_DRAW_MARKER, 0.5),
+            (launcher.ELO_LOSS_MARKER, 0.0),
+        ):
+            transported = np.float32(marker + 0.01).item()
+            result, stripped = launcher._decode_explicit_outcome_marker(transported)
+            self.assertEqual(result, expected_result)
+            self.assertAlmostEqual(stripped, 0.01, delta=0.0011)
+
 
 class ManagedLiveLogTests(unittest.TestCase):
     def test_managed_live_log_tees_stdout_and_stderr_to_run_scoped_sidecar(self):
