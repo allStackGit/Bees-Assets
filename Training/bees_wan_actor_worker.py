@@ -1228,6 +1228,26 @@ class ActorSession:
             return
         raise RuntimeError(f"WAN actor background task failed: {type(error).__name__}: {error}") from error
 
+    def _enqueue_upload(self, payload: Mapping[str, Any]) -> bool:
+        while not self.stop.is_set():
+            try:
+                self._upload_queue.put(payload, timeout=0.5)
+                return True
+            except queue.Full:
+                # This is intentional broker backpressure, not a dead rollout.
+                # Preserve every trajectory, but keep the supervisor health lease
+                # fresh while the uploader waits for central capacity/connectivity.
+                self._report_runtime_progress()
+                self._write_throughput_metrics()
+                self._raise_thread_error()
+                if (
+                    self._session_changed.is_set()
+                    or self._state_changed.is_set()
+                    or self._stale.is_set()
+                ):
+                    return False
+        return False
+
     def _collect_trajectories(self) -> List[Any]:
         trajectories = []
         for manager in self.manager.agent_managers.values():
@@ -1275,23 +1295,7 @@ class ActorSession:
                         "policy_versions": dict(self.policy_versions),
                         "trajectories": trajectories[start : start + MAX_TRAJECTORIES_PER_UPLOAD],
                     }
-                    while not self.stop.is_set():
-                        try:
-                            self._upload_queue.put(payload, timeout=0.5)
-                            break
-                        except queue.Full:
-                            # This is intentional broker backpressure, not a dead rollout.
-                            # Preserve every trajectory, but keep the supervisor health lease
-                            # fresh while the uploader waits for central capacity/connectivity.
-                            self._report_runtime_progress()
-                            self._write_throughput_metrics()
-                            self._raise_thread_error()
-                            if (
-                                self._session_changed.is_set()
-                                or self._state_changed.is_set()
-                                or self._stale.is_set()
-                            ):
-                                break
+                    self._enqueue_upload(payload)
             self._reconcile_env_count()
 
 
