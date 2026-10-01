@@ -28,6 +28,7 @@ import signal
 import sys
 import threading
 import time
+import tempfile
 from typing import Dict, List, Optional, Sequence, Tuple
 
 
@@ -764,12 +765,23 @@ def _install_windows_break_interrupt():
 
 def _atomic_json(path: Path, value) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(path.suffix + ".tmp")
-    temporary.write_text(
-        json.dumps(value, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
+    fd, temporary_name = tempfile.mkstemp(
+        prefix=path.name + ".",
+        suffix=".tmp",
+        dir=str(path.parent),
     )
-    os.replace(temporary, path)
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(json.dumps(value, indent=2, sort_keys=True) + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    finally:
+        try:
+            temporary.unlink()
+        except FileNotFoundError:
+            pass
 
 
 def _managed_learner_progress_path() -> Optional[Path]:
@@ -829,16 +841,25 @@ def _install_managed_learner_progress_marker():
             if step > 0:
                 steps.append(step)
         if steps:
-            _atomic_json(
-                path,
-                {
-                    "schema_version": 1,
-                    "run_id": run_id,
-                    "step": max(steps),
-                    "updated_unix_seconds": time.time(),
-                },
-            )
-            marker_written = True
+            try:
+                _atomic_json(
+                    path,
+                    {
+                        "schema_version": 1,
+                        "run_id": run_id,
+                        "step": max(steps),
+                        "updated_unix_seconds": time.time(),
+                    },
+                )
+            except OSError as exc:
+                print(
+                    "[Bees RL] learner progress marker write deferred: "
+                    f"{type(exc).__name__}: {exc}",
+                    file=sys.stderr,
+                    flush=True,
+                )
+            else:
+                marker_written = True
         return result
 
     TrainerController.advance = advance_with_progress
