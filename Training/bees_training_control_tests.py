@@ -1089,6 +1089,72 @@ class TrainingControlClientTests(unittest.TestCase):
 
             self.assertEqual(first, second)
 
+    def test_training_log_uploader_separates_generations_with_identical_startup_prefix(self):
+        class UploadClient:
+            def __init__(self, initial):
+                self.files = {("worker-a", "run", "Player-0.log"): initial}
+
+            def upload_log_chunk(
+                self,
+                *,
+                trainer_id,
+                run_id,
+                relative_path,
+                offset,
+                data,
+                reset=False,
+            ):
+                key = (trainer_id, run_id, relative_path)
+                current = self.files.get(key, b"")
+                if reset:
+                    current = b""
+                if len(current) != offset:
+                    raise control.TrainingLogOffsetMismatch(
+                        len(current),
+                        hashlib.sha256(current).hexdigest(),
+                    )
+                current += data
+                self.files[key] = current
+                return len(current)
+
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            run = root / "run"
+            run.mkdir()
+            local = run / "Player-0.log"
+            shared_prefix = b"x" * agent.TrainingLogUploader.GENERATION_FINGERPRINT_BYTES
+            old_generation = shared_prefix + b"-old-generation-tail"
+            new_generation = shared_prefix + b"-new-generation-tail"
+            local.write_bytes(new_generation)
+            client = UploadClient(old_generation)
+            uploader = agent.TrainingLogUploader(root)
+
+            uploader.flush_all(client, trainer_id="worker-a", run_id="run")
+
+            matching = [
+                (key, value)
+                for key, value in client.files.items()
+                if key[0:2] == ("worker-a", "run")
+                and key[2].startswith("generations/")
+                and value == new_generation
+            ]
+            self.assertEqual(len(matching), 1)
+            self.assertEqual(
+                client.files[("worker-a", "run", "Player-0.log")],
+                old_generation,
+            )
+
+            restarted = agent.TrainingLogUploader(root)
+            restarted.flush_all(client, trainer_id="worker-a", run_id="run")
+            matching_after_restart = [
+                (key, value)
+                for key, value in client.files.items()
+                if key[0:2] == ("worker-a", "run")
+                and key[2].startswith("generations/")
+                and value == new_generation
+            ]
+            self.assertEqual(matching_after_restart, matching)
+
     def test_training_log_uploader_advances_past_multiple_conflicting_preserved_copies(self):
         class UploadClient:
             def __init__(self):
