@@ -430,8 +430,10 @@ def _install_batched_inference(cpu_inference: bool = False):
     from mlagents.trainers.policy.torch_policy import TorchPolicy
     from mlagents.trainers.subprocess_env_manager import (
         EnvironmentCommand,
+        EnvironmentResponse,
         SubprocessEnvManager,
     )
+    from mlagents_envs.exception import UnityCommunicationException
     from mlagents.trainers.torch_entities.utils import ModelUtils
     from mlagents_envs.base_env import ActionTuple, DecisionSteps, _ActionTupleBase
     from mlagents_envs.timers import hierarchical_timer
@@ -652,8 +654,21 @@ def _install_batched_inference(cpu_inference: bool = False):
                     behavior_name: make_ipc_action_info(info)
                     for behavior_name, info in all_action_info.items()
                 }
-                worker.send(EnvironmentCommand.STEP, ipc_action_info)
-                worker.waiting = True
+                try:
+                    worker.send(EnvironmentCommand.STEP, ipc_action_info)
+                    worker.waiting = True
+                except UnityCommunicationException as exc:
+                    # A Unity child can disappear after we selected it as idle but before the
+                    # batched action send reaches its multiprocessing pipe. Route that race back
+                    # through ML-Agents' normal ENV_EXITED recovery instead of letting a local
+                    # broken pipe escape and recycle the entire WAN actor session.
+                    self.step_queue.put(
+                        EnvironmentResponse(
+                            EnvironmentCommand.ENV_EXITED,
+                            worker.worker_id,
+                            exc,
+                        )
+                    )
 
     batched_queue_steps._bees_batched_inference = True
     batched_queue_steps._bees_cpu_inference = bool(cpu_inference)
