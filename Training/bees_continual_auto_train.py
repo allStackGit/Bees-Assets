@@ -15,6 +15,8 @@ processes receive exactly the same final ``--env-args`` as local workers.
 from __future__ import annotations
 
 import sys
+import os
+import traceback
 import threading
 from dataclasses import dataclass
 from typing import List, Optional, Sequence, Tuple
@@ -178,6 +180,31 @@ def _watch_public_learning(
             )
 
 
+def _record_unhandled_training_failure(exc: BaseException) -> None:
+    """Persist the inner learner traceback after its live-log tee has been restored."""
+
+    log_dir = os.environ.get("BEES_TRAINING_LOG_DIR", "").strip()
+    if not log_dir:
+        return
+    try:
+        path = Path(log_dir).expanduser().resolve() / "learner-failure.log"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8", errors="replace") as handle:
+            handle.write(
+                "".join(
+                    traceback.format_exception(
+                        type(exc),
+                        exc,
+                        exc.__traceback__,
+                    )
+                )
+            )
+            handle.write("\n")
+            handle.flush()
+    except OSError:
+        pass
+
+
 def main(argv: Optional[Sequence[str]] = None) -> int:
     raw_args = list(sys.argv[1:] if argv is None else argv)
     try:
@@ -266,6 +293,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         watcher.start()
         try:
             return continual_train.main(prepared_args)
+        except BaseException as exc:
+            _record_unhandled_training_failure(exc)
+            raise
         finally:
             stop.set()
             watcher.join(timeout=max(1.0, min(5.0, auto_options.watch_seconds)))
