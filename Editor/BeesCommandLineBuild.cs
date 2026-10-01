@@ -10,6 +10,14 @@ internal static class BeesCommandLineBuild
 {
     private const string OutputArgument = "-beesOutput";
     private const string RlScene = "Assets/Scenes/RL 1v1 Training.unity";
+    private static readonly string[] RlOversizedTexturePaths =
+    {
+        "Assets/Sprites/Ships/Parts/Ship Explosions/queen_death_body.png",
+        "Assets/Sprites/Ships/Parts/Ship Explosions/queen_death_crown.png",
+        "Assets/Sprites/Ships/Parts/Ship Explosions/queen_death_rings.png",
+        "Assets/Sprites/Ships/Parts/Ship Explosions/queen_death_wings_eyes.png",
+    };
+
     private static readonly string[] FullGameExcludedScenes =
     {
         RlScene,
@@ -21,19 +29,68 @@ internal static class BeesCommandLineBuild
 
     public static void BuildWindowsRl()
     {
-        Build(
+        BuildRl(
             BuildTarget.StandaloneWindows64,
-            new[] { RlScene },
-            "Bees RL Training.exe");
+            "Bees RL Training.exe",
+            StandaloneBuildSubtarget.Player);
     }
 
     public static void BuildLinuxRl()
     {
-        Build(
+        BuildRl(
             BuildTarget.StandaloneLinux64,
-            new[] { RlScene },
             "Bees RL Training.x86_64",
             StandaloneBuildSubtarget.Server);
+    }
+
+    private static void BuildRl(
+        BuildTarget target,
+        string executableName,
+        StandaloneBuildSubtarget subtarget)
+    {
+        int[] originalMaxSizes = new int[RlOversizedTexturePaths.Length];
+        try
+        {
+            for (int i = 0; i < RlOversizedTexturePaths.Length; i++)
+            {
+                TextureImporter importer =
+                    AssetImporter.GetAtPath(RlOversizedTexturePaths[i]) as TextureImporter;
+                if (importer == null)
+                {
+                    throw new InvalidOperationException(
+                        $"Missing RL texture importer: {RlOversizedTexturePaths[i]}");
+                }
+
+                originalMaxSizes[i] = importer.maxTextureSize;
+                if (importer.maxTextureSize > 8192)
+                {
+                    importer.maxTextureSize = 8192;
+                    importer.SaveAndReimport();
+                }
+            }
+
+            Build(
+                target,
+                new[] { RlScene },
+                executableName,
+                subtarget,
+                createMlAgentsTimerDirectory: true);
+        }
+        finally
+        {
+            for (int i = 0; i < RlOversizedTexturePaths.Length; i++)
+            {
+                TextureImporter importer =
+                    AssetImporter.GetAtPath(RlOversizedTexturePaths[i]) as TextureImporter;
+                if (importer != null &&
+                    originalMaxSizes[i] > 0 &&
+                    importer.maxTextureSize != originalMaxSizes[i])
+                {
+                    importer.maxTextureSize = originalMaxSizes[i];
+                    importer.SaveAndReimport();
+                }
+            }
+        }
     }
 
     public static void BuildWindowsFullGame()
@@ -58,7 +115,8 @@ internal static class BeesCommandLineBuild
         BuildTarget target,
         string[] scenes,
         string executableName,
-        StandaloneBuildSubtarget subtarget = StandaloneBuildSubtarget.Player)
+        StandaloneBuildSubtarget subtarget = StandaloneBuildSubtarget.Player,
+        bool createMlAgentsTimerDirectory = false)
     {
         string outputDirectory = ReadRequiredArgument(OutputArgument);
         outputDirectory = Path.GetFullPath(outputDirectory);
@@ -88,6 +146,18 @@ internal static class BeesCommandLineBuild
         {
             throw new InvalidOperationException(
                 $"Unity {target} build failed: {summary.result}; errors={summary.totalErrors}.");
+        }
+
+        if (createMlAgentsTimerDirectory)
+        {
+            string dataDirectoryName =
+                Path.GetFileNameWithoutExtension(executableName) + "_Data";
+            string timerDirectory = Path.Combine(
+                outputDirectory,
+                dataDirectoryName,
+                "ML-Agents",
+                "Timers");
+            Directory.CreateDirectory(timerDirectory);
         }
     }
 
