@@ -352,14 +352,13 @@ class TrainingEnvOptimizer {
         ) {
             return -1;
         }
-        if (
-            state.direction > 0 &&
-            state.trainer_id !== best.trainer_id &&
-            capacity.current_envs < capacity.max_envs
-        ) {
-            return -1;
-        }
         return state.direction;
+    }
+
+    _shouldWaitForMoreProductiveWorker(state, direction) {
+        if (direction <= 0 || state.producer_efficiency === null) return false;
+        const ranked = this._producerRanks();
+        return ranked.length >= 2 && ranked[0].trainer_id !== state.trainer_id;
     }
 
     _chooseProbe(state, capacity, now) {
@@ -378,6 +377,14 @@ class TrainingEnvOptimizer {
         }
 
         const preferred = this._preferredDirection(state, capacity);
+        if (this._shouldWaitForMoreProductiveWorker(state, preferred)) {
+            this._releaseProbe(state.trainer_id);
+            state.desired_envs = state.baseline_envs ?? capacity.current_envs;
+            state.phase = 'waiting';
+            state.last_decision =
+                'waiting for more productive worker capacity search';
+            return;
+        }
         const alternate = -preferred;
         if (!this._directionBlocked(state, preferred)) {
             if (state.direction !== preferred || state.step < 1) {
