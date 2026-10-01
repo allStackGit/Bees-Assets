@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import threading
+import time
 from typing import Callable, Optional
 
 
@@ -43,6 +44,7 @@ _ORIGINAL_PPO_CREATE_OPTIMIZER = None
 _ORIGINAL_PPO_PROCESS_TRAJECTORY = None
 _POLICY_DIMENSION_MASK_STATE = threading.local()
 _BC_MASK_STATE = threading.local()
+_POCA_TIMING_STATE = threading.local()
 
 
 def _is_bees_action_spec(action_spec) -> bool:
@@ -807,20 +809,73 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
 
         num_epoch = self.hyperparameters.num_epoch
         batch_update_stats = defaultdict(list)
-        for _ in range(num_epoch):
+        max_num_batch = buffer_length // batch_size
+        total_minibatches = num_epoch * max_num_batch
+        update_started = time.perf_counter()
+        print(
+            "[Bees PPO timing] update begin "
+            f"buffer={buffer_length} batch={batch_size} epochs={num_epoch} "
+            f"minibatches={total_minibatches}",
+            flush=True,
+        )
+        completed_minibatches = 0
+        for epoch_index in range(num_epoch):
             self.update_buffer.shuffle(
                 sequence_length=self.policy.sequence_length
             )
             buffer = self.update_buffer
-            max_num_batch = buffer_length // batch_size
-            for i in range(0, max_num_batch * batch_size, batch_size):
+            for batch_index, i in enumerate(
+                range(0, max_num_batch * batch_size, batch_size),
+                start=1,
+            ):
+                completed_minibatches += 1
+                _POCA_TIMING_STATE.epoch = epoch_index + 1
+                _POCA_TIMING_STATE.batch = batch_index
+                _POCA_TIMING_STATE.completed = completed_minibatches
+                _POCA_TIMING_STATE.total = total_minibatches
                 minibatch = buffer.make_mini_batch(i, i + batch_size)
+                minibatch_started = time.perf_counter()
+                print(
+                    "[Bees PPO timing] minibatch begin "
+                    f"epoch={epoch_index + 1}/{num_epoch} "
+                    f"batch={batch_index}/{max_num_batch} "
+                    f"overall={completed_minibatches}/{total_minibatches}",
+                    flush=True,
+                )
                 update_stats = self.optimizer.update(minibatch, n_sequences)
-                update_stats.update(
-                    self.optimizer.update_reward_signals(minibatch)
+                reward_started = time.perf_counter()
+                print(
+                    "[Bees PPO timing] phase begin update_reward_signals "
+                    f"overall={completed_minibatches}/{total_minibatches}",
+                    flush=True,
+                )
+                reward_stats = self.optimizer.update_reward_signals(minibatch)
+                print(
+                    "[Bees PPO timing] phase end update_reward_signals "
+                    f"overall={completed_minibatches}/{total_minibatches} "
+                    f"seconds={time.perf_counter() - reward_started:.6f}",
+                    flush=True,
+                )
+                update_stats.update(reward_stats)
+                print(
+                    "[Bees PPO timing] minibatch end "
+                    f"overall={completed_minibatches}/{total_minibatches} "
+                    f"seconds={time.perf_counter() - minibatch_started:.6f}",
+                    flush=True,
                 )
                 for stat_name, value in update_stats.items():
                     batch_update_stats[stat_name].append(value)
+
+        print(
+            "[Bees PPO timing] update end "
+            f"minibatches={completed_minibatches}/{total_minibatches} "
+            f"seconds={time.perf_counter() - update_started:.6f}",
+            flush=True,
+        )
+        _POCA_TIMING_STATE.epoch = None
+        _POCA_TIMING_STATE.batch = None
+        _POCA_TIMING_STATE.completed = None
+        _POCA_TIMING_STATE.total = None
 
         for stat, stat_list in batch_update_stats.items():
             self._stats_reporter.add_stat(stat, np.mean(stat_list))
@@ -1004,15 +1059,95 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             reset_training_slot_limits,
             set_training_slot_limits,
         )
+        from mlagents.torch_utils import torch
 
         slot_limits = _structured_training_slot_limits(
             self.policy,
             batch,
         )
         slot_token = set_training_slot_limits(slot_limits)
+        overall = getattr(_POCA_TIMING_STATE, "completed", "?")
+        total = getattr(_POCA_TIMING_STATE, "total", "?")
+        print(
+            "[Bees PPO timing] optimizer begin "
+            f"overall={overall}/{total} slot_limits={slot_limits}",
+            flush=True,
+        )
+        optimizer_started = time.perf_counter()
+
+        patched = []
+
+        def patch_phase(target, name, label):
+            had_instance_value = hasattr(target, "__dict__") and name in target.__dict__
+            previous_instance_value = (
+                target.__dict__.get(name) if had_instance_value else None
+            )
+            original = getattr(target, name)
+
+            def timed(*args, **kwargs):
+                started = time.perf_counter()
+                print(
+                    f"[Bees PPO timing] phase begin {label} "
+                    f"overall={overall}/{total}",
+                    flush=True,
+                )
+                try:
+                    return original(*args, **kwargs)
+                finally:
+                    print(
+                        f"[Bees PPO timing] phase end {label} "
+                        f"overall={overall}/{total} "
+                        f"seconds={time.perf_counter() - started:.6f}",
+                        flush=True,
+                    )
+
+            object.__setattr__(target, name, timed)
+            patched.append(
+                (target, name, had_instance_value, previous_instance_value)
+            )
+
+        original_autograd_backward = torch.autograd.backward
+
+        def timed_autograd_backward(*args, **kwargs):
+            started = time.perf_counter()
+            print(
+                "[Bees PPO timing] phase begin backward "
+                f"overall={overall}/{total}",
+                flush=True,
+            )
+            try:
+                return original_autograd_backward(*args, **kwargs)
+            finally:
+                print(
+                    "[Bees PPO timing] phase end backward "
+                    f"overall={overall}/{total} "
+                    f"seconds={time.perf_counter() - started:.6f}",
+                    flush=True,
+                )
+
         try:
+            patch_phase(self.policy.actor, "get_stats", "actor_get_stats")
+            patch_phase(self.critic, "critic_pass", "critic_pass")
+            patch_phase(self.critic, "baseline", "baseline")
+            patch_phase(self.optimizer, "step", "optimizer_step")
+            torch.autograd.backward = timed_autograd_backward
             return original_poca_update(self, batch, num_sequences)
         finally:
+            torch.autograd.backward = original_autograd_backward
+            for target, name, had_instance_value, previous_instance_value in reversed(patched):
+                if had_instance_value:
+                    object.__setattr__(target, name, previous_instance_value)
+                else:
+                    try:
+                        object.__delattr__(target, name)
+                    except AttributeError:
+                        pass
+            print(
+                "[Bees PPO timing] optimizer end "
+                f"overall={overall}/{total} "
+                f"seconds={time.perf_counter() - optimizer_started:.6f}",
+                flush=True,
+            )
             reset_training_slot_limits(slot_token)
             _POLICY_DIMENSION_MASK_STATE.mask = None
             _POLICY_DIMENSION_MASK_STATE.sample_weights = None
