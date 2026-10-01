@@ -563,7 +563,14 @@ def _structured_training_slot_limits(policy, batch, extra_observations=()):
                 count,
                 size,
             )
-            weapons = entities[:, :, ENTITY_BASE_SIZE:].reshape(
+            weapon_end = ENTITY_BASE_SIZE + (
+                ENTITY_WEAPON_COUNT * OBSERVED_WEAPON_SIZE
+            )
+            weapons = entities[
+                :,
+                :,
+                ENTITY_BASE_SIZE:weapon_end,
+            ].reshape(
                 values.shape[0],
                 count,
                 ENTITY_WEAPON_COUNT,
