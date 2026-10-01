@@ -35,6 +35,7 @@ namespace Assets.Scripts.Scenes
         private int _automaticReconnectAttempts;
         private bool _pausedForNetworkDisconnect;
         private bool _hasShownDeadVersionAlert;
+        private bool _dedicatedTrainingSocketDisabled;
         private readonly List<ServerRequest> _resendRequests = new List<ServerRequest>();
         private int _resends;
 
@@ -251,6 +252,11 @@ namespace Assets.Scripts.Scenes
             SocketTimer.Update();
 
             bool canRunWithoutServer = CanRunWithoutServer();
+            if (canRunWithoutServer && !_dedicatedTrainingSocketDisabled)
+            {
+                ConfigData.Socket.DisableForDedicatedTraining();
+                _dedicatedTrainingSocketDisabled = true;
+            }
             if (!canRunWithoutServer)
             {
                 // Do not feed standing requests into a dead WebSocket. They remain in
