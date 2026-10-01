@@ -783,6 +783,7 @@ class TrainingControlClientTests(unittest.TestCase):
             root = Path(temp)
             fake = mock.Mock()
             fake.pid = 4344
+            fake.returncode = 0
             fake.poll.side_effect = [None, None, 0, 0]
             fake.wait.return_value = 0
 
@@ -814,6 +815,43 @@ class TrainingControlClientTests(unittest.TestCase):
 
             self.assertFalse(stop_file.exists())
             progress.assert_called()
+            killpg.assert_not_called()
+
+    def test_remote_graceful_stop_rejects_unclean_owned_child_cleanup(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            fake = mock.Mock()
+            fake.pid = 4345
+            fake.returncode = 75
+            fake.poll.side_effect = [None, None, 75, 75]
+
+            with (
+                mock.patch.object(agent, "_is_windows", return_value=False),
+                mock.patch.object(process_safety, "_is_windows", return_value=False),
+                mock.patch.object(process_safety.subprocess, "Popen", return_value=fake),
+                mock.patch.object(agent.os, "killpg", create=True) as killpg,
+                mock.patch.object(agent.time, "sleep"),
+            ):
+                managed = agent.ManagedProcess()
+                managed.start(
+                    ["python", "actor.py"],
+                    revision=1,
+                    build_sha256="a" * 64,
+                    build_id="build-a",
+                    run_id="run-a",
+                    compatibility_key="b" * 64,
+                    state_file=root / "control-state.json",
+                    environment_args=(),
+                    graceful_remote_stop=True,
+                )
+
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    "owned child cleanup was not confirmed",
+                ):
+                    managed.stop()
+
+            self.assertIsNone(managed.process)
             killpg.assert_not_called()
 
     def test_central_checkpoint_timeout_refuses_force_kill(self):
