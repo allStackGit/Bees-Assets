@@ -21,23 +21,33 @@ internal static class BeesCommandLineBuild
 
     public static void BuildWindowsRl()
     {
-        Build(
+        BuildRl(
             BuildTarget.StandaloneWindows64,
-            new[] { RlScene },
             "Bees RL Training.exe",
             StandaloneBuildSubtarget.Player);
     }
 
     public static void BuildLinuxRl()
     {
+        BuildRl(
+            BuildTarget.StandaloneLinux64,
+            "Bees RL Training.x86_64",
+            StandaloneBuildSubtarget.Server);
+    }
+
+    private static void BuildRl(
+        BuildTarget target,
+        string executableName,
+        StandaloneBuildSubtarget subtarget)
+    {
         PluginImporter[] excludedPlugins = ExcludeDedicatedRlNativePlugins();
         try
         {
             Build(
-                BuildTarget.StandaloneLinux64,
+                target,
                 new[] { RlScene },
-                "Bees RL Training.x86_64",
-                StandaloneBuildSubtarget.Server);
+                executableName,
+                subtarget);
         }
         finally
         {
