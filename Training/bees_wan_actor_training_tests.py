@@ -92,6 +92,37 @@ class WanActorTimerDirectoryTests(unittest.TestCase):
             self.assertTrue(created.is_dir())
 
 
+class WanActorBackpressureTests(unittest.TestCase):
+    def test_full_upload_queue_refreshes_health_without_dropping_payload(self):
+        class OneFullThenAcceptQueue:
+            def __init__(self):
+                self.calls = 0
+                self.payload = None
+
+            def put(self, payload, timeout):
+                self.calls += 1
+                if self.calls == 1:
+                    raise queue.Full()
+                self.payload = payload
+
+        session = object.__new__(actor.ActorSession)
+        session.stop = SimpleNamespace(is_set=lambda: False)
+        session._upload_queue = OneFullThenAcceptQueue()
+        session._session_changed = SimpleNamespace(is_set=lambda: False)
+        session._state_changed = SimpleNamespace(is_set=lambda: False)
+        session._stale = SimpleNamespace(is_set=lambda: False)
+        session._report_runtime_progress = mock.Mock()
+        session._write_throughput_metrics = mock.Mock()
+        session._raise_thread_error = mock.Mock()
+        payload = {"trajectories": [object()]}
+
+        self.assertTrue(session._enqueue_upload(payload))
+        self.assertIs(session._upload_queue.payload, payload)
+        session._report_runtime_progress.assert_called_once_with()
+        session._write_throughput_metrics.assert_called_once_with()
+        session._raise_thread_error.assert_called_once_with()
+
+
 class WanActorStepDiagnosticTests(unittest.TestCase):
     def test_stalled_step_recovery_terminates_only_waiting_live_workers(self):
         class FakeProcess:
