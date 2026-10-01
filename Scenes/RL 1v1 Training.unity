@@ -14502,7 +14502,7 @@ MonoBehaviour:
   MediumShipExplosionPrefab: {fileID: 5251504260705199934, guid: 9b9ec98e14c9ff04db5cf9584f56ae1c, type: 3}
   LargeShipExplosionPrefab: {fileID: 5251504260705199934, guid: 70dc82c9665ce3f4eb24bbfe8e62b2c9, type: 3}
   HugeShipExplosionPrefab: {fileID: 5251504260705199934, guid: 6a4063a718e9d7341ac9460de59edcb0, type: 3}
-  QueenShipExplosionPrefab: {fileID: 1317667449522872329, guid: 3916e7d63e371ed4ab56cbc6ead366b2, type: 3}
+  QueenShipExplosionPrefab: {fileID: 0}
   ObstaclePrefab: {fileID: 2254396663677463879, guid: e6e906216d499064a9ce6774a36d2fa1, type: 3}
   ObstacleBackgroundPrefab: {fileID: 5088379900833165171, guid: ccd1ff021d71d56468e6e3c3b96ac8cd, type: 3}
   MovementMarkerPrefab: {fileID: 2507697582912947509, guid: d5ee77a24c7f6a6499324a8a600b4943, type: 3}
