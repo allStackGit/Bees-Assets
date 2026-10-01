@@ -15,6 +15,7 @@ const {
     paths,
     readJson,
     readText,
+    rotateManagedLog,
     removeIfExists,
     samePath,
     sha256File,
@@ -660,12 +661,14 @@ async function startCentralAgentIfNeeded(
     writeJsonAtomic(paths.centralAgentStatePath, launchIntent);
     removeIfExists(paths.centralAgentPidPath);
 
+    rotateManagedLog(outLog);
+    rotateManagedLog(errLog);
     const stdoutFd = fs.openSync(outLog, 'a');
     const stderrFd = fs.openSync(errLog, 'a');
     let child;
     try {
         child = spawn(bootstrapPython, launchArgs, {
-            cwd: paths.assetsRoot,
+            cwd: path.resolve(preparedRuntime.runtime_root),
             detached: true,
             windowsHide: true,
             stdio: ['ignore', stdoutFd, stderrFd],
