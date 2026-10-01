@@ -430,12 +430,12 @@ async function invokeBundle(options = {}) {
                     ? String(status.desired.run_id).trim()
                     : await getActiveRunId(config, '')
             );
-        await requestCentralDiagnosticModelSnapshot(
-            status,
-            targetRun,
-            snapshotJson,
-        );
         if (options.evaluate) {
+            await requestCentralDiagnosticModelSnapshot(
+                status,
+                targetRun,
+                snapshotJson,
+            );
             await invokeCentralDiagnosticBenchmark(
                 targetRun,
                 snapshotJson,
@@ -443,7 +443,8 @@ async function invokeBundle(options = {}) {
             );
         } else {
             console.log(
-                'Deterministic policy evaluation skipped; use bundle -Evaluate to include it.'
+                'Live learner ONNX snapshot and deterministic policy evaluation skipped; ' +
+                'use bundle -Evaluate to include them.'
             );
         }
 
