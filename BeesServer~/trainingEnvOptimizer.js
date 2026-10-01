@@ -659,12 +659,51 @@ class TrainingEnvOptimizer {
         }
 
         if (resizeFailure && capacity.current_envs !== state.desired_envs) {
+            const failedTarget = state.desired_envs;
+            const reason =
+                'live resize failed while targeting ' + failedTarget +
+                ' envs: ' + resizeFailure.error;
+
+            if (
+                state.baseline_envs !== null &&
+                failedTarget === state.baseline_envs &&
+                capacity.current_envs !== state.baseline_envs
+            ) {
+                // The probe already moved away from its baseline and the attempted rollback
+                // failed too. The worker has explicitly rejected this target until BeesServer
+                // requests a different count, so continuing to demand the old baseline creates
+                // a permanent actual->desired mismatch. Reconcile to the capacity that is
+                // actually alive, release the cluster-wide probe lock, and establish a fresh
+                // baseline before trying another capacity change.
+                this._releaseProbe(record.trainer_id);
+                state.desired_envs = capacity.current_envs;
+                state.baseline_envs = null;
+                state.baseline_sps = null;
+                state.last_sps = null;
+                state.direction = capacity.current_envs >= capacity.max_envs ? -1 : 1;
+                state.step = capacity.current_envs >= capacity.max_envs
+                    ? downwardStep(capacity.current_envs)
+                    : initialStep(capacity.current_envs);
+                state.moved_direction = 0;
+                state.blocked_up = false;
+                state.blocked_down = false;
+                state.cooldown_until_ms = 0;
+                state.metrics_missing_since_ms = null;
+                this._resetMeasurement(
+                    state,
+                    timestamp,
+                    totalSteps,
+                    reason + '; accepting live ' + capacity.current_envs +
+                        ' envs and collecting a fresh baseline',
+                );
+                return this.snapshot(record.trainer_id);
+            }
+
             this._abortProbe(
                 state,
                 capacity,
                 timestamp,
-                'live resize failed while targeting ' + state.desired_envs +
-                    ' envs: ' + resizeFailure.error,
+                reason,
             );
             return this.snapshot(record.trainer_id);
         }
