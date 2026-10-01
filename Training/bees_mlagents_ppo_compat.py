@@ -28,6 +28,7 @@ BEES_CAPABILITY_SPECIAL_PHASE_INDEX = BEES_CAPABILITY_START + 4
 BEES_BARGE_SHIP_TYPE_SCALAR = -1.0 / 23.0
 BEES_HEALING_SPECIAL_ACTION = 3
 ACTION_ENTROPY_EPSILON = 1e-7
+POCA_ENCODER_CHUNK_ROWS = 2048
 
 _ORIGINAL_GAUSSIAN_FORWARD = None
 _ORIGINAL_ACTION_MODEL_FORWARD = None
@@ -36,6 +37,7 @@ _ORIGINAL_PPO_UPDATE = None
 _ORIGINAL_POCA_UPDATE = None
 _ORIGINAL_POCA_TRAJECTORY_VALUES = None
 _ORIGINAL_POCA_UPDATE_POLICY = None
+_ORIGINAL_MULTI_AGENT_FORWARD = None
 _ORIGINAL_TRUST_REGION_POLICY_LOSS = None
 _ORIGINAL_MASKED_MEAN = None
 _ORIGINAL_BC_UPDATE_BATCH = None
@@ -45,6 +47,7 @@ _ORIGINAL_PPO_PROCESS_TRAJECTORY = None
 _POLICY_DIMENSION_MASK_STATE = threading.local()
 _BC_MASK_STATE = threading.local()
 _POCA_TIMING_STATE = threading.local()
+_POCA_GROUP_BATCH_STATE = threading.local()
 
 
 def _is_bees_action_spec(action_spec) -> bool:
@@ -608,6 +611,30 @@ def _structured_training_slot_limits(policy, batch, extra_observations=()):
     }
 
 
+def _poca_groupmate_valid_row_indices(policy, batch, batch_size):
+    """Return CPU-derived valid row indices for each padded MA-POCA groupmate slot."""
+
+    import numpy as np
+    from mlagents.trainers.trajectory import GroupObsUtil
+
+    n_obs = len(policy.behavior_spec.observation_specs)
+    if n_obs != 1 or batch_size <= 0:
+        return None
+
+    valid_rows = []
+    for groupmate in GroupObsUtil.from_buffer(batch, n_obs):
+        if not groupmate:
+            return None
+        first_obs = np.asarray(groupmate[0])
+        if first_obs.shape[0] != batch_size:
+            return None
+        first_value = first_obs.reshape(batch_size, -1)[:, 0]
+        valid_rows.append(
+            np.flatnonzero(~np.isnan(first_value)).astype(np.int64, copy=False)
+        )
+    return valid_rows
+
+
 def _poca_communication_activity(policy, batch, batch_size):
     """Return 1 where at least one live MA-POCA groupmate can receive communication."""
 
@@ -723,6 +750,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
     from mlagents.trainers.torch_entities.components.bc.module import BCModule
     from mlagents.trainers.ppo.optimizer_torch import TorchPPOOptimizer
     from mlagents.trainers.torch_entities.action_model import ActionModel
+    from mlagents.trainers.torch_entities.networks import MultiAgentNetworkBody
     from mlagents.trainers.torch_entities.utils import ModelUtils
 
     global _ORIGINAL_ACTION_MODEL_FORWARD
@@ -731,6 +759,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
     global _ORIGINAL_POCA_UPDATE
     global _ORIGINAL_POCA_TRAJECTORY_VALUES
     global _ORIGINAL_POCA_UPDATE_POLICY
+    global _ORIGINAL_MULTI_AGENT_FORWARD
     global _ORIGINAL_TRUST_REGION_POLICY_LOSS
     global _ORIGINAL_MASKED_MEAN
     global _ORIGINAL_BC_UPDATE_BATCH
@@ -747,10 +776,216 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         TorchPOCAOptimizer.get_trajectory_and_baseline_value_estimates
     )
     original_poca_update_policy = POCATrainer._update_policy
+    original_multi_agent_forward = MultiAgentNetworkBody.forward
     original_policy_loss = ModelUtils.trust_region_policy_loss
     original_masked_mean = ModelUtils.masked_mean
     original_bc_update_batch = BCModule._update_batch
     original_bc_loss = BCModule._behavioral_cloning_loss
+
+    def optimized_multi_agent_forward(
+        self,
+        obs_only,
+        obs,
+        actions,
+        memories=None,
+        sequence_length=1,
+    ):
+        """Batch Bees group-member encoding and reuse it across POCA value/baseline."""
+
+        valid_rows = getattr(_POCA_GROUP_BATCH_STATE, "valid_rows", None)
+        cache = getattr(_POCA_GROUP_BATCH_STATE, "encoded_cache", None)
+        if (
+            valid_rows is None
+            or cache is None
+            or not getattr(self.observation_encoder, "_bees", False)
+            or len(getattr(self.observation_encoder, "processors", ())) != 1
+        ):
+            return original_multi_agent_forward(
+                self,
+                obs_only,
+                obs,
+                actions,
+                memories=memories,
+                sequence_length=sequence_length,
+            )
+
+        from mlagents.torch_utils import torch
+
+        groupmate_count = len(valid_rows)
+        if len(obs) > groupmate_count or max(0, len(obs_only) - 1) > groupmate_count:
+            return original_multi_agent_forward(
+                self,
+                obs_only,
+                obs,
+                actions,
+                memories=memories,
+                sequence_length=sequence_length,
+            )
+        if obs and len(actions) != len(obs):
+            return original_multi_agent_forward(
+                self,
+                obs_only,
+                obs,
+                actions,
+                memories=memories,
+                sequence_length=sequence_length,
+            )
+
+        reference_members = obs_only if obs_only else obs
+        if not reference_members or len(reference_members[0]) != 1:
+            return original_multi_agent_forward(
+                self,
+                obs_only,
+                obs,
+                actions,
+                memories=memories,
+                sequence_length=sequence_length,
+            )
+        batch_size = int(reference_members[0][0].shape[0])
+        encoded_size = int(self.observation_encoder.total_enc_size)
+
+        def encode_members(members, member_valid_rows):
+            outputs = [None] * len(members)
+            pending = []
+
+            for position, (member, valid) in enumerate(zip(members, member_valid_rows)):
+                if len(member) != 1 or int(member[0].shape[0]) != batch_size:
+                    raise RuntimeError(
+                        "Bees POCA optimized group encoder received an unexpected observation shape."
+                    )
+                source = member[0]
+                cache_key = id(source)
+                cached = cache.get(cache_key)
+                if cached is not None:
+                    outputs[position] = cached
+                    continue
+
+                count = batch_size if valid is None else int(len(valid))
+                if count == 0:
+                    encoded = source.new_zeros((batch_size, encoded_size))
+                    cache[cache_key] = encoded
+                    outputs[position] = encoded
+                    continue
+                pending.append((position, member, valid, count, cache_key))
+
+            offset = 0
+            while offset < len(pending):
+                chunk = []
+                chunk_rows = 0
+                while offset < len(pending):
+                    record = pending[offset]
+                    if chunk and chunk_rows + record[3] > POCA_ENCODER_CHUNK_ROWS:
+                        break
+                    chunk.append(record)
+                    chunk_rows += record[3]
+                    offset += 1
+
+                selected = []
+                prepared = []
+                for position, member, valid, count, cache_key in chunk:
+                    source = member[0]
+                    if valid is None:
+                        selected_source = source
+                        index = None
+                    else:
+                        index = torch.as_tensor(
+                            valid,
+                            dtype=torch.long,
+                            device=source.device,
+                        )
+                        selected_source = source.index_select(0, index)
+                    selected.append(selected_source)
+                    prepared.append(
+                        (position, valid, count, cache_key, index, source)
+                    )
+
+                merged = selected[0] if len(selected) == 1 else torch.cat(selected, dim=0)
+                merged_encoded = self.observation_encoder([merged])
+
+                encoded_offset = 0
+                for position, valid, count, cache_key, index, source in prepared:
+                    part = merged_encoded[encoded_offset : encoded_offset + count]
+                    encoded_offset += count
+                    if valid is None:
+                        encoded = part
+                    else:
+                        encoded = part.new_zeros((batch_size, encoded_size)).index_copy(
+                            0,
+                            index,
+                            part,
+                        )
+                    cache[cache_key] = encoded
+                    outputs[position] = encoded
+
+            return outputs
+
+        self_attn_masks = []
+        self_attn_inputs = []
+
+        if obs:
+            obs_attn_mask = self._get_masks_from_nans(obs)
+            encoded_obs = encode_members(
+                obs,
+                valid_rows[: len(obs)],
+            )
+            concat_f_inp = []
+            for encoded, action in zip(encoded_obs, actions):
+                concat_f_inp.append(
+                    torch.cat(
+                        [
+                            encoded,
+                            action.to_flat(self.action_spec.discrete_branches),
+                        ],
+                        dim=1,
+                    )
+                )
+            f_inp = torch.stack(concat_f_inp, dim=1)
+            self_attn_masks.append(obs_attn_mask)
+            self_attn_inputs.append(self.obs_action_encoder(None, f_inp))
+
+        if obs_only:
+            obs_only_attn_mask = self._get_masks_from_nans(obs_only)
+            obs_only_valid_rows = [None]
+            if len(obs_only) > 1:
+                obs_only_valid_rows.extend(valid_rows[: len(obs_only) - 1])
+            encoded_obs_only = encode_members(
+                obs_only,
+                obs_only_valid_rows,
+            )
+            g_inp = torch.stack(encoded_obs_only, dim=1)
+            self_attn_masks.append(obs_only_attn_mask)
+            self_attn_inputs.append(self.obs_encoder(None, g_inp))
+
+        if not self_attn_inputs:
+            return original_multi_agent_forward(
+                self,
+                obs_only,
+                obs,
+                actions,
+                memories=memories,
+                sequence_length=sequence_length,
+            )
+
+        encoded_entity = torch.cat(self_attn_inputs, dim=1)
+        encoded_state = self.self_attn(encoded_entity, self_attn_masks)
+
+        flipped_masks = 1 - torch.cat(self_attn_masks, dim=1)
+        num_agents = torch.sum(flipped_masks, dim=1, keepdim=True)
+        max_agents = torch.max(num_agents).item()
+        if max_agents > self._current_max_agents:
+            self._current_max_agents = torch.nn.Parameter(
+                torch.as_tensor(max_agents),
+                requires_grad=False,
+            )
+
+        num_agents = num_agents * 2.0 / self._current_max_agents - 1
+        encoding = self.linear_encoder(encoded_state)
+        if self.use_lstm:
+            encoding = encoding.reshape([-1, sequence_length, self.h_size])
+            encoding, memories = self.lstm(encoding, memories)
+            encoding = encoding.reshape([-1, self.m_size // 2])
+        encoding = torch.cat([encoding, num_agents], dim=1)
+        return encoding, memories
 
     def masked_bc_update_batch(self, mini_batch_demo, n_sequences):
         _BC_MASK_STATE.weapon_activity = _bees_bc_weapon_activity(
@@ -1038,11 +1273,18 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             reset_training_slot_limits(slot_token)
 
     def masked_poca_update(self, batch, num_sequences):
+        batch_size = len(batch[BufferKey.MASKS])
         communication_activity = _poca_communication_activity(
             self.policy,
             batch,
-            len(batch[BufferKey.MASKS]),
+            batch_size,
         )
+        _POCA_GROUP_BATCH_STATE.valid_rows = _poca_groupmate_valid_row_indices(
+            self.policy,
+            batch,
+            batch_size,
+        )
+        _POCA_GROUP_BATCH_STATE.encoded_cache = {}
         action_masks = _set_dimension_mask(
             self,
             batch,
@@ -1151,6 +1393,8 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             reset_training_slot_limits(slot_token)
             _POLICY_DIMENSION_MASK_STATE.mask = None
             _POLICY_DIMENSION_MASK_STATE.sample_weights = None
+            _POCA_GROUP_BATCH_STATE.valid_rows = None
+            _POCA_GROUP_BATCH_STATE.encoded_cache = None
 
     ActionModel.forward = masked_forward
     ActionModel.evaluate = masked_evaluate
@@ -1160,6 +1404,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         compact_poca_trajectory_values
     )
     POCATrainer._update_policy = weighted_poca_update_policy
+    MultiAgentNetworkBody.forward = optimized_multi_agent_forward
     ModelUtils.trust_region_policy_loss = staticmethod(masked_policy_loss)
     ModelUtils.masked_mean = staticmethod(weighted_masked_mean)
     BCModule._update_batch = masked_bc_update_batch
@@ -1171,6 +1416,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
     _ORIGINAL_POCA_UPDATE = original_poca_update
     _ORIGINAL_POCA_TRAJECTORY_VALUES = original_poca_trajectory_values
     _ORIGINAL_POCA_UPDATE_POLICY = original_poca_update_policy
+    _ORIGINAL_MULTI_AGENT_FORWARD = original_multi_agent_forward
     _ORIGINAL_TRUST_REGION_POLICY_LOSS = original_policy_loss
     _ORIGINAL_MASKED_MEAN = original_masked_mean
     _ORIGINAL_BC_UPDATE_BATCH = original_bc_update_batch
@@ -1187,6 +1433,7 @@ def restore_inactive_continuous_action_masking() -> None:
     global _ORIGINAL_POCA_UPDATE
     global _ORIGINAL_POCA_TRAJECTORY_VALUES
     global _ORIGINAL_POCA_UPDATE_POLICY
+    global _ORIGINAL_MULTI_AGENT_FORWARD
     global _ORIGINAL_TRUST_REGION_POLICY_LOSS
     global _ORIGINAL_MASKED_MEAN
     global _ORIGINAL_BC_UPDATE_BATCH
@@ -1200,6 +1447,7 @@ def restore_inactive_continuous_action_masking() -> None:
     from mlagents.trainers.ppo.optimizer_torch import TorchPPOOptimizer
     from mlagents.trainers.torch_entities.components.bc.module import BCModule
     from mlagents.trainers.torch_entities.action_model import ActionModel
+    from mlagents.trainers.torch_entities.networks import MultiAgentNetworkBody
     from mlagents.trainers.torch_entities.utils import ModelUtils
 
     ActionModel.forward = _ORIGINAL_ACTION_MODEL_FORWARD
@@ -1210,6 +1458,7 @@ def restore_inactive_continuous_action_masking() -> None:
         _ORIGINAL_POCA_TRAJECTORY_VALUES
     )
     POCATrainer._update_policy = _ORIGINAL_POCA_UPDATE_POLICY
+    MultiAgentNetworkBody.forward = _ORIGINAL_MULTI_AGENT_FORWARD
     ModelUtils.trust_region_policy_loss = staticmethod(
         _ORIGINAL_TRUST_REGION_POLICY_LOSS
     )
@@ -1220,6 +1469,8 @@ def restore_inactive_continuous_action_masking() -> None:
     _BC_MASK_STATE.weapon_activity = None
     _BC_MASK_STATE.movement_activity = None
     _POLICY_DIMENSION_MASK_STATE.sample_weights = None
+    _POCA_GROUP_BATCH_STATE.valid_rows = None
+    _POCA_GROUP_BATCH_STATE.encoded_cache = None
 
     _ORIGINAL_ACTION_MODEL_FORWARD = None
     _ORIGINAL_ACTION_MODEL_EVALUATE = None
@@ -1227,6 +1478,7 @@ def restore_inactive_continuous_action_masking() -> None:
     _ORIGINAL_POCA_UPDATE = None
     _ORIGINAL_POCA_TRAJECTORY_VALUES = None
     _ORIGINAL_POCA_UPDATE_POLICY = None
+    _ORIGINAL_MULTI_AGENT_FORWARD = None
     _ORIGINAL_TRUST_REGION_POLICY_LOSS = None
     _ORIGINAL_MASKED_MEAN = None
     _ORIGINAL_BC_UPDATE_BATCH = None
