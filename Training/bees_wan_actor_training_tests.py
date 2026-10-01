@@ -76,6 +76,22 @@ class WanActorLogGenerationTests(unittest.TestCase):
             self.assertTrue(second.is_dir())
 
 
+class WanActorTimerDirectoryTests(unittest.TestCase):
+    def test_actor_creates_mlagents_timer_directory_beside_extracted_player(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            session = object.__new__(actor.ActorSession)
+            session.env_path = root / "Bees RL Training.exe"
+
+            created = session._ensure_unity_timer_directory()
+
+            self.assertEqual(
+                created,
+                root / "Bees RL Training_Data" / "ML-Agents" / "Timers",
+            )
+            self.assertTrue(created.is_dir())
+
+
 class WanActorStepDiagnosticTests(unittest.TestCase):
     def test_worker_diagnostics_identify_waiting_unity_process(self):
         class FakeProcess:
