@@ -204,6 +204,49 @@ class StructuredPolicyArchitectureTests(unittest.TestCase):
             atol=1.0e-6,
         )
 
+    def test_compact_training_slots_match_full_dense_output(self):
+        from mlagents.torch_utils import torch
+
+        torch.manual_seed(11)
+        body = BeesStructuredNetworkBody(
+            self._observation_specs(),
+            self._network_settings(),
+        )
+        observations = torch.zeros((4, BEES_OBSERVATION_SIZE))
+        observations[:2, FACTION_INDEX] = 1.0
+        observations[2:, FACTION_INDEX] = -1.0
+        for start in (
+            ALLY_START,
+            ENEMY_START,
+            MINING_START,
+            MAP_OBJECT_START,
+            COLLISION_START,
+        ):
+            observations[:, start] = 1.0
+        observations[:, ALLY_START + ENTITY_BASE_SIZE] = 1.0
+        observations[:, ENEMY_START + ENTITY_BASE_SIZE] = 1.0
+
+        full_output, _ = body([observations])
+        token = set_training_slot_limits({
+            "allies": 1,
+            "enemies": 1,
+            "entity_weapons": 1,
+            "mining": 1,
+            "map_objects": 1,
+            "collisions": 1,
+        })
+        try:
+            compact_output, _ = body([observations])
+        finally:
+            reset_training_slot_limits(token)
+
+        torch.testing.assert_close(
+            compact_output,
+            full_output,
+            rtol=1.0e-5,
+            atol=1.0e-6,
+        )
+
     def test_gradient_update_path_avoids_sparse_nonzero_selection(self):
         from mlagents.torch_utils import torch
 
