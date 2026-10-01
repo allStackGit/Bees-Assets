@@ -37,6 +37,8 @@ from bees_process_safety import close_windows_owned_child_job, popen_owned
 
 DEFAULT_RECONNECT_SECONDS = 5.0
 WORKER_REGISTRATION_GRACE_SECONDS = 30.0
+MAX_STALE_TRANSPORT_RECYCLES = 2
+BROKER_PATH_FAILURE_SECONDS = 60.0
 DEFAULT_GAMEPLAY_PORT = 7146
 TRAINING_GAMEPLAY_HOST_ENV = "BEES_TRAINING_GAMEPLAY_HOST"
 TRAINING_GAMEPLAY_PORT_ENV = "BEES_TRAINING_GAMEPLAY_PORT"
@@ -1611,17 +1613,23 @@ def _control_failure_total(record: Optional[Mapping[str, object]]) -> Optional[i
     return None
 
 
-def stale_trainer_requires_recycle(
+def stale_trainer_recovery_action(
     record: Optional[Mapping[str, object]],
     *,
     grace_started_monotonic: float,
     now: float,
+    transport_recycles: int,
     grace_seconds: float = WORKER_REGISTRATION_GRACE_SECONDS,
-) -> bool:
-    """Allow one bounded heartbeat window after worker launch or central-control recovery."""
+    max_transport_recycles: int = MAX_STALE_TRANSPORT_RECYCLES,
+) -> str:
+    """Choose bounded recovery without killing a locally live worker on the first stale record."""
     if not isinstance(record, Mapping) or not bool(record.get("stale", False)):
-        return False
-    return now - float(grace_started_monotonic) >= max(0.0, float(grace_seconds))
+        return "none"
+    if now - float(grace_started_monotonic) < max(0.0, float(grace_seconds)):
+        return "none"
+    if max(0, int(transport_recycles)) < max(0, int(max_transport_recycles)):
+        return "transport"
+    return "worker"
 
 
 def _inner_control_stalled(
@@ -2046,6 +2054,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             stale_recycle_grace_started_monotonic = 0.0
             runtime_cutover: Optional[Path] = None
             worker_recycle_requested = False
+            stale_transport_recycles = 0
             try:
                 tailnet, tailnet_log_thread = _start_logged_process(
                     _tailnet_forward_command(args)
@@ -2112,6 +2121,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     # occurred before the outer supervisor first sampled status and the worker is
                     # already stranded stopped waiting for desired state.
                     inner_control_stall_watchdog = _TransportWatchdog(10.0)
+                    broker_path_watchdog = _TransportWatchdog(BROKER_PATH_FAILURE_SECONDS)
                     while (
                         runtime_cutover is None
                         and worker is not None
@@ -2191,6 +2201,33 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                                 stale_recycle_grace_started_monotonic = now
                                 inner_control_stall_watchdog.observe(True, now)
                                 control_failure_watchdog.reset()
+                            if control_healthy and _training_desired(status):
+                                broker_healthy = _broker_session_available(args)
+                                if broker_path_watchdog.observe(broker_healthy, now):
+                                    print(
+                                        "[Bees remote] WAN broker path remained unavailable while "
+                                        "control stayed healthy; recycling private transport without "
+                                        "restarting the managed worker.",
+                                        file=sys.stderr,
+                                        flush=True,
+                                    )
+                                    try:
+                                        _terminate(tailnet)
+                                    except RuntimeError as exc:
+                                        raise _SupervisorProcessRestartRequired(
+                                            "private broker transport could not be recycled: "
+                                            + str(exc)
+                                        ) from exc
+                                    if tailnet_log_thread is not None:
+                                        tailnet_log_thread.join(timeout=1.0)
+                                    tailnet = None
+                                    tailnet_log_thread = None
+                                    broker_path_watchdog.observe(True, now)
+                                    stale_recycle_grace_started_monotonic = now
+                                    continue
+                            else:
+                                broker_path_watchdog.observe(True, now)
+
                             record_stale = (
                                 isinstance(record, Mapping)
                                 and bool(record.get("stale", False))
@@ -2206,6 +2243,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                             # the new worker one bounded heartbeat-registration window before using
                             # that historical record to trigger another recycle; otherwise the
                             # supervisor can kill every replacement before its first heartbeat.
+                            if control_healthy and not record_stale:
+                                stale_transport_recycles = 0
                             if control_healthy and not record_stale and not registration_grace:
                                 if inner_control_stall_watchdog.observe(
                                     not _inner_control_stalled(status, record),
@@ -2262,15 +2301,41 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                                 if record_stale or not control_healthy:
                                     control_failure_watchdog.reset()
 
-                            if stale_trainer_requires_recycle(
+                            stale_action = stale_trainer_recovery_action(
                                 record,
                                 grace_started_monotonic=stale_recycle_grace_started_monotonic,
                                 now=now,
-                            ):
+                                transport_recycles=stale_transport_recycles,
+                            )
+                            if stale_action == "transport":
+                                stale_transport_recycles += 1
                                 print(
                                     "[Bees remote] trainer heartbeat remained STALE beyond the "
                                     f"{WORKER_REGISTRATION_GRACE_SECONDS:g}s registration grace; "
-                                    "recycling the managed worker and private transport.",
+                                    "recycling private transport while keeping the managed worker "
+                                    f"alive (attempt {stale_transport_recycles}/"
+                                    f"{MAX_STALE_TRANSPORT_RECYCLES}).",
+                                    file=sys.stderr,
+                                    flush=True,
+                                )
+                                try:
+                                    _terminate(tailnet)
+                                except RuntimeError as exc:
+                                    raise _SupervisorProcessRestartRequired(
+                                        "stale-trainer transport could not be recycled: "
+                                        + str(exc)
+                                    ) from exc
+                                if tailnet_log_thread is not None:
+                                    tailnet_log_thread.join(timeout=1.0)
+                                tailnet = None
+                                tailnet_log_thread = None
+                                stale_recycle_grace_started_monotonic = now
+                                continue
+                            if stale_action == "worker":
+                                print(
+                                    "[Bees remote] trainer heartbeat remained STALE after "
+                                    f"{MAX_STALE_TRANSPORT_RECYCLES} private-transport recoveries; "
+                                    "recycling the managed worker as the final bounded recovery step.",
                                     file=sys.stderr,
                                     flush=True,
                                 )
