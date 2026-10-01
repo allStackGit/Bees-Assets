@@ -827,28 +827,77 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
         self.assertEqual(process.poll.call_count, 3)
         self.assertGreaterEqual(updater.request_refresh.call_count, 2)
 
-    def test_previous_stale_record_does_not_kill_fresh_worker_before_registration(self):
+    def test_previous_stale_record_prefers_transport_recovery_before_worker_restart(self):
         record = {"stale": True}
 
-        self.assertFalse(
-            managed.stale_trainer_requires_recycle(
+        self.assertEqual(
+            managed.stale_trainer_recovery_action(
                 record,
                 grace_started_monotonic=100.0,
                 now=129.9,
-            )
+                transport_recycles=0,
+            ),
+            "none",
         )
-        self.assertTrue(
-            managed.stale_trainer_requires_recycle(
+        self.assertEqual(
+            managed.stale_trainer_recovery_action(
                 record,
                 grace_started_monotonic=100.0,
                 now=130.0,
-            )
+                transport_recycles=0,
+            ),
+            "transport",
         )
-        self.assertFalse(
-            managed.stale_trainer_requires_recycle(
+        self.assertEqual(
+            managed.stale_trainer_recovery_action(
+                record,
+                grace_started_monotonic=100.0,
+                now=130.0,
+                transport_recycles=1,
+            ),
+            "transport",
+        )
+        self.assertEqual(
+            managed.stale_trainer_recovery_action(
+                record,
+                grace_started_monotonic=100.0,
+                now=130.0,
+                transport_recycles=2,
+            ),
+            "worker",
+        )
+        self.assertEqual(
+            managed.stale_trainer_recovery_action(
                 {"stale": False},
                 grace_started_monotonic=100.0,
                 now=1000.0,
+                transport_recycles=99,
+            ),
+            "none",
+        )
+
+    def test_broker_path_watchdog_requires_sustained_failure(self):
+        watchdog = managed._TransportWatchdog(
+            managed.BROKER_PATH_FAILURE_SECONDS
+        )
+
+        self.assertFalse(watchdog.observe(False, 100.0))
+        self.assertFalse(
+            watchdog.observe(
+                False,
+                100.0 + managed.BROKER_PATH_FAILURE_SECONDS - 0.1,
+            )
+        )
+        self.assertTrue(
+            watchdog.observe(
+                False,
+                100.0 + managed.BROKER_PATH_FAILURE_SECONDS,
+            )
+        )
+        self.assertFalse(
+            watchdog.observe(
+                True,
+                100.0 + managed.BROKER_PATH_FAILURE_SECONDS + 1.0,
             )
         )
 
