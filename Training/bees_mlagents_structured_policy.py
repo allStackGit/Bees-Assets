@@ -17,8 +17,9 @@ All other ML-Agents behaviors retain the upstream implementation.
 
 from __future__ import annotations
 
+import contextvars
 import math
-from typing import Optional
+from typing import Mapping, Optional
 
 from mlagents.torch_utils import torch, nn
 from mlagents.trainers.exception import UnityTrainerException
@@ -99,6 +100,28 @@ ACTION_ENCODING_SIZE = (
 
 _STRUCTURED_ENCODER_MARKER = "bees_structured_v23"
 _INSTALLED_STATE = None
+_TRAINING_SLOT_LIMITS = contextvars.ContextVar(
+    "bees_structured_training_slot_limits",
+    default=None,
+)
+
+
+def set_training_slot_limits(limits: Optional[Mapping[str, int]]):
+    return _TRAINING_SLOT_LIMITS.set(None if limits is None else dict(limits))
+
+
+def reset_training_slot_limits(token) -> None:
+    _TRAINING_SLOT_LIMITS.reset(token)
+
+
+def _slot_limit(name: str, full_count: int) -> int:
+    limits = _TRAINING_SLOT_LIMITS.get()
+    if not limits or torch.onnx.is_in_onnx_export():
+        return full_count
+    value = limits.get(name)
+    if not isinstance(value, int):
+        return full_count
+    return max(1, min(full_count, value))
 
 
 def _use_dense_structured_path() -> bool:
