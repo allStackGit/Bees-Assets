@@ -86,6 +86,37 @@ class RunLifecycleTests(unittest.TestCase):
                 first["compatibility_key"],
             )
 
+    def test_trainer_python_implementation_change_keeps_same_run_identity(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            assets = self._assets(root)
+            state = root / "current.json"
+
+            first = lifecycle.plan_run(
+                assets, state, datetime(2026, 9, 24, 12, 0, tzinfo=timezone.utc)
+            )
+            lifecycle.commit_plan(state, first)
+
+            structured = assets / "Training" / "bees_mlagents_structured_policy.py"
+            structured.write_text(
+                structured.read_text(encoding="utf-8")
+                + "\nIMPLEMENTATION_ONLY = 1\n",
+                encoding="utf-8",
+            )
+
+            second = lifecycle.plan_run(
+                assets, state, datetime(2026, 9, 24, 13, 0, tzinfo=timezone.utc)
+            )
+
+            self.assertFalse(second["incompatible"])
+            self.assertFalse(second["new_run"])
+            self.assertEqual(second["run_id"], first["run_id"])
+            self.assertEqual(second["compatibility_key"], first["compatibility_key"])
+            self.assertNotEqual(
+                second["contract"]["structured_policy_source_sha256"],
+                first["contract"]["structured_policy_source_sha256"],
+            )
+
     def test_compatible_build_keeps_same_run(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
