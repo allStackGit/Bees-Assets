@@ -497,6 +497,55 @@ test('optimizer holds a recovered worker before probing again after a reported f
     assert.equal(state.probing, true);
 });
 
+test('fresh stopped heartbeat after a runtime cutover waits for startup instead of holding', () => {
+    const optimizer = new TrainingEnvOptimizer({
+        warmupMs: 10_000,
+        measurementMs: 1000,
+        instabilityHoldMs: 60_000,
+    });
+
+    let state = update(optimizer, 'remote-a', 4, 0, 0, {
+        max: 16,
+        processState: 'stopped',
+        runtimeVersionValue: 'b'.repeat(64),
+    });
+    assert.notEqual(state.phase, 'stability-hold');
+    assert.equal(state.stability_hold_until_ms, 0);
+
+    state = update(optimizer, 'remote-a', 4, 0, 10_001, {
+        max: 16,
+        processState: 'stopped',
+        runtimeVersionValue: 'b'.repeat(64),
+    });
+    assert.equal(state.phase, 'stability-hold');
+    assert.match(state.last_instability_reason, /worker process state stopped/);
+});
+
+test('cluster search prefers productive workers and backs off a persistently weak worker', () => {
+    const optimizer = new TrainingEnvOptimizer({
+        settleMs: 0,
+        measurementMs: 1000,
+        retestMs: 60_000,
+    });
+
+    update(optimizer, 'remote-fast', 2, 0, 0, { max: 8, accepted: 0 });
+    update(optimizer, 'remote-slow', 2, 0, 0, { max: 8, accepted: 0 });
+    update(optimizer, 'remote-fast', 2, 1000, 1000, { max: 8, accepted: 1000 });
+    const slow = update(
+        optimizer,
+        'remote-slow',
+        2,
+        1000,
+        1000,
+        { max: 8, accepted: 10 },
+    );
+
+    assert.equal(slow.desired_envs, 1);
+    assert.equal(slow.direction, -1);
+    assert.equal(slow.producer_sps, 10);
+    assert.equal(slow.producer_efficiency, 5);
+});
+
 test('unexplained stopped heartbeat is instability even when brief', () => {
     const optimizer = new TrainingEnvOptimizer({
         warmupMs: 0,
