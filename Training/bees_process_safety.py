@@ -25,6 +25,7 @@ HEALTH_FILE_ENV = "BEES_TRAINING_CHILD_HEALTH_FILE"
 HEALTH_TOKEN_ENV = "BEES_TRAINING_CHILD_HEALTH_TOKEN"
 VALID_HEALTH_STATES = frozenset(("starting", "ready", "error"))
 OWNED_CHILD_TERMINATION_GRACE_SECONDS = 10.0
+OWNED_CHILD_POST_EXIT_KILL_SECONDS = 5.0
 MANAGED_HEALTH_FUTURE_CLOCK_SKEW_SECONDS = 5.0
 ATOMIC_REPLACE_RETRY_DELAYS = (0.01, 0.025, 0.05, 0.1, 0.2, 0.4)
 
@@ -223,28 +224,47 @@ def _owned_child_main(argv: Sequence[str]) -> int:
                 signal_child_group(signal.SIGKILL)
                 child_group_kill_sent = True
 
-    # A learner may exit while one of its environment workers remains alive. Retire any such
-    # descendants before reporting that the owned launch has finished.
+    # A learner/actor may exit while one of its Unity environment workers remains alive.
+    # The guardian must not report completion until that entire owned process group is gone;
+    # otherwise an outer supervisor can truthfully observe this wrapper as stopped while orphaned
+    # Unity children continue consuming CPU.
     try:
         os.killpg(child.pid, signal.SIGTERM)
     except ProcessLookupError:
-        # No descendants remain, but still preserve the learner's signal exit below.
         pass
 
-    deadline = time.monotonic() + 0.25
-    while time.monotonic() < deadline:
+    def process_group_alive() -> bool:
         try:
             os.killpg(child.pid, 0)
+            return True
         except ProcessLookupError:
-            break
+            return False
         except PermissionError:
-            pass
+            # Same-user descendants should remain signalable. Treat an unexpected permission
+            # result as alive so shutdown fails closed rather than claiming cleanup succeeded.
+            return True
+
+    deadline = time.monotonic() + 0.25
+    while process_group_alive() and time.monotonic() < deadline:
         time.sleep(0.025)
-    else:
+
+    if process_group_alive():
         try:
             os.killpg(child.pid, signal.SIGKILL)
         except ProcessLookupError:
             pass
+        kill_deadline = time.monotonic() + OWNED_CHILD_POST_EXIT_KILL_SECONDS
+        while process_group_alive() and time.monotonic() < kill_deadline:
+            time.sleep(0.025)
+
+    if process_group_alive():
+        print(
+            f"error: owned child process group {child.pid} survived SIGKILL after "
+            f"{OWNED_CHILD_POST_EXIT_KILL_SECONDS:g}s",
+            file=sys.stderr,
+            flush=True,
+        )
+        return 75
 
     if return_code < 0:
         child_signal = -return_code
