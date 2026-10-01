@@ -58,7 +58,7 @@ GRACEFUL_CHECKPOINT_STOP_SECONDS = 120.0
 CHILD_HEALTH_STARTUP_GRACE_SECONDS = 30.0
 CHILD_HEALTH_STALE_SECONDS = 30.0
 CHILD_HEALTH_STARTUP_PHASE_TIMEOUT_SECONDS = 180.0
-CHILD_HEALTH_PROGRESS_STALE_SECONDS = 120.0
+CHILD_HEALTH_PROGRESS_STALE_SECONDS = 60.0
 GRACEFUL_REMOTE_STOP_SECONDS = 20.0
 MANAGED_RESTART_STABLE_SECONDS = 60.0
 MANAGED_RESTART_BACKOFF_SECONDS = (1.0, 2.0, 5.0, 10.0, 30.0, 60.0, 120.0)
@@ -1266,6 +1266,24 @@ class ManagedProcess:
             return ""
         return str(health.get("error") or "managed child reported an internal failure")
 
+    def rollout_stalled(self) -> bool:
+        if not self.health_required or not self.alive():
+            return False
+        health = self.health()
+        if not isinstance(health, Mapping) or str(health.get("state", "")) != "ready":
+            return False
+        details = health.get("details")
+        details_map = details if isinstance(details, Mapping) else {}
+        if (
+            str(details_map.get("component", "") or "") != "elastic-wan-actor"
+            or str(details_map.get("phase", "") or "") != "running"
+        ):
+            return False
+        progress = details_map.get("progress_unix_seconds")
+        if not isinstance(progress, (int, float)) or isinstance(progress, bool):
+            return False
+        return max(0.0, time.time() - float(progress)) >= CHILD_HEALTH_PROGRESS_STALE_SECONDS
+
     def health_error(self) -> str:
         if not self.health_required or not self.alive():
             return ""
@@ -2373,6 +2391,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         )
                         if args.auto_worker_envs and managed.alive():
                             managed.set_worker_env_target(worker_env_count)
+                        rollout_stalled = managed.rollout_stalled()
                         needs_restart = (
                             not managed.alive()
                             or managed.build_sha256 != desired_sha
@@ -2381,6 +2400,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                             or managed.compatibility_key != compatibility_key
                             or managed.environment_args != environment_args
                             or managed.command != tuple(command)
+                            or rollout_stalled
                         )
                         if (
                             needs_restart
@@ -2399,6 +2419,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                                 worker_env_count,
                             )
                         if needs_restart:
+                            if rollout_stalled:
+                                print(
+                                    "[Bees control] managed rollout stalled; restarting the "
+                                    "owned actor process tree.",
+                                    file=sys.stderr,
+                                    flush=True,
+                                )
                             set_reconciliation_phase("launching managed actor")
                             managed.start(
                                 command,
