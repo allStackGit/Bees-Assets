@@ -33,6 +33,7 @@ _ORIGINAL_ACTION_MODEL_FORWARD = None
 _ORIGINAL_ACTION_MODEL_EVALUATE = None
 _ORIGINAL_PPO_UPDATE = None
 _ORIGINAL_POCA_UPDATE = None
+_ORIGINAL_POCA_TRAJECTORY_VALUES = None
 _ORIGINAL_POCA_UPDATE_POLICY = None
 _ORIGINAL_TRUST_REGION_POLICY_LOSS = None
 _ORIGINAL_MASKED_MEAN = None
@@ -474,7 +475,7 @@ def _trust_region_policy_loss_with_dimension_mask(
     return (element_loss * weights).sum() / torch.clamp(weights.sum(), min=1.0)
 
 
-def _structured_training_slot_limits(policy, batch):
+def _structured_training_slot_limits(policy, batch, extra_observations=()):
     """Find the occupied prefix of each zero-padded structured slot family."""
 
     import numpy as np
@@ -521,6 +522,19 @@ def _structured_training_slot_limits(policy, batch):
         candidate = np.asarray(groupmate[0], dtype=np.float32)
         if candidate.ndim == 2 and candidate.shape[1] == BEES_OBSERVATION_SIZE:
             observations.append(candidate)
+
+    def add_extra(value):
+        if isinstance(value, (list, tuple)):
+            for item in value:
+                add_extra(item)
+            return
+        candidate = np.asarray(value, dtype=np.float32)
+        if candidate.ndim == 1 and candidate.shape[0] == BEES_OBSERVATION_SIZE:
+            observations.append(candidate.reshape(1, -1))
+        elif candidate.ndim == 2 and candidate.shape[1] == BEES_OBSERVATION_SIZE:
+            observations.append(candidate)
+
+    add_extra(extra_observations)
 
     def occupied_prefix(start, count, size):
         highest = 0
@@ -706,6 +720,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
     global _ORIGINAL_ACTION_MODEL_EVALUATE
     global _ORIGINAL_PPO_UPDATE
     global _ORIGINAL_POCA_UPDATE
+    global _ORIGINAL_POCA_TRAJECTORY_VALUES
     global _ORIGINAL_POCA_UPDATE_POLICY
     global _ORIGINAL_TRUST_REGION_POLICY_LOSS
     global _ORIGINAL_MASKED_MEAN
@@ -719,6 +734,9 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
     original_evaluate = ActionModel.evaluate
     original_ppo_update = TorchPPOOptimizer.update
     original_poca_update = TorchPOCAOptimizer.update
+    original_poca_trajectory_values = (
+        TorchPOCAOptimizer.get_trajectory_and_baseline_value_estimates
+    )
     original_poca_update_policy = POCATrainer._update_policy
     original_policy_loss = ModelUtils.trust_region_policy_loss
     original_masked_mean = ModelUtils.masked_mean
@@ -926,6 +944,37 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             _POLICY_DIMENSION_MASK_STATE.mask = None
             _POLICY_DIMENSION_MASK_STATE.sample_weights = None
 
+    def compact_poca_trajectory_values(
+        self,
+        batch,
+        next_obs,
+        next_groupmate_obs,
+        done,
+        agent_id="",
+    ):
+        from bees_mlagents_structured_policy import (
+            reset_training_slot_limits,
+            set_training_slot_limits,
+        )
+
+        slot_limits = _structured_training_slot_limits(
+            self.policy,
+            batch,
+            extra_observations=(next_obs, next_groupmate_obs),
+        )
+        slot_token = set_training_slot_limits(slot_limits)
+        try:
+            return original_poca_trajectory_values(
+                self,
+                batch,
+                next_obs,
+                next_groupmate_obs,
+                done,
+                agent_id,
+            )
+        finally:
+            reset_training_slot_limits(slot_token)
+
     def masked_poca_update(self, batch, num_sequences):
         communication_activity = _poca_communication_activity(
             self.policy,
@@ -965,6 +1014,9 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
     ActionModel.evaluate = masked_evaluate
     TorchPPOOptimizer.update = masked_ppo_update
     TorchPOCAOptimizer.update = masked_poca_update
+    TorchPOCAOptimizer.get_trajectory_and_baseline_value_estimates = (
+        compact_poca_trajectory_values
+    )
     POCATrainer._update_policy = weighted_poca_update_policy
     ModelUtils.trust_region_policy_loss = staticmethod(masked_policy_loss)
     ModelUtils.masked_mean = staticmethod(weighted_masked_mean)
@@ -975,6 +1027,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
     _ORIGINAL_ACTION_MODEL_EVALUATE = original_evaluate
     _ORIGINAL_PPO_UPDATE = original_ppo_update
     _ORIGINAL_POCA_UPDATE = original_poca_update
+    _ORIGINAL_POCA_TRAJECTORY_VALUES = original_poca_trajectory_values
     _ORIGINAL_POCA_UPDATE_POLICY = original_poca_update_policy
     _ORIGINAL_TRUST_REGION_POLICY_LOSS = original_policy_loss
     _ORIGINAL_MASKED_MEAN = original_masked_mean
@@ -990,6 +1043,7 @@ def restore_inactive_continuous_action_masking() -> None:
     global _ORIGINAL_ACTION_MODEL_EVALUATE
     global _ORIGINAL_PPO_UPDATE
     global _ORIGINAL_POCA_UPDATE
+    global _ORIGINAL_POCA_TRAJECTORY_VALUES
     global _ORIGINAL_POCA_UPDATE_POLICY
     global _ORIGINAL_TRUST_REGION_POLICY_LOSS
     global _ORIGINAL_MASKED_MEAN
@@ -1010,6 +1064,9 @@ def restore_inactive_continuous_action_masking() -> None:
     ActionModel.evaluate = _ORIGINAL_ACTION_MODEL_EVALUATE
     TorchPPOOptimizer.update = _ORIGINAL_PPO_UPDATE
     TorchPOCAOptimizer.update = _ORIGINAL_POCA_UPDATE
+    TorchPOCAOptimizer.get_trajectory_and_baseline_value_estimates = (
+        _ORIGINAL_POCA_TRAJECTORY_VALUES
+    )
     POCATrainer._update_policy = _ORIGINAL_POCA_UPDATE_POLICY
     ModelUtils.trust_region_policy_loss = staticmethod(
         _ORIGINAL_TRUST_REGION_POLICY_LOSS
@@ -1026,6 +1083,7 @@ def restore_inactive_continuous_action_masking() -> None:
     _ORIGINAL_ACTION_MODEL_EVALUATE = None
     _ORIGINAL_PPO_UPDATE = None
     _ORIGINAL_POCA_UPDATE = None
+    _ORIGINAL_POCA_TRAJECTORY_VALUES = None
     _ORIGINAL_POCA_UPDATE_POLICY = None
     _ORIGINAL_TRUST_REGION_POLICY_LOSS = None
     _ORIGINAL_MASKED_MEAN = None
