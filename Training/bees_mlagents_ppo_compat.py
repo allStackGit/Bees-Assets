@@ -481,7 +481,7 @@ def _trust_region_policy_loss_with_dimension_mask(
 
 
 def _structured_training_slot_limits(policy, batch, extra_observations=()):
-    """Find the occupied prefix of each zero-padded structured slot family."""
+    """Find occupied structured-slot prefixes without padding MA-POCA group observations."""
 
     import numpy as np
     from mlagents.trainers.trajectory import GroupObsUtil, ObsUtil
@@ -511,6 +511,7 @@ def _structured_training_slot_limits(policy, batch, extra_observations=()):
 
     if len(policy.behavior_spec.observation_specs) != 1:
         return None
+
     current_obs = ObsUtil.from_buffer(batch, 1)
     current = np.asarray(current_obs[0].to_ndarray(), dtype=np.float32)
     if (
@@ -520,189 +521,208 @@ def _structured_training_slot_limits(policy, batch, extra_observations=()):
     ):
         return None
 
-    observations = [current]
-    for groupmate in GroupObsUtil.from_buffer(batch, 1):
-        if not groupmate:
-            continue
-        candidate = np.asarray(groupmate[0], dtype=np.float32)
-        if candidate.ndim == 2 and candidate.shape[1] == BEES_OBSERVATION_SIZE:
-            observations.append(candidate)
+    families = {
+        "allies": (ALLY_START, ALLY_COUNT, ALLY_SIZE),
+        "enemies": (ENEMY_START, ENEMY_COUNT, ENEMY_SIZE),
+        "mining": (MINING_START, MINING_COUNT, MINING_SIZE),
+        "map_objects": (MAP_OBJECT_START, MAP_OBJECT_COUNT, MAP_OBJECT_SIZE),
+        "collisions": (COLLISION_START, COLLISION_COUNT, COLLISION_SIZE),
+    }
+    presence_indices = {
+        name: np.asarray(
+            [start + slot * size for slot in range(count)],
+            dtype=np.int64,
+        )
+        for name, (start, count, size) in families.items()
+    }
+    weapon_presence_indices = []
+    entity_families = (
+        (PARENT_START, 1, PARENT_SIZE),
+        (ALLY_START, ALLY_COUNT, ALLY_SIZE),
+        (ENEMY_START, ENEMY_COUNT, ENEMY_SIZE),
+    )
+    for weapon_index in range(ENTITY_WEAPON_COUNT):
+        indices = []
+        for start, count, size in entity_families:
+            indices.extend(
+                start
+                + slot * size
+                + ENTITY_BASE_SIZE
+                + weapon_index * OBSERVED_WEAPON_SIZE
+                for slot in range(count)
+            )
+        weapon_presence_indices.append(np.asarray(indices, dtype=np.int64))
+
+    highest = {name: 0 for name in families}
+    entity_weapon_highest = 0
+
+    def scan(values):
+        nonlocal entity_weapon_highest
+        candidate = np.asarray(values, dtype=np.float32)
+        if candidate.ndim == 1:
+            if candidate.shape[0] != BEES_OBSERVATION_SIZE:
+                return
+            candidate = candidate.reshape(1, -1)
+        if candidate.ndim != 2 or candidate.shape[1] != BEES_OBSERVATION_SIZE:
+            return
+
+        for name, indices in presence_indices.items():
+            presence = candidate[:, indices]
+            occupied = np.any(
+                np.isfinite(presence) & (presence > 0.0),
+                axis=0,
+            )
+            occupied_indices = np.flatnonzero(occupied)
+            if occupied_indices.size:
+                highest[name] = max(
+                    highest[name],
+                    int(occupied_indices[-1]) + 1,
+                )
+
+        for weapon_index, indices in enumerate(weapon_presence_indices):
+            presence = candidate[:, indices]
+            if np.any(np.isfinite(presence) & (presence > 0.0)):
+                entity_weapon_highest = max(
+                    entity_weapon_highest,
+                    weapon_index + 1,
+                )
+
+    scan(current)
+
+    # Group observations are already stored as ragged lists on the CPU. Scan only
+    # actual observations in small chunks instead of materializing a
+    # [batch, max_group, 7743] padded representation merely to read presence bits.
+    group_field = batch[GroupObsUtil.get_name_at(0)]
+    group_chunk = []
+    for group_entry in group_field:
+        group_chunk.extend(group_entry)
+        while len(group_chunk) >= 128:
+            scan(np.asarray(group_chunk[:128], dtype=np.float32))
+            del group_chunk[:128]
+    if group_chunk:
+        scan(np.asarray(group_chunk, dtype=np.float32))
 
     def add_extra(value):
         if isinstance(value, (list, tuple)):
             for item in value:
                 add_extra(item)
             return
-        candidate = np.asarray(value, dtype=np.float32)
-        if candidate.ndim == 1 and candidate.shape[0] == BEES_OBSERVATION_SIZE:
-            observations.append(candidate.reshape(1, -1))
-        elif candidate.ndim == 2 and candidate.shape[1] == BEES_OBSERVATION_SIZE:
-            observations.append(candidate)
+        scan(value)
 
     add_extra(extra_observations)
 
-    def occupied_prefix(start, count, size):
-        highest = 0
-        for values in observations:
-            slots = values[:, start : start + count * size].reshape(
-                values.shape[0],
-                count,
-                size,
-            )
-            presence = slots[:, :, 0]
-            occupied = np.isfinite(presence) & (presence > 0.0)
-            indices = np.flatnonzero(np.any(occupied, axis=0))
-            if indices.size:
-                highest = max(highest, int(indices[-1]) + 1)
-        return max(1, min(count, highest))
-
-    entity_weapon_highest = 0
-    for values in observations:
-        for start, count, size in (
-            (PARENT_START, 1, PARENT_SIZE),
-            (ALLY_START, ALLY_COUNT, ALLY_SIZE),
-            (ENEMY_START, ENEMY_COUNT, ENEMY_SIZE),
-        ):
-            entities = values[:, start : start + count * size].reshape(
-                values.shape[0],
-                count,
-                size,
-            )
-            weapon_end = ENTITY_BASE_SIZE + (
-                ENTITY_WEAPON_COUNT * OBSERVED_WEAPON_SIZE
-            )
-            weapons = entities[
-                :,
-                :,
-                ENTITY_BASE_SIZE:weapon_end,
-            ].reshape(
-                values.shape[0],
-                count,
-                ENTITY_WEAPON_COUNT,
-                OBSERVED_WEAPON_SIZE,
-            )
-            presence = weapons[:, :, :, 0]
-            occupied = np.isfinite(presence) & (presence > 0.0)
-            indices = np.flatnonzero(np.any(occupied, axis=(0, 1)))
-            if indices.size:
-                entity_weapon_highest = max(
-                    entity_weapon_highest,
-                    int(indices[-1]) + 1,
-                )
-
     return {
-        "allies": occupied_prefix(ALLY_START, ALLY_COUNT, ALLY_SIZE),
-        "enemies": occupied_prefix(ENEMY_START, ENEMY_COUNT, ENEMY_SIZE),
+        "allies": max(1, min(ALLY_COUNT, highest["allies"])),
+        "enemies": max(1, min(ENEMY_COUNT, highest["enemies"])),
         "entity_weapons": max(
             1,
             min(ENTITY_WEAPON_COUNT, entity_weapon_highest),
         ),
-        "mining": occupied_prefix(MINING_START, MINING_COUNT, MINING_SIZE),
-        "map_objects": occupied_prefix(
-            MAP_OBJECT_START,
-            MAP_OBJECT_COUNT,
-            MAP_OBJECT_SIZE,
+        "mining": max(1, min(MINING_COUNT, highest["mining"])),
+        "map_objects": max(
+            1,
+            min(MAP_OBJECT_COUNT, highest["map_objects"]),
         ),
-        "collisions": occupied_prefix(
-            COLLISION_START,
-            COLLISION_COUNT,
-            COLLISION_SIZE,
+        "collisions": max(
+            1,
+            min(COLLISION_COUNT, highest["collisions"]),
         ),
     }
 
 
-def _poca_groupmate_valid_row_indices(policy, batch, batch_size):
-    """Return CPU-derived valid row indices for each padded MA-POCA groupmate slot."""
+def _poca_groupmate_counts(policy, batch, batch_size):
+    """Return raw MA-POCA groupmate counts without padding any observations."""
 
     import numpy as np
     from mlagents.trainers.trajectory import GroupObsUtil
 
-    n_obs = len(policy.behavior_spec.observation_specs)
-    if n_obs != 1 or batch_size <= 0:
+    if len(policy.behavior_spec.observation_specs) != 1 or batch_size <= 0:
         return None
 
-    valid_rows = []
-    for groupmate in GroupObsUtil.from_buffer(batch, n_obs):
-        if not groupmate:
-            return None
-        first_obs = np.asarray(groupmate[0])
-        if first_obs.shape[0] != batch_size:
-            return None
-        first_value = first_obs.reshape(batch_size, -1)[:, 0]
-        valid_rows.append(
-            np.flatnonzero(~np.isnan(first_value)).astype(np.int64, copy=False)
+    group_field = batch[GroupObsUtil.get_name_at(0)]
+    if len(group_field) != batch_size:
+        return None
+
+    try:
+        counts = np.fromiter(
+            (len(group_entry) for group_entry in group_field),
+            dtype=np.int32,
+            count=batch_size,
         )
-    return valid_rows
+    except TypeError:
+        return None
+    return counts
 
 
-def _poca_communication_activity(policy, batch, batch_size):
+def _poca_groupmate_valid_row_indices(groupmate_counts):
+    """Return valid minibatch rows for each raw MA-POCA groupmate position."""
+
+    import numpy as np
+
+    if groupmate_counts is None:
+        return None
+    counts = np.asarray(groupmate_counts, dtype=np.int32)
+    if counts.ndim != 1:
+        return None
+    max_groupmates = int(counts.max()) if counts.size else 0
+    return [
+        np.flatnonzero(counts > position).astype(np.int64, copy=False)
+        for position in range(max_groupmates)
+    ]
+
+
+def _poca_communication_activity(groupmate_counts):
     """Return 1 where at least one live MA-POCA groupmate can receive communication."""
 
     import numpy as np
-    from mlagents.trainers.trajectory import GroupObsUtil
 
-    n_obs = len(policy.behavior_spec.observation_specs)
-    if n_obs <= 0 or batch_size <= 0:
+    if groupmate_counts is None:
         return None
-
-    groupmate_obs = GroupObsUtil.from_buffer(batch, n_obs)
-    active = np.zeros(batch_size, dtype=np.float32)
-    for groupmate in groupmate_obs:
-        if not groupmate:
-            continue
-        first_obs = np.asarray(groupmate[0])
-        if first_obs.shape[0] != batch_size:
-            return None
-        first_value = first_obs.reshape(batch_size, -1)[:, 0]
-        active = np.maximum(
-            active,
-            (~np.isnan(first_value)).astype(np.float32),
-        )
-    return active
+    counts = np.asarray(groupmate_counts, dtype=np.int32)
+    if counts.ndim != 1:
+        return None
+    return (counts > 0).astype(np.float32, copy=False)
 
 
-def _poca_inverse_group_size_weight_array(policy, batch, batch_size):
+def _poca_inverse_group_size_weight_array(
+    policy,
+    batch,
+    batch_size,
+    groupmate_counts=None,
+):
     """Return exact 1/N active-group weights as a NumPy vector."""
 
     import numpy as np
     from mlagents.trainers.buffer import BufferKey
-    from mlagents.trainers.trajectory import GroupObsUtil
 
-    n_obs = len(policy.behavior_spec.observation_specs)
-    if n_obs <= 0 or batch_size <= 0:
+    counts = (
+        _poca_groupmate_counts(policy, batch, batch_size)
+        if groupmate_counts is None
+        else np.asarray(groupmate_counts, dtype=np.int32)
+    )
+    if counts is None or counts.ndim != 1 or counts.shape[0] != batch_size:
         return None
-    groupmate_obs = GroupObsUtil.from_buffer(batch, n_obs)
 
-    group_size = np.ones(batch_size, dtype=np.float32)
-    for groupmate in groupmate_obs:
-        if not groupmate:
-            continue
-        first_obs = np.asarray(groupmate[0])
-        if first_obs.shape[0] != batch_size:
-            return None
-        first_value = first_obs.reshape(batch_size, -1)[:, 0]
-        group_size += (~np.isnan(first_value)).astype(np.float32)
-
-    weights = 1.0 / np.maximum(group_size, 1.0)
+    weights = 1.0 / np.maximum(counts.astype(np.float32) + 1.0, 1.0)
     loss_masks = np.asarray(batch[BufferKey.MASKS].get_batch(), dtype=np.float32)
     if loss_masks.shape[0] == batch_size:
         weights *= (loss_masks > 0.0).astype(np.float32)
     return weights
 
 
-def _poca_inverse_group_size_weights(policy, batch, reference):
-    """Weight each agent sample so one team-timestep has roughly unit total weight.
-
-    MA-POCA exposes each sample's groupmates explicitly. A timestep with N active
-    agents therefore contributes N actor samples. Giving each sample weight 1/N
-    prevents large fleets from overwhelming updates merely because they contain
-    more policy-controlled ships.
-    """
+def _poca_inverse_group_size_weights(
+    policy,
+    batch,
+    reference,
+    groupmate_counts=None,
+):
+    """Weight each sample so every active team-timestep contributes roughly unit weight."""
 
     weights = _poca_inverse_group_size_weight_array(
         policy,
         batch,
         int(reference.shape[0]),
+        groupmate_counts=groupmate_counts,
     )
     return None if weights is None else reference.new_tensor(weights)
 
@@ -739,6 +759,22 @@ def _normalize_poca_advantages(policy, batch):
 
     batch[BufferKey.ADVANTAGES].set(normalized)
     return normalized
+
+
+def _poca_record_timing(label, seconds):
+    totals = getattr(_POCA_TIMING_STATE, "timing_totals", None)
+    counts = getattr(_POCA_TIMING_STATE, "timing_counts", None)
+    if totals is None or counts is None:
+        return
+    totals[label] = totals.get(label, 0.0) + float(seconds)
+    counts[label] = counts.get(label, 0) + 1
+
+
+def _poca_average_timing(label):
+    totals = getattr(_POCA_TIMING_STATE, "timing_totals", None) or {}
+    counts = getattr(_POCA_TIMING_STATE, "timing_counts", None) or {}
+    count = counts.get(label, 0)
+    return totals.get(label, 0.0) / count if count else 0.0
 
 
 def install_inactive_continuous_action_masking() -> Optional[Callable]:
@@ -1025,7 +1061,6 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
 
         import numpy as np
         from collections import defaultdict
-        from mlagents.trainers.buffer import BufferKey
 
         buffer_length = self.update_buffer.num_experiences
         self.cumulative_returns_since_policy_update.clear()
@@ -1047,70 +1082,60 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         max_num_batch = buffer_length // batch_size
         total_minibatches = num_epoch * max_num_batch
         update_started = time.perf_counter()
+        _POCA_TIMING_STATE.timing_totals = {}
+        _POCA_TIMING_STATE.timing_counts = {}
         print(
             "[Bees PPO timing] update begin "
             f"buffer={buffer_length} batch={batch_size} epochs={num_epoch} "
             f"minibatches={total_minibatches}",
             flush=True,
         )
+
         completed_minibatches = 0
-        for epoch_index in range(num_epoch):
+        for _epoch_index in range(num_epoch):
             self.update_buffer.shuffle(
                 sequence_length=self.policy.sequence_length
             )
             buffer = self.update_buffer
-            for batch_index, i in enumerate(
-                range(0, max_num_batch * batch_size, batch_size),
-                start=1,
-            ):
+            for i in range(0, max_num_batch * batch_size, batch_size):
                 completed_minibatches += 1
-                _POCA_TIMING_STATE.epoch = epoch_index + 1
-                _POCA_TIMING_STATE.batch = batch_index
-                _POCA_TIMING_STATE.completed = completed_minibatches
-                _POCA_TIMING_STATE.total = total_minibatches
-                minibatch = buffer.make_mini_batch(i, i + batch_size)
                 minibatch_started = time.perf_counter()
-                print(
-                    "[Bees PPO timing] minibatch begin "
-                    f"epoch={epoch_index + 1}/{num_epoch} "
-                    f"batch={batch_index}/{max_num_batch} "
-                    f"overall={completed_minibatches}/{total_minibatches}",
-                    flush=True,
-                )
+                minibatch = buffer.make_mini_batch(i, i + batch_size)
                 update_stats = self.optimizer.update(minibatch, n_sequences)
+
                 reward_started = time.perf_counter()
-                print(
-                    "[Bees PPO timing] phase begin update_reward_signals "
-                    f"overall={completed_minibatches}/{total_minibatches}",
-                    flush=True,
-                )
                 reward_stats = self.optimizer.update_reward_signals(minibatch)
-                print(
-                    "[Bees PPO timing] phase end update_reward_signals "
-                    f"overall={completed_minibatches}/{total_minibatches} "
-                    f"seconds={time.perf_counter() - reward_started:.6f}",
-                    flush=True,
+                _poca_record_timing(
+                    "reward_signals",
+                    time.perf_counter() - reward_started,
                 )
                 update_stats.update(reward_stats)
-                print(
-                    "[Bees PPO timing] minibatch end "
-                    f"overall={completed_minibatches}/{total_minibatches} "
-                    f"seconds={time.perf_counter() - minibatch_started:.6f}",
-                    flush=True,
+                _poca_record_timing(
+                    "minibatch_total",
+                    time.perf_counter() - minibatch_started,
                 )
                 for stat_name, value in update_stats.items():
                     batch_update_stats[stat_name].append(value)
 
+        update_seconds = time.perf_counter() - update_started
         print(
             "[Bees PPO timing] update end "
             f"minibatches={completed_minibatches}/{total_minibatches} "
-            f"seconds={time.perf_counter() - update_started:.6f}",
+            f"seconds={update_seconds:.6f} "
+            f"avg_minibatch={_poca_average_timing('minibatch_total'):.6f} "
+            f"prepare={_poca_average_timing('prepare'):.6f} "
+            f"actor={_poca_average_timing('actor_get_stats'):.6f} "
+            f"critic={_poca_average_timing('critic_pass'):.6f} "
+            f"baseline={_poca_average_timing('baseline'):.6f} "
+            f"backward={_poca_average_timing('backward'):.6f} "
+            f"optimizer_step={_poca_average_timing('optimizer_step'):.6f} "
+            f"optimizer_total={_poca_average_timing('optimizer_total'):.6f} "
+            f"reward={_poca_average_timing('reward_signals'):.6f}",
             flush=True,
         )
-        _POCA_TIMING_STATE.epoch = None
-        _POCA_TIMING_STATE.batch = None
-        _POCA_TIMING_STATE.completed = None
-        _POCA_TIMING_STATE.total = None
+
+        _POCA_TIMING_STATE.timing_totals = None
+        _POCA_TIMING_STATE.timing_counts = None
 
         for stat, stat_list in batch_update_stats.items():
             self._stats_reporter.add_stat(stat, np.mean(stat_list))
@@ -1273,16 +1298,18 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             reset_training_slot_limits(slot_token)
 
     def masked_poca_update(self, batch, num_sequences):
+        prepare_started = time.perf_counter()
         batch_size = len(batch[BufferKey.MASKS])
-        communication_activity = _poca_communication_activity(
+        groupmate_counts = _poca_groupmate_counts(
             self.policy,
             batch,
             batch_size,
         )
-        _POCA_GROUP_BATCH_STATE.valid_rows = _poca_groupmate_valid_row_indices(
-            self.policy,
-            batch,
-            batch_size,
+        communication_activity = _poca_communication_activity(
+            groupmate_counts,
+        )
+        _POCA_GROUP_BATCH_STATE.valid_rows = (
+            _poca_groupmate_valid_row_indices(groupmate_counts)
         )
         _POCA_GROUP_BATCH_STATE.encoded_cache = {}
         action_masks = _set_dimension_mask(
@@ -1295,6 +1322,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                 self.policy,
                 batch,
                 action_masks,
+                groupmate_counts=groupmate_counts,
             )
         )
         from bees_mlagents_structured_policy import (
@@ -1308,12 +1336,9 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             batch,
         )
         slot_token = set_training_slot_limits(slot_limits)
-        overall = getattr(_POCA_TIMING_STATE, "completed", "?")
-        total = getattr(_POCA_TIMING_STATE, "total", "?")
-        print(
-            "[Bees PPO timing] optimizer begin "
-            f"overall={overall}/{total} slot_limits={slot_limits}",
-            flush=True,
+        _poca_record_timing(
+            "prepare",
+            time.perf_counter() - prepare_started,
         )
         optimizer_started = time.perf_counter()
 
@@ -1328,19 +1353,12 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
 
             def timed(*args, **kwargs):
                 started = time.perf_counter()
-                print(
-                    f"[Bees PPO timing] phase begin {label} "
-                    f"overall={overall}/{total}",
-                    flush=True,
-                )
                 try:
                     return original(*args, **kwargs)
                 finally:
-                    print(
-                        f"[Bees PPO timing] phase end {label} "
-                        f"overall={overall}/{total} "
-                        f"seconds={time.perf_counter() - started:.6f}",
-                        flush=True,
+                    _poca_record_timing(
+                        label,
+                        time.perf_counter() - started,
                     )
 
             object.__setattr__(target, name, timed)
@@ -1352,19 +1370,12 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
 
         def timed_autograd_backward(*args, **kwargs):
             started = time.perf_counter()
-            print(
-                "[Bees PPO timing] phase begin backward "
-                f"overall={overall}/{total}",
-                flush=True,
-            )
             try:
                 return original_autograd_backward(*args, **kwargs)
             finally:
-                print(
-                    "[Bees PPO timing] phase end backward "
-                    f"overall={overall}/{total} "
-                    f"seconds={time.perf_counter() - started:.6f}",
-                    flush=True,
+                _poca_record_timing(
+                    "backward",
+                    time.perf_counter() - started,
                 )
 
         try:
@@ -1384,11 +1395,9 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                         object.__delattr__(target, name)
                     except AttributeError:
                         pass
-            print(
-                "[Bees PPO timing] optimizer end "
-                f"overall={overall}/{total} "
-                f"seconds={time.perf_counter() - optimizer_started:.6f}",
-                flush=True,
+            _poca_record_timing(
+                "optimizer_total",
+                time.perf_counter() - optimizer_started,
             )
             reset_training_slot_limits(slot_token)
             _POLICY_DIMENSION_MASK_STATE.mask = None
