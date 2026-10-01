@@ -284,6 +284,8 @@ def _learner_step(
     status_text: Optional[Path],
     learner_log_root: Optional[Path],
     results_root: Optional[Path] = None,
+    *,
+    minimum_log_mtime: Optional[float] = None,
 ) -> Optional[int]:
     latest: Optional[int] = None
 
@@ -297,6 +299,12 @@ def _learner_step(
         for path in learner_log_root.rglob("*"):
             if not path.is_file() or path.suffix.lower() not in TEXT_LOG_SUFFIXES:
                 continue
+            if minimum_log_mtime is not None:
+                try:
+                    if path.stat().st_mtime < minimum_log_mtime:
+                        continue
+                except OSError:
+                    continue
             for match in LEARNER_SUMMARY_RE.finditer(_tail_text(path)):
                 value = int(match.group(1).replace(",", ""))
                 latest = value if latest is None else max(latest, value)
@@ -559,16 +567,17 @@ def create_bundle(
                 warnings,
                 minimum_mtime=run_start_epoch,
             )
-            _collect_log_group(
-                bees_root / "Logs" / "Server",
-                staging,
-                "logs/historical/server",
-                log_percent,
-                historical,
-                records,
-                warnings,
-                maximum_mtime=run_start_epoch,
-            )
+            if run_start_epoch is not None:
+                _collect_log_group(
+                    bees_root / "Logs" / "Server",
+                    staging,
+                    "logs/historical/server",
+                    log_percent,
+                    historical,
+                    records,
+                    warnings,
+                    maximum_mtime=run_start_epoch,
+                )
             _collect_log_group(
                 bees_root / "Logs" / "Training",
                 staging,
@@ -579,16 +588,17 @@ def create_bundle(
                 warnings,
                 minimum_mtime=run_start_epoch,
             )
-            _collect_log_group(
-                bees_root / "Logs" / "Training",
-                staging,
-                "logs/historical/learner",
-                log_percent,
-                historical,
-                records,
-                warnings,
-                maximum_mtime=run_start_epoch,
-            )
+            if run_start_epoch is not None:
+                _collect_log_group(
+                    bees_root / "Logs" / "Training",
+                    staging,
+                    "logs/historical/learner",
+                    log_percent,
+                    historical,
+                    records,
+                    warnings,
+                    maximum_mtime=run_start_epoch,
+                )
             _collect_log_group(
                 trainer_logs_root,
                 staging,
@@ -721,6 +731,7 @@ def create_bundle(
             status_text if same_live_run else None,
             (bees_root / "Logs" / "Training") if same_live_run else None,
             results_root,
+            minimum_log_mtime=run_start_epoch if same_live_run else None,
         )
         model_step = _model_step(model, snapshot_value if model_source == "live-snapshot" else None)
         learner_step = reported_learner_step
