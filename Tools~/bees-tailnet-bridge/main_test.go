@@ -13,6 +13,24 @@ import (
 	"time"
 )
 
+
+func TestTailnetTargetIPsDeduplicatesMappedPeer(t *testing.T) {
+	targets := []string{
+		"100.64.0.10:7150",
+		"100.64.0.10:55051",
+		"100.64.0.10:7151",
+		"100.64.0.10:7146",
+		"not-an-address",
+	}
+	ips := tailnetTargetIPs(targets)
+	if len(ips) != 1 {
+		t.Fatalf("expected one deduplicated target IP, got %v", ips)
+	}
+	if !ips[netip.MustParseAddr("100.64.0.10")] {
+		t.Fatalf("expected learner IP in target set: %v", ips)
+	}
+}
+
 func TestValidateTailnetBackendStatusRequiresRunningExpectedIP(t *testing.T) {
 	expected := "100.80.169.87"
 	assigned := []netip.Addr{
