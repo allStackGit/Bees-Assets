@@ -164,7 +164,6 @@ class WanActorStepDiagnosticTests(unittest.TestCase):
         self.assertEqual(session._step_stall_recovered_sequence, 7)
 
     def test_worker_diagnostics_identify_waiting_unity_process(self):
-    def test_worker_diagnostics_identify_waiting_unity_process(self):
         class FakeProcess:
             def __init__(self, pid, alive):
                 self.pid = pid
