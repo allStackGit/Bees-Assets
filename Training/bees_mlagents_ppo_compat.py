@@ -474,6 +474,117 @@ def _trust_region_policy_loss_with_dimension_mask(
     return (element_loss * weights).sum() / torch.clamp(weights.sum(), min=1.0)
 
 
+def _structured_training_slot_limits(policy, batch):
+    """Find the occupied prefix of each zero-padded structured slot family."""
+
+    import numpy as np
+    from mlagents.trainers.trajectory import GroupObsUtil, ObsUtil
+    from bees_mlagents_structured_policy import (
+        ALLY_COUNT,
+        ALLY_SIZE,
+        ALLY_START,
+        BEES_OBSERVATION_SIZE,
+        COLLISION_COUNT,
+        COLLISION_SIZE,
+        COLLISION_START,
+        ENEMY_COUNT,
+        ENEMY_SIZE,
+        ENEMY_START,
+        ENTITY_BASE_SIZE,
+        ENTITY_WEAPON_COUNT,
+        MAP_OBJECT_COUNT,
+        MAP_OBJECT_SIZE,
+        MAP_OBJECT_START,
+        MINING_COUNT,
+        MINING_SIZE,
+        MINING_START,
+        OBSERVED_WEAPON_SIZE,
+        PARENT_SIZE,
+        PARENT_START,
+    )
+
+    if len(policy.behavior_spec.observation_specs) != 1:
+        return None
+    current_obs = ObsUtil.from_buffer(batch, 1)
+    current = np.asarray(current_obs[0].to_ndarray(), dtype=np.float32)
+    if (
+        current.ndim != 2
+        or current.shape[0] <= 0
+        or current.shape[1] != BEES_OBSERVATION_SIZE
+    ):
+        return None
+
+    observations = [current]
+    for groupmate in GroupObsUtil.from_buffer(batch, 1):
+        if not groupmate:
+            continue
+        candidate = np.asarray(groupmate[0], dtype=np.float32)
+        if candidate.ndim == 2 and candidate.shape[1] == BEES_OBSERVATION_SIZE:
+            observations.append(candidate)
+
+    def occupied_prefix(start, count, size):
+        highest = 0
+        for values in observations:
+            slots = values[:, start : start + count * size].reshape(
+                values.shape[0],
+                count,
+                size,
+            )
+            presence = slots[:, :, 0]
+            occupied = np.isfinite(presence) & (presence > 0.0)
+            indices = np.flatnonzero(np.any(occupied, axis=0))
+            if indices.size:
+                highest = max(highest, int(indices[-1]) + 1)
+        return max(1, min(count, highest))
+
+    entity_weapon_highest = 0
+    for values in observations:
+        for start, count, size in (
+            (PARENT_START, 1, PARENT_SIZE),
+            (ALLY_START, ALLY_COUNT, ALLY_SIZE),
+            (ENEMY_START, ENEMY_COUNT, ENEMY_SIZE),
+        ):
+            entities = values[:, start : start + count * size].reshape(
+                values.shape[0],
+                count,
+                size,
+            )
+            weapons = entities[:, :, ENTITY_BASE_SIZE:].reshape(
+                values.shape[0],
+                count,
+                ENTITY_WEAPON_COUNT,
+                OBSERVED_WEAPON_SIZE,
+            )
+            presence = weapons[:, :, :, 0]
+            occupied = np.isfinite(presence) & (presence > 0.0)
+            indices = np.flatnonzero(np.any(occupied, axis=(0, 1)))
+            if indices.size:
+                entity_weapon_highest = max(
+                    entity_weapon_highest,
+                    int(indices[-1]) + 1,
+                )
+
+    return {
+        "allies": occupied_prefix(ALLY_START, ALLY_COUNT, ALLY_SIZE),
+        "enemies": occupied_prefix(ENEMY_START, ENEMY_COUNT, ENEMY_SIZE),
+        "entity_weapons": max(
+            1,
+            min(ENTITY_WEAPON_COUNT, entity_weapon_highest),
+        ),
+        "mining": occupied_prefix(MINING_START, MINING_COUNT, MINING_SIZE),
+        "map_objects": occupied_prefix(
+            MAP_OBJECT_START,
+            MAP_OBJECT_COUNT,
+            MAP_OBJECT_SIZE,
+        ),
+        "collisions": occupied_prefix(
+            COLLISION_START,
+            COLLISION_COUNT,
+            COLLISION_SIZE,
+        ),
+    }
+
+
 def _poca_communication_activity(policy, batch, batch_size):
     """Return 1 where at least one live MA-POCA groupmate can receive communication."""
 
