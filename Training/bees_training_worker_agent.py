@@ -1558,11 +1558,18 @@ class ManagedProcess:
                         next_progress = now + 2.0
                     time.sleep(0.25)
                 if process.poll() is not None:
+                    return_code = process.returncode
                     self.process = None
                     try:
                         self.stop_request_file.unlink()
                     except FileNotFoundError:
                         pass
+                    if return_code not in (None, 0):
+                        raise RuntimeError(
+                            "managed remote process exited with code "
+                            f"{return_code} during graceful shutdown; "
+                            "owned child cleanup was not confirmed"
+                        )
                     return
 
         # Non-checkpoint-owning workers may be force-stopped, but never report them stopped
