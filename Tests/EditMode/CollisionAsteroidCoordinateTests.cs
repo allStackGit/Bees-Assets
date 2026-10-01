@@ -1,5 +1,4 @@
 using System.IO;
-using Assets.Scripts.Entities;
 using NUnit.Framework;
 using UnityEngine;
 
@@ -36,13 +35,23 @@ namespace Bees.Tests.EditMode
         [Test]
         public void AsteroidPieceDeathTimerWorksWithoutRenderer()
         {
+            System.Type asteroidPieceType = System.Type.GetType(
+                "Assets.Scripts.Entities.AsteroidPiece, Assembly-CSharp");
+            Assert.That(asteroidPieceType, Is.Not.Null);
+
             GameObject gameObject = new GameObject("headless-asteroid-piece");
             try
             {
-                AsteroidPiece piece = gameObject.AddComponent<AsteroidPiece>();
+                Component piece = gameObject.AddComponent(asteroidPieceType);
+                System.Reflection.MethodInfo deathTimer =
+                    asteroidPieceType.GetMethod("DeathTimer");
+                System.Reflection.FieldInfo halfSeconds =
+                    asteroidPieceType.GetField("HalfSeconds");
 
-                Assert.DoesNotThrow(piece.DeathTimer);
-                Assert.That(piece.HalfSeconds, Is.EqualTo(1));
+                Assert.That(deathTimer, Is.Not.Null);
+                Assert.That(halfSeconds, Is.Not.Null);
+                Assert.DoesNotThrow(() => deathTimer.Invoke(piece, null));
+                Assert.That((int)halfSeconds.GetValue(piece), Is.EqualTo(1));
             }
             finally
             {
