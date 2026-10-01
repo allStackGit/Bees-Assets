@@ -17,7 +17,10 @@ namespace Assets.Scripts.Entities
         private Color _originalColor;
         public override void Create(Stage stage)
         {
-            _originalColor = SpriteRenderer.color;
+            if (SpriteRenderer != null)
+            {
+                _originalColor = SpriteRenderer.color;
+            }
             base.Create(stage);
             Speed = Utilities.RandomInt(Stage.AsteroidMaxSpeed) + ConfigData.MinimumAsteroidSpeed;
 
@@ -26,7 +29,7 @@ namespace Assets.Scripts.Entities
         {
             base.ClearData();
             HalfSeconds = 0;
-            if (Stage.IsRendering)
+            if (Stage != null && Stage.IsRendering && SpriteRenderer != null)
             {
                 SpriteRenderer.color = _originalColor;
             }
@@ -57,7 +60,10 @@ namespace Assets.Scripts.Entities
             }
             else
             {
-                SpriteRenderer.color = ConfigData.FadingAsteroidPiecesColors[HalfSeconds];
+                if (Stage != null && Stage.IsRendering && SpriteRenderer != null)
+                {
+                    SpriteRenderer.color = ConfigData.FadingAsteroidPiecesColors[HalfSeconds];
+                }
                 HalfSeconds++;
             }
         }
