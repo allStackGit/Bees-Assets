@@ -1065,6 +1065,30 @@ class TrainingControlClientTests(unittest.TestCase):
                 conflict_paths,
             )
 
+    def test_training_log_generation_path_stays_stable_while_active_file_grows(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            run = root / "run"
+            run.mkdir()
+            local = run / "Player-0.log"
+            prefix = b"x" * agent.TrainingLogUploader.GENERATION_FINGERPRINT_BYTES
+            local.write_bytes(prefix + b"-first-tail")
+            uploader = agent.TrainingLogUploader(root)
+
+            first = uploader._generation_remote_path(
+                local,
+                "Player-0.log",
+                local.stat().st_size,
+            )
+            local.write_bytes(prefix + b"-a-much-longer-second-tail")
+            second = uploader._generation_remote_path(
+                local,
+                "Player-0.log",
+                local.stat().st_size,
+            )
+
+            self.assertEqual(first, second)
+
     def test_training_log_uploader_advances_past_multiple_conflicting_preserved_copies(self):
         class UploadClient:
             def __init__(self):
