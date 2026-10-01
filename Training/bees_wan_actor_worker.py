@@ -44,6 +44,7 @@ DEFAULT_STATE_WAIT_SECONDS = 20.0
 MAX_TRAJECTORIES_PER_UPLOAD = 256
 MAX_UNITY_SEED = (1 << 31) - 1
 STEP_STALL_DIAGNOSTIC_SECONDS = 30.0
+STEP_STALL_RECOVERY_SECONDS = 60.0
 THROUGHPUT_METRICS_ENV = "BEES_TRAINING_THROUGHPUT_FILE"
 TRAINING_RUN_ID_ENV = "BEES_TRAINING_RUN_ID"
 NETWORK_TRAFFIC_STATE_FILE = "worker-network-traffic.json"
@@ -572,6 +573,7 @@ class ActorSession:
         self._step_wait_started_monotonic: Optional[float] = None
         self._step_wait_sequence = 0
         self._step_stall_reported_sequence = -1
+        self._step_stall_recovered_sequence = -1
         self._step_diagnostic_stop = threading.Event()
         self._step_diagnostic_thread: Optional[threading.Thread] = None
 
@@ -618,26 +620,73 @@ class ActorSession:
             )
         return "; ".join(details) if details else "workers=none"
 
+    def _terminate_waiting_unity_workers(self, sequence: int, age: float) -> int:
+        manager = self.manager
+        if manager is None:
+            return 0
+
+        waiting_processes = []
+        for env_worker in getattr(manager, "env_workers", ()):
+            process = getattr(env_worker, "process", None)
+            if not bool(getattr(env_worker, "waiting", False)) or process is None:
+                continue
+            try:
+                if process.is_alive():
+                    waiting_processes.append(process)
+            except Exception:
+                continue
+
+        if not waiting_processes:
+            return 0
+
+        # Do not mutate SubprocessEnvManager queues or worker bookkeeping from this thread.
+        # Killing only the owned Unity child processes makes the blocked get_steps() unwind;
+        # the actor session is then discarded and reconstructed by the normal outer recovery
+        # path, so no partial trajectory or stale manager state is reused.
+        with self._step_wait_lock:
+            if (
+                self._step_wait_sequence != sequence
+                or self._step_stall_recovered_sequence == sequence
+            ):
+                return 0
+            self._step_stall_recovered_sequence = sequence
+
+        print(
+            f"[Bees WAN actor] manager.get_steps remained blocked for {age:.1f}s; "
+            f"restarting this actor session by terminating {len(waiting_processes)} "
+            "waiting Unity worker(s).",
+            file=sys.stderr,
+            flush=True,
+        )
+        for process in waiting_processes:
+            try:
+                process.terminate()
+            except Exception:
+                pass
+        return len(waiting_processes)
+
     def _step_diagnostic_loop(self) -> None:
         while not self._step_diagnostic_stop.wait(5.0):
             with self._step_wait_lock:
                 started = self._step_wait_started_monotonic
                 sequence = self._step_wait_sequence
                 already_reported = self._step_stall_reported_sequence == sequence
-            if started is None or already_reported:
+                already_recovered = self._step_stall_recovered_sequence == sequence
+            if started is None:
                 continue
             age = time.monotonic() - started
-            if age < STEP_STALL_DIAGNOSTIC_SECONDS:
-                continue
-            print(
-                f"[Bees WAN actor] manager.get_steps blocked for {age:.1f}s; " +
-                self._unity_worker_diagnostics(),
-                file=sys.stderr,
-                flush=True,
-            )
-            with self._step_wait_lock:
-                if self._step_wait_sequence == sequence:
-                    self._step_stall_reported_sequence = sequence
+            if age >= STEP_STALL_DIAGNOSTIC_SECONDS and not already_reported:
+                print(
+                    f"[Bees WAN actor] manager.get_steps blocked for {age:.1f}s; " +
+                    self._unity_worker_diagnostics(),
+                    file=sys.stderr,
+                    flush=True,
+                )
+                with self._step_wait_lock:
+                    if self._step_wait_sequence == sequence:
+                        self._step_stall_reported_sequence = sequence
+            if age >= STEP_STALL_RECOVERY_SECONDS and not already_recovered:
+                self._terminate_waiting_unity_workers(sequence, age)
 
     def _report_env_count_changed(self) -> None:
         callback = self._env_count_changed
@@ -668,6 +717,8 @@ class ActorSession:
                         flush=True,
                     )
                     reported = True
+                self._report_runtime_progress()
+                self._write_throughput_metrics()
                 self.stop.wait(1.0)
         raise KeyboardInterrupt
 
@@ -1229,8 +1280,17 @@ class ActorSession:
                             self._upload_queue.put(payload, timeout=0.5)
                             break
                         except queue.Full:
+                            # This is intentional broker backpressure, not a dead rollout.
+                            # Preserve every trajectory, but keep the supervisor health lease
+                            # fresh while the uploader waits for central capacity/connectivity.
+                            self._report_runtime_progress()
+                            self._write_throughput_metrics()
                             self._raise_thread_error()
-                            if self._session_changed.is_set() or self._state_changed.is_set():
+                            if (
+                                self._session_changed.is_set()
+                                or self._state_changed.is_set()
+                                or self._stale.is_set()
+                            ):
                                 break
             self._reconcile_env_count()
 
