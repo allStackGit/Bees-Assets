@@ -401,8 +401,16 @@ def plan_run(
     if preserve_run and previous is None:
         raise ValueError("preserve_run requires an existing training run")
 
+    previous_normalized_key = None
+    if previous is not None:
+        previous_contract = previous.get("contract")
+        if isinstance(previous_contract, Mapping):
+            previous_normalized_key = compatibility_key(previous_contract)
+
     contract_changed = (
-        previous is not None and previous["compatibility_key"] != key
+        previous is not None
+        and previous["compatibility_key"] != key
+        and previous_normalized_key != key
     )
     preserve_run_override = bool(preserve_run and contract_changed)
     if preserve_run_override:
