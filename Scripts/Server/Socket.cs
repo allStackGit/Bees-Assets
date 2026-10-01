@@ -190,7 +190,10 @@ namespace Assets.Scripts.Server
             _nativeWebSocket = null;
 
             while (MainThreadActions.TryDequeue(out _)) { }
-            while (MessageQueue.TryDequeue(out _)) { }
+            if (MessageQueue != null)
+            {
+                while (MessageQueue.TryDequeue(out _)) { }
+            }
             while (SharpOutboundMessages.TryDequeue(out _)) { }
 
             if (sharpSocket != null)
