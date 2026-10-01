@@ -708,6 +708,15 @@ function stopManagedProcessTree(state, expectedExecutable, label) {
     return true;
 }
 
+function rotateManagedLog(filePath) {
+    ensureDir(path.dirname(filePath));
+    const previous = filePath + '.previous';
+    removeIfExists(previous);
+    if (exists(filePath)) {
+        fs.renameSync(filePath, previous);
+    }
+}
+
 function readTail(filePath, maxLines = 1000, maxBytes = 1024 * 1024) {
     if (!exists(filePath)) return [];
     const stat = fs.statSync(filePath);
@@ -745,6 +754,7 @@ module.exports = {
     powershellExecutable,
     readJson,
     readTail,
+    rotateManagedLog,
     removeUtf8BomIfPresent,
     readText,
     removeIfExists,
