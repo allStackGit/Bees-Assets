@@ -521,29 +521,54 @@ test('fresh stopped heartbeat after a runtime cutover waits for startup instead 
     assert.match(state.last_instability_reason, /worker process state stopped/);
 });
 
-test('cluster search prefers productive workers and backs off a persistently weak worker', () => {
+test('cluster search prefers productive workers and backs off only materially weak workers', () => {
     const optimizer = new TrainingEnvOptimizer({
         settleMs: 0,
         measurementMs: 1000,
         retestMs: 60_000,
     });
+    const capacity = { auto: true, current_envs: 2, min_envs: 1, max_envs: 8 };
 
-    update(optimizer, 'remote-fast', 2, 0, 0, { max: 8, accepted: 0 });
-    update(optimizer, 'remote-slow', 2, 0, 0, { max: 8, accepted: 0 });
-    update(optimizer, 'remote-fast', 2, 1000, 1000, { max: 8, accepted: 1000 });
-    const slow = update(
-        optimizer,
-        'remote-slow',
-        2,
-        1000,
-        1000,
-        { max: 8, accepted: 10 },
-    );
+    const fast = optimizer._newState('remote-fast', 'run|build|args', capacity, 0);
+    Object.assign(fast, {
+        baseline_envs: 2,
+        baseline_sps: 100,
+        desired_envs: 2,
+        phase: 'stable',
+        direction: 1,
+        producer_sps: 100,
+        producer_efficiency: 50,
+    });
+    optimizer.states.set('remote-fast', fast);
 
-    assert.equal(slow.desired_envs, 1);
-    assert.equal(slow.direction, -1);
-    assert.equal(slow.producer_sps, 10);
-    assert.equal(slow.producer_efficiency, 5);
+    const slow = optimizer._newState('remote-slow', 'run|build|args', capacity, 0);
+    Object.assign(slow, {
+        baseline_envs: 2,
+        baseline_sps: 100,
+        desired_envs: 2,
+        phase: 'stable',
+        direction: 1,
+        producer_sps: 10,
+        producer_efficiency: 5,
+    });
+    optimizer.states.set('remote-slow', slow);
+
+    optimizer._chooseProbe(slow, capacity, 1000);
+    let snapshot = optimizer.snapshot('remote-slow');
+    assert.equal(snapshot.desired_envs, 1);
+    assert.equal(snapshot.direction, -1);
+    assert.equal(snapshot.probing, true);
+
+    optimizer._releaseProbe('remote-slow');
+    slow.producer_efficiency = 40;
+    slow.direction = 1;
+    slow.phase = 'stable';
+    slow.desired_envs = 2;
+    optimizer._chooseProbe(slow, capacity, 2000);
+    snapshot = optimizer.snapshot('remote-slow');
+    assert.equal(snapshot.desired_envs, 2);
+    assert.equal(snapshot.phase, 'waiting');
+    assert.match(snapshot.decision, /more productive worker/);
 });
 
 test('unexplained stopped heartbeat is instability even when brief', () => {
