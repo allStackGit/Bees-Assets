@@ -944,9 +944,20 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                 action_masks,
             )
         )
+        from bees_mlagents_structured_policy import (
+            reset_training_slot_limits,
+            set_training_slot_limits,
+        )
+
+        slot_limits = _structured_training_slot_limits(
+            self.policy,
+            batch,
+        )
+        slot_token = set_training_slot_limits(slot_limits)
         try:
             return original_poca_update(self, batch, num_sequences)
         finally:
+            reset_training_slot_limits(slot_token)
             _POLICY_DIMENSION_MASK_STATE.mask = None
             _POLICY_DIMENSION_MASK_STATE.sample_weights = None
 
