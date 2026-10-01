@@ -104,6 +104,14 @@ public class SteamManager : MonoBehaviour {
 		// We want our SteamManager Instance to persist across scenes.
 		DontDestroyOnLoad(gameObject);
 
+		if (RlOneVsOneTrainingBootstrap.IsDedicatedTrainingRuntime)
+		{
+			m_bInitialized = false;
+			m_bInitializationFailed = true;
+			enabled = false;
+			return;
+		}
+
 		try
 		{
 			if (!Packsize.Test()) {
