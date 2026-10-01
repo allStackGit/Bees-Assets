@@ -874,6 +874,7 @@ class TrainingLogUploader:
         log_path: Path,
         relative_path: str,
         size: int,
+        current_remote_path: str,
         expected_offset: int,
         expected_sha256: str,
     ) -> str:
@@ -884,7 +885,11 @@ class TrainingLogUploader:
                 "could not fingerprint conflicting local training log generation"
             )
         remote_identity = hashlib.sha256(
-            (str(expected_offset) + ":" + str(expected_sha256 or "")).encode("utf-8")
+            (
+                str(current_remote_path) + ":" +
+                str(expected_offset) + ":" +
+                str(expected_sha256 or "")
+            ).encode("utf-8")
         ).hexdigest()[:16]
         return (
             "generations/" +
@@ -1011,20 +1016,24 @@ class TrainingLogUploader:
                     or not mismatch.expected_sha256
                     or local_prefix_sha256 != mismatch.expected_sha256
                 ):
-                    next_remote_relative = self._generation_remote_path(
+                    base_generation_relative = self._generation_remote_path(
                         log_path,
                         relative,
                         size,
                     )
-                    if next_remote_relative == remote_relative:
-                        # Preserve both copies instead of retrying a permanently divergent
-                        # remote generation forever. The alternate path is deterministic for
-                        # the local snapshot plus the conflicting remote identity, so a
-                        # supervisor restart rediscovers the same safe destination.
+                    if remote_relative == relative:
+                        next_remote_relative = base_generation_relative
+                    else:
+                        # A preserved destination can itself already contain a divergent copy.
+                        # Never bounce back to an earlier path: derive the next deterministic
+                        # destination from the exact conflicting remote path and its identity.
+                        # After restart the uploader walks the same chain and resumes the first
+                        # matching generation it encounters.
                         next_remote_relative = self._conflict_remote_path(
                             log_path,
                             relative,
                             size,
+                            remote_relative,
                             expected_offset,
                             mismatch.expected_sha256,
                         )
