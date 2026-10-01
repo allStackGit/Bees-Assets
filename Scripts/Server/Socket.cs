@@ -171,6 +171,55 @@ namespace Assets.Scripts.Server
             }
         }
 
+        public async void DisableForDedicatedTraining()
+        {
+            if (KeepClosed)
+            {
+                return;
+            }
+
+            KeepClosed = true;
+            IsOpen = false;
+            HasClosed = false;
+            Interlocked.Exchange(ref _connectionAttemptInFlight, 0);
+            Interlocked.Increment(ref _socketGeneration);
+
+            WebSocketSharp.WebSocket sharpSocket = _webSocketSharpSocket;
+            _webSocketSharpSocket = null;
+            NativeWebSocket.WebSocket nativeSocket = _nativeWebSocket;
+            _nativeWebSocket = null;
+
+            while (MainThreadActions.TryDequeue(out _)) { }
+            while (MessageQueue.TryDequeue(out _)) { }
+            while (SharpOutboundMessages.TryDequeue(out _)) { }
+
+            if (sharpSocket != null)
+            {
+                try
+                {
+                    sharpSocket.CloseAsync();
+                }
+                catch (Exception)
+                {
+                    // Dedicated training no longer depends on this transport.
+                }
+            }
+
+            if (nativeSocket != null)
+            {
+                try
+                {
+                    await nativeSocket.Close();
+                }
+                catch (Exception)
+                {
+                    // Dedicated training no longer depends on this transport.
+                }
+            }
+
+            HasClosed = false;
+        }
+
         private bool IsCurrentSharpSocket(int generation, WebSocketSharp.WebSocket socket)
         {
             return generation == Volatile.Read(ref _socketGeneration) &&
@@ -190,6 +239,12 @@ namespace Assets.Scripts.Server
 
         private void Open()
         {
+            if (KeepClosed)
+            {
+                IsOpen = false;
+                HasClosed = false;
+                return;
+            }
             IsOpen = true;
             if (HasClosed)
             {
@@ -219,6 +274,12 @@ namespace Assets.Scripts.Server
 
         private void Close(string reason = null)
         {
+            if (KeepClosed)
+            {
+                IsOpen = false;
+                HasClosed = false;
+                return;
+            }
             Debug.LogWarning("Connection closed!");
             if (reason != null)
             {
