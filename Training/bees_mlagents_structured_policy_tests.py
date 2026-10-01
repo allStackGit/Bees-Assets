@@ -9,13 +9,21 @@ from unittest import mock
 
 from bees_mlagents_structured_policy import (
     ACTION_ENCODING_SIZE,
+    ALLY_START,
     BEES_CONTINUOUS_ACTIONS,
     BEES_DISCRETE_BRANCHES,
     BEES_OBSERVATION_SIZE,
+    COLLISION_START,
+    ENEMY_START,
+    ENTITY_BASE_SIZE,
     FACTION_INDEX,
+    MAP_OBJECT_START,
+    MINING_START,
     BeesStructuredActionModel,
     BeesStructuredNetworkBody,
     BeesStructuredObservationEncoder,
+    reset_training_slot_limits,
+    set_training_slot_limits,
 )
 
 
