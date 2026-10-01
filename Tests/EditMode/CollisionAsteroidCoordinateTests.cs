@@ -1,4 +1,5 @@
 using System.IO;
+using Assets.Scripts.Entities;
 using NUnit.Framework;
 using UnityEngine;
 
