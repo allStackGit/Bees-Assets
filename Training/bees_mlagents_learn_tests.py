@@ -529,6 +529,48 @@ class BatchedInferenceTests(unittest.TestCase):
         self.assertEqual(len(policy.saved_memories), 1)
         self.assertEqual(len(policy.checked_actions), 1)
 
+    def test_dead_unity_pipe_is_routed_to_worker_restart_queue(self):
+        from mlagents.trainers.subprocess_env_manager import (
+            EnvironmentCommand,
+            EnvironmentResponse,
+        )
+        from mlagents_envs.exception import UnityCommunicationException
+
+        behavior = "BeesRL1v1?team=0"
+        worker = self._worker(3, {behavior: self._decision_steps(31, 3.0)})
+        policy = self._policy()
+
+        class FakeQueue:
+            def __init__(self):
+                self.items = []
+
+            def put(self, value):
+                self.items.append(value)
+
+        class FakeManager:
+            pass
+
+        manager = FakeManager()
+        manager.env_workers = [worker]
+        manager.policies = {behavior: policy}
+        manager.step_queue = FakeQueue()
+
+        worker.send = mock.Mock(
+            side_effect=UnityCommunicationException(
+                "UnityEnvironment worker: send failed."
+            )
+        )
+
+        self.SubprocessEnvManager._queue_steps(manager)
+
+        self.assertFalse(worker.waiting)
+        self.assertEqual(len(manager.step_queue.items), 1)
+        failure = manager.step_queue.items[0]
+        self.assertIsInstance(failure, EnvironmentResponse)
+        self.assertEqual(failure.cmd, EnvironmentCommand.ENV_EXITED)
+        self.assertEqual(failure.worker_id, 3)
+        self.assertIsInstance(failure.payload, UnityCommunicationException)
+
     def test_distinct_self_play_behaviors_are_not_merged(self):
         team0 = "BeesRL1v1?team=0"
         team1 = "BeesRL1v1?team=1"
