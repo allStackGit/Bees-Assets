@@ -17,6 +17,7 @@ import (
 	"os/signal"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -166,8 +167,167 @@ func localDial(target string) func(context.Context) (net.Conn, error) {
 
 func tailnetDial(s *tsnet.Server, target string) func(context.Context) (net.Conn, error) {
 	return func(ctx context.Context) (net.Conn, error) {
-		return s.Dial(ctx, "tcp", target)
+		var lastErr error
+		attempt := 0
+		for {
+			attempt++
+			attemptCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			conn, err := s.Dial(attemptCtx, "tcp", target)
+			cancel()
+			if err == nil {
+				if attempt > 1 {
+					log.Printf("[Bees tailnet] %s recovered after %d dial attempts", target, attempt)
+				}
+				return conn, nil
+			}
+			lastErr = err
+			select {
+			case <-ctx.Done():
+				return nil, fmt.Errorf("dial %s failed after %d attempts: %w", target, attempt, lastErr)
+			case <-time.After(250 * time.Millisecond):
+			}
+		}
 	}
+}
+
+func tailnetTargetIPs(targets []string) map[netip.Addr]bool {
+	result := make(map[netip.Addr]bool)
+	for _, target := range targets {
+		host, _, err := net.SplitHostPort(target)
+		if err != nil {
+			continue
+		}
+		ip, err := netip.ParseAddr(host)
+		if err == nil {
+			result[ip] = true
+		}
+	}
+	return result
+}
+
+func tailnetPeerSnapshot(ctx context.Context, s *tsnet.Server, targets []string) string {
+	client, err := s.LocalClient()
+	if err != nil {
+		return "localapi-error=" + err.Error()
+	}
+	statusCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	status, err := client.Status(statusCtx)
+	if err != nil {
+		return "status-error=" + err.Error()
+	}
+	wanted := tailnetTargetIPs(targets)
+	peers := make([]string, 0)
+	for _, peer := range status.Peer {
+		matched := len(wanted) == 0
+		for _, ip := range peer.TailscaleIPs {
+			if wanted[ip] {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			continue
+		}
+		path := "idle"
+		switch {
+		case peer.CurAddr != "":
+			path = "direct:" + peer.CurAddr
+		case peer.PeerRelay != "":
+			path = "peer-relay:" + peer.PeerRelay
+		case peer.Relay != "":
+			path = "derp:" + peer.Relay
+		}
+		handshake := "never"
+		if !peer.LastHandshake.IsZero() {
+			handshake = time.Since(peer.LastHandshake).Round(time.Second).String()
+		}
+		ips := make([]string, 0, len(peer.TailscaleIPs))
+		for _, ip := range peer.TailscaleIPs {
+			ips = append(ips, ip.String())
+		}
+		peers = append(peers, fmt.Sprintf(
+			"%s[%s] path=%s online=%t handshake=%s rx=%d tx=%d",
+			peer.HostName,
+			strings.Join(ips, ","),
+			path,
+			peer.Online,
+			handshake,
+			peer.RxBytes,
+			peer.TxBytes,
+		))
+	}
+	sort.Strings(peers)
+	if len(peers) == 0 {
+		return "no-matching-peer-status"
+	}
+	return strings.Join(peers, " | ")
+}
+
+func hostNetworkSnapshot() string {
+	interfaces, err := net.Interfaces()
+	if err != nil {
+		return "interfaces-error=" + err.Error()
+	}
+	parts := make([]string, 0, len(interfaces))
+	for _, iface := range interfaces {
+		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		addresses, _ := iface.Addrs()
+		addrParts := make([]string, 0, len(addresses))
+		for _, address := range addresses {
+			addrParts = append(addrParts, address.String())
+		}
+		sort.Strings(addrParts)
+		carrier := ""
+		if data, err := os.ReadFile(filepath.Join("/sys/class/net", iface.Name, "carrier")); err == nil {
+			carrier = " carrier=" + strings.TrimSpace(string(data))
+		}
+		parts = append(parts, fmt.Sprintf(
+			"%s mtu=%d flags=%s%s addrs=%s",
+			iface.Name,
+			iface.MTU,
+			iface.Flags.String(),
+			carrier,
+			strings.Join(addrParts, ","),
+		))
+	}
+	sort.Strings(parts)
+	if len(parts) == 0 {
+		return "no-up-nonloopback-interface"
+	}
+	return strings.Join(parts, " | ")
+}
+
+func startTailnetTelemetry(ctx context.Context, s *tsnet.Server, targets []string, label string) {
+	go func() {
+		ticker := time.NewTicker(10 * time.Second)
+		defer ticker.Stop()
+		lastPeers := ""
+		lastHost := ""
+		logSnapshot := func() {
+			peers := tailnetPeerSnapshot(ctx, s, targets)
+			host := hostNetworkSnapshot()
+			if peers != lastPeers {
+				log.Printf("[Bees tailnet] %s peer path: %s", label, peers)
+				lastPeers = peers
+			}
+			if host != lastHost {
+				log.Printf("[Bees tailnet] %s host network: %s", label, host)
+				lastHost = host
+			}
+		}
+		logSnapshot()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				logSnapshot()
+			}
+		}
+	}()
 }
 
 func loadSecret(path string) (string, error) {
@@ -534,33 +694,41 @@ func serveGatewaySession(
 			defer close(healthDone)
 			ticker := time.NewTicker(2 * time.Second)
 			defer ticker.Stop()
-			consecutiveBackendFailures := 0
+			var unhealthySince time.Time
+			var lastBackendErr string
 			for {
 				select {
 				case <-sessionCtx.Done():
 					return
 				case <-ticker.C:
-					if err := checkTailnetBackend(sessionCtx, s, ip4); err != nil {
-						consecutiveBackendFailures++
-						log.Printf(
-							"[Bees tailnet] gateway backend health check failed (%d/3): %v",
-							consecutiveBackendFailures,
-							err,
-						)
-						if consecutiveBackendFailures >= 3 {
+					backendErr := checkTailnetBackend(sessionCtx, s, ip4)
+					if backendErr != nil {
+						if unhealthySince.IsZero() {
+							unhealthySince = time.Now()
+						}
+						if backendErr.Error() != lastBackendErr {
+							log.Printf("[Bees tailnet] gateway backend degraded: %v", backendErr)
+							lastBackendErr = backendErr.Error()
+						}
+						if time.Since(unhealthySince) >= 60*time.Second {
 							fail(fmt.Errorf(
-								"tailnet backend remained unhealthy across %d checks: %w",
-								consecutiveBackendFailures,
-								err,
+								"tailnet backend remained unhealthy for %s: %w",
+								time.Since(unhealthySince).Round(time.Second),
+								backendErr,
 							))
 							return
 						}
-						// Do not refresh the health-file mtime while the embedded Tailscale
-						// backend is unhealthy. This lets the outer operator independently
-						// detect a stale gateway even before the child restart completes.
-						continue
+					} else if !unhealthySince.IsZero() {
+						log.Printf(
+							"[Bees tailnet] gateway backend recovered after %s without restarting",
+							time.Since(unhealthySince).Round(time.Second),
+						)
+						unhealthySince = time.Time{}
+						lastBackendErr = ""
 					}
-					consecutiveBackendFailures = 0
+					// This file is process liveness, not proof of peer reachability. Keep it
+					// fresh during a transient backend disturbance so the outer operator
+					// does not race Tailscale's own path recovery.
 					if err := writeGatewayHealth(
 						healthFile,
 						ip4,
@@ -577,6 +745,7 @@ func serveGatewaySession(
 		}()
 	}
 
+	startTailnetTelemetry(sessionCtx, s, nil, "gateway")
 	log.Printf(
 		"[Bees tailnet] gateway online ip=%s control=%d broker=%d bootstrap=%d gameplay=%d",
 		ip4, controlPort, brokerPort, bootstrapPort, gameplayPort,
@@ -1138,37 +1307,9 @@ func runForwardMulti(args []string) error {
 		return err
 	}
 
-	go func() {
-		ticker := time.NewTicker(2 * time.Second)
-		defer ticker.Stop()
-		consecutiveFailures := 0
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				if err := checkTailnetBackend(ctx, s, ip4); err != nil {
-					consecutiveFailures++
-					log.Printf(
-						"[Bees tailnet] forward backend health check failed (%d/3): %v",
-						consecutiveFailures,
-						err,
-					)
-					if consecutiveFailures >= 3 {
-						log.Printf(
-							"[Bees tailnet] forward backend remained unhealthy; restarting transport",
-						)
-						cancel()
-						return
-					}
-					continue
-				}
-				consecutiveFailures = 0
-			}
-		}
-	}()
-
+	_ = ip4 // The address anchors this persistent tsnet identity; transient backend state is telemetry only.
 	listeners := make([]net.Listener, 0, len(mappings))
+	remoteTargets := make([]string, 0, len(mappings))
 	for _, mapping := range mappings {
 		local, remote, err := parseMapping(mapping)
 		if err != nil {
@@ -1179,9 +1320,11 @@ func runForwardMulti(args []string) error {
 			return fmt.Errorf("listen %s: %w", local, err)
 		}
 		listeners = append(listeners, ln)
+		remoteTargets = append(remoteTargets, remote)
 		go proxyListener(ctx, ln, tailnetDial(s, remote), local+" -> "+remote, nil)
 		log.Printf("[Bees tailnet] forwarding %s -> %s", local, remote)
 	}
+	startTailnetTelemetry(ctx, s, remoteTargets, "forward")
 	defer func() {
 		for _, ln := range listeners {
 			_ = ln.Close()
