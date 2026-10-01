@@ -306,8 +306,31 @@ def contract_payload(assets_root: Path) -> dict[str, Any]:
     return payload
 
 
+TRAINER_IMPLEMENTATION_AUDIT_FIELDS = (
+    "structured_policy_source_sha256",
+    "optimizer_compat_source_sha256",
+    "learner_launcher_source_sha256",
+)
+
+
 def compatibility_key(payload: Mapping[str, Any]) -> str:
-    canonical = json.dumps(dict(payload), sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    # Trainer implementation hashes are retained in the persisted contract for release
+    # traceability, but they are not checkpoint/run compatibility surfaces. Implementation-only
+    # fixes (for example CUDA execution strategy, diagnostics, or launcher robustness) must be
+    # deployable onto an unchanged policy/checkpoint lineage. Explicit ABI/schema identity,
+    # trainer type, network settings, and gameplay/observation/reward semantic hashes remain part
+    # of the compatibility key and still fail closed when the learned contract changes.
+    compatible = {
+        key: value
+        for key, value in dict(payload).items()
+        if key not in TRAINER_IMPLEMENTATION_AUDIT_FIELDS
+    }
+    canonical = json.dumps(
+        compatible,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+    )
     return _sha256_bytes(canonical.encode("utf-8"))
 
 
