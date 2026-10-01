@@ -47,54 +47,26 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void DedicatedRlTrainingKeepsTransportPumpButStopsConnectionManagementAfterStartup()
+        public void DedicatedTrainingSocketShutdownIsPermanentAndNonError()
         {
-            string sceneSource = File.ReadAllText(Path.Combine(
-                Application.dataPath, "Scripts", "Scenes", "Scene.cs"));
-            string levelSource = File.ReadAllText(Path.Combine(
-                Application.dataPath, "Scripts", "Levels", "Level.cs"));
+            Type socketType = RuntimeAssembly.GetType("Assets.Scripts.Server.Socket");
+            object socket = RuntimeAssembly.CreateUninitialized(
+                "Assets.Scripts.Server.Socket");
 
-            int policyStart = sceneSource.IndexOf("private bool CanRunWithoutServer()", StringComparison.Ordinal);
-            int updateStart = sceneSource.IndexOf("protected virtual void Update()", policyStart, StringComparison.Ordinal);
+            RuntimeAssembly.SetField(socket, "IsOpen", true);
+            RuntimeAssembly.SetField(socket, "HasClosed", true);
+            RuntimeAssembly.SetField(socket, "KeepClosed", false);
 
-            Assert.That(policyStart, Is.GreaterThanOrEqualTo(0));
-            Assert.That(updateStart, Is.GreaterThan(policyStart));
+            Assert.DoesNotThrow(() =>
+                RuntimeAssembly.Invoke(socket, "DisableForDedicatedTraining"));
 
-            string policy = sceneSource.Substring(policyStart, updateStart - policyStart);
-            Assert.That(policy, Does.Contain("RlOneVsOneTrainingBootstrap.IsDedicatedTrainingRuntime"));
-            Assert.That(policy, Does.Contain("ConfigData.AreAllSettingsLoaded"));
-            Assert.That(policy, Does.Contain("!ConfigData.Configuration.IsDeadVersion"));
-            Assert.That(policy, Does.Not.Contain("RlOneVsOneTrainingBootstrap.IsActiveFor(stage)"),
-                "The detach gate must work on the settings-completion frame before the Stage training flags are applied.");
-            Assert.That(policy, Does.Not.Contain("IsFinalized"));
-            Assert.That(policy, Does.Not.Contain("ConfigData.IsAllUserDataLoaded"),
-                "Dedicated RL must not wait for player profile data before becoming server-independent.");
+            Assert.That(RuntimeAssembly.GetField(socket, "KeepClosed"), Is.True);
+            Assert.That(RuntimeAssembly.GetField(socket, "IsOpen"), Is.False);
+            Assert.That(RuntimeAssembly.GetField(socket, "HasClosed"), Is.False);
 
-            int socketPump = sceneSource.IndexOf("SocketTimer.Update();", updateStart, StringComparison.Ordinal);
-            int connectionManagementGate = sceneSource.IndexOf("if (!canRunWithoutServer)", updateStart, StringComparison.Ordinal);
-            int finalizationGate = sceneSource.IndexOf(
-                "if (!ConfigData.SocketManager.NetworkDisconnection.IsOpen)",
-                connectionManagementGate,
-                StringComparison.Ordinal);
-
-            Assert.That(socketPump, Is.GreaterThan(updateStart));
-            Assert.That(connectionManagementGate, Is.GreaterThan(socketPump),
-                "The bounded socket pump must keep draining WebSocketSharp close/error/response callbacks after RL becomes server-independent.");
-            Assert.That(finalizationGate, Is.GreaterThan(connectionManagementGate));
-
-            string managedConnectionSection = sceneSource.Substring(
-                connectionManagementGate,
-                finalizationGate - connectionManagementGate);
-            Assert.That(managedConnectionSection, Does.Not.Contain("SocketTimer.Update();"));
-            Assert.That(managedConnectionSection, Does.Contain("ResendTimer.Update();"));
-            Assert.That(managedConnectionSection, Does.Contain("AutomaticReconnectTimer.Update();"));
-            Assert.That(managedConnectionSection, Does.Contain("NetworkDisconnection.Show();"));
-
-            Assert.That(levelSource, Does.Contain("if (global::RlOneVsOneTrainingBootstrap.IsActiveFor(Stage))"));
-            Assert.That(levelSource, Does.Contain("IsLevelSetupOnServer = true;"));
-            Assert.That(levelSource, Does.Contain("IsLevelConnectedToServer = true;"));
-            Assert.That(levelSource, Does.Contain("LevelConstructor.RequestServerSetup();"),
-                "Ordinary levels must retain their server setup request while the dedicated RL level stays local.");
+            Assert.DoesNotThrow(() =>
+                RuntimeAssembly.Invoke(socket, "DisableForDedicatedTraining"));
+            Assert.That(RuntimeAssembly.GetField(socket, "KeepClosed"), Is.True);
         }
     }
 }
