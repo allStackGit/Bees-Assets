@@ -10,14 +10,6 @@ internal static class BeesCommandLineBuild
 {
     private const string OutputArgument = "-beesOutput";
     private const string RlScene = "Assets/Scenes/RL 1v1 Training.unity";
-    private static readonly string[] RlOversizedTexturePaths =
-    {
-        "Assets/Sprites/Ships/Parts/Ship Explosions/queen_death_body.png",
-        "Assets/Sprites/Ships/Parts/Ship Explosions/queen_death_crown.png",
-        "Assets/Sprites/Ships/Parts/Ship Explosions/queen_death_rings.png",
-        "Assets/Sprites/Ships/Parts/Ship Explosions/queen_death_wings_eyes.png",
-    };
-
     private static readonly string[] FullGameExcludedScenes =
     {
         RlScene,
@@ -29,78 +21,20 @@ internal static class BeesCommandLineBuild
 
     public static void BuildWindowsRl()
     {
-        BuildRl(
+        Build(
             BuildTarget.StandaloneWindows64,
+            new[] { RlScene },
             "Bees RL Training.exe",
             StandaloneBuildSubtarget.Player);
     }
 
     public static void BuildLinuxRl()
     {
-        BuildRl(
+        Build(
             BuildTarget.StandaloneLinux64,
+            new[] { RlScene },
             "Bees RL Training.x86_64",
             StandaloneBuildSubtarget.Server);
-    }
-
-    private static void BuildRl(
-        BuildTarget target,
-        string executableName,
-        StandaloneBuildSubtarget subtarget)
-    {
-        TextureImporterPlatformSettings[] originalDefaultSettings =
-            new TextureImporterPlatformSettings[RlOversizedTexturePaths.Length];
-        try
-        {
-            for (int i = 0; i < RlOversizedTexturePaths.Length; i++)
-            {
-                TextureImporter importer =
-                    AssetImporter.GetAtPath(RlOversizedTexturePaths[i]) as TextureImporter;
-                if (importer == null)
-                {
-                    throw new InvalidOperationException(
-                        $"Missing RL texture importer: {RlOversizedTexturePaths[i]}");
-                }
-
-                TextureImporterPlatformSettings settings =
-                    importer.GetDefaultPlatformTextureSettings();
-                originalDefaultSettings[i] = settings;
-
-                if (settings.maxTextureSize > 8192)
-                {
-                    TextureImporterPlatformSettings rlSettings =
-                        importer.GetDefaultPlatformTextureSettings();
-                    rlSettings.maxTextureSize = 8192;
-                    importer.SetPlatformTextureSettings(rlSettings);
-                    importer.SaveAndReimport();
-                }
-            }
-
-            Build(
-                target,
-                new[] { RlScene },
-                executableName,
-                subtarget);
-        }
-        finally
-        {
-            for (int i = 0; i < RlOversizedTexturePaths.Length; i++)
-            {
-                TextureImporter importer =
-                    AssetImporter.GetAtPath(RlOversizedTexturePaths[i]) as TextureImporter;
-                TextureImporterPlatformSettings original = originalDefaultSettings[i];
-                if (importer != null && original != null)
-                {
-                    TextureImporterPlatformSettings current =
-                        importer.GetDefaultPlatformTextureSettings();
-                    if (current.maxTextureSize != original.maxTextureSize)
-                    {
-                        importer.SetPlatformTextureSettings(original);
-                        importer.SaveAndReimport();
-                    }
-                }
-            }
-        }
     }
 
     public static void BuildWindowsFullGame()
