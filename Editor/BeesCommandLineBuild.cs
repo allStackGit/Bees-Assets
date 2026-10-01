@@ -30,11 +30,45 @@ internal static class BeesCommandLineBuild
 
     public static void BuildLinuxRl()
     {
-        Build(
-            BuildTarget.StandaloneLinux64,
-            new[] { RlScene },
-            "Bees RL Training.x86_64",
-            StandaloneBuildSubtarget.Server);
+        PluginImporter[] excludedPlugins = ExcludeDedicatedRlNativePlugins();
+        try
+        {
+            Build(
+                BuildTarget.StandaloneLinux64,
+                new[] { RlScene },
+                "Bees RL Training.x86_64",
+                StandaloneBuildSubtarget.Server);
+        }
+        finally
+        {
+            foreach (PluginImporter importer in excludedPlugins)
+            {
+                importer.SetIncludeInBuildDelegate(null);
+            }
+        }
+    }
+
+    private static PluginImporter[] ExcludeDedicatedRlNativePlugins()
+    {
+        PluginImporter[] excluded = PluginImporter.GetAllImporters()
+            .Where(importer =>
+                importer != null &&
+                (
+                    importer.assetPath.IndexOf(
+                        "AppUINativePlugin",
+                        StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    importer.assetPath.IndexOf(
+                        "steam_api",
+                        StringComparison.OrdinalIgnoreCase) >= 0
+                ))
+            .ToArray();
+
+        foreach (PluginImporter importer in excluded)
+        {
+            importer.SetIncludeInBuildDelegate(_ => false);
+            Debug.Log($"[Bees build] excluding dedicated-RL native plugin {importer.assetPath}");
+        }
+        return excluded;
     }
 
     public static void BuildWindowsFullGame()
