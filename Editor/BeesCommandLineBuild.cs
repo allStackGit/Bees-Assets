@@ -48,7 +48,8 @@ internal static class BeesCommandLineBuild
         string executableName,
         StandaloneBuildSubtarget subtarget)
     {
-        int[] originalMaxSizes = new int[RlOversizedTexturePaths.Length];
+        TextureImporterPlatformSettings[] originalDefaultSettings =
+            new TextureImporterPlatformSettings[RlOversizedTexturePaths.Length];
         try
         {
             for (int i = 0; i < RlOversizedTexturePaths.Length; i++)
@@ -61,10 +62,16 @@ internal static class BeesCommandLineBuild
                         $"Missing RL texture importer: {RlOversizedTexturePaths[i]}");
                 }
 
-                originalMaxSizes[i] = importer.maxTextureSize;
-                if (importer.maxTextureSize > 8192)
+                TextureImporterPlatformSettings settings =
+                    importer.GetDefaultPlatformTextureSettings();
+                originalDefaultSettings[i] = settings;
+
+                if (settings.maxTextureSize > 8192)
                 {
-                    importer.maxTextureSize = 8192;
+                    TextureImporterPlatformSettings rlSettings =
+                        importer.GetDefaultPlatformTextureSettings();
+                    rlSettings.maxTextureSize = 8192;
+                    importer.SetPlatformTextureSettings(rlSettings);
                     importer.SaveAndReimport();
                 }
             }
@@ -73,8 +80,7 @@ internal static class BeesCommandLineBuild
                 target,
                 new[] { RlScene },
                 executableName,
-                subtarget,
-                createMlAgentsTimerDirectory: true);
+                subtarget);
         }
         finally
         {
@@ -82,12 +88,16 @@ internal static class BeesCommandLineBuild
             {
                 TextureImporter importer =
                     AssetImporter.GetAtPath(RlOversizedTexturePaths[i]) as TextureImporter;
-                if (importer != null &&
-                    originalMaxSizes[i] > 0 &&
-                    importer.maxTextureSize != originalMaxSizes[i])
+                TextureImporterPlatformSettings original = originalDefaultSettings[i];
+                if (importer != null && original != null)
                 {
-                    importer.maxTextureSize = originalMaxSizes[i];
-                    importer.SaveAndReimport();
+                    TextureImporterPlatformSettings current =
+                        importer.GetDefaultPlatformTextureSettings();
+                    if (current.maxTextureSize != original.maxTextureSize)
+                    {
+                        importer.SetPlatformTextureSettings(original);
+                        importer.SaveAndReimport();
+                    }
                 }
             }
         }
@@ -115,8 +125,7 @@ internal static class BeesCommandLineBuild
         BuildTarget target,
         string[] scenes,
         string executableName,
-        StandaloneBuildSubtarget subtarget = StandaloneBuildSubtarget.Player,
-        bool createMlAgentsTimerDirectory = false)
+        StandaloneBuildSubtarget subtarget = StandaloneBuildSubtarget.Player)
     {
         string outputDirectory = ReadRequiredArgument(OutputArgument);
         outputDirectory = Path.GetFullPath(outputDirectory);
@@ -148,17 +157,6 @@ internal static class BeesCommandLineBuild
                 $"Unity {target} build failed: {summary.result}; errors={summary.totalErrors}.");
         }
 
-        if (createMlAgentsTimerDirectory)
-        {
-            string dataDirectoryName =
-                Path.GetFileNameWithoutExtension(executableName) + "_Data";
-            string timerDirectory = Path.Combine(
-                outputDirectory,
-                dataDirectoryName,
-                "ML-Agents",
-                "Timers");
-            Directory.CreateDirectory(timerDirectory);
-        }
     }
 
     private static string ReadRequiredArgument(string name)
