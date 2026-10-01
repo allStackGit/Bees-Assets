@@ -14,6 +14,7 @@ const {
     paths,
     readJson,
     readText,
+    rotateManagedLog,
     removeIfExists,
     samePath,
     sha256File,
@@ -392,12 +393,14 @@ async function startLocalActorIfNeeded(
     };
     writeJsonAtomic(paths.localActorStatePath, launchIntent);
 
+    rotateManagedLog(paths.localActorOutLogPath);
+    rotateManagedLog(paths.localActorErrLogPath);
     const stdoutFd = fs.openSync(paths.localActorOutLogPath, 'a');
     const stderrFd = fs.openSync(paths.localActorErrLogPath, 'a');
     let child;
     try {
         child = spawn(bootstrapPython, launchArgs, {
-            cwd: paths.assetsRoot,
+            cwd: path.resolve(preparedRuntime.runtime_root),
             detached: true,
             windowsHide: true,
             stdio: ['ignore', stdoutFd, stderrFd],
