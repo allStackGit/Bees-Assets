@@ -754,6 +754,12 @@ class ActorSession:
         options.torch_settings.device = self.torch_device
         return options
 
+    def _ensure_unity_timer_directory(self) -> Path:
+        data_directory = self.env_path.parent / f"{self.env_path.stem}_Data"
+        timer_directory = data_directory / "ML-Agents" / "Timers"
+        timer_directory.mkdir(parents=True, exist_ok=True)
+        return timer_directory
+
     def _run_logs_dir(self, options: Any) -> str:
         managed_log_dir = os.environ.get("BEES_TRAINING_LOG_DIR", "").strip()
         if managed_log_dir:
@@ -843,6 +849,7 @@ class ActorSession:
         np.random.seed(int(options.env_settings.seed))
         torch.manual_seed(int(options.env_settings.seed))
 
+        self._ensure_unity_timer_directory()
         factory = learn.create_environment_factory(
             options.env_settings.env_path,
             options.engine_settings.no_graphics,
