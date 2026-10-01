@@ -1130,11 +1130,25 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             f"normalize={_poca_average_timing('advantage_normalization'):.6f} "
             f"avg_minibatch={_poca_average_timing('minibatch_total'):.6f} "
             f"prepare={_poca_average_timing('prepare'):.6f} "
+            f"decay={_poca_average_timing('decay'):.6f} "
+            f"reward_tensors={_poca_average_timing('reward_tensors'):.6f} "
+            f"current_obs={_poca_average_timing('current_obs'):.6f} "
+            f"group_pad={_poca_average_timing('group_obs_padding'):.6f} "
+            f"group_tensors={_poca_average_timing('group_obs_tensors'):.6f} "
+            f"action_masks={_poca_average_timing('action_masks'):.6f} "
+            f"current_actions={_poca_average_timing('current_actions'):.6f} "
+            f"group_actions={_poca_average_timing('group_actions'):.6f} "
+            f"memories={_poca_average_timing('memories'):.6f} "
             f"actor={_poca_average_timing('actor_get_stats'):.6f} "
             f"critic={_poca_average_timing('critic_pass'):.6f} "
             f"baseline={_poca_average_timing('baseline'):.6f} "
+            f"old_probs_masks={_poca_average_timing('old_probs_masks'):.6f} "
+            f"losses={_poca_average_timing('losses'):.6f} "
+            f"learning_rate={_poca_average_timing('learning_rate'):.6f} "
+            f"zero_grad={_poca_average_timing('zero_grad'):.6f} "
             f"backward={_poca_average_timing('backward'):.6f} "
             f"optimizer_step={_poca_average_timing('optimizer_step'):.6f} "
+            f"stats={_poca_average_timing('stats'):.6f} "
             f"optimizer_total={_poca_average_timing('optimizer_total'):.6f} "
             f"reward={_poca_average_timing('reward_signals'):.6f}",
             flush=True,
@@ -1303,6 +1317,195 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         finally:
             reset_training_slot_limits(slot_token)
 
+    def profiled_poca_update(self, batch, num_sequences):
+        """Pinned ML-Agents 1.1.0 POCA update with non-overlapping phase timing."""
+
+        from mlagents.trainers.buffer import RewardSignalUtil
+        from mlagents.trainers.torch_entities.action_log_probs import ActionLogProbs
+        from mlagents.trainers.torch_entities.agent_action import AgentAction
+        from mlagents.trainers.trajectory import GroupObsUtil, ObsUtil
+        from mlagents.torch_utils import torch
+
+        started = time.perf_counter()
+        decay_lr = self.decay_learning_rate.get_value(self.policy.get_current_step())
+        decay_eps = self.decay_epsilon.get_value(self.policy.get_current_step())
+        decay_bet = self.decay_beta.get_value(self.policy.get_current_step())
+        _poca_record_timing("decay", time.perf_counter() - started)
+
+        started = time.perf_counter()
+        returns = {}
+        old_values = {}
+        old_baseline_values = {}
+        for name in self.reward_signals:
+            old_values[name] = ModelUtils.list_to_tensor(
+                batch[RewardSignalUtil.value_estimates_key(name)]
+            )
+            returns[name] = ModelUtils.list_to_tensor(
+                batch[RewardSignalUtil.returns_key(name)]
+            )
+            old_baseline_values[name] = ModelUtils.list_to_tensor(
+                batch[RewardSignalUtil.baseline_estimates_key(name)]
+            )
+        _poca_record_timing("reward_tensors", time.perf_counter() - started)
+
+        started = time.perf_counter()
+        n_obs = len(self.policy.behavior_spec.observation_specs)
+        current_obs = ObsUtil.from_buffer(batch, n_obs)
+        current_obs = [ModelUtils.list_to_tensor(obs) for obs in current_obs]
+        _poca_record_timing("current_obs", time.perf_counter() - started)
+
+        started = time.perf_counter()
+        groupmate_obs = GroupObsUtil.from_buffer(batch, n_obs)
+        _poca_record_timing("group_obs_padding", time.perf_counter() - started)
+
+        started = time.perf_counter()
+        groupmate_obs = [
+            [ModelUtils.list_to_tensor(obs) for obs in _groupmate_obs]
+            for _groupmate_obs in groupmate_obs
+        ]
+        _poca_record_timing("group_obs_tensors", time.perf_counter() - started)
+
+        started = time.perf_counter()
+        act_masks = ModelUtils.list_to_tensor(batch[BufferKey.ACTION_MASK])
+        _poca_record_timing("action_masks", time.perf_counter() - started)
+
+        started = time.perf_counter()
+        actions = AgentAction.from_buffer(batch)
+        _poca_record_timing("current_actions", time.perf_counter() - started)
+
+        started = time.perf_counter()
+        groupmate_actions = AgentAction.group_from_buffer(batch)
+        _poca_record_timing("group_actions", time.perf_counter() - started)
+
+        started = time.perf_counter()
+        memories = [
+            ModelUtils.list_to_tensor(batch[BufferKey.MEMORY][i])
+            for i in range(
+                0,
+                len(batch[BufferKey.MEMORY]),
+                self.policy.sequence_length,
+            )
+        ]
+        if len(memories) > 0:
+            memories = torch.stack(memories).unsqueeze(0)
+        value_memories = [
+            ModelUtils.list_to_tensor(batch[BufferKey.CRITIC_MEMORY][i])
+            for i in range(
+                0,
+                len(batch[BufferKey.CRITIC_MEMORY]),
+                self.policy.sequence_length,
+            )
+        ]
+        baseline_memories = [
+            ModelUtils.list_to_tensor(batch[BufferKey.BASELINE_MEMORY][i])
+            for i in range(
+                0,
+                len(batch[BufferKey.BASELINE_MEMORY]),
+                self.policy.sequence_length,
+            )
+        ]
+        if len(value_memories) > 0:
+            value_memories = torch.stack(value_memories).unsqueeze(0)
+            baseline_memories = torch.stack(baseline_memories).unsqueeze(0)
+        _poca_record_timing("memories", time.perf_counter() - started)
+
+        started = time.perf_counter()
+        run_out = self.policy.actor.get_stats(
+            current_obs,
+            actions,
+            masks=act_masks,
+            memories=memories,
+            sequence_length=self.policy.sequence_length,
+        )
+        log_probs = run_out["log_probs"]
+        entropy = run_out["entropy"]
+        _poca_record_timing("actor_get_stats", time.perf_counter() - started)
+
+        started = time.perf_counter()
+        all_obs = [current_obs] + groupmate_obs
+        values, _ = self.critic.critic_pass(
+            all_obs,
+            memories=value_memories,
+            sequence_length=self.policy.sequence_length,
+        )
+        _poca_record_timing("critic_pass", time.perf_counter() - started)
+
+        started = time.perf_counter()
+        groupmate_obs_and_actions = (groupmate_obs, groupmate_actions)
+        baselines, _ = self.critic.baseline(
+            current_obs,
+            groupmate_obs_and_actions,
+            memories=baseline_memories,
+            sequence_length=self.policy.sequence_length,
+        )
+        _poca_record_timing("baseline", time.perf_counter() - started)
+
+        started = time.perf_counter()
+        old_log_probs = ActionLogProbs.from_buffer(batch).flatten()
+        log_probs = log_probs.flatten()
+        loss_masks = ModelUtils.list_to_tensor(
+            batch[BufferKey.MASKS],
+            dtype=torch.bool,
+        )
+        _poca_record_timing("old_probs_masks", time.perf_counter() - started)
+
+        started = time.perf_counter()
+        baseline_loss = ModelUtils.trust_region_value_loss(
+            baselines,
+            old_baseline_values,
+            returns,
+            decay_eps,
+            loss_masks,
+        )
+        value_loss = ModelUtils.trust_region_value_loss(
+            values,
+            old_values,
+            returns,
+            decay_eps,
+            loss_masks,
+        )
+        policy_loss = ModelUtils.trust_region_policy_loss(
+            ModelUtils.list_to_tensor(batch[BufferKey.ADVANTAGES]),
+            log_probs,
+            old_log_probs,
+            loss_masks,
+            decay_eps,
+        )
+        loss = (
+            policy_loss
+            + 0.5 * (value_loss + 0.5 * baseline_loss)
+            - decay_bet * ModelUtils.masked_mean(entropy, loss_masks)
+        )
+        _poca_record_timing("losses", time.perf_counter() - started)
+
+        started = time.perf_counter()
+        ModelUtils.update_learning_rate(self.optimizer, decay_lr)
+        _poca_record_timing("learning_rate", time.perf_counter() - started)
+
+        started = time.perf_counter()
+        self.optimizer.zero_grad()
+        _poca_record_timing("zero_grad", time.perf_counter() - started)
+
+        started = time.perf_counter()
+        loss.backward()
+        _poca_record_timing("backward", time.perf_counter() - started)
+
+        started = time.perf_counter()
+        self.optimizer.step()
+        _poca_record_timing("optimizer_step", time.perf_counter() - started)
+
+        started = time.perf_counter()
+        update_stats = {
+            "Losses/Policy Loss": torch.abs(policy_loss).item(),
+            "Losses/Value Loss": value_loss.item(),
+            "Losses/Baseline Loss": baseline_loss.item(),
+            "Policy/Learning Rate": decay_lr,
+            "Policy/Epsilon": decay_eps,
+            "Policy/Beta": decay_bet,
+        }
+        _poca_record_timing("stats", time.perf_counter() - started)
+        return update_stats
+
     def masked_poca_update(self, batch, num_sequences):
         prepare_started = time.perf_counter()
         batch_size = len(batch[BufferKey.MASKS])
@@ -1335,7 +1538,6 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             reset_training_slot_limits,
             set_training_slot_limits,
         )
-        from mlagents.torch_utils import torch
 
         slot_limits = _structured_training_slot_limits(
             self.policy,
@@ -1348,59 +1550,9 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         )
         optimizer_started = time.perf_counter()
 
-        patched = []
-
-        def patch_phase(target, name, label):
-            had_instance_value = hasattr(target, "__dict__") and name in target.__dict__
-            previous_instance_value = (
-                target.__dict__.get(name) if had_instance_value else None
-            )
-            original = getattr(target, name)
-
-            def timed(*args, **kwargs):
-                started = time.perf_counter()
-                try:
-                    return original(*args, **kwargs)
-                finally:
-                    _poca_record_timing(
-                        label,
-                        time.perf_counter() - started,
-                    )
-
-            object.__setattr__(target, name, timed)
-            patched.append(
-                (target, name, had_instance_value, previous_instance_value)
-            )
-
-        original_autograd_backward = torch.autograd.backward
-
-        def timed_autograd_backward(*args, **kwargs):
-            started = time.perf_counter()
-            try:
-                return original_autograd_backward(*args, **kwargs)
-            finally:
-                _poca_record_timing(
-                    "backward",
-                    time.perf_counter() - started,
-                )
-
         try:
-            patch_phase(self.policy.actor, "get_stats", "actor_get_stats")
-            patch_phase(self.critic, "critic_pass", "critic_pass")
-            patch_phase(self.critic, "baseline", "baseline")
-            patch_phase(self.optimizer, "step", "optimizer_step")
-            torch.autograd.backward = timed_autograd_backward
-            return original_poca_update(self, batch, num_sequences)
+            return profiled_poca_update(self, batch, num_sequences)
         finally:
-            torch.autograd.backward = original_autograd_backward
-            for target, name, had_instance_value, previous_instance_value in reversed(patched):
-                if had_instance_value:
-                    object.__setattr__(target, name, previous_instance_value)
-                else:
-                    try:
-                        object.__delattr__(target, name)
-                    except AttributeError:
-                        pass
             _poca_record_timing(
                 "optimizer_total",
                 time.perf_counter() - optimizer_started,
