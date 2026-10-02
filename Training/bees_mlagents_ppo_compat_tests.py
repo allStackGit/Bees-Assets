@@ -959,7 +959,34 @@ class PocaTensorCacheTests(unittest.TestCase):
                     1.0 if row != 1 else -1.0
                 )
                 buffer[ObsUtil.get_name_at(0)].append(observation)
-                buffer[GroupObsUtil.get_name_at(0)].append([])
+                groupmates = []
+                if row == 0:
+                    mate = np.zeros(
+                        compat.BEES_OBSERVATION_SIZE,
+                        dtype=np.float32,
+                    )
+                    mate[0] = 10.0
+                    groupmates = [mate]
+                elif row == 1:
+                    mate = np.zeros(
+                        compat.BEES_OBSERVATION_SIZE,
+                        dtype=np.float32,
+                    )
+                    mate[0] = 20.0
+                    groupmates = [mate]
+                else:
+                    first = np.zeros(
+                        compat.BEES_OBSERVATION_SIZE,
+                        dtype=np.float32,
+                    )
+                    second = np.zeros(
+                        compat.BEES_OBSERVATION_SIZE,
+                        dtype=np.float32,
+                    )
+                    first[0] = 30.0
+                    second[0] = 31.0
+                    groupmates = [first, second]
+                buffer[GroupObsUtil.get_name_at(0)].append(groupmates)
                 buffer[BufferKey.CONTINUOUS_ACTION].append(
                     np.full(
                         compat.BEES_CONTINUOUS_ACTIONS,
@@ -1057,7 +1084,31 @@ class PocaTensorCacheTests(unittest.TestCase):
             )
             np.testing.assert_array_equal(
                 selected["groupmate_counts"],
-                np.asarray([0, 0], dtype=np.int32),
+                np.asarray([2, 1], dtype=np.int32),
+            )
+            self.assertEqual(len(selected["groupmate_obs"]), 2)
+            self.assertEqual(len(selected["groupmate_obs"][0]), 1)
+            first_groupmate = (
+                selected["groupmate_obs"][0][0][:, 0]
+                .detach()
+                .cpu()
+                .numpy()
+            )
+            second_groupmate = (
+                selected["groupmate_obs"][1][0][:, 0]
+                .detach()
+                .cpu()
+                .numpy()
+            )
+            np.testing.assert_allclose(
+                first_groupmate,
+                np.asarray([30.0, 10.0], dtype=np.float32),
+            )
+            self.assertEqual(second_groupmate[0], 31.0)
+            self.assertTrue(np.isnan(second_groupmate[1]))
+            self.assertIsInstance(
+                cache["groupmate_obs"],
+                compat._PocaRaggedGroupObs,
             )
             np.testing.assert_array_equal(
                 selected["faction_rows"]["bee"],
