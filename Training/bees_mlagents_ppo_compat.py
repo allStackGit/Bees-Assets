@@ -1429,9 +1429,6 @@ def _complete_poca_trajectory(
 def _process_poca_trajectory_batch(trainer, trajectories):
     """Process multiple short feed-forward trajectories with shared critic passes."""
 
-    import numpy as np
-    from mlagents.trainers.trainer.rl_trainer import RLTrainer
-
     buffers = [trajectory.to_agentbuffer() for trajectory in trajectories]
     merged = _merge_agent_buffers(buffers)
     if trainer.is_training:
@@ -1443,18 +1440,231 @@ def _process_poca_trajectory_batch(trainer, trajectories):
         buffers,
         trajectories,
     )
+    _apply_prepared_poca_trajectory_batch(
+        trainer,
+        {
+            "trajectories": trajectories,
+            "buffers": buffers,
+            "values": values,
+            "baselines": baselines,
+            "next_values": next_values,
+        },
+        update_normalization=False,
+    )
+
+
+def _poca_cpu_tensor(values, dtype):
+    """Materialize one update-buffer field once on CPU for repeated PPO epochs."""
+
+    import numpy as np
+    from mlagents.torch_utils import torch
+
+    array = np.ascontiguousarray(np.asarray(values))
+    return torch.as_tensor(
+        array,
+        dtype=dtype,
+        device=torch.device("cpu"),
+    )
+
+
+def _poca_cpu_buffer_tensor(values, dtype):
+    raw = values.to_ndarray() if hasattr(values, "to_ndarray") else values
+    return _poca_cpu_tensor(raw, dtype)
+
+
+def _poca_cpu_group_actions(buffer):
+    import numpy as np
+    from mlagents.torch_utils import torch
+    from mlagents.trainers.buffer import BufferKey
+    from mlagents.trainers.torch_entities.agent_action import AgentAction
+
+    continuous = []
+    if BufferKey.GROUP_CONTINUOUS_ACTION in buffer:
+        continuous = list(
+            buffer[BufferKey.GROUP_CONTINUOUS_ACTION].padded_to_batch()
+        )
+    discrete = []
+    if BufferKey.GROUP_DISCRETE_ACTION in buffer:
+        discrete = list(
+            buffer[BufferKey.GROUP_DISCRETE_ACTION].padded_to_batch(
+                dtype=np.int64
+            )
+        )
+
+    actions = []
+    for position in range(max(len(continuous), len(discrete))):
+        continuous_tensor = (
+            _poca_cpu_tensor(continuous[position], torch.float32)
+            if position < len(continuous)
+            else None
+        )
+        discrete_tensor = (
+            _poca_cpu_tensor(discrete[position], torch.long)
+            if position < len(discrete)
+            else None
+        )
+        actions.append(
+            AgentAction(
+                continuous_tensor,
+                None
+                if discrete_tensor is None
+                else [
+                    discrete_tensor[..., index]
+                    for index in range(discrete_tensor.shape[-1])
+                ],
+            )
+        )
+    return actions
+
+
+def _prepare_poca_trajectory_batch_snapshot(snapshot, trajectories):
+    """Evaluate one contiguous policy-version batch on a frozen CPU critic."""
+
+    import numpy as np
+    from mlagents.torch_utils import torch
+    from mlagents.trainers.torch_entities.utils import ModelUtils
+    from mlagents.trainers.trajectory import GroupObsUtil, ObsUtil
+    from bees_mlagents_structured_policy import (
+        reset_training_slot_limits,
+        set_training_slot_limits,
+    )
+
+    buffers = [trajectory.to_agentbuffer() for trajectory in trajectories]
+    merged = _merge_agent_buffers(buffers)
+    policy = snapshot.policy
+    n_obs = len(policy.behavior_spec.observation_specs)
+    next_buffer = _build_poca_next_observation_buffer(
+        trajectories,
+        n_obs,
+    )
+    slot_limits = _structured_training_slot_limits(
+        policy,
+        merged,
+        extra_observations=[
+            (trajectory.next_obs, trajectory.next_group_obs)
+            for trajectory in trajectories
+        ],
+    )
+    slot_token = set_training_slot_limits(slot_limits)
+    try:
+        with torch.inference_mode():
+            current_obs = [
+                _poca_cpu_buffer_tensor(obs, torch.float32)
+                for obs in ObsUtil.from_buffer(merged, n_obs)
+            ]
+            groupmate_obs = GroupObsUtil.from_buffer(merged, n_obs)
+            groupmate_obs = [
+                [
+                    _poca_cpu_tensor(obs, torch.float32)
+                    for obs in groupmate
+                ]
+                for groupmate in groupmate_obs
+            ]
+            current_counts = _poca_groupmate_counts(
+                policy,
+                merged,
+                merged.num_experiences,
+            )
+            _POCA_GROUP_BATCH_STATE.valid_rows = (
+                _poca_groupmate_valid_row_indices(current_counts)
+            )
+            _POCA_GROUP_BATCH_STATE.encoded_cache = {}
+
+            value_estimates, _ = snapshot.critic.critic_pass(
+                [current_obs] + groupmate_obs,
+                memories=None,
+                sequence_length=merged.num_experiences,
+            )
+            baseline_estimates, _ = snapshot.critic.baseline(
+                current_obs,
+                (
+                    groupmate_obs,
+                    _poca_cpu_group_actions(merged),
+                ),
+                memories=None,
+                sequence_length=merged.num_experiences,
+            )
+
+            next_obs = [
+                _poca_cpu_buffer_tensor(obs, torch.float32)
+                for obs in ObsUtil.from_buffer(next_buffer, n_obs)
+            ]
+            next_groupmate_obs = GroupObsUtil.from_buffer(
+                next_buffer,
+                n_obs,
+            )
+            next_groupmate_obs = [
+                [
+                    _poca_cpu_tensor(obs, torch.float32)
+                    for obs in groupmate
+                ]
+                for groupmate in next_groupmate_obs
+            ]
+            next_counts = _poca_groupmate_counts(
+                policy,
+                next_buffer,
+                next_buffer.num_experiences,
+            )
+            _POCA_GROUP_BATCH_STATE.valid_rows = (
+                _poca_groupmate_valid_row_indices(next_counts)
+            )
+            _POCA_GROUP_BATCH_STATE.encoded_cache = {}
+            next_value_estimates, _ = snapshot.critic.critic_pass(
+                [next_obs] + next_groupmate_obs,
+                memories=None,
+                sequence_length=next_buffer.num_experiences,
+            )
+    finally:
+        reset_training_slot_limits(slot_token)
+        _POCA_GROUP_BATCH_STATE.valid_rows = None
+        _POCA_GROUP_BATCH_STATE.encoded_cache = None
+
+    return {
+        "trajectories": trajectories,
+        "buffers": buffers,
+        "values": {
+            name: ModelUtils.to_numpy(value)
+            for name, value in value_estimates.items()
+        },
+        "baselines": {
+            name: ModelUtils.to_numpy(value)
+            for name, value in baseline_estimates.items()
+        },
+        "next_values": {
+            name: ModelUtils.to_numpy(value)
+            for name, value in next_value_estimates.items()
+        },
+    }
+
+
+def _apply_prepared_poca_trajectory_batch(
+    trainer,
+    prepared,
+    *,
+    update_normalization: bool,
+):
+    """Commit pre-evaluated values while keeping all mutable trainer state on its owner thread."""
+
+    import numpy as np
+    from mlagents.trainers.trainer.rl_trainer import RLTrainer
+
+    trajectories = prepared["trajectories"]
+    buffers = prepared["buffers"]
+    values = prepared["values"]
+    baselines = prepared["baselines"]
+    next_values = prepared["next_values"]
 
     offset = 0
     for trajectory_index, (trajectory, buffer) in enumerate(
         zip(trajectories, buffers)
     ):
-        # Keep ML-Agents step/checkpoint/summary ordering per trajectory. Value
-        # inference is intentionally batched before this bookkeeping; no policy
-        # weights are changed by that inference.
+        if update_normalization and trainer.is_training:
+            trainer.policy.actor.update_normalization(buffer)
+            trainer.optimizer.critic.update_normalization(buffer)
+
         RLTrainer._process_trajectory(trainer, trajectory)
         length = buffer.num_experiences
         end = offset + length
-
         trajectory_values = {
             name: np.asarray(value[offset:end])
             for name, value in values.items()
@@ -1489,20 +1699,6 @@ def _process_poca_trajectory_batch(trainer, trajectories):
             trajectory_next,
         )
         offset = end
-
-
-def _poca_cpu_tensor(values, dtype):
-    """Materialize one update-buffer field once on CPU for repeated PPO epochs."""
-
-    import numpy as np
-    from mlagents.torch_utils import torch
-
-    array = np.ascontiguousarray(np.asarray(values))
-    return torch.as_tensor(
-        array,
-        dtype=dtype,
-        device=torch.device("cpu"),
-    )
 
 
 def _build_poca_update_tensor_cache(optimizer, buffer):
