@@ -850,7 +850,7 @@ class PocaBatchedTrajectoryEvaluationTests(unittest.TestCase):
 
 
 class PocaFrozenTrajectorySnapshotTests(unittest.TestCase):
-    def test_snapshot_evaluation_stays_cpu_graph_free_and_updates_private_normalizer(self):
+    def test_snapshot_evaluation_stays_cpu_graph_free_and_keeps_normalizer_frozen(self):
         import numpy as np
         from mlagents.torch_utils import torch
         from mlagents.trainers.buffer import AgentBuffer
@@ -878,7 +878,9 @@ class PocaFrozenTrajectorySnapshotTests(unittest.TestCase):
 
         class FakeCritic:
             def update_normalization(self, buffer):
-                calls.append(("normalize", buffer.num_experiences))
+                raise AssertionError(
+                    "frozen source-policy snapshot normalization must not mutate"
+                )
 
             def critic_pass(
                 self,
@@ -947,9 +949,8 @@ class PocaFrozenTrajectorySnapshotTests(unittest.TestCase):
             prepared["next_values"]["extrinsic"],
             np.asarray([11.0, 12.0], dtype=np.float32),
         )
-        self.assertEqual(calls[0], ("normalize", 2))
         self.assertEqual(
-            calls[1:],
+            calls,
             [
                 ("critic", "cpu", False, 2),
                 ("baseline", "cpu", False, 2),
