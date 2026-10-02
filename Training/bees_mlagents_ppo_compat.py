@@ -30,6 +30,7 @@ BEES_HEALING_SPECIAL_ACTION = 3
 ACTION_ENTROPY_EPSILON = 1e-7
 POCA_ENCODER_CHUNK_ROWS = 2048
 POCA_TRAJECTORY_BATCH_MAX_EXPERIENCES = 2048
+POCA_TRAJECTORY_TIMING_REPORT_SECONDS = 30.0
 POCA_PACKED_GROUP_CACHE_MAX_BYTES = 4 * 1024 * 1024 * 1024
 POCA_GPU_CACHE_MIN_RESERVE_BYTES = 2 * 1024 * 1024 * 1024
 POCA_GPU_CACHE_RESERVE_FRACTION = 0.30
@@ -56,6 +57,17 @@ _POCA_GROUP_BATCH_STATE = threading.local()
 _POCA_UPDATE_CACHE_STATE = threading.local()
 _POCA_UPDATE_BUSY_LOCK = threading.Lock()
 _POCA_UPDATE_BUSY_SECONDS_TOTAL = 0.0
+_POCA_TRAJECTORY_TIMING_LOCK = threading.Lock()
+_POCA_TRAJECTORY_TIMING = {
+    "last_report": 0.0,
+    "batches": 0,
+    "trajectories": 0,
+    "experiences": 0,
+    "prepare": 0.0,
+    "evaluate": 0.0,
+    "complete": 0.0,
+    "total": 0.0,
+}
 
 
 def poca_update_busy_seconds_total() -> float:
@@ -800,6 +812,61 @@ def _poca_average_timing(label):
     return totals.get(label, 0.0) / count if count else 0.0
 
 
+def _record_poca_trajectory_batch_timing(
+    *,
+    trajectories: int,
+    experiences: int,
+    prepare_seconds: float,
+    evaluate_seconds: float,
+    complete_seconds: float,
+    total_seconds: float,
+) -> None:
+    now = time.monotonic()
+    report = None
+    with _POCA_TRAJECTORY_TIMING_LOCK:
+        state = _POCA_TRAJECTORY_TIMING
+        if state["last_report"] <= 0.0:
+            state["last_report"] = now
+        state["batches"] += 1
+        state["trajectories"] += int(trajectories)
+        state["experiences"] += int(experiences)
+        state["prepare"] += float(prepare_seconds)
+        state["evaluate"] += float(evaluate_seconds)
+        state["complete"] += float(complete_seconds)
+        state["total"] += float(total_seconds)
+        if now - state["last_report"] >= POCA_TRAJECTORY_TIMING_REPORT_SECONDS:
+            report = dict(state)
+            state.update(
+                {
+                    "last_report": now,
+                    "batches": 0,
+                    "trajectories": 0,
+                    "experiences": 0,
+                    "prepare": 0.0,
+                    "evaluate": 0.0,
+                    "complete": 0.0,
+                    "total": 0.0,
+                }
+            )
+    if report is None:
+        return
+    batches = max(1, int(report["batches"]))
+    total_seconds = max(1.0e-9, float(report["total"]))
+    print(
+        "[Bees trajectory timing] "
+        f"batches={report['batches']} "
+        f"trajectories={report['trajectories']} "
+        f"experiences={report['experiences']} "
+        f"avg_batch_exp={report['experiences'] / batches:.1f} "
+        f"compute_exp_per_s={report['experiences'] / total_seconds:.1f} "
+        f"avg_prepare={report['prepare'] / batches:.6f} "
+        f"avg_evaluate={report['evaluate'] / batches:.6f} "
+        f"avg_complete={report['complete'] / batches:.6f} "
+        f"avg_total={report['total'] / batches:.6f}",
+        flush=True,
+    )
+
+
 def _merge_agent_buffers(buffers):
     """Concatenate trajectory buffers without copying their NumPy payloads."""
 
@@ -1119,18 +1186,24 @@ def _process_poca_trajectory_batch(trainer, trajectories):
     import numpy as np
     from mlagents.trainers.trainer.rl_trainer import RLTrainer
 
+    batch_started = time.perf_counter()
+    prepare_started = batch_started
     buffers = [trajectory.to_agentbuffer() for trajectory in trajectories]
     merged = _merge_agent_buffers(buffers)
     if trainer.is_training:
         trainer.policy.actor.update_normalization(merged)
         trainer.optimizer.critic.update_normalization(merged)
+    prepare_seconds = time.perf_counter() - prepare_started
 
+    evaluate_started = time.perf_counter()
     values, baselines, next_values = _evaluate_poca_trajectory_batch(
         trainer,
         merged,
         trajectories,
     )
+    evaluate_seconds = time.perf_counter() - evaluate_started
 
+    complete_started = time.perf_counter()
     offset = 0
     for trajectory_index, (trajectory, buffer) in enumerate(
         zip(trajectories, buffers)
@@ -1176,6 +1249,16 @@ def _process_poca_trajectory_batch(trainer, trajectories):
             trajectory_next,
         )
         offset = end
+
+    complete_seconds = time.perf_counter() - complete_started
+    _record_poca_trajectory_batch_timing(
+        trajectories=len(trajectories),
+        experiences=merged.num_experiences,
+        prepare_seconds=prepare_seconds,
+        evaluate_seconds=evaluate_seconds,
+        complete_seconds=complete_seconds,
+        total_seconds=time.perf_counter() - batch_started,
+    )
 
 
 def _poca_cpu_tensor(values, dtype):
@@ -2310,6 +2393,10 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             "device_cache_copy",
             float(device_cache["copy_seconds"]),
         )
+        _poca_record_timing(
+            "group_cache_copy",
+            float(device_cache.get("group_copy_seconds", 0.0)),
+        )
 
         num_epoch = self.hyperparameters.num_epoch
         batch_update_stats = defaultdict(list)
@@ -2417,6 +2504,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             f"normalize={_poca_average_timing('advantage_normalization'):.6f} "
             f"materialize={_poca_average_timing('materialize'):.6f} "
             f"cache_copy={_poca_average_timing('device_cache_copy'):.6f} "
+            f"group_cache_copy={_poca_average_timing('group_cache_copy'):.6f} "
             f"cache_storage={device_cache['storage']} "
             f"transfer={_poca_average_timing('cache_transfer'):.6f} "
             f"avg_minibatch={_poca_average_timing('minibatch_total'):.6f} "
