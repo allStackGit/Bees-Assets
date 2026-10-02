@@ -17,6 +17,8 @@ Mandatory rules for coding/development work in this repository.
 
 ## Engineering contract
 
+DO NOT UNDER ANY CIRCUMSTANCES MAKE OR SUGGEST CHANGES WHEN YOU DON'T UNDERSTAND THE SYSTEM.
+
 Optimize for a working, understandable system rather than documentation volume, test count, or process ceremony.
 
 - Reproduce reported failures before changing code when practical, and trace the causal chain before patching symptoms.
