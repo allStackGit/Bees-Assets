@@ -1142,6 +1142,7 @@ class ElasticWanBroker(base.WanActorBroker):
 class ElasticWanPatch:
     env_manager_class: Any
     trainer_controller_advance: Any
+    agent_queue_get_nowait: Any = None
 
 
 class ElasticWanEnvManagerMixin:
@@ -1309,7 +1310,10 @@ def restore_elastic_wan_env_manager(patch: Optional[ElasticWanPatch]) -> None:
     if patch is None:
         return
     import mlagents.trainers.learn as learn
+    from mlagents.trainers.agent_processor import AgentManagerQueue
     from mlagents.trainers.trainer_controller import TrainerController
 
     learn.SubprocessEnvManager = patch.env_manager_class
     TrainerController.advance = patch.trainer_controller_advance
+    if patch.agent_queue_get_nowait is not None:
+        AgentManagerQueue.get_nowait = patch.agent_queue_get_nowait
