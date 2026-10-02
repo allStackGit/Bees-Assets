@@ -3435,6 +3435,7 @@ def restore_inactive_continuous_action_masking() -> None:
 
     _shutdown_all_poca_pipelines()
 
+    from mlagents.trainers.ghost.trainer import GhostTrainer
     from mlagents.trainers.poca.optimizer_torch import TorchPOCAOptimizer
     from mlagents.trainers.poca.trainer import POCATrainer
     from mlagents.trainers.ppo.optimizer_torch import TorchPPOOptimizer
