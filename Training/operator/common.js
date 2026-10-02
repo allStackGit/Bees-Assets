@@ -22,6 +22,7 @@ const paths = Object.freeze({
     remoteRoot: path.join(beesRoot, 'Remote'),
     serverRoot: path.join(assetsRoot, 'BeesServer~'),
     configPath: path.join(assetsRoot, 'Training', 'bees.cluster.json'),
+    runtimeTrainingOptionsPath: path.join(beesRoot, 'Runtime', 'training-runtime-options.json'),
     latestReleasePath: path.join(beesRoot, 'Builds', 'latest-training-release.json'),
     workerTokenPath: path.join(beesRoot, 'Secrets', 'training-worker.token'),
     adminTokenPath: path.join(beesRoot, 'Secrets', 'training-admin.token'),
@@ -283,11 +284,60 @@ function resolveNpmInvocation(node = process.execPath) {
     return npmInvocationFromCommand(npmCommand, node);
 }
 
+function applyRuntimeTrainingOptions(config, options = {}) {
+    const result = {
+        ...config,
+        localActor: {
+            ...(config && typeof config.localActor === 'object' && config.localActor
+                ? config.localActor
+                : {}),
+        },
+    };
+    if (Object.prototype.hasOwnProperty.call(options, 'threadedTraining')) {
+        result.threadedTraining = Boolean(options.threadedTraining);
+    }
+    if (Object.prototype.hasOwnProperty.call(options, 'localTraining')) {
+        result.localActor.enabled = Boolean(options.localTraining);
+    }
+    return result;
+}
+
+function readRuntimeTrainingOptions() {
+    if (!exists(paths.runtimeTrainingOptionsPath)) return null;
+    const value = readJson(paths.runtimeTrainingOptionsPath);
+    if (
+        !value ||
+        value.schema_version !== 1 ||
+        typeof value.threadedTraining !== 'boolean' ||
+        typeof value.localTraining !== 'boolean'
+    ) {
+        throw new Error(
+            'Runtime training options are malformed: ' + paths.runtimeTrainingOptionsPath
+        );
+    }
+    return value;
+}
+
+function saveRuntimeTrainingOptions(options) {
+    const value = {
+        schema_version: 1,
+        threadedTraining: Boolean(options && options.threadedTraining),
+        localTraining: Boolean(options && options.localTraining),
+        updated_utc: new Date().toISOString(),
+    };
+    writeJsonAtomic(paths.runtimeTrainingOptionsPath, value);
+    return value;
+}
+
 function loadConfig() {
     if (!exists(paths.configPath)) {
         throw new Error('Tracked training configuration is missing: ' + paths.configPath);
     }
-    return readJson(paths.configPath);
+    const config = readJson(paths.configPath);
+    const runtimeOptions = readRuntimeTrainingOptions();
+    return runtimeOptions
+        ? applyRuntimeTrainingOptions(config, runtimeOptions)
+        : config;
 }
 
 function resolvePython(config) {
@@ -736,6 +786,7 @@ function readTail(filePath, maxLines = 1000, maxBytes = 1024 * 1024) {
 
 module.exports = {
     GAMEPLAY_SERVER_PORT,
+    applyRuntimeTrainingOptions,
     atomicReplace,
     ensureDir,
     ensureTokenFile,
@@ -753,6 +804,7 @@ module.exports = {
     paths,
     powershellExecutable,
     readJson,
+    readRuntimeTrainingOptions,
     readTail,
     rotateManagedLog,
     removeUtf8BomIfPresent,
@@ -768,6 +820,7 @@ module.exports = {
     runChecked,
     runSync,
     samePath,
+    saveRuntimeTrainingOptions,
     sha256File,
     sha256Text,
     sleep,
