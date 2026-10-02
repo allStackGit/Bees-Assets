@@ -176,6 +176,51 @@ class StructuredPolicyArchitectureTests(unittest.TestCase):
         self.assertEqual(calls["human_encoder"], 0)
         self.assertEqual(calls["human_trunk"], 0)
 
+    def test_slot_limited_no_grad_batch_still_skips_unused_faction(self):
+        from mlagents.torch_utils import torch
+
+        body = BeesStructuredNetworkBody(
+            self._observation_specs(),
+            self._network_settings(),
+        )
+        calls = {"bee_encoder": 0, "human_encoder": 0}
+
+        def count(name):
+            def hook(_module, _inputs, _output):
+                calls[name] += 1
+            return hook
+
+        handles = [
+            body.bee_observation_encoder.register_forward_hook(
+                count("bee_encoder")
+            ),
+            body.human_observation_encoder.register_forward_hook(
+                count("human_encoder")
+            ),
+        ]
+        observations = torch.zeros((3, BEES_OBSERVATION_SIZE))
+        observations[:, FACTION_INDEX] = 1.0
+        observations[:, ALLY_START] = 1.0
+        token = set_training_slot_limits({
+            "allies": 1,
+            "enemies": 1,
+            "entity_weapons": 1,
+            "mining": 1,
+            "map_objects": 1,
+            "collisions": 1,
+        })
+        try:
+            with torch.no_grad():
+                output, _ = body([observations])
+        finally:
+            reset_training_slot_limits(token)
+            for handle in handles:
+                handle.remove()
+
+        self.assertEqual(output.shape, (3, ACTION_ENCODING_SIZE))
+        self.assertEqual(calls["bee_encoder"], 1)
+        self.assertEqual(calls["human_encoder"], 0)
+
     def test_sparse_runtime_path_matches_dense_export_semantics(self):
         from mlagents.torch_utils import torch
 
