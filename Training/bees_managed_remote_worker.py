@@ -2208,8 +2208,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                                 "the managed worker.",
                                 flush=True,
                             )
-                            stale_recycle_grace_started_monotonic = time.monotonic()
-                            inner_control_stall_watchdog.observe(True, time.monotonic())
+                            restored_now = time.monotonic()
+                            stale_recycle_grace_started_monotonic = restored_now
+                            inner_control_stall_watchdog.observe(True, restored_now)
+                            private_path_watchdog.observe(True, restored_now)
+                            broker_path_watchdog.observe(True, restored_now)
                             control_failure_watchdog.reset()
                             next_status = 0.0
 
