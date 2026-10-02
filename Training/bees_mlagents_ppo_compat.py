@@ -215,6 +215,9 @@ class _PocaTrajectoryPipeline:
                 or not self._ready.empty()
             )
 
+    def overlap_drain_active(self) -> bool:
+        return self._overlap.is_set()
+
     def stats_snapshot(self):
         with self._state_lock:
             return {
@@ -2455,7 +2458,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             wrapped_trainer.advance = wrapped_advance
 
     def batched_poca_advance(self):
-        """Drain short trajectories, including values prepared during the previous PPO update."""
+        """Process ordinary trajectories, run PPO once, then commit admitted overlap work."""
 
         if self.policy is None or self.policy.use_recurrent:
             return original_poca_advance(self)
@@ -2510,99 +2513,138 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             ]
             return min(candidates) if candidates else None
 
-        with hierarchical_timer("process_trajectory"):
-            if pipeline is not None:
-                for prepared in pipeline.drain_ready():
-                    queried = True
+        def apply_prepared_results():
+            nonlocal queried
+            if pipeline is None:
+                return False
+            applied = False
+            for prepared in pipeline.drain_ready():
+                applied = True
+                queried = True
+                for trajectory in prepared["trajectories"]:
+                    observe_trajectory(trajectory)
+                if prepared.get("prepared"):
+                    _apply_prepared_poca_trajectory_batch(
+                        self,
+                        prepared,
+                        update_normalization=True,
+                    )
+                else:
+                    # Missing/failed snapshots are a performance fallback only.
+                    # The stock path preserves correctness and lifecycle behavior.
                     for trajectory in prepared["trajectories"]:
-                        observe_trajectory(trajectory)
-                    if prepared.get("prepared"):
-                        _apply_prepared_poca_trajectory_batch(
+                        original_poca_process_trajectory(
                             self,
-                            prepared,
-                            update_normalization=True,
+                            trajectory,
                         )
-                    else:
-                        # Snapshot absence/failure is a performance fallback only.
-                        # Commit each trajectory through the stock path so summary,
-                        # checkpoint and normalization ordering remain unchanged.
-                        for trajectory in prepared["trajectories"]:
-                            original_poca_process_trajectory(
-                                self,
-                                trajectory,
-                            )
+            return applied
 
-            # The background worker is the sole AgentManagerQueue consumer while
-            # it still owns an in-flight/held trajectory. Otherwise retain the
-            # original synchronous batching path.
-            pipeline_pending = (
-                pipeline is not None and pipeline.has_pending_work()
-            )
-            if not pipeline_pending:
-                for trajectory_queue in self.trajectory_queues:
-                    queue_size = trajectory_queue.qsize()
-                    for _ in range(queue_size):
-                        try:
-                            trajectory = trajectory_queue.get_nowait()
-                        except AgentManagerQueue.Empty:
-                            break
-                        queried = True
-                        observe_trajectory(trajectory)
-                        trajectory_experiences = len(trajectory.steps)
+        def drain_synchronous_queues():
+            nonlocal queried
+            nonlocal pending_experiences
 
+            for trajectory_queue in self.trajectory_queues:
+                queue_size = trajectory_queue.qsize()
+                for _ in range(queue_size):
+                    try:
+                        trajectory = trajectory_queue.get_nowait()
+                    except AgentManagerQueue.Empty:
+                        break
+                    queried = True
+                    observe_trajectory(trajectory)
+                    trajectory_experiences = len(trajectory.steps)
+
+                    boundary = next_bookkeeping_boundary()
+                    if (
+                        pending
+                        and boundary is not None
+                        and self.get_step
+                        + pending_experiences
+                        + trajectory_experiences
+                        >= boundary
+                    ):
+                        flush_pending()
                         boundary = next_bookkeeping_boundary()
-                        if (
-                            pending
-                            and boundary is not None
-                            and self.get_step
-                            + pending_experiences
-                            + trajectory_experiences
-                            >= boundary
-                        ):
-                            flush_pending()
-                            boundary = next_bookkeeping_boundary()
 
-                        if (
-                            not pending
-                            and boundary is not None
-                            and self.get_step != 0
-                            and self.get_step + trajectory_experiences >= boundary
-                        ):
-                            original_poca_process_trajectory(
-                                self,
-                                trajectory,
-                            )
-                            continue
+                    if (
+                        not pending
+                        and boundary is not None
+                        and self.get_step != 0
+                        and self.get_step + trajectory_experiences >= boundary
+                    ):
+                        original_poca_process_trajectory(
+                            self,
+                            trajectory,
+                        )
+                        continue
 
-                        if (
-                            pending
-                            and pending_experiences + trajectory_experiences
-                            > POCA_TRAJECTORY_BATCH_MAX_EXPERIENCES
-                        ):
-                            flush_pending()
+                    if (
+                        pending
+                        and pending_experiences + trajectory_experiences
+                        > POCA_TRAJECTORY_BATCH_MAX_EXPERIENCES
+                    ):
+                        flush_pending()
 
-                        if not trajectory.steps:
-                            flush_pending()
-                            original_poca_process_trajectory(
-                                self,
-                                trajectory,
-                            )
-                            continue
+                    if not trajectory.steps:
+                        flush_pending()
+                        original_poca_process_trajectory(
+                            self,
+                            trajectory,
+                        )
+                        continue
 
-                        pending.append(trajectory)
-                        pending_experiences += trajectory_experiences
+                    pending.append(trajectory)
+                    pending_experiences += trajectory_experiences
 
-                flush_pending()
+            flush_pending()
+
+        with hierarchical_timer("process_trajectory"):
+            apply_prepared_results()
+            # Do not race the snapshot worker for AgentManagerQueue ownership.
+            if pipeline is None or not pipeline.has_pending_work():
+                drain_synchronous_queues()
             if self.threaded and not queried:
                 time.sleep(0.0001)
 
+        did_update = False
         if self.should_still_train and self._is_ready_update():
             with hierarchical_timer("_update_policy"):
                 if self._update_policy():
+                    did_update = True
                     for policy_queue in self.policy_queues:
                         policy_queue.put(
                             self.get_policy(policy_queue.behavior_id)
                         )
+
+        # weighted_poca_update_policy() stops new WAN/self-play intake before
+        # returning but deliberately leaves the snapshot worker draining the
+        # internal queue. Finish that finite set now, before GhostTrainer can
+        # change learning teams. This prepares the next update buffer without
+        # launching a second PPO update in this advance() call.
+        if (
+            did_update
+            and pipeline is not None
+            and pipeline.overlap_drain_active()
+        ):
+            with hierarchical_timer("process_trajectory"):
+                while True:
+                    applied = apply_prepared_results()
+                    queued = sum(
+                        trajectory_queue.qsize()
+                        for trajectory_queue in self.trajectory_queues
+                    )
+                    if queued == 0 and not pipeline.has_pending_work():
+                        break
+                    if not applied:
+                        time.sleep(POCA_PIPELINE_IDLE_SECONDS)
+
+                pipeline.finish_overlap()
+                apply_prepared_results()
+
+                # A trajectory can be forwarded immediately before the global
+                # overlap gate closes. If it arrived after the worker observed
+                # an empty queue, process that final residue synchronously.
+                drain_synchronous_queues()
 
     def weighted_poca_update_policy(self):
         """ML-Agents 1.1.0 update while frozen critics prepare the next trajectories."""
