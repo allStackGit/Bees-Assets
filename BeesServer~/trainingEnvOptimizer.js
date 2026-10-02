@@ -272,6 +272,10 @@ class TrainingEnvOptimizer {
             candidate.measurement_started_ms = null;
             candidate.measurement_start_steps = null;
             candidate.measurement_start_produced_steps = null;
+            candidate.measurement_last_ms = null;
+            candidate.measurement_last_steps = null;
+            candidate.measurement_active_ms = 0;
+            candidate.measurement_active_steps = 0;
             candidate.source_steps = null;
             candidate.last_decision =
                 'cluster capacity changed; waiting to refresh global learner baseline';
@@ -312,6 +316,10 @@ class TrainingEnvOptimizer {
         state.measurement_started_ms = null;
         state.measurement_start_steps = null;
         state.measurement_start_produced_steps = null;
+        state.measurement_last_ms = null;
+        state.measurement_last_steps = null;
+        state.measurement_active_ms = 0;
+        state.measurement_active_steps = 0;
         state.source_steps = null;
         state.last_decision = 'resizing for throughput probe ' +
             state.baseline_envs + '->' + target;
@@ -573,6 +581,10 @@ class TrainingEnvOptimizer {
         state.measurement_started_ms = null;
         state.measurement_start_steps = null;
         state.measurement_start_produced_steps = null;
+        state.measurement_last_ms = null;
+        state.measurement_last_steps = null;
+        state.measurement_active_ms = 0;
+        state.measurement_active_steps = 0;
         state.source_steps = null;
         state.last_decision =
             (materiallyWorse ? 'throughput regressed' : 'no material throughput gain') +
