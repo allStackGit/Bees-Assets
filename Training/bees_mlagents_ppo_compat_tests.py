@@ -864,6 +864,50 @@ class PocaGpuCachePromotionTests(unittest.TestCase):
             4 * 8 * 4 + 2 * 8,
         )
 
+    def test_unindexed_cuda_device_uses_current_device_index_for_mem_info(self):
+        from mlagents.torch_utils import torch
+
+        cache = {
+            "current_obs": [torch.zeros((2, 3), dtype=torch.float32)],
+            "storage": "cpu",
+        }
+
+        def fake_move(value, device):
+            self.assertEqual(device, torch.device("cuda", 0))
+            return dict(value)
+
+        with (
+            mock.patch(
+                "mlagents.torch_utils.default_device",
+                return_value=torch.device("cuda"),
+            ),
+            mock.patch.object(
+                torch.cuda,
+                "is_available",
+                return_value=True,
+            ),
+            mock.patch.object(
+                torch.cuda,
+                "current_device",
+                return_value=0,
+            ),
+            mock.patch.object(
+                torch.cuda,
+                "mem_get_info",
+                return_value=(6 * 1024**3, 6 * 1024**3),
+            ) as mem_get_info,
+            mock.patch.object(
+                compat,
+                "_poca_move_cache_tensors",
+                side_effect=fake_move,
+            ),
+        ):
+            promoted, info = compat._promote_poca_update_tensor_cache(cache)
+
+        mem_get_info.assert_called_once_with(0)
+        self.assertEqual(promoted["storage"], "cuda")
+        self.assertEqual(info["storage"], "cuda")
+
     def test_cpu_device_keeps_cache_on_cpu(self):
         from mlagents.torch_utils import torch
 

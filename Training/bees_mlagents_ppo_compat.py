@@ -1350,7 +1350,15 @@ def _promote_poca_update_tensor_cache(cache):
     if getattr(device, "type", str(device)) != "cuda" or not torch.cuda.is_available():
         return cache, result
 
-    free_bytes, total_bytes = torch.cuda.mem_get_info(device)
+    # PyTorch 2.1.1 mem_get_info() requires an integer or an explicitly
+    # indexed CUDA device; ML-Agents default_device() returns torch.device("cuda")
+    # with no index. Resolve the current device once and use it consistently.
+    device_index = device.index
+    if device_index is None:
+        device_index = torch.cuda.current_device()
+    device_index = int(device_index)
+    device = torch.device("cuda", device_index)
+    free_bytes, total_bytes = torch.cuda.mem_get_info(device_index)
     reserve_bytes = max(
         POCA_GPU_CACHE_MIN_RESERVE_BYTES,
         int(total_bytes * POCA_GPU_CACHE_RESERVE_FRACTION),
