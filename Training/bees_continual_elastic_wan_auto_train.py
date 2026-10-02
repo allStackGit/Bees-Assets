@@ -67,6 +67,7 @@ def _normalize_zero_local_num_envs_for_mlagents(
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     raw_args = list(sys.argv[1:] if argv is None else argv)
+    raw_args, threaded_mode = elastic.extract_threaded_mode(raw_args)
     trainer_args, options = elastic.extract_elastic_wan_options(raw_args)
     if not options.enabled:
         raise SystemExit(
@@ -83,6 +84,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         patch = zero_local.install_elastic_wan_env_manager(
             options,
             force_zero_local=zero_local_requested,
+            threaded_mode=threaded_mode,
+            max_policy_lag=(
+                elastic.DEFAULT_THREADED_MAX_POLICY_LAG
+                if threaded_mode
+                else 0
+            ),
         )
         return continual_auto.main(trainer_args)
     finally:
