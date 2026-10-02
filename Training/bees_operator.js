@@ -27,7 +27,7 @@ function usage() {
     return [
         'Usage:',
         '  node Training/bees_operator.js build [--full-game] [--force] [--preserve-run]',
-        '  node Training/bees_operator.js runtime [--threaded] [--local-training]',
+        '  node Training/bees_operator.js runtime [--threaded [--policy-lag N]] [--local-training]',
         '  node Training/bees_operator.js server',
         '  node Training/bees_operator.js start [--new-run] [--env-arg VALUE ...]',
         '  node Training/bees_operator.js stop [--server]',
@@ -77,6 +77,8 @@ function parseArgs(argv = process.argv.slice(2)) {
         preserveRun: false,
         newRun: false,
         threaded: false,
+        policyLag: null,
+        explicitPolicyLag: false,
         localTraining: false,
         envArgs: [],
         once: false,
@@ -101,6 +103,25 @@ function parseArgs(argv = process.argv.slice(2)) {
             options.newRun = true;
         } else if (arg === '--threaded') {
             options.threaded = true;
+        } else if (arg === '--policy-lag') {
+            options.policyLag = parseNumber(
+                requireValue(argv, index, arg),
+                arg,
+                0,
+                2147483647,
+                true,
+            );
+            options.explicitPolicyLag = true;
+            index++;
+        } else if (arg.startsWith('--policy-lag=')) {
+            options.policyLag = parseNumber(
+                arg.slice('--policy-lag='.length),
+                '--policy-lag',
+                0,
+                2147483647,
+                true,
+            );
+            options.explicitPolicyLag = true;
         } else if (arg === '--local-training') {
             options.localTraining = true;
         } else if (arg === '--env-arg') {
@@ -155,6 +176,12 @@ function parseArgs(argv = process.argv.slice(2)) {
     }
     if (options.localTraining && command !== 'runtime') {
         throw new Error('--local-training is only valid with the runtime command.');
+    }
+    if (options.explicitPolicyLag && command !== 'runtime') {
+        throw new Error('--policy-lag is only valid with the runtime command.');
+    }
+    if (options.explicitPolicyLag && !options.threaded) {
+        throw new Error('--policy-lag requires --threaded.');
     }
     if (options.explicitLogPercent && command !== 'bundle') {
         throw new Error('--log-percent is only valid with the bundle command.');
