@@ -849,6 +849,130 @@ class PocaBatchedTrajectoryEvaluationTests(unittest.TestCase):
         )
 
 
+class PocaFrozenTrajectorySnapshotTests(unittest.TestCase):
+    def test_snapshot_evaluation_stays_cpu_graph_free_and_updates_private_normalizer(self):
+        import numpy as np
+        from mlagents.torch_utils import torch
+        from mlagents.trainers.buffer import AgentBuffer
+        from mlagents.trainers.trajectory import GroupObsUtil, ObsUtil
+
+        class FakeTrajectory:
+            def __init__(self, value):
+                self.buffer = AgentBuffer()
+                observation = np.zeros(
+                    compat.BEES_OBSERVATION_SIZE,
+                    dtype=np.float32,
+                )
+                observation[0] = value
+                self.buffer[ObsUtil.get_name_at(0)].append(observation)
+                self.buffer[GroupObsUtil.get_name_at(0)].append([])
+                next_observation = observation.copy()
+                next_observation[0] = value + 10.0
+                self.next_obs = [next_observation]
+                self.next_group_obs = []
+
+            def to_agentbuffer(self):
+                return self.buffer
+
+        calls = []
+
+        class FakeCritic:
+            def update_normalization(self, buffer):
+                calls.append(("normalize", buffer.num_experiences))
+
+            def critic_pass(
+                self,
+                all_obs,
+                memories=None,
+                sequence_length=1,
+            ):
+                values = all_obs[0][0][:, 0]
+                calls.append(
+                    (
+                        "critic",
+                        values.device.type,
+                        torch.is_grad_enabled(),
+                        int(values.shape[0]),
+                    )
+                )
+                return {"extrinsic": values.clone()}, None
+
+            def baseline(
+                self,
+                current_obs,
+                groupmate_obs_and_actions,
+                memories=None,
+                sequence_length=1,
+            ):
+                values = current_obs[0][:, 0]
+                calls.append(
+                    (
+                        "baseline",
+                        values.device.type,
+                        torch.is_grad_enabled(),
+                        int(values.shape[0]),
+                    )
+                )
+                return {"extrinsic": values + 100.0}, None
+
+        policy = SimpleNamespace(
+            use_recurrent=False,
+            behavior_spec=SimpleNamespace(
+                observation_specs=[
+                    SimpleNamespace(
+                        shape=(compat.BEES_OBSERVATION_SIZE,)
+                    )
+                ]
+            ),
+        )
+        snapshot = compat._PocaCriticSnapshot(
+            7,
+            policy,
+            FakeCritic(),
+        )
+        prepared = compat._prepare_poca_trajectory_batch_snapshot(
+            snapshot,
+            [FakeTrajectory(1.0), FakeTrajectory(2.0)],
+        )
+
+        np.testing.assert_allclose(
+            prepared["values"]["extrinsic"],
+            np.asarray([1.0, 2.0], dtype=np.float32),
+        )
+        np.testing.assert_allclose(
+            prepared["baselines"]["extrinsic"],
+            np.asarray([101.0, 102.0], dtype=np.float32),
+        )
+        np.testing.assert_allclose(
+            prepared["next_values"]["extrinsic"],
+            np.asarray([11.0, 12.0], dtype=np.float32),
+        )
+        self.assertEqual(calls[0], ("normalize", 2))
+        self.assertEqual(
+            calls[1:],
+            [
+                ("critic", "cpu", False, 2),
+                ("baseline", "cpu", False, 2),
+                ("critic", "cpu", False, 2),
+            ],
+        )
+
+    def test_publication_state_keeps_policy_version_and_lag(self):
+        compat._shutdown_all_poca_pipelines()
+        compat.note_poca_policy_publication(
+            "BeesRL1v1?team=0",
+            12,
+            max_policy_lag=4,
+        )
+        self.assertEqual(
+            compat._POCA_POLICY_PUBLICATIONS[
+                "BeesRL1v1?team=0"
+            ],
+            {"version": 12, "max_policy_lag": 4},
+        )
+        compat._shutdown_all_poca_pipelines()
+
+
 class PocaTensorCacheTests(unittest.TestCase):
     def test_cached_minibatch_selects_requested_rows_without_repadding(self):
         import numpy as np
