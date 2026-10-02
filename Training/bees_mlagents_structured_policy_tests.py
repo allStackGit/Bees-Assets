@@ -22,7 +22,9 @@ from bees_mlagents_structured_policy import (
     BeesStructuredActionModel,
     BeesStructuredNetworkBody,
     BeesStructuredObservationEncoder,
+    reset_training_faction_rows,
     reset_training_slot_limits,
+    set_training_faction_rows,
     set_training_slot_limits,
 )
 
@@ -314,6 +316,54 @@ class StructuredPolicyArchitectureTests(unittest.TestCase):
             output.sum().backward()
 
         self.assertEqual(output.shape, (4, ACTION_ENCODING_SIZE))
+
+    def test_precomputed_faction_rows_skip_unused_gradient_encoder(self):
+        from mlagents.torch_utils import torch
+
+        body = BeesStructuredNetworkBody(
+            self._observation_specs(),
+            self._network_settings(),
+        )
+        calls = {"bee_encoder": 0, "human_encoder": 0}
+
+        def count(name):
+            def hook(_module, _inputs, _output):
+                calls[name] += 1
+            return hook
+
+        handles = [
+            body.bee_observation_encoder.register_forward_hook(
+                count("bee_encoder")
+            ),
+            body.human_observation_encoder.register_forward_hook(
+                count("human_encoder")
+            ),
+        ]
+        observations = torch.zeros((4, BEES_OBSERVATION_SIZE))
+        observations[:, FACTION_INDEX] = 1.0
+        token = set_training_faction_rows({
+            "bee": (0, 1, 2, 3),
+            "human": (),
+            "mixed": (),
+        })
+        try:
+            with mock.patch.object(
+                torch,
+                "nonzero",
+                side_effect=AssertionError(
+                    "precomputed gradient faction rows must not use torch.nonzero"
+                ),
+            ):
+                output, _ = body([observations])
+                output.sum().backward()
+        finally:
+            reset_training_faction_rows(token)
+            for handle in handles:
+                handle.remove()
+
+        self.assertEqual(output.shape, (4, ACTION_ENCODING_SIZE))
+        self.assertEqual(calls["bee_encoder"], 1)
+        self.assertEqual(calls["human_encoder"], 0)
 
     def test_bee_and_human_actor_encoders_and_trunks_are_independent(self):
         from mlagents.torch_utils import torch
