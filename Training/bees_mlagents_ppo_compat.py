@@ -1285,10 +1285,17 @@ def _select_poca_update_tensor_cache(cache, indices):
         selected = tensor.index_select(0, index_tensor)
         return selected.to(device=device)
 
+    selected_groupmate_counts = cache["groupmate_counts"][indices]
+    max_groupmates = (
+        int(selected_groupmate_counts.max())
+        if selected_groupmate_counts.size
+        else 0
+    )
+
     current_obs = [take(tensor) for tensor in cache["current_obs"]]
     groupmate_obs = [
         [take(tensor) for tensor in groupmate]
-        for groupmate in cache["groupmate_obs"]
+        for groupmate in cache["groupmate_obs"][:max_groupmates]
     ]
     continuous_actions = take(cache["continuous_actions"])
     discrete_actions = take(cache["discrete_actions"])
@@ -1301,9 +1308,12 @@ def _select_poca_update_tensor_cache(cache, indices):
     )
 
     group_actions = []
-    group_count = max(
-        len(cache["group_continuous"]),
-        len(cache["group_discrete"]),
+    group_count = min(
+        max_groupmates,
+        max(
+            len(cache["group_continuous"]),
+            len(cache["group_discrete"]),
+        ),
     )
     for position in range(group_count):
         continuous = (
@@ -1355,7 +1365,7 @@ def _select_poca_update_tensor_cache(cache, indices):
             else take(cache["movement_activity"])
         ),
         "discrete_actions": discrete_actions,
-        "groupmate_counts": cache["groupmate_counts"][indices],
+        "groupmate_counts": selected_groupmate_counts,
         "slot_limits": cache["slot_limits"],
     }
 
@@ -1646,6 +1656,14 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         """Drain queued short trajectories into shared feed-forward POCA critic passes."""
 
         if self.policy is None or self.policy.use_recurrent:
+            return original_poca_advance(self)
+        behavior_spec = self.policy.behavior_spec
+        observation_specs = behavior_spec.observation_specs
+        if (
+            not _is_bees_action_spec(behavior_spec.action_spec)
+            or len(observation_specs) != 1
+            or tuple(observation_specs[0].shape) != (BEES_OBSERVATION_SIZE,)
+        ):
             return original_poca_advance(self)
 
         from mlagents_envs.timers import hierarchical_timer
