@@ -1116,8 +1116,86 @@ def _poca_cpu_tensor(values, dtype):
     )
 
 
+class _PocaRaggedGroupObs:
+    """Borrow the update buffer's ragged group observations without duplicating them."""
+
+    __slots__ = ("fields",)
+
+    def __init__(self, fields) -> None:
+        self.fields = tuple(fields)
+
+
+def _select_poca_ragged_group_obs(source, indices, groupmate_counts, device):
+    """Pack only the selected minibatch's real groupmate rows.
+
+    ML-Agents normally pads every groupmate position across the complete PPO buffer.
+    For Bees' large vector observation that can consume tens of GiB. Keep the original
+    ragged rows in AgentBuffer and construct the temporary padded representation only
+    for the current minibatch. Missing groupmates remain NaN so stock POCA masking
+    semantics are unchanged.
+    """
+
+    import numpy as np
+    from mlagents.torch_utils import torch
+
+    if not isinstance(source, _PocaRaggedGroupObs):
+        return []
+    indices = np.asarray(indices, dtype=np.int64)
+    counts = np.asarray(groupmate_counts, dtype=np.int32)
+    max_groupmates = int(counts.max()) if counts.size else 0
+    if max_groupmates <= 0:
+        return []
+
+    separated = []
+    for field in source.fields:
+        positions = []
+        for position in range(max_groupmates):
+            valid_rows = np.flatnonzero(counts > position).astype(
+                np.int64,
+                copy=False,
+            )
+            if valid_rows.size == 0:
+                continue
+            compact = np.stack(
+                [
+                    np.asarray(
+                        field[int(indices[row])][position],
+                        dtype=np.float32,
+                    )
+                    for row in valid_rows
+                ],
+                axis=0,
+            )
+            compact_tensor = _poca_cpu_tensor(
+                compact,
+                torch.float32,
+            ).to(device=device)
+            padded = torch.full(
+                (len(indices), *compact_tensor.shape[1:]),
+                float("nan"),
+                dtype=compact_tensor.dtype,
+                device=device,
+            )
+            padded.index_copy_(
+                0,
+                torch.as_tensor(
+                    valid_rows,
+                    dtype=torch.long,
+                    device=device,
+                ),
+                compact_tensor,
+            )
+            positions.append(padded)
+        separated.append(positions)
+
+    return [
+        [separated[obs_index][position] for obs_index in range(len(separated))]
+        for position in range(max_groupmates)
+    ]
+
+
 def _build_poca_update_tensor_cache(optimizer, buffer):
-    """Pre-pad and tensorize the feed-forward extrinsic POCA update buffer once."""
+    """Tensorize fixed PPO fields once while retaining group observations ragged."""
 
     import numpy as np
     from mlagents.torch_utils import torch
@@ -1156,20 +1234,12 @@ def _build_poca_update_tensor_cache(optimizer, buffer):
             len(policy.behavior_spec.observation_specs),
         )
     ]
-    padded_group_obs = GroupObsUtil.from_buffer(
-        buffer,
-        len(policy.behavior_spec.observation_specs),
+    groupmate_obs = _PocaRaggedGroupObs(
+        buffer[GroupObsUtil.get_name_at(index)]
+        for index in range(
+            len(policy.behavior_spec.observation_specs)
+        )
     )
-    groupmate_obs = [
-        [
-            _poca_cpu_tensor(
-                np.asarray(obs, dtype=np.float32),
-                torch.float32,
-            )
-            for obs in groupmate
-        ]
-        for groupmate in padded_group_obs
-    ]
 
     def field_tensor(key, dtype):
         return _poca_cpu_tensor(buffer[key].get_batch(), dtype)
@@ -1444,10 +1514,12 @@ def _select_poca_update_tensor_cache(cache, indices):
     }
 
     current_obs = [take(tensor) for tensor in cache["current_obs"]]
-    groupmate_obs = [
-        [take(tensor) for tensor in groupmate]
-        for groupmate in cache["groupmate_obs"][:max_groupmates]
-    ]
+    groupmate_obs = _select_poca_ragged_group_obs(
+        cache["groupmate_obs"],
+        indices,
+        selected_groupmate_counts,
+        device,
+    )
     continuous_actions = take(cache["continuous_actions"])
     discrete_actions = take(cache["discrete_actions"])
     actions = AgentAction(
@@ -1976,6 +2048,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             f"cache_free_mib={device_cache['free_before'] / (1024 * 1024):.1f} "
             f"cache_reserve_mib={device_cache['reserve'] / (1024 * 1024):.1f} "
             f"cache_copy={device_cache['copy_seconds']:.6f} "
+            f"group_obs=ragged-minibatch "
             f"materialize={materialize_seconds:.6f}",
             flush=True,
         )
