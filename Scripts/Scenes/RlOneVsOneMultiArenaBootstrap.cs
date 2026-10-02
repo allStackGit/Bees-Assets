@@ -167,13 +167,16 @@ internal sealed class RlOneVsOneMultiArenaBootstrap : MonoBehaviour
 
     private void FixedUpdate()
     {
-        if (!_applied || _stage == null || !RlOneVsOneTrainingBootstrap.IsActiveFor(_stage))
+        if (!_applied || _stage == null || !RlOneVsOneTrainingBootstrap.IsActiveFor(_stage) ||
+            !RlOneVsOneTrainingBootstrap.ShouldConstrainShipsToArena(
+                RlOneVsOneTrainingBootstrap.CurrentStaticObstaclesEnabled))
         {
             return;
         }
 
         // The legacy runtime guard handles PrimaryLevel. Handle confinement only for the additional
-        // Levels here; durability is centralized in RlOneVsOneTrainingDurabilityGuard for all arenas.
+        // Levels here when the non-lethal boundary guard is active; durability is centralized in
+        // RlOneVsOneTrainingDurabilityGuard for all arenas.
         IReadOnlyList<Level> levels = _stage.Levels;
         for (int levelIndex = 1; levelIndex < levels.Count; levelIndex++)
         {
