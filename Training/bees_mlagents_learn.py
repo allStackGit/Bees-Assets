@@ -987,6 +987,13 @@ def _install_threaded_trainer_failure_propagation():
     failure = {"exc_info": None}
 
     def guarded_trainer_update(controller, trainer):
+        from mlagents import torch_utils
+
+        # torch.set_default_device() is thread-local. ML-Agents configures CUDA on the
+        # main thread before spawning threaded trainers, so establish the same default
+        # device at trainer-thread entry before ModelUtils.list_to_tensor() creates any
+        # optimizer/value tensors.
+        torch_utils.torch.set_default_device(torch_utils.default_device())
         try:
             return original_update(controller, trainer)
         except BaseException:
