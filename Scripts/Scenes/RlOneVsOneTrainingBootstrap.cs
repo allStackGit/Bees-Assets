@@ -72,6 +72,11 @@ internal static class RlOneVsOneTrainingBootstrap
     internal static bool CurrentStaticObstaclesEnabled => RuntimeOptions.StaticObstaclesEnabled;
     internal static bool CurrentMiningAsteroidsEnabled => RuntimeOptions.MiningAsteroidsEnabled;
 
+    internal static bool ShouldConstrainShipsToArena(bool staticObstaclesEnabled)
+    {
+        return !staticObstaclesEnabled;
+    }
+
     private static RlOneVsOneTrainingOptions RuntimeOptions
     {
         get
@@ -418,9 +423,10 @@ internal sealed class RlOneVsOneTrainingStartupGate : MonoBehaviour
 }
 
 /// <summary>
-/// Dedicated presentation and arena guard for RL combat training. It runs after ordinary gameplay
-/// FixedUpdate callbacks so the policy can use the normal ship movement code while still respecting
-/// the configured training arena. This is deliberately scoped to the dedicated RL scene.
+/// Dedicated presentation and optional arena guard for RL combat training. It runs after ordinary
+/// gameplay FixedUpdate callbacks. When static obstacles are enabled, the lethal map border owns
+/// confinement so the policy experiences the border exactly like the navigation grid represents it.
+/// This component clamps movement only when static obstacles are disabled.
 /// </summary>
 [DefaultExecutionOrder(10000)]
 internal sealed class RlOneVsOneTrainingRuntimeGuard : MonoBehaviour
@@ -436,7 +442,9 @@ internal sealed class RlOneVsOneTrainingRuntimeGuard : MonoBehaviour
 
     private void FixedUpdate()
     {
-        if (!RlOneVsOneTrainingBootstrap.IsActiveFor(_stage))
+        if (!RlOneVsOneTrainingBootstrap.IsActiveFor(_stage) ||
+            !RlOneVsOneTrainingBootstrap.ShouldConstrainShipsToArena(
+                RlOneVsOneTrainingBootstrap.CurrentStaticObstaclesEnabled))
         {
             return;
         }
