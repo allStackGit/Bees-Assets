@@ -523,6 +523,7 @@ class ElasticWanBroker(base.WanActorBroker):
         self._claims: Dict[str, Dict[str, Any]] = {}
         self._consumed_steps_by_actor: Dict[int, int] = collections.defaultdict(int)
         self._trainer_step = 0
+        self._optimizer_busy_seconds_total = 0.0
         self._fair_drain_cursor = 0
         self._topology_epoch = 0
         self.diagnostics = CapacityDiagnostics(self.local_envs)
@@ -806,6 +807,9 @@ class ElasticWanBroker(base.WanActorBroker):
                 "remote_envs": sum(active.values()),
                 "local_envs": self.local_envs,
                 "trainer_step": int(self._trainer_step),
+                "optimizer_busy_seconds_total": float(
+                    self._optimizer_busy_seconds_total
+                ),
                 "consumed_steps_by_actor": {
                     str(actor_id): int(self._consumed_steps_by_actor.get(actor_id, 0))
                     for actor_id in active
@@ -1158,6 +1162,20 @@ class ElasticWanBroker(base.WanActorBroker):
                 self._trainer_step = int(step)
         self.diagnostics.observe_trainer_step(step)
 
+    def observe_optimizer_busy_seconds(self, seconds: float) -> None:
+        try:
+            value = float(seconds)
+        except (TypeError, ValueError):
+            return
+        if not math.isfinite(value) or value < 0.0:
+            return
+        with self._condition:
+            if value >= self._optimizer_busy_seconds_total:
+                changed = value != self._optimizer_busy_seconds_total
+                self._optimizer_busy_seconds_total = value
+                if changed:
+                    self._condition.notify_all()
+
     def report_capacity(self) -> None:
         with self._condition:
             active = self._active_snapshot_locked()
@@ -1332,6 +1350,8 @@ def install_elastic_wan_env_manager(options: ElasticWanOptions) -> Optional[Elas
             )
 
     def monitored_advance(controller: Any, env_manager: Any) -> int:
+        from bees_mlagents_ppo_compat import poca_update_busy_seconds_total
+
         broker = getattr(env_manager, "_bees_wan_broker", None)
         starting_policy_epoch = (
             broker.policy_publication_epoch() if broker is not None else 0
@@ -1347,6 +1367,9 @@ def install_elastic_wan_env_manager(options: ElasticWanOptions) -> Optional[Elas
                     continue
             if steps:
                 broker.observe_trainer_step(max(steps))
+            broker.observe_optimizer_busy_seconds(
+                poca_update_busy_seconds_total()
+            )
         return result
 
     learn.SubprocessEnvManager = ElasticWanEnvManager
