@@ -289,12 +289,16 @@ class ElasticActorLiveResizeTests(unittest.TestCase):
         )
         session = self._session(manager, 2)
 
-        self.assertFalse(session._scale_up_one(3))
+        self.assertFalse(session._scale_up_one(12))
 
         self.assertEqual(manager.env_workers, existing)
         self.assertEqual(manager.workers_alive, 2)
         self.assertEqual(session.env_count, 2)
-        self.assertEqual(session._resize_failed_target, 3)
+        self.assertEqual(
+            session._resize_failed_target,
+            12,
+            "an intermediate worker failure must reject the optimizer's full requested probe",
+        )
         self.assertIn("behavior specifications do not match", session._resize_failure["error"])
 
     def test_capacity_registration_reclaims_expired_same_actor_slot(self):
