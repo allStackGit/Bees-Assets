@@ -516,12 +516,14 @@ class ElasticActorThroughputTests(unittest.TestCase):
                 {
                     "policy_cycle": 7,
                     "trainer_step": 600,
+                    "optimizer_busy_seconds_total": 12.5,
                     "consumed_steps_by_actor": {"0": 1200},
                 }
             )
 
         self.assertEqual(session.policy_cycle, 7)
         self.assertEqual(session.learner_step, 600)
+        self.assertEqual(session.optimizer_busy_seconds_total, 12.5)
         self.assertEqual(session._learner_consumed_steps_total, 1200)
         self.assertAlmostEqual(session._learner_consumed_steps_per_sec, 100.0)
         session._write_throughput_metrics.assert_called_once_with()
