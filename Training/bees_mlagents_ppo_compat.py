@@ -1287,6 +1287,28 @@ def _poca_group_obs_cache_nbytes(value) -> int:
     return int(value.nbytes) if isinstance(value, _PocaPackedGroupObs) else 0
 
 
+def _move_poca_packed_group_obs(value, device):
+    """Move packed group observation values while retaining CPU lookup metadata."""
+
+    if not isinstance(value, _PocaPackedGroupObs):
+        return value
+    fields = []
+    for field in value.fields:
+        positions = []
+        for position in field:
+            if position is None:
+                positions.append(None)
+                continue
+            positions.append(
+                _PocaPackedGroupPosition(
+                    position.lookup,
+                    position.values.to(device=device),
+                )
+            )
+        fields.append(tuple(positions))
+    return _PocaPackedGroupObs(fields, value.nbytes)
+
+
 def _select_poca_ragged_group_obs(source, indices, groupmate_counts, device):
     """Pack only the selected minibatch's real groupmate rows.
 
@@ -1330,14 +1352,17 @@ def _select_poca_ragged_group_obs(source, indices, groupmate_counts, device):
                     np.int64,
                     copy=False,
                 )
+                packed_device = packed_position.values.device
                 compact_tensor = packed_position.values.index_select(
                     0,
                     torch.as_tensor(
                         selected_ids,
                         dtype=torch.long,
-                        device=torch.device("cpu"),
+                        device=packed_device,
                     ),
-                ).to(device=device)
+                )
+                if compact_tensor.device != device:
+                    compact_tensor = compact_tensor.to(device=device)
             else:
                 compact = np.stack(
                     [
@@ -1586,16 +1611,26 @@ def _promote_poca_update_tensor_cache(cache):
             "storage": "off",
             "bytes": 0,
             "copy_seconds": 0.0,
+            "group_storage": "off",
+            "group_bytes": 0,
+            "group_copy_seconds": 0.0,
             "free_before": 0,
             "reserve": 0,
         }
 
     cache_bytes = _poca_tensor_cache_nbytes(cache)
     device = default_device()
+    group_cache = cache.get("groupmate_obs")
+    group_cache_bytes = _poca_group_obs_cache_nbytes(group_cache)
     result = {
         "storage": "cpu",
         "bytes": int(cache_bytes),
         "copy_seconds": 0.0,
+        "group_storage": (
+            "cpu" if isinstance(group_cache, _PocaPackedGroupObs) else "off"
+        ),
+        "group_bytes": int(group_cache_bytes),
+        "group_copy_seconds": 0.0,
         "free_before": 0,
         "reserve": 0,
     }
@@ -1643,6 +1678,60 @@ def _promote_poca_update_tensor_cache(cache):
     promoted["storage"] = "cuda"
     result["storage"] = "cuda"
     result["copy_seconds"] = time.perf_counter() - started
+
+    promoted_group = promoted.get("groupmate_obs")
+    if (
+        isinstance(promoted_group, _PocaPackedGroupObs)
+        and promoted_group.nbytes > 0
+    ):
+        group_free_bytes, group_total_bytes = torch.cuda.mem_get_info(
+            device_index
+        )
+        group_allocated_bytes = int(
+            torch.cuda.memory_allocated(device_index)
+        )
+        group_reserved_bytes = int(
+            torch.cuda.memory_reserved(device_index)
+        )
+        group_reusable_bytes = max(
+            0,
+            group_reserved_bytes - group_allocated_bytes,
+        )
+        group_effective_free = (
+            int(group_free_bytes) + group_reusable_bytes
+        )
+        group_reserve = max(
+            POCA_GPU_CACHE_MIN_RESERVE_BYTES,
+            int(
+                group_total_bytes
+                * POCA_GPU_CACHE_RESERVE_FRACTION
+            ),
+        )
+        if promoted_group.nbytes <= max(
+            0,
+            group_effective_free - group_reserve,
+        ):
+            group_started = time.perf_counter()
+            try:
+                gpu_group = _move_poca_packed_group_obs(
+                    promoted_group,
+                    device,
+                )
+            except RuntimeError as exc:
+                if "out of memory" not in str(exc).lower():
+                    raise
+                torch.cuda.empty_cache()
+                print(
+                    "[Bees PPO timing] packed group cache promotion skipped after CUDA OOM; "
+                    "keeping group observations on CPU.",
+                    flush=True,
+                )
+            else:
+                promoted["groupmate_obs"] = gpu_group
+                result["group_storage"] = "cuda"
+                result["group_copy_seconds"] = (
+                    time.perf_counter() - group_started
+                )
     return promoted, result
 
 
@@ -2238,8 +2327,10 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             f"cache_allocator_reusable_mib={device_cache.get('allocator_reusable_before', 0) / (1024 * 1024):.1f} "
             f"cache_reserve_mib={device_cache['reserve'] / (1024 * 1024):.1f} "
             f"cache_copy={device_cache['copy_seconds']:.6f} "
-            f"group_obs={'packed-cpu' if tensor_cache is not None and isinstance(tensor_cache.get('groupmate_obs'), _PocaPackedGroupObs) else 'ragged-minibatch'} "
-            f"group_cache_mib={_poca_group_obs_cache_nbytes(None if tensor_cache is None else tensor_cache.get('groupmate_obs')) / (1024 * 1024):.1f} "
+            f"group_obs={'packed' if tensor_cache is not None and isinstance(tensor_cache.get('groupmate_obs'), _PocaPackedGroupObs) else 'ragged-minibatch'} "
+            f"group_cache_storage={device_cache.get('group_storage', 'off')} "
+            f"group_cache_mib={device_cache.get('group_bytes', 0) / (1024 * 1024):.1f} "
+            f"group_cache_copy={device_cache.get('group_copy_seconds', 0.0):.6f} "
             f"materialize={materialize_seconds:.6f}",
             flush=True,
         )
