@@ -1174,6 +1174,26 @@ class PocaTensorCacheTests(unittest.TestCase):
             self.assertTrue(np.isnan(second_groupmate[1]))
             self.assertIsInstance(
                 cache["groupmate_obs"],
+                compat._PocaPackedGroupObs,
+            )
+            self.assertEqual(
+                compat._poca_group_obs_cache_nbytes(
+                    cache["groupmate_obs"]
+                ),
+                4 * compat.BEES_OBSERVATION_SIZE * 4,
+            )
+            with mock.patch.object(
+                compat,
+                "POCA_PACKED_GROUP_CACHE_MAX_BYTES",
+                1,
+            ):
+                fallback_group_obs = compat._build_poca_group_obs_cache(
+                    policy,
+                    buffer,
+                    np.asarray([1, 1, 2], dtype=np.int32),
+                )
+            self.assertIsInstance(
+                fallback_group_obs,
                 compat._PocaRaggedGroupObs,
             )
             np.testing.assert_array_equal(
