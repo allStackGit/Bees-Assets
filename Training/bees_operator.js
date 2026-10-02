@@ -27,7 +27,7 @@ function usage() {
     return [
         'Usage:',
         '  node Training/bees_operator.js build [--full-game] [--force] [--preserve-run]',
-        '  node Training/bees_operator.js runtime',
+        '  node Training/bees_operator.js runtime [--threaded] [--local-training]',
         '  node Training/bees_operator.js server',
         '  node Training/bees_operator.js start [--new-run] [--env-arg VALUE ...]',
         '  node Training/bees_operator.js stop [--server]',
@@ -76,6 +76,8 @@ function parseArgs(argv = process.argv.slice(2)) {
         force: false,
         preserveRun: false,
         newRun: false,
+        threaded: false,
+        localTraining: false,
         envArgs: [],
         once: false,
         refreshSeconds: 2,
@@ -97,6 +99,10 @@ function parseArgs(argv = process.argv.slice(2)) {
             options.preserveRun = true;
         } else if (arg === '--new-run') {
             options.newRun = true;
+        } else if (arg === '--threaded') {
+            options.threaded = true;
+        } else if (arg === '--local-training') {
+            options.localTraining = true;
         } else if (arg === '--env-arg') {
             options.envArgs.push(String(requireValue(argv, index, arg)));
             index++;
@@ -143,6 +149,12 @@ function parseArgs(argv = process.argv.slice(2)) {
     }
     if (options.newRun && command !== 'start') {
         throw new Error('--new-run is only valid with the start command.');
+    }
+    if (options.threaded && command !== 'runtime') {
+        throw new Error('--threaded is only valid with the runtime command.');
+    }
+    if (options.localTraining && command !== 'runtime') {
+        throw new Error('--local-training is only valid with the runtime command.');
     }
     if (options.explicitLogPercent && command !== 'bundle') {
         throw new Error('--log-percent is only valid with the bundle command.');
