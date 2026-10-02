@@ -941,7 +941,7 @@ class ElasticBrokerTests(unittest.TestCase):
         broker, specs = self._broker()
         actor_id = broker.claim_actor({**broker.release_identity, "actor_key": "machine-a", "actor_instance_id": "process-a", "env_count": 8})
         with self.assertRaisesRegex(
-            base.ActorClaimRequiredError,
+            elastic.base.ActorClaimRequiredError,
             "no active claim",
         ):
             broker.register_actor(
