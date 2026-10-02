@@ -234,12 +234,14 @@ class ZeroLocalBrokerTests(unittest.TestCase):
 
         batch = manager._wait_for_current_remote_batch()
         self.assertEqual(batch["step_count"], 19)
+        broker.observe_optimizer_busy_seconds(12.5)
         state = broker.wait_state(
             broker._policy_epoch,
             broker.control_epoch,
             0.0,
         )
         self.assertEqual(state["consumed_steps_by_actor"]["0"], 19)
+        self.assertEqual(state["optimizer_busy_seconds_total"], 12.5)
 
     def test_stale_release_cannot_seed_zero_local_behavior_specs(self):
         broker = self._broker()
