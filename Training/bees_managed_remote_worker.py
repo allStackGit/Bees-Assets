@@ -39,6 +39,7 @@ DEFAULT_RECONNECT_SECONDS = 5.0
 WORKER_REGISTRATION_GRACE_SECONDS = 30.0
 MAX_STALE_TRANSPORT_RECYCLES = 2
 BROKER_PATH_FAILURE_SECONDS = 60.0
+PRIVATE_PATH_FAILURE_SECONDS = 30.0
 DEFAULT_GAMEPLAY_PORT = 7146
 TRAINING_GAMEPLAY_HOST_ENV = "BEES_TRAINING_GAMEPLAY_HOST"
 TRAINING_GAMEPLAY_PORT_ENV = "BEES_TRAINING_GAMEPLAY_PORT"
@@ -1532,6 +1533,19 @@ def _training_desired(status: object) -> bool:
     return bool(desired.get("training_enabled", False))
 
 
+def _private_transport_reachable(
+    status: object,
+    broker_healthy: bool,
+) -> bool:
+    """A live control or WAN response proves the private tailnet path is carrying traffic.
+
+    This intentionally ignores Unity/rollout progress. Slow disk-backed worker startup or an
+    environment-count resize can take minutes without implying any private-network failure.
+    """
+
+    return isinstance(status, Mapping) or bool(broker_healthy)
+
+
 class _TransportWatchdog:
     def __init__(self, timeout_seconds: float) -> None:
         if timeout_seconds <= 0:
@@ -2135,6 +2149,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     # already stranded stopped waiting for desired state.
                     inner_control_stall_watchdog = _TransportWatchdog(10.0)
                     broker_path_watchdog = _TransportWatchdog(BROKER_PATH_FAILURE_SECONDS)
+                    private_path_watchdog = _TransportWatchdog(
+                        PRIVATE_PATH_FAILURE_SECONDS
+                    )
                     while (
                         runtime_cutover is None
                         and worker is not None
@@ -2202,20 +2219,56 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                             control_healthy = isinstance(status, Mapping)
                             record = _trainer_record(status, trainer_id)
 
-                            # Do not tear down a healthy private network merely because the central
-                            # control service is restarting. The worker lease handles a genuine
-                            # control outage fail-closed and will reconcile when control returns.
-                            # Clear asymmetric-failure history across a global outage so old failed
-                            # POSTs cannot trigger a transport recycle after recovery.
+                            # Probe the broker whenever control is unavailable, even if the outer
+                            # status path cannot tell us whether training is desired. Either a
+                            # successful control response or a successful broker response proves
+                            # that this worker's private tsnet path is carrying traffic. If BOTH
+                            # remain unavailable, recycle only the private transport. This is
+                            # deliberately independent of Unity/rollout progress so Lancaster's
+                            # slow USB-backed startup/resizes cannot trigger network recovery.
+                            broker_healthy = True
+                            if not control_healthy or _training_desired(status):
+                                broker_healthy = _broker_session_available(args)
+                            private_path_healthy = _private_transport_reachable(
+                                status,
+                                broker_healthy,
+                            )
+                            if private_path_watchdog.observe(
+                                private_path_healthy,
+                                now,
+                            ):
+                                print(
+                                    "[Bees remote] control and WAN broker paths were both "
+                                    f"unreachable for {PRIVATE_PATH_FAILURE_SECONDS:g}s; "
+                                    "recycling private transport without restarting the "
+                                    "managed worker.",
+                                    file=sys.stderr,
+                                    flush=True,
+                                )
+                                try:
+                                    _terminate(tailnet)
+                                except RuntimeError as exc:
+                                    raise _SupervisorProcessRestartRequired(
+                                        "unreachable private transport could not be recycled: "
+                                        + str(exc)
+                                    ) from exc
+                                if tailnet_log_thread is not None:
+                                    tailnet_log_thread.join(timeout=1.0)
+                                tailnet = None
+                                tailnet_log_thread = None
+                                private_path_watchdog.observe(True, now)
+                                broker_path_watchdog.observe(True, now)
+                                stale_recycle_grace_started_monotonic = now
+                                continue
+
+                            # A central control outage alone is not enough to restart Unity. The
+                            # worker lease handles fail-closed behavior and reconciliation after
+                            # control returns. Clear asymmetric-control failure history across it.
                             if not control_healthy:
-                                # Continuously move the stale-record deadline while central control
-                                # is absent. When it returns, the existing worker gets a full bounded
-                                # heartbeat window to reconcile before stale status can recycle it.
                                 stale_recycle_grace_started_monotonic = now
                                 inner_control_stall_watchdog.observe(True, now)
                                 control_failure_watchdog.reset()
                             if control_healthy and _training_desired(status):
-                                broker_healthy = _broker_session_available(args)
                                 if broker_path_watchdog.observe(broker_healthy, now):
                                     print(
                                         "[Bees remote] WAN broker path remained unavailable while "
@@ -2236,6 +2289,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                                     tailnet = None
                                     tailnet_log_thread = None
                                     broker_path_watchdog.observe(True, now)
+                                    private_path_watchdog.observe(True, now)
                                     stale_recycle_grace_started_monotonic = now
                                     continue
                             else:
