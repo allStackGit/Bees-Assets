@@ -1029,6 +1029,69 @@ class PocaGpuCachePromotionTests(unittest.TestCase):
         self.assertEqual(info["group_bytes"], 16)
         move_group.assert_called_once()
 
+    def test_group_cache_stays_cpu_without_displacing_fixed_gpu_cache(self):
+        import numpy as np
+        from mlagents.torch_utils import torch
+
+        group = compat._PocaPackedGroupObs(
+            [
+                [
+                    compat._PocaPackedGroupPosition(
+                        np.asarray([0], dtype=np.int32),
+                        torch.zeros((1, 4), dtype=torch.float32),
+                    )
+                ]
+            ],
+            3 * 1024**3,
+        )
+        cache = {
+            "current_obs": [torch.zeros((2, 3), dtype=torch.float32)],
+            "groupmate_obs": group,
+            "storage": "cpu",
+        }
+
+        with (
+            mock.patch(
+                "mlagents.torch_utils.default_device",
+                return_value=torch.device("cuda"),
+            ),
+            mock.patch.object(torch.cuda, "is_available", return_value=True),
+            mock.patch.object(torch.cuda, "current_device", return_value=0),
+            mock.patch.object(
+                torch.cuda,
+                "mem_get_info",
+                side_effect=[
+                    (6 * 1024**3, 6 * 1024**3),
+                    (1024**3, 6 * 1024**3),
+                ],
+            ),
+            mock.patch.object(
+                torch.cuda,
+                "memory_allocated",
+                return_value=512 * 1024**2,
+            ),
+            mock.patch.object(
+                torch.cuda,
+                "memory_reserved",
+                return_value=1024 * 1024**2,
+            ),
+            mock.patch.object(
+                compat,
+                "_poca_move_cache_tensors",
+                side_effect=lambda value, _device: dict(value),
+            ),
+            mock.patch.object(
+                compat,
+                "_move_poca_packed_group_obs",
+            ) as move_group,
+        ):
+            promoted, info = compat._promote_poca_update_tensor_cache(cache)
+
+        self.assertEqual(promoted["storage"], "cuda")
+        self.assertIs(promoted["groupmate_obs"], group)
+        self.assertEqual(info["group_storage"], "cpu")
+        move_group.assert_not_called()
+
     def test_cpu_device_keeps_cache_on_cpu(self):
         from mlagents.torch_utils import torch
 
