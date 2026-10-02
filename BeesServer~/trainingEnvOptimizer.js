@@ -1137,15 +1137,6 @@ class TrainingEnvOptimizer {
             }
 
             const delta = state.measurement_active_steps;
-            if (delta === 0 && producedDelta !== null && producedDelta > 0) {
-                this._resetMeasurement(
-                    state,
-                    timestamp,
-                    totalSteps,
-                    'worker produced rollouts but the global learner did not advance; retrying measurement',
-                );
-                return this.snapshot(record.trainer_id);
-            }
             const sps = elapsed > 0 ? (delta * 1000) / elapsed : 0;
             this._finishMeasurement(state, capacity, timestamp, sps);
             return this.snapshot(record.trainer_id);
