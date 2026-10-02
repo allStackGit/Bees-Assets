@@ -280,6 +280,7 @@ class InactiveContinuousActionMaskTests(unittest.TestCase):
         original_ppo_update = TorchPPOOptimizer.update
         original_poca_update = TorchPOCAOptimizer.update
         original_poca_update_policy = POCATrainer._update_policy
+        original_poca_advance = POCATrainer.advance
         original_policy_loss = ModelUtils.trust_region_policy_loss
         original_masked_mean = ModelUtils.masked_mean
         original_bc_update = BCModule._update_batch
@@ -292,6 +293,7 @@ class InactiveContinuousActionMaskTests(unittest.TestCase):
         self.assertIsNot(TorchPPOOptimizer.update, original_ppo_update)
         self.assertIsNot(TorchPOCAOptimizer.update, original_poca_update)
         self.assertIsNot(POCATrainer._update_policy, original_poca_update_policy)
+        self.assertIsNot(POCATrainer.advance, original_poca_advance)
         self.assertIsNot(ModelUtils.trust_region_policy_loss, original_policy_loss)
         self.assertIsNot(ModelUtils.masked_mean, original_masked_mean)
         self.assertIsNot(BCModule._update_batch, original_bc_update)
@@ -303,6 +305,7 @@ class InactiveContinuousActionMaskTests(unittest.TestCase):
         self.assertIs(TorchPPOOptimizer.update, original_ppo_update)
         self.assertIs(TorchPOCAOptimizer.update, original_poca_update)
         self.assertIs(POCATrainer._update_policy, original_poca_update_policy)
+        self.assertIs(POCATrainer.advance, original_poca_advance)
         self.assertIs(ModelUtils.trust_region_policy_loss, original_policy_loss)
         self.assertIs(ModelUtils.masked_mean, original_masked_mean)
         self.assertIs(BCModule._update_batch, original_bc_update)
@@ -742,6 +745,246 @@ class StructuredTrainingSlotLimitTests(unittest.TestCase):
 
         self.assertEqual(limits["allies"], 2)
         self.assertEqual(limits["enemies"], 3)
+
+
+class PocaBatchedTrajectoryEvaluationTests(unittest.TestCase):
+    def test_batch_evaluates_current_and_bootstrap_values_without_grad(self):
+        import numpy as np
+        from mlagents.torch_utils import torch
+        from mlagents.trainers.buffer import AgentBuffer
+        from mlagents.trainers.trajectory import GroupObsUtil, ObsUtil
+
+        buffers = []
+        for values in ((1.0, 2.0), (3.0,)):
+            buffer = AgentBuffer()
+            for value in values:
+                observation = np.zeros(
+                    compat.BEES_OBSERVATION_SIZE,
+                    dtype=np.float32,
+                )
+                observation[0] = value
+                buffer[ObsUtil.get_name_at(0)].append(observation)
+                buffer[GroupObsUtil.get_name_at(0)].append([])
+            buffers.append(buffer)
+
+        trajectories = []
+        for value in (10.0, 20.0):
+            observation = np.zeros(
+                compat.BEES_OBSERVATION_SIZE,
+                dtype=np.float32,
+            )
+            observation[0] = value
+            trajectories.append(
+                SimpleNamespace(
+                    next_obs=[observation],
+                    next_group_obs=[],
+                )
+            )
+
+        calls = []
+
+        class FakeCritic:
+            def critic_pass(
+                self,
+                all_obs,
+                memories=None,
+                sequence_length=1,
+            ):
+                values = all_obs[0][0][:, 0]
+                calls.append(
+                    ("critic", int(values.shape[0]), torch.is_grad_enabled())
+                )
+                return {"extrinsic": values.clone()}, None
+
+            def baseline(
+                self,
+                current_obs,
+                groupmate_obs_and_actions,
+                memories=None,
+                sequence_length=1,
+            ):
+                values = current_obs[0][:, 0]
+                calls.append(
+                    ("baseline", int(values.shape[0]), torch.is_grad_enabled())
+                )
+                return {"extrinsic": values + 100.0}, None
+
+        trainer = SimpleNamespace(
+            policy=SimpleNamespace(
+                use_recurrent=False,
+                behavior_spec=SimpleNamespace(
+                    observation_specs=[object()]
+                ),
+            ),
+            optimizer=SimpleNamespace(critic=FakeCritic()),
+        )
+
+        values, baselines, next_values = (
+            compat._evaluate_poca_trajectory_batch(
+                trainer,
+                buffers,
+                trajectories,
+            )
+        )
+
+        np.testing.assert_allclose(
+            values["extrinsic"],
+            np.asarray([1.0, 2.0, 3.0], dtype=np.float32),
+        )
+        np.testing.assert_allclose(
+            baselines["extrinsic"],
+            np.asarray([101.0, 102.0, 103.0], dtype=np.float32),
+        )
+        np.testing.assert_allclose(
+            next_values["extrinsic"],
+            np.asarray([10.0, 20.0], dtype=np.float32),
+        )
+        self.assertEqual(
+            calls,
+            [
+                ("critic", 3, False),
+                ("baseline", 3, False),
+                ("critic", 2, False),
+            ],
+        )
+
+
+class PocaTensorCacheTests(unittest.TestCase):
+    def test_cached_minibatch_selects_requested_rows_without_repadding(self):
+        import numpy as np
+        from mlagents.torch_utils import torch
+        from mlagents.trainers.buffer import (
+            AgentBuffer,
+            BufferKey,
+            RewardSignalKeyPrefix,
+            RewardSignalUtil,
+        )
+        from mlagents.trainers.trajectory import GroupObsUtil, ObsUtil
+        from mlagents.trainers.torch_entities.components.reward_providers.extrinsic_reward_provider import (
+            ExtrinsicRewardProvider,
+        )
+
+        original_value_key = RewardSignalUtil.value_estimates_key
+        RewardSignalUtil.value_estimates_key = staticmethod(
+            lambda name: (RewardSignalKeyPrefix.VALUE_ESTIMATES, name)
+        )
+        try:
+            buffer = AgentBuffer()
+            for row in range(3):
+                observation = np.zeros(
+                    compat.BEES_OBSERVATION_SIZE,
+                    dtype=np.float32,
+                )
+                observation[0] = float(row + 1)
+                observation[compat.BEES_SELF_IS_MOBILE_INDEX] = 1.0
+                buffer[ObsUtil.get_name_at(0)].append(observation)
+                buffer[GroupObsUtil.get_name_at(0)].append([])
+                buffer[BufferKey.CONTINUOUS_ACTION].append(
+                    np.full(
+                        compat.BEES_CONTINUOUS_ACTIONS,
+                        float(row),
+                        dtype=np.float32,
+                    )
+                )
+                buffer[BufferKey.DISCRETE_ACTION].append(
+                    np.zeros(
+                        len(compat.BEES_DISCRETE_BRANCHES),
+                        dtype=np.int64,
+                    )
+                )
+                buffer[BufferKey.ACTION_MASK].append(
+                    np.ones(
+                        sum(compat.BEES_DISCRETE_BRANCHES),
+                        dtype=np.float32,
+                    )
+                )
+                buffer[BufferKey.MASKS].append(1.0)
+                buffer[BufferKey.CONTINUOUS_LOG_PROBS].append(
+                    np.full(
+                        compat.BEES_CONTINUOUS_ACTIONS,
+                        row + 0.1,
+                        dtype=np.float32,
+                    )
+                )
+                buffer[BufferKey.DISCRETE_LOG_PROBS].append(
+                    np.full(
+                        len(compat.BEES_DISCRETE_BRANCHES),
+                        row + 0.2,
+                        dtype=np.float32,
+                    )
+                )
+                buffer[BufferKey.ADVANTAGES].append(float(row))
+                buffer[
+                    RewardSignalUtil.value_estimates_key("extrinsic")
+                ].append(float(row + 10))
+                buffer[
+                    RewardSignalUtil.returns_key("extrinsic")
+                ].append(float(row + 20))
+                buffer[
+                    RewardSignalUtil.baseline_estimates_key("extrinsic")
+                ].append(float(row + 30))
+
+            provider = ExtrinsicRewardProvider(
+                SimpleNamespace(),
+                SimpleNamespace(gamma=1.0, strength=1.0),
+            )
+            policy = SimpleNamespace(
+                sequence_length=1,
+                behavior_spec=SimpleNamespace(
+                    observation_specs=[object()],
+                    action_spec=SimpleNamespace(
+                        continuous_size=compat.BEES_CONTINUOUS_ACTIONS,
+                        discrete_branches=compat.BEES_DISCRETE_BRANCHES,
+                        discrete_size=len(compat.BEES_DISCRETE_BRANCHES),
+                    ),
+                ),
+            )
+            optimizer = SimpleNamespace(
+                policy=policy,
+                reward_signals={"extrinsic": provider},
+            )
+
+            cache = compat._build_poca_update_tensor_cache(
+                optimizer,
+                buffer,
+            )
+            self.assertIsNotNone(cache)
+            selected = compat._select_poca_update_tensor_cache(
+                cache,
+                np.asarray([2, 0], dtype=np.int64),
+            )
+
+            np.testing.assert_allclose(
+                selected["current_obs"][0][:, 0].detach().cpu().numpy(),
+                np.asarray([3.0, 1.0], dtype=np.float32),
+            )
+            np.testing.assert_allclose(
+                selected["advantages"].detach().cpu().numpy(),
+                np.asarray([2.0, 0.0], dtype=np.float32),
+            )
+            self.assertEqual(
+                tuple(selected["old_log_probs"].shape),
+                (
+                    2,
+                    compat.BEES_CONTINUOUS_ACTIONS
+                    + len(compat.BEES_DISCRETE_BRANCHES),
+                ),
+            )
+            self.assertEqual(
+                tuple(selected["discrete_actions"].shape),
+                (2, len(compat.BEES_DISCRETE_BRANCHES)),
+            )
+            np.testing.assert_array_equal(
+                selected["groupmate_counts"],
+                np.asarray([0, 0], dtype=np.int32),
+            )
+            self.assertTrue(
+                torch.all(selected["movement_activity"] == 1.0)
+            )
+        finally:
+            RewardSignalUtil.value_estimates_key = staticmethod(
+                original_value_key
+            )
 
 
 class PocaCommunicationActivityTests(unittest.TestCase):
