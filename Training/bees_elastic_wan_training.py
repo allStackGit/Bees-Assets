@@ -43,6 +43,8 @@ WAN_BROKER_PORT_FLAG = base.WAN_BROKER_PORT_FLAG
 WAN_AUTH_TOKEN_FILE_FLAG = base.WAN_AUTH_TOKEN_FILE_FLAG
 WAN_MAX_QUEUED_BATCHES_FLAG = base.WAN_MAX_QUEUED_BATCHES_FLAG
 WAN_LEASE_SECONDS_FLAG = "--bees-wan-actor-lease-seconds"
+THREADED_FLAG = "--bees-threaded"
+DEFAULT_THREADED_MAX_POLICY_LAG = 1
 BUILD_ID_ENV = "BEES_TRAINING_BUILD_ID"
 RUN_ID_ENV = "BEES_TRAINING_RUN_ID"
 COMPATIBILITY_KEY_ENV = "BEES_TRAINING_COMPATIBILITY_KEY"
@@ -110,6 +112,34 @@ def _positive_float(value: str, flag: str) -> float:
     if parsed <= 0:
         raise SystemExit(f"{flag} requires a positive number; got {value!r}.")
     return parsed
+
+
+def extract_threaded_mode(argv: Sequence[str]) -> Tuple[List[str], bool]:
+    """Strip Bees' threaded-training switch before ordinary ML-Agents parsing."""
+    cleaned: List[str] = []
+    enabled: Optional[bool] = None
+    for argument in argv:
+        if argument == THREADED_FLAG:
+            if enabled is not None:
+                raise SystemExit(f"{THREADED_FLAG} may be specified only once.")
+            enabled = True
+            continue
+        prefix = THREADED_FLAG + "="
+        if argument.startswith(prefix):
+            if enabled is not None:
+                raise SystemExit(f"{THREADED_FLAG} may be specified only once.")
+            raw = argument[len(prefix):].strip().lower()
+            if raw in ("1", "true", "on", "yes"):
+                enabled = True
+            elif raw in ("0", "false", "off", "no"):
+                enabled = False
+            else:
+                raise SystemExit(
+                    f"{THREADED_FLAG} must be true/false or on/off; got {raw!r}."
+                )
+            continue
+        cleaned.append(argument)
+    return cleaned, bool(enabled)
 
 
 def extract_elastic_wan_options(argv: Sequence[str]) -> Tuple[List[str], ElasticWanOptions]:
@@ -389,12 +419,36 @@ class CapacityDiagnostics:
 
 
 class ElasticWanBroker(base.WanActorBroker):
-    def __init__(self, options: ElasticWanOptions, run_options: Any, auth_token: str, local_envs: int):
+    def __init__(
+        self,
+        options: ElasticWanOptions,
+        run_options: Any,
+        auth_token: str,
+        local_envs: int,
+        *,
+        threaded_mode: bool = False,
+        max_policy_lag: int = 0,
+    ):
         super().__init__(options, run_options, auth_token)
+        if (
+            not isinstance(max_policy_lag, int)
+            or isinstance(max_policy_lag, bool)
+            or max_policy_lag < 0
+        ):
+            raise ValueError("max_policy_lag must be a non-negative integer")
         self.options = options
         self.local_envs = int(local_envs)
         self.remote_worker_base = self.local_envs
+        self.threaded_mode = bool(threaded_mode)
+        self.max_policy_lag = int(max_policy_lag)
         self._policy_cycle = 0
+        self._accepted_stale_batches = 0
+        self._accepted_stale_steps = 0
+        self._consumed_stale_batches = 0
+        self._consumed_stale_steps = 0
+        self._discarded_stale_batches = 0
+        self._discarded_stale_steps = 0
+        self._last_lag_report = 0.0
         build_id = os.environ.get(BUILD_ID_ENV, "").strip()
         compatibility_key = os.environ.get(COMPATIBILITY_KEY_ENV, "").strip().lower()
         environment_id = os.environ.get(ENVIRONMENT_ID_ENV, "").strip().lower()
@@ -449,6 +503,8 @@ class ElasticWanBroker(base.WanActorBroker):
             "run_id": str(self.run_options.checkpoint_settings.run_id),
             "release_identity": dict(self.release_identity),
             "run_options": self.run_options,
+            "threaded_training": self.threaded_mode,
+            "max_policy_lag": self.max_policy_lag,
         }
 
     def _validate_release_identity(self, payload: Mapping[str, Any]) -> None:
@@ -736,6 +792,75 @@ class ElasticWanBroker(base.WanActorBroker):
             self._registrations[actor_id]["last_seen"] = time.monotonic()
         super().acknowledge_reset(payload)
 
+    def _policy_lag_locked(self, supplied: Any) -> int:
+        expected = self._policy_versions_locked()
+        if not expected:
+            raise base.StaleActorStateError("central policy is not ready")
+        if not isinstance(supplied, Mapping):
+            raise base.StaleActorStateError("trajectory batch is missing policy_versions")
+        try:
+            normalized = {str(key): int(value) for key, value in supplied.items()}
+        except (TypeError, ValueError) as exc:
+            raise base.StaleActorStateError("trajectory policy_versions are malformed") from exc
+        if set(normalized) != set(expected):
+            raise base.StaleActorStateError(
+                f"trajectory policy behaviors {sorted(normalized)} != current behaviors {sorted(expected)}"
+            )
+        lag = 0
+        for behavior_name, current_version in expected.items():
+            supplied_version = normalized[behavior_name]
+            difference = int(current_version) - int(supplied_version)
+            if difference < 0:
+                raise base.StaleActorStateError(
+                    f"trajectory policy {behavior_name} version {supplied_version} is newer than "
+                    f"central version {current_version}"
+                )
+            lag = max(lag, difference)
+        if lag > self.max_policy_lag:
+            raise base.StaleActorStateError(
+                f"trajectory policy lag {lag} exceeds allowed lag {self.max_policy_lag}"
+            )
+        return lag
+
+    def _validate_policy_versions(self, supplied: Any) -> int:
+        if self.max_policy_lag <= 0:
+            super()._validate_policy_versions(supplied)
+            return 0
+        with self._condition:
+            return self._policy_lag_locked(supplied)
+
+    def _batch_is_current(self, batch: Mapping[str, Any]) -> bool:
+        if self.max_policy_lag <= 0:
+            return super()._batch_is_current(batch)
+        with self._condition:
+            if batch.get("control_epoch") != self._control_epoch:
+                return False
+            try:
+                self._policy_lag_locked(batch.get("policy_versions"))
+            except base.StaleActorStateError:
+                return False
+            return True
+
+    def _prune_policy_queue_locked(self) -> None:
+        scan_count = self._trajectory_batches.qsize()
+        retained: List[Mapping[str, Any]] = []
+        for _ in range(scan_count):
+            try:
+                batch = self._trajectory_batches.get_nowait()
+            except queue.Empty:
+                break
+            try:
+                if batch.get("control_epoch") != self._control_epoch:
+                    raise base.StaleActorStateError("stale control epoch")
+                self._policy_lag_locked(batch.get("policy_versions"))
+            except base.StaleActorStateError:
+                self._discarded_stale_batches += 1
+                self._discarded_stale_steps += int(batch.get("step_count", 0) or 0)
+            else:
+                retained.append(batch)
+        for batch in retained:
+            self._trajectory_batches.put_nowait(batch)
+
     def submit_trajectory_batch(self, payload: Mapping[str, Any]) -> int:
         actor_id = self._validate_actor_id(payload.get("actor_id"))
         with self._condition:
@@ -749,7 +874,7 @@ class ElasticWanBroker(base.WanActorBroker):
             raise base.StaleActorStateError(
                 f"trajectory control epoch {payload.get('control_epoch')!r} != {self.control_epoch}"
             )
-        self._validate_policy_versions(payload.get("policy_versions"))
+        policy_lag = self._validate_policy_versions(payload.get("policy_versions"))
         trajectories = payload.get("trajectories")
         if not isinstance(trajectories, list) or not trajectories:
             raise ValueError("trajectory batch must contain at least one trajectory")
@@ -784,25 +909,45 @@ class ElasticWanBroker(base.WanActorBroker):
             "control_epoch": int(payload["control_epoch"]),
             "trajectories": trajectories,
             "step_count": step_count,
+            "policy_lag_at_submit": int(policy_lag),
         }
         try:
             # Coordinate queue admission with the learner's fair snapshot drain. This keeps
             # requeueing of unselected batches lossless while producers continue concurrently.
             with self._condition:
                 self._trajectory_batches.put_nowait(item)
+                if policy_lag > 0:
+                    self._accepted_stale_batches += 1
+                    self._accepted_stale_steps += step_count
         except queue.Full:
             self.diagnostics.observe_backpressure()
             raise
         self.diagnostics.observe_remote_batch(step_count)
         return len(trajectories)
 
-    def record_consumed_batch(self, batch: Mapping[str, Any]) -> None:
+    def record_consumed_batch(self, batch: Mapping[str, Any]) -> bool:
         actor_id = self._validate_actor_id(batch.get("actor_id"))
         step_count = batch.get("step_count")
         if not isinstance(step_count, int) or isinstance(step_count, bool) or step_count < 0:
             raise ValueError("consumed WAN batch has invalid step_count")
         with self._condition:
+            if batch.get("control_epoch") != self._control_epoch:
+                return False
+            try:
+                lag = (
+                    self._policy_lag_locked(batch.get("policy_versions"))
+                    if self.max_policy_lag > 0
+                    else 0
+                )
+                if self.max_policy_lag <= 0:
+                    super()._validate_policy_versions(batch.get("policy_versions"))
+            except base.StaleActorStateError:
+                return False
             self._consumed_steps_by_actor[actor_id] += step_count
+            if lag > 0:
+                self._consumed_stale_batches += 1
+                self._consumed_stale_steps += step_count
+            return True
 
     def drain_current_batches(self, limit: int) -> Tuple[Mapping[str, Any], ...]:
         """Drain current-policy batches fairly across actors without sacrificing capacity.
@@ -868,20 +1013,46 @@ class ElasticWanBroker(base.WanActorBroker):
                 self._fair_drain_cursor = (actor_ids.index(last_actor_id) + 1) % len(actor_ids)
 
             selected = [batch for _ordinal, batch in chosen]
-            for batch in selected:
-                actor_id = int(batch["actor_id"])
-                self._consumed_steps_by_actor[actor_id] += int(batch["step_count"])
-
+            selected = [
+                batch for batch in selected
+                if self.record_consumed_batch(batch)
+            ]
             return tuple(selected)
 
     def publish_policy(self, behavior_name: str, policy: Any) -> int:
-        return super().publish_policy(behavior_name, policy)
+        if self.max_policy_lag <= 0:
+            return super().publish_policy(behavior_name, policy)
+
+        self.ensure_server_alive()
+        wire = dict(base._policy_wire_payload(policy))
+        identity = base._policy_identity_digest(wire)
+        encoded = base.encode_payload(wire)
+        transport_digest = base.hashlib.sha256(encoded).hexdigest()
+        with self._condition:
+            previous = self._policy_snapshots.get(behavior_name)
+            if previous is not None and self._policy_identities.get(behavior_name) == identity:
+                return previous.version
+            version = 1 if previous is None else previous.version + 1
+            self._policy_snapshots[behavior_name] = base._PolicySnapshot(
+                version,
+                transport_digest,
+                encoded,
+            )
+            self._policy_identities[behavior_name] = identity
+            self._policy_epoch += 1
+            if self.threaded_mode:
+                self._policy_cycle += 1
+            self._prune_policy_queue_locked()
+            self._condition.notify_all()
+            return version
 
     def policy_publication_epoch(self) -> int:
         with self._condition:
             return int(self._policy_epoch)
 
     def complete_policy_cycle(self, starting_policy_epoch: int) -> None:
+        if self.threaded_mode:
+            return
         with self._condition:
             if self._policy_epoch > int(starting_policy_epoch):
                 # TrainerController.advance() is synchronous. Any one or many behavior policy
@@ -907,6 +1078,20 @@ class ElasticWanBroker(base.WanActorBroker):
             self._trajectory_batches.qsize(),
             self.options.max_queued_batches,
         )
+        if self.max_policy_lag > 0:
+            now = time.monotonic()
+            if now - self._last_lag_report >= DIAGNOSTIC_INTERVAL_SECONDS:
+                self._last_lag_report = now
+                print(
+                    "[Bees WAN lag] "
+                    f"threaded={self.threaded_mode} max_policy_lag={self.max_policy_lag} "
+                    f"accepted_stale_batches={self._accepted_stale_batches} "
+                    f"accepted_stale_steps={self._accepted_stale_steps} "
+                    f"consumed_stale_batches={self._consumed_stale_batches} "
+                    f"consumed_stale_steps={self._consumed_stale_steps} "
+                    f"discarded_stale_batches={self._discarded_stale_batches} "
+                    f"discarded_stale_steps={self._discarded_stale_steps}."
+                )
 
 
 @dataclass(frozen=True)
