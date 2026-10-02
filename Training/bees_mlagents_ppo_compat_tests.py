@@ -268,6 +268,7 @@ class InactiveContinuousActionMaskTests(unittest.TestCase):
         self.assertIsNone(activity)
 
     def test_install_and_restore_patch_action_model_and_ppo_loss(self):
+        from mlagents.trainers.ghost.trainer import GhostTrainer
         from mlagents.trainers.poca.optimizer_torch import TorchPOCAOptimizer
         from mlagents.trainers.poca.trainer import POCATrainer
         from mlagents.trainers.ppo.optimizer_torch import TorchPPOOptimizer
@@ -281,6 +282,7 @@ class InactiveContinuousActionMaskTests(unittest.TestCase):
         original_poca_update = TorchPOCAOptimizer.update
         original_poca_update_policy = POCATrainer._update_policy
         original_poca_advance = POCATrainer.advance
+        original_ghost_advance = GhostTrainer.advance
         original_policy_loss = ModelUtils.trust_region_policy_loss
         original_masked_mean = ModelUtils.masked_mean
         original_bc_update = BCModule._update_batch
@@ -294,6 +296,7 @@ class InactiveContinuousActionMaskTests(unittest.TestCase):
         self.assertIsNot(TorchPOCAOptimizer.update, original_poca_update)
         self.assertIsNot(POCATrainer._update_policy, original_poca_update_policy)
         self.assertIsNot(POCATrainer.advance, original_poca_advance)
+        self.assertIsNot(GhostTrainer.advance, original_ghost_advance)
         self.assertIsNot(ModelUtils.trust_region_policy_loss, original_policy_loss)
         self.assertIsNot(ModelUtils.masked_mean, original_masked_mean)
         self.assertIsNot(BCModule._update_batch, original_bc_update)
@@ -306,6 +309,7 @@ class InactiveContinuousActionMaskTests(unittest.TestCase):
         self.assertIs(TorchPOCAOptimizer.update, original_poca_update)
         self.assertIs(POCATrainer._update_policy, original_poca_update_policy)
         self.assertIs(POCATrainer.advance, original_poca_advance)
+        self.assertIs(GhostTrainer.advance, original_ghost_advance)
         self.assertIs(ModelUtils.trust_region_policy_loss, original_policy_loss)
         self.assertIs(ModelUtils.masked_mean, original_masked_mean)
         self.assertIs(BCModule._update_batch, original_bc_update)
@@ -928,6 +932,7 @@ class PocaFrozenTrajectorySnapshotTests(unittest.TestCase):
             ),
         )
         snapshot = compat._PocaCriticSnapshot(
+            "BeesRL1v1?team=0",
             7,
             policy,
             FakeCritic(),
@@ -956,6 +961,29 @@ class PocaFrozenTrajectorySnapshotTests(unittest.TestCase):
                 ("baseline", "cpu", False, 2),
                 ("critic", "cpu", False, 2),
             ],
+        )
+
+    def test_policy_key_keeps_self_play_teams_distinct(self):
+        team_zero = SimpleNamespace(
+            behavior_id="BeesRL1v1?team=0",
+            policy_versions={"BeesRL1v1?team=0": 7},
+        )
+        team_one = SimpleNamespace(
+            behavior_id="BeesRL1v1?team=1",
+            policy_versions={"BeesRL1v1?team=1": 7},
+        )
+
+        self.assertEqual(
+            compat._trajectory_source_policy_key(team_zero),
+            ("BeesRL1v1?team=0", 7),
+        )
+        self.assertEqual(
+            compat._trajectory_source_policy_key(team_one),
+            ("BeesRL1v1?team=1", 7),
+        )
+        self.assertNotEqual(
+            compat._trajectory_source_policy_key(team_zero),
+            compat._trajectory_source_policy_key(team_one),
         )
 
     def test_publication_state_keeps_policy_version_and_lag(self):
