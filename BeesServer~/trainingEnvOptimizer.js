@@ -1085,46 +1085,38 @@ class TrainingEnvOptimizer {
             if (timestamp - state.phase_started_ms < this.warmupMs) {
                 return this.snapshot(record.trainer_id);
             }
+            if (busySeconds === null) {
+                state.last_decision =
+                    'waiting for cumulative learner optimizer-busy metrics';
+                return this.snapshot(record.trainer_id);
+            }
             state.phase = 'measuring';
             state.measurement_started_ms = timestamp;
             state.measurement_start_steps = totalSteps;
             state.measurement_start_produced_steps = producedSteps;
-            state.measurement_last_ms = timestamp;
-            state.measurement_last_steps = totalSteps;
-            state.measurement_active_ms = 0;
-            state.measurement_active_steps = 0;
+            state.measurement_start_busy_seconds = busySeconds;
             state.last_decision =
                 'measuring global learner throughput for ' +
-                Math.round(this.measurementMs / 1000) + ' seconds';
+                Math.round(this.measurementMs / 1000) +
+                ' active learner seconds';
             return this.snapshot(record.trainer_id);
         }
 
         if (state.phase === 'measuring') {
-            const sampleElapsed = Math.max(
-                0,
-                timestamp - state.measurement_last_ms,
-            );
-            const sampleDelta = totalSteps - state.measurement_last_steps;
-            if (sampleDelta < 0) {
+            if (busySeconds === null) {
+                state.last_decision =
+                    'waiting for cumulative learner optimizer-busy metrics';
+                return this.snapshot(record.trainer_id);
+            }
+            if (busySeconds < state.measurement_start_busy_seconds) {
                 this._resetMeasurement(
                     state,
                     timestamp,
                     totalSteps,
-                    'throughput counter restarted',
+                    'learner optimizer-busy counter restarted',
                 );
                 return this.snapshot(record.trainer_id);
             }
-
-            // PPO intentionally stops learner-step progress while optimizer work runs.
-            // Do not charge those stationary intervals against rollout-capacity probes.
-            // Frequent worker heartbeats split normal rollout and PPO phases closely enough
-            // that only the small boundary interval around a phase transition is ambiguous.
-            if (sampleDelta > 0 && sampleElapsed > 0) {
-                state.measurement_active_ms += sampleElapsed;
-                state.measurement_active_steps += sampleDelta;
-            }
-            state.measurement_last_ms = timestamp;
-            state.measurement_last_steps = totalSteps;
 
             const producedDelta =
                 producedSteps !== null &&
@@ -1141,12 +1133,29 @@ class TrainingEnvOptimizer {
                 return this.snapshot(record.trainer_id);
             }
 
-            const elapsed = state.measurement_active_ms;
+            const wallElapsed = Math.max(
+                0,
+                timestamp - state.measurement_started_ms,
+            );
+            const busyElapsed = Math.max(
+                0,
+                (busySeconds - state.measurement_start_busy_seconds) * 1000,
+            );
+            const elapsed = Math.max(0, wallElapsed - busyElapsed);
             if (elapsed < this.measurementMs) {
                 return this.snapshot(record.trainer_id);
             }
 
-            const delta = state.measurement_active_steps;
+            const delta = totalSteps - state.measurement_start_steps;
+            if (delta < 0) {
+                this._resetMeasurement(
+                    state,
+                    timestamp,
+                    totalSteps,
+                    'throughput counter restarted',
+                );
+                return this.snapshot(record.trainer_id);
+            }
             const sps = elapsed > 0 ? (delta * 1000) / elapsed : 0;
             this._finishMeasurement(state, capacity, timestamp, sps);
             return this.snapshot(record.trainer_id);
