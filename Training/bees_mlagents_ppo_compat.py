@@ -2061,7 +2061,6 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
 
     from mlagents.trainers.buffer import BufferKey
     from mlagents.trainers.ghost.trainer import GhostTrainer
-    from mlagents.trainers.ghost.trainer import GhostTrainer
     from mlagents.trainers.poca.optimizer_torch import TorchPOCAOptimizer
     from mlagents.trainers.poca.trainer import POCATrainer
     from mlagents.trainers.torch_entities.components.bc.module import BCModule
