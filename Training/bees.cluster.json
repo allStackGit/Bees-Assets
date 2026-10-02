@@ -19,11 +19,12 @@
   "tailnetLearnerName": "bees-learner",
   "tailnetBootstrapPort": 7151,
   "localActor": {
-    "enabled": true,
+    "enabled": false,
     "initialEnvs": 4,
     "minEnvs": 1,
     "maxEnvs": 48,
     "autoTune": true,
     "torchDevice": "cpu"
-  }
+  },
+  "threadedTraining": false
 }
