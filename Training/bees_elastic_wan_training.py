@@ -44,7 +44,9 @@ WAN_AUTH_TOKEN_FILE_FLAG = base.WAN_AUTH_TOKEN_FILE_FLAG
 WAN_MAX_QUEUED_BATCHES_FLAG = base.WAN_MAX_QUEUED_BATCHES_FLAG
 WAN_LEASE_SECONDS_FLAG = "--bees-wan-actor-lease-seconds"
 THREADED_FLAG = "--bees-threaded"
+POLICY_LAG_FLAG = "--bees-max-policy-lag"
 DEFAULT_THREADED_MAX_POLICY_LAG = 1
+MAX_THREADED_POLICY_LAG = 2147483647
 BUILD_ID_ENV = "BEES_TRAINING_BUILD_ID"
 RUN_ID_ENV = "BEES_TRAINING_RUN_ID"
 COMPATIBILITY_KEY_ENV = "BEES_TRAINING_COMPATIBILITY_KEY"
@@ -114,21 +116,28 @@ def _positive_float(value: str, flag: str) -> float:
     return parsed
 
 
-def extract_threaded_mode(argv: Sequence[str]) -> Tuple[List[str], bool]:
-    """Strip Bees' threaded-training switch before ordinary ML-Agents parsing."""
+def extract_threaded_options(
+    argv: Sequence[str],
+) -> Tuple[List[str], bool, int]:
+    """Strip Bees' threaded-training controls before ordinary ML-Agents parsing."""
     cleaned: List[str] = []
     enabled: Optional[bool] = None
-    for argument in argv:
+    policy_lag: Optional[int] = None
+    index = 0
+    while index < len(argv):
+        argument = argv[index]
         if argument == THREADED_FLAG:
             if enabled is not None:
                 raise SystemExit(f"{THREADED_FLAG} may be specified only once.")
             enabled = True
+            index += 1
             continue
-        prefix = THREADED_FLAG + "="
-        if argument.startswith(prefix):
+
+        threaded_prefix = THREADED_FLAG + "="
+        if argument.startswith(threaded_prefix):
             if enabled is not None:
                 raise SystemExit(f"{THREADED_FLAG} may be specified only once.")
-            raw = argument[len(prefix):].strip().lower()
+            raw = argument[len(threaded_prefix):].strip().lower()
             if raw in ("1", "true", "on", "yes"):
                 enabled = True
             elif raw in ("0", "false", "off", "no"):
@@ -137,9 +146,39 @@ def extract_threaded_mode(argv: Sequence[str]) -> Tuple[List[str], bool]:
                 raise SystemExit(
                     f"{THREADED_FLAG} must be true/false or on/off; got {raw!r}."
                 )
+            index += 1
             continue
+
+        raw_lag, next_index = _read_value(argv, index, POLICY_LAG_FLAG)
+        if raw_lag is not None:
+            if policy_lag is not None:
+                raise SystemExit(f"{POLICY_LAG_FLAG} may be specified only once.")
+            policy_lag = _whole_number(
+                raw_lag,
+                POLICY_LAG_FLAG,
+                minimum=0,
+                maximum=MAX_THREADED_POLICY_LAG,
+            )
+            index = next_index
+            continue
+
         cleaned.append(argument)
-    return cleaned, bool(enabled)
+        index += 1
+
+    threaded = bool(enabled)
+    if policy_lag is not None and not threaded:
+        raise SystemExit(f"{POLICY_LAG_FLAG} requires {THREADED_FLAG}.")
+    return (
+        cleaned,
+        threaded,
+        DEFAULT_THREADED_MAX_POLICY_LAG if policy_lag is None else policy_lag,
+    )
+
+
+def extract_threaded_mode(argv: Sequence[str]) -> Tuple[List[str], bool]:
+    """Compatibility wrapper for callers that only need the threaded toggle."""
+    cleaned, enabled, _policy_lag = extract_threaded_options(argv)
+    return cleaned, enabled
 
 
 def extract_elastic_wan_options(argv: Sequence[str]) -> Tuple[List[str], ElasticWanOptions]:
@@ -1063,7 +1102,14 @@ class ElasticWanBroker(base.WanActorBroker):
 
     def publish_policy(self, behavior_name: str, policy: Any) -> int:
         if self.max_policy_lag <= 0:
-            return super().publish_policy(behavior_name, policy)
+            starting_policy_epoch = self.policy_publication_epoch()
+            version = super().publish_policy(behavior_name, policy)
+            if self.threaded_mode:
+                with self._condition:
+                    if self._policy_epoch > starting_policy_epoch:
+                        self._policy_cycle += 1
+                        self._condition.notify_all()
+            return version
 
         self.ensure_server_alive()
         wire = dict(base._policy_wire_payload(policy))
