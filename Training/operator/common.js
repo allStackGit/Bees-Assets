@@ -284,6 +284,20 @@ function resolveNpmInvocation(node = process.execPath) {
     return npmInvocationFromCommand(npmCommand, node);
 }
 
+function normalizeThreadedPolicyLag(value, fallback = 1) {
+    const candidate = value == null ? fallback : Number(value);
+    if (
+        !Number.isSafeInteger(candidate) ||
+        candidate < 0 ||
+        candidate > 2147483647
+    ) {
+        throw new Error(
+            'Threaded policy lag must be an integer in 0-2147483647; got ' + value + '.'
+        );
+    }
+    return candidate;
+}
+
 function applyRuntimeTrainingOptions(config, options = {}) {
     const result = {
         ...config,
@@ -296,13 +310,24 @@ function applyRuntimeTrainingOptions(config, options = {}) {
     if (Object.prototype.hasOwnProperty.call(options, 'threadedTraining')) {
         result.threadedTraining = Boolean(options.threadedTraining);
     }
+    if (Object.prototype.hasOwnProperty.call(options, 'threadedPolicyLag')) {
+        result.threadedPolicyLag = normalizeThreadedPolicyLag(
+            options.threadedPolicyLag,
+            config && config.threadedPolicyLag != null ? config.threadedPolicyLag : 1,
+        );
+    } else {
+        result.threadedPolicyLag = normalizeThreadedPolicyLag(
+            result.threadedPolicyLag,
+            1,
+        );
+    }
     if (Object.prototype.hasOwnProperty.call(options, 'localTraining')) {
         result.localActor.enabled = Boolean(options.localTraining);
     }
     return result;
 }
 
-function readRuntimeTrainingOptions() {
+function readRuntimeTrainingOptions(defaultPolicyLag = 1) {
     if (!exists(paths.runtimeTrainingOptionsPath)) return null;
     const value = readJson(paths.runtimeTrainingOptionsPath);
     if (
@@ -315,13 +340,23 @@ function readRuntimeTrainingOptions() {
             'Runtime training options are malformed: ' + paths.runtimeTrainingOptionsPath
         );
     }
-    return value;
+    return {
+        ...value,
+        threadedPolicyLag: normalizeThreadedPolicyLag(
+            value.threadedPolicyLag,
+            defaultPolicyLag,
+        ),
+    };
 }
 
 function saveRuntimeTrainingOptions(options) {
     const value = {
         schema_version: 1,
         threadedTraining: Boolean(options && options.threadedTraining),
+        threadedPolicyLag: normalizeThreadedPolicyLag(
+            options && options.threadedPolicyLag,
+            1,
+        ),
         localTraining: Boolean(options && options.localTraining),
         updated_utc: new Date().toISOString(),
     };
@@ -334,10 +369,12 @@ function loadConfig() {
         throw new Error('Tracked training configuration is missing: ' + paths.configPath);
     }
     const config = readJson(paths.configPath);
-    const runtimeOptions = readRuntimeTrainingOptions();
+    const runtimeOptions = readRuntimeTrainingOptions(
+        normalizeThreadedPolicyLag(config.threadedPolicyLag, 1)
+    );
     return runtimeOptions
         ? applyRuntimeTrainingOptions(config, runtimeOptions)
-        : config;
+        : applyRuntimeTrainingOptions(config);
 }
 
 function resolvePython(config) {
