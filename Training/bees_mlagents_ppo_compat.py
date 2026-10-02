@@ -1378,6 +1378,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
     global _ORIGINAL_POCA_UPDATE
     global _ORIGINAL_POCA_TRAJECTORY_VALUES
     global _ORIGINAL_POCA_UPDATE_POLICY
+    global _ORIGINAL_POCA_ADVANCE
     global _ORIGINAL_MULTI_AGENT_FORWARD
     global _ORIGINAL_TRUST_REGION_POLICY_LOSS
     global _ORIGINAL_MASKED_MEAN
@@ -1395,6 +1396,8 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         TorchPOCAOptimizer.get_trajectory_and_baseline_value_estimates
     )
     original_poca_update_policy = POCATrainer._update_policy
+    original_poca_advance = POCATrainer.advance
+    original_poca_process_trajectory = POCATrainer._process_trajectory
     original_multi_agent_forward = MultiAgentNetworkBody.forward
     original_policy_loss = ModelUtils.trust_region_policy_loss
     original_masked_mean = ModelUtils.masked_mean
@@ -1639,8 +1642,69 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             expert_actions,
         )
 
+    def batched_poca_advance(self):
+        """Drain queued short trajectories into shared feed-forward POCA critic passes."""
+
+        if self.policy is None or self.policy.use_recurrent:
+            return original_poca_advance(self)
+
+        from mlagents_envs.timers import hierarchical_timer
+        from mlagents.trainers.agent_processor import AgentManagerQueue
+
+        pending = []
+        pending_experiences = 0
+        queried = False
+
+        def flush_pending():
+            nonlocal pending
+            nonlocal pending_experiences
+            if not pending:
+                return
+            if len(pending) == 1:
+                original_poca_process_trajectory(self, pending[0])
+            else:
+                _process_poca_trajectory_batch(self, pending)
+            pending = []
+            pending_experiences = 0
+
+        with hierarchical_timer("process_trajectory"):
+            for trajectory_queue in self.trajectory_queues:
+                queue_size = trajectory_queue.qsize()
+                for _ in range(queue_size):
+                    try:
+                        trajectory = trajectory_queue.get_nowait()
+                    except AgentManagerQueue.Empty:
+                        break
+                    queried = True
+                    trajectory_experiences = len(trajectory.steps)
+
+                    if (
+                        pending
+                        and pending_experiences + trajectory_experiences
+                        > POCA_TRAJECTORY_BATCH_MAX_EXPERIENCES
+                    ):
+                        flush_pending()
+
+                    if not trajectory.steps:
+                        flush_pending()
+                        original_poca_process_trajectory(self, trajectory)
+                        continue
+
+                    pending.append(trajectory)
+                    pending_experiences += trajectory_experiences
+
+            flush_pending()
+            if self.threaded and not queried:
+                time.sleep(0.0001)
+
+        if self.should_still_train and self._is_ready_update():
+            with hierarchical_timer("_update_policy"):
+                if self._update_policy():
+                    for queue in self.policy_queues:
+                        queue.put(self.get_policy(queue.behavior_id))
+
     def weighted_poca_update_policy(self):
-        """ML-Agents 1.1.0 on-policy update with team-timestep-weighted advantages."""
+        """ML-Agents 1.1.0 on-policy update with cached feed-forward minibatch tensors."""
 
         import numpy as np
         from collections import defaultdict
@@ -1661,12 +1725,21 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         update_started = time.perf_counter()
         _POCA_TIMING_STATE.timing_totals = {}
         _POCA_TIMING_STATE.timing_counts = {}
+
         normalization_started = time.perf_counter()
         _normalize_poca_advantages(self.policy, self.update_buffer)
         _poca_record_timing(
             "advantage_normalization",
             time.perf_counter() - normalization_started,
         )
+
+        materialize_started = time.perf_counter()
+        tensor_cache = _build_poca_update_tensor_cache(
+            self.optimizer,
+            self.update_buffer,
+        )
+        materialize_seconds = time.perf_counter() - materialize_started
+        _poca_record_timing("materialize", materialize_seconds)
 
         num_epoch = self.hyperparameters.num_epoch
         batch_update_stats = defaultdict(list)
@@ -1675,35 +1748,84 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         print(
             "[Bees PPO timing] update begin "
             f"buffer={buffer_length} batch={batch_size} epochs={num_epoch} "
-            f"minibatches={total_minibatches}",
+            f"minibatches={total_minibatches} "
+            f"tensor_cache={'on' if tensor_cache is not None else 'off'} "
+            f"materialize={materialize_seconds:.6f}",
             flush=True,
         )
 
         completed_minibatches = 0
-        for _epoch_index in range(num_epoch):
-            self.update_buffer.shuffle(
-                sequence_length=self.policy.sequence_length
-            )
-            buffer = self.update_buffer
-            for i in range(0, max_num_batch * batch_size, batch_size):
-                completed_minibatches += 1
-                minibatch_started = time.perf_counter()
-                minibatch = buffer.make_mini_batch(i, i + batch_size)
-                update_stats = self.optimizer.update(minibatch, n_sequences)
+        _POCA_UPDATE_CACHE_STATE.cache = tensor_cache
+        try:
+            for _epoch_index in range(num_epoch):
+                epoch_order = None
+                if tensor_cache is None:
+                    self.update_buffer.shuffle(
+                        sequence_length=self.policy.sequence_length
+                    )
+                else:
+                    epoch_order = np.arange(
+                        buffer_length,
+                        dtype=np.int64,
+                    )
+                    np.random.shuffle(epoch_order)
 
-                reward_started = time.perf_counter()
-                reward_stats = self.optimizer.update_reward_signals(minibatch)
-                _poca_record_timing(
-                    "reward_signals",
-                    time.perf_counter() - reward_started,
-                )
-                update_stats.update(reward_stats)
-                _poca_record_timing(
-                    "minibatch_total",
-                    time.perf_counter() - minibatch_started,
-                )
-                for stat_name, value in update_stats.items():
-                    batch_update_stats[stat_name].append(value)
+                for i in range(
+                    0,
+                    max_num_batch * batch_size,
+                    batch_size,
+                ):
+                    completed_minibatches += 1
+                    minibatch_started = time.perf_counter()
+                    if tensor_cache is None:
+                        minibatch = self.update_buffer.make_mini_batch(
+                            i,
+                            i + batch_size,
+                        )
+                        _POCA_UPDATE_CACHE_STATE.indices = None
+                    else:
+                        _POCA_UPDATE_CACHE_STATE.indices = epoch_order[
+                            i : i + batch_size
+                        ]
+                        # The optimizer reads the selected rows from the cache.
+                        # Passing the original buffer preserves the public
+                        # ML-Agents optimizer signature without copying fields.
+                        minibatch = self.update_buffer
+
+                    try:
+                        update_stats = self.optimizer.update(
+                            minibatch,
+                            n_sequences,
+                        )
+                    finally:
+                        _POCA_UPDATE_CACHE_STATE.indices = None
+                        _POCA_UPDATE_CACHE_STATE.minibatch = None
+
+                    reward_started = time.perf_counter()
+                    if tensor_cache is None:
+                        reward_stats = self.optimizer.update_reward_signals(
+                            minibatch
+                        )
+                    else:
+                        # The cache is enabled only for extrinsic reward, whose
+                        # update() is a no-op. Non-extrinsic providers use the
+                        # stock AgentBuffer path above.
+                        reward_stats = {}
+                    _poca_record_timing(
+                        "reward_signals",
+                        time.perf_counter() - reward_started,
+                    )
+                    update_stats.update(reward_stats)
+                    _poca_record_timing(
+                        "minibatch_total",
+                        time.perf_counter() - minibatch_started,
+                    )
+                    for stat_name, value in update_stats.items():
+                        batch_update_stats[stat_name].append(value)
+        finally:
+            _POCA_UPDATE_CACHE_STATE.cache = None
+            _POCA_UPDATE_CACHE_STATE.indices = None
+            _POCA_UPDATE_CACHE_STATE.minibatch = None
 
         update_seconds = time.perf_counter() - update_started
         print(
@@ -1711,6 +1833,8 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             f"minibatches={completed_minibatches}/{total_minibatches} "
             f"seconds={update_seconds:.6f} "
             f"normalize={_poca_average_timing('advantage_normalization'):.6f} "
+            f"materialize={_poca_average_timing('materialize'):.6f} "
+            f"transfer={_poca_average_timing('cache_transfer'):.6f} "
             f"avg_minibatch={_poca_average_timing('minibatch_total'):.6f} "
             f"prepare={_poca_average_timing('prepare'):.6f} "
             f"decay={_poca_average_timing('decay'):.6f} "
@@ -1877,6 +2001,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         done,
         agent_id="",
     ):
+        from mlagents.torch_utils import torch
         from bees_mlagents_structured_policy import (
             reset_training_slot_limits,
             set_training_slot_limits,
@@ -1889,14 +2014,18 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         )
         slot_token = set_training_slot_limits(slot_limits)
         try:
-            return original_poca_trajectory_values(
-                self,
-                batch,
-                next_obs,
-                next_groupmate_obs,
-                done,
-                agent_id,
-            )
+            # ML-Agents 1.1.0 places its bootstrap critic call outside the
+            # internal no_grad block. Keep the entire feed-forward trajectory
+            # value path graph-free.
+            with torch.no_grad():
+                return original_poca_trajectory_values(
+                    self,
+                    batch,
+                    next_obs,
+                    next_groupmate_obs,
+                    done,
+                    agent_id,
+                )
         finally:
             reset_training_slot_limits(slot_token)
 
@@ -1909,6 +2038,8 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         from mlagents.trainers.trajectory import GroupObsUtil, ObsUtil
         from mlagents.torch_utils import torch
 
+        cached = getattr(_POCA_UPDATE_CACHE_STATE, "minibatch", None)
+
         started = time.perf_counter()
         decay_lr = self.decay_learning_rate.get_value(self.policy.get_current_step())
         decay_eps = self.decay_epsilon.get_value(self.policy.get_current_step())
@@ -1916,80 +2047,109 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         _poca_record_timing("decay", time.perf_counter() - started)
 
         started = time.perf_counter()
-        returns = {}
-        old_values = {}
-        old_baseline_values = {}
-        for name in self.reward_signals:
-            old_values[name] = ModelUtils.list_to_tensor(
-                batch[RewardSignalUtil.value_estimates_key(name)]
-            )
-            returns[name] = ModelUtils.list_to_tensor(
-                batch[RewardSignalUtil.returns_key(name)]
-            )
-            old_baseline_values[name] = ModelUtils.list_to_tensor(
-                batch[RewardSignalUtil.baseline_estimates_key(name)]
-            )
+        if cached is None:
+            returns = {}
+            old_values = {}
+            old_baseline_values = {}
+            for name in self.reward_signals:
+                old_values[name] = ModelUtils.list_to_tensor(
+                    batch[RewardSignalUtil.value_estimates_key(name)]
+                )
+                returns[name] = ModelUtils.list_to_tensor(
+                    batch[RewardSignalUtil.returns_key(name)]
+                )
+                old_baseline_values[name] = ModelUtils.list_to_tensor(
+                    batch[RewardSignalUtil.baseline_estimates_key(name)]
+                )
+        else:
+            returns = cached["returns"]
+            old_values = cached["old_values"]
+            old_baseline_values = cached["old_baselines"]
         _poca_record_timing("reward_tensors", time.perf_counter() - started)
 
         started = time.perf_counter()
         n_obs = len(self.policy.behavior_spec.observation_specs)
-        current_obs = ObsUtil.from_buffer(batch, n_obs)
-        current_obs = [ModelUtils.list_to_tensor(obs) for obs in current_obs]
+        if cached is None:
+            current_obs = ObsUtil.from_buffer(batch, n_obs)
+            current_obs = [ModelUtils.list_to_tensor(obs) for obs in current_obs]
+        else:
+            current_obs = cached["current_obs"]
         _poca_record_timing("current_obs", time.perf_counter() - started)
 
         started = time.perf_counter()
-        groupmate_obs = GroupObsUtil.from_buffer(batch, n_obs)
+        if cached is None:
+            groupmate_obs = GroupObsUtil.from_buffer(batch, n_obs)
+        else:
+            groupmate_obs = cached["groupmate_obs"]
         _poca_record_timing("group_obs_padding", time.perf_counter() - started)
 
         started = time.perf_counter()
-        groupmate_obs = [
-            [ModelUtils.list_to_tensor(obs) for obs in _groupmate_obs]
-            for _groupmate_obs in groupmate_obs
-        ]
+        if cached is None:
+            groupmate_obs = [
+                [ModelUtils.list_to_tensor(obs) for obs in _groupmate_obs]
+                for _groupmate_obs in groupmate_obs
+            ]
         _poca_record_timing("group_obs_tensors", time.perf_counter() - started)
 
         started = time.perf_counter()
-        act_masks = ModelUtils.list_to_tensor(batch[BufferKey.ACTION_MASK])
+        act_masks = (
+            ModelUtils.list_to_tensor(batch[BufferKey.ACTION_MASK])
+            if cached is None
+            else cached["action_masks"]
+        )
         _poca_record_timing("action_masks", time.perf_counter() - started)
 
         started = time.perf_counter()
-        actions = AgentAction.from_buffer(batch)
+        actions = (
+            AgentAction.from_buffer(batch)
+            if cached is None
+            else cached["actions"]
+        )
         _poca_record_timing("current_actions", time.perf_counter() - started)
 
         started = time.perf_counter()
-        groupmate_actions = AgentAction.group_from_buffer(batch)
+        groupmate_actions = (
+            AgentAction.group_from_buffer(batch)
+            if cached is None
+            else cached["groupmate_actions"]
+        )
         _poca_record_timing("group_actions", time.perf_counter() - started)
 
         started = time.perf_counter()
-        memories = [
-            ModelUtils.list_to_tensor(batch[BufferKey.MEMORY][i])
-            for i in range(
-                0,
-                len(batch[BufferKey.MEMORY]),
-                self.policy.sequence_length,
-            )
-        ]
-        if len(memories) > 0:
-            memories = torch.stack(memories).unsqueeze(0)
-        value_memories = [
-            ModelUtils.list_to_tensor(batch[BufferKey.CRITIC_MEMORY][i])
-            for i in range(
-                0,
-                len(batch[BufferKey.CRITIC_MEMORY]),
-                self.policy.sequence_length,
-            )
-        ]
-        baseline_memories = [
-            ModelUtils.list_to_tensor(batch[BufferKey.BASELINE_MEMORY][i])
-            for i in range(
-                0,
-                len(batch[BufferKey.BASELINE_MEMORY]),
-                self.policy.sequence_length,
-            )
-        ]
-        if len(value_memories) > 0:
-            value_memories = torch.stack(value_memories).unsqueeze(0)
-            baseline_memories = torch.stack(baseline_memories).unsqueeze(0)
+        if cached is None:
+            memories = [
+                ModelUtils.list_to_tensor(batch[BufferKey.MEMORY][i])
+                for i in range(
+                    0,
+                    len(batch[BufferKey.MEMORY]),
+                    self.policy.sequence_length,
+                )
+            ]
+            if len(memories) > 0:
+                memories = torch.stack(memories).unsqueeze(0)
+            value_memories = [
+                ModelUtils.list_to_tensor(batch[BufferKey.CRITIC_MEMORY][i])
+                for i in range(
+                    0,
+                    len(batch[BufferKey.CRITIC_MEMORY]),
+                    self.policy.sequence_length,
+                )
+            ]
+            baseline_memories = [
+                ModelUtils.list_to_tensor(batch[BufferKey.BASELINE_MEMORY][i])
+                for i in range(
+                    0,
+                    len(batch[BufferKey.BASELINE_MEMORY]),
+                    self.policy.sequence_length,
+                )
+            ]
+            if len(value_memories) > 0:
+                value_memories = torch.stack(value_memories).unsqueeze(0)
+                baseline_memories = torch.stack(baseline_memories).unsqueeze(0)
+        else:
+            memories = []
+            value_memories = []
+            baseline_memories = []
         _poca_record_timing("memories", time.perf_counter() - started)
 
         started = time.perf_counter()
@@ -2014,22 +2174,29 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         _poca_record_timing("critic_pass", time.perf_counter() - started)
 
         started = time.perf_counter()
-        groupmate_obs_and_actions = (groupmate_obs, groupmate_actions)
         baselines, _ = self.critic.baseline(
             current_obs,
-            groupmate_obs_and_actions,
+            (groupmate_obs, groupmate_actions),
             memories=baseline_memories,
             sequence_length=self.policy.sequence_length,
         )
         _poca_record_timing("baseline", time.perf_counter() - started)
 
         started = time.perf_counter()
-        old_log_probs = ActionLogProbs.from_buffer(batch).flatten()
+        if cached is None:
+            old_log_probs = ActionLogProbs.from_buffer(batch).flatten()
+            loss_masks = ModelUtils.list_to_tensor(
+                batch[BufferKey.MASKS],
+                dtype=torch.bool,
+            )
+            advantages = ModelUtils.list_to_tensor(
+                batch[BufferKey.ADVANTAGES]
+            )
+        else:
+            old_log_probs = cached["old_log_probs"]
+            loss_masks = cached["loss_masks"]
+            advantages = cached["advantages"]
         log_probs = log_probs.flatten()
-        loss_masks = ModelUtils.list_to_tensor(
-            batch[BufferKey.MASKS],
-            dtype=torch.bool,
-        )
         _poca_record_timing("old_probs_masks", time.perf_counter() - started)
 
         started = time.perf_counter()
@@ -2048,7 +2215,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             loss_masks,
         )
         policy_loss = ModelUtils.trust_region_policy_loss(
-            ModelUtils.list_to_tensor(batch[BufferKey.ADVANTAGES]),
+            advantages,
             log_probs,
             old_log_probs,
             loss_masks,
@@ -2091,41 +2258,90 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
 
     def masked_poca_update(self, batch, num_sequences):
         prepare_started = time.perf_counter()
-        batch_size = len(batch[BufferKey.MASKS])
-        groupmate_counts = _poca_groupmate_counts(
-            self.policy,
-            batch,
-            batch_size,
-        )
-        communication_activity = _poca_communication_activity(
-            groupmate_counts,
-        )
+        tensor_cache = getattr(_POCA_UPDATE_CACHE_STATE, "cache", None)
+        indices = getattr(_POCA_UPDATE_CACHE_STATE, "indices", None)
+        cached = None
+
+        if tensor_cache is not None and indices is not None:
+            transfer_started = time.perf_counter()
+            cached = _select_poca_update_tensor_cache(
+                tensor_cache,
+                indices,
+            )
+            _POCA_UPDATE_CACHE_STATE.minibatch = cached
+            _poca_record_timing(
+                "cache_transfer",
+                time.perf_counter() - transfer_started,
+            )
+
+            groupmate_counts = cached["groupmate_counts"]
+            communication_activity = _poca_communication_activity(
+                groupmate_counts
+            )
+            action_masks = cached["action_masks"]
+            communication_tensor = (
+                None
+                if communication_activity is None
+                else action_masks.new_tensor(communication_activity)
+            )
+            dimension_mask = _build_bees_policy_dimension_mask(
+                self.policy.behavior_spec.action_spec,
+                action_masks,
+                movement_activity=cached["movement_activity"],
+                discrete_actions=cached["discrete_actions"],
+                communication_activity=communication_tensor,
+            )
+            _POLICY_DIMENSION_MASK_STATE.mask = dimension_mask
+
+            import numpy as np
+
+            weights = 1.0 / np.maximum(
+                np.asarray(groupmate_counts, dtype=np.float32) + 1.0,
+                1.0,
+            )
+            _POLICY_DIMENSION_MASK_STATE.sample_weights = (
+                action_masks.new_tensor(weights)
+                * cached["loss_masks"].to(action_masks.dtype)
+            )
+            slot_limits = cached["slot_limits"]
+        else:
+            batch_size = len(batch[BufferKey.MASKS])
+            groupmate_counts = _poca_groupmate_counts(
+                self.policy,
+                batch,
+                batch_size,
+            )
+            communication_activity = _poca_communication_activity(
+                groupmate_counts,
+            )
+            action_masks = _set_dimension_mask(
+                self,
+                batch,
+                communication_activity=communication_activity,
+            )
+            _POLICY_DIMENSION_MASK_STATE.sample_weights = (
+                _poca_inverse_group_size_weights(
+                    self.policy,
+                    batch,
+                    action_masks,
+                    groupmate_counts=groupmate_counts,
+                )
+            )
+            slot_limits = _structured_training_slot_limits(
+                self.policy,
+                batch,
+            )
+
         _POCA_GROUP_BATCH_STATE.valid_rows = (
             _poca_groupmate_valid_row_indices(groupmate_counts)
         )
         _POCA_GROUP_BATCH_STATE.encoded_cache = {}
-        action_masks = _set_dimension_mask(
-            self,
-            batch,
-            communication_activity=communication_activity,
-        )
-        _POLICY_DIMENSION_MASK_STATE.sample_weights = (
-            _poca_inverse_group_size_weights(
-                self.policy,
-                batch,
-                action_masks,
-                groupmate_counts=groupmate_counts,
-            )
-        )
+
         from bees_mlagents_structured_policy import (
             reset_training_slot_limits,
             set_training_slot_limits,
         )
 
-        slot_limits = _structured_training_slot_limits(
-            self.policy,
-            batch,
-        )
         slot_token = set_training_slot_limits(slot_limits)
         _poca_record_timing(
             "prepare",
@@ -2145,6 +2361,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             _POLICY_DIMENSION_MASK_STATE.sample_weights = None
             _POCA_GROUP_BATCH_STATE.valid_rows = None
             _POCA_GROUP_BATCH_STATE.encoded_cache = None
+            _POCA_UPDATE_CACHE_STATE.minibatch = None
 
     ActionModel.forward = masked_forward
     ActionModel.evaluate = masked_evaluate
@@ -2154,6 +2371,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         compact_poca_trajectory_values
     )
     POCATrainer._update_policy = weighted_poca_update_policy
+    POCATrainer.advance = batched_poca_advance
     MultiAgentNetworkBody.forward = optimized_multi_agent_forward
     ModelUtils.trust_region_policy_loss = staticmethod(masked_policy_loss)
     ModelUtils.masked_mean = staticmethod(weighted_masked_mean)
@@ -2166,6 +2384,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
     _ORIGINAL_POCA_UPDATE = original_poca_update
     _ORIGINAL_POCA_TRAJECTORY_VALUES = original_poca_trajectory_values
     _ORIGINAL_POCA_UPDATE_POLICY = original_poca_update_policy
+    _ORIGINAL_POCA_ADVANCE = original_poca_advance
     _ORIGINAL_MULTI_AGENT_FORWARD = original_multi_agent_forward
     _ORIGINAL_TRUST_REGION_POLICY_LOSS = original_policy_loss
     _ORIGINAL_MASKED_MEAN = original_masked_mean
@@ -2183,6 +2402,7 @@ def restore_inactive_continuous_action_masking() -> None:
     global _ORIGINAL_POCA_UPDATE
     global _ORIGINAL_POCA_TRAJECTORY_VALUES
     global _ORIGINAL_POCA_UPDATE_POLICY
+    global _ORIGINAL_POCA_ADVANCE
     global _ORIGINAL_MULTI_AGENT_FORWARD
     global _ORIGINAL_TRUST_REGION_POLICY_LOSS
     global _ORIGINAL_MASKED_MEAN
@@ -2208,6 +2428,7 @@ def restore_inactive_continuous_action_masking() -> None:
         _ORIGINAL_POCA_TRAJECTORY_VALUES
     )
     POCATrainer._update_policy = _ORIGINAL_POCA_UPDATE_POLICY
+    POCATrainer.advance = _ORIGINAL_POCA_ADVANCE
     MultiAgentNetworkBody.forward = _ORIGINAL_MULTI_AGENT_FORWARD
     ModelUtils.trust_region_policy_loss = staticmethod(
         _ORIGINAL_TRUST_REGION_POLICY_LOSS
@@ -2221,6 +2442,9 @@ def restore_inactive_continuous_action_masking() -> None:
     _POLICY_DIMENSION_MASK_STATE.sample_weights = None
     _POCA_GROUP_BATCH_STATE.valid_rows = None
     _POCA_GROUP_BATCH_STATE.encoded_cache = None
+    _POCA_UPDATE_CACHE_STATE.cache = None
+    _POCA_UPDATE_CACHE_STATE.indices = None
+    _POCA_UPDATE_CACHE_STATE.minibatch = None
 
     _ORIGINAL_ACTION_MODEL_FORWARD = None
     _ORIGINAL_ACTION_MODEL_EVALUATE = None
@@ -2228,6 +2452,7 @@ def restore_inactive_continuous_action_masking() -> None:
     _ORIGINAL_POCA_UPDATE = None
     _ORIGINAL_POCA_TRAJECTORY_VALUES = None
     _ORIGINAL_POCA_UPDATE_POLICY = None
+    _ORIGINAL_POCA_ADVANCE = None
     _ORIGINAL_MULTI_AGENT_FORWARD = None
     _ORIGINAL_TRUST_REGION_POLICY_LOSS = None
     _ORIGINAL_MASKED_MEAN = None
