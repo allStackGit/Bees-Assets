@@ -1272,6 +1272,7 @@ def _select_poca_update_tensor_cache(cache, indices):
     import numpy as np
     from mlagents.torch_utils import default_device, torch
     from mlagents.trainers.torch_entities.agent_action import AgentAction
+    from bees_mlagents_structured_policy import FACTION_INDEX
 
     indices = np.asarray(indices, dtype=np.int64)
     index_tensor = torch.as_tensor(
@@ -1291,6 +1292,29 @@ def _select_poca_update_tensor_cache(cache, indices):
         if selected_groupmate_counts.size
         else 0
     )
+    selected_faction = (
+        cache["current_obs"][0]
+        .index_select(0, index_tensor)[:, FACTION_INDEX]
+        .numpy()
+    )
+    bee_weight = np.clip(
+        (selected_faction.astype(np.float32, copy=False) + 1.0) * 0.5,
+        0.0,
+        1.0,
+    )
+    faction_rows = {
+        "bee": np.flatnonzero(bee_weight >= 1.0).astype(
+            np.int64,
+            copy=False,
+        ),
+        "human": np.flatnonzero(bee_weight <= 0.0).astype(
+            np.int64,
+            copy=False,
+        ),
+        "mixed": np.flatnonzero(
+            (bee_weight > 0.0) & (bee_weight < 1.0)
+        ).astype(np.int64, copy=False),
+    }
 
     current_obs = [take(tensor) for tensor in cache["current_obs"]]
     groupmate_obs = [
@@ -1366,6 +1390,7 @@ def _select_poca_update_tensor_cache(cache, indices):
         ),
         "discrete_actions": discrete_actions,
         "groupmate_counts": selected_groupmate_counts,
+        "faction_rows": faction_rows,
         "slot_limits": cache["slot_limits"],
     }
 
@@ -2400,11 +2425,16 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         _POCA_GROUP_BATCH_STATE.encoded_cache = {}
 
         from bees_mlagents_structured_policy import (
+            reset_training_faction_rows,
             reset_training_slot_limits,
+            set_training_faction_rows,
             set_training_slot_limits,
         )
 
         slot_token = set_training_slot_limits(slot_limits)
+        faction_token = set_training_faction_rows(
+            None if cached is None else cached["faction_rows"]
+        )
         _poca_record_timing(
             "prepare",
             time.perf_counter() - prepare_started,
@@ -2418,6 +2448,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                 "optimizer_total",
                 time.perf_counter() - optimizer_started,
             )
+            reset_training_faction_rows(faction_token)
             reset_training_slot_limits(slot_token)
             _POLICY_DIMENSION_MASK_STATE.mask = None
             _POLICY_DIMENSION_MASK_STATE.sample_weights = None
