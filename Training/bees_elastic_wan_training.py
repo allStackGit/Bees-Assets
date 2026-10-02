@@ -785,11 +785,13 @@ class ElasticWanBroker(base.WanActorBroker):
         deadline = time.monotonic() + wait_seconds
         with self._condition:
             initial_topology = self._topology_epoch
+            initial_optimizer_busy = self._optimizer_busy_seconds_total
             while (
                 not self._closed
                 and policy_epoch == self._policy_epoch
                 and control_epoch == self._control_epoch
                 and initial_topology == self._topology_epoch
+                and initial_optimizer_busy == self._optimizer_busy_seconds_total
                 and wait_seconds > 0
             ):
                 remaining = deadline - time.monotonic()
