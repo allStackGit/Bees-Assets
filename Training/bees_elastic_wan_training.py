@@ -14,6 +14,7 @@ collection, stale-actor leases, and capacity diagnostics.
 from __future__ import annotations
 
 import collections
+import math
 import os
 import queue
 import time
