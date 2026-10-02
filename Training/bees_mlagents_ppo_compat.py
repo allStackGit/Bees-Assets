@@ -3182,7 +3182,10 @@ def restore_inactive_continuous_action_masking() -> None:
     global _ORIGINAL_BC_LOSS
 
     if _ORIGINAL_ACTION_MODEL_FORWARD is None:
+        _shutdown_all_poca_pipelines()
         return
+
+    _shutdown_all_poca_pipelines()
 
     from mlagents.trainers.poca.optimizer_torch import TorchPOCAOptimizer
     from mlagents.trainers.poca.trainer import POCATrainer
