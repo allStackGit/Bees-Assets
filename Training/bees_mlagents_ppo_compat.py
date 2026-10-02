@@ -87,9 +87,16 @@ def note_poca_policy_publication(
         }
 
 
-def poca_pipeline_overlap_active() -> bool:
+def poca_pipeline_overlap_active(behavior_name: Optional[str] = None) -> bool:
     with _POCA_PIPELINE_REGISTRY_LOCK:
-        return bool(_POCA_ACTIVE_OVERLAPS)
+        if behavior_name is None:
+            return bool(_POCA_ACTIVE_OVERLAPS)
+        normalized = str(behavior_name or "").strip()
+        return any(
+            id(pipeline) in _POCA_ACTIVE_OVERLAPS
+            and pipeline.behavior_name == normalized
+            for pipeline in _POCA_PIPELINES.values()
+        )
 
 
 def poca_pipeline_has_pending_work() -> bool:
@@ -321,7 +328,13 @@ class _PocaTrajectoryPipeline:
         self._overlap.set()
         return True, float(copy_seconds), int(snapshot.version)
 
-    def end_overlap(self) -> None:
+    def end_external_overlap(self) -> None:
+        """Stop WAN/self-play intake but keep draining already-forwarded internal work."""
+
+        with _POCA_PIPELINE_REGISTRY_LOCK:
+            _POCA_ACTIVE_OVERLAPS.discard(id(self))
+
+    def finish_overlap(self) -> None:
         self._overlap.clear()
         with _POCA_PIPELINE_REGISTRY_LOCK:
             _POCA_ACTIVE_OVERLAPS.discard(id(self))
@@ -408,15 +421,18 @@ class _PocaTrajectoryPipeline:
                 self._overlap.wait(timeout=0.05)
                 continue
 
-            gathered = self._gather_batch()
-            if gathered is None:
-                time.sleep(POCA_PIPELINE_IDLE_SECONDS)
-                continue
-            policy_key, trajectories, experiences = gathered
-
+            # Mark the whole dequeue/gather/evaluate interval as in-flight so
+            # the trainer thread cannot observe a false idle gap after the
+            # worker has removed a trajectory but before evaluation starts.
             with self._state_lock:
                 self._inflight = True
             try:
+                gathered = self._gather_batch()
+                if gathered is None:
+                    time.sleep(POCA_PIPELINE_IDLE_SECONDS)
+                    continue
+                policy_key, trajectories, experiences = gathered
+
                 snapshot = self._snapshot_for(policy_key)
                 if snapshot is None:
                     result = {
@@ -2347,7 +2363,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
 
             try:
                 while not forward_stop.is_set():
-                    if not poca_pipeline_overlap_active():
+                    if not poca_pipeline_overlap_active(self.brain_name):
                         forward_stop.wait(POCA_PIPELINE_IDLE_SECONDS)
                         continue
 
@@ -2375,7 +2391,9 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                         for _ in range(queue_size):
                             if (
                                 forward_stop.is_set()
-                                or not poca_pipeline_overlap_active()
+                                or not poca_pipeline_overlap_active(
+                                    self.brain_name
+                                )
                             ):
                                 break
                             if (
@@ -2734,7 +2752,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                 _POCA_UPDATE_CACHE_STATE.minibatch = None
         finally:
             if pipeline is not None and pipeline_overlap:
-                pipeline.end_overlap()
+                pipeline.end_external_overlap()
 
         update_seconds = time.perf_counter() - update_started
         pipeline_after = (
