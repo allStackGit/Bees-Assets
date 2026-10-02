@@ -12,6 +12,7 @@ import math
 from pathlib import Path
 from types import SimpleNamespace
 import unittest
+from unittest import mock
 
 
 COMPAT_PATH = Path(__file__).with_name("bees_mlagents_ppo_compat.py")
@@ -1000,6 +1001,38 @@ class PocaFrozenTrajectorySnapshotTests(unittest.TestCase):
             {"version": 12, "max_policy_lag": 4},
         )
         compat._shutdown_all_poca_pipelines()
+
+
+class PocaGpuCachePromotionTests(unittest.TestCase):
+    def test_cache_size_counts_nested_tensors_once(self):
+        from mlagents.torch_utils import torch
+
+        tensor = torch.zeros((4, 8), dtype=torch.float32)
+        cache = {
+            "a": tensor,
+            "nested": [tensor, torch.zeros((2,), dtype=torch.int64)],
+        }
+        self.assertEqual(
+            compat._poca_tensor_cache_nbytes(cache),
+            4 * 8 * 4 + 2 * 8,
+        )
+
+    def test_cpu_device_keeps_cache_on_cpu(self):
+        from mlagents.torch_utils import torch
+
+        cache = {
+            "current_obs": [torch.zeros((2, 3), dtype=torch.float32)],
+            "storage": "cpu",
+        }
+        with mock.patch(
+            "mlagents.torch_utils.default_device",
+            return_value=torch.device("cpu"),
+        ):
+            promoted, info = compat._promote_poca_update_tensor_cache(cache)
+
+        self.assertIs(promoted, cache)
+        self.assertEqual(info["storage"], "cpu")
+        self.assertEqual(info["bytes"], 2 * 3 * 4)
 
 
 class PocaTensorCacheTests(unittest.TestCase):
