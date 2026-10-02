@@ -1711,11 +1711,13 @@ def _apply_prepared_poca_trajectory_batch(
     for trajectory_index, (trajectory, buffer) in enumerate(
         zip(trajectories, buffers)
     ):
+        # Match stock POCA ordering: summary/checkpoint/step bookkeeping
+        # happens before this trajectory mutates running normalization state.
+        RLTrainer._process_trajectory(trainer, trajectory)
         if update_normalization and trainer.is_training:
             trainer.policy.actor.update_normalization(buffer)
             trainer.optimizer.critic.update_normalization(buffer)
 
-        RLTrainer._process_trajectory(trainer, trajectory)
         length = buffer.num_experiences
         end = offset + length
         trajectory_values = {
