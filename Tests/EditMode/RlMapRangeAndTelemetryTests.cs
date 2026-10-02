@@ -115,6 +115,23 @@ namespace Bees.Tests.EditMode
                 "--rl-map-size-max", "64");
         }
 
+        [TestCase(false, true)]
+        [TestCase(true, false)]
+        public void ArenaMovementGuardIsDisabledWhenStaticObstaclesAreLethal(
+            bool staticObstaclesEnabled,
+            bool expectedConfinement)
+        {
+            Type bootstrapType = RuntimeAssembly.GetType("RlOneVsOneTrainingBootstrap");
+            MethodInfo shouldConstrain = bootstrapType.GetMethod(
+                "ShouldConstrainShipsToArena",
+                BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public);
+
+            Assert.That(shouldConstrain, Is.Not.Null);
+            Assert.That(
+                (bool)shouldConstrain.Invoke(null, new object[] { staticObstaclesEnabled }),
+                Is.EqualTo(expectedConfinement));
+        }
+
         [Test]
         public void MultiArenaTelemetryKeepsEpisodeStateIndependentPerLevel()
         {
