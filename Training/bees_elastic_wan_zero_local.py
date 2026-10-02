@@ -115,7 +115,7 @@ class ZeroLocalElasticWanEnvManagerMixin(elastic.ElasticWanEnvManagerMixin):
         self._bees_threaded_mode = bool(threaded_mode)
         self._bees_threaded_injector_stop = threading.Event()
         self._bees_threaded_injector_thread = None
-        self._bees_threaded_injector_error: Optional[BaseException] = None
+        self._bees_threaded_injector_error: Optional[Exception] = None
         self._bees_wan_broker = elastic.ElasticWanBroker(
             options,
             run_options,
@@ -205,7 +205,7 @@ class ZeroLocalElasticWanEnvManagerMixin(elastic.ElasticWanEnvManagerMixin):
                     if self._bees_wan_broker._closed:
                         return
                     self._bees_wan_broker._condition.wait(timeout=0.01)
-        except BaseException as exc:
+        except Exception as exc:
             if not self._bees_threaded_injector_stop.is_set():
                 self._bees_threaded_injector_error = exc
                 with self._bees_wan_broker._condition:
