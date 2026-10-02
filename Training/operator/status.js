@@ -423,7 +423,8 @@ async function getStatusFrameLines(config, adminToken) {
                     : 'off'
             ) +
             ' max_remote=' + config.maxRemoteActors +
-            ' broker_port=' + config.brokerPort
+            ' broker_port=' + config.brokerPort +
+            ' threaded=' + (config.threadedTraining ? 'on' : 'off')
         );
 
         if (desired.pending_release) {
