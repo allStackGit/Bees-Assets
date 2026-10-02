@@ -452,7 +452,7 @@ class TrainingEnvOptimizer {
             state.measurement_start_steps = null;
             state.measurement_start_produced_steps = null;
             state.measurement_start_busy_seconds = null;
-                            state.source_steps = null;
+            state.source_steps = null;
             state.last_decision =
                 reason + '; backing off to ' + state.baseline_envs + ' envs';
         }
@@ -911,7 +911,7 @@ class TrainingEnvOptimizer {
             state.measurement_start_steps = null;
             state.measurement_start_produced_steps = null;
             state.measurement_start_busy_seconds = null;
-                            state.source_steps = totalSteps;
+            state.source_steps = totalSteps;
             state.last_decision = optimizerError
                 ? 'holding env count after worker-reported error'
                 : recentSessionFailure
@@ -951,7 +951,7 @@ class TrainingEnvOptimizer {
             state.measurement_start_steps = null;
             state.measurement_start_produced_steps = null;
             state.measurement_start_busy_seconds = null;
-                            state.source_steps = totalSteps;
+            state.source_steps = totalSteps;
             state.last_decision =
                 'resizing Unity environments ' + capacity.current_envs +
                 '->' + state.desired_envs;
@@ -973,7 +973,7 @@ class TrainingEnvOptimizer {
             state.measurement_start_steps = null;
             state.measurement_start_produced_steps = null;
             state.measurement_start_busy_seconds = null;
-                            state.source_steps = totalSteps;
+            state.source_steps = totalSteps;
             state.last_decision =
                 'waiting for another worker capacity search before measuring global throughput';
             return this.snapshot(record.trainer_id);
