@@ -1956,7 +1956,7 @@ class TrainingControlClientTests(unittest.TestCase):
             agent.dedicated_process_matches_desired(managed, **base)
         )
 
-    def test_auto_restart_uses_measured_optimizer_baseline(self):
+    def test_auto_restart_caps_measured_baseline_at_safe_start_count(self):
         desired = {"env_optimizer": {"baseline_envs": 6, "desired_envs": 12}}
         self.assertEqual(
             agent.safe_auto_restart_env_count(
@@ -1965,7 +1965,19 @@ class TrainingControlClientTests(unittest.TestCase):
                 minimum=1,
                 maximum=16,
             ),
-            6,
+            4,
+        )
+
+    def test_auto_restart_preserves_lower_measured_baseline(self):
+        desired = {"env_optimizer": {"baseline_envs": 2, "desired_envs": 12}}
+        self.assertEqual(
+            agent.safe_auto_restart_env_count(
+                desired,
+                fallback=4,
+                minimum=1,
+                maximum=16,
+            ),
+            2,
         )
 
     def test_auto_restart_falls_back_to_safe_start_count_without_baseline(self):
