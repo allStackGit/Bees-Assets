@@ -394,6 +394,8 @@ def install_elastic_wan_env_manager(
             )
 
     def monitored_advance(controller: Any, env_manager: Any) -> int:
+        from bees_mlagents_ppo_compat import poca_update_busy_seconds_total
+
         broker = getattr(env_manager, "_bees_wan_broker", None)
         starting_policy_epoch = (
             broker.policy_publication_epoch() if broker is not None else 0
@@ -409,6 +411,9 @@ def install_elastic_wan_env_manager(
                     continue
             if steps:
                 broker.observe_trainer_step(max(steps))
+            broker.observe_optimizer_busy_seconds(
+                poca_update_busy_seconds_total()
+            )
         return result
 
     learn.SubprocessEnvManager = ZeroLocalElasticWanEnvManager
