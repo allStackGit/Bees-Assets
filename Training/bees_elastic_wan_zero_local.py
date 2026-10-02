@@ -25,6 +25,9 @@ import bees_wan_actor_training as base
 from bees_process_safety import write_managed_health
 
 
+THREADED_INJECT_MAX_QUEUED_TRAJECTORIES = 256
+
+
 class _VersionedTrajectory:
     """Central-only trajectory wrapper retaining the remote policy generation."""
 
@@ -194,10 +197,21 @@ class ZeroLocalElasticWanEnvManagerMixin(elastic.ElasticWanEnvManagerMixin):
                 if not poca_pipeline_overlap_active():
                     self._bees_threaded_injector_stop.wait(0.005)
                     continue
-                active = self._bees_wan_broker.active_actor_snapshot()
-                batches = self._bees_wan_broker.drain_current_batches(
-                    max(1, len(active) * 2)
+                queued_trajectories = sum(
+                    manager.trajectory_queue.qsize()
+                    for manager in self.agent_managers.values()
                 )
+                if (
+                    queued_trajectories
+                    >= THREADED_INJECT_MAX_QUEUED_TRAJECTORIES
+                ):
+                    self._bees_threaded_injector_stop.wait(0.002)
+                    continue
+                # One fair broker batch at a time keeps the existing bounded
+                # broker queue as the ultimate backpressure owner. A batch may
+                # contain up to 256 trajectories, so the AgentManager side
+                # remains bounded to roughly two such batches while PPO runs.
+                batches = self._bees_wan_broker.drain_current_batches(1)
                 if batches:
                     self._inject_batches(batches)
                     continue
