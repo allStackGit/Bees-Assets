@@ -897,6 +897,16 @@ class PocaGpuCachePromotionTests(unittest.TestCase):
                 return_value=(6 * 1024**3, 6 * 1024**3),
             ) as mem_get_info,
             mock.patch.object(
+                torch.cuda,
+                "memory_allocated",
+                return_value=512 * 1024**2,
+            ),
+            mock.patch.object(
+                torch.cuda,
+                "memory_reserved",
+                return_value=1024 * 1024**2,
+            ),
+            mock.patch.object(
                 compat,
                 "_poca_move_cache_tensors",
                 side_effect=fake_move,
@@ -907,6 +917,52 @@ class PocaGpuCachePromotionTests(unittest.TestCase):
         mem_get_info.assert_called_once_with(0)
         self.assertEqual(promoted["storage"], "cuda")
         self.assertEqual(info["storage"], "cuda")
+
+    def test_allocator_reusable_memory_allows_gpu_cache_when_driver_free_is_zero(self):
+        from mlagents.torch_utils import torch
+
+        cache = {
+            "current_obs": [
+                torch.zeros((256, 256), dtype=torch.float32)
+            ],
+            "storage": "cpu",
+        }
+
+        with (
+            mock.patch(
+                "mlagents.torch_utils.default_device",
+                return_value=torch.device("cuda"),
+            ),
+            mock.patch.object(torch.cuda, "is_available", return_value=True),
+            mock.patch.object(torch.cuda, "current_device", return_value=0),
+            mock.patch.object(
+                torch.cuda,
+                "mem_get_info",
+                return_value=(0, 6 * 1024**3),
+            ),
+            mock.patch.object(
+                torch.cuda,
+                "memory_allocated",
+                return_value=2 * 1024**3,
+            ),
+            mock.patch.object(
+                torch.cuda,
+                "memory_reserved",
+                return_value=5 * 1024**3,
+            ),
+            mock.patch.object(
+                compat,
+                "_poca_move_cache_tensors",
+                side_effect=lambda value, _device: dict(value),
+            ),
+        ):
+            promoted, info = compat._promote_poca_update_tensor_cache(cache)
+
+        self.assertEqual(promoted["storage"], "cuda")
+        self.assertEqual(info["storage"], "cuda")
+        self.assertEqual(info["driver_free_before"], 0)
+        self.assertEqual(info["allocator_reusable_before"], 3 * 1024**3)
+        self.assertEqual(info["free_before"], 3 * 1024**3)
 
     def test_cpu_device_keeps_cache_on_cpu(self):
         from mlagents.torch_utils import torch
@@ -924,6 +980,16 @@ class PocaGpuCachePromotionTests(unittest.TestCase):
         self.assertIs(promoted, cache)
         self.assertEqual(info["storage"], "cpu")
         self.assertEqual(info["bytes"], 2 * 3 * 4)
+
+
+class PocaBusyTelemetryTests(unittest.TestCase):
+    def test_busy_counter_accumulates_update_wall_time(self):
+        before = compat.poca_update_busy_seconds_total()
+        compat._record_poca_update_busy_seconds(1.25)
+        self.assertAlmostEqual(
+            compat.poca_update_busy_seconds_total(),
+            before + 1.25,
+        )
 
 
 class PocaTensorCacheTests(unittest.TestCase):
