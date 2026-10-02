@@ -2061,6 +2061,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
 
     from mlagents.trainers.buffer import BufferKey
     from mlagents.trainers.ghost.trainer import GhostTrainer
+    from mlagents.trainers.ghost.trainer import GhostTrainer
     from mlagents.trainers.poca.optimizer_torch import TorchPOCAOptimizer
     from mlagents.trainers.poca.trainer import POCATrainer
     from mlagents.trainers.torch_entities.components.bc.module import BCModule
@@ -2431,25 +2432,30 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                 daemon=True,
             )
             forward_thread.start()
+            wrapped_error = None
             try:
                 return wrapped_advance()
+            except BaseException as exc:
+                wrapped_error = exc
+                raise
             finally:
                 forward_stop.set()
                 forward_thread.join(timeout=2.0)
-                if forward_thread.is_alive():
-                    raise RuntimeError(
-                        "self-play trajectory forwarder did not stop"
-                    )
-                if forward_errors:
-                    raise RuntimeError(
-                        "self-play trajectory forwarder failed"
-                    ) from forward_errors[0]
+                if wrapped_error is None:
+                    if forward_thread.is_alive():
+                        raise RuntimeError(
+                            "self-play trajectory forwarder did not stop"
+                        )
+                    if forward_errors:
+                        raise RuntimeError(
+                            "self-play trajectory forwarder failed"
+                        ) from forward_errors[0]
 
-                # Preserve GhostTrainer ownership/order for ELO and ghost-step
-                # bookkeeping. These run before its team-change/save/swap logic.
-                for trajectory in forwarded_learning:
-                    self._process_trajectory(trajectory)
-                self.ghost_step += int(forwarded_ghost_steps[0])
+                    # Preserve GhostTrainer ownership/order for ELO and ghost-step
+                    # bookkeeping. These run before its team-change/save/swap logic.
+                    for trajectory in forwarded_learning:
+                        self._process_trajectory(trajectory)
+                    self.ghost_step += int(forwarded_ghost_steps[0])
 
         wrapped_trainer.advance = overlapped_wrapped_advance
         try:
@@ -3416,6 +3422,7 @@ def restore_inactive_continuous_action_masking() -> None:
     global _ORIGINAL_POCA_TRAJECTORY_VALUES
     global _ORIGINAL_POCA_UPDATE_POLICY
     global _ORIGINAL_POCA_ADVANCE
+    global _ORIGINAL_GHOST_ADVANCE
     global _ORIGINAL_MULTI_AGENT_FORWARD
     global _ORIGINAL_TRUST_REGION_POLICY_LOSS
     global _ORIGINAL_MASKED_MEAN
@@ -3445,6 +3452,7 @@ def restore_inactive_continuous_action_masking() -> None:
     )
     POCATrainer._update_policy = _ORIGINAL_POCA_UPDATE_POLICY
     POCATrainer.advance = _ORIGINAL_POCA_ADVANCE
+    GhostTrainer.advance = _ORIGINAL_GHOST_ADVANCE
     MultiAgentNetworkBody.forward = _ORIGINAL_MULTI_AGENT_FORWARD
     ModelUtils.trust_region_policy_loss = staticmethod(
         _ORIGINAL_TRUST_REGION_POLICY_LOSS
@@ -3469,6 +3477,7 @@ def restore_inactive_continuous_action_masking() -> None:
     _ORIGINAL_POCA_TRAJECTORY_VALUES = None
     _ORIGINAL_POCA_UPDATE_POLICY = None
     _ORIGINAL_POCA_ADVANCE = None
+    _ORIGINAL_GHOST_ADVANCE = None
     _ORIGINAL_MULTI_AGENT_FORWARD = None
     _ORIGINAL_TRUST_REGION_POLICY_LOSS = None
     _ORIGINAL_MASKED_MEAN = None
