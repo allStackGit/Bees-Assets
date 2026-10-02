@@ -1648,13 +1648,21 @@ def safe_auto_restart_env_count(
     minimum: int,
     maximum: int,
 ) -> int:
-    """Return the last measured optimizer baseline for recovery, or the safe startup count."""
+    """Return a conservative process-launch count for an auto-tuned worker.
+
+    The optimizer baseline is a measured steady-state capacity, not evidence that launching that
+    many Unity processes simultaneously is safe. Start no higher than the machine's conservative
+    startup count; if the measured baseline is lower, preserve that lower bound. Once the actor is
+    healthy, the existing live-resize path can add environments one at a time toward the server's
+    desired capacity.
+    """
+    startup = max(minimum, min(maximum, int(fallback)))
     optimizer = desired.get("env_optimizer")
     baseline = optimizer.get("baseline_envs") if isinstance(optimizer, Mapping) else None
     if isinstance(baseline, int) and not isinstance(baseline, bool):
         if minimum <= baseline <= maximum:
-            return int(baseline)
-    return max(minimum, min(maximum, int(fallback)))
+            return min(startup, int(baseline))
+    return startup
 
 
 def dedicated_process_matches_desired(
@@ -2451,12 +2459,18 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                             needs_restart
                             and args.auto_worker_envs
                             and not recovery_restart
-                            and launch_worker_env_count != worker_env_count
                         ):
-                            # Build/runtime/config replacement of an otherwise healthy actor should
-                            # preserve the server's current desired capacity. Recovery from a dead or
-                            # stalled probe instead starts from the last measured safe baseline.
-                            launch_worker_env_count = worker_env_count
+                            # A steady-state optimizer target can be much larger than the number of
+                            # Unity processes this machine can safely launch at once. Release/runtime
+                            # replacement must therefore use the same conservative launch count as
+                            # recovery. On the next heartbeat the live target is restored to the
+                            # server's desired capacity and the actor grows one environment at a time.
+                            launch_worker_env_count = safe_auto_restart_env_count(
+                                desired,
+                                fallback=int(args.worker_envs),
+                                minimum=int(args.worker_envs_min),
+                                maximum=int(args.worker_envs_max),
+                            )
                             command = render_command(
                                 runtime_command_template,
                                 entrypoint,
