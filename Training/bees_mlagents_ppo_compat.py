@@ -46,6 +46,7 @@ _ORIGINAL_POCA_UPDATE = None
 _ORIGINAL_POCA_TRAJECTORY_VALUES = None
 _ORIGINAL_POCA_UPDATE_POLICY = None
 _ORIGINAL_POCA_ADVANCE = None
+_ORIGINAL_GHOST_ADVANCE = None
 _ORIGINAL_MULTI_AGENT_FORWARD = None
 _ORIGINAL_TRUST_REGION_POLICY_LOSS = None
 _ORIGINAL_MASKED_MEAN = None
@@ -120,6 +121,14 @@ def _trajectory_source_policy_version(trajectory) -> Optional[int]:
     return None
 
 
+def _trajectory_source_policy_key(trajectory):
+    behavior_id = str(getattr(trajectory, "behavior_id", "") or "").strip()
+    version = _trajectory_source_policy_version(trajectory)
+    if not behavior_id or version is None:
+        return None
+    return behavior_id, int(version)
+
+
 def _poca_pipeline_supported(trainer) -> bool:
     from mlagents.trainers.torch_entities.components.reward_providers.extrinsic_reward_provider import (
         ExtrinsicRewardProvider,
@@ -144,9 +153,16 @@ def _poca_pipeline_supported(trainer) -> bool:
 
 
 class _PocaCriticSnapshot:
-    __slots__ = ("version", "policy", "critic")
+    __slots__ = ("behavior_id", "version", "policy", "critic")
 
-    def __init__(self, version: int, policy, critic) -> None:
+    def __init__(
+        self,
+        behavior_id: str,
+        version: int,
+        policy,
+        critic,
+    ) -> None:
+        self.behavior_id = str(behavior_id)
         self.version = int(version)
         self.policy = policy
         self.critic = critic
@@ -164,6 +180,7 @@ class _PocaTrajectoryPipeline:
         self._stop = threading.Event()
         self._state_lock = threading.Lock()
         self._snapshots = {}
+        self._source_behavior_id = None
         self._inflight = False
         self._prepared_batches = 0
         self._prepared_steps = 0
@@ -203,23 +220,51 @@ class _PocaTrajectoryPipeline:
                 "ready_batches": int(self._ready.qsize()),
             }
 
-    def _publication(self):
-        with _POCA_PIPELINE_REGISTRY_LOCK:
-            value = _POCA_POLICY_PUBLICATIONS.get(self.behavior_name)
-            return None if value is None else dict(value)
+    def observe_trajectory(self, trajectory) -> None:
+        behavior_id = str(
+            getattr(trajectory, "behavior_id", "") or ""
+        ).strip()
+        if not behavior_id:
+            return
+        from mlagents.trainers.behavior_id_utils import BehaviorIdentifiers
 
-    def _snapshot_for(self, version: int):
+        parsed = BehaviorIdentifiers.from_name_behavior_id(behavior_id)
+        if parsed.brain_name != self.behavior_name:
+            return
         with self._state_lock:
-            return self._snapshots.get(int(version))
+            self._source_behavior_id = behavior_id
+
+    def _publication(self):
+        with self._state_lock:
+            behavior_id = self._source_behavior_id
+        if not behavior_id:
+            return None, None
+        with _POCA_PIPELINE_REGISTRY_LOCK:
+            value = _POCA_POLICY_PUBLICATIONS.get(behavior_id)
+            return behavior_id, None if value is None else dict(value)
+
+    def _snapshot_for(self, policy_key):
+        if policy_key is None:
+            return None
+        behavior_id, version = policy_key
+        with self._state_lock:
+            return self._snapshots.get(
+                (str(behavior_id), int(version))
+            )
 
     def _capture_current_snapshot(self):
-        publication = self._publication()
+        behavior_id, publication = self._publication()
         trainer = self._trainer_ref()
-        if publication is None or trainer is None:
+        if (
+            behavior_id is None
+            or publication is None
+            or trainer is None
+        ):
             return None, 0.0
         version = int(publication["version"])
+        snapshot_key = (behavior_id, version)
         with self._state_lock:
-            existing = self._snapshots.get(version)
+            existing = self._snapshots.get(snapshot_key)
         if existing is not None:
             return existing, 0.0
 
@@ -235,7 +280,12 @@ class _PocaTrajectoryPipeline:
             use_recurrent=False,
             behavior_spec=copy.deepcopy(trainer.policy.behavior_spec),
         )
-        snapshot = _PocaCriticSnapshot(version, policy_view, critic)
+        snapshot = _PocaCriticSnapshot(
+            behavior_id,
+            version,
+            policy_view,
+            critic,
+        )
         elapsed = time.perf_counter() - started
 
         minimum_version = max(
@@ -243,10 +293,14 @@ class _PocaTrajectoryPipeline:
             version - int(publication["max_policy_lag"]),
         )
         with self._state_lock:
-            self._snapshots[version] = snapshot
-            for old_version in tuple(self._snapshots):
-                if old_version < minimum_version:
-                    self._snapshots.pop(old_version, None)
+            self._snapshots[snapshot_key] = snapshot
+            for old_key in tuple(self._snapshots):
+                old_behavior_id, old_version = old_key
+                if (
+                    old_behavior_id == behavior_id
+                    and old_version < minimum_version
+                ):
+                    self._snapshots.pop(old_key, None)
         return snapshot, elapsed
 
     def begin_overlap(self):
@@ -309,10 +363,10 @@ class _PocaTrajectoryPipeline:
         if first is None:
             return None
 
-        version = _trajectory_source_policy_version(first)
+        policy_key = _trajectory_source_policy_key(first)
         trajectories = [first]
         experiences = len(first.steps)
-        if version is None:
+        if policy_key is None:
             return None, trajectories, experiences
 
         while experiences < POCA_TRAJECTORY_BATCH_MAX_EXPERIENCES:
@@ -321,10 +375,10 @@ class _PocaTrajectoryPipeline:
             )
             if candidate is None:
                 break
-            candidate_version = _trajectory_source_policy_version(candidate)
+            candidate_key = _trajectory_source_policy_key(candidate)
             candidate_experiences = len(candidate.steps)
             if (
-                candidate_version != version
+                candidate_key != policy_key
                 or (
                     trajectories
                     and experiences + candidate_experiences
@@ -335,7 +389,7 @@ class _PocaTrajectoryPipeline:
                 break
             trajectories.append(candidate)
             experiences += candidate_experiences
-        return version, trajectories, experiences
+        return policy_key, trajectories, experiences
 
     def _put_result(self, result) -> bool:
         while not self._stop.is_set():
@@ -358,18 +412,16 @@ class _PocaTrajectoryPipeline:
             if gathered is None:
                 time.sleep(POCA_PIPELINE_IDLE_SECONDS)
                 continue
-            version, trajectories, experiences = gathered
+            policy_key, trajectories, experiences = gathered
 
             with self._state_lock:
                 self._inflight = True
             try:
-                snapshot = (
-                    None if version is None else self._snapshot_for(version)
-                )
+                snapshot = self._snapshot_for(policy_key)
                 if snapshot is None:
                     result = {
                         "prepared": False,
-                        "version": version,
+                        "policy_key": policy_key,
                         "trajectories": trajectories,
                     }
                     with self._state_lock:
@@ -392,7 +444,7 @@ class _PocaTrajectoryPipeline:
                         )
                         result = {
                             "prepared": False,
-                            "version": version,
+                            "policy_key": policy_key,
                             "trajectories": trajectories,
                         }
                         with self._state_lock:
@@ -404,7 +456,7 @@ class _PocaTrajectoryPipeline:
                         elapsed = time.perf_counter() - started
                         result = {
                             "prepared": True,
-                            "version": version,
+                            "policy_key": policy_key,
                             **prepared,
                         }
                         with self._state_lock:
@@ -423,8 +475,6 @@ def _get_or_create_poca_pipeline(trainer):
     if not behavior_name or not _poca_pipeline_supported(trainer):
         return None
     with _POCA_PIPELINE_REGISTRY_LOCK:
-        if behavior_name not in _POCA_POLICY_PUBLICATIONS:
-            return None
         key = id(trainer)
         existing = _POCA_PIPELINES.get(key)
         if existing is not None:
