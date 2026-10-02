@@ -6,6 +6,8 @@ param(
     [switch]$Force,
     [switch]$PreserveRun,
     [switch]$NewRun,
+    [switch]$Threaded,
+    [switch]$LocalTraining,
     [string[]]$EnvArg,
     [switch]$Once,
     [ValidateRange(1,60)][int]$RefreshSeconds=2,
@@ -23,6 +25,12 @@ if($PreserveRun -and $Command -ne 'build'){
 }
 if($NewRun -and $Command -ne 'start'){
     throw '-NewRun is only valid with the start command.'
+}
+if($Threaded -and $Command -ne 'runtime'){
+    throw '-Threaded is only valid with the runtime command.'
+}
+if($LocalTraining -and $Command -ne 'runtime'){
+    throw '-LocalTraining is only valid with the runtime command.'
 }
 if($Command -ne 'bundle' -and $PSBoundParameters.ContainsKey('LogPercent')){
     throw '-LogPercent is only valid with the bundle command.'
@@ -62,6 +70,8 @@ if($FullGame){$arguments+='--full-game'}
 if($Force){$arguments+='--force'}
 if($PreserveRun){$arguments+='--preserve-run'}
 if($NewRun){$arguments+='--new-run'}
+if($Threaded){$arguments+='--threaded'}
+if($LocalTraining){$arguments+='--local-training'}
 foreach($value in @($EnvArg)){
     if($null -ne $value){$arguments+=@('--env-arg',[string]$value)}
 }
