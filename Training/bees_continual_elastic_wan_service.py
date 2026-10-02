@@ -9,6 +9,7 @@ phase waits safely for remote actors; release/publish behavior is unchanged.
 from __future__ import annotations
 
 from dataclasses import replace
+import re
 import sys
 from pathlib import Path
 from typing import List, Optional, Sequence, Tuple
@@ -81,8 +82,35 @@ def insert_wan_args_before_environment_args(
     return result
 
 
+def trainer_config_for_threading(config_path: Path, enabled: bool) -> Path:
+    """Create an immutable generation-config variant with the requested threading mode."""
+    source = config_path.read_text(encoding="utf-8")
+    pattern = re.compile(
+        r"^(?P<prefix>\s*threaded:\s*)(?:true|false)(?P<suffix>\s*(?:#.*)?)$",
+        re.MULTILINE | re.IGNORECASE,
+    )
+    replacement = "true" if enabled else "false"
+    updated, count = pattern.subn(
+        lambda match: match.group("prefix") + replacement + match.group("suffix"),
+        source,
+    )
+    if count != 1:
+        raise ValueError(
+            f"Expected exactly one threaded entry in trainer config; found {count}: {config_path}"
+        )
+    if updated == source:
+        return config_path
+    suffix = "-threaded-on" if enabled else "-threaded-off"
+    destination = config_path.with_name(config_path.stem + suffix + config_path.suffix)
+    return service._write_immutable_generation_config(
+        destination,
+        updated.encode("utf-8"),
+    )
+
+
 def main(argv: Optional[Sequence[str]] = None) -> int:
     raw_args = list(sys.argv[1:] if argv is None else argv)
+    raw_args, threaded_mode = elastic.extract_threaded_mode(raw_args)
     service_args, actor_options = elastic.extract_elastic_wan_options(raw_args)
     if not actor_options.enabled:
         print(
@@ -118,6 +146,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         command[1] = str(
             options.runtime_training_root / "bees_continual_elastic_wan_auto_train.py"
         )
+        command[2] = str(
+            trainer_config_for_threading(Path(command[2]), threaded_mode)
+        )
         wan_args = [
             f"{elastic.WAN_ACTORS_FLAG}={actor_options.max_actors}",
             f"{elastic.WAN_MIN_ACTORS_FLAG}={actor_options.min_actors}",
@@ -127,11 +158,18 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             f"{elastic.WAN_MAX_QUEUED_BATCHES_FLAG}={actor_options.max_queued_batches}",
             f"{elastic.WAN_LEASE_SECONDS_FLAG}={actor_options.actor_lease_seconds:g}",
         ]
+        if threaded_mode:
+            wan_args.append(elastic.THREADED_FLAG)
         # ML-Agents --env-args consumes the remainder of the command. Keep elastic WAN
         # trainer flags before it so only the server-owned Unity arguments reach the player.
         return insert_wan_args_before_environment_args(command, wan_args)
 
     service.training_command = elastic_training_command
+    if threaded_mode:
+        print(
+            "[Bees WAN] runtime threaded training enabled; "
+            f"rolling policy lag <= {elastic.DEFAULT_THREADED_MAX_POLICY_LAG}."
+        )
     try:
         return service.run_service(options)
     finally:
