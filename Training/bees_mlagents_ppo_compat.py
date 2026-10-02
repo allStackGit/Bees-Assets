@@ -1531,10 +1531,9 @@ def _prepare_poca_trajectory_batch_snapshot(snapshot, trajectories):
 
     buffers = [trajectory.to_agentbuffer() for trajectory in trajectories]
     merged = _merge_agent_buffers(buffers)
-    # The frozen snapshot owns its normalizer too, so value inference can keep
-    # the stock "update normalization before evaluating this data" ordering
-    # without touching the live critic while PPO mutates its weights.
-    snapshot.critic.update_normalization(merged)
+    # Normalization is part of the source-policy snapshot. Keep it immutable
+    # while evaluating delayed trajectories; the live actor/critic normalizers
+    # catch up on the trainer thread when these prepared trajectories commit.
     policy = snapshot.policy
     n_obs = len(policy.behavior_spec.observation_specs)
     next_buffer = _build_poca_next_observation_buffer(
