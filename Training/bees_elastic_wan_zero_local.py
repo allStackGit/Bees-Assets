@@ -16,14 +16,12 @@ pauses learning rather than terminating or advancing a stale optimizer.
 from __future__ import annotations
 
 import queue
-import threading
 import time
 from typing import Any, Dict, List, Optional
 
 import bees_elastic_wan_training as elastic
 import bees_wan_actor_training as base
 from bees_process_safety import write_managed_health
-
 
 
 class _VersionedTrajectory:
@@ -82,12 +80,6 @@ class _VersionedTrajectory:
         self.broker.record_versioned_trajectory_discarded(self.step_count)
         self._discarded_accounted = True
 
-    def source_policy_version(self) -> Optional[int]:
-        value = self.policy_versions.get(self.behavior_id)
-        if not isinstance(value, int) or isinstance(value, bool) or value < 1:
-            return None
-        return int(value)
-
 
 class ZeroLocalElasticWanEnvManagerMixin(elastic.ElasticWanEnvManagerMixin):
     def _bees_elastic_initialize(
@@ -113,11 +105,6 @@ class ZeroLocalElasticWanEnvManagerMixin(elastic.ElasticWanEnvManagerMixin):
         self._bees_wan_options = options
         self._bees_wan_timeout = max(1.0, float(run_options.env_settings.timeout_wait))
         self._bees_wan_initial_reset = False
-        self._bees_threaded_mode = bool(threaded_mode)
-        self._bees_threaded_injector_stop = threading.Event()
-        self._bees_threaded_injector_thread = None
-        self._bees_inject_lock = threading.Lock()
-        self._bees_threaded_injector_error: Optional[Exception] = None
         self._bees_wan_broker = elastic.ElasticWanBroker(
             options,
             run_options,
@@ -158,71 +145,6 @@ class ZeroLocalElasticWanEnvManagerMixin(elastic.ElasticWanEnvManagerMixin):
         EnvManager.set_agent_manager(self, brain_name, manager)
         if self._bees_local_manager is not None:
             self._bees_local_manager.set_agent_manager(brain_name, manager)
-        elif self._bees_threaded_mode:
-            self._ensure_threaded_injector()
-
-    def _ensure_threaded_injector(self) -> None:
-        if (
-            not self._bees_threaded_mode
-            or self._bees_local_manager is not None
-            or (
-                self._bees_threaded_injector_thread is not None
-                and self._bees_threaded_injector_thread.is_alive()
-            )
-        ):
-            return
-        self._bees_threaded_injector_stop.clear()
-        self._bees_threaded_injector_error = None
-        self._bees_threaded_injector_thread = threading.Thread(
-            target=self._threaded_injector_loop,
-            name="bees-wan-threaded-injector",
-            daemon=True,
-        )
-        self._bees_threaded_injector_thread.start()
-
-    def _threaded_injector_loop(self) -> None:
-        """Feed WAN trajectories while PPO owns the learner thread.
-
-        The injector is deliberately dormant outside a PPO overlap window, so ordinary
-        TrainerController/EnvManager ordering remains unchanged. During an update the
-        trajectory preprocessor owns AgentManagerQueue consumption and this thread only
-        moves already-validated broker batches into those queues.
-        """
-
-        try:
-            from bees_mlagents_ppo_compat import poca_pipeline_overlap_active
-
-            while not self._bees_threaded_injector_stop.is_set():
-                if not poca_pipeline_overlap_active():
-                    self._bees_threaded_injector_stop.wait(0.005)
-                    continue
-                # Drain only one fair broker batch at a time. ML-Agents'
-                # threaded trajectory queue is itself bounded (20 in 1.1.0);
-                # _inject_batches uses a stop-aware bounded put so shutdown
-                # cannot strand this injector on a full queue.
-                batches = self._bees_wan_broker.drain_current_batches(1)
-                if batches:
-                    self._inject_batches(
-                        batches,
-                        stop_event=self._bees_threaded_injector_stop,
-                    )
-                    continue
-                with self._bees_wan_broker._condition:
-                    if self._bees_wan_broker._closed:
-                        return
-                    self._bees_wan_broker._condition.wait(timeout=0.01)
-        except Exception as exc:
-            if not self._bees_threaded_injector_stop.is_set():
-                self._bees_threaded_injector_error = exc
-                with self._bees_wan_broker._condition:
-                    self._bees_wan_broker._condition.notify_all()
-
-    def _raise_threaded_injector_error(self) -> None:
-        error = self._bees_threaded_injector_error
-        if error is not None:
-            raise RuntimeError(
-                "threaded WAN trajectory injector failed"
-            ) from error
 
     def set_policy(self, brain_name: str, policy: Any) -> None:
         from mlagents.trainers.env_manager import EnvManager
@@ -231,14 +153,6 @@ class ZeroLocalElasticWanEnvManagerMixin(elastic.ElasticWanEnvManagerMixin):
         if self._bees_local_manager is not None:
             self._bees_local_manager.set_policy(brain_name, policy)
         version = self._bees_wan_broker.publish_policy(brain_name, policy)
-        if self._bees_threaded_mode:
-            from bees_mlagents_ppo_compat import note_poca_policy_publication
-
-            note_poca_policy_publication(
-                brain_name,
-                version,
-                max_policy_lag=self._bees_wan_broker.max_policy_lag,
-            )
         print(f"[Bees WAN] policy {brain_name} version={version}")
 
     def _wait_for_behavior_source(self) -> None:
@@ -322,32 +236,7 @@ class ZeroLocalElasticWanEnvManagerMixin(elastic.ElasticWanEnvManagerMixin):
         # Return the synthetic tick count so TrainerController continues curriculum/self-play checks.
         return len(step_infos)
 
-    def _put_trajectory(
-        self,
-        trajectory_queue: Any,
-        queued_trajectory: Any,
-        *,
-        stop_event: Optional[threading.Event] = None,
-    ) -> bool:
-        """Put without letting a full ML-Agents queue make shutdown uninterruptible."""
-
-        with self._bees_inject_lock:
-            maxlen = int(getattr(trajectory_queue, "maxlen", 0) or 0)
-            while maxlen > 0 and trajectory_queue.qsize() >= maxlen:
-                if stop_event is not None and stop_event.wait(0.01):
-                    return False
-                time.sleep(0.001)
-            if stop_event is not None and stop_event.is_set():
-                return False
-            trajectory_queue.put(queued_trajectory)
-            return True
-
-    def _inject_batches(
-        self,
-        batches: List[Any] | tuple[Any, ...],
-        *,
-        stop_event: Optional[threading.Event] = None,
-    ) -> bool:
+    def _inject_batches(self, batches: List[Any] | tuple[Any, ...]) -> None:
         for batch in batches:
             for trajectory in batch["trajectories"]:
                 manager = self.agent_managers.get(trajectory.behavior_id)
@@ -370,13 +259,7 @@ class ZeroLocalElasticWanEnvManagerMixin(elastic.ElasticWanEnvManagerMixin):
                         dict(batch["policy_versions"]),
                         int(batch["control_epoch"]),
                     )
-                if not self._put_trajectory(
-                    manager.trajectory_queue,
-                    queued_trajectory,
-                    stop_event=stop_event,
-                ):
-                    return False
-        return True
+                manager.trajectory_queue.put(queued_trajectory)
 
     def _wait_for_current_remote_batch(self) -> Any:
         """Pause a learner-only trainer when no remote rollout data is currently available."""
@@ -416,23 +299,6 @@ class ZeroLocalElasticWanEnvManagerMixin(elastic.ElasticWanEnvManagerMixin):
             self._bees_wan_broker.report_capacity()
             return local_steps
 
-        # During PPO the dedicated injector/preprocessor may already have moved WAN data beyond
-        # the broker queue. Do not block waiting for another broker batch when prepared or raw
-        # trajectory work is already waiting for the learner thread.
-        if self._bees_threaded_mode:
-            self._raise_threaded_injector_error()
-            from bees_mlagents_ppo_compat import poca_pipeline_has_pending_work
-
-            queued = any(
-                manager.trajectory_queue.qsize() > 0
-                for manager in self.agent_managers.values()
-            )
-            if queued or poca_pipeline_has_pending_work():
-                from mlagents.trainers.env_manager import EnvironmentStep
-
-                self._bees_wan_broker.report_capacity()
-                return [EnvironmentStep.empty(0)]
-
         # With no local simulator there is intentionally nothing to advance until at least one
         # policy-current remote trajectory arrives. Waiting here applies natural backpressure and
         # prevents a busy loop or fake training progress when all actors are offline.
@@ -464,12 +330,6 @@ class ZeroLocalElasticWanEnvManagerMixin(elastic.ElasticWanEnvManagerMixin):
         return dict(self._bees_wan_broker.merged_behavior_specs())
 
     def close(self) -> None:
-        self._bees_threaded_injector_stop.set()
-        with self._bees_wan_broker._condition:
-            self._bees_wan_broker._condition.notify_all()
-        thread = self._bees_threaded_injector_thread
-        if thread is not None and thread.is_alive():
-            thread.join(timeout=2.0)
         try:
             self._bees_wan_broker.close()
         finally:
