@@ -964,6 +964,70 @@ class PocaGpuCachePromotionTests(unittest.TestCase):
         self.assertEqual(info["allocator_reusable_before"], 3 * 1024**3)
         self.assertEqual(info["free_before"], 3 * 1024**3)
 
+    def test_packed_group_cache_promotes_after_fixed_cache_when_vram_permits(self):
+        import numpy as np
+        from mlagents.torch_utils import torch
+
+        group = compat._PocaPackedGroupObs(
+            [
+                [
+                    compat._PocaPackedGroupPosition(
+                        np.asarray([0], dtype=np.int32),
+                        torch.zeros((1, 4), dtype=torch.float32),
+                    )
+                ]
+            ],
+            4 * 4,
+        )
+        cache = {
+            "current_obs": [torch.zeros((2, 3), dtype=torch.float32)],
+            "groupmate_obs": group,
+            "storage": "cpu",
+        }
+
+        with (
+            mock.patch(
+                "mlagents.torch_utils.default_device",
+                return_value=torch.device("cuda"),
+            ),
+            mock.patch.object(torch.cuda, "is_available", return_value=True),
+            mock.patch.object(torch.cuda, "current_device", return_value=0),
+            mock.patch.object(
+                torch.cuda,
+                "mem_get_info",
+                side_effect=[
+                    (6 * 1024**3, 6 * 1024**3),
+                    (5 * 1024**3, 6 * 1024**3),
+                ],
+            ),
+            mock.patch.object(
+                torch.cuda,
+                "memory_allocated",
+                return_value=512 * 1024**2,
+            ),
+            mock.patch.object(
+                torch.cuda,
+                "memory_reserved",
+                return_value=1024 * 1024**2,
+            ),
+            mock.patch.object(
+                compat,
+                "_poca_move_cache_tensors",
+                side_effect=lambda value, _device: dict(value),
+            ),
+            mock.patch.object(
+                compat,
+                "_move_poca_packed_group_obs",
+                return_value=group,
+            ) as move_group,
+        ):
+            promoted, info = compat._promote_poca_update_tensor_cache(cache)
+
+        self.assertEqual(promoted["storage"], "cuda")
+        self.assertEqual(info["group_storage"], "cuda")
+        self.assertEqual(info["group_bytes"], 16)
+        move_group.assert_called_once()
+
     def test_cpu_device_keeps_cache_on_cpu(self):
         from mlagents.torch_utils import torch
 
@@ -1151,7 +1215,11 @@ class PocaTensorCacheTests(unittest.TestCase):
             policy = SimpleNamespace(
                 sequence_length=1,
                 behavior_spec=SimpleNamespace(
-                    observation_specs=[object()],
+                    observation_specs=[
+                        SimpleNamespace(
+                            shape=(compat.BEES_OBSERVATION_SIZE,)
+                        )
+                    ],
                     action_spec=SimpleNamespace(
                         continuous_size=compat.BEES_CONTINUOUS_ACTIONS,
                         discrete_branches=compat.BEES_DISCRETE_BRANCHES,
