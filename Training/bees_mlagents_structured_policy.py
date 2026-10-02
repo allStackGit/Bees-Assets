@@ -352,9 +352,14 @@ class BeesStructuredObservationEncoder(nn.Module):
             self._fallback.update_normalization(buffer)
             return
         obs = ObsUtil.from_buffer(buffer, 1)
-        self.vector_input.update_normalization(
-            torch.as_tensor(obs[0].to_ndarray())
-        )
+        values = torch.as_tensor(obs[0].to_ndarray())
+        normalizer = self.vector_input.normalizer
+        if normalizer is not None:
+            values = values.to(
+                device=normalizer.running_mean.device,
+                dtype=normalizer.running_mean.dtype,
+            )
+        self.vector_input.update_normalization(values)
 
     def copy_normalization(self, other_encoder) -> None:
         if self._fallback is not None:
