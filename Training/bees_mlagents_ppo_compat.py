@@ -30,6 +30,7 @@ BEES_HEALING_SPECIAL_ACTION = 3
 ACTION_ENTROPY_EPSILON = 1e-7
 POCA_ENCODER_CHUNK_ROWS = 2048
 POCA_TRAJECTORY_BATCH_MAX_EXPERIENCES = 2048
+POCA_PACKED_GROUP_CACHE_MAX_BYTES = 4 * 1024 * 1024 * 1024
 POCA_GPU_CACHE_MIN_RESERVE_BYTES = 2 * 1024 * 1024 * 1024
 POCA_GPU_CACHE_RESERVE_FRACTION = 0.30
 
@@ -1142,6 +1143,92 @@ class _PocaRaggedGroupObs:
         self.fields = tuple(fields)
 
 
+class _PocaPackedGroupPosition:
+    """One groupmate position packed only for rows where that member exists."""
+
+    __slots__ = ("lookup", "values")
+
+    def __init__(self, lookup, values) -> None:
+        self.lookup = lookup
+        self.values = values
+
+
+class _PocaPackedGroupObs:
+    """Compact CPU cache for ragged group observations reused across PPO epochs."""
+
+    __slots__ = ("fields", "nbytes")
+
+    def __init__(self, fields, nbytes: int) -> None:
+        self.fields = tuple(tuple(field) for field in fields)
+        self.nbytes = int(nbytes)
+
+
+def _build_poca_group_obs_cache(policy, buffer, groupmate_counts):
+    """Pack actual groupmate rows once when the compact cache is safely bounded."""
+
+    import numpy as np
+    from mlagents.torch_utils import torch
+    from mlagents.trainers.trajectory import GroupObsUtil
+
+    counts = np.asarray(groupmate_counts, dtype=np.int32)
+    size = int(counts.shape[0])
+    max_groupmates = int(counts.max()) if counts.size else 0
+    fields = tuple(
+        buffer[GroupObsUtil.get_name_at(index)]
+        for index in range(len(policy.behavior_spec.observation_specs))
+    )
+    if max_groupmates <= 0:
+        return _PocaPackedGroupObs(
+            tuple(() for _ in fields),
+            0,
+        )
+
+    estimated_bytes = 0
+    actual_members = int(counts.astype(np.int64, copy=False).sum())
+    for spec in policy.behavior_spec.observation_specs:
+        elements = int(np.prod(spec.shape, dtype=np.int64))
+        estimated_bytes += actual_members * elements * np.dtype(np.float32).itemsize
+    if estimated_bytes > POCA_PACKED_GROUP_CACHE_MAX_BYTES:
+        return _PocaRaggedGroupObs(fields)
+
+    packed_fields = []
+    packed_bytes = 0
+    for field in fields:
+        positions = []
+        for position in range(max_groupmates):
+            source_rows = np.flatnonzero(counts > position).astype(
+                np.int64,
+                copy=False,
+            )
+            if source_rows.size == 0:
+                positions.append(None)
+                continue
+            compact = np.stack(
+                [
+                    np.asarray(
+                        field[int(row)][position],
+                        dtype=np.float32,
+                    )
+                    for row in source_rows
+                ],
+                axis=0,
+            )
+            values = _poca_cpu_tensor(compact, torch.float32)
+            lookup = np.full(size, -1, dtype=np.int32)
+            lookup[source_rows] = np.arange(
+                source_rows.size,
+                dtype=np.int32,
+            )
+            positions.append(_PocaPackedGroupPosition(lookup, values))
+            packed_bytes += int(values.numel()) * int(values.element_size())
+        packed_fields.append(tuple(positions))
+    return _PocaPackedGroupObs(packed_fields, packed_bytes)
+
+
+def _poca_group_obs_cache_nbytes(value) -> int:
+    return int(value.nbytes) if isinstance(value, _PocaPackedGroupObs) else 0
+
+
 def _select_poca_ragged_group_obs(source, indices, groupmate_counts, device):
     """Pack only the selected minibatch's real groupmate rows.
 
@@ -1164,7 +1251,7 @@ def _select_poca_ragged_group_obs(source, indices, groupmate_counts, device):
         return []
 
     separated = []
-    for field in source.fields:
+    for field_index, field in enumerate(source.fields):
         positions = []
         for position in range(max_groupmates):
             valid_rows = np.flatnonzero(counts > position).astype(
@@ -1173,20 +1260,38 @@ def _select_poca_ragged_group_obs(source, indices, groupmate_counts, device):
             )
             if valid_rows.size == 0:
                 continue
-            compact = np.stack(
-                [
-                    np.asarray(
-                        field[int(indices[row])][position],
-                        dtype=np.float32,
-                    )
-                    for row in valid_rows
-                ],
-                axis=0,
-            )
-            compact_tensor = _poca_cpu_tensor(
-                compact,
-                torch.float32,
-            ).to(device=device)
+            if isinstance(source, _PocaPackedGroupObs):
+                packed_position = field[position]
+                if packed_position is None:
+                    continue
+                compact_ids = packed_position.lookup[indices]
+                selected_ids = compact_ids[valid_rows].astype(
+                    np.int64,
+                    copy=False,
+                )
+                compact_tensor = packed_position.values.index_select(
+                    0,
+                    torch.as_tensor(
+                        selected_ids,
+                        dtype=torch.long,
+                        device=torch.device("cpu"),
+                    ),
+                ).to(device=device)
+            else:
+                compact = np.stack(
+                    [
+                        np.asarray(
+                            field[int(indices[row])][position],
+                            dtype=np.float32,
+                        )
+                        for row in valid_rows
+                    ],
+                    axis=0,
+                )
+                compact_tensor = _poca_cpu_tensor(
+                    compact,
+                    torch.float32,
+                ).to(device=device)
             padded = torch.full(
                 (len(indices), *compact_tensor.shape[1:]),
                 float("nan"),
@@ -1251,11 +1356,10 @@ def _build_poca_update_tensor_cache(optimizer, buffer):
             len(policy.behavior_spec.observation_specs),
         )
     ]
-    groupmate_obs = _PocaRaggedGroupObs(
-        buffer[GroupObsUtil.get_name_at(index)]
-        for index in range(
-            len(policy.behavior_spec.observation_specs)
-        )
+    groupmate_obs = _build_poca_group_obs_cache(
+        policy,
+        buffer,
+        groupmate_counts,
     )
 
     def field_tensor(key, dtype):
@@ -2073,7 +2177,8 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             f"cache_allocator_reusable_mib={device_cache.get('allocator_reusable_before', 0) / (1024 * 1024):.1f} "
             f"cache_reserve_mib={device_cache['reserve'] / (1024 * 1024):.1f} "
             f"cache_copy={device_cache['copy_seconds']:.6f} "
-            f"group_obs=ragged-minibatch "
+            f"group_obs={'packed-cpu' if isinstance(tensor_cache.get('groupmate_obs'), _PocaPackedGroupObs) else 'ragged-minibatch'} "
+            f"group_cache_mib={_poca_group_obs_cache_nbytes(tensor_cache.get('groupmate_obs')) / (1024 * 1024):.1f} "
             f"materialize={materialize_seconds:.6f}",
             flush=True,
         )
