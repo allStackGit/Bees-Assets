@@ -487,6 +487,10 @@ class TrainingEnvOptimizer {
         state.measurement_started_ms = null;
         state.measurement_start_steps = null;
         state.measurement_start_produced_steps = null;
+        state.measurement_last_ms = null;
+        state.measurement_last_steps = null;
+        state.measurement_active_ms = 0;
+        state.measurement_active_steps = 0;
         state.source_steps = totalSteps;
         state.metrics_missing_since_ms = null;
         state.consecutive_baseline_session_failures = 0;
