@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+import copy
 import math
+import queue
 import threading
 import time
+import weakref
+from collections import deque
+from types import SimpleNamespace
 from typing import Callable, Optional
 
 
@@ -30,6 +35,8 @@ BEES_HEALING_SPECIAL_ACTION = 3
 ACTION_ENTROPY_EPSILON = 1e-7
 POCA_ENCODER_CHUNK_ROWS = 2048
 POCA_TRAJECTORY_BATCH_MAX_EXPERIENCES = 2048
+POCA_PIPELINE_MAX_READY_BATCHES = 8
+POCA_PIPELINE_IDLE_SECONDS = 0.001
 
 _ORIGINAL_GAUSSIAN_FORWARD = None
 _ORIGINAL_ACTION_MODEL_FORWARD = None
@@ -51,6 +58,390 @@ _BC_MASK_STATE = threading.local()
 _POCA_TIMING_STATE = threading.local()
 _POCA_GROUP_BATCH_STATE = threading.local()
 _POCA_UPDATE_CACHE_STATE = threading.local()
+_POCA_PIPELINE_REGISTRY_LOCK = threading.Lock()
+_POCA_PIPELINES = {}
+_POCA_POLICY_PUBLICATIONS = {}
+_POCA_ACTIVE_OVERLAPS = set()
+
+
+def note_poca_policy_publication(
+    behavior_name: str,
+    version: int,
+    *,
+    max_policy_lag: int,
+) -> None:
+    """Record the broker policy generation used to version threaded trajectories."""
+
+    normalized_name = str(behavior_name or "").strip()
+    if not normalized_name:
+        return
+    normalized_version = int(version)
+    normalized_lag = max(0, int(max_policy_lag))
+    if normalized_version < 1:
+        return
+    with _POCA_PIPELINE_REGISTRY_LOCK:
+        _POCA_POLICY_PUBLICATIONS[normalized_name] = {
+            "version": normalized_version,
+            "max_policy_lag": normalized_lag,
+        }
+
+
+def poca_pipeline_overlap_active() -> bool:
+    with _POCA_PIPELINE_REGISTRY_LOCK:
+        return bool(_POCA_ACTIVE_OVERLAPS)
+
+
+def poca_pipeline_has_pending_work() -> bool:
+    with _POCA_PIPELINE_REGISTRY_LOCK:
+        pipelines = list(_POCA_PIPELINES.values())
+    return any(pipeline.has_pending_work() for pipeline in pipelines)
+
+
+def _poca_behavior_name(trainer) -> str:
+    for policy_queue in getattr(trainer, "policy_queues", ()):
+        value = str(getattr(policy_queue, "behavior_id", "") or "").strip()
+        if value:
+            return value
+    return ""
+
+
+def _trajectory_source_policy_version(trajectory) -> Optional[int]:
+    source_method = getattr(trajectory, "source_policy_version", None)
+    if callable(source_method):
+        value = source_method()
+        if isinstance(value, int) and not isinstance(value, bool) and value >= 1:
+            return int(value)
+    versions = getattr(trajectory, "policy_versions", None)
+    behavior_id = str(getattr(trajectory, "behavior_id", "") or "")
+    if isinstance(versions, dict):
+        value = versions.get(behavior_id)
+        if isinstance(value, int) and not isinstance(value, bool) and value >= 1:
+            return int(value)
+    return None
+
+
+def _poca_pipeline_supported(trainer) -> bool:
+    from mlagents.trainers.torch_entities.components.reward_providers.extrinsic_reward_provider import (
+        ExtrinsicRewardProvider,
+    )
+
+    policy = getattr(trainer, "policy", None)
+    optimizer = getattr(trainer, "optimizer", None)
+    if (
+        policy is None
+        or optimizer is None
+        or policy.use_recurrent
+        or len(policy.behavior_spec.observation_specs) != 1
+        or tuple(policy.behavior_spec.observation_specs[0].shape)
+        != (BEES_OBSERVATION_SIZE,)
+        or not _is_bees_action_spec(policy.behavior_spec.action_spec)
+    ):
+        return False
+    return bool(optimizer.reward_signals) and all(
+        isinstance(provider, ExtrinsicRewardProvider)
+        for provider in optimizer.reward_signals.values()
+    )
+
+
+class _PocaCriticSnapshot:
+    __slots__ = ("version", "policy", "critic")
+
+    def __init__(self, version: int, policy, critic) -> None:
+        self.version = int(version)
+        self.policy = policy
+        self.critic = critic
+
+
+class _PocaTrajectoryPipeline:
+    """Prepare policy-versioned trajectory values while PPO owns the live model."""
+
+    def __init__(self, trainer, behavior_name: str) -> None:
+        self.behavior_name = str(behavior_name)
+        self._trainer_ref = weakref.ref(trainer)
+        self._ready = queue.Queue(maxsize=POCA_PIPELINE_MAX_READY_BATCHES)
+        self._held = deque()
+        self._overlap = threading.Event()
+        self._stop = threading.Event()
+        self._state_lock = threading.Lock()
+        self._snapshots = {}
+        self._inflight = False
+        self._prepared_batches = 0
+        self._prepared_steps = 0
+        self._fallback_batches = 0
+        self._fallback_steps = 0
+        self._evaluation_seconds = 0.0
+        self._evaluation_errors = 0
+        self._thread = threading.Thread(
+            target=self._run,
+            name=f"bees-poca-preprocessor-{self.behavior_name}",
+            daemon=True,
+        )
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop.set()
+        self._overlap.set()
+        self._thread.join(timeout=2.0)
+
+    def has_pending_work(self) -> bool:
+        with self._state_lock:
+            return (
+                self._inflight
+                or bool(self._held)
+                or not self._ready.empty()
+            )
+
+    def stats_snapshot(self):
+        with self._state_lock:
+            return {
+                "prepared_batches": int(self._prepared_batches),
+                "prepared_steps": int(self._prepared_steps),
+                "fallback_batches": int(self._fallback_batches),
+                "fallback_steps": int(self._fallback_steps),
+                "evaluation_seconds": float(self._evaluation_seconds),
+                "evaluation_errors": int(self._evaluation_errors),
+                "ready_batches": int(self._ready.qsize()),
+            }
+
+    def _publication(self):
+        with _POCA_PIPELINE_REGISTRY_LOCK:
+            value = _POCA_POLICY_PUBLICATIONS.get(self.behavior_name)
+            return None if value is None else dict(value)
+
+    def _snapshot_for(self, version: int):
+        with self._state_lock:
+            return self._snapshots.get(int(version))
+
+    def _capture_current_snapshot(self):
+        publication = self._publication()
+        trainer = self._trainer_ref()
+        if publication is None or trainer is None:
+            return None, 0.0
+        version = int(publication["version"])
+        with self._state_lock:
+            existing = self._snapshots.get(version)
+        if existing is not None:
+            return existing, 0.0
+
+        from mlagents.torch_utils import torch
+
+        started = time.perf_counter()
+        critic = copy.deepcopy(trainer.optimizer.critic)
+        critic.to(device=torch.device("cpu"))
+        critic.eval()
+        for parameter in critic.parameters():
+            parameter.requires_grad_(False)
+        policy_view = SimpleNamespace(
+            use_recurrent=False,
+            behavior_spec=copy.deepcopy(trainer.policy.behavior_spec),
+        )
+        snapshot = _PocaCriticSnapshot(version, policy_view, critic)
+        elapsed = time.perf_counter() - started
+
+        minimum_version = max(
+            1,
+            version - int(publication["max_policy_lag"]),
+        )
+        with self._state_lock:
+            self._snapshots[version] = snapshot
+            for old_version in tuple(self._snapshots):
+                if old_version < minimum_version:
+                    self._snapshots.pop(old_version, None)
+        return snapshot, elapsed
+
+    def begin_overlap(self):
+        try:
+            snapshot, copy_seconds = self._capture_current_snapshot()
+        except Exception as exc:
+            print(
+                "[Bees trajectory pipeline] snapshot capture failed; "
+                f"falling back to synchronous trajectory processing: "
+                f"{type(exc).__name__}: {exc}",
+                flush=True,
+            )
+            return False, 0.0, None
+        if snapshot is None:
+            return False, 0.0, None
+        with _POCA_PIPELINE_REGISTRY_LOCK:
+            _POCA_ACTIVE_OVERLAPS.add(id(self))
+        self._overlap.set()
+        return True, float(copy_seconds), int(snapshot.version)
+
+    def end_overlap(self) -> None:
+        self._overlap.clear()
+        with _POCA_PIPELINE_REGISTRY_LOCK:
+            _POCA_ACTIVE_OVERLAPS.discard(id(self))
+
+    def drain_ready(self):
+        results = []
+        while True:
+            try:
+                results.append(self._ready.get_nowait())
+            except queue.Empty:
+                break
+        return results
+
+    def _next_trajectory(self, *, allow_queue: bool):
+        with self._state_lock:
+            if self._held:
+                return self._held.popleft()
+        if not allow_queue:
+            return None
+        trainer = self._trainer_ref()
+        if trainer is None:
+            return None
+        from mlagents.trainers.agent_processor import AgentManagerQueue
+
+        for trajectory_queue in trainer.trajectory_queues:
+            try:
+                return trajectory_queue.get_nowait()
+            except AgentManagerQueue.Empty:
+                continue
+        return None
+
+    def _hold_front(self, trajectory) -> None:
+        with self._state_lock:
+            self._held.appendleft(trajectory)
+
+    def _gather_batch(self):
+        allow_queue = self._overlap.is_set()
+        first = self._next_trajectory(allow_queue=allow_queue)
+        if first is None:
+            return None
+
+        version = _trajectory_source_policy_version(first)
+        trajectories = [first]
+        experiences = len(first.steps)
+        if version is None:
+            return None, trajectories, experiences
+
+        while experiences < POCA_TRAJECTORY_BATCH_MAX_EXPERIENCES:
+            candidate = self._next_trajectory(
+                allow_queue=self._overlap.is_set()
+            )
+            if candidate is None:
+                break
+            candidate_version = _trajectory_source_policy_version(candidate)
+            candidate_experiences = len(candidate.steps)
+            if (
+                candidate_version != version
+                or (
+                    trajectories
+                    and experiences + candidate_experiences
+                    > POCA_TRAJECTORY_BATCH_MAX_EXPERIENCES
+                )
+            ):
+                self._hold_front(candidate)
+                break
+            trajectories.append(candidate)
+            experiences += candidate_experiences
+        return version, trajectories, experiences
+
+    def _put_result(self, result) -> bool:
+        while not self._stop.is_set():
+            try:
+                self._ready.put(result, timeout=0.05)
+                return True
+            except queue.Full:
+                continue
+        return False
+
+    def _run(self) -> None:
+        while not self._stop.is_set():
+            with self._state_lock:
+                has_held = bool(self._held)
+            if not self._overlap.is_set() and not has_held:
+                self._overlap.wait(timeout=0.05)
+                continue
+
+            gathered = self._gather_batch()
+            if gathered is None:
+                time.sleep(POCA_PIPELINE_IDLE_SECONDS)
+                continue
+            version, trajectories, experiences = gathered
+
+            with self._state_lock:
+                self._inflight = True
+            try:
+                snapshot = (
+                    None if version is None else self._snapshot_for(version)
+                )
+                if snapshot is None:
+                    result = {
+                        "prepared": False,
+                        "version": version,
+                        "trajectories": trajectories,
+                    }
+                    with self._state_lock:
+                        self._fallback_batches += 1
+                        self._fallback_steps += int(experiences)
+                else:
+                    started = time.perf_counter()
+                    try:
+                        prepared = _prepare_poca_trajectory_batch_snapshot(
+                            snapshot,
+                            trajectories,
+                        )
+                    except Exception as exc:
+                        elapsed = time.perf_counter() - started
+                        print(
+                            "[Bees trajectory pipeline] snapshot evaluation failed; "
+                            f"falling back to synchronous processing for "
+                            f"{experiences} steps: {type(exc).__name__}: {exc}",
+                            flush=True,
+                        )
+                        result = {
+                            "prepared": False,
+                            "version": version,
+                            "trajectories": trajectories,
+                        }
+                        with self._state_lock:
+                            self._fallback_batches += 1
+                            self._fallback_steps += int(experiences)
+                            self._evaluation_seconds += float(elapsed)
+                            self._evaluation_errors += 1
+                    else:
+                        elapsed = time.perf_counter() - started
+                        result = {
+                            "prepared": True,
+                            "version": version,
+                            **prepared,
+                        }
+                        with self._state_lock:
+                            self._prepared_batches += 1
+                            self._prepared_steps += int(experiences)
+                            self._evaluation_seconds += float(elapsed)
+                if not self._put_result(result):
+                    return
+            finally:
+                with self._state_lock:
+                    self._inflight = False
+
+
+def _get_or_create_poca_pipeline(trainer):
+    behavior_name = _poca_behavior_name(trainer)
+    if not behavior_name or not _poca_pipeline_supported(trainer):
+        return None
+    with _POCA_PIPELINE_REGISTRY_LOCK:
+        if behavior_name not in _POCA_POLICY_PUBLICATIONS:
+            return None
+        key = id(trainer)
+        existing = _POCA_PIPELINES.get(key)
+        if existing is not None:
+            return existing
+        pipeline = _PocaTrajectoryPipeline(trainer, behavior_name)
+        _POCA_PIPELINES[key] = pipeline
+        return pipeline
+
+
+def _shutdown_all_poca_pipelines() -> None:
+    with _POCA_PIPELINE_REGISTRY_LOCK:
+        pipelines = list(_POCA_PIPELINES.values())
+        _POCA_PIPELINES.clear()
+        _POCA_ACTIVE_OVERLAPS.clear()
+        _POCA_POLICY_PUBLICATIONS.clear()
+    for pipeline in pipelines:
+        pipeline.stop()
 
 
 def _is_bees_action_spec(action_spec) -> bool:
