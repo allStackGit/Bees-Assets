@@ -57,6 +57,15 @@ function optimizationSteps(metrics) {
     return globalStep === null ? learnerConsumedSteps(metrics) : globalStep;
 }
 
+function optimizerBusySeconds(metrics) {
+    if (!metrics || typeof metrics !== 'object' || Array.isArray(metrics)) return null;
+    const throughput = metrics.throughput;
+    if (!throughput || typeof throughput !== 'object' || Array.isArray(throughput)) return null;
+    const total = throughput.optimizer_busy_seconds_total;
+    if (typeof total !== 'number' || !Number.isFinite(total) || total < 0) return null;
+    return total;
+}
+
 function producerAcceptedSteps(metrics) {
     if (!metrics || typeof metrics !== 'object' || Array.isArray(metrics)) return null;
     const throughput = metrics.throughput;
@@ -605,6 +614,7 @@ class TrainingEnvOptimizer {
         const capacity = normalizeCapacity(record && record.worker_capacity);
         const totalSteps = optimizationSteps(record && record.metrics);
         const producedSteps = producerAcceptedSteps(record && record.metrics);
+        const busySeconds = optimizerBusySeconds(record && record.metrics);
         const currentRuntimeVersion = runtimeVersion(record && record.metrics);
         const sessionFailureAgeSeconds = recentSessionFailureAgeSeconds(
             record && record.metrics);
@@ -1193,6 +1203,7 @@ module.exports = {
     learnerConsumedSteps,
     learnerStep,
     optimizationSteps,
+    optimizerBusySeconds,
     producerAcceptedSteps,
     runtimeVersion,
     policyCycle,
