@@ -84,7 +84,13 @@ function buildCentralLearnerArgv(config, learnerPython, unity, runtimeRoot) {
         '--bees-wan-broker-port', String(config.brokerPort),
         '--bees-wan-auth-token-file', paths.wanTokenPath,
     ];
-    if (Boolean(config.threadedTraining)) argv.push('--bees-threaded');
+    if (Boolean(config.threadedTraining)) {
+        argv.push(
+            '--bees-threaded',
+            '--bees-max-policy-lag',
+            String(Number(config.threadedPolicyLag)),
+        );
+    }
     return argv;
 }
 
