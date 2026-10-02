@@ -25,8 +25,6 @@ import bees_wan_actor_training as base
 from bees_process_safety import write_managed_health
 
 
-THREADED_INJECT_MAX_QUEUED_TRAJECTORIES = 256
-
 
 class _VersionedTrajectory:
     """Central-only trajectory wrapper retaining the remote policy generation."""
@@ -118,6 +116,7 @@ class ZeroLocalElasticWanEnvManagerMixin(elastic.ElasticWanEnvManagerMixin):
         self._bees_threaded_mode = bool(threaded_mode)
         self._bees_threaded_injector_stop = threading.Event()
         self._bees_threaded_injector_thread = None
+        self._bees_inject_lock = threading.Lock()
         self._bees_threaded_injector_error: Optional[Exception] = None
         self._bees_wan_broker = elastic.ElasticWanBroker(
             options,
@@ -197,23 +196,16 @@ class ZeroLocalElasticWanEnvManagerMixin(elastic.ElasticWanEnvManagerMixin):
                 if not poca_pipeline_overlap_active():
                     self._bees_threaded_injector_stop.wait(0.005)
                     continue
-                queued_trajectories = sum(
-                    manager.trajectory_queue.qsize()
-                    for manager in self.agent_managers.values()
-                )
-                if (
-                    queued_trajectories
-                    >= THREADED_INJECT_MAX_QUEUED_TRAJECTORIES
-                ):
-                    self._bees_threaded_injector_stop.wait(0.002)
-                    continue
-                # One fair broker batch at a time keeps the existing bounded
-                # broker queue as the ultimate backpressure owner. A batch may
-                # contain up to 256 trajectories, so the AgentManager side
-                # remains bounded to roughly two such batches while PPO runs.
+                # Drain only one fair broker batch at a time. ML-Agents'
+                # threaded trajectory queue is itself bounded (20 in 1.1.0);
+                # _inject_batches uses a stop-aware bounded put so shutdown
+                # cannot strand this injector on a full queue.
                 batches = self._bees_wan_broker.drain_current_batches(1)
                 if batches:
-                    self._inject_batches(batches)
+                    self._inject_batches(
+                        batches,
+                        stop_event=self._bees_threaded_injector_stop,
+                    )
                     continue
                 with self._bees_wan_broker._condition:
                     if self._bees_wan_broker._closed:
@@ -330,7 +322,32 @@ class ZeroLocalElasticWanEnvManagerMixin(elastic.ElasticWanEnvManagerMixin):
         # Return the synthetic tick count so TrainerController continues curriculum/self-play checks.
         return len(step_infos)
 
-    def _inject_batches(self, batches: List[Any] | tuple[Any, ...]) -> None:
+    def _put_trajectory(
+        self,
+        trajectory_queue: Any,
+        queued_trajectory: Any,
+        *,
+        stop_event: Optional[threading.Event] = None,
+    ) -> bool:
+        """Put without letting a full ML-Agents queue make shutdown uninterruptible."""
+
+        with self._bees_inject_lock:
+            maxlen = int(getattr(trajectory_queue, "maxlen", 0) or 0)
+            while maxlen > 0 and trajectory_queue.qsize() >= maxlen:
+                if stop_event is not None and stop_event.wait(0.01):
+                    return False
+                time.sleep(0.001)
+            if stop_event is not None and stop_event.is_set():
+                return False
+            trajectory_queue.put(queued_trajectory)
+            return True
+
+    def _inject_batches(
+        self,
+        batches: List[Any] | tuple[Any, ...],
+        *,
+        stop_event: Optional[threading.Event] = None,
+    ) -> bool:
         for batch in batches:
             for trajectory in batch["trajectories"]:
                 manager = self.agent_managers.get(trajectory.behavior_id)
@@ -353,7 +370,13 @@ class ZeroLocalElasticWanEnvManagerMixin(elastic.ElasticWanEnvManagerMixin):
                         dict(batch["policy_versions"]),
                         int(batch["control_epoch"]),
                     )
-                manager.trajectory_queue.put(queued_trajectory)
+                if not self._put_trajectory(
+                    manager.trajectory_queue,
+                    queued_trajectory,
+                    stop_event=stop_event,
+                ):
+                    return False
+        return True
 
     def _wait_for_current_remote_batch(self) -> Any:
         """Pause a learner-only trainer when no remote rollout data is currently available."""
