@@ -2857,6 +2857,8 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                 f"tensor_cache={'on' if tensor_cache is not None else 'off'} "
                 f"cache_storage={device_cache['storage']} "
                 f"cache_mib={device_cache['bytes'] / (1024 * 1024):.1f} "
+                f"cache_free_mib={device_cache['free_before'] / (1024 * 1024):.1f} "
+                f"cache_reserve_mib={device_cache['reserve'] / (1024 * 1024):.1f} "
                 f"cache_copy={device_cache['copy_seconds']:.6f} "
                 f"materialize={materialize_seconds:.6f} "
                 f"trajectory_pipeline={'on' if pipeline_overlap else 'off'} "
