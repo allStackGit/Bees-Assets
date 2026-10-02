@@ -863,6 +863,7 @@ class PocaTensorCacheTests(unittest.TestCase):
         from mlagents.trainers.torch_entities.components.reward_providers.extrinsic_reward_provider import (
             ExtrinsicRewardProvider,
         )
+        from bees_mlagents_structured_policy import FACTION_INDEX
 
         original_value_key = RewardSignalUtil.value_estimates_key
         RewardSignalUtil.value_estimates_key = staticmethod(
@@ -877,6 +878,9 @@ class PocaTensorCacheTests(unittest.TestCase):
                 )
                 observation[0] = float(row + 1)
                 observation[compat.BEES_SELF_IS_MOBILE_INDEX] = 1.0
+                observation[FACTION_INDEX] = (
+                    1.0 if row != 1 else -1.0
+                )
                 buffer[ObsUtil.get_name_at(0)].append(observation)
                 buffer[GroupObsUtil.get_name_at(0)].append([])
                 buffer[BufferKey.CONTINUOUS_ACTION].append(
@@ -977,6 +981,18 @@ class PocaTensorCacheTests(unittest.TestCase):
             np.testing.assert_array_equal(
                 selected["groupmate_counts"],
                 np.asarray([0, 0], dtype=np.int32),
+            )
+            np.testing.assert_array_equal(
+                selected["faction_rows"]["bee"],
+                np.asarray([0, 1], dtype=np.int64),
+            )
+            self.assertEqual(
+                selected["faction_rows"]["human"].size,
+                0,
+            )
+            self.assertEqual(
+                selected["faction_rows"]["mixed"].size,
+                0,
             )
             self.assertTrue(
                 torch.all(selected["movement_activity"] == 1.0)
