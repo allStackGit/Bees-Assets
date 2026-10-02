@@ -287,23 +287,23 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
             mock.patch.object(managed, "_available_cpu_threads", return_value=4),
             mock.patch.object(managed, "_available_memory_bytes", return_value=int(3.8 * gib)),
         ):
-            self.assertEqual(managed._memory_env_limit(), 5)
+            self.assertEqual(managed._memory_env_limit(), 11)
             self.assertEqual(
                 managed._default_envs(),
                 4,
                 "automatic startup must honor both the memory safety bound and the conservative CPU start limit",
             )
 
-    def test_eight_gib_worker_allows_fourteen_envs_with_one_gib_reserve(self):
+    def test_eight_gib_worker_allows_twenty_eight_envs_with_one_gib_reserve(self):
         gib = 1024 * 1024 * 1024
         with mock.patch.object(
             managed,
             "_available_memory_bytes",
             return_value=8 * gib,
         ):
-            self.assertEqual(managed._memory_env_limit(), 14)
+            self.assertEqual(managed._memory_env_limit(), 28)
 
-    def test_transient_low_free_memory_does_not_permanently_reduce_auto_capacity(self):
+    def test_low_free_memory_is_a_hard_auto_capacity_bound(self):
         gib = 1024 * 1024 * 1024
         with (
             mock.patch.object(
@@ -323,7 +323,7 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
             mock.patch.object(managed, "_available_cpu_threads", return_value=4),
             mock.patch.object(managed, "_available_memory_bytes", return_value=31 * gib),
         ):
-            self.assertEqual(managed._memory_env_limit(), 60)
+            self.assertEqual(managed._memory_env_limit(), 64)
             self.assertEqual(managed._cpu_env_start_limit(), 4)
             self.assertEqual(managed._default_envs(), 4)
 

@@ -45,7 +45,7 @@ TRAINING_GAMEPLAY_PORT_ENV = "BEES_TRAINING_GAMEPLAY_PORT"
 MAX_ENVS_PER_ACTOR = 64
 REMOTE_CPU_START_ENVS_PER_THREAD = 1
 REMOTE_MEMORY_RESERVE_BYTES = 1 * 1024 * 1024 * 1024
-REMOTE_MEMORY_PER_ENV_BYTES = 512 * 1024 * 1024
+REMOTE_MEMORY_PER_ENV_BYTES = 256 * 1024 * 1024
 REMOTE_PID_FILE = "remote-worker.pid"
 REMOTE_STOP_REQUEST_FILE = "remote-worker.stop"
 REMOTE_WORKER_AGENT_STOP_REQUEST_FILE = "worker-agent-stop.request"
@@ -406,7 +406,7 @@ def _parser() -> argparse.ArgumentParser:
         "--max-envs",
         type=int,
         default=None,
-        help="Maximum environment count for automatic tuning (default 64; startup still uses CPU/RAM heuristics).",
+        help="Maximum environment count for automatic tuning (default 64, additionally capped by the RAM safety bound).",
     )
     parser.add_argument(
         "--gameplay-port",
@@ -1925,7 +1925,7 @@ def _worker_command(args: argparse.Namespace, root: Path, actor_key: str) -> lis
 def main(argv: Optional[Sequence[str]] = None) -> int:
     raw_argv = list(sys.argv[1:] if argv is None else argv)
     args = _parser().parse_args(raw_argv)
-    memory_start_cap = _memory_env_limit()
+    memory_hard_cap = _memory_env_limit()
     cpu_threads = _available_cpu_threads()
     cpu_start_cap = min(
         MAX_ENVS_PER_ACTOR,
@@ -1933,25 +1933,38 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     )
     if args.envs is None:
         args.auto_envs = True
-        requested_max = MAX_ENVS_PER_ACTOR if args.max_envs is None else args.max_envs
-        if not 1 <= args.min_envs <= requested_max <= MAX_ENVS_PER_ACTOR:
+        configured_max = MAX_ENVS_PER_ACTOR if args.max_envs is None else args.max_envs
+        if not 1 <= args.min_envs <= configured_max <= MAX_ENVS_PER_ACTOR:
             print("error: automatic env bounds must satisfy 1 <= min <= max <= 64", file=sys.stderr)
             return 2
-        # CPU threads and currently free RAM are deliberately only startup heuristics. Once a
-        # baseline exists, BeesServer is allowed to probe upward until measured throughput stops
-        # improving (or an explicit --max-envs/global actor limit is reached).
+        requested_max = min(configured_max, memory_hard_cap)
+        if args.min_envs > requested_max:
+            print(
+                "error: automatic minimum environment count exceeds the RAM safety bound "
+                f"of {memory_hard_cap} envs",
+                file=sys.stderr,
+            )
+            return 2
         args.max_envs = requested_max
         args.envs = max(args.min_envs, min(_default_envs(), args.max_envs))
         print(
             f"[Bees remote] --envs omitted; auto optimizer enabled at {args.envs} envs "
             f"(range={args.min_envs}-{args.max_envs} cpu_threads={cpu_threads} "
-            f"cpu_start_cap={cpu_start_cap} memory_start_cap={memory_start_cap} "
-            f"hard_cap={MAX_ENVS_PER_ACTOR})."
+            f"cpu_start_cap={cpu_start_cap} memory_hard_cap={memory_hard_cap} "
+            f"ram_per_env_mib={REMOTE_MEMORY_PER_ENV_BYTES // (1024 * 1024)} "
+            f"ram_reserve_mib={REMOTE_MEMORY_RESERVE_BYTES // (1024 * 1024)})."
         )
     else:
         args.auto_envs = False
         if not 1 <= args.envs <= MAX_ENVS_PER_ACTOR:
             print(f"error: --envs must be in 1-{MAX_ENVS_PER_ACTOR}", file=sys.stderr)
+            return 2
+        if args.envs > memory_hard_cap:
+            print(
+                f"error: --envs={args.envs} exceeds the RAM safety bound of "
+                f"{memory_hard_cap} environments",
+                file=sys.stderr,
+            )
             return 2
         args.min_envs = args.envs
         args.max_envs = args.envs

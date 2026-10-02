@@ -1627,6 +1627,22 @@ class ManagedProcess:
             ) from exc
 
 
+def safe_auto_restart_env_count(
+    desired: Mapping[str, Any],
+    *,
+    fallback: int,
+    minimum: int,
+    maximum: int,
+) -> int:
+    """Return the last measured optimizer baseline for recovery, or the safe startup count."""
+    optimizer = desired.get("env_optimizer")
+    baseline = optimizer.get("baseline_envs") if isinstance(optimizer, Mapping) else None
+    if isinstance(baseline, int) and not isinstance(baseline, bool):
+        if minimum <= baseline <= maximum:
+            return int(baseline)
+    return max(minimum, min(maximum, int(fallback)))
+
+
 def dedicated_process_matches_desired(
     managed: ManagedProcess,
     *,
@@ -2388,6 +2404,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                             and managed.worker_env_count is not None
                         ):
                             launch_worker_env_count = managed.worker_env_count
+                        rollout_stalled = managed.rollout_stalled()
+                        recovery_restart = not managed.alive() or rollout_stalled
+                        if args.auto_worker_envs and recovery_restart:
+                            launch_worker_env_count = safe_auto_restart_env_count(
+                                desired,
+                                fallback=int(args.worker_envs),
+                                minimum=int(args.worker_envs_min),
+                                maximum=int(args.worker_envs_max),
+                            )
                         command = render_command(
                             runtime_command_template,
                             entrypoint,
@@ -2396,9 +2421,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                             run_id,
                             launch_worker_env_count,
                         )
-                        if args.auto_worker_envs and managed.alive():
+                        if args.auto_worker_envs and managed.alive() and not rollout_stalled:
                             managed.set_worker_env_target(worker_env_count)
-                        rollout_stalled = managed.rollout_stalled()
                         needs_restart = (
                             not managed.alive()
                             or managed.build_sha256 != desired_sha
@@ -2412,18 +2436,20 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         if (
                             needs_restart
                             and args.auto_worker_envs
+                            and not recovery_restart
                             and launch_worker_env_count != worker_env_count
                         ):
-                            # A real build/runtime/config restart should launch at the latest desired
-                            # capacity. Using the old launch count here would make the next heartbeat
-                            # see a command mismatch and restart the actor a second time.
+                            # Build/runtime/config replacement of an otherwise healthy actor should
+                            # preserve the server's current desired capacity. Recovery from a dead or
+                            # stalled probe instead starts from the last measured safe baseline.
+                            launch_worker_env_count = worker_env_count
                             command = render_command(
                                 runtime_command_template,
                                 entrypoint,
                                 environment_args,
                                 str(active_build["build_id"]),
                                 run_id,
-                                worker_env_count,
+                                launch_worker_env_count,
                             )
                         if needs_restart:
                             if rollout_stalled:
@@ -2443,7 +2469,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                                 compatibility_key=compatibility_key,
                                 state_file=state_file,
                                 environment_args=environment_args,
-                                worker_env_count=worker_env_count,
+                                worker_env_count=launch_worker_env_count,
                                 graceful_checkpoint=(
                                     args.role == "dedicated"
                                     and args.trainer_id == "central-learner"

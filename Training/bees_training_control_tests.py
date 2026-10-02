@@ -1954,6 +1954,29 @@ class TrainingControlClientTests(unittest.TestCase):
             agent.dedicated_process_matches_desired(managed, **base)
         )
 
+    def test_auto_restart_uses_measured_optimizer_baseline(self):
+        desired = {"env_optimizer": {"baseline_envs": 6, "desired_envs": 12}}
+        self.assertEqual(
+            agent.safe_auto_restart_env_count(
+                desired,
+                fallback=4,
+                minimum=1,
+                maximum=16,
+            ),
+            6,
+        )
+
+    def test_auto_restart_falls_back_to_safe_start_count_without_baseline(self):
+        self.assertEqual(
+            agent.safe_auto_restart_env_count(
+                {"env_optimizer": {"baseline_envs": None, "desired_envs": 12}},
+                fallback=4,
+                minimum=1,
+                maximum=16,
+            ),
+            4,
+        )
+
     def test_live_worker_env_target_is_written_without_changing_launch_identity(self):
         with tempfile.TemporaryDirectory() as temp:
             managed = agent.ManagedProcess()
