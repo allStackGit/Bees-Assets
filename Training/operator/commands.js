@@ -138,6 +138,9 @@ async function invokeRuntime(options = {}) {
     if (options.explicitPolicyLag) {
         runtimeOverrides.threadedPolicyLag = Number(options.policyLag);
     }
+    if (options.explicitBackpressureQueue) {
+        runtimeOverrides.wanMaxQueuedBatches = Number(options.backpressureQueue);
+    }
     config = applyRuntimeTrainingOptions(config, runtimeOverrides);
     if (!exists(paths.latestReleasePath)) {
         throw new Error(
@@ -236,6 +239,7 @@ async function invokeRuntime(options = {}) {
     saveRuntimeTrainingOptions({
         threadedTraining: Boolean(config.threadedTraining),
         threadedPolicyLag: Number(config.threadedPolicyLag),
+        wanMaxQueuedBatches: Number(config.wanMaxQueuedBatches),
         localTraining: Boolean(
             config.localActor &&
             typeof config.localActor === 'object' &&
@@ -278,6 +282,7 @@ async function invokeRuntime(options = {}) {
         ' source=' + sourceSha +
         ' threaded=' + (config.threadedTraining ? 'on' : 'off') +
         ' policy_lag=' + Number(config.threadedPolicyLag) +
+        ' backpressure_queue=' + Number(config.wanMaxQueuedBatches) +
         ' local_training=' + (
             config.localActor && config.localActor.enabled ? 'on' : 'off'
         ) + '.'

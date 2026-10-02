@@ -83,6 +83,7 @@ function buildCentralLearnerArgv(config, learnerPython, unity, runtimeRoot) {
         '--bees-wan-min-actors', String(config.minRemoteActors),
         '--bees-wan-broker-port', String(config.brokerPort),
         '--bees-wan-auth-token-file', paths.wanTokenPath,
+        '--bees-wan-max-queued-batches', String(Number(config.wanMaxQueuedBatches)),
     ];
     if (Boolean(config.threadedTraining)) {
         argv.push(

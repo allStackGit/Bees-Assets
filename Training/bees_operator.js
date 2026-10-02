@@ -27,7 +27,7 @@ function usage() {
     return [
         'Usage:',
         '  node Training/bees_operator.js build [--full-game] [--force] [--preserve-run]',
-        '  node Training/bees_operator.js runtime [--threaded [--policy-lag N]] [--local-training]',
+        '  node Training/bees_operator.js runtime [--threaded [--policy-lag N]] [--backpressure-queue N] [--local-training]',
         '  node Training/bees_operator.js server',
         '  node Training/bees_operator.js start [--new-run] [--env-arg VALUE ...]',
         '  node Training/bees_operator.js stop [--server]',
@@ -79,6 +79,8 @@ function parseArgs(argv = process.argv.slice(2)) {
         threaded: false,
         policyLag: null,
         explicitPolicyLag: false,
+        backpressureQueue: null,
+        explicitBackpressureQueue: false,
         localTraining: false,
         envArgs: [],
         once: false,
@@ -122,6 +124,25 @@ function parseArgs(argv = process.argv.slice(2)) {
                 true,
             );
             options.explicitPolicyLag = true;
+        } else if (arg === '--backpressure-queue') {
+            options.backpressureQueue = parseNumber(
+                requireValue(argv, index, arg),
+                arg,
+                1,
+                2147483647,
+                true,
+            );
+            options.explicitBackpressureQueue = true;
+            index++;
+        } else if (arg.startsWith('--backpressure-queue=')) {
+            options.backpressureQueue = parseNumber(
+                arg.slice('--backpressure-queue='.length),
+                '--backpressure-queue',
+                1,
+                2147483647,
+                true,
+            );
+            options.explicitBackpressureQueue = true;
         } else if (arg === '--local-training') {
             options.localTraining = true;
         } else if (arg === '--env-arg') {
@@ -182,6 +203,9 @@ function parseArgs(argv = process.argv.slice(2)) {
     }
     if (options.explicitPolicyLag && !options.threaded) {
         throw new Error('--policy-lag requires --threaded.');
+    }
+    if (options.explicitBackpressureQueue && command !== 'runtime') {
+        throw new Error('--backpressure-queue is only valid with the runtime command.');
     }
     if (options.explicitLogPercent && command !== 'bundle') {
         throw new Error('--log-percent is only valid with the bundle command.');

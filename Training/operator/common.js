@@ -298,6 +298,20 @@ function normalizeThreadedPolicyLag(value, fallback = 1) {
     return candidate;
 }
 
+function normalizeWanMaxQueuedBatches(value, fallback = 32) {
+    const candidate = value == null ? fallback : Number(value);
+    if (
+        !Number.isSafeInteger(candidate) ||
+        candidate < 1 ||
+        candidate > 2147483647
+    ) {
+        throw new Error(
+            'WAN backpressure queue must be an integer in 1-2147483647; got ' + value + '.'
+        );
+    }
+    return candidate;
+}
+
 function applyRuntimeTrainingOptions(config, options = {}) {
     const result = {
         ...config,
@@ -321,13 +335,24 @@ function applyRuntimeTrainingOptions(config, options = {}) {
             1,
         );
     }
+    if (Object.prototype.hasOwnProperty.call(options, 'wanMaxQueuedBatches')) {
+        result.wanMaxQueuedBatches = normalizeWanMaxQueuedBatches(
+            options.wanMaxQueuedBatches,
+            config && config.wanMaxQueuedBatches != null ? config.wanMaxQueuedBatches : 32,
+        );
+    } else {
+        result.wanMaxQueuedBatches = normalizeWanMaxQueuedBatches(
+            result.wanMaxQueuedBatches,
+            32,
+        );
+    }
     if (Object.prototype.hasOwnProperty.call(options, 'localTraining')) {
         result.localActor.enabled = Boolean(options.localTraining);
     }
     return result;
 }
 
-function readRuntimeTrainingOptions(defaultPolicyLag = 1) {
+function readRuntimeTrainingOptions(defaultPolicyLag = 1, defaultWanMaxQueuedBatches = 32) {
     if (!exists(paths.runtimeTrainingOptionsPath)) return null;
     const value = readJson(paths.runtimeTrainingOptionsPath);
     if (
@@ -346,6 +371,10 @@ function readRuntimeTrainingOptions(defaultPolicyLag = 1) {
             value.threadedPolicyLag,
             defaultPolicyLag,
         ),
+        wanMaxQueuedBatches: normalizeWanMaxQueuedBatches(
+            value.wanMaxQueuedBatches,
+            defaultWanMaxQueuedBatches,
+        ),
     };
 }
 
@@ -356,6 +385,10 @@ function saveRuntimeTrainingOptions(options) {
         threadedPolicyLag: normalizeThreadedPolicyLag(
             options && options.threadedPolicyLag,
             1,
+        ),
+        wanMaxQueuedBatches: normalizeWanMaxQueuedBatches(
+            options && options.wanMaxQueuedBatches,
+            32,
         ),
         localTraining: Boolean(options && options.localTraining),
         updated_utc: new Date().toISOString(),
@@ -370,7 +403,8 @@ function loadConfig() {
     }
     const config = readJson(paths.configPath);
     const runtimeOptions = readRuntimeTrainingOptions(
-        normalizeThreadedPolicyLag(config.threadedPolicyLag, 1)
+        normalizeThreadedPolicyLag(config.threadedPolicyLag, 1),
+        normalizeWanMaxQueuedBatches(config.wanMaxQueuedBatches, 32),
     );
     return runtimeOptions
         ? applyRuntimeTrainingOptions(config, runtimeOptions)

@@ -8,6 +8,7 @@ param(
     [switch]$NewRun,
     [switch]$Threaded,
     [ValidateRange(0,2147483647)][int]$PolicyLag,
+    [ValidateRange(1,2147483647)][int]$BackpressureQueue,
     [switch]$LocalTraining,
     [string[]]$EnvArg,
     [switch]$Once,
@@ -38,6 +39,9 @@ if($PSBoundParameters.ContainsKey('PolicyLag') -and $Command -ne 'runtime'){
 }
 if($PSBoundParameters.ContainsKey('PolicyLag') -and -not $Threaded){
     throw '-PolicyLag requires -Threaded.'
+}
+if($PSBoundParameters.ContainsKey('BackpressureQueue') -and $Command -ne 'runtime'){
+    throw '-BackpressureQueue is only valid with the runtime command.'
 }
 if($Command -ne 'bundle' -and $PSBoundParameters.ContainsKey('LogPercent')){
     throw '-LogPercent is only valid with the bundle command.'
@@ -80,6 +84,9 @@ if($NewRun){$arguments+='--new-run'}
 if($Threaded){$arguments+='--threaded'}
 if($PSBoundParameters.ContainsKey('PolicyLag')){
     $arguments+=@('--policy-lag',[string]$PolicyLag)
+}
+if($PSBoundParameters.ContainsKey('BackpressureQueue')){
+    $arguments+=@('--backpressure-queue',[string]$BackpressureQueue)
 }
 if($LocalTraining){$arguments+='--local-training'}
 foreach($value in @($EnvArg)){
