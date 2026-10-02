@@ -53,6 +53,23 @@ _BC_MASK_STATE = threading.local()
 _POCA_TIMING_STATE = threading.local()
 _POCA_GROUP_BATCH_STATE = threading.local()
 _POCA_UPDATE_CACHE_STATE = threading.local()
+_POCA_UPDATE_BUSY_LOCK = threading.Lock()
+_POCA_UPDATE_BUSY_SECONDS_TOTAL = 0.0
+
+
+def poca_update_busy_seconds_total() -> float:
+    """Return cumulative wall time spent inside Bees POCA policy updates."""
+
+    with _POCA_UPDATE_BUSY_LOCK:
+        return float(_POCA_UPDATE_BUSY_SECONDS_TOTAL)
+
+
+def _record_poca_update_busy_seconds(seconds: float) -> None:
+    global _POCA_UPDATE_BUSY_SECONDS_TOTAL
+
+    value = max(0.0, float(seconds))
+    with _POCA_UPDATE_BUSY_LOCK:
+        _POCA_UPDATE_BUSY_SECONDS_TOTAL += value
 
 
 def _is_bees_action_spec(action_spec) -> bool:
@@ -1429,13 +1446,19 @@ def _promote_poca_update_tensor_cache(cache):
     device_index = int(device_index)
     device = torch.device("cuda", device_index)
     free_bytes, total_bytes = torch.cuda.mem_get_info(device_index)
+    allocated_bytes = int(torch.cuda.memory_allocated(device_index))
+    reserved_bytes = int(torch.cuda.memory_reserved(device_index))
+    allocator_reusable_bytes = max(0, reserved_bytes - allocated_bytes)
+    effective_free_bytes = int(free_bytes) + allocator_reusable_bytes
     reserve_bytes = max(
         POCA_GPU_CACHE_MIN_RESERVE_BYTES,
         int(total_bytes * POCA_GPU_CACHE_RESERVE_FRACTION),
     )
-    result["free_before"] = int(free_bytes)
+    result["driver_free_before"] = int(free_bytes)
+    result["allocator_reusable_before"] = int(allocator_reusable_bytes)
+    result["free_before"] = int(effective_free_bytes)
     result["reserve"] = int(reserve_bytes)
-    if cache_bytes > max(0, int(free_bytes) - int(reserve_bytes)):
+    if cache_bytes > max(0, effective_free_bytes - int(reserve_bytes)):
         return cache, result
 
     started = time.perf_counter()
@@ -2046,6 +2069,8 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             f"cache_storage={device_cache['storage']} "
             f"cache_mib={device_cache['bytes'] / (1024 * 1024):.1f} "
             f"cache_free_mib={device_cache['free_before'] / (1024 * 1024):.1f} "
+            f"cache_driver_free_mib={device_cache.get('driver_free_before', 0) / (1024 * 1024):.1f} "
+            f"cache_allocator_reusable_mib={device_cache.get('allocator_reusable_before', 0) / (1024 * 1024):.1f} "
             f"cache_reserve_mib={device_cache['reserve'] / (1024 * 1024):.1f} "
             f"cache_copy={device_cache['copy_seconds']:.6f} "
             f"group_obs=ragged-minibatch "
@@ -2127,6 +2152,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             _POCA_UPDATE_CACHE_STATE.minibatch = None
 
         update_seconds = time.perf_counter() - update_started
+        _record_poca_update_busy_seconds(update_seconds)
         print(
             "[Bees PPO timing] update end "
             f"minibatches={completed_minibatches}/{total_minibatches} "
