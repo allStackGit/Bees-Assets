@@ -102,6 +102,10 @@ class BrokerStaleActor(RuntimeError):
     pass
 
 
+class BrokerClaimRequired(RuntimeError):
+    pass
+
+
 class BrokerBackpressure(RuntimeError):
     pass
 
@@ -230,6 +234,8 @@ class BrokerClient:
                 raise BrokerSessionChanged(message) from exc
             if exc.code == 409 and code == "stale-actor-state":
                 raise BrokerStaleActor(message) from exc
+            if exc.code == 409 and code == "actor-claim-required":
+                raise BrokerClaimRequired(message) from exc
             if exc.code == 429 and code == "backpressure":
                 raise BrokerBackpressure(message) from exc
             raise RuntimeError(f"WAN broker rejected {method} {path}: {exc.code} {code}: {message}") from exc

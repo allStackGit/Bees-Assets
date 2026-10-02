@@ -570,6 +570,8 @@ class WanActorBroker:
                         self._json({"status": "acknowledged"})
                         return
                     self._error(404, "not-found", "Unknown WAN actor endpoint.")
+                except ActorClaimRequiredError as exc:
+                    self._error(409, "actor-claim-required", str(exc))
                 except StaleActorStateError as exc:
                     self._error(409, "stale-actor-state", str(exc))
                 except queue.Full:
@@ -904,6 +906,10 @@ class WanActorBroker:
 
 
 class StaleActorStateError(RuntimeError):
+    pass
+
+
+class ActorClaimRequiredError(RuntimeError):
     pass
 
 

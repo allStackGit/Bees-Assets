@@ -117,9 +117,21 @@ class ElasticActorSession(worker.ActorSession):
             "control_epoch": self.control_epoch,
             "behavior_specs": dict(self._behavior_specs),
         }
+
+        def register() -> None:
+            try:
+                self.client.register(registration)
+            except worker.BrokerClaimRequired:
+                reclaimed_actor_id = self.client.claim(self.session_id)
+                if int(reclaimed_actor_id) != int(self.actor_id):
+                    raise worker.BrokerStaleActor(
+                        "expired actor claim was reassigned to a different slot"
+                    )
+                self.client.register(registration)
+
         try:
             self._retry_broker_unavailable(
-                lambda: self.client.register(registration),
+                register,
                 label="environment-capacity registration",
             )
         except worker.BrokerStaleActor:
@@ -235,7 +247,7 @@ class ElasticActorSession(worker.ActorSession):
             # there is no remaining worker that can emit stale steps for this worker id.
             pass
 
-    def _scale_up_one(self) -> bool:
+    def _scale_up_one(self, requested_target: int) -> bool:
         from mlagents.trainers.env_manager import EnvironmentStep
         from mlagents.trainers.subprocess_env_manager import EnvironmentCommand
 
@@ -315,7 +327,7 @@ class ElasticActorSession(worker.ActorSession):
                     "live resize candidate failed and could not be retired cleanly: "
                     f"{type(cleanup_error).__name__}: {cleanup_error}"
                 ) from cleanup_error
-            self._record_resize_failure(local_worker_id + 1, exc)
+            self._record_resize_failure(int(requested_target), exc)
             return False
 
     def _scale_down_one(self) -> bool:
@@ -400,7 +412,7 @@ class ElasticActorSession(worker.ActorSession):
             return True
 
         if desired > self.env_count:
-            self._scale_up_one()
+            self._scale_up_one(desired)
         return False
 
     def _heartbeat(self) -> bool:

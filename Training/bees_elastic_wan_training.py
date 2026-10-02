@@ -723,7 +723,9 @@ class ElasticWanBroker(base.WanActorBroker):
                     and previous.get("actor_instance_id") == actor_instance_id
                 )
                 if claim is None and not owns_previous:
-                    raise ValueError("actor has no active claim for the requested slot")
+                    raise base.ActorClaimRequiredError(
+                        "actor has no active claim for the requested slot"
+                    )
                 if claim is not None and (
                     int(claim["actor_id"]) != actor_id
                     or claim.get("actor_instance_id") != actor_instance_id
