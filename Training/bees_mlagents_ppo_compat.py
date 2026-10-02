@@ -29,6 +29,7 @@ BEES_BARGE_SHIP_TYPE_SCALAR = -1.0 / 23.0
 BEES_HEALING_SPECIAL_ACTION = 3
 ACTION_ENTROPY_EPSILON = 1e-7
 POCA_ENCODER_CHUNK_ROWS = 2048
+POCA_TRAJECTORY_BATCH_MAX_EXPERIENCES = 2048
 
 _ORIGINAL_GAUSSIAN_FORWARD = None
 _ORIGINAL_ACTION_MODEL_FORWARD = None
@@ -37,6 +38,7 @@ _ORIGINAL_PPO_UPDATE = None
 _ORIGINAL_POCA_UPDATE = None
 _ORIGINAL_POCA_TRAJECTORY_VALUES = None
 _ORIGINAL_POCA_UPDATE_POLICY = None
+_ORIGINAL_POCA_ADVANCE = None
 _ORIGINAL_MULTI_AGENT_FORWARD = None
 _ORIGINAL_TRUST_REGION_POLICY_LOSS = None
 _ORIGINAL_MASKED_MEAN = None
@@ -48,6 +50,7 @@ _POLICY_DIMENSION_MASK_STATE = threading.local()
 _BC_MASK_STATE = threading.local()
 _POCA_TIMING_STATE = threading.local()
 _POCA_GROUP_BATCH_STATE = threading.local()
+_POCA_UPDATE_CACHE_STATE = threading.local()
 
 
 def _is_bees_action_spec(action_spec) -> bool:
@@ -775,6 +778,586 @@ def _poca_average_timing(label):
     counts = getattr(_POCA_TIMING_STATE, "timing_counts", None) or {}
     count = counts.get(label, 0)
     return totals.get(label, 0.0) / count if count else 0.0
+
+
+def _merge_agent_buffers(buffers):
+    """Concatenate trajectory buffers without copying their NumPy payloads."""
+
+    from mlagents.trainers.buffer import AgentBuffer
+
+    merged = AgentBuffer()
+    for buffer in buffers:
+        for key, field in buffer.items():
+            merged[key].extend(field)
+    return merged
+
+
+def _build_poca_next_observation_buffer(trajectories, n_obs):
+    """Represent one bootstrap observation per trajectory as an AgentBuffer."""
+
+    from mlagents.trainers.buffer import AgentBuffer
+    from mlagents.trainers.trajectory import GroupObsUtil, ObsUtil
+
+    buffer = AgentBuffer()
+    for trajectory in trajectories:
+        for obs_index in range(n_obs):
+            buffer[ObsUtil.get_name_at(obs_index)].append(
+                trajectory.next_obs[obs_index]
+            )
+            buffer[GroupObsUtil.get_name_at(obs_index)].append(
+                [
+                    groupmate_obs[obs_index]
+                    for groupmate_obs in trajectory.next_group_obs
+                ]
+            )
+    return buffer
+
+
+def _evaluate_poca_trajectory_batch(trainer, buffers, trajectories):
+    """Evaluate feed-forward POCA value, baseline and bootstrap targets in batches."""
+
+    from mlagents.torch_utils import torch
+    from mlagents.trainers.torch_entities.agent_action import AgentAction
+    from mlagents.trainers.torch_entities.utils import ModelUtils
+    from mlagents.trainers.trajectory import GroupObsUtil, ObsUtil
+    from bees_mlagents_structured_policy import (
+        reset_training_slot_limits,
+        set_training_slot_limits,
+    )
+
+    if trainer.policy.use_recurrent:
+        raise RuntimeError(
+            "Batched Bees POCA trajectory evaluation requires a feed-forward policy."
+        )
+
+    merged = _merge_agent_buffers(buffers)
+    n_obs = len(trainer.policy.behavior_spec.observation_specs)
+    next_buffer = _build_poca_next_observation_buffer(trajectories, n_obs)
+    slot_limits = _structured_training_slot_limits(
+        trainer.policy,
+        merged,
+        extra_observations=[
+            (trajectory.next_obs, trajectory.next_group_obs)
+            for trajectory in trajectories
+        ],
+    )
+    slot_token = set_training_slot_limits(slot_limits)
+    try:
+        with torch.no_grad():
+            current_obs = [
+                ModelUtils.list_to_tensor(obs)
+                for obs in ObsUtil.from_buffer(merged, n_obs)
+            ]
+            groupmate_obs = GroupObsUtil.from_buffer(merged, n_obs)
+            groupmate_obs = [
+                [
+                    ModelUtils.list_to_tensor(obs)
+                    for obs in groupmate
+                ]
+                for groupmate in groupmate_obs
+            ]
+            groupmate_actions = AgentAction.group_from_buffer(merged)
+            current_counts = _poca_groupmate_counts(
+                trainer.policy,
+                merged,
+                merged.num_experiences,
+            )
+            _POCA_GROUP_BATCH_STATE.valid_rows = (
+                _poca_groupmate_valid_row_indices(current_counts)
+            )
+            _POCA_GROUP_BATCH_STATE.encoded_cache = {}
+
+            all_obs = [current_obs] + groupmate_obs
+            value_estimates, _ = trainer.optimizer.critic.critic_pass(
+                all_obs,
+                memories=None,
+                sequence_length=merged.num_experiences,
+            )
+            baseline_estimates, _ = trainer.optimizer.critic.baseline(
+                current_obs,
+                (groupmate_obs, groupmate_actions),
+                memories=None,
+                sequence_length=merged.num_experiences,
+            )
+
+            next_obs = [
+                ModelUtils.list_to_tensor(obs)
+                for obs in ObsUtil.from_buffer(next_buffer, n_obs)
+            ]
+            next_groupmate_obs = GroupObsUtil.from_buffer(next_buffer, n_obs)
+            next_groupmate_obs = [
+                [
+                    ModelUtils.list_to_tensor(obs)
+                    for obs in groupmate
+                ]
+                for groupmate in next_groupmate_obs
+            ]
+            next_counts = _poca_groupmate_counts(
+                trainer.policy,
+                next_buffer,
+                next_buffer.num_experiences,
+            )
+            _POCA_GROUP_BATCH_STATE.valid_rows = (
+                _poca_groupmate_valid_row_indices(next_counts)
+            )
+            _POCA_GROUP_BATCH_STATE.encoded_cache = {}
+            next_value_estimates, _ = trainer.optimizer.critic.critic_pass(
+                [next_obs] + next_groupmate_obs,
+                memories=None,
+                sequence_length=next_buffer.num_experiences,
+            )
+    finally:
+        reset_training_slot_limits(slot_token)
+        _POCA_GROUP_BATCH_STATE.valid_rows = None
+        _POCA_GROUP_BATCH_STATE.encoded_cache = None
+
+    return (
+        {
+            name: ModelUtils.to_numpy(value)
+            for name, value in value_estimates.items()
+        },
+        {
+            name: ModelUtils.to_numpy(value)
+            for name, value in baseline_estimates.items()
+        },
+        {
+            name: ModelUtils.to_numpy(value)
+            for name, value in next_value_estimates.items()
+        },
+    )
+
+
+def _complete_poca_trajectory(
+    trainer,
+    trajectory,
+    agent_buffer_trajectory,
+    value_estimates,
+    baseline_estimates,
+    value_next,
+):
+    """Finish stock ML-Agents 1.1.0 POCA bookkeeping after batched value inference."""
+
+    import numpy as np
+    from mlagents_envs.side_channel.stats_side_channel import (
+        StatsAggregationMethod,
+    )
+    from mlagents.trainers.buffer import BufferKey, RewardSignalUtil
+    from mlagents.trainers.trainer.trainer_utils import lambda_return
+
+    agent_id = trajectory.agent_id
+
+    for name, values in value_estimates.items():
+        agent_buffer_trajectory[
+            RewardSignalUtil.value_estimates_key(name)
+        ].extend(values)
+        agent_buffer_trajectory[
+            RewardSignalUtil.baseline_estimates_key(name)
+        ].extend(baseline_estimates[name])
+        trainer._stats_reporter.add_stat(
+            f"Policy/{trainer.optimizer.reward_signals[name].name.capitalize()} "
+            "Baseline Estimate",
+            np.mean(baseline_estimates[name]),
+        )
+        trainer._stats_reporter.add_stat(
+            f"Policy/{trainer.optimizer.reward_signals[name].name.capitalize()} "
+            "Value Estimate",
+            np.mean(value_estimates[name]),
+        )
+
+    trainer.collected_rewards["environment"][agent_id] += np.sum(
+        agent_buffer_trajectory[BufferKey.ENVIRONMENT_REWARDS]
+    )
+    trainer.collected_group_rewards[agent_id] += np.sum(
+        agent_buffer_trajectory[BufferKey.GROUP_REWARD]
+    )
+
+    for name, reward_signal in trainer.optimizer.reward_signals.items():
+        evaluate_result = (
+            reward_signal.evaluate(agent_buffer_trajectory)
+            * reward_signal.strength
+        )
+        agent_buffer_trajectory[RewardSignalUtil.rewards_key(name)].extend(
+            evaluate_result
+        )
+        trainer.collected_rewards[name][agent_id] += np.sum(evaluate_result)
+
+    tmp_advantages = []
+    for name in trainer.optimizer.reward_signals:
+        local_rewards = np.asarray(
+            agent_buffer_trajectory[
+                RewardSignalUtil.rewards_key(name)
+            ].get_batch(),
+            dtype=np.float32,
+        )
+        baseline_estimate = agent_buffer_trajectory[
+            RewardSignalUtil.baseline_estimates_key(name)
+        ].get_batch()
+        v_estimates = agent_buffer_trajectory[
+            RewardSignalUtil.value_estimates_key(name)
+        ].get_batch()
+
+        lambd_returns = lambda_return(
+            r=local_rewards,
+            value_estimates=v_estimates,
+            gamma=trainer.optimizer.reward_signals[name].gamma,
+            lambd=trainer.hyperparameters.lambd,
+            value_next=value_next[name],
+        )
+        local_advantage = (
+            np.asarray(lambd_returns)
+            - np.asarray(baseline_estimate)
+        )
+        agent_buffer_trajectory[RewardSignalUtil.returns_key(name)].set(
+            lambd_returns
+        )
+        agent_buffer_trajectory[RewardSignalUtil.advantage_key(name)].set(
+            local_advantage
+        )
+        tmp_advantages.append(local_advantage)
+
+    global_advantages = list(
+        np.mean(np.asarray(tmp_advantages, dtype=np.float32), axis=0)
+    )
+    agent_buffer_trajectory[BufferKey.ADVANTAGES].set(global_advantages)
+    trainer._append_to_update_buffer(agent_buffer_trajectory)
+
+    if trajectory.done_reached:
+        trainer._update_end_episode_stats(agent_id, trainer.optimizer)
+        if not trajectory.all_group_dones_reached:
+            trainer.collected_group_rewards.pop(agent_id)
+
+    if trajectory.all_group_dones_reached and trajectory.done_reached:
+        trainer.stats_reporter.add_stat(
+            "Environment/Group Cumulative Reward",
+            trainer.collected_group_rewards.get(agent_id, 0),
+            aggregation=StatsAggregationMethod.HISTOGRAM,
+        )
+        trainer.collected_group_rewards.pop(agent_id)
+
+
+def _process_poca_trajectory_batch(trainer, trajectories):
+    """Process multiple short feed-forward trajectories with shared critic passes."""
+
+    import numpy as np
+    from mlagents.trainers.trainer.rl_trainer import RLTrainer
+
+    buffers = [trajectory.to_agentbuffer() for trajectory in trajectories]
+    merged = _merge_agent_buffers(buffers)
+    if trainer.is_training:
+        trainer.policy.actor.update_normalization(merged)
+        trainer.optimizer.critic.update_normalization(merged)
+
+    values, baselines, next_values = _evaluate_poca_trajectory_batch(
+        trainer,
+        buffers,
+        trajectories,
+    )
+
+    offset = 0
+    for trajectory_index, (trajectory, buffer) in enumerate(
+        zip(trajectories, buffers)
+    ):
+        # Keep ML-Agents step/checkpoint/summary ordering per trajectory. Value
+        # inference is intentionally batched before this bookkeeping; no policy
+        # weights are changed by that inference.
+        RLTrainer._process_trajectory(trainer, trajectory)
+        length = buffer.num_experiences
+        end = offset + length
+
+        trajectory_values = {
+            name: np.asarray(value[offset:end])
+            for name, value in values.items()
+        }
+        trajectory_baselines = {
+            name: np.asarray(value[offset:end])
+            for name, value in baselines.items()
+        }
+        trajectory_next = {}
+        terminal = (
+            trajectory.all_group_dones_reached
+            and trajectory.done_reached
+            and not trajectory.interrupted
+        )
+        for name, value in next_values.items():
+            next_slice = np.asarray(
+                value[trajectory_index : trajectory_index + 1]
+            ).copy()
+            if (
+                terminal
+                and not trainer.optimizer.reward_signals[name].ignore_done
+            ):
+                next_slice[-1] = 0.0
+            trajectory_next[name] = next_slice
+
+        _complete_poca_trajectory(
+            trainer,
+            trajectory,
+            buffer,
+            trajectory_values,
+            trajectory_baselines,
+            trajectory_next,
+        )
+        offset = end
+
+
+def _poca_cpu_tensor(values, dtype):
+    """Materialize one update-buffer field once on CPU for repeated PPO epochs."""
+
+    import numpy as np
+    from mlagents.torch_utils import torch
+
+    array = np.ascontiguousarray(np.asarray(values))
+    return torch.as_tensor(
+        array,
+        dtype=dtype,
+        device=torch.device("cpu"),
+    )
+
+
+def _build_poca_update_tensor_cache(optimizer, buffer):
+    """Pre-pad and tensorize the feed-forward extrinsic POCA update buffer once."""
+
+    import numpy as np
+    from mlagents.torch_utils import torch
+    from mlagents.trainers.buffer import BufferKey, RewardSignalUtil
+    from mlagents.trainers.trajectory import GroupObsUtil, ObsUtil
+    from mlagents.trainers.torch_entities.components.reward_providers.extrinsic_reward_provider import (
+        ExtrinsicRewardProvider,
+    )
+
+    policy = optimizer.policy
+    if (
+        policy.sequence_length != 1
+        or len(policy.behavior_spec.observation_specs) != 1
+        or not _is_bees_action_spec(policy.behavior_spec.action_spec)
+        or any(
+            not isinstance(provider, ExtrinsicRewardProvider)
+            for provider in optimizer.reward_signals.values()
+        )
+    ):
+        return None
+
+    size = buffer.num_experiences
+    if size <= 0:
+        return None
+    groupmate_counts = _poca_groupmate_counts(policy, buffer, size)
+    if groupmate_counts is None:
+        return None
+
+    current_obs = [
+        _poca_cpu_tensor(
+            np.asarray(field.to_ndarray(), dtype=np.float32),
+            torch.float32,
+        )
+        for field in ObsUtil.from_buffer(
+            buffer,
+            len(policy.behavior_spec.observation_specs),
+        )
+    ]
+    padded_group_obs = GroupObsUtil.from_buffer(
+        buffer,
+        len(policy.behavior_spec.observation_specs),
+    )
+    groupmate_obs = [
+        [
+            _poca_cpu_tensor(
+                np.asarray(obs, dtype=np.float32),
+                torch.float32,
+            )
+            for obs in groupmate
+        ]
+        for groupmate in padded_group_obs
+    ]
+
+    def field_tensor(key, dtype):
+        return _poca_cpu_tensor(buffer[key].get_batch(), dtype)
+
+    continuous_actions = field_tensor(
+        BufferKey.CONTINUOUS_ACTION,
+        torch.float32,
+    )
+    discrete_actions = field_tensor(
+        BufferKey.DISCRETE_ACTION,
+        torch.long,
+    )
+    action_masks = field_tensor(BufferKey.ACTION_MASK, torch.float32)
+    loss_masks = field_tensor(BufferKey.MASKS, torch.bool)
+    advantages = field_tensor(BufferKey.ADVANTAGES, torch.float32)
+
+    old_log_prob_parts = []
+    if BufferKey.CONTINUOUS_LOG_PROBS in buffer:
+        old_log_prob_parts.append(
+            field_tensor(BufferKey.CONTINUOUS_LOG_PROBS, torch.float32)
+        )
+    if BufferKey.DISCRETE_LOG_PROBS in buffer:
+        old_log_prob_parts.append(
+            field_tensor(BufferKey.DISCRETE_LOG_PROBS, torch.float32)
+        )
+    if not old_log_prob_parts:
+        return None
+    old_log_probs = (
+        old_log_prob_parts[0]
+        if len(old_log_prob_parts) == 1
+        else torch.cat(old_log_prob_parts, dim=1)
+    )
+
+    group_continuous = []
+    if BufferKey.GROUP_CONTINUOUS_ACTION in buffer:
+        group_continuous = [
+            _poca_cpu_tensor(arr, torch.float32)
+            for arr in buffer[
+                BufferKey.GROUP_CONTINUOUS_ACTION
+            ].padded_to_batch()
+        ]
+    group_discrete = []
+    if BufferKey.GROUP_DISCRETE_ACTION in buffer:
+        group_discrete = [
+            _poca_cpu_tensor(arr, torch.long)
+            for arr in buffer[
+                BufferKey.GROUP_DISCRETE_ACTION
+            ].padded_to_batch(dtype=np.int64)
+        ]
+
+    returns = {}
+    old_values = {}
+    old_baselines = {}
+    for name in optimizer.reward_signals:
+        returns[name] = field_tensor(
+            RewardSignalUtil.returns_key(name),
+            torch.float32,
+        )
+        old_values[name] = field_tensor(
+            RewardSignalUtil.value_estimates_key(name),
+            torch.float32,
+        )
+        old_baselines[name] = field_tensor(
+            RewardSignalUtil.baseline_estimates_key(name),
+            torch.float32,
+        )
+
+    movement_activity = _bees_movement_activity(policy, buffer)
+    movement_tensor = (
+        None
+        if movement_activity is None
+        else _poca_cpu_tensor(movement_activity, torch.float32)
+    )
+
+    return {
+        "size": size,
+        "current_obs": current_obs,
+        "groupmate_obs": groupmate_obs,
+        "continuous_actions": continuous_actions,
+        "discrete_actions": discrete_actions,
+        "group_continuous": group_continuous,
+        "group_discrete": group_discrete,
+        "action_masks": action_masks,
+        "loss_masks": loss_masks,
+        "advantages": advantages,
+        "old_log_probs": old_log_probs,
+        "returns": returns,
+        "old_values": old_values,
+        "old_baselines": old_baselines,
+        "movement_activity": movement_tensor,
+        "groupmate_counts": np.asarray(
+            groupmate_counts,
+            dtype=np.int32,
+        ),
+        "slot_limits": _structured_training_slot_limits(policy, buffer),
+    }
+
+
+def _select_poca_update_tensor_cache(cache, indices):
+    """Gather one shuffled PPO minibatch from the materialized CPU cache."""
+
+    import numpy as np
+    from mlagents.torch_utils import default_device, torch
+    from mlagents.trainers.torch_entities.agent_action import AgentAction
+
+    indices = np.asarray(indices, dtype=np.int64)
+    index_tensor = torch.as_tensor(
+        indices,
+        dtype=torch.long,
+        device=torch.device("cpu"),
+    )
+    device = default_device()
+
+    def take(tensor):
+        selected = tensor.index_select(0, index_tensor)
+        return selected.to(device=device)
+
+    current_obs = [take(tensor) for tensor in cache["current_obs"]]
+    groupmate_obs = [
+        [take(tensor) for tensor in groupmate]
+        for groupmate in cache["groupmate_obs"]
+    ]
+    continuous_actions = take(cache["continuous_actions"])
+    discrete_actions = take(cache["discrete_actions"])
+    actions = AgentAction(
+        continuous_actions,
+        [
+            discrete_actions[..., index]
+            for index in range(discrete_actions.shape[-1])
+        ],
+    )
+
+    group_actions = []
+    group_count = max(
+        len(cache["group_continuous"]),
+        len(cache["group_discrete"]),
+    )
+    for position in range(group_count):
+        continuous = (
+            take(cache["group_continuous"][position])
+            if position < len(cache["group_continuous"])
+            else None
+        )
+        discrete = (
+            take(cache["group_discrete"][position])
+            if position < len(cache["group_discrete"])
+            else None
+        )
+        group_actions.append(
+            AgentAction(
+                continuous,
+                None
+                if discrete is None
+                else [
+                    discrete[..., index]
+                    for index in range(discrete.shape[-1])
+                ],
+            )
+        )
+
+    return {
+        "current_obs": current_obs,
+        "groupmate_obs": groupmate_obs,
+        "actions": actions,
+        "groupmate_actions": group_actions,
+        "action_masks": take(cache["action_masks"]),
+        "loss_masks": take(cache["loss_masks"]),
+        "advantages": take(cache["advantages"]),
+        "old_log_probs": take(cache["old_log_probs"]),
+        "returns": {
+            name: take(tensor)
+            for name, tensor in cache["returns"].items()
+        },
+        "old_values": {
+            name: take(tensor)
+            for name, tensor in cache["old_values"].items()
+        },
+        "old_baselines": {
+            name: take(tensor)
+            for name, tensor in cache["old_baselines"].items()
+        },
+        "movement_activity": (
+            None
+            if cache["movement_activity"] is None
+            else take(cache["movement_activity"])
+        ),
+        "discrete_actions": discrete_actions,
+        "groupmate_counts": cache["groupmate_counts"][indices],
+        "slot_limits": cache["slot_limits"],
+    }
 
 
 def install_inactive_continuous_action_masking() -> Optional[Callable]:
