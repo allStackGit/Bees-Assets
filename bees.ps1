@@ -7,6 +7,7 @@ param(
     [switch]$PreserveRun,
     [switch]$NewRun,
     [switch]$Threaded,
+    [ValidateRange(0,2147483647)][int]$PolicyLag,
     [switch]$LocalTraining,
     [string[]]$EnvArg,
     [switch]$Once,
@@ -31,6 +32,12 @@ if($Threaded -and $Command -ne 'runtime'){
 }
 if($LocalTraining -and $Command -ne 'runtime'){
     throw '-LocalTraining is only valid with the runtime command.'
+}
+if($PSBoundParameters.ContainsKey('PolicyLag') -and $Command -ne 'runtime'){
+    throw '-PolicyLag is only valid with the runtime command.'
+}
+if($PSBoundParameters.ContainsKey('PolicyLag') -and -not $Threaded){
+    throw '-PolicyLag requires -Threaded.'
 }
 if($Command -ne 'bundle' -and $PSBoundParameters.ContainsKey('LogPercent')){
     throw '-LogPercent is only valid with the bundle command.'
@@ -71,6 +78,9 @@ if($Force){$arguments+='--force'}
 if($PreserveRun){$arguments+='--preserve-run'}
 if($NewRun){$arguments+='--new-run'}
 if($Threaded){$arguments+='--threaded'}
+if($PSBoundParameters.ContainsKey('PolicyLag')){
+    $arguments+=@('--policy-lag',[string]$PolicyLag)
+}
 if($LocalTraining){$arguments+='--local-training'}
 foreach($value in @($EnvArg)){
     if($null -ne $value){$arguments+=@('--env-arg',[string]$value)}
