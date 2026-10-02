@@ -5,6 +5,7 @@ const path = require('node:path');
 
 const {
     GAMEPLAY_SERVER_PORT,
+    applyRuntimeTrainingOptions,
     ensureDir,
     ensureTokenFile,
     getGitShortSha,
@@ -20,6 +21,7 @@ const {
     resolvePython,
     resolveUnityEditor,
     runChecked,
+    saveRuntimeTrainingOptions,
     sleep,
     stopManagedProcessTree,
     testControl,
@@ -127,8 +129,12 @@ async function reconcilePersistedTrainingAfterServerStart(config, admin) {
     );
 }
 
-async function invokeRuntime() {
-    const config = loadConfig();
+async function invokeRuntime(options = {}) {
+    let config = loadConfig();
+    config = applyRuntimeTrainingOptions(config, {
+        threadedTraining: Boolean(options.threaded),
+        localTraining: Boolean(options.localTraining),
+    });
     if (!exists(paths.latestReleasePath)) {
         throw new Error(
             "No training release exists. Run '.\\Assets\\bees.ps1 build' first."
@@ -223,6 +229,14 @@ async function invokeRuntime() {
         runtime_updated_utc: new Date().toISOString(),
     };
     saveLatestRelease(updatedRelease);
+    saveRuntimeTrainingOptions({
+        threadedTraining: Boolean(config.threadedTraining),
+        localTraining: Boolean(
+            config.localActor &&
+            typeof config.localActor === 'object' &&
+            config.localActor.enabled
+        ),
+    });
 
     const unity = resolveUnityEditor(config);
     assertCentralAgentCheckpointSafe();
@@ -256,7 +270,11 @@ async function invokeRuntime() {
     console.log(
         'Training runtime updated without rebuilding Unity: build=' + buildId +
         ' runtime=' + String(runtime.runtime_version || '').slice(0, 12) +
-        ' source=' + sourceSha + '.'
+        ' source=' + sourceSha +
+        ' threaded=' + (config.threadedTraining ? 'on' : 'off') +
+        ' local_training=' + (
+            config.localActor && config.localActor.enabled ? 'on' : 'off'
+        ) + '.'
     );
 }
 
