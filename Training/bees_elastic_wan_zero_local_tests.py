@@ -158,6 +158,28 @@ class ZeroLocalArgumentTests(unittest.TestCase):
         self.assertEqual(session.topology_epoch, 1)
 
 
+class VersionedTrajectoryTests(unittest.TestCase):
+    def test_source_policy_version_matches_trajectory_behavior(self):
+        trajectory = SimpleNamespace(
+            behavior_id="BeesRL1v1?team=0",
+            steps=[object(), object()],
+        )
+        wrapped = zero_local._VersionedTrajectory(
+            trajectory,
+            SimpleNamespace(),
+            actor_id=2,
+            policy_versions={
+                "BeesRL1v1?team=0": 17,
+                "OtherBehavior": 9,
+            },
+            control_epoch=4,
+        )
+
+        self.assertEqual(wrapped.source_policy_version(), 17)
+        self.assertEqual(wrapped.behavior_id, "BeesRL1v1?team=0")
+        self.assertEqual(wrapped.step_count, 2)
+
+
 class ZeroLocalBrokerTests(unittest.TestCase):
     def _broker(self):
         options = elastic.ElasticWanOptions(
