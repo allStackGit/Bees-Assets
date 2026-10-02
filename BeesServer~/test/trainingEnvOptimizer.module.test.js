@@ -8,6 +8,7 @@ const {
     learnerConsumedSteps,
     learnerStep,
     optimizationSteps,
+    optimizerBusySeconds,
     producerAcceptedSteps,
     runtimeVersion,
     policyCycle,
@@ -34,6 +35,7 @@ function record(
         policyCycleValue = null,
         runtimeVersionValue = '',
         learnerStepValue = consumed,
+        optimizerBusySecondsValue = 0,
         reconciliationPhase = '',
     } = {},
 ) {
@@ -52,6 +54,7 @@ function record(
             throughput: {
                 learner_consumed_steps_total: consumed,
                 learner_step_total: learnerStepValue,
+                optimizer_busy_seconds_total: optimizerBusySecondsValue,
                 accepted_steps_total: accepted,
                 policy_cycle: policyCycleValue,
                 runtime_version: runtimeVersionValue,
@@ -99,6 +102,18 @@ test('capacity and learner-consumed-step metrics reject malformed values', () =>
     );
     assert.equal(learnerStep({ throughput: { learner_step_total: 21 } }), 21);
     assert.equal(learnerStep({ throughput: { learner_step_total: -1 } }), null);
+    assert.equal(
+        optimizerBusySeconds({
+            throughput: { optimizer_busy_seconds_total: 12.5 },
+        }),
+        12.5,
+    );
+    assert.equal(
+        optimizerBusySeconds({
+            throughput: { optimizer_busy_seconds_total: -1 },
+        }),
+        null,
+    );
     assert.equal(
         optimizationSteps({
             throughput: {
@@ -186,7 +201,7 @@ test('optimizer excludes learner-stall intervals from throughput measurement', (
         4,
         500,
         1500,
-        { max: 8, accepted: 1500 },
+        { max: 8, accepted: 1500, optimizerBusySecondsValue: 1.0 },
     );
     assert.equal(state.phase, 'measuring');
     assert.equal(state.baseline_sps, null);
@@ -197,7 +212,7 @@ test('optimizer excludes learner-stall intervals from throughput measurement', (
         4,
         1000,
         2000,
-        { max: 8, accepted: 2000 },
+        { max: 8, accepted: 2000, optimizerBusySecondsValue: 1.0 },
     );
     assert.equal(state.baseline_envs, 4);
     assert.equal(state.baseline_sps, 1000);
@@ -343,7 +358,7 @@ test('optimizer waits through a learner stall without resizing capacity', () => 
         8,
         0,
         1000,
-        { max: 16, accepted: 900 },
+        { max: 16, accepted: 900, optimizerBusySecondsValue: 1.0 },
     );
 
     assert.equal(state.baseline_envs, null);
@@ -357,7 +372,7 @@ test('optimizer waits through a learner stall without resizing capacity', () => 
         8,
         0,
         1001,
-        { max: 16, accepted: 900 },
+        { max: 16, accepted: 900, optimizerBusySecondsValue: 1.001 },
     );
     assert.equal(state.phase, 'measuring');
 
@@ -367,11 +382,39 @@ test('optimizer waits through a learner stall without resizing capacity', () => 
         8,
         850,
         2001,
-        { max: 16, accepted: 1750 },
+        { max: 16, accepted: 1750, optimizerBusySecondsValue: 1.001 },
     );
     assert.equal(state.baseline_envs, 8);
     assert.equal(state.baseline_sps, 850);
     assert.equal(state.desired_envs, 16);
+});
+
+test('optimizer restarts measurement when learner busy counter restarts', () => {
+    const optimizer = new TrainingEnvOptimizer({
+        settleMs: 0,
+        measurementMs: 1000,
+    });
+
+    let state = update(
+        optimizer,
+        'remote-a',
+        4,
+        0,
+        0,
+        { max: 8, optimizerBusySecondsValue: 10.0 },
+    );
+    assert.equal(state.phase, 'measuring');
+
+    state = update(
+        optimizer,
+        'remote-a',
+        4,
+        100,
+        500,
+        { max: 8, optimizerBusySecondsValue: 1.0 },
+    );
+    assert.equal(state.phase, 'settling');
+    assert.match(state.decision, /optimizer-busy counter restarted/);
 });
 
 test('one worker owns the capacity search while other workers wait', () => {
