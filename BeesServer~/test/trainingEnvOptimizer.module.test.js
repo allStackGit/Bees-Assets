@@ -204,7 +204,7 @@ test('optimizer excludes learner-stall intervals from throughput measurement', (
     assert.equal(state.desired_envs, 8);
 });
 
-test('optimizer uses wall-clock settling and measurement instead of policy-cycle gating', () => {
+test('optimizer uses wall-clock settling and active learner time instead of policy-cycle gating', () => {
     const optimizer = new TrainingEnvOptimizer({
         settleMs: 1000,
         measurementMs: 5000,
@@ -329,7 +329,7 @@ test('optimizer doubles capacity while global learner throughput improves', () =
     assert.match(state.decision, /32/);
 });
 
-test('optimizer retries a starved sample instead of treating producer activity as zero useful throughput', () => {
+test('optimizer waits through a learner stall without resizing capacity', () => {
     const optimizer = new TrainingEnvOptimizer({
         settleMs: 0,
         measurementMs: 1000,
@@ -349,8 +349,7 @@ test('optimizer retries a starved sample instead of treating producer activity a
     assert.equal(state.baseline_envs, null);
     assert.equal(state.baseline_sps, null);
     assert.equal(state.desired_envs, 8);
-    assert.equal(state.phase, 'settling');
-    assert.match(state.decision, /global learner did not advance/);
+    assert.equal(state.phase, 'measuring');
 
     state = update(
         optimizer,
