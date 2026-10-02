@@ -124,8 +124,9 @@ class ElasticActorSession(worker.ActorSession):
             except worker.BrokerClaimRequired:
                 reclaimed_actor_id = self.client.claim(self.session_id)
                 if int(reclaimed_actor_id) != int(self.actor_id):
-                    raise worker.BrokerStaleActor(
-                        "expired actor claim was reassigned to a different slot"
+                    raise worker.BrokerActorSlotChanged(
+                        "expired actor claim moved from slot "
+                        f"{self.actor_id} to {reclaimed_actor_id}"
                     )
                 self.client.register(registration)
 

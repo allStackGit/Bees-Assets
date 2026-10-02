@@ -106,6 +106,10 @@ class BrokerClaimRequired(RuntimeError):
     pass
 
 
+class BrokerActorSlotChanged(RuntimeError):
+    pass
+
+
 class BrokerBackpressure(RuntimeError):
     pass
 

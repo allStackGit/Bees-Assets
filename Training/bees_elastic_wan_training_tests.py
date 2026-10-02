@@ -326,9 +326,11 @@ class ElasticActorLiveResizeTests(unittest.TestCase):
         )
         session.client.claim = mock.Mock(return_value=1)
 
-        self.assertFalse(session._register_current_capacity())
-
-        self.assertTrue(session._state_changed.is_set())
+        with self.assertRaisesRegex(
+            actor_session.worker.BrokerActorSlotChanged,
+            "moved from slot 0 to 1",
+        ):
+            session._register_current_capacity()
 
     def test_downscale_retires_locally_even_while_uploads_are_backpressured(self):
         tail = SimpleNamespace(worker_id=2, waiting=False)

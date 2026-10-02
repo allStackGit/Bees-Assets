@@ -742,6 +742,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 reconnect_backoff.reset()
                 print("[Bees WAN actor] central generation changed; reconnecting to the next trainer session.")
                 stop.wait(0.25)
+            except worker.BrokerActorSlotChanged as exc:
+                reconnect_backoff.reset()
+                startup_health.set_ready("resynchronizing")
+                print(
+                    f"[Bees WAN actor] {exc}; rebuilding local worker mapping."
+                )
+                stop.wait(0.1)
             except worker.BrokerStaleActor:
                 # Fallback for a freshness race that escaped the in-session resynchronizer.
                 # Do not count this as a session failure; central state simply advanced while
