@@ -833,7 +833,7 @@ def _build_poca_next_observation_buffer(trajectories, n_obs):
     return buffer
 
 
-def _evaluate_poca_trajectory_batch(trainer, buffers, trajectories):
+def _evaluate_poca_trajectory_batch(trainer, merged, trajectories):
     """Evaluate feed-forward POCA value, baseline and bootstrap targets in batches."""
 
     from mlagents.torch_utils import torch
@@ -850,7 +850,6 @@ def _evaluate_poca_trajectory_batch(trainer, buffers, trajectories):
             "Batched Bees POCA trajectory evaluation requires a feed-forward policy."
         )
 
-    merged = _merge_agent_buffers(buffers)
     n_obs = len(trainer.policy.behavior_spec.observation_specs)
     next_buffer = _build_poca_next_observation_buffer(trajectories, n_obs)
     slot_limits = _structured_training_slot_limits(
@@ -1069,7 +1068,7 @@ def _process_poca_trajectory_batch(trainer, trajectories):
 
     values, baselines, next_values = _evaluate_poca_trajectory_batch(
         trainer,
-        buffers,
+        merged,
         trajectories,
     )
 
@@ -1242,7 +1241,10 @@ def _select_poca_ragged_group_obs(source, indices, groupmate_counts, device):
     import numpy as np
     from mlagents.torch_utils import torch
 
-    if not isinstance(source, _PocaRaggedGroupObs):
+    if not isinstance(
+        source,
+        (_PocaRaggedGroupObs, _PocaPackedGroupObs),
+    ):
         return []
     indices = np.asarray(indices, dtype=np.int64)
     counts = np.asarray(groupmate_counts, dtype=np.int32)
@@ -2177,8 +2179,8 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             f"cache_allocator_reusable_mib={device_cache.get('allocator_reusable_before', 0) / (1024 * 1024):.1f} "
             f"cache_reserve_mib={device_cache['reserve'] / (1024 * 1024):.1f} "
             f"cache_copy={device_cache['copy_seconds']:.6f} "
-            f"group_obs={'packed-cpu' if isinstance(tensor_cache.get('groupmate_obs'), _PocaPackedGroupObs) else 'ragged-minibatch'} "
-            f"group_cache_mib={_poca_group_obs_cache_nbytes(tensor_cache.get('groupmate_obs')) / (1024 * 1024):.1f} "
+            f"group_obs={'packed-cpu' if tensor_cache is not None and isinstance(tensor_cache.get('groupmate_obs'), _PocaPackedGroupObs) else 'ragged-minibatch'} "
+            f"group_cache_mib={_poca_group_obs_cache_nbytes(None if tensor_cache is None else tensor_cache.get('groupmate_obs')) / (1024 * 1024):.1f} "
             f"materialize={materialize_seconds:.6f}",
             flush=True,
         )
