@@ -131,10 +131,14 @@ async function reconcilePersistedTrainingAfterServerStart(config, admin) {
 
 async function invokeRuntime(options = {}) {
     let config = loadConfig();
-    config = applyRuntimeTrainingOptions(config, {
+    const runtimeOverrides = {
         threadedTraining: Boolean(options.threaded),
         localTraining: Boolean(options.localTraining),
-    });
+    };
+    if (options.explicitPolicyLag) {
+        runtimeOverrides.threadedPolicyLag = Number(options.policyLag);
+    }
+    config = applyRuntimeTrainingOptions(config, runtimeOverrides);
     if (!exists(paths.latestReleasePath)) {
         throw new Error(
             "No training release exists. Run '.\\Assets\\bees.ps1 build' first."
@@ -231,6 +235,7 @@ async function invokeRuntime(options = {}) {
     saveLatestRelease(updatedRelease);
     saveRuntimeTrainingOptions({
         threadedTraining: Boolean(config.threadedTraining),
+        threadedPolicyLag: Number(config.threadedPolicyLag),
         localTraining: Boolean(
             config.localActor &&
             typeof config.localActor === 'object' &&
@@ -272,6 +277,7 @@ async function invokeRuntime(options = {}) {
         ' runtime=' + String(runtime.runtime_version || '').slice(0, 12) +
         ' source=' + sourceSha +
         ' threaded=' + (config.threadedTraining ? 'on' : 'off') +
+        ' policy_lag=' + Number(config.threadedPolicyLag) +
         ' local_training=' + (
             config.localActor && config.localActor.enabled ? 'on' : 'off'
         ) + '.'
