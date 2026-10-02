@@ -208,6 +208,10 @@ class TrainingEnvOptimizer {
             measurement_started_ms: null,
             measurement_start_steps: null,
             measurement_start_produced_steps: null,
+            measurement_last_ms: null,
+            measurement_last_steps: null,
+            measurement_active_ms: 0,
+            measurement_active_steps: 0,
             source_steps: null,
             last_sps: null,
             last_decision: 'settling before baseline measurement',
@@ -243,6 +247,10 @@ class TrainingEnvOptimizer {
         state.measurement_started_ms = null;
         state.measurement_start_steps = null;
         state.measurement_start_produced_steps = null;
+        state.measurement_last_ms = null;
+        state.measurement_last_steps = null;
+        state.measurement_active_ms = 0;
+        state.measurement_active_steps = 0;
         state.source_steps = totalSteps;
         if (reason) state.last_decision = reason;
     }
@@ -438,6 +446,10 @@ class TrainingEnvOptimizer {
             state.measurement_started_ms = null;
             state.measurement_start_steps = null;
             state.measurement_start_produced_steps = null;
+            state.measurement_last_ms = null;
+            state.measurement_last_steps = null;
+            state.measurement_active_ms = 0;
+            state.measurement_active_steps = 0;
             state.source_steps = null;
             state.last_decision =
                 reason + '; backing off to ' + state.baseline_envs + ' envs';
@@ -893,6 +905,10 @@ class TrainingEnvOptimizer {
             state.measurement_started_ms = null;
             state.measurement_start_steps = null;
             state.measurement_start_produced_steps = null;
+            state.measurement_last_ms = null;
+            state.measurement_last_steps = null;
+            state.measurement_active_ms = 0;
+            state.measurement_active_steps = 0;
             state.source_steps = totalSteps;
             state.last_decision = optimizerError
                 ? 'holding env count after worker-reported error'
@@ -932,6 +948,10 @@ class TrainingEnvOptimizer {
             state.measurement_started_ms = null;
             state.measurement_start_steps = null;
             state.measurement_start_produced_steps = null;
+            state.measurement_last_ms = null;
+            state.measurement_last_steps = null;
+            state.measurement_active_ms = 0;
+            state.measurement_active_steps = 0;
             state.source_steps = totalSteps;
             state.last_decision =
                 'resizing Unity environments ' + capacity.current_envs +
@@ -953,6 +973,10 @@ class TrainingEnvOptimizer {
             state.measurement_started_ms = null;
             state.measurement_start_steps = null;
             state.measurement_start_produced_steps = null;
+            state.measurement_last_ms = null;
+            state.measurement_last_steps = null;
+            state.measurement_active_ms = 0;
+            state.measurement_active_steps = 0;
             state.source_steps = totalSteps;
             state.last_decision =
                 'waiting for another worker capacity search before measuring global throughput';
@@ -1039,6 +1063,10 @@ class TrainingEnvOptimizer {
             state.measurement_started_ms = timestamp;
             state.measurement_start_steps = totalSteps;
             state.measurement_start_produced_steps = producedSteps;
+            state.measurement_last_ms = timestamp;
+            state.measurement_last_steps = totalSteps;
+            state.measurement_active_ms = 0;
+            state.measurement_active_steps = 0;
             state.last_decision =
                 'measuring global learner throughput for ' +
                 Math.round(this.measurementMs / 1000) + ' seconds';
@@ -1046,12 +1074,32 @@ class TrainingEnvOptimizer {
         }
 
         if (state.phase === 'measuring') {
-            const elapsed = timestamp - state.measurement_started_ms;
-            if (elapsed < this.measurementMs) {
+            const sampleElapsed = Math.max(
+                0,
+                timestamp - state.measurement_last_ms,
+            );
+            const sampleDelta = totalSteps - state.measurement_last_steps;
+            if (sampleDelta < 0) {
+                this._resetMeasurement(
+                    state,
+                    timestamp,
+                    totalSteps,
+                    'throughput counter restarted',
+                );
                 return this.snapshot(record.trainer_id);
             }
 
-            const delta = totalSteps - state.measurement_start_steps;
+            // PPO intentionally stops learner-step progress while optimizer work runs.
+            // Do not charge those stationary intervals against rollout-capacity probes.
+            // Frequent worker heartbeats split normal rollout and PPO phases closely enough
+            // that only the small boundary interval around a phase transition is ambiguous.
+            if (sampleDelta > 0 && sampleElapsed > 0) {
+                state.measurement_active_ms += sampleElapsed;
+                state.measurement_active_steps += sampleDelta;
+            }
+            state.measurement_last_ms = timestamp;
+            state.measurement_last_steps = totalSteps;
+
             const producedDelta =
                 producedSteps !== null &&
                 state.measurement_start_produced_steps !== null
@@ -1066,6 +1114,13 @@ class TrainingEnvOptimizer {
                 );
                 return this.snapshot(record.trainer_id);
             }
+
+            const elapsed = state.measurement_active_ms;
+            if (elapsed < this.measurementMs) {
+                return this.snapshot(record.trainer_id);
+            }
+
+            const delta = state.measurement_active_steps;
             if (delta === 0 && producedDelta !== null && producedDelta > 0) {
                 this._resetMeasurement(
                     state,
