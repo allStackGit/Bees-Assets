@@ -2039,6 +2039,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
     """Mask nonexistent weapon actions and normalize MA-POCA fleet-size gradients."""
 
     from mlagents.trainers.buffer import BufferKey
+    from mlagents.trainers.ghost.trainer import GhostTrainer
     from mlagents.trainers.poca.optimizer_torch import TorchPOCAOptimizer
     from mlagents.trainers.poca.trainer import POCATrainer
     from mlagents.trainers.torch_entities.components.bc.module import BCModule
@@ -2054,6 +2055,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
     global _ORIGINAL_POCA_TRAJECTORY_VALUES
     global _ORIGINAL_POCA_UPDATE_POLICY
     global _ORIGINAL_POCA_ADVANCE
+    global _ORIGINAL_GHOST_ADVANCE
     global _ORIGINAL_MULTI_AGENT_FORWARD
     global _ORIGINAL_TRUST_REGION_POLICY_LOSS
     global _ORIGINAL_MASKED_MEAN
@@ -2073,6 +2075,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
     original_poca_update_policy = POCATrainer._update_policy
     original_poca_advance = POCATrainer.advance
     original_poca_process_trajectory = POCATrainer._process_trajectory
+    original_ghost_advance = GhostTrainer.advance
     original_multi_agent_forward = MultiAgentNetworkBody.forward
     original_policy_loss = ModelUtils.trust_region_policy_loss
     original_masked_mean = ModelUtils.masked_mean
@@ -2317,6 +2320,120 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             expert_actions,
         )
 
+    def pipelined_ghost_advance(self):
+        """Forward self-play trajectories while the wrapped PPO update is running.
+
+        GhostTrainer normally forwards outer team-qualified trajectories into the
+        wrapped trainer only before calling wrapped_trainer.advance(). During that
+        call the outer queues can fill while PPO blocks. This wrapper drains them
+        only while the POCA snapshot overlap is active. Learning-team trajectories
+        are forwarded into the existing internal queue; ELO and ghost-step state
+        remain owned by the GhostTrainer thread and are applied after the wrapped
+        advance returns.
+        """
+
+        wrapped_trainer = self.trainer
+        wrapped_advance = wrapped_trainer.advance
+        forward_stop = threading.Event()
+        forwarded_learning = []
+        forwarded_ghost_steps = [0]
+        forward_errors = []
+        internal_queue_limit = 256
+
+        def forward_during_overlap():
+            from mlagents.trainers.agent_processor import AgentManagerQueue
+
+            try:
+                while not forward_stop.is_set():
+                    if not poca_pipeline_overlap_active():
+                        forward_stop.wait(POCA_PIPELINE_IDLE_SECONDS)
+                        continue
+
+                    progressed = False
+                    learning_team = self._learning_team
+                    for trajectory_queue in self.trajectory_queues:
+                        parsed_behavior_id = self._name_to_parsed_behavior_id[
+                            trajectory_queue.behavior_id
+                        ]
+                        is_learning = (
+                            parsed_behavior_id.team_id == learning_team
+                        )
+                        internal_queue = None
+                        if is_learning:
+                            internal_queue = self._internal_trajectory_queues[
+                                parsed_behavior_id.brain_name
+                            ]
+                            if (
+                                internal_queue.qsize()
+                                >= internal_queue_limit
+                            ):
+                                continue
+
+                        queue_size = trajectory_queue.qsize()
+                        for _ in range(queue_size):
+                            if (
+                                forward_stop.is_set()
+                                or not poca_pipeline_overlap_active()
+                            ):
+                                break
+                            if (
+                                is_learning
+                                and internal_queue.qsize()
+                                >= internal_queue_limit
+                            ):
+                                break
+                            try:
+                                trajectory = trajectory_queue.get_nowait()
+                            except AgentManagerQueue.Empty:
+                                break
+                            progressed = True
+                            if is_learning:
+                                internal_queue.put(trajectory)
+                                forwarded_learning.append(trajectory)
+                            else:
+                                forwarded_ghost_steps[0] += len(
+                                    trajectory.steps
+                                )
+
+                    if not progressed:
+                        forward_stop.wait(POCA_PIPELINE_IDLE_SECONDS)
+            except Exception as exc:
+                forward_errors.append(exc)
+                forward_stop.set()
+
+        def overlapped_wrapped_advance():
+            forward_thread = threading.Thread(
+                target=forward_during_overlap,
+                name="bees-ghost-poca-forwarder",
+                daemon=True,
+            )
+            forward_thread.start()
+            try:
+                return wrapped_advance()
+            finally:
+                forward_stop.set()
+                forward_thread.join(timeout=2.0)
+                if forward_thread.is_alive():
+                    raise RuntimeError(
+                        "self-play trajectory forwarder did not stop"
+                    )
+                if forward_errors:
+                    raise RuntimeError(
+                        "self-play trajectory forwarder failed"
+                    ) from forward_errors[0]
+
+                # Preserve GhostTrainer ownership/order for ELO and ghost-step
+                # bookkeeping. These run before its team-change/save/swap logic.
+                for trajectory in forwarded_learning:
+                    self._process_trajectory(trajectory)
+                self.ghost_step += int(forwarded_ghost_steps[0])
+
+        wrapped_trainer.advance = overlapped_wrapped_advance
+        try:
+            return original_ghost_advance(self)
+        finally:
+            wrapped_trainer.advance = wrapped_advance
+
     def batched_poca_advance(self):
         """Drain short trajectories, including values prepared during the previous PPO update."""
 
@@ -2338,6 +2455,10 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         pending = []
         pending_experiences = 0
         queried = False
+
+        def observe_trajectory(trajectory):
+            if pipeline is not None:
+                pipeline.observe_trajectory(trajectory)
 
         def flush_pending():
             nonlocal pending
@@ -2373,6 +2494,8 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             if pipeline is not None:
                 for prepared in pipeline.drain_ready():
                     queried = True
+                    for trajectory in prepared["trajectories"]:
+                        observe_trajectory(trajectory)
                     if prepared.get("prepared"):
                         _apply_prepared_poca_trajectory_batch(
                             self,
@@ -2404,6 +2527,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                         except AgentManagerQueue.Empty:
                             break
                         queried = True
+                        observe_trajectory(trajectory)
                         trajectory_experiences = len(trajectory.steps)
 
                         boundary = next_bookkeeping_boundary()
@@ -3197,6 +3321,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
     )
     POCATrainer._update_policy = weighted_poca_update_policy
     POCATrainer.advance = batched_poca_advance
+    GhostTrainer.advance = pipelined_ghost_advance
     MultiAgentNetworkBody.forward = optimized_multi_agent_forward
     ModelUtils.trust_region_policy_loss = staticmethod(masked_policy_loss)
     ModelUtils.masked_mean = staticmethod(weighted_masked_mean)
@@ -3210,6 +3335,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
     _ORIGINAL_POCA_TRAJECTORY_VALUES = original_poca_trajectory_values
     _ORIGINAL_POCA_UPDATE_POLICY = original_poca_update_policy
     _ORIGINAL_POCA_ADVANCE = original_poca_advance
+    _ORIGINAL_GHOST_ADVANCE = original_ghost_advance
     _ORIGINAL_MULTI_AGENT_FORWARD = original_multi_agent_forward
     _ORIGINAL_TRUST_REGION_POLICY_LOSS = original_policy_loss
     _ORIGINAL_MASKED_MEAN = original_masked_mean
