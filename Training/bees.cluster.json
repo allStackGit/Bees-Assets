@@ -26,5 +26,6 @@
     "autoTune": true,
     "torchDevice": "cpu"
   },
-  "threadedTraining": false
+  "threadedTraining": false,
+  "threadedPolicyLag": 1
 }
