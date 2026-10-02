@@ -1667,6 +1667,29 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             pending = []
             pending_experiences = 0
 
+        def next_bookkeeping_boundary():
+            # Keep batches away from ML-Agents summary/checkpoint boundaries.
+            # Batched value inference updates the running normalizers once for
+            # the batch; a boundary trajectory therefore stays on the stock
+            # per-trajectory path so a checkpoint cannot observe normalization
+            # statistics from future experiences.
+            next_summary = self._next_summary_step
+            if next_summary == 0:
+                next_summary = self._get_next_interval_step(
+                    self.summary_freq
+                )
+            next_save = self._next_save_step
+            if next_save == 0:
+                next_save = self._get_next_interval_step(
+                    self.trainer_settings.checkpoint_interval
+                )
+            candidates = [
+                step
+                for step in (next_summary, next_save)
+                if step > self.get_step
+            ]
+            return min(candidates) if candidates else None
+
         with hierarchical_timer("process_trajectory"):
             for trajectory_queue in self.trajectory_queues:
                 queue_size = trajectory_queue.qsize()
@@ -1677,6 +1700,27 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                         break
                     queried = True
                     trajectory_experiences = len(trajectory.steps)
+
+                    boundary = next_bookkeeping_boundary()
+                    if (
+                        pending
+                        and boundary is not None
+                        and self.get_step
+                        + pending_experiences
+                        + trajectory_experiences
+                        >= boundary
+                    ):
+                        flush_pending()
+                        boundary = next_bookkeeping_boundary()
+
+                    if (
+                        not pending
+                        and boundary is not None
+                        and self.get_step != 0
+                        and self.get_step + trajectory_experiences >= boundary
+                    ):
+                        original_poca_process_trajectory(self, trajectory)
+                        continue
 
                     if (
                         pending
