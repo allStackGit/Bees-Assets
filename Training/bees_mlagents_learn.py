@@ -989,13 +989,13 @@ def _install_threaded_trainer_failure_propagation():
     def guarded_trainer_update(controller, trainer):
         from mlagents import torch_utils
 
-        # torch.set_default_device() is thread-local. ML-Agents configures CUDA on the
-        # main thread before spawning threaded trainers, so establish the same default
-        # device at trainer-thread entry before ModelUtils.list_to_tensor() creates any
-        # optimizer/value tensors.
-        torch_utils.torch.set_default_device(torch_utils.default_device())
         try:
-            return original_update(controller, trainer)
+            # PyTorch's global default-device state is not safely transferable across
+            # threads in 2.1.x. Establish a device context that is entered and exited
+            # entirely on this trainer thread so all tensor factories used by ML-Agents
+            # inherit the configured learner device without touching global mode state.
+            with torch_utils.torch.device(torch_utils.default_device()):
+                return original_update(controller, trainer)
         except BaseException:
             if failure["exc_info"] is None:
                 failure["exc_info"] = sys.exc_info()
