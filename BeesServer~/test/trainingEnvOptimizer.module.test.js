@@ -151,6 +151,59 @@ test('optimizer defaults to 60 seconds settling and five minutes measuring', () 
     assert.equal(state.phase, 'resizing');
 });
 
+test('optimizer excludes learner-stall intervals from throughput measurement', () => {
+    const optimizer = new TrainingEnvOptimizer({
+        settleMs: 0,
+        measurementMs: 1000,
+        retestMs: 60_000,
+    });
+
+    let state = update(
+        optimizer,
+        'remote-a',
+        4,
+        0,
+        0,
+        { max: 8, accepted: 0 },
+    );
+    assert.equal(state.phase, 'measuring');
+
+    state = update(
+        optimizer,
+        'remote-a',
+        4,
+        500,
+        500,
+        { max: 8, accepted: 500 },
+    );
+    assert.equal(state.phase, 'measuring');
+    assert.equal(state.baseline_sps, null);
+
+    // Simulate one second of PPO: actors keep producing, learner step does not move.
+    state = update(
+        optimizer,
+        'remote-a',
+        4,
+        500,
+        1500,
+        { max: 8, accepted: 1500 },
+    );
+    assert.equal(state.phase, 'measuring');
+    assert.equal(state.baseline_sps, null);
+
+    state = update(
+        optimizer,
+        'remote-a',
+        4,
+        1000,
+        2000,
+        { max: 8, accepted: 2000 },
+    );
+    assert.equal(state.baseline_envs, 4);
+    assert.equal(state.baseline_sps, 1000);
+    assert.equal(state.desired_envs, 8);
+});
+
 test('optimizer uses wall-clock settling and measurement instead of policy-cycle gating', () => {
     const optimizer = new TrainingEnvOptimizer({
         settleMs: 1000,
