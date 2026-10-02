@@ -217,10 +217,7 @@ class TrainingEnvOptimizer {
             measurement_started_ms: null,
             measurement_start_steps: null,
             measurement_start_produced_steps: null,
-            measurement_last_ms: null,
-            measurement_last_steps: null,
-            measurement_active_ms: 0,
-            measurement_active_steps: 0,
+            measurement_start_busy_seconds: null,
             source_steps: null,
             last_sps: null,
             last_decision: 'settling before baseline measurement',
@@ -256,10 +253,7 @@ class TrainingEnvOptimizer {
         state.measurement_started_ms = null;
         state.measurement_start_steps = null;
         state.measurement_start_produced_steps = null;
-        state.measurement_last_ms = null;
-        state.measurement_last_steps = null;
-        state.measurement_active_ms = 0;
-        state.measurement_active_steps = 0;
+        state.measurement_start_busy_seconds = null;
         state.source_steps = totalSteps;
         if (reason) state.last_decision = reason;
     }
@@ -281,10 +275,7 @@ class TrainingEnvOptimizer {
             candidate.measurement_started_ms = null;
             candidate.measurement_start_steps = null;
             candidate.measurement_start_produced_steps = null;
-            candidate.measurement_last_ms = null;
-            candidate.measurement_last_steps = null;
-            candidate.measurement_active_ms = 0;
-            candidate.measurement_active_steps = 0;
+            candidate.measurement_start_busy_seconds = null;
             candidate.source_steps = null;
             candidate.last_decision =
                 'cluster capacity changed; waiting to refresh global learner baseline';
@@ -325,10 +316,7 @@ class TrainingEnvOptimizer {
         state.measurement_started_ms = null;
         state.measurement_start_steps = null;
         state.measurement_start_produced_steps = null;
-        state.measurement_last_ms = null;
-        state.measurement_last_steps = null;
-        state.measurement_active_ms = 0;
-        state.measurement_active_steps = 0;
+        state.measurement_start_busy_seconds = null;
         state.source_steps = null;
         state.last_decision = 'resizing for throughput probe ' +
             state.baseline_envs + '->' + target;
@@ -463,11 +451,8 @@ class TrainingEnvOptimizer {
             state.measurement_started_ms = null;
             state.measurement_start_steps = null;
             state.measurement_start_produced_steps = null;
-            state.measurement_last_ms = null;
-            state.measurement_last_steps = null;
-            state.measurement_active_ms = 0;
-            state.measurement_active_steps = 0;
-            state.source_steps = null;
+            state.measurement_start_busy_seconds = null;
+                            state.source_steps = null;
             state.last_decision =
                 reason + '; backing off to ' + state.baseline_envs + ' envs';
         }
@@ -496,10 +481,7 @@ class TrainingEnvOptimizer {
         state.measurement_started_ms = null;
         state.measurement_start_steps = null;
         state.measurement_start_produced_steps = null;
-        state.measurement_last_ms = null;
-        state.measurement_last_steps = null;
-        state.measurement_active_ms = 0;
-        state.measurement_active_steps = 0;
+        state.measurement_start_busy_seconds = null;
         state.source_steps = totalSteps;
         state.metrics_missing_since_ms = null;
         state.consecutive_baseline_session_failures = 0;
@@ -594,10 +576,7 @@ class TrainingEnvOptimizer {
         state.measurement_started_ms = null;
         state.measurement_start_steps = null;
         state.measurement_start_produced_steps = null;
-        state.measurement_last_ms = null;
-        state.measurement_last_steps = null;
-        state.measurement_active_ms = 0;
-        state.measurement_active_steps = 0;
+        state.measurement_start_busy_seconds = null;
         state.source_steps = null;
         state.last_decision =
             (materiallyWorse ? 'throughput regressed' : 'no material throughput gain') +
@@ -931,11 +910,8 @@ class TrainingEnvOptimizer {
             state.measurement_started_ms = null;
             state.measurement_start_steps = null;
             state.measurement_start_produced_steps = null;
-            state.measurement_last_ms = null;
-            state.measurement_last_steps = null;
-            state.measurement_active_ms = 0;
-            state.measurement_active_steps = 0;
-            state.source_steps = totalSteps;
+            state.measurement_start_busy_seconds = null;
+                            state.source_steps = totalSteps;
             state.last_decision = optimizerError
                 ? 'holding env count after worker-reported error'
                 : recentSessionFailure
@@ -974,11 +950,8 @@ class TrainingEnvOptimizer {
             state.measurement_started_ms = null;
             state.measurement_start_steps = null;
             state.measurement_start_produced_steps = null;
-            state.measurement_last_ms = null;
-            state.measurement_last_steps = null;
-            state.measurement_active_ms = 0;
-            state.measurement_active_steps = 0;
-            state.source_steps = totalSteps;
+            state.measurement_start_busy_seconds = null;
+                            state.source_steps = totalSteps;
             state.last_decision =
                 'resizing Unity environments ' + capacity.current_envs +
                 '->' + state.desired_envs;
@@ -999,11 +972,8 @@ class TrainingEnvOptimizer {
             state.measurement_started_ms = null;
             state.measurement_start_steps = null;
             state.measurement_start_produced_steps = null;
-            state.measurement_last_ms = null;
-            state.measurement_last_steps = null;
-            state.measurement_active_ms = 0;
-            state.measurement_active_steps = 0;
-            state.source_steps = totalSteps;
+            state.measurement_start_busy_seconds = null;
+                            state.source_steps = totalSteps;
             state.last_decision =
                 'waiting for another worker capacity search before measuring global throughput';
             return this.snapshot(record.trainer_id);
