@@ -168,7 +168,8 @@ class ElasticActorLiveResizeTests(unittest.TestCase):
         session._capacity_registration_pending = False
         session._resize_failed_target = None
         session._resize_failure = None
-        session._downscale_drain_started_monotonic = None
+        session._registered_env_count = env_count
+        session._downscale_registration_pending = False
         session._state_changed = threading.Event()
         session.stop = threading.Event()
         session._upload_queue = queue.Queue()
@@ -296,44 +297,54 @@ class ElasticActorLiveResizeTests(unittest.TestCase):
         self.assertEqual(session._resize_failed_target, 3)
         self.assertIn("behavior specifications do not match", session._resize_failure["error"])
 
-    def test_downscale_waits_for_upload_without_requeueing_idle_tail(self):
-        tail = SimpleNamespace(worker_id=2, waiting=False)
-        manager = SimpleNamespace(env_workers=[SimpleNamespace(worker_id=0), SimpleNamespace(worker_id=1), tail])
-        session = self._session(manager, 3)
-        session._env_target_path = mock.Mock()
-        session._desired_env_count = mock.Mock(return_value=2)
-        session._upload_queue.put({"trajectories": [object()]})
-        session._scale_down_one = mock.Mock()
-
-        self.assertTrue(session._reconcile_env_count())
-        session._scale_down_one.assert_not_called()
-
-    def test_downscale_backpressure_times_out_and_resumes_current_capacity(self):
+    def test_downscale_retires_locally_even_while_uploads_are_backpressured(self):
         tail = SimpleNamespace(worker_id=2, waiting=False)
         manager = SimpleNamespace(
-            env_workers=[
-                SimpleNamespace(worker_id=0),
-                SimpleNamespace(worker_id=1),
-                tail,
-            ]
+            env_workers=[SimpleNamespace(worker_id=0), SimpleNamespace(worker_id=1), tail]
         )
         session = self._session(manager, 3)
         session._env_target_path = mock.Mock()
         session._desired_env_count = mock.Mock(return_value=2)
         session._upload_queue.put({"trajectories": [object()]})
-        session._scale_down_one = mock.Mock()
 
-        with mock.patch.object(actor_session.time, "monotonic", side_effect=[100.0, 116.0]):
-            self.assertTrue(session._reconcile_env_count())
-            self.assertFalse(session._reconcile_env_count())
+        def retire():
+            session.env_count = 2
+            session._downscale_registration_pending = True
+            return True
 
-        session._scale_down_one.assert_not_called()
-        self.assertEqual(session.env_count, 3)
-        self.assertEqual(session._resize_failed_target, 2)
-        self.assertIn("timed out waiting for pending trajectory uploads", session._resize_failure["error"])
+        session._scale_down_one = mock.Mock(side_effect=retire)
 
-        # The same rejected target must no longer pause rollout on subsequent ticks.
+        self.assertTrue(session._reconcile_env_count())
+        session._scale_down_one.assert_called_once()
+        self.assertEqual(session.env_count, 2)
+        self.assertTrue(session._downscale_registration_pending)
+        session.client.register.assert_not_called()
+
+    def test_downscale_waits_for_finite_upload_backlog_then_registers_once(self):
+        manager = SimpleNamespace(
+            env_workers=[SimpleNamespace(worker_id=0), SimpleNamespace(worker_id=1)]
+        )
+        session = self._session(manager, 2)
+        session._env_target_path = mock.Mock()
+        session._desired_env_count = mock.Mock(return_value=2)
+        session._registered_env_count = 3
+        session.client.env_count = 3
+        session._downscale_registration_pending = True
+        session._upload_queue.put({"trajectories": [object()]})
+
+        self.assertTrue(session._reconcile_env_count())
+        self.assertEqual(session._registered_env_count, 3)
+        session.client.register.assert_not_called()
+        self.assertIsNone(session._resize_failure)
+
+        session._upload_queue.get_nowait()
         self.assertFalse(session._reconcile_env_count())
+
+        self.assertFalse(session._downscale_registration_pending)
+        self.assertEqual(session._registered_env_count, 2)
+        self.assertEqual(session.client.env_count, 2)
+        session.client.register.assert_called_once()
+        session._report_env_count_changed.assert_called_once()
 
     def test_scale_down_failure_is_reported_without_crashing_actor(self):
         tail = SimpleNamespace(worker_id=2, waiting=False)
@@ -388,7 +399,15 @@ class ElasticActorLiveResizeTests(unittest.TestCase):
         tail.request_close.assert_called_once_with()
         self.assertEqual(manager.workers_alive, 2)
         self.assertEqual(session.env_count, 2)
+        self.assertEqual(session.client.env_count, 3)
+        self.assertEqual(session._registered_env_count, 3)
+        self.assertTrue(session._downscale_registration_pending)
+        session.client.register.assert_not_called()
+
+        self.assertTrue(session._finish_pending_downscale_registration())
         self.assertEqual(session.client.env_count, 2)
+        self.assertEqual(session._registered_env_count, 2)
+        self.assertFalse(session._downscale_registration_pending)
         session.client.register.assert_called_once()
 
 

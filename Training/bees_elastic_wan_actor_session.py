@@ -14,7 +14,6 @@ import bees_wan_actor_worker as worker
 WORKER_ENVS_TARGET_ENV = "BEES_TRAINING_WORKER_ENVS_FILE"
 MAX_DYNAMIC_ENVS = 64
 WORKER_CLOSE_SECONDS = 10.0
-DOWNSCALE_DRAIN_SECONDS = 15.0
 
 
 class ElasticActorSession(worker.ActorSession):
@@ -39,11 +38,17 @@ class ElasticActorSession(worker.ActorSession):
         self._capacity_registration_pending = False
         self._resize_failed_target = None
         self._resize_failure = None
-        self._downscale_drain_started_monotonic = None
+        self._registered_env_count = int(self.env_count)
+        self._downscale_registration_pending = False
 
     def _throughput_extra_metrics(self) -> Mapping[str, object]:
         failure = self._resize_failure
-        payload: dict[str, object] = {}
+        payload: dict[str, object] = {
+            # Optimizer-visible capacity must not move until Exeter has accepted the
+            # corresponding worker range. Local downscale can lead this value while
+            # pre-downscale trajectory uploads finish.
+            "env_count": int(self._registered_env_count),
+        }
         if self.policy_cycle >= 0:
             payload["policy_cycle"] = int(self.policy_cycle)
         if self.learner_step >= 0:
@@ -122,6 +127,7 @@ class ElasticActorSession(worker.ActorSession):
             self._state_changed.set()
             return False
         self._capacity_registration_pending = False
+        self._registered_env_count = int(self.env_count)
         return True
 
     def _behavior_specs_match(self, candidate: Mapping[str, Any]) -> bool:
@@ -315,8 +321,6 @@ class ElasticActorSession(worker.ActorSession):
     def _scale_down_one(self) -> bool:
         if self.env_count <= 1:
             return False
-        if not self._upload_queue.empty() or not self._upload_idle.is_set():
-            return False
         manager = self.manager
         local_worker_id = len(manager.env_workers) - 1
         target = manager.env_workers[local_worker_id]
@@ -327,13 +331,33 @@ class ElasticActorSession(worker.ActorSession):
         self._cleanup_worker_agent_state(self.worker_offset + local_worker_id)
         self._close_tail_worker()
         self.env_count = previous_count - 1
-        self.client.env_count = int(self.env_count)
-        self._register_current_capacity()
+        self._downscale_registration_pending = True
+        self._write_throughput_metrics(force=True)
+        print(
+            f"[Bees WAN actor] retired Unity environment {previous_count}->{self.env_count} "
+            "locally; central capacity remains unchanged until pending uploads drain.",
+            flush=True,
+        )
+        return True
+
+    def _finish_pending_downscale_registration(self) -> bool:
+        if not self._downscale_registration_pending:
+            return True
+        if not self._upload_queue.empty() or not self._upload_idle.is_set():
+            # Once the requested local count is reached, ordinary rollout remains paused.
+            # The pre-downscale upload set is therefore finite and can drain while Exeter
+            # still authorizes the old worker range for every already-produced trajectory.
+            self._report_runtime_progress()
+            self._write_throughput_metrics()
+            return False
+        if not self._register_current_capacity():
+            return False
+        self._downscale_registration_pending = False
         self._report_env_count_changed()
         self._write_throughput_metrics(force=True)
         print(
-            f"[Bees WAN actor] scaled Unity environments {previous_count}->{self.env_count}; "
-            "remaining workers stayed running.",
+            f"[Bees WAN actor] registered reduced capacity at {self.env_count} envs "
+            "after pending uploads drained.",
             flush=True,
         )
         return True
@@ -346,51 +370,37 @@ class ElasticActorSession(worker.ActorSession):
             if desired != self._resize_failed_target:
                 self._clear_resize_failure()
             else:
-                # A rejected target stays rejected until BeesServer chooses a different count.
-                # Continuing rollout at the current capacity is safer than repeatedly entering
-                # the same failed transition on every actor-loop iteration.
-                self._downscale_drain_started_monotonic = None
-                return False
-        if desired >= self.env_count:
-            self._downscale_drain_started_monotonic = None
-        if desired > self.env_count:
-            self._scale_up_one()
-            return False
-        if desired < self.env_count:
-            target = self.manager.env_workers[-1]
-            upload_busy = not self._upload_queue.empty() or not self._upload_idle.is_set()
-            if not target.waiting and upload_busy:
-                # Keep the tail worker idle while already-produced trajectories finish uploading,
-                # but never pause all rollout indefinitely. Under learner backpressure the queue
-                # may remain non-empty for minutes; a capacity probe must fail and resume the old
-                # capacity rather than deadlock useful training.
-                now = time.monotonic()
-                if self._downscale_drain_started_monotonic is None:
-                    self._downscale_drain_started_monotonic = now
-                elif (
-                    now - self._downscale_drain_started_monotonic
-                    >= DOWNSCALE_DRAIN_SECONDS
+                # A genuine worker-retirement failure rejects this target. If earlier tail
+                # workers were already retired, finish committing that smaller live capacity.
+                if (
+                    self._downscale_registration_pending
+                    and not self._finish_pending_downscale_registration()
                 ):
-                    self._downscale_drain_started_monotonic = None
-                    self._record_resize_failure(
-                        desired,
-                        TimeoutError(
-                            "timed out waiting for pending trajectory uploads "
-                            "before live downscale"
-                        ),
-                    )
-                    return False
-                return True
-            self._downscale_drain_started_monotonic = None
+                    return True
+                return False
+
+        if desired < self.env_count:
             try:
                 if self._scale_down_one():
-                    return desired < self.env_count
+                    # Reconcile again before ordinary rollout. If the next tail worker still has
+                    # an in-flight step, one rollout pass will finish it before retirement.
+                    return True
             except Exception as exc:
                 # A failed single-worker retirement must not take down the whole WAN actor.
-                # Publish the existing resize-failure contract so BeesServer aborts the probe
-                # and the actor continues at the capacity that is still actually alive.
+                # Any earlier successful retirements remain valid and are registered after
+                # their finite pre-downscale upload backlog drains.
                 self._record_resize_failure(desired, exc)
-                return False
+                return bool(self._downscale_registration_pending)
+            return False
+
+        if (
+            self._downscale_registration_pending
+            and not self._finish_pending_downscale_registration()
+        ):
+            return True
+
+        if desired > self.env_count:
+            self._scale_up_one()
         return False
 
     def _heartbeat(self) -> bool:
@@ -498,7 +508,16 @@ class ElasticActorSession(worker.ActorSession):
         # immediate state afterward so topology metadata is applied atomically before rollout resumes.
         super()._synchronize_state(require_policy=require_policy)
         if self._capacity_registration_pending:
-            self._register_current_capacity()
+            registered = self._register_current_capacity()
+            if registered and self._downscale_registration_pending:
+                self._downscale_registration_pending = False
+                self._report_env_count_changed()
+                self._write_throughput_metrics(force=True)
+                print(
+                    f"[Bees WAN actor] registered reduced capacity at {self.env_count} envs "
+                    "after central state resynchronization.",
+                    flush=True,
+                )
         state = self.client.state(
             self.session_id,
             self.policy_epoch,
