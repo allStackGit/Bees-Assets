@@ -74,10 +74,10 @@ namespace Assets.Scripts.Entities
                     return;
                 }
 
-                // The RL policy perceives the map border as an obstacle, so an actual border
-                // contact must have the same consequence as the lethal static obstacles used in
-                // training. The arena guard still prevents ordinary contacts; this is the
-                // authoritative fallback for large/rotated ships that clip into the border trigger.
+                // The RL policy perceives the map border as an obstacle, so when lethal static
+                // obstacles are enabled the border owns confinement too. The training movement
+                // guard is disabled in this mode so border contact remains an observable lethal
+                // consequence instead of being silently clamped away.
                 if (global::RlOneVsOneTrainingBootstrap.IsActiveFor(Stage) &&
                     global::RlOneVsOneTrainingBootstrap.CurrentStaticObstaclesEnabled)
                 {
