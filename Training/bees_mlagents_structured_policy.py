@@ -125,19 +125,18 @@ def _slot_limit(name: str, full_count: int) -> int:
 
 
 def _use_dense_structured_path() -> bool:
-    """Use fixed-shape CUDA work for gradient updates and ONNX export.
+    """Use fixed-shape work only for gradient updates and ONNX export.
 
-    The sparse rollout path skips empty padded slots with torch.nonzero(), which is useful for
-    small no-grad inference batches. On CUDA, nonzero() synchronizes the host with the device;
-    POCA invokes the structured encoder many times per optimizer minibatch, so those synchronizing
-    sparse selections can dominate gradient-update time. Training therefore uses the equivalent
-    dense masked computation while no-grad rollout inference keeps the sparse path.
+    Gradient updates deliberately avoid torch.nonzero() because CUDA must synchronize the host to
+    discover dynamic indices. No-grad trajectory/value inference is different: it is dominated by
+    padded entities and often contains only one faction, so evaluating only occupied slots and the
+    matching faction is substantially cheaper. Training slot limits therefore shorten no-grad
+    trajectory inputs without forcing them back onto the dense dual-faction path.
     """
 
     return bool(
         torch.is_grad_enabled()
         or torch.onnx.is_in_onnx_export()
-        or _TRAINING_SLOT_LIMITS.get()
     )
 
 
