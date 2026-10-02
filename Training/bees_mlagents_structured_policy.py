@@ -989,13 +989,23 @@ class BeesStructuredNetworkBody(nn.Module):
         bee_rows = raw[:, FACTION_INDEX] > 0.0
         human_rows = ~bee_rows
         if bee_rows.any():
-            self.bee_observation_encoder.vector_input.update_normalization(
-                torch.as_tensor(raw[bee_rows])
-            )
+            bee_vector_input = self.bee_observation_encoder.vector_input
+            bee_values = torch.as_tensor(raw[bee_rows])
+            if bee_vector_input.normalizer is not None:
+                bee_values = bee_values.to(
+                    device=bee_vector_input.normalizer.running_mean.device,
+                    dtype=bee_vector_input.normalizer.running_mean.dtype,
+                )
+            bee_vector_input.update_normalization(bee_values)
         if human_rows.any():
-            self.human_observation_encoder.vector_input.update_normalization(
-                torch.as_tensor(raw[human_rows])
-            )
+            human_vector_input = self.human_observation_encoder.vector_input
+            human_values = torch.as_tensor(raw[human_rows])
+            if human_vector_input.normalizer is not None:
+                human_values = human_values.to(
+                    device=human_vector_input.normalizer.running_mean.device,
+                    dtype=human_vector_input.normalizer.running_mean.dtype,
+                )
+            human_vector_input.update_normalization(human_values)
 
     def copy_normalization(self, other_network) -> None:
         if self._fallback is not None:
