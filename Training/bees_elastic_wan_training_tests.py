@@ -150,6 +150,55 @@ class ElasticActorStaleResyncTests(unittest.TestCase):
         self.assertEqual(session.control_epoch, 1)
         session.manager.reset.assert_called_once_with(config={"difficulty": 2})
 
+class PolicySynchronizationStateTests(unittest.TestCase):
+    def test_policy_sync_clears_cached_action_state_without_experience_buffer(self):
+        stale_agent = "agent_0-7"
+        other_agent = "agent_0-8"
+        agent_manager = SimpleNamespace(
+            _experience_buffers={},
+            _last_take_action_outputs={stale_agent: object()},
+            _last_step_result={stale_agent: object(), other_agent: object()},
+            _episode_steps={other_agent: 1},
+            _episode_rewards={},
+            _current_group_obs={"group": {stale_agent: object()}},
+            _group_status={"group": {other_agent: object()}},
+        )
+
+        def clean_agent(agent_id):
+            for name in (
+                "_experience_buffers",
+                "_last_take_action_outputs",
+                "_last_step_result",
+                "_episode_steps",
+                "_episode_rewards",
+            ):
+                getattr(agent_manager, name).pop(agent_id, None)
+
+        def clear_group(agent_id):
+            for name in ("_current_group_obs", "_group_status"):
+                groups = getattr(agent_manager, name)
+                for group_id in list(groups):
+                    groups[group_id].pop(agent_id, None)
+                    if not groups[group_id]:
+                        groups.pop(group_id)
+
+        agent_manager._clean_agent_data = mock.Mock(side_effect=clean_agent)
+        agent_manager._clear_group_status_and_obs = mock.Mock(side_effect=clear_group)
+        manager = SimpleNamespace(agent_managers={"BeesRL1v1?team=0": agent_manager})
+
+        actor_worker.worker._clear_partial_trajectories(manager)
+
+        self.assertEqual(agent_manager._last_take_action_outputs, {})
+        self.assertEqual(agent_manager._last_step_result, {})
+        self.assertEqual(agent_manager._episode_steps, {})
+        self.assertEqual(agent_manager._current_group_obs, {})
+        self.assertEqual(agent_manager._group_status, {})
+        self.assertCountEqual(
+            [call.args[0] for call in agent_manager._clean_agent_data.call_args_list],
+            [stale_agent, other_agent],
+        )
+
+
 class ElasticActorLiveResizeTests(unittest.TestCase):
     def _session(self, manager, env_count: int):
         session = actor_session.ElasticActorSession.__new__(

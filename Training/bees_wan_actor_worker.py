@@ -504,8 +504,39 @@ def _drain_inflight_without_training(manager: Any, worker_offset: int, timeout_s
 
 
 def _clear_partial_trajectories(manager: Any) -> None:
+    """Clear every per-agent state fragment before a new policy starts acting.
+
+    ML-Agents' AgentManager.end_episode() only iterates agents that already have an
+    experience-buffer entry. An agent can still have cached decision/action state before
+    its first experience has been appended, so relying on end_episode() can leave an old
+    policy action paired with a new policy decision after synchronization.
+    """
+    state_names = (
+        "_experience_buffers",
+        "_last_take_action_outputs",
+        "_last_step_result",
+        "_episode_steps",
+        "_episode_rewards",
+    )
+    group_state_names = ("_current_group_obs", "_group_status")
+
     for agent_manager in manager.agent_managers.values():
-        agent_manager.end_episode()
+        agent_ids = set()
+        for name in state_names:
+            values = getattr(agent_manager, name, None)
+            if isinstance(values, Mapping):
+                agent_ids.update(values.keys())
+        for name in group_state_names:
+            groups = getattr(agent_manager, name, None)
+            if not isinstance(groups, Mapping):
+                continue
+            for values in groups.values():
+                if isinstance(values, Mapping):
+                    agent_ids.update(values.keys())
+
+        for agent_id in agent_ids:
+            agent_manager._clean_agent_data(agent_id)
+            agent_manager._clear_group_status_and_obs(agent_id)
 
 
 def _drain_queue(q: queue.Queue) -> None:
