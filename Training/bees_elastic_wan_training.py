@@ -444,10 +444,12 @@ class ElasticWanBroker(base.WanActorBroker):
         self._policy_cycle = 0
         self._accepted_stale_batches = 0
         self._accepted_stale_steps = 0
-        self._consumed_stale_batches = 0
+        self._consumed_stale_trajectories = 0
         self._consumed_stale_steps = 0
         self._discarded_stale_batches = 0
         self._discarded_stale_steps = 0
+        self._discarded_stale_trajectories = 0
+        self._discarded_stale_trajectory_steps = 0
         self._last_lag_report = 0.0
         build_id = os.environ.get(BUILD_ID_ENV, "").strip()
         compatibility_key = os.environ.get(COMPATIBILITY_KEY_ENV, "").strip().lower()
@@ -926,6 +928,12 @@ class ElasticWanBroker(base.WanActorBroker):
         return len(trajectories)
 
     def record_consumed_batch(self, batch: Mapping[str, Any]) -> bool:
+        """Validate a broker batch immediately before injection into AgentManager queues.
+
+        Strict mode retains the historic accounting behavior. Threaded mode defers consumed-step
+        accounting until the version-tagged trajectory is actually dequeued by ML-Agents, because
+        a queued trajectory can age while an optimizer update is running.
+        """
         actor_id = self._validate_actor_id(batch.get("actor_id"))
         step_count = batch.get("step_count")
         if not isinstance(step_count, int) or isinstance(step_count, bool) or step_count < 0:
@@ -943,11 +951,45 @@ class ElasticWanBroker(base.WanActorBroker):
                     super()._validate_policy_versions(batch.get("policy_versions"))
             except base.StaleActorStateError:
                 return False
-            self._consumed_steps_by_actor[actor_id] += step_count
-            if lag > 0:
-                self._consumed_stale_batches += 1
-                self._consumed_stale_steps += step_count
+            if self.max_policy_lag <= 0:
+                self._consumed_steps_by_actor[actor_id] += step_count
             return True
+
+    def validate_versioned_trajectory(
+        self,
+        policy_versions: Mapping[str, int],
+        control_epoch: int,
+    ) -> Optional[int]:
+        """Return current lag for queued threaded data, or None once it has expired."""
+        with self._condition:
+            if int(control_epoch) != self._control_epoch:
+                return None
+            try:
+                return self._policy_lag_locked(policy_versions)
+            except base.StaleActorStateError:
+                return None
+
+    def record_versioned_trajectory_consumed(
+        self,
+        actor_id: int,
+        step_count: int,
+        lag: int,
+    ) -> None:
+        actor_id = self._validate_actor_id(actor_id)
+        if step_count < 0:
+            raise ValueError("versioned trajectory step count may not be negative")
+        with self._condition:
+            self._consumed_steps_by_actor[actor_id] += int(step_count)
+            if lag > 0:
+                self._consumed_stale_trajectories += 1
+                self._consumed_stale_steps += int(step_count)
+
+    def record_versioned_trajectory_discarded(self, step_count: int) -> None:
+        if step_count < 0:
+            raise ValueError("versioned trajectory step count may not be negative")
+        with self._condition:
+            self._discarded_stale_trajectories += 1
+            self._discarded_stale_trajectory_steps += int(step_count)
 
     def drain_current_batches(self, limit: int) -> Tuple[Mapping[str, Any], ...]:
         """Drain current-policy batches fairly across actors without sacrificing capacity.
@@ -1087,10 +1129,12 @@ class ElasticWanBroker(base.WanActorBroker):
                     f"threaded={self.threaded_mode} max_policy_lag={self.max_policy_lag} "
                     f"accepted_stale_batches={self._accepted_stale_batches} "
                     f"accepted_stale_steps={self._accepted_stale_steps} "
-                    f"consumed_stale_batches={self._consumed_stale_batches} "
+                    f"consumed_stale_trajectories={self._consumed_stale_trajectories} "
                     f"consumed_stale_steps={self._consumed_stale_steps} "
                     f"discarded_stale_batches={self._discarded_stale_batches} "
-                    f"discarded_stale_steps={self._discarded_stale_steps}."
+                    f"discarded_stale_batch_steps={self._discarded_stale_steps} "
+                    f"discarded_stale_trajectories={self._discarded_stale_trajectories} "
+                    f"discarded_stale_trajectory_steps={self._discarded_stale_trajectory_steps}."
                 )
 
 
