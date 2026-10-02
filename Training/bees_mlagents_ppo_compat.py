@@ -2839,6 +2839,13 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                 time.perf_counter() - materialize_started
             )
             _poca_record_timing("materialize", materialize_seconds)
+            tensor_cache, device_cache = _promote_poca_update_tensor_cache(
+                tensor_cache
+            )
+            _poca_record_timing(
+                "device_cache_copy",
+                float(device_cache["copy_seconds"]),
+            )
 
             num_epoch = self.hyperparameters.num_epoch
             max_num_batch = buffer_length // batch_size
@@ -2848,6 +2855,9 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                 f"buffer={buffer_length} batch={batch_size} "
                 f"epochs={num_epoch} minibatches={total_minibatches} "
                 f"tensor_cache={'on' if tensor_cache is not None else 'off'} "
+                f"cache_storage={device_cache['storage']} "
+                f"cache_mib={device_cache['bytes'] / (1024 * 1024):.1f} "
+                f"cache_copy={device_cache['copy_seconds']:.6f} "
                 f"materialize={materialize_seconds:.6f} "
                 f"trajectory_pipeline={'on' if pipeline_overlap else 'off'} "
                 f"snapshot_version={pipeline_snapshot_version if pipeline_snapshot_version is not None else '-'} "
@@ -2966,6 +2976,8 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             f"seconds={update_seconds:.6f} "
             f"normalize={_poca_average_timing('advantage_normalization'):.6f} "
             f"materialize={_poca_average_timing('materialize'):.6f} "
+            f"cache_copy={_poca_average_timing('device_cache_copy'):.6f} "
+            f"cache_storage={device_cache['storage']} "
             f"transfer={_poca_average_timing('cache_transfer'):.6f} "
             f"avg_minibatch={_poca_average_timing('minibatch_total'):.6f} "
             f"prepare={_poca_average_timing('prepare'):.6f} "
