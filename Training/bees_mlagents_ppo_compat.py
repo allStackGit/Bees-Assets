@@ -37,6 +37,8 @@ POCA_ENCODER_CHUNK_ROWS = 2048
 POCA_TRAJECTORY_BATCH_MAX_EXPERIENCES = 2048
 POCA_PIPELINE_MAX_READY_BATCHES = 8
 POCA_PIPELINE_IDLE_SECONDS = 0.001
+POCA_GPU_CACHE_MIN_RESERVE_BYTES = 2 * 1024 * 1024 * 1024
+POCA_GPU_CACHE_RESERVE_FRACTION = 0.30
 
 _ORIGINAL_GAUSSIAN_FORWARD = None
 _ORIGINAL_ACTION_MODEL_FORWARD = None
@@ -1902,6 +1904,14 @@ def _build_poca_update_tensor_cache(optimizer, buffer):
         if movement_activity is None
         else _poca_cpu_tensor(movement_activity, torch.float32)
     )
+    from bees_mlagents_structured_policy import FACTION_INDEX
+    faction_values = (
+        current_obs[0][:, FACTION_INDEX]
+        .detach()
+        .cpu()
+        .numpy()
+        .astype(np.float32, copy=True)
+    )
 
     return {
         "size": size,
@@ -1923,28 +1933,149 @@ def _build_poca_update_tensor_cache(optimizer, buffer):
             groupmate_counts,
             dtype=np.int32,
         ),
+        "faction_values": faction_values,
         "slot_limits": _structured_training_slot_limits(policy, buffer),
+        "storage": "cpu",
     }
 
 
+def _poca_tensor_cache_nbytes(value) -> int:
+    """Count unique torch tensor storage represented by a nested cache structure."""
+
+    from mlagents.torch_utils import torch
+
+    seen = set()
+
+    def visit(item):
+        if isinstance(item, torch.Tensor):
+            identity = id(item)
+            if identity in seen:
+                return 0
+            seen.add(identity)
+            return int(item.numel()) * int(item.element_size())
+        if isinstance(item, dict):
+            return sum(visit(child) for child in item.values())
+        if isinstance(item, (list, tuple)):
+            return sum(visit(child) for child in item)
+        return 0
+
+    return int(visit(value))
+
+
+def _poca_move_cache_tensors(value, device):
+    """Recursively move only torch tensors, leaving numpy metadata on CPU."""
+
+    from mlagents.torch_utils import torch
+
+    if isinstance(value, torch.Tensor):
+        return value.to(device=device)
+    if isinstance(value, dict):
+        return {
+            key: _poca_move_cache_tensors(child, device)
+            for key, child in value.items()
+        }
+    if isinstance(value, list):
+        return [
+            _poca_move_cache_tensors(child, device)
+            for child in value
+        ]
+    if isinstance(value, tuple):
+        return tuple(
+            _poca_move_cache_tensors(child, device)
+            for child in value
+        )
+    return value
+
+
+def _promote_poca_update_tensor_cache(cache):
+    """Keep the complete PPO tensor cache on GPU when VRAM can safely hold it.
+
+    This eliminates the repeated CPU->GPU copy for every minibatch/epoch. Exeter's
+    GTX 1660 has limited VRAM, so the promotion is conditional and reserves both a
+    fixed 2 GiB and 30% of total VRAM (whichever is larger) for the model, gradients,
+    activations, CUDA workspace, and allocator fragmentation.
+    """
+
+    from mlagents.torch_utils import default_device, torch
+
+    if cache is None:
+        return cache, {
+            "storage": "off",
+            "bytes": 0,
+            "copy_seconds": 0.0,
+            "free_before": 0,
+            "reserve": 0,
+        }
+
+    cache_bytes = _poca_tensor_cache_nbytes(cache)
+    device = default_device()
+    result = {
+        "storage": "cpu",
+        "bytes": int(cache_bytes),
+        "copy_seconds": 0.0,
+        "free_before": 0,
+        "reserve": 0,
+    }
+    if getattr(device, "type", str(device)) != "cuda" or not torch.cuda.is_available():
+        return cache, result
+
+    free_bytes, total_bytes = torch.cuda.mem_get_info(device)
+    reserve_bytes = max(
+        POCA_GPU_CACHE_MIN_RESERVE_BYTES,
+        int(total_bytes * POCA_GPU_CACHE_RESERVE_FRACTION),
+    )
+    result["free_before"] = int(free_bytes)
+    result["reserve"] = int(reserve_bytes)
+    if cache_bytes > max(0, int(free_bytes) - int(reserve_bytes)):
+        return cache, result
+
+    started = time.perf_counter()
+    try:
+        promoted = _poca_move_cache_tensors(cache, device)
+    except RuntimeError as exc:
+        if "out of memory" not in str(exc).lower():
+            raise
+        torch.cuda.empty_cache()
+        print(
+            "[Bees PPO timing] GPU tensor cache promotion skipped after CUDA OOM; "
+            "falling back to CPU minibatch transfers.",
+            flush=True,
+        )
+        return cache, result
+
+    promoted["storage"] = "cuda"
+    result["storage"] = "cuda"
+    result["copy_seconds"] = time.perf_counter() - started
+    return promoted, result
+
+
 def _select_poca_update_tensor_cache(cache, indices):
-    """Gather one shuffled PPO minibatch from the materialized CPU cache."""
+    """Gather one shuffled PPO minibatch from the materialized cache."""
 
     import numpy as np
     from mlagents.torch_utils import default_device, torch
     from mlagents.trainers.torch_entities.agent_action import AgentAction
-    from bees_mlagents_structured_policy import FACTION_INDEX
 
     indices = np.asarray(indices, dtype=np.int64)
+    device = default_device()
+    cache_storage = str(cache.get("storage", "cpu"))
+    index_device = (
+        device if cache_storage == "cuda"
+        else torch.device("cpu")
+    )
     index_tensor = torch.as_tensor(
         indices,
         dtype=torch.long,
-        device=torch.device("cpu"),
+        device=index_device,
     )
-    device = default_device()
 
     def take(tensor):
-        selected = tensor.index_select(0, index_tensor)
+        local_index = index_tensor
+        if tensor.device != index_device:
+            local_index = index_tensor.to(device=tensor.device)
+        selected = tensor.index_select(0, local_index)
+        if selected.device == device:
+            return selected
         return selected.to(device=device)
 
     selected_groupmate_counts = cache["groupmate_counts"][indices]
@@ -1953,11 +2084,7 @@ def _select_poca_update_tensor_cache(cache, indices):
         if selected_groupmate_counts.size
         else 0
     )
-    selected_faction = (
-        cache["current_obs"][0]
-        .index_select(0, index_tensor)[:, FACTION_INDEX]
-        .numpy()
-    )
+    selected_faction = cache["faction_values"][indices]
     bee_weight = np.clip(
         (selected_faction.astype(np.float32, copy=False) + 1.0) * 0.5,
         0.0,
