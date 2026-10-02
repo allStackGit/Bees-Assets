@@ -24,6 +24,63 @@ import bees_wan_actor_training as base
 from bees_process_safety import write_managed_health
 
 
+class _VersionedTrajectory:
+    """Central-only trajectory wrapper retaining the remote policy generation."""
+
+    __slots__ = (
+        "trajectory",
+        "broker",
+        "actor_id",
+        "policy_versions",
+        "control_epoch",
+        "step_count",
+        "_consumed_accounted",
+        "_discarded_accounted",
+    )
+
+    def __init__(
+        self,
+        trajectory: Any,
+        broker: elastic.ElasticWanBroker,
+        actor_id: int,
+        policy_versions: Dict[str, int],
+        control_epoch: int,
+    ) -> None:
+        self.trajectory = trajectory
+        self.broker = broker
+        self.actor_id = int(actor_id)
+        self.policy_versions = dict(policy_versions)
+        self.control_epoch = int(control_epoch)
+        self.step_count = len(trajectory.steps)
+        self._consumed_accounted = False
+        self._discarded_accounted = False
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self.trajectory, name)
+
+    def current_lag(self) -> Optional[int]:
+        return self.broker.validate_versioned_trajectory(
+            self.policy_versions,
+            self.control_epoch,
+        )
+
+    def mark_consumed(self, lag: int) -> None:
+        if self._consumed_accounted:
+            return
+        self.broker.record_versioned_trajectory_consumed(
+            self.actor_id,
+            self.step_count,
+            lag,
+        )
+        self._consumed_accounted = True
+
+    def mark_discarded(self) -> None:
+        if self._discarded_accounted:
+            return
+        self.broker.record_versioned_trajectory_discarded(self.step_count)
+        self._discarded_accounted = True
+
+
 class ZeroLocalElasticWanEnvManagerMixin(elastic.ElasticWanEnvManagerMixin):
     def _bees_elastic_initialize(
         self,
@@ -193,7 +250,16 @@ class ZeroLocalElasticWanEnvManagerMixin(elastic.ElasticWanEnvManagerMixin):
                         f"WAN actor trajectory length {len(trajectory.steps)} exceeds "
                         f"time_horizon {manager._max_trajectory_length} for {trajectory.behavior_id}."
                     )
-                manager.trajectory_queue.put(trajectory)
+                queued_trajectory = trajectory
+                if self._bees_wan_broker.max_policy_lag > 0:
+                    queued_trajectory = _VersionedTrajectory(
+                        trajectory,
+                        self._bees_wan_broker,
+                        int(batch["actor_id"]),
+                        dict(batch["policy_versions"]),
+                        int(batch["control_epoch"]),
+                    )
+                manager.trajectory_queue.put(queued_trajectory)
 
     def _wait_for_current_remote_batch(self) -> Any:
         """Pause a learner-only trainer when no remote rollout data is currently available."""
@@ -284,6 +350,7 @@ def install_elastic_wan_env_manager(
 
     import mlagents.trainers
     import mlagents.trainers.learn as learn
+    from mlagents.trainers.agent_processor import AgentManagerQueue
     from mlagents.trainers.env_manager import EnvManager
     from mlagents.trainers.trainer_controller import TrainerController
 
@@ -296,6 +363,22 @@ def install_elastic_wan_env_manager(
     base.load_auth_token(options.auth_token_file or "")
     original_manager = learn.SubprocessEnvManager
     original_advance = TrainerController.advance
+    original_queue_get_nowait = AgentManagerQueue.get_nowait
+
+    if threaded_mode:
+        def version_checked_get_nowait(queue_self: Any) -> Any:
+            while True:
+                item = original_queue_get_nowait(queue_self)
+                if not isinstance(item, _VersionedTrajectory):
+                    return item
+                lag = item.current_lag()
+                if lag is None:
+                    item.mark_discarded()
+                    continue
+                item.mark_consumed(lag)
+                return item
+
+        AgentManagerQueue.get_nowait = version_checked_get_nowait
 
     class ZeroLocalElasticWanEnvManager(ZeroLocalElasticWanEnvManagerMixin, EnvManager):
         def __init__(self, env_factory: Any, run_options: Any, n_env: int = 1):
@@ -330,7 +413,11 @@ def install_elastic_wan_env_manager(
 
     learn.SubprocessEnvManager = ZeroLocalElasticWanEnvManager
     TrainerController.advance = monitored_advance
-    return elastic.ElasticWanPatch(original_manager, original_advance)
+    return elastic.ElasticWanPatch(
+        original_manager,
+        original_advance,
+        original_queue_get_nowait if threaded_mode else None,
+    )
 
 
 def restore_elastic_wan_env_manager(patch: Optional[elastic.ElasticWanPatch]) -> None:
