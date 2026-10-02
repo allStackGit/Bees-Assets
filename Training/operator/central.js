@@ -59,7 +59,7 @@ function buildCentralLearnerArgv(config, learnerPython, unity, runtimeRoot) {
     const models = path.join(paths.trainingRoot, 'Models');
 
     // Keep every argv item separate. No shell/string reparse is permitted in this path.
-    return [
+    const argv = [
         path.resolve(learnerPython),
         service,
         '--root', paths.trainingRoot,
@@ -84,6 +84,8 @@ function buildCentralLearnerArgv(config, learnerPython, unity, runtimeRoot) {
         '--bees-wan-broker-port', String(config.brokerPort),
         '--bees-wan-auth-token-file', paths.wanTokenPath,
     ];
+    if (Boolean(config.threadedTraining)) argv.push('--bees-threaded');
+    return argv;
 }
 
 function newCentralLearnerLaunchCommand(config, learnerPython, unity, runtimeRoot) {
