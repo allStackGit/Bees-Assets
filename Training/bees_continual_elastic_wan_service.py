@@ -110,7 +110,7 @@ def trainer_config_for_threading(config_path: Path, enabled: bool) -> Path:
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     raw_args = list(sys.argv[1:] if argv is None else argv)
-    raw_args, threaded_mode = elastic.extract_threaded_mode(raw_args)
+    raw_args, threaded_mode, max_policy_lag = elastic.extract_threaded_options(raw_args)
     service_args, actor_options = elastic.extract_elastic_wan_options(raw_args)
     if not actor_options.enabled:
         print(
@@ -159,7 +159,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             f"{elastic.WAN_LEASE_SECONDS_FLAG}={actor_options.actor_lease_seconds:g}",
         ]
         if threaded_mode:
-            wan_args.append(elastic.THREADED_FLAG)
+            wan_args.extend(
+                [
+                    elastic.THREADED_FLAG,
+                    f"{elastic.POLICY_LAG_FLAG}={max_policy_lag}",
+                ]
+            )
         # ML-Agents --env-args consumes the remainder of the command. Keep elastic WAN
         # trainer flags before it so only the server-owned Unity arguments reach the player.
         return insert_wan_args_before_environment_args(command, wan_args)
@@ -168,7 +173,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if threaded_mode:
         print(
             "[Bees WAN] runtime threaded training enabled; "
-            f"rolling policy lag <= {elastic.DEFAULT_THREADED_MAX_POLICY_LAG}."
+            f"rolling policy lag <= {max_policy_lag}."
         )
     try:
         return service.run_service(options)
