@@ -833,6 +833,69 @@ def _build_poca_next_observation_buffer(trajectories, n_obs):
     return buffer
 
 
+def _poca_group_obs_tensors_from_buffer(policy, buffer, counts, device):
+    """Create stock-equivalent NaN-padded group tensors while copying only real rows."""
+
+    import numpy as np
+    from mlagents.torch_utils import torch
+    from mlagents.trainers.trajectory import GroupObsUtil
+
+    counts = np.asarray(counts, dtype=np.int32)
+    batch_size = int(counts.shape[0])
+    max_groupmates = int(counts.max()) if counts.size else 0
+    if max_groupmates <= 0:
+        return []
+
+    separated = []
+    for obs_index, spec in enumerate(policy.behavior_spec.observation_specs):
+        field = buffer[GroupObsUtil.get_name_at(obs_index)]
+        positions = []
+        for position in range(max_groupmates):
+            valid_rows = np.flatnonzero(counts > position).astype(
+                np.int64,
+                copy=False,
+            )
+            if valid_rows.size == 0:
+                continue
+            compact = np.stack(
+                [
+                    np.asarray(
+                        field[int(row)][position],
+                        dtype=np.float32,
+                    )
+                    for row in valid_rows
+                ],
+                axis=0,
+            )
+            compact_tensor = torch.as_tensor(
+                np.ascontiguousarray(compact),
+                dtype=torch.float32,
+                device=device,
+            )
+            padded = torch.full(
+                (batch_size, *tuple(spec.shape)),
+                float("nan"),
+                dtype=torch.float32,
+                device=device,
+            )
+            padded.index_copy_(
+                0,
+                torch.as_tensor(
+                    valid_rows,
+                    dtype=torch.long,
+                    device=device,
+                ),
+                compact_tensor,
+            )
+            positions.append(padded)
+        separated.append(positions)
+
+    return [
+        [separated[obs_index][position] for obs_index in range(len(separated))]
+        for position in range(max_groupmates)
+    ]
+
+
 def _evaluate_poca_trajectory_batch(trainer, merged, trajectories):
     """Evaluate feed-forward POCA value, baseline and bootstrap targets in batches."""
 
@@ -867,20 +930,18 @@ def _evaluate_poca_trajectory_batch(trainer, merged, trajectories):
                 ModelUtils.list_to_tensor(obs)
                 for obs in ObsUtil.from_buffer(merged, n_obs)
             ]
-            groupmate_obs = GroupObsUtil.from_buffer(merged, n_obs)
-            groupmate_obs = [
-                [
-                    ModelUtils.list_to_tensor(obs)
-                    for obs in groupmate
-                ]
-                for groupmate in groupmate_obs
-            ]
-            groupmate_actions = AgentAction.group_from_buffer(merged)
             current_counts = _poca_groupmate_counts(
                 trainer.policy,
                 merged,
                 merged.num_experiences,
             )
+            groupmate_obs = _poca_group_obs_tensors_from_buffer(
+                trainer.policy,
+                merged,
+                current_counts,
+                current_obs[0].device,
+            )
+            groupmate_actions = AgentAction.group_from_buffer(merged)
             _POCA_GROUP_BATCH_STATE.valid_rows = (
                 _poca_groupmate_valid_row_indices(current_counts)
             )
@@ -903,18 +964,16 @@ def _evaluate_poca_trajectory_batch(trainer, merged, trajectories):
                 ModelUtils.list_to_tensor(obs)
                 for obs in ObsUtil.from_buffer(next_buffer, n_obs)
             ]
-            next_groupmate_obs = GroupObsUtil.from_buffer(next_buffer, n_obs)
-            next_groupmate_obs = [
-                [
-                    ModelUtils.list_to_tensor(obs)
-                    for obs in groupmate
-                ]
-                for groupmate in next_groupmate_obs
-            ]
             next_counts = _poca_groupmate_counts(
                 trainer.policy,
                 next_buffer,
                 next_buffer.num_experiences,
+            )
+            next_groupmate_obs = _poca_group_obs_tensors_from_buffer(
+                trainer.policy,
+                next_buffer,
+                next_counts,
+                next_obs[0].device,
             )
             _POCA_GROUP_BATCH_STATE.valid_rows = (
                 _poca_groupmate_valid_row_indices(next_counts)
