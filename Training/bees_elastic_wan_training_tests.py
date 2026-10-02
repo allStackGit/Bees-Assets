@@ -230,7 +230,7 @@ class ElasticActorLiveResizeTests(unittest.TestCase):
         )
         session = self._session(manager, 2)
 
-        self.assertTrue(session._scale_up_one())
+        self.assertTrue(session._scale_up_one(3))
 
         self.assertIs(manager.env_workers[0], existing[0])
         self.assertIs(manager.env_workers[1], existing[1])
@@ -289,13 +289,46 @@ class ElasticActorLiveResizeTests(unittest.TestCase):
         )
         session = self._session(manager, 2)
 
-        self.assertFalse(session._scale_up_one())
+        self.assertFalse(session._scale_up_one(3))
 
         self.assertEqual(manager.env_workers, existing)
         self.assertEqual(manager.workers_alive, 2)
         self.assertEqual(session.env_count, 2)
         self.assertEqual(session._resize_failed_target, 3)
         self.assertIn("behavior specifications do not match", session._resize_failure["error"])
+
+    def test_capacity_registration_reclaims_expired_same_actor_slot(self):
+        manager = SimpleNamespace(env_workers=[SimpleNamespace(worker_id=0)])
+        session = self._session(manager, 1)
+        session._behavior_specs = {"BeesRL1v1?team=0": object()}
+        session.session_id = "session-a"
+        session.actor_id = 0
+        session.client.register.side_effect = [
+            actor_session.worker.BrokerClaimRequired("claim expired"),
+            None,
+        ]
+        session.client.claim = mock.Mock(return_value=0)
+
+        self.assertTrue(session._register_current_capacity())
+
+        session.client.claim.assert_called_once_with("session-a")
+        self.assertEqual(session.client.register.call_count, 2)
+        self.assertEqual(session._registered_env_count, 1)
+
+    def test_capacity_registration_restarts_session_if_reclaim_moves_slot(self):
+        manager = SimpleNamespace(env_workers=[SimpleNamespace(worker_id=0)])
+        session = self._session(manager, 1)
+        session._behavior_specs = {"BeesRL1v1?team=0": object()}
+        session.session_id = "session-a"
+        session.actor_id = 0
+        session.client.register.side_effect = actor_session.worker.BrokerClaimRequired(
+            "claim expired"
+        )
+        session.client.claim = mock.Mock(return_value=1)
+
+        self.assertFalse(session._register_current_capacity())
+
+        self.assertTrue(session._state_changed.is_set())
 
     def test_downscale_retires_locally_even_while_uploads_are_backpressured(self):
         tail = SimpleNamespace(worker_id=2, waiting=False)
@@ -901,7 +934,10 @@ class ElasticBrokerTests(unittest.TestCase):
     def test_claimed_slot_cannot_be_registered_by_another_identity(self):
         broker, specs = self._broker()
         actor_id = broker.claim_actor({**broker.release_identity, "actor_key": "machine-a", "actor_instance_id": "process-a", "env_count": 8})
-        with self.assertRaisesRegex(ValueError, "no active claim|owned by another"):
+        with self.assertRaisesRegex(
+            base.ActorClaimRequiredError,
+            "no active claim",
+        ):
             broker.register_actor(
                 {
                     **broker.release_identity,
