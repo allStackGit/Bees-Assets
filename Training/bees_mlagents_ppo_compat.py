@@ -48,7 +48,6 @@ _ORIGINAL_POCA_UPDATE = None
 _ORIGINAL_POCA_TRAJECTORY_VALUES = None
 _ORIGINAL_POCA_UPDATE_POLICY = None
 _ORIGINAL_POCA_ADVANCE = None
-_ORIGINAL_GHOST_ADVANCE = None
 _ORIGINAL_MULTI_AGENT_FORWARD = None
 _ORIGINAL_TRUST_REGION_POLICY_LOSS = None
 _ORIGINAL_MASKED_MEAN = None
@@ -3444,7 +3443,6 @@ def restore_inactive_continuous_action_masking() -> None:
     global _ORIGINAL_POCA_TRAJECTORY_VALUES
     global _ORIGINAL_POCA_UPDATE_POLICY
     global _ORIGINAL_POCA_ADVANCE
-    global _ORIGINAL_GHOST_ADVANCE
     global _ORIGINAL_MULTI_AGENT_FORWARD
     global _ORIGINAL_TRUST_REGION_POLICY_LOSS
     global _ORIGINAL_MASKED_MEAN
@@ -3457,7 +3455,6 @@ def restore_inactive_continuous_action_masking() -> None:
 
     _shutdown_all_poca_pipelines()
 
-    from mlagents.trainers.ghost.trainer import GhostTrainer
     from mlagents.trainers.poca.optimizer_torch import TorchPOCAOptimizer
     from mlagents.trainers.poca.trainer import POCATrainer
     from mlagents.trainers.ppo.optimizer_torch import TorchPPOOptimizer
