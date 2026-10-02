@@ -820,10 +820,11 @@ class PocaBatchedTrajectoryEvaluationTests(unittest.TestCase):
             optimizer=SimpleNamespace(critic=FakeCritic()),
         )
 
+        merged = compat._merge_agent_buffers(buffers)
         values, baselines, next_values = (
             compat._evaluate_poca_trajectory_batch(
                 trainer,
-                buffers,
+                merged,
                 trajectories,
             )
         )
