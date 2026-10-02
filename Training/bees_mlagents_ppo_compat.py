@@ -519,7 +519,7 @@ def _structured_training_slot_limits(policy, batch, extra_observations=()):
     """Find occupied structured-slot prefixes without padding MA-POCA group observations."""
 
     import numpy as np
-    from mlagents.trainers.trajectory import GroupObsUtil, ObsUtil
+    from mlagents.trainers.trajectory import ObsUtil
     from bees_mlagents_structured_policy import (
         ALLY_COUNT,
         ALLY_SIZE,
@@ -1417,7 +1417,7 @@ def _select_poca_ragged_group_obs(source, indices, groupmate_counts, device):
         return []
 
     separated = []
-    for field_index, field in enumerate(source.fields):
+    for field in source.fields:
         positions = []
         for position in range(max_groupmates):
             valid_rows = np.flatnonzero(counts > position).astype(
