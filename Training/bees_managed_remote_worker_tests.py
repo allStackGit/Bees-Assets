@@ -1274,6 +1274,20 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
                 )
             )
 
+    def test_private_transport_health_uses_control_or_broker_not_rollout_progress(self):
+        self.assertTrue(
+            managed._private_transport_reachable(
+                {"desired": {"training_enabled": True}},
+                False,
+            )
+        )
+        self.assertTrue(
+            managed._private_transport_reachable(None, True)
+        )
+        self.assertFalse(
+            managed._private_transport_reachable(None, False)
+        )
+
     def test_transport_watchdog_requires_sustained_failure_and_resets_on_success(self):
         watchdog = managed._TransportWatchdog(30.0)
 
