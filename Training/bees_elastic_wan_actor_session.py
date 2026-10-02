@@ -31,7 +31,7 @@ class ElasticActorSession(worker.ActorSession):
         self.topology_epoch = -1
         self.policy_cycle = -1
         self.learner_step = -1
-        self.optimizer_busy_seconds_total = 0.0
+        self.optimizer_busy_seconds_total = None
         self._last_consumed_sample = None
         target_path = os.environ.get(WORKER_ENVS_TARGET_ENV, "").strip()
         self._env_target_path = (
@@ -55,11 +55,18 @@ class ElasticActorSession(worker.ActorSession):
             payload["policy_cycle"] = int(self.policy_cycle)
         if self.learner_step >= 0:
             payload["learner_step_total"] = int(self.learner_step)
-        optimizer_busy = float(
-            getattr(self, "optimizer_busy_seconds_total", 0.0)
+        optimizer_busy = getattr(
+            self,
+            "optimizer_busy_seconds_total",
+            None,
         )
-        if math.isfinite(optimizer_busy) and optimizer_busy >= 0.0:
-            payload["optimizer_busy_seconds_total"] = optimizer_busy
+        if (
+            isinstance(optimizer_busy, (int, float))
+            and not isinstance(optimizer_busy, bool)
+            and math.isfinite(float(optimizer_busy))
+            and float(optimizer_busy) >= 0.0
+        ):
+            payload["optimizer_busy_seconds_total"] = float(optimizer_busy)
         if isinstance(failure, Mapping):
             payload.update(
                 {
