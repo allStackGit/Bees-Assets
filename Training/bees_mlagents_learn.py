@@ -29,6 +29,7 @@ import sys
 import threading
 import time
 import tempfile
+import traceback
 from typing import Dict, List, Optional, Sequence, Tuple
 
 
@@ -971,6 +972,63 @@ def _install_model_snapshot_requests():
     return original
 
 
+def _install_threaded_trainer_failure_propagation():
+    """Fail the learner process when ML-Agents' daemon trainer thread crashes.
+
+    ML-Agents 1.1.0 otherwise prints an exception from trainer_update_func and leaves the
+    environment/main thread running indefinitely. On a trainer-thread failure, interrupt the
+    main thread, suppress final model/checkpoint writes from the failed in-memory state, and
+    re-raise the original exception after learn.main() unwinds.
+    """
+    from mlagents.trainers.trainer_controller import TrainerController
+
+    original_update = TrainerController.trainer_update_func
+    original_save = TrainerController._save_models
+    failure = {"exc_info": None}
+
+    def guarded_trainer_update(controller, trainer):
+        try:
+            return original_update(controller, trainer)
+        except BaseException:
+            if failure["exc_info"] is None:
+                failure["exc_info"] = sys.exc_info()
+                print(
+                    "[Bees RL] threaded trainer failed; aborting learner without writing "
+                    "a checkpoint from the failed in-memory state.",
+                    file=sys.stderr,
+                    flush=True,
+                )
+                traceback.print_exception(*failure["exc_info"], file=sys.stderr)
+                controller.kill_trainers = True
+                _thread.interrupt_main()
+            return None
+
+    def guarded_save_models(controller):
+        if failure["exc_info"] is not None:
+            print(
+                "[Bees RL] skipping final model/checkpoint save because the threaded trainer "
+                "failed; the last durable checkpoint remains authoritative.",
+                file=sys.stderr,
+                flush=True,
+            )
+            return None
+        return original_save(controller)
+
+    TrainerController.trainer_update_func = guarded_trainer_update
+    TrainerController._save_models = guarded_save_models
+    return original_update, original_save, failure
+
+
+def _restore_threaded_trainer_failure_propagation(state) -> None:
+    if state is None:
+        return
+    from mlagents.trainers.trainer_controller import TrainerController
+
+    original_update, original_save, _failure = state
+    TrainerController.trainer_update_func = original_update
+    TrainerController._save_models = original_save
+
+
 def _start_managed_stop_watcher():
     """Interrupt the trainer main thread when its supervisor requests a final checkpoint."""
     path = os.environ.get(MANAGED_STOP_FILE_ENV, "").strip()
@@ -1099,12 +1157,16 @@ def main() -> None:
     previous_argv = sys.argv
     previous_sigbreak_handler = _install_windows_break_interrupt()
     managed_stop_event, managed_stop_watcher = _start_managed_stop_watcher()
+    threaded_failure_state = _install_threaded_trainer_failure_propagation()
     original_maybe_save_model = _install_model_snapshot_requests()
     original_trainer_advance = _install_managed_learner_progress_marker()
     torch_utils.torch.load = device_safe_torch_load
     sys.argv = [previous_argv[0], *trainer_args]
+    threaded_failure = None
     try:
         learn.main()
+        if threaded_failure_state is not None:
+            threaded_failure = threaded_failure_state[2]["exc_info"]
     finally:
         sys.argv = previous_argv
         _restore_managed_live_log(live_log_streams)
@@ -1120,6 +1182,7 @@ def main() -> None:
         if original_trainer_advance is not None:
             from mlagents.trainers.trainer_controller import TrainerController
             TrainerController.advance = original_trainer_advance
+        _restore_threaded_trainer_failure_propagation(threaded_failure_state)
         torch_utils.torch.load = original_torch_load
         restore_continuous_sigma_guard(original_sigma_forward)
         restore_inactive_continuous_action_masking()
@@ -1134,6 +1197,10 @@ def main() -> None:
             EnvManager._process_step_infos = original_process_step_infos
         if original_worker is not None:
             subprocess_env_manager_module.worker = original_worker
+
+    if threaded_failure is not None:
+        _exc_type, exc, tb = threaded_failure
+        raise exc.with_traceback(tb)
 
 
 if __name__ == "__main__":
