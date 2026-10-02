@@ -297,7 +297,7 @@ class InactiveContinuousActionMaskTests(unittest.TestCase):
         self.assertIsNot(TorchPOCAOptimizer.update, original_poca_update)
         self.assertIsNot(POCATrainer._update_policy, original_poca_update_policy)
         self.assertIsNot(POCATrainer.advance, original_poca_advance)
-        self.assertIsNot(GhostTrainer.advance, original_ghost_advance)
+        self.assertIs(GhostTrainer.advance, original_ghost_advance)
         self.assertIsNot(ModelUtils.trust_region_policy_loss, original_policy_loss)
         self.assertIsNot(ModelUtils.masked_mean, original_masked_mean)
         self.assertIsNot(BCModule._update_batch, original_bc_update)
