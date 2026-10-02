@@ -32,6 +32,9 @@ class ZeroLocalElasticWanEnvManagerMixin(elastic.ElasticWanEnvManagerMixin):
         n_env: int,
         env_factory: Any,
         local_manager_class: Any,
+        *,
+        threaded_mode: bool = False,
+        max_policy_lag: int = 0,
     ) -> None:
         from mlagents.trainers.env_manager import EnvManager
 
@@ -50,6 +53,8 @@ class ZeroLocalElasticWanEnvManagerMixin(elastic.ElasticWanEnvManagerMixin):
             run_options,
             base.load_auth_token(options.auth_token_file or ""),
             n_env,
+            threaded_mode=threaded_mode,
+            max_policy_lag=max_policy_lag,
         )
         self._bees_wan_broker.start()
         write_managed_health(
@@ -58,12 +63,19 @@ class ZeroLocalElasticWanEnvManagerMixin(elastic.ElasticWanEnvManagerMixin):
                 "component": "elastic-wan-learner",
                 "local_envs": int(n_env),
                 "broker_port": int(options.broker_port),
+                "threaded_training": bool(threaded_mode),
+                "max_policy_lag": int(max_policy_lag),
             },
         )
         if n_env == 0:
             print(
                 "[Bees WAN] Exeter local_envs=0: PPO learner-only mode enabled; "
                 "waiting for remote rollout actors."
+            )
+        if threaded_mode:
+            print(
+                "[Bees WAN] threaded PPO collection enabled with rolling "
+                f"max_policy_lag={max_policy_lag}."
             )
 
     @property
@@ -203,8 +215,10 @@ class ZeroLocalElasticWanEnvManagerMixin(elastic.ElasticWanEnvManagerMixin):
                     if self._bees_wan_broker._closed:
                         raise RuntimeError("WAN actor broker closed while waiting for trajectories")
                 continue
-            if self._bees_wan_broker._batch_is_current(batch):
-                self._bees_wan_broker.record_consumed_batch(batch)
+            if (
+                self._bees_wan_broker._batch_is_current(batch)
+                and self._bees_wan_broker.record_consumed_batch(batch)
+            ):
                 return batch
 
     def _inject_remote_batches(self) -> None:
@@ -261,6 +275,8 @@ def install_elastic_wan_env_manager(
     options: elastic.ElasticWanOptions,
     *,
     force_zero_local: bool = False,
+    threaded_mode: bool = False,
+    max_policy_lag: int = 0,
 ) -> Optional[elastic.ElasticWanPatch]:
     """Install the elastic EnvManager with optional zero local Unity processes."""
     if not options.enabled:
@@ -290,6 +306,8 @@ def install_elastic_wan_env_manager(
                 effective_n_env,
                 env_factory,
                 original_manager,
+                threaded_mode=threaded_mode,
+                max_policy_lag=max_policy_lag,
             )
 
     def monitored_advance(controller: Any, env_manager: Any) -> int:
