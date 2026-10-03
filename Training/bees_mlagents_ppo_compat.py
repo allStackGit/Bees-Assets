@@ -30,6 +30,8 @@ BEES_HEALING_SPECIAL_ACTION = 3
 ACTION_ENTROPY_EPSILON = 1e-7
 POCA_ENCODER_CHUNK_ROWS = 2048
 POCA_TRAJECTORY_BATCH_MAX_EXPERIENCES = 2048
+POCA_TRAJECTORY_TIMING_REPORT_SECONDS = 30.0
+POCA_PACKED_GROUP_CACHE_MAX_BYTES = 4 * 1024 * 1024 * 1024
 POCA_GPU_CACHE_MIN_RESERVE_BYTES = 2 * 1024 * 1024 * 1024
 POCA_GPU_CACHE_RESERVE_FRACTION = 0.30
 
@@ -55,6 +57,17 @@ _POCA_GROUP_BATCH_STATE = threading.local()
 _POCA_UPDATE_CACHE_STATE = threading.local()
 _POCA_UPDATE_BUSY_LOCK = threading.Lock()
 _POCA_UPDATE_BUSY_SECONDS_TOTAL = 0.0
+_POCA_TRAJECTORY_TIMING_LOCK = threading.Lock()
+_POCA_TRAJECTORY_TIMING = {
+    "last_report": 0.0,
+    "batches": 0,
+    "trajectories": 0,
+    "experiences": 0,
+    "prepare": 0.0,
+    "evaluate": 0.0,
+    "complete": 0.0,
+    "total": 0.0,
+}
 
 
 def poca_update_busy_seconds_total() -> float:
@@ -799,6 +812,61 @@ def _poca_average_timing(label):
     return totals.get(label, 0.0) / count if count else 0.0
 
 
+def _record_poca_trajectory_batch_timing(
+    *,
+    trajectories: int,
+    experiences: int,
+    prepare_seconds: float,
+    evaluate_seconds: float,
+    complete_seconds: float,
+    total_seconds: float,
+) -> None:
+    now = time.monotonic()
+    report = None
+    with _POCA_TRAJECTORY_TIMING_LOCK:
+        state = _POCA_TRAJECTORY_TIMING
+        if state["last_report"] <= 0.0:
+            state["last_report"] = now
+        state["batches"] += 1
+        state["trajectories"] += int(trajectories)
+        state["experiences"] += int(experiences)
+        state["prepare"] += float(prepare_seconds)
+        state["evaluate"] += float(evaluate_seconds)
+        state["complete"] += float(complete_seconds)
+        state["total"] += float(total_seconds)
+        if now - state["last_report"] >= POCA_TRAJECTORY_TIMING_REPORT_SECONDS:
+            report = dict(state)
+            state.update(
+                {
+                    "last_report": now,
+                    "batches": 0,
+                    "trajectories": 0,
+                    "experiences": 0,
+                    "prepare": 0.0,
+                    "evaluate": 0.0,
+                    "complete": 0.0,
+                    "total": 0.0,
+                }
+            )
+    if report is None:
+        return
+    batches = max(1, int(report["batches"]))
+    total_seconds = max(1.0e-9, float(report["total"]))
+    print(
+        "[Bees trajectory timing] "
+        f"batches={report['batches']} "
+        f"trajectories={report['trajectories']} "
+        f"experiences={report['experiences']} "
+        f"avg_batch_exp={report['experiences'] / batches:.1f} "
+        f"compute_exp_per_s={report['experiences'] / total_seconds:.1f} "
+        f"avg_prepare={report['prepare'] / batches:.6f} "
+        f"avg_evaluate={report['evaluate'] / batches:.6f} "
+        f"avg_complete={report['complete'] / batches:.6f} "
+        f"avg_total={report['total'] / batches:.6f}",
+        flush=True,
+    )
+
+
 def _merge_agent_buffers(buffers):
     """Concatenate trajectory buffers without copying their NumPy payloads."""
 
@@ -832,7 +900,70 @@ def _build_poca_next_observation_buffer(trajectories, n_obs):
     return buffer
 
 
-def _evaluate_poca_trajectory_batch(trainer, buffers, trajectories):
+def _poca_group_obs_tensors_from_buffer(policy, buffer, counts, device):
+    """Create stock-equivalent NaN-padded group tensors while copying only real rows."""
+
+    import numpy as np
+    from mlagents.torch_utils import torch
+    from mlagents.trainers.trajectory import GroupObsUtil
+
+    counts = np.asarray(counts, dtype=np.int32)
+    batch_size = int(counts.shape[0])
+    max_groupmates = int(counts.max()) if counts.size else 0
+    if max_groupmates <= 0:
+        return []
+
+    separated = []
+    for obs_index, spec in enumerate(policy.behavior_spec.observation_specs):
+        field = buffer[GroupObsUtil.get_name_at(obs_index)]
+        positions = []
+        for position in range(max_groupmates):
+            valid_rows = np.flatnonzero(counts > position).astype(
+                np.int64,
+                copy=False,
+            )
+            if valid_rows.size == 0:
+                continue
+            compact = np.stack(
+                [
+                    np.asarray(
+                        field[int(row)][position],
+                        dtype=np.float32,
+                    )
+                    for row in valid_rows
+                ],
+                axis=0,
+            )
+            compact_tensor = torch.as_tensor(
+                np.ascontiguousarray(compact),
+                dtype=torch.float32,
+                device=device,
+            )
+            padded = torch.full(
+                (batch_size, *tuple(spec.shape)),
+                float("nan"),
+                dtype=torch.float32,
+                device=device,
+            )
+            padded.index_copy_(
+                0,
+                torch.as_tensor(
+                    valid_rows,
+                    dtype=torch.long,
+                    device=device,
+                ),
+                compact_tensor,
+            )
+            positions.append(padded)
+        separated.append(positions)
+
+    return [
+        [separated[obs_index][position] for obs_index in range(len(separated))]
+        for position in range(max_groupmates)
+    ]
+
+
+def _evaluate_poca_trajectory_batch(trainer, merged, trajectories):
     """Evaluate feed-forward POCA value, baseline and bootstrap targets in batches."""
 
     from mlagents.torch_utils import torch
@@ -849,7 +980,6 @@ def _evaluate_poca_trajectory_batch(trainer, buffers, trajectories):
             "Batched Bees POCA trajectory evaluation requires a feed-forward policy."
         )
 
-    merged = _merge_agent_buffers(buffers)
     n_obs = len(trainer.policy.behavior_spec.observation_specs)
     next_buffer = _build_poca_next_observation_buffer(trajectories, n_obs)
     slot_limits = _structured_training_slot_limits(
@@ -867,20 +997,18 @@ def _evaluate_poca_trajectory_batch(trainer, buffers, trajectories):
                 ModelUtils.list_to_tensor(obs)
                 for obs in ObsUtil.from_buffer(merged, n_obs)
             ]
-            groupmate_obs = GroupObsUtil.from_buffer(merged, n_obs)
-            groupmate_obs = [
-                [
-                    ModelUtils.list_to_tensor(obs)
-                    for obs in groupmate
-                ]
-                for groupmate in groupmate_obs
-            ]
-            groupmate_actions = AgentAction.group_from_buffer(merged)
             current_counts = _poca_groupmate_counts(
                 trainer.policy,
                 merged,
                 merged.num_experiences,
             )
+            groupmate_obs = _poca_group_obs_tensors_from_buffer(
+                trainer.policy,
+                merged,
+                current_counts,
+                current_obs[0].device,
+            )
+            groupmate_actions = AgentAction.group_from_buffer(merged)
             _POCA_GROUP_BATCH_STATE.valid_rows = (
                 _poca_groupmate_valid_row_indices(current_counts)
             )
@@ -903,18 +1031,16 @@ def _evaluate_poca_trajectory_batch(trainer, buffers, trajectories):
                 ModelUtils.list_to_tensor(obs)
                 for obs in ObsUtil.from_buffer(next_buffer, n_obs)
             ]
-            next_groupmate_obs = GroupObsUtil.from_buffer(next_buffer, n_obs)
-            next_groupmate_obs = [
-                [
-                    ModelUtils.list_to_tensor(obs)
-                    for obs in groupmate
-                ]
-                for groupmate in next_groupmate_obs
-            ]
             next_counts = _poca_groupmate_counts(
                 trainer.policy,
                 next_buffer,
                 next_buffer.num_experiences,
+            )
+            next_groupmate_obs = _poca_group_obs_tensors_from_buffer(
+                trainer.policy,
+                next_buffer,
+                next_counts,
+                next_obs[0].device,
             )
             _POCA_GROUP_BATCH_STATE.valid_rows = (
                 _poca_groupmate_valid_row_indices(next_counts)
@@ -1060,18 +1186,24 @@ def _process_poca_trajectory_batch(trainer, trajectories):
     import numpy as np
     from mlagents.trainers.trainer.rl_trainer import RLTrainer
 
+    batch_started = time.perf_counter()
+    prepare_started = batch_started
     buffers = [trajectory.to_agentbuffer() for trajectory in trajectories]
     merged = _merge_agent_buffers(buffers)
     if trainer.is_training:
         trainer.policy.actor.update_normalization(merged)
         trainer.optimizer.critic.update_normalization(merged)
+    prepare_seconds = time.perf_counter() - prepare_started
 
+    evaluate_started = time.perf_counter()
     values, baselines, next_values = _evaluate_poca_trajectory_batch(
         trainer,
-        buffers,
+        merged,
         trajectories,
     )
+    evaluate_seconds = time.perf_counter() - evaluate_started
 
+    complete_started = time.perf_counter()
     offset = 0
     for trajectory_index, (trajectory, buffer) in enumerate(
         zip(trajectories, buffers)
@@ -1118,6 +1250,16 @@ def _process_poca_trajectory_batch(trainer, trajectories):
         )
         offset = end
 
+    complete_seconds = time.perf_counter() - complete_started
+    _record_poca_trajectory_batch_timing(
+        trajectories=len(trajectories),
+        experiences=merged.num_experiences,
+        prepare_seconds=prepare_seconds,
+        evaluate_seconds=evaluate_seconds,
+        complete_seconds=complete_seconds,
+        total_seconds=time.perf_counter() - batch_started,
+    )
+
 
 def _poca_cpu_tensor(values, dtype):
     """Materialize one update-buffer field once on CPU for repeated PPO epochs."""
@@ -1142,6 +1284,114 @@ class _PocaRaggedGroupObs:
         self.fields = tuple(fields)
 
 
+class _PocaPackedGroupPosition:
+    """One groupmate position packed only for rows where that member exists."""
+
+    __slots__ = ("lookup", "values")
+
+    def __init__(self, lookup, values) -> None:
+        self.lookup = lookup
+        self.values = values
+
+
+class _PocaPackedGroupObs:
+    """Compact CPU cache for ragged group observations reused across PPO epochs."""
+
+    __slots__ = ("fields", "nbytes")
+
+    def __init__(self, fields, nbytes: int) -> None:
+        self.fields = tuple(tuple(field) for field in fields)
+        self.nbytes = int(nbytes)
+
+
+def _build_poca_group_obs_cache(policy, buffer, groupmate_counts):
+    """Pack actual groupmate rows once when the compact cache is safely bounded."""
+
+    import numpy as np
+    from mlagents.torch_utils import torch
+    from mlagents.trainers.trajectory import GroupObsUtil
+
+    counts = np.asarray(groupmate_counts, dtype=np.int32)
+    size = int(counts.shape[0])
+    max_groupmates = int(counts.max()) if counts.size else 0
+    fields = tuple(
+        buffer[GroupObsUtil.get_name_at(index)]
+        for index in range(len(policy.behavior_spec.observation_specs))
+    )
+    if max_groupmates <= 0:
+        return _PocaPackedGroupObs(
+            tuple(() for _ in fields),
+            0,
+        )
+
+    estimated_bytes = 0
+    actual_members = int(counts.astype(np.int64, copy=False).sum())
+    for spec in policy.behavior_spec.observation_specs:
+        elements = int(np.prod(spec.shape, dtype=np.int64))
+        estimated_bytes += actual_members * elements * np.dtype(np.float32).itemsize
+    if estimated_bytes > POCA_PACKED_GROUP_CACHE_MAX_BYTES:
+        return _PocaRaggedGroupObs(fields)
+
+    packed_fields = []
+    packed_bytes = 0
+    for field in fields:
+        positions = []
+        for position in range(max_groupmates):
+            source_rows = np.flatnonzero(counts > position).astype(
+                np.int64,
+                copy=False,
+            )
+            if source_rows.size == 0:
+                positions.append(None)
+                continue
+            compact = np.stack(
+                [
+                    np.asarray(
+                        field[int(row)][position],
+                        dtype=np.float32,
+                    )
+                    for row in source_rows
+                ],
+                axis=0,
+            )
+            values = _poca_cpu_tensor(compact, torch.float32)
+            lookup = np.full(size, -1, dtype=np.int32)
+            lookup[source_rows] = np.arange(
+                source_rows.size,
+                dtype=np.int32,
+            )
+            positions.append(_PocaPackedGroupPosition(lookup, values))
+            packed_bytes += int(values.numel()) * int(values.element_size())
+        packed_fields.append(tuple(positions))
+    return _PocaPackedGroupObs(packed_fields, packed_bytes)
+
+
+def _poca_group_obs_cache_nbytes(value) -> int:
+    return int(value.nbytes) if isinstance(value, _PocaPackedGroupObs) else 0
+
+
+def _move_poca_packed_group_obs(value, device):
+    """Move packed group observation values while retaining CPU lookup metadata."""
+
+    if not isinstance(value, _PocaPackedGroupObs):
+        return value
+    fields = []
+    for field in value.fields:
+        positions = []
+        for position in field:
+            if position is None:
+                positions.append(None)
+                continue
+            positions.append(
+                _PocaPackedGroupPosition(
+                    position.lookup,
+                    position.values.to(device=device),
+                )
+            )
+        fields.append(tuple(positions))
+    return _PocaPackedGroupObs(fields, value.nbytes)
+
+
 def _select_poca_ragged_group_obs(source, indices, groupmate_counts, device):
     """Pack only the selected minibatch's real groupmate rows.
 
@@ -1155,7 +1405,10 @@ def _select_poca_ragged_group_obs(source, indices, groupmate_counts, device):
     import numpy as np
     from mlagents.torch_utils import torch
 
-    if not isinstance(source, _PocaRaggedGroupObs):
+    if not isinstance(
+        source,
+        (_PocaRaggedGroupObs, _PocaPackedGroupObs),
+    ):
         return []
     indices = np.asarray(indices, dtype=np.int64)
     counts = np.asarray(groupmate_counts, dtype=np.int32)
@@ -1173,20 +1426,41 @@ def _select_poca_ragged_group_obs(source, indices, groupmate_counts, device):
             )
             if valid_rows.size == 0:
                 continue
-            compact = np.stack(
-                [
-                    np.asarray(
-                        field[int(indices[row])][position],
-                        dtype=np.float32,
-                    )
-                    for row in valid_rows
-                ],
-                axis=0,
-            )
-            compact_tensor = _poca_cpu_tensor(
-                compact,
-                torch.float32,
-            ).to(device=device)
+            if isinstance(source, _PocaPackedGroupObs):
+                packed_position = field[position]
+                if packed_position is None:
+                    continue
+                compact_ids = packed_position.lookup[indices]
+                selected_ids = compact_ids[valid_rows].astype(
+                    np.int64,
+                    copy=False,
+                )
+                packed_device = packed_position.values.device
+                compact_tensor = packed_position.values.index_select(
+                    0,
+                    torch.as_tensor(
+                        selected_ids,
+                        dtype=torch.long,
+                        device=packed_device,
+                    ),
+                )
+                if compact_tensor.device != device:
+                    compact_tensor = compact_tensor.to(device=device)
+            else:
+                compact = np.stack(
+                    [
+                        np.asarray(
+                            field[int(indices[row])][position],
+                            dtype=np.float32,
+                        )
+                        for row in valid_rows
+                    ],
+                    axis=0,
+                )
+                compact_tensor = _poca_cpu_tensor(
+                    compact,
+                    torch.float32,
+                ).to(device=device)
             padded = torch.full(
                 (len(indices), *compact_tensor.shape[1:]),
                 float("nan"),
@@ -1251,11 +1525,10 @@ def _build_poca_update_tensor_cache(optimizer, buffer):
             len(policy.behavior_spec.observation_specs),
         )
     ]
-    groupmate_obs = _PocaRaggedGroupObs(
-        buffer[GroupObsUtil.get_name_at(index)]
-        for index in range(
-            len(policy.behavior_spec.observation_specs)
-        )
+    groupmate_obs = _build_poca_group_obs_cache(
+        policy,
+        buffer,
+        groupmate_counts,
     )
 
     def field_tensor(key, dtype):
@@ -1421,16 +1694,26 @@ def _promote_poca_update_tensor_cache(cache):
             "storage": "off",
             "bytes": 0,
             "copy_seconds": 0.0,
+            "group_storage": "off",
+            "group_bytes": 0,
+            "group_copy_seconds": 0.0,
             "free_before": 0,
             "reserve": 0,
         }
 
     cache_bytes = _poca_tensor_cache_nbytes(cache)
     device = default_device()
+    group_cache = cache.get("groupmate_obs")
+    group_cache_bytes = _poca_group_obs_cache_nbytes(group_cache)
     result = {
         "storage": "cpu",
         "bytes": int(cache_bytes),
         "copy_seconds": 0.0,
+        "group_storage": (
+            "cpu" if isinstance(group_cache, _PocaPackedGroupObs) else "off"
+        ),
+        "group_bytes": int(group_cache_bytes),
+        "group_copy_seconds": 0.0,
         "free_before": 0,
         "reserve": 0,
     }
@@ -1478,6 +1761,60 @@ def _promote_poca_update_tensor_cache(cache):
     promoted["storage"] = "cuda"
     result["storage"] = "cuda"
     result["copy_seconds"] = time.perf_counter() - started
+
+    promoted_group = promoted.get("groupmate_obs")
+    if (
+        isinstance(promoted_group, _PocaPackedGroupObs)
+        and promoted_group.nbytes > 0
+    ):
+        group_free_bytes, group_total_bytes = torch.cuda.mem_get_info(
+            device_index
+        )
+        group_allocated_bytes = int(
+            torch.cuda.memory_allocated(device_index)
+        )
+        group_reserved_bytes = int(
+            torch.cuda.memory_reserved(device_index)
+        )
+        group_reusable_bytes = max(
+            0,
+            group_reserved_bytes - group_allocated_bytes,
+        )
+        group_effective_free = (
+            int(group_free_bytes) + group_reusable_bytes
+        )
+        group_reserve = max(
+            POCA_GPU_CACHE_MIN_RESERVE_BYTES,
+            int(
+                group_total_bytes
+                * POCA_GPU_CACHE_RESERVE_FRACTION
+            ),
+        )
+        if promoted_group.nbytes <= max(
+            0,
+            group_effective_free - group_reserve,
+        ):
+            group_started = time.perf_counter()
+            try:
+                gpu_group = _move_poca_packed_group_obs(
+                    promoted_group,
+                    device,
+                )
+            except RuntimeError as exc:
+                if "out of memory" not in str(exc).lower():
+                    raise
+                torch.cuda.empty_cache()
+                print(
+                    "[Bees PPO timing] packed group cache promotion skipped after CUDA OOM; "
+                    "keeping group observations on CPU.",
+                    flush=True,
+                )
+            else:
+                promoted["groupmate_obs"] = gpu_group
+                result["group_storage"] = "cuda"
+                result["group_copy_seconds"] = (
+                    time.perf_counter() - group_started
+                )
     return promoted, result
 
 
@@ -2056,6 +2393,10 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             "device_cache_copy",
             float(device_cache["copy_seconds"]),
         )
+        _poca_record_timing(
+            "group_cache_copy",
+            float(device_cache.get("group_copy_seconds", 0.0)),
+        )
 
         num_epoch = self.hyperparameters.num_epoch
         batch_update_stats = defaultdict(list)
@@ -2073,7 +2414,10 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             f"cache_allocator_reusable_mib={device_cache.get('allocator_reusable_before', 0) / (1024 * 1024):.1f} "
             f"cache_reserve_mib={device_cache['reserve'] / (1024 * 1024):.1f} "
             f"cache_copy={device_cache['copy_seconds']:.6f} "
-            f"group_obs=ragged-minibatch "
+            f"group_obs={'packed' if tensor_cache is not None and isinstance(tensor_cache.get('groupmate_obs'), _PocaPackedGroupObs) else 'ragged-minibatch'} "
+            f"group_cache_storage={device_cache.get('group_storage', 'off')} "
+            f"group_cache_mib={device_cache.get('group_bytes', 0) / (1024 * 1024):.1f} "
+            f"group_cache_copy={device_cache.get('group_copy_seconds', 0.0):.6f} "
             f"materialize={materialize_seconds:.6f}",
             flush=True,
         )
@@ -2160,6 +2504,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             f"normalize={_poca_average_timing('advantage_normalization'):.6f} "
             f"materialize={_poca_average_timing('materialize'):.6f} "
             f"cache_copy={_poca_average_timing('device_cache_copy'):.6f} "
+            f"group_cache_copy={_poca_average_timing('group_cache_copy'):.6f} "
             f"cache_storage={device_cache['storage']} "
             f"transfer={_poca_average_timing('cache_transfer'):.6f} "
             f"avg_minibatch={_poca_average_timing('minibatch_total'):.6f} "
