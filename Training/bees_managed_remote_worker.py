@@ -2503,8 +2503,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                                 stale_recycle_grace_started_monotonic = restarted_now
                                 control_failure_watchdog.reset()
                                 inner_control_stall_watchdog.observe(True, restarted_now)
-                                broker_path_watchdog.observe(True, restarted_now)
-                                private_path_watchdog.observe(True, restarted_now)
                                 next_status = 0.0
                                 continue
                             if not updater.alive():
