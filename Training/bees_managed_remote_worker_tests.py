@@ -1671,7 +1671,7 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
             self.assertEqual(staged_build_id, "build-1")
             self.assertEqual(error, "")
 
-    def test_private_transport_readiness_requires_marker_from_exact_forwarder(self):
+    def test_private_transport_readiness_accepts_owned_child_marker_with_different_pid(self):
         with tempfile.TemporaryDirectory() as temp:
             args = Namespace(
                 install_root=temp,
@@ -1684,7 +1684,10 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
             process.pid = 4321
             process.poll.return_value = None
             stop = [False]
-            managed._tailnet_ready_path(args).write_text("4321\n", encoding="ascii")
+            ready_path = managed._new_tailnet_ready_path(args)
+            # On Linux popen_owned returns the ownership guardian while the bridge writes
+            # its own PID. Readiness belongs to the unique launch marker, not either PID.
+            ready_path.write_text("9876\n", encoding="ascii")
 
             with (
                 mock.patch.object(managed, "_wait_for_ports", return_value=True) as ports,
@@ -1695,6 +1698,7 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
                         args,
                         process,
                         stop,
+                        ready_path,
                         timeout=5.0,
                     )
                 )
@@ -1706,7 +1710,7 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
             )
             status.assert_not_called()
 
-    def test_orphaned_forwarder_ports_cannot_satisfy_replacement_readiness(self):
+    def test_orphaned_forwarder_marker_cannot_satisfy_replacement_readiness(self):
         with tempfile.TemporaryDirectory() as temp:
             args = Namespace(
                 install_root=temp,
@@ -1719,7 +1723,10 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
             process.pid = 4322
             process.poll.return_value = None
             stop = [False]
-            managed._tailnet_ready_path(args).write_text("1111\n", encoding="ascii")
+            orphan_ready_path = managed._new_tailnet_ready_path(args)
+            replacement_ready_path = managed._new_tailnet_ready_path(args)
+            self.assertNotEqual(orphan_ready_path, replacement_ready_path)
+            orphan_ready_path.write_text("1111\n", encoding="ascii")
 
             with (
                 mock.patch.object(managed, "_wait_for_ports", return_value=True) as ports,
@@ -1735,6 +1742,7 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
                         args,
                         process,
                         stop,
+                        replacement_ready_path,
                         timeout=0.5,
                     )
                 )
@@ -1742,30 +1750,29 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
             ports.assert_not_called()
 
     def test_tailnet_forward_command_maps_control_and_broker(self):
-        args = Namespace(
-            tailnet_bridge="bridge",
-            tailnet_state="state",
-            install_root="install",
-            tailnet_hostname="bees-worker-test",
-            tailnet_target="100.64.0.10",
-            control_port=7150,
-            bootstrap_port=7151,
-            broker_port=55051,
-            gameplay_port=7146,
-        )
-        command = managed._tailnet_forward_command(args)
-        self.assertIn("forward-multi", command)
-        self.assertIn("127.0.0.1:7150=100.64.0.10:7150", command)
-        self.assertIn("127.0.0.1:55051=100.64.0.10:55051", command)
-        self.assertIn("127.0.0.1:7151=100.64.0.10:7151", command)
-        self.assertIn("127.0.0.1:7146=100.64.0.10:7146", command)
-        self.assertIn("--ready-file", command)
-        self.assertTrue(
-            command[command.index("--ready-file") + 1].endswith(
-                managed.REMOTE_TAILNET_READY_FILE
+        with tempfile.TemporaryDirectory() as temp:
+            args = Namespace(
+                tailnet_bridge="bridge",
+                tailnet_state="state",
+                install_root=temp,
+                tailnet_hostname="bees-worker-test",
+                tailnet_target="100.64.0.10",
+                control_port=7150,
+                bootstrap_port=7151,
+                broker_port=55051,
+                gameplay_port=7146,
             )
-        )
-        self.assertNotIn("ssh", " ".join(command).lower())
+            ready_path = managed._new_tailnet_ready_path(args)
+            command = managed._tailnet_forward_command(args, ready_path)
+            self.assertIn("forward-multi", command)
+            self.assertIn("127.0.0.1:7150=100.64.0.10:7150", command)
+            self.assertIn("127.0.0.1:55051=100.64.0.10:55051", command)
+            self.assertIn("127.0.0.1:7151=100.64.0.10:7151", command)
+            self.assertIn("127.0.0.1:7146=100.64.0.10:7146", command)
+            self.assertIn("--ready-file", command)
+            self.assertEqual(command[command.index("--ready-file") + 1], str(ready_path))
+            self.assertTrue(ready_path.name.startswith(managed.REMOTE_TAILNET_READY_FILE + "."))
+            self.assertNotIn("ssh", " ".join(command).lower())
 
 
     def test_run_scoped_log_sink_writes_into_worker_uploaded_log_tree(self):
