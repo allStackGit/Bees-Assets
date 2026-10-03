@@ -347,6 +347,37 @@ def _available_memory_bytes() -> Optional[int]:
         return None
 
 
+def _total_memory_bytes() -> Optional[int]:
+    """Physical RAM capacity, independent of transient worker/process pressure."""
+
+    status = _windows_memory_status()
+    if status is not None:
+        total = int(status.ullTotalPhys)
+        if total > 0:
+            return total
+
+    meminfo = Path("/proc/meminfo")
+    if meminfo.is_file():
+        try:
+            for line in meminfo.read_text(encoding="ascii").splitlines():
+                if line.startswith("MemTotal:"):
+                    parts = line.split()
+                    if len(parts) >= 2:
+                        total = int(parts[1]) * 1024
+                        if total > 0:
+                            return total
+        except (OSError, UnicodeError, ValueError):
+            pass
+
+    try:
+        pages = int(os.sysconf("SC_PHYS_PAGES"))
+        page_size = int(os.sysconf("SC_PAGE_SIZE"))
+        total = pages * page_size
+        return total if total > 0 else None
+    except (AttributeError, OSError, TypeError, ValueError):
+        return None
+
+
 def _memory_limit_for_bytes(memory_bytes: Optional[int]) -> int:
     if memory_bytes is None:
         return MAX_ENVS_PER_ACTOR
@@ -357,6 +388,11 @@ def _memory_limit_for_bytes(memory_bytes: Optional[int]) -> int:
 def _memory_env_limit() -> int:
     """Safe initial environment count based on memory that is free right now."""
     return _memory_limit_for_bytes(_available_memory_bytes())
+
+
+def _memory_hard_limit() -> int:
+    """Maximum worker capacity from installed RAM, not transient free memory."""
+    return _memory_limit_for_bytes(_total_memory_bytes())
 
 
 def _cpu_env_start_limit() -> int:
@@ -1973,7 +2009,8 @@ def _worker_command(args: argparse.Namespace, root: Path, actor_key: str) -> lis
 def main(argv: Optional[Sequence[str]] = None) -> int:
     raw_argv = list(sys.argv[1:] if argv is None else argv)
     args = _parser().parse_args(raw_argv)
-    memory_hard_cap = _memory_env_limit()
+    memory_start_cap = _memory_env_limit()
+    memory_hard_cap = _memory_hard_limit()
     cpu_threads = _available_cpu_threads()
     cpu_start_cap = min(
         MAX_ENVS_PER_ACTOR,
@@ -1994,11 +2031,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             )
             return 2
         args.max_envs = requested_max
-        args.envs = max(args.min_envs, min(_default_envs(), args.max_envs))
+        args.envs = max(
+            args.min_envs,
+            min(cpu_start_cap, memory_start_cap, args.max_envs),
+        )
         print(
             f"[Bees remote] --envs omitted; auto optimizer enabled at {args.envs} envs "
             f"(range={args.min_envs}-{args.max_envs} cpu_threads={cpu_threads} "
-            f"cpu_start_cap={cpu_start_cap} memory_hard_cap={memory_hard_cap} "
+            f"cpu_start_cap={cpu_start_cap} memory_start_cap={memory_start_cap} "
+            f"memory_hard_cap={memory_hard_cap} "
             f"ram_per_env_mib={REMOTE_MEMORY_PER_ENV_BYTES // (1024 * 1024)} "
             f"ram_reserve_mib={REMOTE_MEMORY_RESERVE_BYTES // (1024 * 1024)})."
         )
