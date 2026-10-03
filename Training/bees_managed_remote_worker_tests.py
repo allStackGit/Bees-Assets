@@ -520,6 +520,7 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
         args = Namespace(
             tailnet_bridge="/tmp/bees-tailnet-bridge",
             tailnet_state="/tmp/tailnet-state",
+            install_root="/tmp/bees-worker-install",
             tailnet_hostname="bees-worker-test",
             tailnet_target="100.80.169.87",
             control_port=7150,
@@ -833,7 +834,7 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
         self.assertEqual(process.poll.call_count, 3)
         self.assertGreaterEqual(updater.request_refresh.call_count, 2)
 
-    def test_previous_stale_record_prefers_transport_recovery_before_worker_restart(self):
+    def test_stale_record_recycles_worker_without_tearing_down_reachable_transport(self):
         record = {"stale": True}
 
         self.assertEqual(
@@ -841,7 +842,6 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
                 record,
                 grace_started_monotonic=100.0,
                 now=129.9,
-                transport_recycles=0,
             ),
             "none",
         )
@@ -850,25 +850,6 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
                 record,
                 grace_started_monotonic=100.0,
                 now=130.0,
-                transport_recycles=0,
-            ),
-            "transport",
-        )
-        self.assertEqual(
-            managed.stale_trainer_recovery_action(
-                record,
-                grace_started_monotonic=100.0,
-                now=130.0,
-                transport_recycles=1,
-            ),
-            "transport",
-        )
-        self.assertEqual(
-            managed.stale_trainer_recovery_action(
-                record,
-                grace_started_monotonic=100.0,
-                now=130.0,
-                transport_recycles=2,
             ),
             "worker",
         )
@@ -877,7 +858,6 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
                 {"stale": False},
                 grace_started_monotonic=100.0,
                 now=1000.0,
-                transport_recycles=99,
             ),
             "none",
         )
@@ -1676,6 +1656,7 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
         args = Namespace(
             tailnet_bridge="bridge",
             tailnet_state="state",
+            install_root="install",
             tailnet_hostname="bees-worker-test",
             tailnet_target="100.64.0.10",
             control_port=7150,
@@ -1689,6 +1670,12 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
         self.assertIn("127.0.0.1:55051=100.64.0.10:55051", command)
         self.assertIn("127.0.0.1:7151=100.64.0.10:7151", command)
         self.assertIn("127.0.0.1:7146=100.64.0.10:7146", command)
+        self.assertIn("--ready-file", command)
+        self.assertTrue(
+            command[command.index("--ready-file") + 1].endswith(
+                managed.REMOTE_TAILNET_READY_FILE
+            )
+        )
         self.assertNotIn("ssh", " ".join(command).lower())
 
 
