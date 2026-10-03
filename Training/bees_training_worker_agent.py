@@ -9,6 +9,7 @@ unavailable. When control returns, the worker reconciles build/config state and 
 from __future__ import annotations
 
 import argparse
+import ctypes
 import hashlib
 import json
 import math
@@ -62,6 +63,8 @@ CHILD_HEALTH_PROGRESS_STALE_SECONDS = 60.0
 GRACEFUL_REMOTE_STOP_SECONDS = 20.0
 MANAGED_RESTART_STABLE_SECONDS = 60.0
 MANAGED_RESTART_BACKOFF_SECONDS = (1.0, 2.0, 5.0, 10.0, 30.0, 60.0, 120.0)
+WORKER_MEMORY_RESERVE_BYTES = 1 * 1024 * 1024 * 1024
+WORKER_MEMORY_PER_ENV_BYTES = 256 * 1024 * 1024
 
 
 MAX_RETAINED_RUN_LOG_DIRS = 3
@@ -94,6 +97,70 @@ def _prune_run_log_directories(root: Path, current_run_id: str) -> None:
     candidates.sort(reverse=True)
     for _, path in candidates[MAX_RETAINED_RUN_LOG_DIRS - 1:]:
         shutil.rmtree(path, ignore_errors=True)
+
+
+class _MemoryStatusEx(ctypes.Structure):
+    _fields_ = [
+        ("dwLength", ctypes.c_ulong),
+        ("dwMemoryLoad", ctypes.c_ulong),
+        ("ullTotalPhys", ctypes.c_ulonglong),
+        ("ullAvailPhys", ctypes.c_ulonglong),
+        ("ullTotalPageFile", ctypes.c_ulonglong),
+        ("ullAvailPageFile", ctypes.c_ulonglong),
+        ("ullTotalVirtual", ctypes.c_ulonglong),
+        ("ullAvailVirtual", ctypes.c_ulonglong),
+        ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
+    ]
+
+
+def _available_memory_bytes() -> Optional[int]:
+    if os.name == "nt":
+        try:
+            status = _MemoryStatusEx()
+            status.dwLength = ctypes.sizeof(status)
+            if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
+                available = int(status.ullAvailPhys)
+                if available > 0:
+                    return available
+        except (AttributeError, OSError, ValueError):
+            pass
+
+    meminfo = Path("/proc/meminfo")
+    if meminfo.is_file():
+        try:
+            for line in meminfo.read_text(encoding="ascii").splitlines():
+                if line.startswith("MemAvailable:"):
+                    parts = line.split()
+                    if len(parts) >= 2:
+                        available = int(parts[1]) * 1024
+                        if available > 0:
+                            return available
+        except (OSError, UnicodeError, ValueError):
+            pass
+
+    try:
+        pages = int(os.sysconf("SC_AVPHYS_PAGES"))
+        page_size = int(os.sysconf("SC_PAGE_SIZE"))
+        available = pages * page_size
+        return available if available > 0 else None
+    except (AttributeError, OSError, TypeError, ValueError):
+        return None
+
+
+def memory_safe_worker_max(
+    current_envs: int,
+    configured_max: int,
+    available_memory_bytes: Optional[int],
+) -> int:
+    """Advertise only incremental env capacity that current free RAM can support."""
+
+    current = max(1, int(current_envs))
+    ceiling = max(current, int(configured_max))
+    if available_memory_bytes is None:
+        return ceiling
+    spare = max(0, int(available_memory_bytes) - WORKER_MEMORY_RESERVE_BYTES)
+    additional = spare // WORKER_MEMORY_PER_ENV_BYTES
+    return min(ceiling, current + int(additional))
 
 
 def heartbeat_retry_delay(received_desired: bool, heartbeat_seconds: float) -> float:
@@ -2049,11 +2116,18 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             reported_envs = throughput.get("env_count") if throughput else None
             if isinstance(reported_envs, int) and not isinstance(reported_envs, bool):
                 current = reported_envs
+        advertised_max = int(args.worker_envs_max)
+        if args.auto_worker_envs:
+            advertised_max = memory_safe_worker_max(
+                int(current),
+                advertised_max,
+                _available_memory_bytes(),
+            )
         return {
             "auto": bool(args.auto_worker_envs),
             "current_envs": int(current),
             "min_envs": int(args.worker_envs_min),
-            "max_envs": int(args.worker_envs_max),
+            "max_envs": int(advertised_max),
         }
 
     def current_metrics(run_id: str) -> dict[str, object]:
