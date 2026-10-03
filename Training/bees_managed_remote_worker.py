@@ -616,6 +616,30 @@ def _request_graceful_worker_stop(
         return False
 
 
+def _restart_managed_worker_preserving_transport(
+    args: argparse.Namespace,
+    root: Path,
+    actor_key: str,
+    worker: Optional[subprocess.Popen],
+    worker_log_thread: Optional[threading.Thread],
+) -> tuple[subprocess.Popen, threading.Thread]:
+    """Replace only the worker process tree while leaving a proven-live tailnet bridge alone."""
+
+    worker_stopped = _request_graceful_worker_stop(
+        worker,
+        _worker_agent_stop_request_path(args),
+        timeout=_worker_cleanup_grace_seconds(True),
+    )
+    if not worker_stopped:
+        _terminate(worker)
+    if worker_log_thread is not None:
+        worker_log_thread.join(timeout=1.0)
+    return _start_logged_process(
+        _worker_command(args, root, actor_key),
+        environment=_worker_environment(args),
+    )
+
+
 def _wait_for_ports(
     ports: Sequence[int],
     process: subprocess.Popen,
@@ -2459,8 +2483,30 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                                     file=sys.stderr,
                                     flush=True,
                                 )
-                                worker_recycle_requested = True
-                                break
+                                try:
+                                    worker, worker_log_thread = (
+                                        _restart_managed_worker_preserving_transport(
+                                            args,
+                                            root,
+                                            actor_key,
+                                            worker,
+                                            worker_log_thread,
+                                        )
+                                    )
+                                except RuntimeError as exc:
+                                    raise _SupervisorProcessRestartRequired(
+                                        "stale managed worker could not be replaced cleanly: "
+                                        + str(exc)
+                                    ) from exc
+                                restarted_now = time.monotonic()
+                                worker_started_monotonic = restarted_now
+                                stale_recycle_grace_started_monotonic = restarted_now
+                                control_failure_watchdog.reset()
+                                inner_control_stall_watchdog.observe(True, restarted_now)
+                                broker_path_watchdog.observe(True, restarted_now)
+                                private_path_watchdog.observe(True, restarted_now)
+                                next_status = 0.0
+                                continue
                             if not updater.alive():
                                 if updater.revive():
                                     print(
