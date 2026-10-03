@@ -272,6 +272,46 @@ class WorkerTrafficMetricsTests(unittest.TestCase):
             self.assertEqual(snapshot["throughput"]["network_mib_per_s"], 1.25)
 
 
+class WorkerMemoryCapacityTests(unittest.TestCase):
+    def test_auto_capacity_recovers_as_free_memory_returns(self):
+        gib = 1024 * 1024 * 1024
+        mib = 1024 * 1024
+
+        self.assertEqual(
+            worker_agent.memory_safe_worker_max(
+                1,
+                28,
+                int(1.4 * gib),
+            ),
+            2,
+        )
+        self.assertEqual(
+            worker_agent.memory_safe_worker_max(
+                1,
+                28,
+                5 * gib,
+            ),
+            17,
+        )
+        self.assertEqual(
+            worker_agent.memory_safe_worker_max(
+                17,
+                28,
+                900 * mib,
+            ),
+            17,
+            "low headroom must block growth without reporting a max below the running env count",
+        )
+        self.assertEqual(
+            worker_agent.memory_safe_worker_max(
+                4,
+                12,
+                None,
+            ),
+            12,
+        )
+
+
 class ManagedRemoteWorkerTests(unittest.TestCase):
     def test_default_envs_start_at_one_per_available_thread_when_memory_allows(self):
         with (
