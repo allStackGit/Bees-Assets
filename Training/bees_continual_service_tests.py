@@ -295,6 +295,48 @@ class ContinualServiceTests(unittest.TestCase):
             self.assertIn("device: cuda", revised.read_text(encoding="utf-8"))
             self.assertEqual(service.write_generation_config(options, 0), revised)
 
+    def test_active_generation_allows_batch_size_revision_without_mutating_original(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            options = self._options(root, generation_steps=100)
+            original = service.write_generation_config(options, 0)
+            original_bytes = original.read_bytes()
+
+            options.trainer_config.write_text(
+                options.trainer_config.read_text(encoding="utf-8").replace(
+                    "batch_size: 512",
+                    "batch_size: 1024",
+                ),
+                encoding="utf-8",
+            )
+            revised = service.write_generation_config(options, 0)
+
+            self.assertNotEqual(revised, original)
+            self.assertEqual(original.read_bytes(), original_bytes)
+            self.assertEqual(revised.name, "generation-00000000-batch-1024.yaml")
+            self.assertIn("batch_size: 1024", revised.read_text(encoding="utf-8"))
+            self.assertEqual(service.write_generation_config(options, 0), revised)
+
+    def test_active_generation_rejects_non_resume_safe_hyperparameter_revision(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            options = self._options(root, generation_steps=100)
+            service.write_generation_config(options, 0)
+
+            options.trainer_config.write_text(
+                options.trainer_config.read_text(encoding="utf-8").replace(
+                    "learning_rate: 0.0003",
+                    "learning_rate: 0.001",
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "Immutable generation trainer config conflict",
+            ):
+                service.write_generation_config(options, 0)
+
     def test_active_generation_target_extension_preserves_original_immutable_config(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -765,7 +807,15 @@ class ContinualServiceTests(unittest.TestCase):
         training.mkdir(parents=True, exist_ok=True)
         trainer_config = training / "rl_1v1_config.yaml"
         trainer_config.write_text(
-            "behaviors:\n  BeesRL1v1:\n    trainer_type: ppo\n    max_steps: 2000000000\n",
+            "torch_settings:\n"
+            "  device: cpu\n"
+            "behaviors:\n"
+            "  BeesRL1v1:\n"
+            "    trainer_type: ppo\n"
+            "    hyperparameters:\n"
+            "      batch_size: 512\n"
+            "      learning_rate: 0.0003\n"
+            "    max_steps: 2000000000\n",
             encoding="utf-8",
         )
         continual_config = training / "continual_learning_config.json"
