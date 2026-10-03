@@ -820,10 +820,11 @@ class PocaBatchedTrajectoryEvaluationTests(unittest.TestCase):
             optimizer=SimpleNamespace(critic=FakeCritic()),
         )
 
+        merged = compat._merge_agent_buffers(buffers)
         values, baselines, next_values = (
             compat._evaluate_poca_trajectory_batch(
                 trainer,
-                buffers,
+                merged,
                 trajectories,
             )
         )
@@ -964,6 +965,133 @@ class PocaGpuCachePromotionTests(unittest.TestCase):
         self.assertEqual(info["allocator_reusable_before"], 3 * 1024**3)
         self.assertEqual(info["free_before"], 3 * 1024**3)
 
+    def test_packed_group_cache_promotes_after_fixed_cache_when_vram_permits(self):
+        import numpy as np
+        from mlagents.torch_utils import torch
+
+        group = compat._PocaPackedGroupObs(
+            [
+                [
+                    compat._PocaPackedGroupPosition(
+                        np.asarray([0], dtype=np.int32),
+                        torch.zeros((1, 4), dtype=torch.float32),
+                    )
+                ]
+            ],
+            4 * 4,
+        )
+        cache = {
+            "current_obs": [torch.zeros((2, 3), dtype=torch.float32)],
+            "groupmate_obs": group,
+            "storage": "cpu",
+        }
+
+        with (
+            mock.patch(
+                "mlagents.torch_utils.default_device",
+                return_value=torch.device("cuda"),
+            ),
+            mock.patch.object(torch.cuda, "is_available", return_value=True),
+            mock.patch.object(torch.cuda, "current_device", return_value=0),
+            mock.patch.object(
+                torch.cuda,
+                "mem_get_info",
+                side_effect=[
+                    (6 * 1024**3, 6 * 1024**3),
+                    (5 * 1024**3, 6 * 1024**3),
+                ],
+            ),
+            mock.patch.object(
+                torch.cuda,
+                "memory_allocated",
+                return_value=512 * 1024**2,
+            ),
+            mock.patch.object(
+                torch.cuda,
+                "memory_reserved",
+                return_value=1024 * 1024**2,
+            ),
+            mock.patch.object(
+                compat,
+                "_poca_move_cache_tensors",
+                side_effect=lambda value, _device: dict(value),
+            ),
+            mock.patch.object(
+                compat,
+                "_move_poca_packed_group_obs",
+                return_value=group,
+            ) as move_group,
+        ):
+            promoted, info = compat._promote_poca_update_tensor_cache(cache)
+
+        self.assertEqual(promoted["storage"], "cuda")
+        self.assertEqual(info["group_storage"], "cuda")
+        self.assertEqual(info["group_bytes"], 16)
+        move_group.assert_called_once()
+
+    def test_group_cache_stays_cpu_without_displacing_fixed_gpu_cache(self):
+        import numpy as np
+        from mlagents.torch_utils import torch
+
+        group = compat._PocaPackedGroupObs(
+            [
+                [
+                    compat._PocaPackedGroupPosition(
+                        np.asarray([0], dtype=np.int32),
+                        torch.zeros((1, 4), dtype=torch.float32),
+                    )
+                ]
+            ],
+            3 * 1024**3,
+        )
+        cache = {
+            "current_obs": [torch.zeros((2, 3), dtype=torch.float32)],
+            "groupmate_obs": group,
+            "storage": "cpu",
+        }
+
+        with (
+            mock.patch(
+                "mlagents.torch_utils.default_device",
+                return_value=torch.device("cuda"),
+            ),
+            mock.patch.object(torch.cuda, "is_available", return_value=True),
+            mock.patch.object(torch.cuda, "current_device", return_value=0),
+            mock.patch.object(
+                torch.cuda,
+                "mem_get_info",
+                side_effect=[
+                    (6 * 1024**3, 6 * 1024**3),
+                    (1024**3, 6 * 1024**3),
+                ],
+            ),
+            mock.patch.object(
+                torch.cuda,
+                "memory_allocated",
+                return_value=512 * 1024**2,
+            ),
+            mock.patch.object(
+                torch.cuda,
+                "memory_reserved",
+                return_value=1024 * 1024**2,
+            ),
+            mock.patch.object(
+                compat,
+                "_poca_move_cache_tensors",
+                side_effect=lambda value, _device: dict(value),
+            ),
+            mock.patch.object(
+                compat,
+                "_move_poca_packed_group_obs",
+            ) as move_group,
+        ):
+            promoted, info = compat._promote_poca_update_tensor_cache(cache)
+
+        self.assertEqual(promoted["storage"], "cuda")
+        self.assertIs(promoted["groupmate_obs"], group)
+        self.assertEqual(info["group_storage"], "cpu")
+        move_group.assert_not_called()
+
     def test_cpu_device_keeps_cache_on_cpu(self):
         from mlagents.torch_utils import torch
 
@@ -990,6 +1118,52 @@ class PocaBusyTelemetryTests(unittest.TestCase):
             compat.poca_update_busy_seconds_total(),
             before + 1.25,
         )
+
+
+class PocaTrajectoryGroupTensorTests(unittest.TestCase):
+    def test_compact_transfer_matches_stock_group_padding(self):
+        import numpy as np
+        from mlagents.torch_utils import torch
+        from mlagents.trainers.buffer import AgentBuffer
+        from mlagents.trainers.trajectory import GroupObsUtil
+
+        buffer = AgentBuffer()
+        entries = (
+            [np.asarray([1.0, 2.0, 3.0, 4.0], dtype=np.float32)],
+            [],
+            [
+                np.asarray([5.0, 6.0, 7.0, 8.0], dtype=np.float32),
+                np.asarray([9.0, 10.0, 11.0, 12.0], dtype=np.float32),
+            ],
+        )
+        for entry in entries:
+            buffer[GroupObsUtil.get_name_at(0)].append(list(entry))
+
+        policy = SimpleNamespace(
+            behavior_spec=SimpleNamespace(
+                observation_specs=[
+                    SimpleNamespace(shape=(4,))
+                ]
+            )
+        )
+        counts = np.asarray([1, 0, 2], dtype=np.int32)
+        actual = compat._poca_group_obs_tensors_from_buffer(
+            policy,
+            buffer,
+            counts,
+            torch.device("cpu"),
+        )
+        stock = GroupObsUtil.from_buffer(buffer, 1)
+
+        self.assertEqual(len(actual), len(stock))
+        for position in range(len(stock)):
+            expected = np.asarray(stock[position][0], dtype=np.float32)
+            observed = actual[position][0].detach().cpu().numpy()
+            np.testing.assert_allclose(
+                observed,
+                expected,
+                equal_nan=True,
+            )
 
 
 class PocaTensorCacheTests(unittest.TestCase):
@@ -1105,7 +1279,11 @@ class PocaTensorCacheTests(unittest.TestCase):
             policy = SimpleNamespace(
                 sequence_length=1,
                 behavior_spec=SimpleNamespace(
-                    observation_specs=[object()],
+                    observation_specs=[
+                        SimpleNamespace(
+                            shape=(compat.BEES_OBSERVATION_SIZE,)
+                        )
+                    ],
                     action_spec=SimpleNamespace(
                         continuous_size=compat.BEES_CONTINUOUS_ACTIONS,
                         discrete_branches=compat.BEES_DISCRETE_BRANCHES,
@@ -1174,6 +1352,26 @@ class PocaTensorCacheTests(unittest.TestCase):
             self.assertTrue(np.isnan(second_groupmate[1]))
             self.assertIsInstance(
                 cache["groupmate_obs"],
+                compat._PocaPackedGroupObs,
+            )
+            self.assertEqual(
+                compat._poca_group_obs_cache_nbytes(
+                    cache["groupmate_obs"]
+                ),
+                4 * compat.BEES_OBSERVATION_SIZE * 4,
+            )
+            with mock.patch.object(
+                compat,
+                "POCA_PACKED_GROUP_CACHE_MAX_BYTES",
+                1,
+            ):
+                fallback_group_obs = compat._build_poca_group_obs_cache(
+                    policy,
+                    buffer,
+                    np.asarray([1, 1, 2], dtype=np.int32),
+                )
+            self.assertIsInstance(
+                fallback_group_obs,
                 compat._PocaRaggedGroupObs,
             )
             np.testing.assert_array_equal(
