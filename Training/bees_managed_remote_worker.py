@@ -662,7 +662,10 @@ def _wait_for_ports(
     return not pending
 
 
-def _tailnet_forward_command(args: argparse.Namespace) -> list[str]:
+def _tailnet_forward_command(
+    args: argparse.Namespace,
+    ready_path: Path,
+) -> list[str]:
     return [
         str(Path(args.tailnet_bridge).expanduser().resolve()),
         "forward-multi",
@@ -671,7 +674,7 @@ def _tailnet_forward_command(args: argparse.Namespace) -> list[str]:
         "--hostname",
         args.tailnet_hostname,
         "--ready-file",
-        str(_tailnet_ready_path(args)),
+        str(ready_path),
         "--map",
         f"127.0.0.1:{args.control_port}={args.tailnet_target}:{args.control_port}",
         "--map",
@@ -1625,13 +1628,16 @@ class _TransportWatchdog:
         return now - self.failure_since >= self.timeout_seconds
 
 
-def _tailnet_ready_path(args: argparse.Namespace) -> Path:
-    return Path(args.install_root).expanduser().resolve() / REMOTE_TAILNET_READY_FILE
+def _new_tailnet_ready_path(args: argparse.Namespace) -> Path:
+    install_root = Path(args.install_root).expanduser().resolve()
+    return install_root / f"{REMOTE_TAILNET_READY_FILE}.{uuid.uuid4().hex}"
 
 
-def _clear_tailnet_ready_file(args: argparse.Namespace) -> None:
+def _clear_tailnet_ready_file(ready_path: Optional[Path]) -> None:
+    if ready_path is None:
+        return
     try:
-        _tailnet_ready_path(args).unlink()
+        ready_path.unlink()
     except FileNotFoundError:
         pass
 
@@ -1640,26 +1646,23 @@ def _wait_for_private_transport(
     args: argparse.Namespace,
     process: subprocess.Popen,
     stop: list[bool],
+    ready_path: Path,
     timeout: float = 30.0,
 ) -> bool:
-    """Require readiness published by this exact forwarder process.
+    """Require readiness published for this exact forwarder launch.
 
     Merely seeing the localhost ports open is insufficient: after an abnormal supervisor exit,
-    an orphaned bridge can still own those listeners. A replacement bridge then fails with
-    EADDRINUSE, but the old port-only readiness check could incorrectly declare it healthy.
-    forward-multi writes its PID only after it has successfully bound every requested listener.
+    an orphaned bridge can still own those listeners. Each launch gets a unique ready-file path,
+    so only the bridge started for this launch can publish the marker that satisfies readiness.
+    This remains correct when popen_owned inserts a Linux ownership guardian whose PID differs
+    from the actual bridge process.
     """
 
-    ready_path = _tailnet_ready_path(args)
     deadline = time.monotonic() + min(timeout, 20.0)
     while not stop[0] and time.monotonic() < deadline:
         if process.poll() is not None:
             return False
-        try:
-            ready_pid = int(ready_path.read_text(encoding="ascii").strip())
-        except (FileNotFoundError, OSError, UnicodeError, ValueError):
-            ready_pid = -1
-        if ready_pid == int(process.pid):
+        if ready_path.is_file():
             remaining = max(0.1, deadline - time.monotonic())
             return _wait_for_ports(
                 (
@@ -2174,6 +2177,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         while not stop[0]:
             tailnet: Optional[subprocess.Popen] = None
             tailnet_log_thread: Optional[threading.Thread] = None
+            tailnet_ready_path: Optional[Path] = None
             worker: Optional[subprocess.Popen] = None
             worker_log_thread: Optional[threading.Thread] = None
             worker_started_monotonic = 0.0
@@ -2181,14 +2185,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             runtime_cutover: Optional[Path] = None
             worker_recycle_requested = False
             try:
-                _clear_tailnet_ready_file(args)
+                tailnet_ready_path = _new_tailnet_ready_path(args)
+                _clear_tailnet_ready_file(tailnet_ready_path)
                 tailnet, tailnet_log_thread = _start_logged_process(
-                    _tailnet_forward_command(args)
+                    _tailnet_forward_command(args, tailnet_ready_path)
                 )
                 if not _wait_for_private_transport(
                     args,
                     tailnet,
                     stop,
+                    tailnet_ready_path,
                 ):
                     code = tailnet.poll()
                     print(
@@ -2274,11 +2280,17 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                                     break
                                 time.sleep(args.reconnect_seconds)
 
-                            _clear_tailnet_ready_file(args)
+                            _clear_tailnet_ready_file(tailnet_ready_path)
+                            tailnet_ready_path = _new_tailnet_ready_path(args)
                             tailnet, tailnet_log_thread = _start_logged_process(
-                                _tailnet_forward_command(args)
+                                _tailnet_forward_command(args, tailnet_ready_path)
                             )
-                            if not _wait_for_private_transport(args, tailnet, stop):
+                            if not _wait_for_private_transport(
+                                args,
+                                tailnet,
+                                stop,
+                                tailnet_ready_path,
+                            ):
                                 code = tailnet.poll()
                                 print(
                                     "[Bees remote] replacement private tailnet forwarder "
@@ -2580,6 +2592,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     worker_log_thread.join(timeout=1.0)
                 if tailnet_log_thread is not None:
                     tailnet_log_thread.join(timeout=1.0)
+                _clear_tailnet_ready_file(tailnet_ready_path)
                 if termination_errors:
                     raise _SupervisorProcessRestartRequired(
                         "remote supervisor cleanup could not confirm child shutdown: " +
