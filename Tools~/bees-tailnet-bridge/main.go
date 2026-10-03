@@ -1290,12 +1290,17 @@ func runForwardMulti(args []string) error {
 	fs := flag.NewFlagSet("forward-multi", flag.ContinueOnError)
 	c := addCommon(fs)
 	var mappings stringList
+	readyFile := fs.String("ready-file", "", "optional PID marker written after all local listeners are owned")
 	fs.Var(&mappings, "map", "repeatable local=tailnet-target TCP mapping")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if len(mappings) == 0 {
 		return errors.New("at least one --map is required")
+	}
+	if strings.TrimSpace(*readyFile) != "" {
+		_ = os.Remove(*readyFile)
+		defer os.Remove(*readyFile)
 	}
 	s, err := server(c)
 	if err != nil {
@@ -1312,6 +1317,11 @@ func runForwardMulti(args []string) error {
 
 	_ = ip4 // The address anchors this persistent tsnet identity; transient backend state is telemetry only.
 	listeners := make([]net.Listener, 0, len(mappings))
+	defer func() {
+		for _, ln := range listeners {
+			_ = ln.Close()
+		}
+	}()
 	remoteTargets := make([]string, 0, len(mappings))
 	for _, mapping := range mappings {
 		local, remote, err := parseMapping(mapping)
@@ -1327,12 +1337,16 @@ func runForwardMulti(args []string) error {
 		go proxyListener(ctx, ln, tailnetDial(s, remote), local+" -> "+remote, nil)
 		log.Printf("[Bees tailnet] forwarding %s -> %s", local, remote)
 	}
-	startTailnetTelemetry(ctx, s, remoteTargets, "forward")
-	defer func() {
-		for _, ln := range listeners {
-			_ = ln.Close()
+	if strings.TrimSpace(*readyFile) != "" {
+		if err := atomicWrite(*readyFile, 0o600, func(dst io.Writer) error {
+			_, writeErr := fmt.Fprintf(dst, "%d\n", os.Getpid())
+			return writeErr
+		}); err != nil {
+			return fmt.Errorf("publish forward readiness: %w", err)
 		}
-	}()
+		log.Printf("[Bees tailnet] private forward ready pid=%d", os.Getpid())
+	}
+	startTailnetTelemetry(ctx, s, remoteTargets, "forward")
 	go func() {
 		<-ctx.Done()
 		for _, ln := range listeners {
