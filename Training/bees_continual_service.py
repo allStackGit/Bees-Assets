@@ -204,29 +204,62 @@ def _torch_device_from_config(text: str) -> str:
     raise ValueError("Trainer config torch_settings block has no device")
 
 
-def _normalize_runtime_device(text: str) -> str:
+def _batch_size_from_config(text: str) -> Optional[int]:
+    matches = re.findall(
+        r"(?m)^(\s*)batch_size:\s*(\d+)\s*(?:#.*)?$",
+        text,
+    )
+    if len(matches) > 1:
+        raise ValueError(
+            f"Expected at most one integer batch_size entry in trainer config; found {len(matches)}."
+        )
+    return int(matches[0][1]) if matches else None
+
+
+def _normalize_resume_safe_generation_settings(text: str) -> str:
+    """Normalize trainer settings that may change while resuming one generation.
+
+    Generation YAML files remain immutable audit records. Device placement and PPO
+    minibatch size can change without invalidating the ML-Agents checkpoint shape,
+    so a resumed generation may select a new immutable revision containing those
+    values. Other trainer changes remain fail-closed.
+    """
+
     lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
     in_torch_settings = False
     torch_indent = -1
     normalized = []
-    replaced = False
+    batch_size_count = 0
     for line in lines:
         stripped = line.strip()
         indent = len(line) - len(line.lstrip())
-        if not in_torch_settings and re.fullmatch(r"torch_settings:\s*(?:#.*)?", stripped):
+        if not in_torch_settings and re.fullmatch(
+            r"torch_settings:\s*(?:#.*)?",
+            stripped,
+        ):
             in_torch_settings = True
             torch_indent = indent
             normalized.append(line)
             continue
         if in_torch_settings and stripped and indent <= torch_indent:
             in_torch_settings = False
-        if in_torch_settings and re.fullmatch(r"device:\s*([^#\s]+)\s*(?:#.*)?", stripped):
+        if in_torch_settings and re.fullmatch(
+            r"device:\s*([^#\s]+)\s*(?:#.*)?",
+            stripped,
+        ):
             normalized.append(" " * indent + "device: <runtime-device>")
-            replaced = True
-        else:
-            normalized.append(line)
-    if not replaced:
-        raise ValueError("Trainer config torch_settings block has no device")
+            continue
+        if re.fullmatch(r"batch_size:\s*(\d+)\s*(?:#.*)?", stripped):
+            batch_size_count += 1
+            normalized.append(" " * indent + "batch_size: <runtime-batch-size>")
+            continue
+        normalized.append(line)
+
+    if batch_size_count > 1:
+        raise ValueError(
+            "Trainer config has multiple batch_size entries; cannot determine a "
+            "single resumable generation setting."
+        )
     return "\n".join(normalized)
 
 
@@ -265,25 +298,38 @@ def write_generation_config(options: ServiceOptions, index: int) -> Path:
     existing_target = _max_steps_from_config(existing_text)
     candidate_text = body.decode("utf-8")
 
-    # Execution device is not part of checkpoint/learning semantics. Preserve the immutable
-    # original audit record, but allow a device-specific immutable revision so a CPU<->CUDA
-    # deployment can resume the same generation/checkpoint lineage.
+    # Preserve the original generation audit record while allowing settings that
+    # ML-Agents can safely resume with the same checkpoint tensors. The selected
+    # revision path records exactly which resume-safe settings changed.
     comparison_existing = existing_text
     if target_steps > existing_target:
         comparison_existing = rewrite_max_steps(existing_text, target_steps)
     if (
         target_steps >= existing_target
-        and _normalize_runtime_device(comparison_existing)
-        == _normalize_runtime_device(candidate_text)
+        and _normalize_resume_safe_generation_settings(comparison_existing)
+        == _normalize_resume_safe_generation_settings(candidate_text)
     ):
-        device = _torch_device_from_config(candidate_text)
-        suffix = (
-            f"-target-{target_steps}-device-{device}"
-            if target_steps != existing_target
-            else f"-device-{device}"
-        )
-        revised = config_root / f"{generation_id(index)}{suffix}.yaml"
-        return _write_immutable_generation_config(revised, body)
+        suffix_parts = []
+        if target_steps != existing_target:
+            suffix_parts.append(f"target-{target_steps}")
+
+        try:
+            existing_device = _torch_device_from_config(existing_text)
+            candidate_device = _torch_device_from_config(candidate_text)
+        except ValueError:
+            existing_device = candidate_device = None
+        if candidate_device != existing_device:
+            suffix_parts.append(f"device-{candidate_device}")
+
+        existing_batch_size = _batch_size_from_config(existing_text)
+        candidate_batch_size = _batch_size_from_config(candidate_text)
+        if candidate_batch_size != existing_batch_size:
+            suffix_parts.append(f"batch-{candidate_batch_size}")
+
+        if suffix_parts:
+            suffix = "-" + "-".join(suffix_parts)
+            revised = config_root / f"{generation_id(index)}{suffix}.yaml"
+            return _write_immutable_generation_config(revised, body)
 
     if target_steps <= existing_target:
         raise ValueError(f"Immutable generation trainer config conflict: {destination}")
