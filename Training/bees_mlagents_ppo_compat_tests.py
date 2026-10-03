@@ -851,6 +851,67 @@ class PocaBatchedTrajectoryEvaluationTests(unittest.TestCase):
         )
 
 
+class PocaCudaTimingTests(unittest.TestCase):
+    def tearDown(self):
+        compat._POCA_TIMING_STATE.timing_totals = None
+        compat._POCA_TIMING_STATE.timing_counts = None
+        compat._POCA_TIMING_STATE.cuda_events = None
+
+    def test_cuda_timing_records_elapsed_after_single_flush(self):
+        from mlagents.torch_utils import torch
+
+        start_event = mock.Mock()
+        end_event = mock.Mock()
+        start_event.elapsed_time.return_value = 125.0
+
+        compat._POCA_TIMING_STATE.timing_totals = {}
+        compat._POCA_TIMING_STATE.timing_counts = {}
+        compat._POCA_TIMING_STATE.cuda_events = []
+
+        with (
+            mock.patch.object(torch.cuda, "is_available", return_value=True),
+            mock.patch.object(
+                torch.cuda,
+                "Event",
+                side_effect=[start_event, end_event],
+            ),
+            mock.patch.object(torch.cuda, "synchronize") as synchronize,
+        ):
+            marker = compat._poca_cuda_timing_begin("critic_pass")
+            compat._poca_cuda_timing_end(marker)
+
+            start_event.record.assert_called_once_with()
+            end_event.record.assert_called_once_with()
+            synchronize.assert_not_called()
+
+            compat._poca_flush_cuda_timings()
+
+        synchronize.assert_called_once_with()
+        start_event.elapsed_time.assert_called_once_with(end_event)
+        self.assertAlmostEqual(
+            compat._poca_average_timing("cuda_critic_pass"),
+            0.125,
+        )
+        self.assertEqual(compat._POCA_TIMING_STATE.cuda_events, [])
+
+    def test_cuda_timing_is_disabled_when_cuda_is_unavailable(self):
+        from mlagents.torch_utils import torch
+
+        compat._POCA_TIMING_STATE.timing_totals = {}
+        compat._POCA_TIMING_STATE.timing_counts = {}
+        compat._POCA_TIMING_STATE.cuda_events = []
+
+        with (
+            mock.patch.object(torch.cuda, "is_available", return_value=False),
+            mock.patch.object(torch.cuda, "Event") as event,
+        ):
+            marker = compat._poca_cuda_timing_begin("critic_pass")
+
+        self.assertIsNone(marker)
+        event.assert_not_called()
+        self.assertEqual(compat._POCA_TIMING_STATE.cuda_events, [])
+
+
 class PocaGpuCachePromotionTests(unittest.TestCase):
     def test_cache_size_counts_nested_tensors_once(self):
         from mlagents.torch_utils import torch
