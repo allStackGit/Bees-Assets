@@ -569,7 +569,8 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
             gameplay_port=7146,
         )
 
-        command = managed._tailnet_forward_command(args)
+        ready_path = managed._new_tailnet_ready_path(args)
+        command = managed._tailnet_forward_command(args, ready_path)
         self.assertIn(
             "127.0.0.1:7146=100.80.169.87:7146",
             command,
@@ -1501,7 +1502,8 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
             "--wan-token-file", "wan.token",
         ])
         self.assertEqual(args.gameplay_port, 7146)
-        command = managed._tailnet_forward_command(args)
+        ready_path = managed._new_tailnet_ready_path(args)
+        command = managed._tailnet_forward_command(args, ready_path)
         self.assertIn("127.0.0.1:7146=100.64.0.10:7146", command)
 
     def test_managed_worker_command_uses_actor_key_and_local_tailnet_broker(self):
