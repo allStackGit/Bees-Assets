@@ -681,6 +681,55 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
             self.assertEqual(request.read_text(encoding="ascii"), "stop\n")
             process.wait.assert_called_once_with(timeout=7.0)
 
+    def test_stale_worker_restart_preserves_transport_process(self):
+        args = Namespace(
+            install_root="/tmp/bees-worker",
+            control_port=7150,
+            broker_port=55051,
+            worker_token_file="worker.token",
+            envs=4,
+            min_envs=1,
+            max_envs=16,
+            auto_envs=True,
+            wan_token_file="wan.token",
+            torch_device="cpu",
+        )
+        worker = mock.Mock()
+        worker_log_thread = mock.Mock()
+        replacement = mock.Mock()
+        replacement_thread = mock.Mock()
+
+        with (
+            mock.patch.object(
+                managed,
+                "_request_graceful_worker_stop",
+                return_value=True,
+            ) as graceful,
+            mock.patch.object(managed, "_terminate") as terminate,
+            mock.patch.object(
+                managed,
+                "_start_logged_process",
+                return_value=(replacement, replacement_thread),
+            ) as start,
+        ):
+            actual = managed._restart_managed_worker_preserving_transport(
+                args,
+                Path("/runtime"),
+                "a" * 32,
+                worker,
+                worker_log_thread,
+            )
+
+        self.assertEqual(actual, (replacement, replacement_thread))
+        graceful.assert_called_once()
+        terminate.assert_not_called()
+        worker_log_thread.join.assert_called_once_with(timeout=1.0)
+        start.assert_called_once()
+        self.assertIn(
+            "--actor-key",
+            start.call_args.args[0],
+        )
+
     def test_runtime_alignment_waits_until_current_runtime_is_verified_for_canonical_build(self):
         args = Namespace(transport_watchdog_seconds=30.0)
         process = mock.Mock()
