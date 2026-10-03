@@ -303,7 +303,7 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
         ):
             self.assertEqual(managed._memory_env_limit(), 28)
 
-    def test_low_free_memory_is_a_hard_auto_capacity_bound(self):
+    def test_low_free_memory_limits_startup_without_permanently_lowering_capacity(self):
         gib = 1024 * 1024 * 1024
         with (
             mock.patch.object(
@@ -311,9 +311,15 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
                 "_available_memory_bytes",
                 return_value=int(1.4 * gib),
             ),
+            mock.patch.object(
+                managed,
+                "_total_memory_bytes",
+                return_value=8 * gib,
+            ),
             mock.patch.object(managed, "_available_cpu_threads", return_value=8),
         ):
             self.assertEqual(managed._memory_env_limit(), 1)
+            self.assertEqual(managed._memory_hard_limit(), 28)
             self.assertEqual(managed._default_envs(), 1)
 
 
