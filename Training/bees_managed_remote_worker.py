@@ -37,7 +37,6 @@ from bees_process_safety import close_windows_owned_child_job, popen_owned
 
 DEFAULT_RECONNECT_SECONDS = 5.0
 WORKER_REGISTRATION_GRACE_SECONDS = 30.0
-MAX_STALE_TRANSPORT_RECYCLES = 2
 BROKER_PATH_FAILURE_SECONDS = 60.0
 PRIVATE_PATH_FAILURE_SECONDS = 30.0
 DEFAULT_GAMEPLAY_PORT = 7146
@@ -50,6 +49,7 @@ REMOTE_MEMORY_PER_ENV_BYTES = 256 * 1024 * 1024
 REMOTE_PID_FILE = "remote-worker.pid"
 REMOTE_STOP_REQUEST_FILE = "remote-worker.stop"
 REMOTE_WORKER_AGENT_STOP_REQUEST_FILE = "worker-agent-stop.request"
+REMOTE_TAILNET_READY_FILE = "tailnet-forward.ready"
 MAX_RETAINED_RUNTIME_VERSIONS = 4
 MAX_RETAINED_VENV_VERSIONS = 4
 RUN_ID_PATTERN = re.compile(r"^[A-Za-z0-9._-]+$")
@@ -610,6 +610,8 @@ def _tailnet_forward_command(args: argparse.Namespace) -> list[str]:
         str(Path(args.tailnet_state).expanduser().resolve()),
         "--hostname",
         args.tailnet_hostname,
+        "--ready-file",
+        str(_tailnet_ready_path(args)),
         "--map",
         f"127.0.0.1:{args.control_port}={args.tailnet_target}:{args.control_port}",
         "--map",
@@ -1563,24 +1565,55 @@ class _TransportWatchdog:
         return now - self.failure_since >= self.timeout_seconds
 
 
+def _tailnet_ready_path(args: argparse.Namespace) -> Path:
+    return Path(args.install_root).expanduser().resolve() / REMOTE_TAILNET_READY_FILE
+
+
+def _clear_tailnet_ready_file(args: argparse.Namespace) -> None:
+    try:
+        _tailnet_ready_path(args).unlink()
+    except FileNotFoundError:
+        pass
+
+
 def _wait_for_private_transport(
     args: argparse.Namespace,
     process: subprocess.Popen,
     stop: list[bool],
     timeout: float = 30.0,
 ) -> bool:
-    """Wait only for the local forwarder, not for the central services behind it.
+    """Require readiness published by this exact forwarder process.
 
-    forward-multi binds these listeners only after tsnet itself is up. Central control, broker,
-    bootstrap, and gameplay targets have independent lifecycles and may legitimately be down
-    during a runtime/server cutover; their availability must not decide whether tsnet is healthy.
+    Merely seeing the localhost ports open is insufficient: after an abnormal supervisor exit,
+    an orphaned bridge can still own those listeners. A replacement bridge then fails with
+    EADDRINUSE, but the old port-only readiness check could incorrectly declare it healthy.
+    forward-multi writes its PID only after it has successfully bound every requested listener.
     """
-    return _wait_for_ports(
-        (args.control_port, args.broker_port, args.bootstrap_port, args.gameplay_port),
-        process,
-        stop,
-        timeout=min(timeout, 20.0),
-    )
+
+    ready_path = _tailnet_ready_path(args)
+    deadline = time.monotonic() + min(timeout, 20.0)
+    while not stop[0] and time.monotonic() < deadline:
+        if process.poll() is not None:
+            return False
+        try:
+            ready_pid = int(ready_path.read_text(encoding="ascii").strip())
+        except (FileNotFoundError, OSError, UnicodeError, ValueError):
+            ready_pid = -1
+        if ready_pid == int(process.pid):
+            remaining = max(0.1, deadline - time.monotonic())
+            return _wait_for_ports(
+                (
+                    args.control_port,
+                    args.broker_port,
+                    args.bootstrap_port,
+                    args.gameplay_port,
+                ),
+                process,
+                stop,
+                timeout=remaining,
+            )
+        time.sleep(0.1)
+    return False
 
 
 _STATUS_UNSET = object()
@@ -1632,17 +1665,18 @@ def stale_trainer_recovery_action(
     *,
     grace_started_monotonic: float,
     now: float,
-    transport_recycles: int,
     grace_seconds: float = WORKER_REGISTRATION_GRACE_SECONDS,
-    max_transport_recycles: int = MAX_STALE_TRANSPORT_RECYCLES,
 ) -> str:
-    """Choose bounded recovery without killing a locally live worker on the first stale record."""
+    """Recycle a stale worker only after its registration grace has expired.
+
+    This function is evaluated from a successful outer control response. That response proves
+    the private control forward is carrying traffic, so a stale inner trainer heartbeat is a
+    worker-lifecycle failure, not evidence that the tsnet process should be torn down.
+    """
     if not isinstance(record, Mapping) or not bool(record.get("stale", False)):
         return "none"
     if now - float(grace_started_monotonic) < max(0.0, float(grace_seconds)):
         return "none"
-    if max(0, int(transport_recycles)) < max(0, int(max_transport_recycles)):
-        return "transport"
     return "worker"
 
 
@@ -2081,8 +2115,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             stale_recycle_grace_started_monotonic = 0.0
             runtime_cutover: Optional[Path] = None
             worker_recycle_requested = False
-            stale_transport_recycles = 0
             try:
+                _clear_tailnet_ready_file(args)
                 tailnet, tailnet_log_thread = _start_logged_process(
                     _tailnet_forward_command(args)
                 )
@@ -2175,6 +2209,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                                     break
                                 time.sleep(args.reconnect_seconds)
 
+                            _clear_tailnet_ready_file(args)
                             tailnet, tailnet_log_thread = _start_logged_process(
                                 _tailnet_forward_command(args)
                             )
@@ -2313,8 +2348,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                             # the new worker one bounded heartbeat-registration window before using
                             # that historical record to trigger another recycle; otherwise the
                             # supervisor can kill every replacement before its first heartbeat.
-                            if control_healthy and not record_stale:
-                                stale_transport_recycles = 0
                             if control_healthy and not record_stale and not registration_grace:
                                 if inner_control_stall_watchdog.observe(
                                     not _inner_control_stalled(status, record),
@@ -2375,37 +2408,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                                 record,
                                 grace_started_monotonic=stale_recycle_grace_started_monotonic,
                                 now=now,
-                                transport_recycles=stale_transport_recycles,
                             )
-                            if stale_action == "transport":
-                                stale_transport_recycles += 1
-                                print(
-                                    "[Bees remote] trainer heartbeat remained STALE beyond the "
-                                    f"{WORKER_REGISTRATION_GRACE_SECONDS:g}s registration grace; "
-                                    "recycling private transport while keeping the managed worker "
-                                    f"alive (attempt {stale_transport_recycles}/"
-                                    f"{MAX_STALE_TRANSPORT_RECYCLES}).",
-                                    file=sys.stderr,
-                                    flush=True,
-                                )
-                                try:
-                                    _terminate(tailnet)
-                                except RuntimeError as exc:
-                                    raise _SupervisorProcessRestartRequired(
-                                        "stale-trainer transport could not be recycled: "
-                                        + str(exc)
-                                    ) from exc
-                                if tailnet_log_thread is not None:
-                                    tailnet_log_thread.join(timeout=1.0)
-                                tailnet = None
-                                tailnet_log_thread = None
-                                stale_recycle_grace_started_monotonic = now
-                                continue
                             if stale_action == "worker":
                                 print(
-                                    "[Bees remote] trainer heartbeat remained STALE after "
-                                    f"{MAX_STALE_TRANSPORT_RECYCLES} private-transport recoveries; "
-                                    "recycling the managed worker as the final bounded recovery step.",
+                                    "[Bees remote] trainer heartbeat remained STALE beyond the "
+                                    f"{WORKER_REGISTRATION_GRACE_SECONDS:g}s registration grace "
+                                    "while outer control remains reachable; recycling the managed "
+                                    "worker without disturbing the healthy private transport.",
                                     file=sys.stderr,
                                     flush=True,
                                 )
