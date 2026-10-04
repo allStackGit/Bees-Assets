@@ -2739,7 +2739,12 @@ def _poca_build_observation_dedup_plan(cached):
     group_inverse = []
     input_rows = int(current_rows.shape[0])
     for position, member in enumerate(cached.get("groupmate_obs", ())):
-        if len(member) != 1 or member[0].device.type != "cpu":
+        if (
+            len(member) != 1
+            or member[0].device.type != "cpu"
+            or member[0].ndim != 2
+            or int(member[0].shape[1]) != BEES_OBSERVATION_SIZE
+        ):
             return None
         valid_rows = np.flatnonzero(counts > position).astype(
             np.int64,
@@ -3259,12 +3264,14 @@ class _PocaCpuMinibatchPreparer:
         logical_cpus = max(1, int(os.cpu_count() or 1))
         self.workers = min(
             POCA_CPU_PREPARE_MAX_WORKERS,
-            max(2, logical_cpus - 2),
+            max(1, logical_cpus - 2),
         )
         self.enabled = bool(
             cache is not None
             and self.group_source is not None
             and _POCA_OPTIMIZATIONS.effective_sync_cleanup
+            and _POCA_OPTIMIZATIONS.stream_shards == 1
+            and not _POCA_OPTIMIZATIONS.critic_baseline_overlap
             and not _POCA_OPTIMIZATIONS.minibatch_prefetch
             and self.device.type == "cuda"
             and torch.cuda.is_available()
