@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 import threading
 import time
+from dataclasses import dataclass
 from typing import Callable, Optional
 
 
@@ -34,6 +35,58 @@ POCA_TRAJECTORY_TIMING_REPORT_SECONDS = 30.0
 POCA_PACKED_GROUP_CACHE_MAX_BYTES = 4 * 1024 * 1024 * 1024
 POCA_GPU_CACHE_MIN_RESERVE_BYTES = 2 * 1024 * 1024 * 1024
 POCA_GPU_CACHE_RESERVE_FRACTION = 0.30
+
+
+@dataclass(frozen=True)
+class PocaLearnerOptimizationOptions:
+    """Opt-in learner execution experiments; all preserve the logical PPO minibatch."""
+
+    sync_cleanup: bool = False
+    stream_shards: int = 1
+    minibatch_prefetch: bool = False
+    critic_baseline_overlap: bool = False
+    cuda_graphs: bool = False
+
+    @property
+    def effective_sync_cleanup(self) -> bool:
+        return bool(
+            self.sync_cleanup
+            or self.stream_shards > 1
+            or self.critic_baseline_overlap
+            or self.cuda_graphs
+        )
+
+
+_POCA_OPTIMIZATIONS = PocaLearnerOptimizationOptions()
+
+
+def configure_poca_learner_optimizations(
+    *,
+    sync_cleanup: bool = False,
+    stream_shards: int = 1,
+    minibatch_prefetch: bool = False,
+    critic_baseline_overlap: bool = False,
+    cuda_graphs: bool = False,
+) -> PocaLearnerOptimizationOptions:
+    """Configure experimental execution optimizations before trainer construction."""
+
+    global _POCA_OPTIMIZATIONS
+    shards = int(stream_shards)
+    if shards not in (1, 2, 4):
+        raise ValueError("POCA stream_shards must be one of 1, 2, or 4.")
+    _POCA_OPTIMIZATIONS = PocaLearnerOptimizationOptions(
+        sync_cleanup=bool(sync_cleanup),
+        stream_shards=shards,
+        minibatch_prefetch=bool(minibatch_prefetch),
+        critic_baseline_overlap=bool(critic_baseline_overlap),
+        cuda_graphs=bool(cuda_graphs),
+    )
+    return _POCA_OPTIMIZATIONS
+
+
+def poca_learner_optimization_options() -> PocaLearnerOptimizationOptions:
+    return _POCA_OPTIMIZATIONS
+
 
 _ORIGINAL_GAUSSIAN_FORWARD = None
 _ORIGINAL_ACTION_MODEL_FORWARD = None
@@ -2245,12 +2298,29 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
 
         flipped_masks = 1 - torch.cat(self_attn_masks, dim=1)
         num_agents = torch.sum(flipped_masks, dim=1, keepdim=True)
-        max_agents = torch.max(num_agents).item()
-        if max_agents > self._current_max_agents:
-            self._current_max_agents = torch.nn.Parameter(
-                torch.as_tensor(max_agents),
-                requires_grad=False,
-            )
+        freeze_max_agents = bool(
+            getattr(_POCA_GROUP_BATCH_STATE, "freeze_max_agents", False)
+        )
+        if not freeze_max_agents:
+            if _POCA_OPTIMIZATIONS.effective_sync_cleanup:
+                # Keep the running POCA normalization maximum entirely on-device. Calling
+                # Tensor.item() here forces a host/device rendezvous twice per minibatch
+                # (value + baseline) and drains CUDA's launch queue.
+                with torch.no_grad():
+                    candidate = torch.max(num_agents).to(
+                        dtype=self._current_max_agents.dtype,
+                        device=self._current_max_agents.device,
+                    )
+                    self._current_max_agents.copy_(
+                        torch.maximum(self._current_max_agents, candidate)
+                    )
+            else:
+                max_agents = torch.max(num_agents).item()
+                if max_agents > self._current_max_agents:
+                    self._current_max_agents = torch.nn.Parameter(
+                        torch.as_tensor(max_agents),
+                        requires_grad=False,
+                    )
 
         num_agents = num_agents * 2.0 / self._current_max_agents - 1
         encoding = self.linear_encoder(encoded_state)
@@ -2465,6 +2535,11 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             "[Bees PPO timing] update begin "
             f"buffer={buffer_length} batch={batch_size} epochs={num_epoch} "
             f"minibatches={total_minibatches} "
+            f"sync_cleanup={'on' if _POCA_OPTIMIZATIONS.effective_sync_cleanup else 'off'} "
+            f"stream_shards={_POCA_OPTIMIZATIONS.stream_shards} "
+            f"prefetch={'on' if _POCA_OPTIMIZATIONS.minibatch_prefetch else 'off'} "
+            f"critic_baseline_overlap={'on' if _POCA_OPTIMIZATIONS.critic_baseline_overlap else 'off'} "
+            f"cuda_graphs={'on' if _POCA_OPTIMIZATIONS.cuda_graphs else 'off'} "
             f"tensor_cache={'on' if tensor_cache is not None else 'off'} "
             f"cache_storage={device_cache['storage']} "
             f"cache_mib={device_cache['bytes'] / (1024 * 1024):.1f} "
@@ -2604,7 +2679,22 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         _POCA_TIMING_STATE.cuda_events = None
 
         for stat, stat_list in batch_update_stats.items():
-            self._stats_reporter.add_stat(stat, np.mean(stat_list))
+            if (
+                _POCA_OPTIMIZATIONS.effective_sync_cleanup
+                and stat_list
+                and hasattr(stat_list[0], "detach")
+            ):
+                from mlagents.torch_utils import torch
+
+                stat_value = float(
+                    torch.stack([value.detach() for value in stat_list])
+                    .mean()
+                    .cpu()
+                    .item()
+                )
+            else:
+                stat_value = np.mean(stat_list)
+            self._stats_reporter.add_stat(stat, stat_value)
 
         if self.optimizer.bc_module:
             update_stats = self.optimizer.bc_module.update()
@@ -2994,10 +3084,20 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         _poca_record_timing("optimizer_step", time.perf_counter() - started)
 
         started = time.perf_counter()
+        if _POCA_OPTIMIZATIONS.effective_sync_cleanup:
+            # Do not synchronize CUDA merely to report minibatch statistics. Detached
+            # scalars are reduced after the update's one deliberate CUDA synchronization.
+            policy_stat = torch.abs(policy_loss).detach()
+            value_stat = value_loss.detach()
+            baseline_stat = baseline_loss.detach()
+        else:
+            policy_stat = torch.abs(policy_loss).item()
+            value_stat = value_loss.item()
+            baseline_stat = baseline_loss.item()
         update_stats = {
-            "Losses/Policy Loss": torch.abs(policy_loss).item(),
-            "Losses/Value Loss": value_loss.item(),
-            "Losses/Baseline Loss": baseline_loss.item(),
+            "Losses/Policy Loss": policy_stat,
+            "Losses/Value Loss": value_stat,
+            "Losses/Baseline Loss": baseline_stat,
             "Policy/Learning Rate": decay_lr,
             "Policy/Epsilon": decay_eps,
             "Policy/Beta": decay_bet,
