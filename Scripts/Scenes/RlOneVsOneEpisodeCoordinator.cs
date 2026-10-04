@@ -1615,6 +1615,7 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         {
             string environmentTelemetry = RlOneVsOneEpisodeDiagnostics.BuildEnvironmentEpisodeFields(level);
             string combatTelemetry = RlOneVsOneCombatTelemetry.BuildEpisodeFields(level);
+            string fireBargeTelemetry = RlOneVsOneEpisodeDiagnostics.BuildFireBargeEpisodeFields(level, timedOut);
             WriteTrainingDiagnostic(
                 $"RL 1v1 episode={result.EpisodeNumber} arena={GetArenaIndex()} outcome={outcome} bee_team={_beeTeamId} human_team={_humanTeamId} " +
                 $"ships_per_side={RlOneVsOneTrainingBootstrap.CurrentShipsPerSide} map_size={mapSize:F0} winner={winningSide} timeout={timedOut} duration={durationSeconds:F2}s " +
@@ -1625,7 +1626,7 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
                 $"human_fire_requests={_humanFireRequestsThisEpisode} human_shots={_humanShotsThisEpisode} human_hits={_humanHitsThisEpisode} human_damage={_humanDamageThisEpisode} " +
                 $"human_turret_shots={_humanShotsThisEpisode} human_turret_hits={_humanTurretHitsThisEpisode} human_turret_damage={_humanTurretDamageThisEpisode} " +
                 $"human_special_hits={_humanSpecialHitsThisEpisode} human_special_damage={_humanSpecialDamageThisEpisode} human_other_hits={_humanOtherHitsThisEpisode} human_other_damage={_humanOtherDamageThisEpisode} " +
-                environmentTelemetry + " " + combatTelemetry);
+                fireBargeTelemetry + " " + environmentTelemetry + " " + combatTelemetry);
         }
 
         if (_completedEpisodes == 1 || _completedEpisodes % FullEpisodeDiagnosticsInterval == 0)

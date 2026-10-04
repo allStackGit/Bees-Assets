@@ -490,6 +490,22 @@ internal static class RlOneVsOneEpisodeDiagnostics
         state.DeathCauses[sideIndex][victim.Id] = cause;
     }
 
+    internal static string BuildFireBargeEpisodeFields(Level level, bool timedOut)
+    {
+        if (!TryGetState(level, out ArenaState state))
+        {
+            return "bee_fire_barges=0 bee_fire_barge_self_detonations=0 bee_fire_barge_border_deaths=0 " +
+                   "bee_fire_barge_static_deaths=0 bee_fire_barge_asteroid_deaths=0 bee_fire_barge_enemy_deaths=0 " +
+                   "bee_fire_barge_other_deaths=0 bee_fire_barge_alive=0 bee_fire_barge_timeout_alive=0 " +
+                   "human_fire_barges=0 human_fire_barge_self_detonations=0 human_fire_barge_border_deaths=0 " +
+                   "human_fire_barge_static_deaths=0 human_fire_barge_asteroid_deaths=0 human_fire_barge_enemy_deaths=0 " +
+                   "human_fire_barge_other_deaths=0 human_fire_barge_alive=0 human_fire_barge_timeout_alive=0";
+        }
+
+        return FormatFireBargeOutcomeFields(state, 0, "bee", timedOut) + " " +
+               FormatFireBargeOutcomeFields(state, 1, "human", timedOut);
+    }
+
     internal static string BuildEpisodeFields(Level level, bool timedOut)
     {
         string environmentTelemetry = BuildEnvironmentEpisodeFields(level);
@@ -710,6 +726,80 @@ internal static class RlOneVsOneEpisodeDiagnostics
             values.Add($"{keys[i]}:{counts[keys[i]]}");
         }
         return string.Join("|", values);
+    }
+
+    private static string FormatFireBargeOutcomeFields(
+        ArenaState state,
+        int sideIndex,
+        string sideName,
+        bool timedOut)
+    {
+        int total = 0;
+        int selfDetonations = 0;
+        int borderDeaths = 0;
+        int staticDeaths = 0;
+        int asteroidDeaths = 0;
+        int enemyDeaths = 0;
+        int otherDeaths = 0;
+        int alive = 0;
+        int timeoutAlive = 0;
+
+        foreach (RootShipRecord root in state.RootShips[sideIndex].Values)
+        {
+            if (!string.Equals(root.Type, ConfigData.ShipTypes.FireBarge.ToString(), StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            total++;
+            if (!state.DeathCauses[sideIndex].TryGetValue(root.Id, out string cause))
+            {
+                if (timedOut)
+                {
+                    timeoutAlive++;
+                }
+                else
+                {
+                    alive++;
+                }
+                continue;
+            }
+
+            if (string.Equals(cause, "self_detonate", StringComparison.Ordinal))
+            {
+                selfDetonations++;
+            }
+            else if (string.Equals(cause, "map_border", StringComparison.Ordinal))
+            {
+                borderDeaths++;
+            }
+            else if (string.Equals(cause, "static_obstacle", StringComparison.Ordinal))
+            {
+                staticDeaths++;
+            }
+            else if (string.Equals(cause, "collision_asteroid", StringComparison.Ordinal))
+            {
+                asteroidDeaths++;
+            }
+            else if (cause.StartsWith("enemy-", StringComparison.Ordinal))
+            {
+                enemyDeaths++;
+            }
+            else
+            {
+                otherDeaths++;
+            }
+        }
+
+        return $"{sideName}_fire_barges={total} " +
+               $"{sideName}_fire_barge_self_detonations={selfDetonations} " +
+               $"{sideName}_fire_barge_border_deaths={borderDeaths} " +
+               $"{sideName}_fire_barge_static_deaths={staticDeaths} " +
+               $"{sideName}_fire_barge_asteroid_deaths={asteroidDeaths} " +
+               $"{sideName}_fire_barge_enemy_deaths={enemyDeaths} " +
+               $"{sideName}_fire_barge_other_deaths={otherDeaths} " +
+               $"{sideName}_fire_barge_alive={alive} " +
+               $"{sideName}_fire_barge_timeout_alive={timeoutAlive}";
     }
 
     private static string FormatRootOutcomes(ArenaState state, int sideIndex, bool timedOut)
