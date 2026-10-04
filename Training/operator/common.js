@@ -312,9 +312,53 @@ function normalizeWanMaxQueuedBatches(value, fallback = 32) {
     return candidate;
 }
 
+function normalizeLearnerOptimizations(value, fallback = null) {
+    const base = fallback && typeof fallback === 'object'
+        ? fallback
+        : {
+            syncCleanup: false,
+            streamShards: 1,
+            minibatchPrefetch: false,
+            criticBaselineOverlap: false,
+            cudaGraphs: false,
+        };
+    const source = value && typeof value === 'object' ? value : base;
+    const streamShards = Number(
+        source.streamShards == null ? base.streamShards : source.streamShards
+    );
+    if (![1, 2, 4].includes(streamShards)) {
+        throw new Error(
+            'Learner stream shards must be one of 1, 2, or 4; got ' +
+            String(source.streamShards) + '.'
+        );
+    }
+    return {
+        syncCleanup: Boolean(
+            source.syncCleanup == null ? base.syncCleanup : source.syncCleanup
+        ),
+        streamShards,
+        minibatchPrefetch: Boolean(
+            source.minibatchPrefetch == null
+                ? base.minibatchPrefetch
+                : source.minibatchPrefetch
+        ),
+        criticBaselineOverlap: Boolean(
+            source.criticBaselineOverlap == null
+                ? base.criticBaselineOverlap
+                : source.criticBaselineOverlap
+        ),
+        cudaGraphs: Boolean(
+            source.cudaGraphs == null ? base.cudaGraphs : source.cudaGraphs
+        ),
+    };
+}
+
 function applyRuntimeTrainingOptions(config, options = {}) {
     const result = {
         ...config,
+        learnerOptimizations: normalizeLearnerOptimizations(
+            config && config.learnerOptimizations,
+        ),
         localActor: {
             ...(config && typeof config.localActor === 'object' && config.localActor
                 ? config.localActor
@@ -349,10 +393,20 @@ function applyRuntimeTrainingOptions(config, options = {}) {
     if (Object.prototype.hasOwnProperty.call(options, 'localTraining')) {
         result.localActor.enabled = Boolean(options.localTraining);
     }
+    if (Object.prototype.hasOwnProperty.call(options, 'learnerOptimizations')) {
+        result.learnerOptimizations = normalizeLearnerOptimizations(
+            options.learnerOptimizations,
+            result.learnerOptimizations,
+        );
+    }
     return result;
 }
 
-function readRuntimeTrainingOptions(defaultPolicyLag = 1, defaultWanMaxQueuedBatches = 32) {
+function readRuntimeTrainingOptions(
+    defaultPolicyLag = 1,
+    defaultWanMaxQueuedBatches = 32,
+    defaultLearnerOptimizations = null,
+) {
     if (!exists(paths.runtimeTrainingOptionsPath)) return null;
     const value = readJson(paths.runtimeTrainingOptionsPath);
     if (
@@ -375,6 +429,10 @@ function readRuntimeTrainingOptions(defaultPolicyLag = 1, defaultWanMaxQueuedBat
             value.wanMaxQueuedBatches,
             defaultWanMaxQueuedBatches,
         ),
+        learnerOptimizations: normalizeLearnerOptimizations(
+            value.learnerOptimizations,
+            defaultLearnerOptimizations,
+        ),
     };
 }
 
@@ -391,6 +449,9 @@ function saveRuntimeTrainingOptions(options) {
             32,
         ),
         localTraining: Boolean(options && options.localTraining),
+        learnerOptimizations: normalizeLearnerOptimizations(
+            options && options.learnerOptimizations,
+        ),
         updated_utc: new Date().toISOString(),
     };
     writeJsonAtomic(paths.runtimeTrainingOptionsPath, value);
@@ -405,6 +466,7 @@ function loadConfig() {
     const runtimeOptions = readRuntimeTrainingOptions(
         normalizeThreadedPolicyLag(config.threadedPolicyLag, 1),
         normalizeWanMaxQueuedBatches(config.wanMaxQueuedBatches, 32),
+        normalizeLearnerOptimizations(config.learnerOptimizations),
     );
     return runtimeOptions
         ? applyRuntimeTrainingOptions(config, runtimeOptions)
