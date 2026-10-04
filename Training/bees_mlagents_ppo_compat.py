@@ -3243,6 +3243,19 @@ class _PocaCpuMinibatchPreparer:
 
         self.cache = cache
         self.device = default_device()
+        self.full_minibatch = bool(
+            cache is not None
+            and str(cache.get("storage", "cpu")) == "cpu"
+        )
+        self.group_source = (
+            cache
+            if self.full_minibatch
+            else (
+                cache.get("_cpu_group_source")
+                if cache is not None
+                else None
+            )
+        )
         logical_cpus = max(1, int(os.cpu_count() or 1))
         self.workers = min(
             POCA_CPU_PREPARE_MAX_WORKERS,
@@ -3250,7 +3263,7 @@ class _PocaCpuMinibatchPreparer:
         )
         self.enabled = bool(
             cache is not None
-            and str(cache.get("storage", "cpu")) == "cpu"
+            and self.group_source is not None
             and _POCA_OPTIMIZATIONS.effective_sync_cleanup
             and not _POCA_OPTIMIZATIONS.minibatch_prefetch
             and self.device.type == "cuda"
@@ -3278,15 +3291,29 @@ class _PocaCpuMinibatchPreparer:
         from mlagents.torch_utils import torch
 
         started = time.perf_counter()
-        selected = _select_poca_update_tensor_cache(
-            self.cache,
-            indices,
-            device_override=torch.device("cpu"),
-            non_blocking=False,
-        )
-        selected["observation_dedup"] = (
-            _poca_build_observation_dedup_plan(selected)
-        )
+        if self.full_minibatch:
+            selected = _select_poca_update_tensor_cache(
+                self.cache,
+                indices,
+                device_override=torch.device("cpu"),
+                non_blocking=False,
+            )
+            selected["observation_dedup"] = (
+                _poca_build_observation_dedup_plan(selected)
+            )
+        else:
+            observation_source = _poca_select_group_prepare_source(
+                self.group_source,
+                indices,
+            )
+            selected = {
+                "groupmate_obs": observation_source["groupmate_obs"],
+                "observation_dedup": (
+                    _poca_build_observation_dedup_plan(
+                        observation_source
+                    )
+                ),
+            }
         selected = _poca_pin_selected_minibatch(selected)
         return selected, time.perf_counter() - started
 
