@@ -1503,7 +1503,14 @@ def _move_poca_packed_group_obs(value, device):
     return _PocaPackedGroupObs(fields, value.nbytes)
 
 
-def _select_poca_ragged_group_obs(source, indices, groupmate_counts, device):
+def _select_poca_ragged_group_obs(
+    source,
+    indices,
+    groupmate_counts,
+    device,
+    *,
+    non_blocking: bool = False,
+):
     """Pack only the selected minibatch's real groupmate rows.
 
     ML-Agents normally pads every groupmate position across the complete PPO buffer.
@@ -1556,7 +1563,17 @@ def _select_poca_ragged_group_obs(source, indices, groupmate_counts, device):
                     ),
                 )
                 if compact_tensor.device != device:
-                    compact_tensor = compact_tensor.to(device=device)
+                    if (
+                        non_blocking
+                        and compact_tensor.device.type == "cpu"
+                        and device.type == "cuda"
+                        and not compact_tensor.is_pinned()
+                    ):
+                        compact_tensor = compact_tensor.pin_memory()
+                    compact_tensor = compact_tensor.to(
+                        device=device,
+                        non_blocking=non_blocking,
+                    )
             else:
                 compact = np.stack(
                     [
@@ -1571,7 +1588,17 @@ def _select_poca_ragged_group_obs(source, indices, groupmate_counts, device):
                 compact_tensor = _poca_cpu_tensor(
                     compact,
                     torch.float32,
-                ).to(device=device)
+                )
+                if (
+                    non_blocking
+                    and device.type == "cuda"
+                    and not compact_tensor.is_pinned()
+                ):
+                    compact_tensor = compact_tensor.pin_memory()
+                compact_tensor = compact_tensor.to(
+                    device=device,
+                    non_blocking=non_blocking,
+                )
             padded = torch.full(
                 (len(indices), *compact_tensor.shape[1:]),
                 float("nan"),
@@ -1929,7 +1956,13 @@ def _promote_poca_update_tensor_cache(cache):
     return promoted, result
 
 
-def _select_poca_update_tensor_cache(cache, indices):
+def _select_poca_update_tensor_cache(
+    cache,
+    indices,
+    *,
+    device_override=None,
+    non_blocking: bool = False,
+):
     """Gather one shuffled PPO minibatch from the materialized cache."""
 
     import numpy as np
@@ -1937,7 +1970,7 @@ def _select_poca_update_tensor_cache(cache, indices):
     from mlagents.trainers.torch_entities.agent_action import AgentAction
 
     indices = np.asarray(indices, dtype=np.int64)
-    device = default_device()
+    device = default_device() if device_override is None else device_override
     cache_storage = str(cache.get("storage", "cpu"))
     index_device = (
         device if cache_storage == "cuda"
@@ -1956,7 +1989,14 @@ def _select_poca_update_tensor_cache(cache, indices):
         selected = tensor.index_select(0, local_index)
         if selected.device == device:
             return selected
-        return selected.to(device=device)
+        if (
+            non_blocking
+            and selected.device.type == "cpu"
+            and device.type == "cuda"
+            and not selected.is_pinned()
+        ):
+            selected = selected.pin_memory()
+        return selected.to(device=device, non_blocking=non_blocking)
 
     selected_groupmate_counts = cache["groupmate_counts"][indices]
     max_groupmates = (
@@ -1990,6 +2030,7 @@ def _select_poca_update_tensor_cache(cache, indices):
         indices,
         selected_groupmate_counts,
         device,
+        non_blocking=non_blocking,
     )
     continuous_actions = take(cache["continuous_actions"])
     discrete_actions = take(cache["discrete_actions"])
