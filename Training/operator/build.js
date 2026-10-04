@@ -475,8 +475,12 @@ async function invokeBuild(options = {}) {
     const outgoingRun = await getActiveRunId(config, preBuildAdmin);
     if (outgoingRun) archiveTrainingRun(python, outgoingRun, 'pre-build');
 
+    const preserveExistingRun = Boolean(
+        options.preserveRun ||
+        (!options.newRun && exists(paths.runStatePath))
+    );
     const plan = newTrainingRunPlan(python, {
-        preserveRun: Boolean(options.preserveRun),
+        preserveRun: preserveExistingRun,
     });
     if (plan.incompatible && plan.preserve_run_override) {
         console.warn(
@@ -484,7 +488,10 @@ async function invokeBuild(options = {}) {
             plan.run_id + '. Trainers will stop together before the new compatibility contract becomes active.'
         );
     } else if (plan.incompatible) {
-        console.log('Training contract changed incompatibly. New run: ' + plan.run_id);
+        console.log(
+            'Training contract changed incompatibly and -NewRun was explicitly supplied. ' +
+            'New run: ' + plan.run_id
+        );
     } else if (plan.new_run) {
         console.log('Creating initial training run: ' + plan.run_id);
     } else {
