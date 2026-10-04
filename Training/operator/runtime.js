@@ -122,7 +122,7 @@ function ensureLearnerPython(config, requirementsRoot = '') {
 
     const stampPath = path.join(venvRoot, 'bees-requirements.sha256');
     const currentStamp = exists(stampPath) ? readText(stampPath).trim() : '';
-    const preflight = 'import sys, mlagents, torch, numpy, onnxruntime; raise SystemExit(0 if sys.version_info[:2] == (3,10) else 1)';
+    const preflight = 'import sys, mlagents, torch, numpy, onnxruntime, psutil; raise SystemExit(0 if sys.version_info[:2] == (3,10) else 1)';
     let importsOk = currentStamp === requirementsHash && testPythonCode(venvPython, preflight);
 
     if (!importsOk) {
