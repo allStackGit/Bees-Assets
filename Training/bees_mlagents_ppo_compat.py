@@ -2447,6 +2447,16 @@ def _promote_poca_update_tensor_cache(cache):
     result["allocator_reusable_before"] = int(allocator_reusable_bytes)
     result["free_before"] = int(free_bytes)
     result["reserve"] = int(reserve_bytes)
+
+    # A ragged group cache means this update is already large enough that the
+    # critic will materialize substantial temporary group tensors per minibatch.
+    # Keep the fixed cache on CPU too so model/backprop working memory retains
+    # the full physical-VRAM reserve instead of competing with ~550 MiB of
+    # long-lived update tensors.
+    if isinstance(group_cache, _PocaRaggedGroupObs):
+        result["fixed_cache_reason"] = "ragged-group-reserve"
+        return cache, result
+
     if cache_bytes > max(0, int(free_bytes) - int(reserve_bytes)):
         return cache, result
 
@@ -2468,65 +2478,16 @@ def _promote_poca_update_tensor_cache(cache):
     result["storage"] = "cuda"
     result["copy_seconds"] = time.perf_counter() - started
 
-    promoted_group = promoted.get("groupmate_obs")
-    if (
-        isinstance(promoted_group, _PocaPackedGroupObs)
-        and promoted_group.nbytes > 0
-    ):
-        group_cleanup_started = time.perf_counter()
-        torch.cuda.empty_cache()
-        result["group_empty_cache_seconds"] = (
-            time.perf_counter() - group_cleanup_started
-        )
-        group_free_bytes, group_total_bytes = torch.cuda.mem_get_info(
-            device_index
-        )
-        group_allocated_bytes = int(
-            torch.cuda.memory_allocated(device_index)
-        )
-        group_reserved_bytes = int(
-            torch.cuda.memory_reserved(device_index)
-        )
-        group_reusable_bytes = max(
-            0,
-            group_reserved_bytes - group_allocated_bytes,
-        )
-        result["group_driver_free_before"] = int(group_free_bytes)
-        result["group_allocator_reusable_before"] = int(
-            group_reusable_bytes
-        )
-        group_reserve = max(
-            POCA_GPU_CACHE_MIN_RESERVE_BYTES,
-            int(
-                group_total_bytes
-                * POCA_GPU_CACHE_RESERVE_FRACTION
-            ),
-        )
-        if promoted_group.nbytes <= max(
-            0,
-            int(group_free_bytes) - group_reserve,
-        ):
-            group_started = time.perf_counter()
-            try:
-                gpu_group = _move_poca_packed_group_obs(
-                    promoted_group,
-                    device,
-                )
-            except RuntimeError as exc:
-                if "out of memory" not in str(exc).lower():
-                    raise
-                torch.cuda.empty_cache()
-                print(
-                    "[Bees PPO timing] packed group cache promotion skipped after CUDA OOM; "
-                    "keeping group observations on CPU.",
-                    flush=True,
-                )
-            else:
-                promoted["groupmate_obs"] = gpu_group
-                result["group_storage"] = "cuda"
-                result["group_copy_seconds"] = (
-                    time.perf_counter() - group_started
-                )
+    # Packed group observations remain CPU-resident. Even when a multi-GiB
+    # packed cache technically fits beside the model, keeping it resident on
+    # the GTX 1660 leaves too little headroom for critic/baseline/backprop
+    # temporaries and produced severe WDDM paging stalls in live training.
+    # Per-minibatch group tensors are transferred on demand instead.
+    result["group_storage"] = (
+        "cpu" if isinstance(promoted.get("groupmate_obs"), _PocaPackedGroupObs)
+        else "off"
+    )
+    result["group_promotion_reason"] = "cpu-resident"
     return promoted, result
 
 
