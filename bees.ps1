@@ -6,6 +6,7 @@ param(
     [switch]$Force,
     [switch]$PreserveRun,
     [switch]$NewRun,
+    [string]$ResumeRun,
     [switch]$Threaded,
     [ValidateRange(0,2147483647)][int]$PolicyLag,
     [ValidateRange(1,2147483647)][int]$BackpressureQueue,
@@ -31,8 +32,17 @@ $ErrorActionPreference='Stop'
 if($PreserveRun -and $Command -ne 'build'){
     throw '-PreserveRun is only valid with the build command.'
 }
-if($NewRun -and $Command -ne 'start'){
-    throw '-NewRun is only valid with the start command.'
+if($NewRun -and $Command -ne 'start' -and $Command -ne 'build'){
+    throw '-NewRun is only valid with the build or start command.'
+}
+if($ResumeRun -and $Command -ne 'start'){
+    throw '-ResumeRun is only valid with the start command.'
+}
+if($ResumeRun -and $NewRun){
+    throw '-ResumeRun cannot be combined with -NewRun.'
+}
+if($PreserveRun -and $NewRun){
+    throw '-PreserveRun cannot be combined with -NewRun.'
 }
 if($Threaded -and $Command -ne 'runtime'){
     throw '-Threaded is only valid with the runtime command.'
@@ -107,6 +117,7 @@ if($FullGame){$arguments+='--full-game'}
 if($Force){$arguments+='--force'}
 if($PreserveRun){$arguments+='--preserve-run'}
 if($NewRun){$arguments+='--new-run'}
+if($ResumeRun){$arguments+=@('--resume-run',[string]$ResumeRun)}
 if($Threaded){$arguments+='--threaded'}
 if($PSBoundParameters.ContainsKey('PolicyLag')){
     $arguments+=@('--policy-lag',[string]$PolicyLag)
