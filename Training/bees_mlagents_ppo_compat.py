@@ -2391,6 +2391,8 @@ def _promote_poca_update_tensor_cache(cache):
             "group_storage": "off",
             "group_bytes": 0,
             "group_copy_seconds": 0.0,
+            "empty_cache_seconds": 0.0,
+            "group_empty_cache_seconds": 0.0,
             "free_before": 0,
             "reserve": 0,
         }
@@ -2408,6 +2410,8 @@ def _promote_poca_update_tensor_cache(cache):
         ),
         "group_bytes": int(group_cache_bytes),
         "group_copy_seconds": 0.0,
+        "empty_cache_seconds": 0.0,
+        "group_empty_cache_seconds": 0.0,
         "free_before": 0,
         "reserve": 0,
     }
@@ -2422,20 +2426,28 @@ def _promote_poca_update_tensor_cache(cache):
         device_index = torch.cuda.current_device()
     device_index = int(device_index)
     device = torch.device("cuda", device_index)
+
+    # Release only unused PyTorch allocator blocks before asking the CUDA
+    # driver how much physical VRAM is actually available. On Windows/WDDM,
+    # allocator-reserved virtual memory can grow beyond physical VRAM; it must
+    # never be counted as additional cache capacity.
+    cleanup_started = time.perf_counter()
+    torch.cuda.empty_cache()
+    result["empty_cache_seconds"] = time.perf_counter() - cleanup_started
+
     free_bytes, total_bytes = torch.cuda.mem_get_info(device_index)
     allocated_bytes = int(torch.cuda.memory_allocated(device_index))
     reserved_bytes = int(torch.cuda.memory_reserved(device_index))
     allocator_reusable_bytes = max(0, reserved_bytes - allocated_bytes)
-    effective_free_bytes = int(free_bytes) + allocator_reusable_bytes
     reserve_bytes = max(
         POCA_GPU_CACHE_MIN_RESERVE_BYTES,
         int(total_bytes * POCA_GPU_CACHE_RESERVE_FRACTION),
     )
     result["driver_free_before"] = int(free_bytes)
     result["allocator_reusable_before"] = int(allocator_reusable_bytes)
-    result["free_before"] = int(effective_free_bytes)
+    result["free_before"] = int(free_bytes)
     result["reserve"] = int(reserve_bytes)
-    if cache_bytes > max(0, effective_free_bytes - int(reserve_bytes)):
+    if cache_bytes > max(0, int(free_bytes) - int(reserve_bytes)):
         return cache, result
 
     started = time.perf_counter()
@@ -2461,6 +2473,11 @@ def _promote_poca_update_tensor_cache(cache):
         isinstance(promoted_group, _PocaPackedGroupObs)
         and promoted_group.nbytes > 0
     ):
+        group_cleanup_started = time.perf_counter()
+        torch.cuda.empty_cache()
+        result["group_empty_cache_seconds"] = (
+            time.perf_counter() - group_cleanup_started
+        )
         group_free_bytes, group_total_bytes = torch.cuda.mem_get_info(
             device_index
         )
@@ -2474,8 +2491,9 @@ def _promote_poca_update_tensor_cache(cache):
             0,
             group_reserved_bytes - group_allocated_bytes,
         )
-        group_effective_free = (
-            int(group_free_bytes) + group_reusable_bytes
+        result["group_driver_free_before"] = int(group_free_bytes)
+        result["group_allocator_reusable_before"] = int(
+            group_reusable_bytes
         )
         group_reserve = max(
             POCA_GPU_CACHE_MIN_RESERVE_BYTES,
@@ -2486,7 +2504,7 @@ def _promote_poca_update_tensor_cache(cache):
         )
         if promoted_group.nbytes <= max(
             0,
-            group_effective_free - group_reserve,
+            int(group_free_bytes) - group_reserve,
         ):
             group_started = time.perf_counter()
             try:
