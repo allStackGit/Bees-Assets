@@ -90,8 +90,7 @@ function isInterruptedIncompatibleCutover(release, desired) {
     }
     return (
         activeRun === previousRun &&
-        activeRun !== releaseRun &&
-        activeKey !== releaseKey
+        activeRun !== releaseRun
     );
 }
 
@@ -445,6 +444,85 @@ async function invokeStart(options = {}) {
     let forcedPlan = getPendingForcedNewRunPlan();
     const resumeForcedNewRun = Boolean(forcedPlan);
     const initialStatus = await getStatus(config, admin);
+
+    if (options.resumeRunId) {
+        if (resumeForcedNewRun) {
+            throw new Error(
+                'Cannot resume an existing run while a forced-new run operation is unfinished.'
+            );
+        }
+        const targetRun = String(options.resumeRunId || '').trim();
+        const immediatePreviousRun = String(release.previous_run_id || '').trim();
+        const activeRun = String(
+            initialStatus.desired && initialStatus.desired.run_id || ''
+        ).trim();
+        if (!targetRun || !/^[A-Za-z0-9._-]+$/.test(targetRun)) {
+            throw new Error('Resume run id is malformed.');
+        }
+        if (!immediatePreviousRun || targetRun !== immediatePreviousRun) {
+            throw new Error(
+                'For safety, -ResumeRun may only restore the immediate predecessor of ' +
+                'the latest release. requested=' + targetRun +
+                ' predecessor=' + (immediatePreviousRun || '(none)')
+            );
+        }
+        if (activeRun !== String(release.run_id || '').trim()) {
+            throw new Error(
+                'The active control-plane run does not match the latest release; refusing ' +
+                'to guess which lineage should be replaced. active=' + activeRun +
+                ' release=' + String(release.run_id || '').trim()
+            );
+        }
+        const behaviorName = String(
+            release.contract && release.contract.behavior_name || ''
+        ).trim();
+        if (!behaviorName || !/^[A-Za-z0-9._-]+$/.test(behaviorName)) {
+            throw new Error('Latest release has no valid behavior name for checkpoint recovery.');
+        }
+        const checkpointPath = path.join(
+            paths.trainingRoot,
+            'trainer-results',
+            targetRun,
+            behaviorName,
+            'checkpoint.pt',
+        );
+        if (!exists(checkpointPath)) {
+            throw new Error(
+                'Cannot resume run ' + targetRun +
+                ' because its optimizer checkpoint is missing: ' + checkpointPath
+            );
+        }
+
+        const resumePlan = newTrainingRunPlan(
+            python,
+            { resumeRunId: targetRun },
+        );
+        if (
+            String(resumePlan.run_id || '').trim() !== targetRun ||
+            !Boolean(resumePlan.resume_existing_run) ||
+            Boolean(resumePlan.new_run)
+        ) {
+            throw new Error(
+                'Existing-run lifecycle planner did not produce the requested resume transition.'
+            );
+        }
+
+        release = {
+            ...release,
+            run_id: targetRun,
+            previous_run_id: activeRun,
+            compatibility_key: String(resumePlan.compatibility_key),
+            incompatible: true,
+            preserve_run_override: true,
+            contract: resumePlan.contract,
+        };
+        saveLatestRelease(release);
+        commitTrainingRunPlan(python);
+        console.log(
+            'Restoring existing training run ' + targetRun +
+            ' from its checkpoint; replacing accidental run ' + activeRun + '.'
+        );
+    }
     const resumeInterruptedIncompatibleCutover = Boolean(
         !resumeForcedNewRun &&
         !options.newRun &&
