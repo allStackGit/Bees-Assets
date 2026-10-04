@@ -1425,6 +1425,11 @@ class PocaCpuMinibatchPreparerTests(unittest.TestCase):
                 "mlagents.torch_utils.default_device",
                 return_value=torch.device("cuda"),
             ),
+            mock.patch.object(
+                compat,
+                "_POCA_OPTIMIZATIONS",
+                compat.PocaLearnerOptimizationOptions(sync_cleanup=True),
+            ),
             mock.patch.object(torch.cuda, "is_available", return_value=True),
             mock.patch.object(
                 compat,
@@ -1496,6 +1501,11 @@ class PocaCpuMinibatchPreparerTests(unittest.TestCase):
             mock.patch(
                 "mlagents.torch_utils.default_device",
                 return_value=torch.device("cuda"),
+            ),
+            mock.patch.object(
+                compat,
+                "_POCA_OPTIMIZATIONS",
+                compat.PocaLearnerOptimizationOptions(sync_cleanup=True),
             ),
             mock.patch.object(torch.cuda, "is_available", return_value=True),
             mock.patch.object(
