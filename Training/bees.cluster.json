@@ -27,5 +27,12 @@
     "torchDevice": "cpu"
   },
   "threadedTraining": false,
-  "threadedPolicyLag": 1
+  "threadedPolicyLag": 1,
+  "learnerOptimizations": {
+    "syncCleanup": false,
+    "streamShards": 1,
+    "minibatchPrefetch": false,
+    "criticBaselineOverlap": false,
+    "cudaGraphs": false
+  }
 }
