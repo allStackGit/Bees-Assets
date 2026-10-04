@@ -9,6 +9,7 @@ from unittest import mock
 
 import bees_elastic_wan_slot_safety as slot_safety
 import bees_elastic_wan_training as elastic
+import bees_wan_actor_training as wan
 
 
 class FakeObservationSpec:
@@ -35,6 +36,13 @@ class FakeBehaviorSpec:
 class MismatchedBehaviorSpec:
     observation_specs = (FakeObservationSpec(),)
     action_spec = MismatchedActionSpec()
+
+
+class FakeTrajectory:
+    def __init__(self, behavior_id: str, agent_id: str):
+        self.behavior_id = behavior_id
+        self.agent_id = agent_id
+        self.steps = [object()]
 
 
 class SlotSafetyTests(unittest.TestCase):
@@ -173,6 +181,42 @@ class SlotSafetyTests(unittest.TestCase):
                     "control_epoch": 1,
                 }
             )
+
+    def test_authenticated_trajectory_traffic_refreshes_actor_lease(self):
+        broker, specs = self._broker()
+        behavior = "BeesRL1v1?team=0"
+        broker.register_actor(
+            {
+                **broker.release_identity,
+                "actor_id": 0,
+                "actor_instance_id": "a" * 32,
+                "env_count": 8,
+                "control_epoch": 1,
+                "behavior_specs": specs,
+            }
+        )
+        broker._registrations[0]["last_seen"] = 100.0
+        broker._policy_snapshots[behavior] = wan._PolicySnapshot(
+            1,
+            "digest",
+            b"policy",
+        )
+        broker._policy_epoch = 1
+        payload = {
+            **broker.release_identity,
+            "actor_id": 0,
+            "actor_instance_id": "a" * 32,
+            "control_epoch": 1,
+            "policy_versions": {behavior: 1},
+            "trajectories": [FakeTrajectory(behavior, "agent_32-1")],
+        }
+
+        with mock.patch.object(elastic.time, "monotonic", return_value=210.0):
+            self.assertEqual(broker.submit_trajectory_batch(payload), 1)
+        self.assertEqual(broker._registrations[0]["last_seen"], 210.0)
+
+        with mock.patch.object(elastic.time, "monotonic", return_value=320.0):
+            self.assertEqual(broker.active_actor_snapshot(), {0: 8})
 
     def test_authenticated_control_ack_refreshes_actor_lease(self):
         broker, specs = self._broker()
