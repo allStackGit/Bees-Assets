@@ -36,10 +36,12 @@ class SlotSafeElasticWanBroker(elastic.ElasticWanBroker):
         return instance_id
 
     def _require_live_instance(self, payload: Mapping[str, Any]) -> int:
+        """Validate slot ownership and refresh the lease for authenticated actor traffic."""
         actor_id = self._validate_actor_id(payload.get("actor_id"))
         instance_id = self._payload_instance_id(payload)
+        now = time.monotonic()
         with self._condition:
-            self._active_snapshot_locked()
+            self._active_snapshot_locked(now=now)
             record = self._registrations.get(actor_id)
             if record is None:
                 raise ValueError("actor lease expired; re-register before continuing")
@@ -47,6 +49,8 @@ class SlotSafeElasticWanBroker(elastic.ElasticWanBroker):
                 raise ValueError(
                     f"actor slot {actor_id} is owned by another live remote process"
                 )
+            record["last_seen"] = now
+            self._condition.notify_all()
         return actor_id
 
     def register_actor(self, payload: Mapping[str, Any]) -> None:
@@ -85,15 +89,9 @@ class SlotSafeElasticWanBroker(elastic.ElasticWanBroker):
         return super().submit_trajectory_batch(payload)
 
     def acknowledge_reset(self, payload: Mapping[str, Any]) -> None:
-        """Treat the authenticated control acknowledgement as an actor heartbeat too."""
-        actor_id = self._require_live_instance(payload)
+        """Treat the authenticated control acknowledgement as actor liveness too."""
+        self._require_live_instance(payload)
         super().acknowledge_reset(payload)
-        with self._condition:
-            record = self._registrations.get(actor_id)
-            if record is None:
-                raise ValueError("actor lease expired; re-register before sending heartbeat")
-            record["last_seen"] = time.monotonic()
-            self._condition.notify_all()
 
 
 def install_slot_safety() -> Type[elastic.ElasticWanBroker]:
