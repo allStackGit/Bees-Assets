@@ -2585,7 +2585,9 @@ def _poca_optimizer_step(optimizer) -> None:
         state["graph"] = None
         state["signature"] = None
         state["warmups"] += 1
-        _poca_record_timing("cuda_graph_warmup", 1.0)
+        _POCA_TIMING_STATE.graph_warmups = int(
+            getattr(_POCA_TIMING_STATE, "graph_warmups", 0)
+        ) + 1
         return
 
     migrate_step_state()
@@ -2612,6 +2614,9 @@ def _poca_optimizer_step(optimizer) -> None:
         replay_started = time.perf_counter()
         state["graph"].replay()
         state["replays"] += 1
+        _POCA_TIMING_STATE.graph_replays = int(
+            getattr(_POCA_TIMING_STATE, "graph_replays", 0)
+        ) + 1
         _poca_record_timing(
             "cuda_graph_replay_submit",
             time.perf_counter() - replay_started,
@@ -2629,6 +2634,9 @@ def _poca_optimizer_step(optimizer) -> None:
     state["signature"] = signature
     state["learning_rates"] = learning_rates
     state["captures"] += 1
+    _POCA_TIMING_STATE.graph_captures = int(
+        getattr(_POCA_TIMING_STATE, "graph_captures", 0)
+    ) + 1
     _poca_record_timing(
         "cuda_graph_capture",
         time.perf_counter() - capture_started,
@@ -3070,6 +3078,10 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         _POCA_TIMING_STATE.timing_totals = {}
         _POCA_TIMING_STATE.timing_counts = {}
         _POCA_TIMING_STATE.cuda_events = []
+        _POCA_TIMING_STATE.graph_warmups = 0
+        _POCA_TIMING_STATE.graph_captures = 0
+        _POCA_TIMING_STATE.graph_replays = 0
+        _POCA_TIMING_STATE.parallel_streams = ()
 
         normalization_started = time.perf_counter()
         _normalize_poca_advantages(self.policy, self.update_buffer)
@@ -3284,7 +3296,9 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             f"backward_join={_poca_average_timing('backward_stream_join'):.6f} "
             f"prefetch_wait={_poca_average_timing('prefetch_cpu_wait'):.6f} "
             f"cuda_prefetch={_poca_average_timing('cuda_prefetch'):.6f} "
-            f"graph_warmup={_poca_average_timing('cuda_graph_warmup'):.6f} "
+            f"graph_warmups={int(getattr(_POCA_TIMING_STATE, 'graph_warmups', 0))} "
+            f"graph_captures={int(getattr(_POCA_TIMING_STATE, 'graph_captures', 0))} "
+            f"graph_replays={int(getattr(_POCA_TIMING_STATE, 'graph_replays', 0))} "
             f"graph_capture={_poca_average_timing('cuda_graph_capture'):.6f} "
             f"graph_replay_submit={_poca_average_timing('cuda_graph_replay_submit'):.6f} "
             f"stats={_poca_average_timing('stats'):.6f} "
@@ -3297,6 +3311,10 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         _POCA_TIMING_STATE.timing_totals = None
         _POCA_TIMING_STATE.timing_counts = None
         _POCA_TIMING_STATE.cuda_events = None
+        _POCA_TIMING_STATE.graph_warmups = 0
+        _POCA_TIMING_STATE.graph_captures = 0
+        _POCA_TIMING_STATE.graph_replays = 0
+        _POCA_TIMING_STATE.parallel_streams = ()
 
         for stat, stat_list in batch_update_stats.items():
             if (
