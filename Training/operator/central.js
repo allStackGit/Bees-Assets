@@ -92,6 +92,31 @@ function buildCentralLearnerArgv(config, learnerPython, unity, runtimeRoot) {
             String(Number(config.threadedPolicyLag)),
         );
     }
+    const learnerOptimizations = (
+        config.learnerOptimizations &&
+        typeof config.learnerOptimizations === 'object'
+    ) ? config.learnerOptimizations : {};
+    const streamShards = Number(learnerOptimizations.streamShards || 1);
+    if (![1, 2, 4].includes(streamShards)) {
+        throw new Error(
+            'learnerOptimizations.streamShards must be 1, 2, or 4.'
+        );
+    }
+    argv.push(
+        '--bees-ppo-sync-cleanup=' + (
+            learnerOptimizations.syncCleanup ? 'true' : 'false'
+        ),
+        '--bees-ppo-stream-shards=' + String(streamShards),
+        '--bees-ppo-prefetch=' + (
+            learnerOptimizations.minibatchPrefetch ? 'true' : 'false'
+        ),
+        '--bees-ppo-critic-baseline-overlap=' + (
+            learnerOptimizations.criticBaselineOverlap ? 'true' : 'false'
+        ),
+        '--bees-ppo-cuda-graphs=' + (
+            learnerOptimizations.cudaGraphs ? 'true' : 'false'
+        ),
+    );
     return argv;
 }
 
