@@ -2477,11 +2477,15 @@ def _promote_poca_update_tensor_cache(cache):
         return cache, result
 
     promoted["storage"] = "cuda"
-    promoted["_cpu_group_source"] = {
-        "current_obs": cache["current_obs"],
-        "groupmate_obs": cache["groupmate_obs"],
-        "groupmate_counts": cache["groupmate_counts"],
-    }
+    if all(
+        key in cache
+        for key in ("current_obs", "groupmate_obs", "groupmate_counts")
+    ):
+        promoted["_cpu_group_source"] = {
+            "current_obs": cache["current_obs"],
+            "groupmate_obs": cache["groupmate_obs"],
+            "groupmate_counts": cache["groupmate_counts"],
+        }
     result["storage"] = "cuda"
     result["copy_seconds"] = time.perf_counter() - started
 
