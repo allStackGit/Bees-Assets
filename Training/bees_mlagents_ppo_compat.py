@@ -2458,6 +2458,116 @@ def _poca_parallel_forward(
         _POCA_GROUP_BATCH_STATE.freeze_max_agents = full_freeze
 
 
+
+def _poca_optimizer_step(optimizer) -> None:
+    """Execute Adam eagerly or replay a captured CUDA optimizer step."""
+
+    opts = _POCA_OPTIMIZATIONS
+    if not opts.cuda_graphs:
+        optimizer.step()
+        return
+
+    from mlagents.torch_utils import torch
+
+    if not torch.cuda.is_available():
+        optimizer.step()
+        return
+
+    state = getattr(optimizer, "_bees_cuda_graph_state", None)
+    if state is None:
+        state = {
+            "prepared": False,
+            "graph": None,
+            "signature": None,
+            "learning_rates": None,
+            "captures": 0,
+            "replays": 0,
+            "warmups": 0,
+        }
+        optimizer._bees_cuda_graph_state = state
+
+    def active_parameters():
+        return [
+            parameter
+            for group in optimizer.param_groups
+            for parameter in group["params"]
+            if parameter.grad is not None
+        ]
+
+    def migrate_step_state() -> None:
+        for group in optimizer.param_groups:
+            group["capturable"] = True
+            for parameter in group["params"]:
+                parameter_state = optimizer.state.get(parameter)
+                if not parameter_state:
+                    continue
+                step = parameter_state.get("step")
+                if step is not None and step.device != parameter.device:
+                    parameter_state["step"] = step.to(device=parameter.device)
+
+    parameters = active_parameters()
+    needs_state = any(not optimizer.state.get(parameter) for parameter in parameters)
+    if not state["prepared"] or needs_state:
+        # Run the real step once outside capture so Adam can lazily allocate its
+        # moment tensors. This is not an extra optimizer step.
+        for group in optimizer.param_groups:
+            group["capturable"] = False
+        optimizer.step()
+        migrate_step_state()
+        state["prepared"] = True
+        state["graph"] = None
+        state["signature"] = None
+        state["warmups"] += 1
+        _poca_record_timing("cuda_graph_warmup", 1.0)
+        return
+
+    migrate_step_state()
+    signature = tuple(
+        (
+            id(parameter),
+            int(parameter.data_ptr()),
+            int(parameter.grad.data_ptr()),
+            tuple(parameter.shape),
+            str(parameter.dtype),
+        )
+        for parameter in parameters
+    )
+    learning_rates = tuple(
+        float(group["lr"])
+        for group in optimizer.param_groups
+    )
+
+    if (
+        state["graph"] is not None
+        and state["signature"] == signature
+        and state["learning_rates"] == learning_rates
+    ):
+        replay_started = time.perf_counter()
+        state["graph"].replay()
+        state["replays"] += 1
+        _poca_record_timing(
+            "cuda_graph_replay_submit",
+            time.perf_counter() - replay_started,
+        )
+        return
+
+    # Capturing executes this minibatch's real optimizer step exactly once.
+    # If capture fails, propagate the failure rather than risk double-stepping.
+    capture_started = time.perf_counter()
+    torch.cuda.synchronize()
+    graph = torch.cuda.CUDAGraph()
+    with torch.cuda.graph(graph):
+        optimizer.step()
+    state["graph"] = graph
+    state["signature"] = signature
+    state["learning_rates"] = learning_rates
+    state["captures"] += 1
+    _poca_record_timing(
+        "cuda_graph_capture",
+        time.perf_counter() - capture_started,
+    )
+
+
 def install_inactive_continuous_action_masking() -> Optional[Callable]:
     """Mask nonexistent weapon actions and normalize MA-POCA fleet-size gradients."""
 
