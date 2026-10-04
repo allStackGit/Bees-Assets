@@ -37,6 +37,7 @@ class SlotSafeElasticWanBroker(elastic.ElasticWanBroker):
 
     def _require_live_instance(self, payload: Mapping[str, Any]) -> int:
         """Validate slot ownership and refresh the lease for authenticated actor traffic."""
+        self._validate_release_identity(payload)
         actor_id = self._validate_actor_id(payload.get("actor_id"))
         instance_id = self._payload_instance_id(payload)
         now = time.monotonic()
