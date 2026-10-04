@@ -201,6 +201,73 @@ server.listen(0,'127.0.0.1',async()=>{
         self.assertEqual(result["count"], 1)
         self.assertIn("HTTP 409", result["message"])
 
+    def test_runtime_parser_exposes_independent_ppo_experiments(self):
+        node = node_executable()
+        if not node:
+            self.skipTest("node is not available")
+        script = (
+            "const op=require(process.argv[1]);"
+            "process.stdout.write(JSON.stringify({"
+            "control:op.parseArgs(['runtime','--ppo-control']),"
+            "combo:op.parseArgs(['runtime','--ppo-sync-cleanup','--ppo-stream-shards','2',"
+            "'--ppo-prefetch','--ppo-critic-baseline-overlap','--ppo-cuda-graphs'])"
+            "}));"
+        )
+        completed = subprocess.run(
+            [node, "-e", script, str(NODE_OPERATOR)],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+        self.assertEqual(completed.returncode, 0, msg=completed.stderr)
+        parsed = json.loads(completed.stdout)
+
+        self.assertTrue(parsed["control"]["options"]["ppoControl"])
+        combo = parsed["combo"]["options"]
+        self.assertTrue(combo["explicitLearnerOptimizations"])
+        self.assertTrue(combo["ppoSyncCleanup"])
+        self.assertEqual(combo["ppoStreamShards"], 2)
+        self.assertTrue(combo["ppoPrefetch"])
+        self.assertTrue(combo["ppoCriticBaselineOverlap"])
+        self.assertTrue(combo["ppoCudaGraphs"])
+
+    def test_runtime_options_normalize_and_replace_learner_experiments(self):
+        node = node_executable()
+        if not node:
+            self.skipTest("node is not available")
+        common = OPERATOR_ROOT / "common.js"
+        script = (
+            "const c=require(process.argv[1]);"
+            "const base={learnerOptimizations:{syncCleanup:false,streamShards:1,"
+            "minibatchPrefetch:false,criticBaselineOverlap:false,cudaGraphs:false},"
+            "localActor:{enabled:false}};"
+            "const out=c.applyRuntimeTrainingOptions(base,{learnerOptimizations:{"
+            "syncCleanup:true,streamShards:4,minibatchPrefetch:true,"
+            "criticBaselineOverlap:false,cudaGraphs:true}});"
+            "process.stdout.write(JSON.stringify(out.learnerOptimizations));"
+        )
+        completed = subprocess.run(
+            [node, "-e", script, str(common)],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+        self.assertEqual(completed.returncode, 0, msg=completed.stderr)
+        self.assertEqual(
+            json.loads(completed.stdout),
+            {
+                "syncCleanup": True,
+                "streamShards": 4,
+                "minibatchPrefetch": True,
+                "criticBaselineOverlap": False,
+                "cudaGraphs": True,
+            },
+        )
+
     def test_central_supervisor_uses_prepared_immutable_runtime_copy(self):
         node = node_executable()
         if not node:
