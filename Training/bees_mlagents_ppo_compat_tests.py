@@ -851,6 +851,41 @@ class PocaBatchedTrajectoryEvaluationTests(unittest.TestCase):
         )
 
 
+class PocaLearnerOptimizationOptionTests(unittest.TestCase):
+    def tearDown(self):
+        compat.configure_poca_learner_optimizations()
+
+    def test_advanced_stream_options_force_sync_cleanup(self):
+        options = compat.configure_poca_learner_optimizations(
+            sync_cleanup=False,
+            stream_shards=2,
+            minibatch_prefetch=True,
+            critic_baseline_overlap=True,
+            cuda_graphs=False,
+        )
+        self.assertTrue(options.effective_sync_cleanup)
+        self.assertEqual(options.stream_shards, 2)
+        self.assertTrue(options.minibatch_prefetch)
+        self.assertTrue(options.critic_baseline_overlap)
+
+    def test_stream_shards_are_limited_to_supported_experiments(self):
+        with self.assertRaisesRegex(ValueError, "1, 2, or 4"):
+            compat.configure_poca_learner_optimizations(stream_shards=3)
+
+    def test_shard_row_remapping_preserves_local_indices(self):
+        import numpy as np
+
+        remapped = compat._poca_remap_rows(
+            np.asarray([0, 3, 5, 7, 9], dtype=np.int64),
+            4,
+            8,
+        )
+        np.testing.assert_array_equal(
+            remapped,
+            np.asarray([1, 3], dtype=np.int64),
+        )
+
+
 class PocaCudaTimingTests(unittest.TestCase):
     def tearDown(self):
         compat._POCA_TIMING_STATE.timing_totals = None
