@@ -1476,6 +1476,78 @@ class PocaCpuMinibatchPreparerTests(unittest.TestCase):
         )
 
 
+    def test_gpu_fixed_cache_uses_cpu_worker_only_for_group_prep(self):
+        from mlagents.torch_utils import torch
+
+        cpu_group_source = {"marker": "cpu-group-source"}
+        cache = {
+            "storage": "cuda",
+            "_cpu_group_source": cpu_group_source,
+        }
+        observation_source = {
+            "current_obs": [torch.zeros((2, compat.BEES_OBSERVATION_SIZE))],
+            "groupmate_obs": [],
+            "groupmate_counts": [0, 0],
+        }
+        compat._POCA_TIMING_STATE.dedup_input_rows = 0
+        compat._POCA_TIMING_STATE.dedup_unique_rows = 0
+
+        with (
+            mock.patch(
+                "mlagents.torch_utils.default_device",
+                return_value=torch.device("cuda"),
+            ),
+            mock.patch.object(torch.cuda, "is_available", return_value=True),
+            mock.patch.object(
+                compat,
+                "_poca_select_group_prepare_source",
+                return_value=observation_source,
+            ) as select_group,
+            mock.patch.object(
+                compat,
+                "_poca_build_observation_dedup_plan",
+                return_value=None,
+            ),
+            mock.patch.object(
+                compat,
+                "_poca_pin_selected_minibatch",
+                side_effect=lambda value: value,
+            ),
+            mock.patch.object(
+                compat,
+                "_poca_move_selected_minibatch",
+                side_effect=lambda value, _device: value,
+            ),
+            mock.patch.object(
+                compat,
+                "_select_poca_update_tensor_cache",
+            ) as select_full,
+            mock.patch.object(
+                compat,
+                "_poca_cuda_timing_begin",
+                return_value=None,
+            ),
+            mock.patch.object(
+                compat,
+                "_poca_cuda_timing_end",
+            ),
+        ):
+            preparer = compat._PocaCpuMinibatchPreparer(cache)
+            self.assertTrue(preparer.enabled)
+            self.assertFalse(preparer.full_minibatch)
+            future = preparer.submit([0, 1])
+            result = preparer.consume(future)
+            preparer.close()
+
+        self.assertIn("groupmate_obs", result)
+        select_group.assert_called_once()
+        self.assertIs(
+            select_group.call_args.args[0],
+            cpu_group_source,
+        )
+        select_full.assert_not_called()
+
+
 class PocaBusyTelemetryTests(unittest.TestCase):
     def test_busy_counter_accumulates_update_wall_time(self):
         before = compat.poca_update_busy_seconds_total()
