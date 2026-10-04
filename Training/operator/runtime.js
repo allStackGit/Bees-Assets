@@ -292,6 +292,9 @@ function newTrainingRunPlan(python, options = {}) {
     if (options.preserveRun) {
         args.push('--preserve-run');
     }
+    if (options.resumeRunId) {
+        args.push('--resume-run-id', String(options.resumeRunId));
+    }
     if (options.forceNew) {
         args.push('--force-new');
         if (options.buildId) args.push('--build-id', String(options.buildId));
