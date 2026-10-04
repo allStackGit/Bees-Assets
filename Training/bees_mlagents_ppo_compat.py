@@ -2477,6 +2477,11 @@ def _promote_poca_update_tensor_cache(cache):
         return cache, result
 
     promoted["storage"] = "cuda"
+    promoted["_cpu_group_source"] = {
+        "current_obs": cache["current_obs"],
+        "groupmate_obs": cache["groupmate_obs"],
+        "groupmate_counts": cache["groupmate_counts"],
+    }
     result["storage"] = "cuda"
     result["copy_seconds"] = time.perf_counter() - started
 
@@ -2499,6 +2504,7 @@ def _select_poca_update_tensor_cache(
     *,
     device_override=None,
     non_blocking: bool = False,
+    groupmate_obs_override=None,
 ):
     """Gather one shuffled PPO minibatch from the materialized cache."""
 
@@ -2562,12 +2568,16 @@ def _select_poca_update_tensor_cache(
     }
 
     current_obs = [take(tensor) for tensor in cache["current_obs"]]
-    groupmate_obs = _select_poca_ragged_group_obs(
-        cache["groupmate_obs"],
-        indices,
-        selected_groupmate_counts,
-        device,
-        non_blocking=non_blocking,
+    groupmate_obs = (
+        groupmate_obs_override
+        if groupmate_obs_override is not None
+        else _select_poca_ragged_group_obs(
+            cache["groupmate_obs"],
+            indices,
+            selected_groupmate_counts,
+            device,
+            non_blocking=non_blocking,
+        )
     )
     continuous_actions = take(cache["continuous_actions"])
     discrete_actions = take(cache["discrete_actions"])
@@ -2643,6 +2653,36 @@ def _select_poca_update_tensor_cache(
     }
 
 
+def _poca_select_group_prepare_source(source, indices):
+    """Select only CPU observation data needed by the POCA group hot path."""
+
+    import numpy as np
+    from mlagents.torch_utils import torch
+
+    indices = np.asarray(indices, dtype=np.int64)
+    index_tensor = torch.as_tensor(indices, dtype=torch.long)
+    counts = np.asarray(
+        source["groupmate_counts"][indices],
+        dtype=np.int32,
+    )
+    current_obs = [
+        tensor.index_select(0, index_tensor)
+        for tensor in source["current_obs"]
+    ]
+    groupmate_obs = _select_poca_ragged_group_obs(
+        source["groupmate_obs"],
+        indices,
+        counts,
+        torch.device("cpu"),
+        non_blocking=False,
+    )
+    return {
+        "current_obs": current_obs,
+        "groupmate_obs": groupmate_obs,
+        "groupmate_counts": counts,
+    }
+
+
 def _poca_build_observation_dedup_plan(cached):
     """Find bit-identical current/group observations off the CUDA critical path.
 
@@ -2687,9 +2727,8 @@ def _poca_build_observation_dedup_plan(cached):
             if np.array_equal(bits, unique_bits[unique_index]):
                 return unique_index
         unique_index = len(unique_rows)
-        stored = np.array(row, dtype=np.float32, copy=True)
-        unique_rows.append(stored)
-        unique_bits.append(stored.view(np.uint32))
+        unique_rows.append(row)
+        unique_bits.append(bits)
         candidates.setdefault(key, []).append(unique_index)
         return unique_index
 
