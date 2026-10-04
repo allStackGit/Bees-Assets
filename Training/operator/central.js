@@ -639,7 +639,13 @@ async function startCentralAgentIfNeeded(
                 console.log(
                     'Central supervisor/control configuration changed; checkpointing the learner before replacing the verified supervisor.'
                 );
-                await stopCentralAgentGracefully(Number(existing.pid));
+                const shutdownAlreadyRequested = exists(
+                    paths.centralAgentShutdownRequestPath
+                );
+                await stopCentralAgentGracefully(
+                    Number(existing.pid),
+                    shutdownAlreadyRequested ? 1800 : 150,
+                );
             } else {
                 const livePid = getStateReferencedLivePid(existing);
                 if (livePid > 0) {
