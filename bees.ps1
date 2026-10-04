@@ -10,6 +10,12 @@ param(
     [ValidateRange(0,2147483647)][int]$PolicyLag,
     [ValidateRange(1,2147483647)][int]$BackpressureQueue,
     [switch]$LocalTraining,
+    [switch]$PpoControl,
+    [switch]$PpoSyncCleanup,
+    [ValidateSet(1,2,4)][int]$PpoStreamShards,
+    [switch]$PpoPrefetch,
+    [switch]$PpoCriticBaselineOverlap,
+    [switch]$PpoCudaGraphs,
     [string[]]$EnvArg,
     [switch]$Once,
     [ValidateRange(1,60)][int]$RefreshSeconds=2,
@@ -42,6 +48,26 @@ if($PSBoundParameters.ContainsKey('PolicyLag') -and -not $Threaded){
 }
 if($PSBoundParameters.ContainsKey('BackpressureQueue') -and $Command -ne 'runtime'){
     throw '-BackpressureQueue is only valid with the runtime command.'
+}
+$ppoExperimentRequested=(
+    $PpoControl -or
+    $PpoSyncCleanup -or
+    $PSBoundParameters.ContainsKey('PpoStreamShards') -or
+    $PpoPrefetch -or
+    $PpoCriticBaselineOverlap -or
+    $PpoCudaGraphs
+)
+if($ppoExperimentRequested -and $Command -ne 'runtime'){
+    throw 'PPO learner optimization options are only valid with the runtime command.'
+}
+if($PpoControl -and (
+    $PpoSyncCleanup -or
+    $PSBoundParameters.ContainsKey('PpoStreamShards') -or
+    $PpoPrefetch -or
+    $PpoCriticBaselineOverlap -or
+    $PpoCudaGraphs
+)){
+    throw '-PpoControl cannot be combined with PPO optimization options.'
 }
 if($Command -ne 'bundle' -and $PSBoundParameters.ContainsKey('LogPercent')){
     throw '-LogPercent is only valid with the bundle command.'
@@ -89,6 +115,14 @@ if($PSBoundParameters.ContainsKey('BackpressureQueue')){
     $arguments+=@('--backpressure-queue',[string]$BackpressureQueue)
 }
 if($LocalTraining){$arguments+='--local-training'}
+if($PpoControl){$arguments+='--ppo-control'}
+if($PpoSyncCleanup){$arguments+='--ppo-sync-cleanup'}
+if($PSBoundParameters.ContainsKey('PpoStreamShards')){
+    $arguments+=@('--ppo-stream-shards',[string]$PpoStreamShards)
+}
+if($PpoPrefetch){$arguments+='--ppo-prefetch'}
+if($PpoCriticBaselineOverlap){$arguments+='--ppo-critic-baseline-overlap'}
+if($PpoCudaGraphs){$arguments+='--ppo-cuda-graphs'}
 foreach($value in @($EnvArg)){
     if($null -ne $value){$arguments+=@('--env-arg',[string]$value)}
 }
