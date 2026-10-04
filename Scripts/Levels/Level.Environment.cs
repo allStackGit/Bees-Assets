@@ -211,6 +211,12 @@ namespace Assets.Scripts.Levels
                 random.Next(),
                 GetRlStaticObstacleMinimumCorridorHalfWidth());
 
+            if (layout.Count > 0 &&
+                global::RlOneVsOneTrainingBootstrap.ObserveVisibleObstaclesRequested)
+            {
+                ObstacleMap.ObstacleBackground = obstaclePool.GetBackground(Map.transform);
+            }
+
             for (int i = 0; i < layout.Count; i++)
             {
                 Rect rect = layout[i];

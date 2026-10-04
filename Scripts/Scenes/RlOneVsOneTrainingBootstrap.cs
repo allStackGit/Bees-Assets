@@ -18,6 +18,7 @@ using UnityEngine.SceneManagement;
 internal static class RlOneVsOneTrainingBootstrap
 {
     internal const string TrainingSceneName = "RL 1v1 Training";
+    internal const string ObserveVisibleObstaclesFlag = "--bees-rl-observe-visible-obstacles";
     internal const int TrainingLevelCount = 1;
 
     // Keep these original proof constants as the stable no-argument defaults. Runtime code uses the
@@ -61,6 +62,9 @@ internal static class RlOneVsOneTrainingBootstrap
     internal static bool IsDedicatedTrainingRuntime =>
         ShouldApply(SceneManager.GetActiveScene().name);
 
+    internal static bool ObserveVisibleObstaclesRequested =>
+        HasCommandLineFlag(ObserveVisibleObstaclesFlag);
+
     internal static float CurrentHealthRatio => RuntimeOptions.HealthRatio;
     internal static float CurrentMapSize => RuntimeOptions.MapSize;
     internal static float CurrentCameraSize => CurrentMapSize / 2f;
@@ -87,6 +91,19 @@ internal static class RlOneVsOneTrainingBootstrap
             }
             return _runtimeOptions;
         }
+    }
+
+    private static bool HasCommandLineFlag(string flag)
+    {
+        string[] args = Environment.GetCommandLineArgs();
+        for (int i = 0; i < args.Length; i++)
+        {
+            if (string.Equals(args[i], flag, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+        return false;
     }
 
     internal static bool ShouldApply(string sceneName)

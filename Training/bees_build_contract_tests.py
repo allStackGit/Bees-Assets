@@ -94,6 +94,7 @@ class OperatorBehaviorTests(unittest.TestCase):
                 "--rl-ships-per-side=2",
                 "--rl-static-obstacles=true",
                 "--bees-rl-arenas-per-env=1",
+                "--bees-rl-observe-visible-obstacles",
             ],
         )
 
