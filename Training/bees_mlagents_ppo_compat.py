@@ -972,6 +972,7 @@ class _PocaUpdateHardwareProfiler:
         try:
             per_core = self._psutil.cpu_percent(None, percpu=True)
             memory = self._process.memory_info()
+            system_memory = self._psutil.virtual_memory()
             context = self._process.num_ctx_switches()
             self._cpu_samples.append(
                 {
@@ -979,6 +980,10 @@ class _PocaUpdateHardwareProfiler:
                     "system_cpu": float(self._psutil.cpu_percent(None)),
                     "hottest_core": max(per_core) if per_core else 0.0,
                     "rss_mib": float(memory.rss) / (1024.0 * 1024.0),
+                    "system_ram_percent": float(system_memory.percent),
+                    "system_ram_available_mib": (
+                        float(system_memory.available) / (1024.0 * 1024.0)
+                    ),
                     "threads": float(self._process.num_threads()),
                     "ctx_voluntary": float(context.voluntary),
                     "ctx_involuntary": float(context.involuntary),
@@ -1079,6 +1084,8 @@ class _PocaUpdateHardwareProfiler:
             "system_cpu",
             "hottest_core",
             "rss_mib",
+            "system_ram_percent",
+            "system_ram_available_mib",
             "threads",
             "swap_percent",
         ):
@@ -3961,6 +3968,8 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             f"hottest_core_avg={hardware_summary.get('hottest_core_avg', 0.0):.1f} "
             f"hottest_core_max={hardware_summary.get('hottest_core_max', 0.0):.1f} "
             f"rss_max_mib={hardware_summary.get('rss_mib_max', 0.0):.1f} "
+            f"ram_percent_max={hardware_summary.get('system_ram_percent_max', 0.0):.1f} "
+            f"ram_available_min_mib={hardware_summary.get('system_ram_available_mib_min', 0.0):.1f} "
             f"swap_max={hardware_summary.get('swap_percent_max', 0.0):.1f} "
             f"ctx_voluntary={hardware_summary.get('ctx_voluntary_delta', 0.0):.0f} "
             f"ctx_involuntary={hardware_summary.get('ctx_involuntary_delta', 0.0):.0f} "
