@@ -237,6 +237,25 @@ async function invokeRuntime(options = {}) {
         : '';
 
     if (activeRun !== releaseRun || activeKey !== releaseKey) {
+        if (isInterruptedIncompatibleCutover(release, desired)) {
+            saveRuntimeTrainingOptions({
+                threadedTraining: Boolean(config.threadedTraining),
+                threadedPolicyLag: Number(config.threadedPolicyLag),
+                wanMaxQueuedBatches: Number(config.wanMaxQueuedBatches),
+                localTraining: Boolean(
+                    config.localActor &&
+                    typeof config.localActor === 'object' &&
+                    config.localActor.enabled
+                ),
+                learnerOptimizations: config.learnerOptimizations,
+            });
+            console.log(
+                'Latest release is an interrupted incompatible cutover. ' +
+                'Saved the requested runtime settings and resuming that cutover now.'
+            );
+            await invokeStart({});
+            return;
+        }
         throw new Error(
             'Latest release does not match the active training run. active=' +
             activeRun + '/' + activeKey + ' release=' + releaseRun + '/' + releaseKey
