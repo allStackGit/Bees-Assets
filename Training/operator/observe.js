@@ -1,15 +1,12 @@
 'use strict';
 
-const crypto = require('node:crypto');
 const path = require('node:path');
 
 const {
-    ensureDir,
     ensureTokenFile,
     exists,
     loadConfig,
     paths,
-    readJson,
     removeIfExists,
     resolveUnityEditor,
     sleep,
@@ -19,7 +16,6 @@ const {
 } = require('./common');
 const { queryUnityProcesses } = require('./build');
 const { getStatus } = require('./control');
-const { requestCentralDiagnosticModelSnapshot } = require('./diagnostics');
 const {
     ensureLearnerPython,
     getTrainingCompatibilityFingerprint,
@@ -82,14 +78,6 @@ function assertUnityProjectClosed() {
     );
 }
 
-function removeEphemeralSnapshot(modelPath) {
-    const resolved = String(modelPath || '').trim();
-    if (!resolved) return;
-    const name = path.basename(resolved).toLowerCase();
-    if (!name.startsWith('diagnostic-') || path.extname(name) !== '.onnx') return;
-    removeIfExists(resolved);
-}
-
 async function invokeObserve() {
     const config = loadConfig();
     const admin = ensureTokenFile(paths.adminTokenPath);
@@ -97,7 +85,7 @@ async function invokeObserve() {
 
     if (!(await testControl(String(config.controlUrl), admin))) {
         throw new Error(
-            'Training control is offline. The live in-memory learner policy cannot be observed.'
+            'Training control is offline. The live learner policy cannot be observed.'
         );
     }
 
@@ -113,6 +101,12 @@ async function invokeObserve() {
         throw new Error('Active training status is missing run/policy compatibility identity.');
     }
 
+    if (!exists(paths.wanTokenPath)) {
+        throw new Error(
+            'The active training broker authentication token is missing: ' + paths.wanTokenPath
+        );
+    }
+
     const python = ensureLearnerPython(config);
     const fingerprint = getTrainingCompatibilityFingerprint(python);
     const sourceKey = String(fingerprint.compatibility_key || '').trim().toLowerCase();
@@ -124,58 +118,39 @@ async function invokeObserve() {
         );
     }
 
-    ensureDir(paths.runtimeRoot);
-    const observeId = crypto.randomBytes(12).toString('hex');
-    const snapshotJson = path.join(
-        paths.runtimeRoot,
-        'observe-model-snapshot-' + observeId + '.json',
+    const environmentArgs = visualEnvironmentArgs(desired.environment_args || []);
+    const observerScript = path.join(
+        paths.assetsRoot,
+        'Training',
+        'bees_training_observe.py',
     );
-    let modelPath = '';
+    if (!exists(observerScript)) {
+        throw new Error('Training observer helper is missing: ' + observerScript);
+    }
+
+    const unity = resolveUnityEditor(config);
     let observer = null;
     let editor = null;
 
     try {
-        await requestCentralDiagnosticModelSnapshot(status, runId, snapshotJson);
-        const snapshot = readJson(snapshotJson);
-        if (String(snapshot.status) !== 'succeeded') {
-            throw new Error(
-                'Live learner snapshot failed: ' +
-                String(snapshot.reason || snapshot.error || snapshot.status || 'unknown error')
-            );
-        }
-        modelPath = String(snapshot.model_path || '').trim();
-        if (!modelPath || !exists(modelPath)) {
-            throw new Error('Live learner snapshot file is unavailable: ' + modelPath);
-        }
-
-        const environmentArgs = visualEnvironmentArgs(desired.environment_args || []);
-        const observerScript = path.join(
-            paths.assetsRoot,
-            'Training',
-            'bees_training_observe.py',
-        );
-        if (!exists(observerScript)) {
-            throw new Error('Training observer helper is missing: ' + observerScript);
-        }
-
-        const unity = resolveUnityEditor(config);
-        console.log(
-            'Observing current learner policy at step ' + Number(snapshot.step || 0) +
-            ' for run ' + runId + '.'
-        );
+        console.log('Observing live training policies for run ' + runId + '.');
         console.log(
             'Visual environment arguments: ' +
             (environmentArgs.length ? environmentArgs.join(' ') : '(none)')
         );
         console.log(
-            'Starting the local ONNX inference driver; this does not join PPO or submit experience.'
+            'Starting the training-style policy driver. It samples the same live Torch policies ' +
+            'and self-play opponents published to rollout workers, but it never registers as an ' +
+            'actor or submits trajectories.'
         );
 
         observer = spawn(
             python,
             [
                 observerScript,
-                '--model', modelPath,
+                '--broker-port', String(config.brokerPort),
+                '--token-file', paths.wanTokenPath,
+                '--run-id', runId,
                 '--timeout-wait', '600',
             ],
             {
@@ -185,9 +160,15 @@ async function invokeObserve() {
             },
         );
         await waitForSpawn(observer, 'RL visual observer');
+
         // Unity's Editor client tries the external communicator immediately on entering Play.
-        // Give the Python process a brief head start so its editor-port listener owns the socket first.
+        // Give the Python process time to authenticate to the broker and open the editor-port listener.
         await sleep(1000);
+        if (observer.exitCode !== null || observer.signalCode !== null) {
+            throw new Error(
+                'RL visual policy driver exited before the Unity Editor could connect.'
+            );
+        }
 
         editor = spawn(
             unity,
@@ -205,10 +186,12 @@ async function invokeObserve() {
         await waitForSpawn(editor, 'Unity Editor observer');
 
         console.log(
-            'Unity Editor is opening the RL 1v1 Training scene. The same snapshot controls both teams.'
+            'Unity Editor is opening the RL 1v1 Training scene. Live training policy assignments ' +
+            'control the two teams; Torch policies sample exploration exactly as rollout inference does.'
         );
         console.log(
-            'Stop Play mode when you are finished; the inference driver will exit and the snapshot will be removed.'
+            'Stop Play mode when you are finished; the policy driver will exit. The observed ' +
+            'environment does not contribute experience to PPO.'
         );
 
         const first = await Promise.race([
@@ -231,13 +214,11 @@ async function invokeObserve() {
 
         if (first.result.code !== 0 && first.result.code !== null) {
             throw new Error(
-                'RL visual inference driver exited with code ' + first.result.code + '.'
+                'RL visual policy driver exited with code ' + first.result.code + '.'
             );
         }
         console.log('RL observation ended. Unity Editor remains open.');
     } finally {
-        removeIfExists(snapshotJson);
-        removeEphemeralSnapshot(modelPath);
         if (observer && observer.exitCode === null && observer.signalCode === null) {
             killProcessTree(observer);
         }
