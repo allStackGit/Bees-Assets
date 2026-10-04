@@ -552,6 +552,86 @@ async function invokeStart(options = {}) {
         );
     }
 
+    if (options.resumeRunId) {
+        const unity = resolveUnityEditor(config);
+        ensureTailnetIdentity(config);
+        prepareRemoteBootstrap(config, python, release);
+        await publishRelease(config, admin, release);
+        await startTailnetGatewayIfNeeded(config);
+
+        const staged = await stageRelease(
+            config,
+            admin,
+            release,
+            envArgs,
+            environmentValidationKey,
+        );
+        const desired = await setDesiredState(
+            config,
+            admin,
+            { training_enabled: true },
+        );
+
+        if (staged.pending_release) {
+            await waitReleaseRollout(
+                config,
+                admin,
+                String(release.build_id),
+                String(release.run_id),
+                String(release.compatibility_key),
+            );
+        }
+
+        const centralRuntime = prepareCentralReleaseRuntime(
+            config,
+            bootstrapPython,
+            unity,
+            release,
+        );
+        await startCentralAgentIfNeeded(
+            config,
+            bootstrapPython,
+            unity,
+            release,
+            centralRuntime,
+        );
+        prepareLocalActorReleaseRuntime(
+            config,
+            release,
+            centralRuntime,
+        );
+        await startLocalActorIfNeeded(
+            config,
+            bootstrapPython,
+            release,
+            centralRuntime,
+        );
+
+        if (
+            release.previous_run_id &&
+            String(release.previous_run_id) !== String(release.run_id)
+        ) {
+            await sleep(2000);
+            archiveTrainingRun(
+                python,
+                String(release.previous_run_id),
+                'replaced-accidental-run',
+            );
+        }
+
+        console.log(
+            'Existing-run restoration complete. Active run: ' +
+            release.run_id
+        );
+        console.log(
+            'Training requested: build=' + release.build_id +
+            ' run=' + release.run_id + ' revision=' + desired.revision
+        );
+        await sleep(1000);
+        await showStatus(config, admin, true, options.refreshSeconds || 2);
+        return;
+    }
+
     if (resumeForcedNewRun) {
         let planBuild = String(forcedPlan.build_id || '').trim();
         const planRun = String(forcedPlan.run_id || '').trim();
