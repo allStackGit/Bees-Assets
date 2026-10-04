@@ -78,6 +78,23 @@ function getEnvironmentArgs(config, options) {
     return Array.isArray(config.environmentArgs) ? config.environmentArgs.map(String) : [];
 }
 
+function isInterruptedIncompatibleCutover(release, desired) {
+    if (!release || !desired || !Boolean(release.incompatible)) return false;
+    const releaseRun = String(release.run_id || '').trim();
+    const previousRun = String(release.previous_run_id || '').trim();
+    const releaseKey = String(release.compatibility_key || '').trim().toLowerCase();
+    const activeRun = String(desired.run_id || '').trim();
+    const activeKey = String(desired.compatibility_key || '').trim().toLowerCase();
+    if (!releaseRun || !previousRun || !releaseKey || !activeRun || !activeKey) {
+        return false;
+    }
+    return (
+        activeRun === previousRun &&
+        activeRun !== releaseRun &&
+        activeKey !== releaseKey
+    );
+}
+
 async function reconcilePersistedTrainingAfterServerStart(config, admin) {
     const status = await getStatus(config, admin);
     if (!status.desired || !status.desired.training_enabled) return;
@@ -401,8 +418,29 @@ async function invokeStart(options = {}) {
 
     let forcedPlan = getPendingForcedNewRunPlan();
     const resumeForcedNewRun = Boolean(forcedPlan);
+    const initialStatus = await getStatus(config, admin);
+    const resumeInterruptedIncompatibleCutover = Boolean(
+        !resumeForcedNewRun &&
+        !options.newRun &&
+        isInterruptedIncompatibleCutover(
+            release,
+            initialStatus.desired || {},
+        )
+    );
     let outgoingRun = '';
     let environmentValidationKey = '';
+
+    if (resumeInterruptedIncompatibleCutover) {
+        envArgs = (
+            (initialStatus.desired && initialStatus.desired.environment_args) || []
+        ).map(String);
+        console.log(
+            'Resuming interrupted incompatible release cutover: active=' +
+            String(initialStatus.desired.run_id || '') +
+            ' target=' + String(release.run_id || '') +
+            ' build=' + String(release.build_id || '') + '.'
+        );
+    }
 
     if (!resumeForcedNewRun) {
         environmentValidationKey = await assertRlEnvironmentArgsValid(
@@ -552,6 +590,83 @@ async function invokeStart(options = {}) {
     const performForcedNewRun = Boolean(options.newRun || resumeForcedNewRun);
     const unity = resolveUnityEditor(config);
     let centralRuntime = null;
+
+    if (resumeInterruptedIncompatibleCutover) {
+        centralRuntime = prepareCentralReleaseRuntime(
+            config, bootstrapPython, unity, release
+        );
+
+        ensureTailnetIdentity(config);
+        prepareRemoteBootstrap(config, python, release);
+
+        // Mirror the post-build incompatible-cutover sequence. The old run remains
+        // authoritative until its verified central supervisor has exited cleanly.
+        await startCentralAgentIfNeeded(
+            config, bootstrapPython, unity, release, centralRuntime
+        );
+        prepareLocalActorReleaseRuntime(config, release, centralRuntime);
+
+        await publishRelease(config, admin, release);
+        await startTailnetGatewayIfNeeded(config);
+
+        const staged = await stageRelease(
+            config,
+            admin,
+            release,
+            envArgs,
+            environmentValidationKey,
+        );
+        const desired = await setDesiredState(
+            config,
+            admin,
+            { training_enabled: true },
+        );
+
+        if (staged.pending_release) {
+            await waitReleaseRollout(
+                config,
+                admin,
+                String(release.build_id),
+                String(release.run_id),
+                String(release.compatibility_key),
+            );
+        }
+
+        if (
+            release.previous_run_id &&
+            String(release.previous_run_id) !== String(release.run_id)
+        ) {
+            await sleep(2000);
+            archiveTrainingRun(
+                python,
+                String(release.previous_run_id),
+                'incompatible-run-final',
+            );
+        }
+
+        await startLocalActorIfNeeded(
+            config,
+            bootstrapPython,
+            release,
+            centralRuntime,
+        );
+
+        console.log(
+            'Interrupted incompatible cutover complete. Active run: ' +
+            release.run_id
+        );
+        console.log(
+            'Training requested: build=' + release.build_id +
+            ' run=' + release.run_id + ' revision=' + desired.revision
+        );
+        console.log(
+            'Environment arguments: ' +
+            (envArgs.length ? envArgs.join(' ') : '(none; defaults)')
+        );
+        await sleep(1000);
+        await showStatus(config, admin, true, options.refreshSeconds || 2);
+        return;
+    }
 
     // For an ordinary same-run start, preserve the existing hot-runtime behavior. A forced new
     // run is different: do not publish a new runtime pointer while training-control still names
@@ -831,6 +946,7 @@ async function invokeQualify() {
 
 module.exports = {
     getEnvironmentArgs,
+    isInterruptedIncompatibleCutover,
     invokeBuild,
     invokeQualify,
     invokeRuntime,
