@@ -2501,14 +2501,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         ):
                             launch_worker_env_count = managed.worker_env_count
                         rollout_stalled = managed.rollout_stalled()
-                        child_health_error = (
-                            managed.health_error() if managed.alive() else ""
-                        )
-                        recovery_restart = (
-                            not managed.alive()
-                            or rollout_stalled
-                            or bool(child_health_error)
-                        )
+                        recovery_restart = not managed.alive() or rollout_stalled
                         if args.auto_worker_envs and recovery_restart:
                             launch_worker_env_count = safe_auto_restart_env_count(
                                 desired,
@@ -2524,12 +2517,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                             run_id,
                             launch_worker_env_count,
                         )
-                        if (
-                            args.auto_worker_envs
-                            and managed.alive()
-                            and not rollout_stalled
-                            and not child_health_error
-                        ):
+                        if args.auto_worker_envs and managed.alive() and not rollout_stalled:
                             managed.set_worker_env_target(worker_env_count)
                         needs_restart = (
                             not managed.alive()
@@ -2540,7 +2528,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                             or managed.environment_args != environment_args
                             or managed.command != tuple(command)
                             or rollout_stalled
-                            or bool(child_health_error)
                         )
                         if (
                             needs_restart
@@ -2567,14 +2554,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                                 launch_worker_env_count,
                             )
                         if needs_restart:
-                            if child_health_error:
-                                print(
-                                    "[Bees control] managed actor health failed; restarting the "
-                                    "owned actor process tree: " + child_health_error,
-                                    file=sys.stderr,
-                                    flush=True,
-                                )
-                            elif rollout_stalled:
+                            if rollout_stalled:
                                 print(
                                     "[Bees control] managed rollout stalled; restarting the "
                                     "owned actor process tree.",
