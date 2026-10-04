@@ -3527,6 +3527,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
 
         valid_rows = getattr(_POCA_GROUP_BATCH_STATE, "valid_rows", None)
         cache = getattr(_POCA_GROUP_BATCH_STATE, "encoded_cache", None)
+        dedup_plan = getattr(_POCA_GROUP_BATCH_STATE, "dedup_plan", None)
         if (
             valid_rows is None
             or cache is None
@@ -3577,9 +3578,35 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         batch_size = int(reference_members[0][0].shape[0])
         encoded_size = int(self.observation_encoder.total_enc_size)
 
-        def encode_members(members, member_valid_rows):
+        def dedup_unique_encoding():
+            if dedup_plan is None:
+                return None
+            unique_obs = dedup_plan.get("unique_obs")
+            if (
+                not isinstance(unique_obs, list)
+                or len(unique_obs) != 1
+                or unique_obs[0].device != reference_members[0][0].device
+            ):
+                return None
+            cache_key = ("dedup-unique", id(self))
+            encoded = cache.get(cache_key)
+            if encoded is None:
+                encoded = self.observation_encoder(unique_obs)
+                cache[cache_key] = encoded
+            return encoded
+
+        def encode_members(
+            members,
+            member_valid_rows,
+            dedup_mappings=None,
+        ):
             outputs = [None] * len(members)
             pending = []
+            unique_encoded = (
+                dedup_unique_encoding()
+                if dedup_mappings is not None
+                else None
+            )
 
             for position, (member, valid) in enumerate(zip(members, member_valid_rows)):
                 if len(member) != 1 or int(member[0].shape[0]) != batch_size:
@@ -3592,6 +3619,44 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                 if cached is not None:
                     outputs[position] = cached
                     continue
+
+                mapping = (
+                    dedup_mappings[position]
+                    if (
+                        unique_encoded is not None
+                        and position < len(dedup_mappings)
+                    )
+                    else None
+                )
+                if mapping is not None:
+                    count = batch_size if valid is None else int(len(valid))
+                    expected = count
+                    if (
+                        mapping.device == source.device
+                        and int(mapping.numel()) == expected
+                    ):
+                        part = unique_encoded.index_select(
+                            0,
+                            mapping.to(dtype=torch.long),
+                        )
+                        if valid is None:
+                            encoded = part
+                        else:
+                            index = torch.as_tensor(
+                                valid,
+                                dtype=torch.long,
+                                device=source.device,
+                            )
+                            encoded = part.new_zeros(
+                                (batch_size, encoded_size)
+                            ).index_copy(
+                                0,
+                                index,
+                                part,
+                            )
+                        cache[cache_key] = encoded
+                        outputs[position] = encoded
+                        continue
 
                 count = batch_size if valid is None else int(len(valid))
                 if count == 0:
@@ -3655,11 +3720,27 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         self_attn_masks = []
         self_attn_inputs = []
 
+        group_dedup_mappings = (
+            dedup_plan.get("group_inverse", ())
+            if dedup_plan is not None
+            else None
+        )
+        current_dedup_mapping = (
+            dedup_plan.get("current_inverse")
+            if dedup_plan is not None
+            else None
+        )
+
         if obs:
             obs_attn_mask = self._get_masks_from_nans(obs)
             encoded_obs = encode_members(
                 obs,
                 valid_rows[: len(obs)],
+                (
+                    group_dedup_mappings[: len(obs)]
+                    if group_dedup_mappings is not None
+                    else None
+                ),
             )
             concat_f_inp = []
             for encoded, action in zip(encoded_obs, actions):
@@ -3681,9 +3762,19 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             obs_only_valid_rows = [None]
             if len(obs_only) > 1:
                 obs_only_valid_rows.extend(valid_rows[: len(obs_only) - 1])
+            obs_only_dedup_mappings = None
+            if (
+                current_dedup_mapping is not None
+                and group_dedup_mappings is not None
+            ):
+                obs_only_dedup_mappings = [
+                    current_dedup_mapping,
+                    *group_dedup_mappings[: max(0, len(obs_only) - 1)],
+                ]
             encoded_obs_only = encode_members(
                 obs_only,
                 obs_only_valid_rows,
+                obs_only_dedup_mappings,
             )
             g_inp = torch.stack(encoded_obs_only, dim=1)
             self_attn_masks.append(obs_only_attn_mask)
@@ -4903,6 +4994,15 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             _poca_groupmate_valid_row_indices(groupmate_counts)
         )
         _POCA_GROUP_BATCH_STATE.encoded_cache = {}
+        _POCA_GROUP_BATCH_STATE.dedup_plan = (
+            cached.get("observation_dedup")
+            if (
+                cached is not None
+                and _POCA_OPTIMIZATIONS.stream_shards == 1
+                and not _POCA_OPTIMIZATIONS.critic_baseline_overlap
+            )
+            else None
+        )
 
         from bees_mlagents_structured_policy import (
             reset_training_faction_rows,
@@ -4936,6 +5036,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             _POLICY_DIMENSION_MASK_STATE.sample_weights = None
             _POCA_GROUP_BATCH_STATE.valid_rows = None
             _POCA_GROUP_BATCH_STATE.encoded_cache = None
+            _POCA_GROUP_BATCH_STATE.dedup_plan = None
             _POCA_UPDATE_CACHE_STATE.minibatch = None
 
     ActionModel.forward = masked_forward
@@ -5017,6 +5118,7 @@ def restore_inactive_continuous_action_masking() -> None:
     _POLICY_DIMENSION_MASK_STATE.sample_weights = None
     _POCA_GROUP_BATCH_STATE.valid_rows = None
     _POCA_GROUP_BATCH_STATE.encoded_cache = None
+    _POCA_GROUP_BATCH_STATE.dedup_plan = None
     _POCA_UPDATE_CACHE_STATE.cache = None
     _POCA_UPDATE_CACHE_STATE.indices = None
     _POCA_UPDATE_CACHE_STATE.minibatch = None
