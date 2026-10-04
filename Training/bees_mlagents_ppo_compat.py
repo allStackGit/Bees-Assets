@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import math
+import os
+import shutil
+import subprocess
 import threading
 import time
 from dataclasses import dataclass
@@ -35,6 +38,9 @@ POCA_TRAJECTORY_TIMING_REPORT_SECONDS = 30.0
 POCA_PACKED_GROUP_CACHE_MAX_BYTES = 4 * 1024 * 1024 * 1024
 POCA_GPU_CACHE_MIN_RESERVE_BYTES = 2 * 1024 * 1024 * 1024
 POCA_GPU_CACHE_RESERVE_FRACTION = 0.30
+POCA_HARDWARE_SAMPLE_SECONDS = 1.0
+POCA_VARIABILITY_HISTORY_LIMIT = 64
+_POCA_VARIABILITY_HISTORY = []
 
 
 @dataclass(frozen=True)
@@ -849,13 +855,495 @@ def _normalize_poca_advantages(policy, batch):
     return normalized
 
 
+def _poca_numeric_summary(values):
+    clean = [float(value) for value in values if value is not None and math.isfinite(float(value))]
+    if not clean:
+        return {"count": 0, "avg": 0.0, "min": 0.0, "max": 0.0}
+    return {
+        "count": len(clean),
+        "avg": sum(clean) / len(clean),
+        "min": min(clean),
+        "max": max(clean),
+    }
+
+
+def _poca_percentile(values, percentile):
+    clean = sorted(
+        float(value)
+        for value in values
+        if value is not None and math.isfinite(float(value))
+    )
+    if not clean:
+        return 0.0
+    if len(clean) == 1:
+        return clean[0]
+    position = (len(clean) - 1) * float(percentile) / 100.0
+    lower = int(math.floor(position))
+    upper = int(math.ceil(position))
+    if lower == upper:
+        return clean[lower]
+    weight = position - lower
+    return clean[lower] * (1.0 - weight) + clean[upper] * weight
+
+
+def _poca_parse_nvidia_smi_sample(line):
+    fields = [field.strip() for field in str(line).strip().split(",")]
+    if len(fields) < 9:
+        return None
+
+    def number(value):
+        text = str(value).strip()
+        if not text or text.lower() in {"n/a", "[n/a]", "na"}:
+            return None
+        try:
+            return float(text)
+        except ValueError:
+            return None
+
+    return {
+        "gpu_util": number(fields[0]),
+        "memory_util": number(fields[1]),
+        "memory_used_mib": number(fields[2]),
+        "memory_total_mib": number(fields[3]),
+        "temperature_c": number(fields[4]),
+        "power_w": number(fields[5]),
+        "graphics_clock_mhz": number(fields[6]),
+        "memory_clock_mhz": number(fields[7]),
+        "pstate": fields[8],
+    }
+
+
+class _PocaUpdateHardwareProfiler:
+    """Low-overhead hardware sampler for the repeated PPO minibatch loop."""
+
+    def __init__(self):
+        self._stop = threading.Event()
+        self._cpu_samples = []
+        self._gpu_samples = []
+        self._thread = None
+        self._process_cpu_start = 0.0
+        self._cuda_start = {}
+        self._psutil = None
+        self._process = None
+        self._nvidia_smi = shutil.which("nvidia-smi")
+
+    def start(self):
+        self._process_cpu_start = time.process_time()
+        try:
+            import psutil
+
+            self._psutil = psutil
+            self._process = psutil.Process(os.getpid())
+            self._process.cpu_percent(None)
+            psutil.cpu_percent(None, percpu=True)
+        except (ImportError, OSError):
+            self._psutil = None
+            self._process = None
+
+        try:
+            from mlagents.torch_utils import torch
+
+            if torch.cuda.is_available():
+                device = int(torch.cuda.current_device())
+                free_bytes, total_bytes = torch.cuda.mem_get_info(device)
+                self._cuda_start = {
+                    "device": device,
+                    "allocated": int(torch.cuda.memory_allocated(device)),
+                    "reserved": int(torch.cuda.memory_reserved(device)),
+                    "free": int(free_bytes),
+                    "total": int(total_bytes),
+                }
+                torch.cuda.reset_peak_memory_stats(device)
+        except (ImportError, AttributeError, RuntimeError):
+            self._cuda_start = {}
+
+        self._thread = threading.Thread(
+            target=self._sample_loop,
+            name="bees-poca-hardware-profiler",
+            daemon=True,
+        )
+        self._thread.start()
+        return self
+
+    def _sample_cpu(self):
+        if self._psutil is None or self._process is None:
+            return
+        try:
+            per_core = self._psutil.cpu_percent(None, percpu=True)
+            memory = self._process.memory_info()
+            context = self._process.num_ctx_switches()
+            self._cpu_samples.append(
+                {
+                    "process_cpu": float(self._process.cpu_percent(None)),
+                    "system_cpu": float(self._psutil.cpu_percent(None)),
+                    "hottest_core": max(per_core) if per_core else 0.0,
+                    "rss_mib": float(memory.rss) / (1024.0 * 1024.0),
+                    "threads": float(self._process.num_threads()),
+                    "ctx_voluntary": float(context.voluntary),
+                    "ctx_involuntary": float(context.involuntary),
+                    "swap_percent": float(self._psutil.swap_memory().percent),
+                }
+            )
+        except (OSError, RuntimeError):
+            return
+
+    def _sample_gpu(self):
+        if not self._nvidia_smi:
+            return
+        command = [
+            self._nvidia_smi,
+            "--query-gpu=utilization.gpu,utilization.memory,memory.used,memory.total,"
+            "temperature.gpu,power.draw,clocks.current.graphics,clocks.current.memory,pstate",
+            "--format=csv,noheader,nounits",
+        ]
+        if self._cuda_start:
+            command.extend(["-i", str(self._cuda_start.get("device", 0))])
+        try:
+            completed = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                timeout=2.0,
+                check=False,
+                creationflags=(
+                    subprocess.CREATE_NO_WINDOW
+                    if hasattr(subprocess, "CREATE_NO_WINDOW")
+                    else 0
+                ),
+            )
+        except (OSError, subprocess.SubprocessError):
+            return
+        if completed.returncode != 0:
+            return
+        first_line = next(
+            (line for line in completed.stdout.splitlines() if line.strip()),
+            "",
+        )
+        sample = _poca_parse_nvidia_smi_sample(first_line)
+        if sample is not None:
+            self._gpu_samples.append(sample)
+
+    def _sample_loop(self):
+        # Sample immediately, then at one-second intervals. Each nvidia-smi call is
+        # short-lived so a learner exception cannot orphan a persistent telemetry process.
+        while not self._stop.is_set():
+            self._sample_cpu()
+            self._sample_gpu()
+            if self._stop.wait(POCA_HARDWARE_SAMPLE_SECONDS):
+                break
+
+    def stop(self, wall_seconds):
+        self._stop.set()
+        if self._thread is not None:
+            self._thread.join(timeout=3.0)
+            self._thread = None
+
+        result = {
+            "process_cpu_seconds": max(
+                0.0,
+                time.process_time() - self._process_cpu_start,
+            ),
+            "process_cpu_equivalent_percent": (
+                max(0.0, time.process_time() - self._process_cpu_start)
+                * 100.0
+                / max(float(wall_seconds), 1e-9)
+            ),
+            "cpu_samples": len(self._cpu_samples),
+            "gpu_samples": len(self._gpu_samples),
+        }
+
+        for key in (
+            "process_cpu",
+            "system_cpu",
+            "hottest_core",
+            "rss_mib",
+            "threads",
+            "swap_percent",
+        ):
+            summary = _poca_numeric_summary(
+                sample.get(key) for sample in self._cpu_samples
+            )
+            result[f"{key}_avg"] = summary["avg"]
+            result[f"{key}_max"] = summary["max"]
+
+        if self._cpu_samples:
+            first = self._cpu_samples[0]
+            last = self._cpu_samples[-1]
+            result["ctx_voluntary_delta"] = max(
+                0.0,
+                last["ctx_voluntary"] - first["ctx_voluntary"],
+            )
+            result["ctx_involuntary_delta"] = max(
+                0.0,
+                last["ctx_involuntary"] - first["ctx_involuntary"],
+            )
+
+        for key in (
+            "gpu_util",
+            "memory_util",
+            "memory_used_mib",
+            "temperature_c",
+            "power_w",
+            "graphics_clock_mhz",
+            "memory_clock_mhz",
+        ):
+            summary = _poca_numeric_summary(
+                sample.get(key) for sample in self._gpu_samples
+            )
+            result[f"{key}_avg"] = summary["avg"]
+            result[f"{key}_min"] = summary["min"]
+            result[f"{key}_max"] = summary["max"]
+
+        pstates = [
+            sample["pstate"]
+            for sample in self._gpu_samples
+            if sample.get("pstate")
+        ]
+        if pstates:
+            result["pstate"] = max(set(pstates), key=pstates.count)
+
+        try:
+            from mlagents.torch_utils import torch
+
+            if torch.cuda.is_available():
+                device = int(torch.cuda.current_device())
+                free_bytes, total_bytes = torch.cuda.mem_get_info(device)
+                result.update(
+                    {
+                        "cuda_allocated_end_mib": (
+                            int(torch.cuda.memory_allocated(device))
+                            / (1024.0 * 1024.0)
+                        ),
+                        "cuda_reserved_end_mib": (
+                            int(torch.cuda.memory_reserved(device))
+                            / (1024.0 * 1024.0)
+                        ),
+                        "cuda_peak_allocated_mib": (
+                            int(torch.cuda.max_memory_allocated(device))
+                            / (1024.0 * 1024.0)
+                        ),
+                        "cuda_peak_reserved_mib": (
+                            int(torch.cuda.max_memory_reserved(device))
+                            / (1024.0 * 1024.0)
+                        ),
+                        "cuda_free_end_mib": int(free_bytes) / (1024.0 * 1024.0),
+                        "cuda_total_mib": int(total_bytes) / (1024.0 * 1024.0),
+                    }
+                )
+        except (ImportError, AttributeError, RuntimeError):
+            pass
+        return result
+
+
+def _poca_structured_slot_profile(cache):
+    """Describe actual occupied structured prefixes without changing training tensors."""
+
+    import numpy as np
+    from bees_mlagents_structured_policy import (
+        ALLY_COUNT,
+        ALLY_SIZE,
+        ALLY_START,
+        COLLISION_COUNT,
+        COLLISION_SIZE,
+        COLLISION_START,
+        ENEMY_COUNT,
+        ENEMY_SIZE,
+        ENEMY_START,
+        MAP_OBJECT_COUNT,
+        MAP_OBJECT_SIZE,
+        MAP_OBJECT_START,
+        MINING_COUNT,
+        MINING_SIZE,
+        MINING_START,
+    )
+
+    if cache is None:
+        return {}
+
+    families = {
+        "allies": (ALLY_START, ALLY_COUNT, ALLY_SIZE),
+        "enemies": (ENEMY_START, ENEMY_COUNT, ENEMY_SIZE),
+        "mining": (MINING_START, MINING_COUNT, MINING_SIZE),
+        "map_objects": (MAP_OBJECT_START, MAP_OBJECT_COUNT, MAP_OBJECT_SIZE),
+        "collisions": (COLLISION_START, COLLISION_COUNT, COLLISION_SIZE),
+    }
+    indices = {
+        name: np.asarray(
+            [start + slot * size for slot in range(count)],
+            dtype=np.int64,
+        )
+        for name, (start, count, size) in families.items()
+    }
+    samples = {name: [] for name in families}
+    tensors = []
+    current = cache.get("current_obs") or []
+    if current and getattr(current[0], "device", None) is not None:
+        if current[0].device.type == "cpu":
+            tensors.append(current[0])
+
+    group_cache = cache.get("groupmate_obs")
+    if isinstance(group_cache, _PocaPackedGroupObs) and group_cache.fields:
+        for position in group_cache.fields[0]:
+            if (
+                position is not None
+                and position.values.device.type == "cpu"
+            ):
+                tensors.append(position.values)
+
+    for tensor in tensors:
+        values = tensor.detach().numpy()
+        if values.ndim != 2 or values.shape[1] != BEES_OBSERVATION_SIZE:
+            continue
+        for name, family_indices in indices.items():
+            presence = values[:, family_indices]
+            occupied = np.isfinite(presence) & (presence > 0.0)
+            slot_numbers = np.arange(
+                1,
+                family_indices.size + 1,
+                dtype=np.int16,
+            )
+            highest = np.max(
+                np.where(occupied, slot_numbers, 0),
+                axis=1,
+                initial=0,
+            )
+            samples[name].extend(highest.tolist())
+
+    result = {"slot_profile_rows": len(samples["allies"])}
+    for name, values in samples.items():
+        result[f"{name}_p50"] = _poca_percentile(values, 50)
+        result[f"{name}_p90"] = _poca_percentile(values, 90)
+        result[f"{name}_p99"] = _poca_percentile(values, 99)
+        result[f"{name}_max"] = max(values) if values else 0
+    return result
+
+
+def _poca_update_workload_profile(cache, device_cache):
+    import numpy as np
+
+    if cache is None:
+        return {}
+
+    counts = np.asarray(cache.get("groupmate_counts", ()), dtype=np.int32)
+    faction = np.asarray(cache.get("faction_values", ()), dtype=np.float32)
+    bee_weight = np.clip((faction + 1.0) * 0.5, 0.0, 1.0)
+    limits = cache.get("slot_limits") or {}
+    result = {
+        "experiences": int(cache.get("size", 0)),
+        "groupmates_mean": float(counts.mean()) if counts.size else 0.0,
+        "groupmates_p50": _poca_percentile(counts, 50),
+        "groupmates_p90": _poca_percentile(counts, 90),
+        "groupmates_p99": _poca_percentile(counts, 99),
+        "groupmates_max": int(counts.max()) if counts.size else 0,
+        "groupmate_rows": int(counts.astype(np.int64, copy=False).sum())
+        if counts.size
+        else 0,
+        "bee_rows": int(np.count_nonzero(bee_weight >= 1.0)),
+        "human_rows": int(np.count_nonzero(bee_weight <= 0.0)),
+        "mixed_rows": int(
+            np.count_nonzero((bee_weight > 0.0) & (bee_weight < 1.0))
+        ),
+        "cache_storage": str(device_cache.get("storage", "off")),
+        "cache_mib": float(device_cache.get("bytes", 0)) / (1024.0 * 1024.0),
+        "group_cache_storage": str(device_cache.get("group_storage", "off")),
+        "group_cache_mib": float(device_cache.get("group_bytes", 0))
+        / (1024.0 * 1024.0),
+    }
+    for name, value in limits.items():
+        result[f"limit_{name}"] = int(value)
+    result.update(_poca_structured_slot_profile(cache))
+    return result
+
+
+def _poca_timing_distribution(label):
+    samples = getattr(_POCA_TIMING_STATE, "timing_samples", None) or {}
+    values = samples.get(label, ())
+    return {
+        "p50": _poca_percentile(values, 50),
+        "p90": _poca_percentile(values, 90),
+        "max": max(values) if values else 0.0,
+    }
+
+
+def _poca_cuda_unattributed_distribution():
+    samples = getattr(_POCA_TIMING_STATE, "timing_samples", None) or {}
+    labels = (
+        "cuda_optimizer_total",
+        "cuda_actor_get_stats",
+        "cuda_critic_pass",
+        "cuda_baseline",
+        "cuda_backward",
+        "cuda_optimizer_step",
+    )
+    arrays = [samples.get(label, ()) for label in labels]
+    if not arrays or not all(arrays):
+        return {"p50": 0.0, "p90": 0.0, "max": 0.0}
+    count = min(len(values) for values in arrays)
+    values = []
+    for index in range(count):
+        span = arrays[0][index]
+        accounted = sum(array[index] for array in arrays[1:])
+        values.append(float(span) - float(accounted))
+    return {
+        "p50": _poca_percentile(values, 50),
+        "p90": _poca_percentile(values, 90),
+        "max": max(values) if values else 0.0,
+    }
+
+
+def _poca_record_variability_history(update_seconds, workload, hardware):
+    minibatch = _poca_timing_distribution("minibatch_total")
+    cuda_span = _poca_timing_distribution("cuda_optimizer_total")
+    record = {
+        "seconds": float(update_seconds),
+        "gpu_util": float(hardware.get("gpu_util_avg", 0.0)),
+        "gpu_clock": float(hardware.get("graphics_clock_mhz_avg", 0.0)),
+        "process_cpu": float(hardware.get("process_cpu_avg", 0.0)),
+        "hottest_core": float(hardware.get("hottest_core_avg", 0.0)),
+        "group_p90": float(workload.get("groupmates_p90", 0.0)),
+        "allies_p90": float(workload.get("allies_p90", 0.0)),
+        "enemies_p90": float(workload.get("enemies_p90", 0.0)),
+        "collisions_p90": float(workload.get("collisions_p90", 0.0)),
+        "minibatch_p50": float(minibatch["p50"]),
+        "cuda_span_p50": float(cuda_span["p50"]),
+    }
+    _POCA_VARIABILITY_HISTORY.append(record)
+    if len(_POCA_VARIABILITY_HISTORY) > POCA_VARIABILITY_HISTORY_LIMIT:
+        del _POCA_VARIABILITY_HISTORY[:-POCA_VARIABILITY_HISTORY_LIMIT]
+    if len(_POCA_VARIABILITY_HISTORY) < 2:
+        return
+    fastest = min(_POCA_VARIABILITY_HISTORY, key=lambda item: item["seconds"])
+    slowest = max(_POCA_VARIABILITY_HISTORY, key=lambda item: item["seconds"])
+    ratio = slowest["seconds"] / max(fastest["seconds"], 1e-9)
+    print(
+        "[Bees PPO variability] contrast "
+        f"n={len(_POCA_VARIABILITY_HISTORY)} "
+        f"fast={fastest['seconds']:.3f} slow={slowest['seconds']:.3f} ratio={ratio:.2f} "
+        f"gpu_util={fastest['gpu_util']:.1f}->{slowest['gpu_util']:.1f} "
+        f"gpu_clock={fastest['gpu_clock']:.0f}->{slowest['gpu_clock']:.0f} "
+        f"process_cpu={fastest['process_cpu']:.1f}->{slowest['process_cpu']:.1f} "
+        f"hottest_core={fastest['hottest_core']:.1f}->{slowest['hottest_core']:.1f} "
+        f"group_p90={fastest['group_p90']:.1f}->{slowest['group_p90']:.1f} "
+        f"allies_p90={fastest['allies_p90']:.1f}->{slowest['allies_p90']:.1f} "
+        f"enemies_p90={fastest['enemies_p90']:.1f}->{slowest['enemies_p90']:.1f} "
+        f"collisions_p90={fastest['collisions_p90']:.1f}->{slowest['collisions_p90']:.1f} "
+        f"minibatch_p50={fastest['minibatch_p50']:.3f}->{slowest['minibatch_p50']:.3f} "
+        f"cuda_span_p50={fastest['cuda_span_p50']:.3f}->{slowest['cuda_span_p50']:.3f}",
+        flush=True,
+    )
+
+
 def _poca_record_timing(label, seconds):
     totals = getattr(_POCA_TIMING_STATE, "timing_totals", None)
     counts = getattr(_POCA_TIMING_STATE, "timing_counts", None)
     if totals is None or counts is None:
         return
-    totals[label] = totals.get(label, 0.0) + float(seconds)
+    value = float(seconds)
+    totals[label] = totals.get(label, 0.0) + value
     counts[label] = counts.get(label, 0) + 1
+    samples = getattr(_POCA_TIMING_STATE, "timing_samples", None)
+    if samples is not None:
+        samples.setdefault(label, []).append(value)
 
 
 def _poca_cuda_timing_begin(label):
