@@ -28,10 +28,10 @@ const COMMANDS = new Set([
 function usage() {
     return [
         'Usage:',
-        '  node Training/bees_operator.js build [--full-game] [--force] [--preserve-run]',
+        '  node Training/bees_operator.js build [--full-game] [--force] [--preserve-run | --new-run]',
         '  node Training/bees_operator.js runtime [--threaded [--policy-lag N]] [--backpressure-queue N] [--local-training] [--ppo-control | PPO optimization flags]',
         '  node Training/bees_operator.js server',
-        '  node Training/bees_operator.js start [--new-run] [--env-arg VALUE ...]',
+        '  node Training/bees_operator.js start [--new-run | --resume-run ID] [--env-arg VALUE ...]',
         '  node Training/bees_operator.js stop [--server]',
         '  node Training/bees_operator.js status [--once] [--refresh-seconds N]',
         '  node Training/bees_operator.js bundle [--run-id ID] [--log-percent PCT] [--evaluate]',
@@ -79,6 +79,7 @@ function parseArgs(argv = process.argv.slice(2)) {
         force: false,
         preserveRun: false,
         newRun: false,
+        resumeRunId: '',
         threaded: false,
         policyLag: null,
         explicitPolicyLag: false,
@@ -113,6 +114,11 @@ function parseArgs(argv = process.argv.slice(2)) {
             options.preserveRun = true;
         } else if (arg === '--new-run') {
             options.newRun = true;
+        } else if (arg === '--resume-run') {
+            options.resumeRunId = String(requireValue(argv, index, arg));
+            index++;
+        } else if (arg.startsWith('--resume-run=')) {
+            options.resumeRunId = arg.slice('--resume-run='.length);
         } else if (arg === '--threaded') {
             options.threaded = true;
         } else if (arg === '--policy-lag') {
@@ -239,8 +245,17 @@ function parseArgs(argv = process.argv.slice(2)) {
     if (options.preserveRun && command !== 'build') {
         throw new Error('--preserve-run is only valid with the build command.');
     }
-    if (options.newRun && command !== 'start') {
-        throw new Error('--new-run is only valid with the start command.');
+    if (options.newRun && command !== 'start' && command !== 'build') {
+        throw new Error('--new-run is only valid with the build or start command.');
+    }
+    if (options.resumeRunId && command !== 'start') {
+        throw new Error('--resume-run is only valid with the start command.');
+    }
+    if (options.resumeRunId && options.newRun) {
+        throw new Error('--resume-run cannot be combined with --new-run.');
+    }
+    if (options.preserveRun && options.newRun) {
+        throw new Error('--preserve-run cannot be combined with --new-run.');
     }
     if (options.threaded && command !== 'runtime') {
         throw new Error('--threaded is only valid with the runtime command.');
