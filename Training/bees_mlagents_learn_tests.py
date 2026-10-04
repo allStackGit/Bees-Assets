@@ -32,6 +32,7 @@ class BeesOptionParsingTests(unittest.TestCase):
             torch_threads,
             batch_inference,
             cpu_inference,
+            optimization_options,
         ) = launcher._extract_bees_options(
             [
                 "Training/rl_1v1_config.yaml",
@@ -47,6 +48,8 @@ class BeesOptionParsingTests(unittest.TestCase):
         self.assertIsNone(torch_threads)
         self.assertTrue(batch_inference)
         self.assertFalse(cpu_inference)
+        self.assertEqual(optimization_options["stream_shards"], 1)
+        self.assertFalse(optimization_options["sync_cleanup"])
 
     def test_thread_batch_and_cpu_inference_flags_can_be_combined(self):
         (
@@ -71,6 +74,48 @@ class BeesOptionParsingTests(unittest.TestCase):
         self.assertEqual(torch_threads, 2)
         self.assertTrue(batch_inference)
         self.assertTrue(cpu_inference)
+        self.assertFalse(optimization_options["cuda_graphs"])
+
+    def test_ppo_optimization_flags_are_removed_and_parsed(self):
+        (
+            trainer_args,
+            torch_threads,
+            batch_inference,
+            cpu_inference,
+            optimization_options,
+        ) = launcher._extract_bees_options(
+            [
+                "Training/rl_1v1_config.yaml",
+                "--bees-ppo-sync-cleanup",
+                "--bees-ppo-stream-shards=4",
+                "--bees-ppo-prefetch=true",
+                "--bees-ppo-critic-baseline-overlap",
+                "--bees-ppo-cuda-graphs=on",
+                "--resume",
+            ]
+        )
+
+        self.assertEqual(
+            trainer_args,
+            ["Training/rl_1v1_config.yaml", "--resume"],
+        )
+        self.assertIsNone(torch_threads)
+        self.assertFalse(batch_inference)
+        self.assertFalse(cpu_inference)
+        self.assertTrue(optimization_options["sync_cleanup"])
+        self.assertEqual(optimization_options["stream_shards"], 4)
+        self.assertTrue(optimization_options["minibatch_prefetch"])
+        self.assertTrue(optimization_options["critic_baseline_overlap"])
+        self.assertTrue(optimization_options["cuda_graphs"])
+
+    def test_ppo_stream_shards_rejects_unsupported_values(self):
+        with self.assertRaisesRegex(SystemExit, "requires 1, 2, or 4"):
+            launcher._extract_bees_options(
+                [
+                    "Training/rl_1v1_config.yaml",
+                    "--bees-ppo-stream-shards=3",
+                ]
+            )
 
     def test_results_dir_defaults_to_hidden_unity_ignored_folder(self):
         trainer_args = launcher._ensure_results_dir(
