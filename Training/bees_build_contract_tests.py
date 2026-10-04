@@ -35,7 +35,9 @@ class OperatorBehaviorTests(unittest.TestCase):
             "process.stdout.write(JSON.stringify({"
             "start:op.parseArgs(['start','--new-run','--env-arg','--rl-map-size-min=32',"
             "'--env-arg','--rl-human-ship-types=Scout,Gunship']),"
+            "resume:op.parseArgs(['start','--resume-run','bees-old-run']),"
             "preserve:op.parseArgs(['build','--preserve-run']),"
+            "newBuild:op.parseArgs(['build','--new-run']),"
             "observe:op.parseArgs(['observe'])"
             "}));"
         )
@@ -61,9 +63,17 @@ class OperatorBehaviorTests(unittest.TestCase):
             ],
         )
 
+        resume = parsed["resume"]
+        self.assertEqual(resume["command"], "start")
+        self.assertEqual(resume["options"]["resumeRunId"], "bees-old-run")
+
         preserve = parsed["preserve"]
         self.assertEqual(preserve["command"], "build")
         self.assertTrue(preserve["options"]["preserveRun"])
+
+        new_build = parsed["newBuild"]
+        self.assertEqual(new_build["command"], "build")
+        self.assertTrue(new_build["options"]["newRun"])
 
         observe = parsed["observe"]
         self.assertEqual(observe["command"], "observe")
