@@ -256,6 +256,72 @@ class RunLifecycleTests(unittest.TestCase):
             ):
                 lifecycle.plan_run(assets, state, preserve_run=True)
 
+    def test_resume_existing_run_re_adopts_previous_checkpoint_lineage(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            assets = self._assets(root)
+            state = root / "current.json"
+
+            original = lifecycle.plan_run(
+                assets,
+                state,
+                datetime(2026, 9, 24, 12, 0, tzinfo=timezone.utc),
+            )
+            lifecycle.commit_plan(state, original)
+
+            actions = assets / "Scripts" / "Scenes" / "RlOneVsOneAgent.cs"
+            actions.write_text("actions-v2\n", encoding="utf-8")
+            accidental = lifecycle.plan_run(
+                assets,
+                state,
+                datetime(2026, 9, 24, 13, 0, tzinfo=timezone.utc),
+            )
+            self.assertTrue(accidental["new_run"])
+            lifecycle.commit_plan(state, accidental)
+
+            resumed = lifecycle.plan_run(
+                assets,
+                state,
+                datetime(2026, 9, 24, 14, 0, tzinfo=timezone.utc),
+                resume_run_id=original["run_id"],
+            )
+
+            self.assertTrue(resumed["incompatible"])
+            self.assertFalse(resumed["new_run"])
+            self.assertTrue(resumed["resume_existing_run"])
+            self.assertEqual(resumed["run_id"], original["run_id"])
+            self.assertEqual(
+                resumed["previous_run_id"],
+                accidental["run_id"],
+            )
+            self.assertEqual(
+                resumed["compatibility_key"],
+                accidental["compatibility_key"],
+            )
+
+            lifecycle.commit_plan(state, resumed)
+            committed = json.loads(state.read_text(encoding="utf-8"))
+            self.assertEqual(committed["run_id"], original["run_id"])
+            self.assertEqual(
+                committed["compatibility_key"],
+                accidental["compatibility_key"],
+            )
+
+    def test_resume_existing_run_requires_safe_run_id(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            assets = self._assets(root)
+            state = root / "current.json"
+            first = lifecycle.plan_run(assets, state)
+            lifecycle.commit_plan(state, first)
+
+            with self.assertRaisesRegex(ValueError, "safe run-id"):
+                lifecycle.plan_run(
+                    assets,
+                    state,
+                    resume_run_id="../old-run",
+                )
+
     def test_force_new_creates_new_run_without_contract_change(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
