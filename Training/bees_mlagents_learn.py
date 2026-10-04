@@ -37,6 +37,11 @@ EXPECTED_MLAGENTS_VERSION = "1.1.0"
 THREAD_FLAG = "--bees-torch-threads"
 BATCH_INFERENCE_FLAG = "--bees-batch-inference"
 CPU_INFERENCE_FLAG = "--bees-cpu-inference"
+PPO_SYNC_CLEANUP_FLAG = "--bees-ppo-sync-cleanup"
+PPO_STREAM_SHARDS_FLAG = "--bees-ppo-stream-shards"
+PPO_PREFETCH_FLAG = "--bees-ppo-prefetch"
+PPO_CRITIC_BASELINE_OVERLAP_FLAG = "--bees-ppo-critic-baseline-overlap"
+PPO_CUDA_GRAPHS_FLAG = "--bees-ppo-cuda-graphs"
 RESULTS_DIR_FLAG = "--results-dir"
 DEFAULT_RESULTS_DIR = ".results"
 WORKER_TIMER_SAMPLE_STEPS = 64
@@ -223,11 +228,24 @@ def _parse_positive_int(value: str, flag: str) -> int:
 
 def _extract_bees_options(
     argv: Sequence[str],
-) -> Tuple[List[str], Optional[int], bool, bool]:
+):
     trainer_args: List[str] = []
     torch_threads: Optional[int] = None
     batch_inference = False
     cpu_inference = False
+    optimization_options = {
+        "sync_cleanup": False,
+        "stream_shards": 1,
+        "minibatch_prefetch": False,
+        "critic_baseline_overlap": False,
+        "cuda_graphs": False,
+    }
+    boolean_flags = {
+        PPO_SYNC_CLEANUP_FLAG: "sync_cleanup",
+        PPO_PREFETCH_FLAG: "minibatch_prefetch",
+        PPO_CRITIC_BASELINE_OVERLAP_FLAG: "critic_baseline_overlap",
+        PPO_CUDA_GRAPHS_FLAG: "cuda_graphs",
+    }
     index = 0
 
     while index < len(argv):
@@ -258,10 +276,64 @@ def _extract_bees_options(
             index += 1
             continue
 
+        matched_boolean = False
+        for flag, key in boolean_flags.items():
+            if argument == flag:
+                optimization_options[key] = True
+                index += 1
+                matched_boolean = True
+                break
+            prefix = flag + "="
+            if argument.startswith(prefix):
+                raw = argument[len(prefix) :].strip().lower()
+                if raw in ("1", "true", "on", "yes"):
+                    optimization_options[key] = True
+                elif raw in ("0", "false", "off", "no"):
+                    optimization_options[key] = False
+                else:
+                    raise SystemExit(
+                        f"{flag} must be true/false or on/off; got {raw!r}."
+                    )
+                index += 1
+                matched_boolean = True
+                break
+        if matched_boolean:
+            continue
+
+        if argument == PPO_STREAM_SHARDS_FLAG:
+            if index + 1 >= len(argv) or argv[index + 1].startswith("--"):
+                raise SystemExit(f"{PPO_STREAM_SHARDS_FLAG} requires 1, 2, or 4.")
+            raw_shards = argv[index + 1]
+            index += 2
+        elif argument.startswith(PPO_STREAM_SHARDS_FLAG + "="):
+            raw_shards = argument.split("=", 1)[1]
+            index += 1
+        else:
+            raw_shards = None
+        if raw_shards is not None:
+            try:
+                shards = int(raw_shards)
+            except ValueError as exc:
+                raise SystemExit(
+                    f"{PPO_STREAM_SHARDS_FLAG} requires 1, 2, or 4."
+                ) from exc
+            if shards not in (1, 2, 4):
+                raise SystemExit(
+                    f"{PPO_STREAM_SHARDS_FLAG} requires 1, 2, or 4; got {shards}."
+                )
+            optimization_options["stream_shards"] = shards
+            continue
+
         trainer_args.append(argument)
         index += 1
 
-    return trainer_args, torch_threads, batch_inference, cpu_inference
+    return (
+        trainer_args,
+        torch_threads,
+        batch_inference,
+        cpu_inference,
+        optimization_options,
+    )
 
 
 def _ensure_results_dir(argv: Sequence[str]) -> List[str]:
@@ -1064,6 +1136,7 @@ def main() -> None:
         torch_threads,
         batch_inference,
         cpu_inference,
+        optimization_options,
     ) = _extract_bees_options(sys.argv[1:])
     trainer_args = _ensure_results_dir(trainer_args)
 
@@ -1085,6 +1158,7 @@ def main() -> None:
     from mlagents.trainers.env_manager import EnvManager
     from mlagents.trainers.subprocess_env_manager import SubprocessEnvManager
     from bees_mlagents_ppo_compat import (
+        configure_poca_learner_optimizations,
         install_continuous_sigma_guard,
         install_inactive_continuous_action_masking,
         install_value_estimate_key_fix,
@@ -1106,6 +1180,9 @@ def main() -> None:
             "this version guard."
         )
 
+    configured_optimizations = configure_poca_learner_optimizations(
+        **optimization_options
+    )
     structured_policy_state = install_structured_policy()
     original_explicit_outcome_elo = _install_explicit_outcome_elo()
     original_value_estimate_key = None
@@ -1127,6 +1204,14 @@ def main() -> None:
     print("[Bees RL] Continuous sigma guard: enabled")
     print("[Bees RL] PPO/POCA value-estimate/return buffer key separation: enabled")
     print("[Bees RL] Self-play ELO explicit battle-outcome classification: enabled")
+    print(
+        "[Bees RL] PPO execution optimizations: "
+        f"sync_cleanup={'on' if configured_optimizations.effective_sync_cleanup else 'off'} "
+        f"stream_shards={configured_optimizations.stream_shards} "
+        f"prefetch={'on' if configured_optimizations.minibatch_prefetch else 'off'} "
+        f"critic_baseline_overlap={'on' if configured_optimizations.critic_baseline_overlap else 'off'} "
+        f"cuda_graphs={'on' if configured_optimizations.cuda_graphs else 'off'}"
+    )
 
     if torch_threads is not None:
         torch_utils.torch.set_num_threads(torch_threads)
