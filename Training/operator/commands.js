@@ -391,6 +391,11 @@ async function invokeStart(options = {}) {
                 "Cannot force a new training run before the first RL build exists. Run '.\\Assets\\bees.ps1 build' first."
             );
         }
+        if (options.resumeRunId) {
+            throw new Error(
+                "Cannot resume an existing training run before a release exists."
+            );
+        }
         await setDesiredState(config, admin, {
             training_enabled: false,
             environment_args: envArgs,
