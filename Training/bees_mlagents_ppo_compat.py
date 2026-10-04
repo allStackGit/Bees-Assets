@@ -2534,7 +2534,22 @@ class _PocaMinibatchPrefetcher:
             self.executor = None
 
 
-def _poca_optimizer_step(optimizer) -> None:
+
+def _poca_cuda_graph_minibatch_eligible(cached) -> bool:
+    """Require all conditionally executed faction actor parameters to participate."""
+
+    if not _POCA_OPTIMIZATIONS.cuda_graphs or cached is None:
+        return False
+    rows = cached.get("faction_rows")
+    if not isinstance(rows, dict):
+        return False
+    bee = len(rows.get("bee", ()))
+    human = len(rows.get("human", ()))
+    mixed = len(rows.get("mixed", ()))
+    return bool((bee or mixed) and (human or mixed))
+
+
+def _poca_optimizer_step(optimizer, *, graph_eligible: bool = False) -> None:
     """Execute Adam eagerly or replay a captured CUDA optimizer step."""
 
     opts = _POCA_OPTIMIZATIONS
@@ -2558,16 +2573,32 @@ def _poca_optimizer_step(optimizer) -> None:
             "captures": 0,
             "replays": 0,
             "warmups": 0,
+            "stable_grads": False,
         }
         optimizer._bees_cuda_graph_state = state
 
-    def active_parameters():
+    def all_parameters():
         return [
             parameter
             for group in optimizer.param_groups
             for parameter in group["params"]
+        ]
+
+    def active_parameters():
+        return [
+            parameter
+            for parameter in all_parameters()
             if parameter.grad is not None
         ]
+
+    def eager_step_and_invalidate() -> None:
+        for group in optimizer.param_groups:
+            group["capturable"] = False
+        optimizer.step()
+        state["graph"] = None
+        state["signature"] = None
+        state["learning_rates"] = None
+        state["stable_grads"] = False
 
     def migrate_step_state() -> None:
         for group in optimizer.param_groups:
@@ -2581,17 +2612,23 @@ def _poca_optimizer_step(optimizer) -> None:
                     parameter_state["step"] = step.to(device=parameter.device)
 
     parameters = active_parameters()
+    complete_parameter_set = len(parameters) == len(all_parameters())
+    if not graph_eligible or not complete_parameter_set:
+        eager_step_and_invalidate()
+        _POCA_TIMING_STATE.graph_skips = int(
+            getattr(_POCA_TIMING_STATE, "graph_skips", 0)
+        ) + 1
+        return
+
     needs_state = any(not optimizer.state.get(parameter) for parameter in parameters)
     if not state["prepared"] or needs_state:
-        # Run the real step once outside capture so Adam can lazily allocate its
-        # moment tensors. This is not an extra optimizer step.
-        for group in optimizer.param_groups:
-            group["capturable"] = False
-        optimizer.step()
+        # Run this minibatch's real step eagerly so Adam can lazily allocate its
+        # moment tensors. The next fully active minibatch can retain these gradient
+        # buffers for graph replay without changing None-vs-zero gradient semantics.
+        eager_step_and_invalidate()
         migrate_step_state()
         state["prepared"] = True
-        state["graph"] = None
-        state["signature"] = None
+        state["stable_grads"] = True
         state["warmups"] += 1
         _POCA_TIMING_STATE.graph_warmups = int(
             getattr(_POCA_TIMING_STATE, "graph_warmups", 0)
@@ -2599,6 +2636,7 @@ def _poca_optimizer_step(optimizer) -> None:
         return
 
     migrate_step_state()
+    state["stable_grads"] = True
     signature = tuple(
         (
             id(parameter),
@@ -3089,6 +3127,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         _POCA_TIMING_STATE.graph_warmups = 0
         _POCA_TIMING_STATE.graph_captures = 0
         _POCA_TIMING_STATE.graph_replays = 0
+        _POCA_TIMING_STATE.graph_skips = 0
         _POCA_TIMING_STATE.parallel_streams = ()
 
         normalization_started = time.perf_counter()
@@ -3307,6 +3346,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             f"graph_warmups={int(getattr(_POCA_TIMING_STATE, 'graph_warmups', 0))} "
             f"graph_captures={int(getattr(_POCA_TIMING_STATE, 'graph_captures', 0))} "
             f"graph_replays={int(getattr(_POCA_TIMING_STATE, 'graph_replays', 0))} "
+            f"graph_skips={int(getattr(_POCA_TIMING_STATE, 'graph_skips', 0))} "
             f"graph_capture={_poca_average_timing('cuda_graph_capture'):.6f} "
             f"graph_replay_submit={_poca_average_timing('cuda_graph_replay_submit'):.6f} "
             f"stats={_poca_average_timing('stats'):.6f} "
@@ -3322,6 +3362,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         _POCA_TIMING_STATE.graph_warmups = 0
         _POCA_TIMING_STATE.graph_captures = 0
         _POCA_TIMING_STATE.graph_replays = 0
+        _POCA_TIMING_STATE.graph_skips = 0
         _POCA_TIMING_STATE.parallel_streams = ()
 
         for stat, stat_list in batch_update_stats.items():
@@ -3728,9 +3769,20 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         ModelUtils.update_learning_rate(self.optimizer, decay_lr)
         _poca_record_timing("learning_rate", time.perf_counter() - started)
 
+        graph_eligible = _poca_cuda_graph_minibatch_eligible(cached)
+        graph_state = getattr(
+            self.optimizer,
+            "_bees_cuda_graph_state",
+            None,
+        )
+        retain_graph_grads = bool(
+            graph_eligible
+            and graph_state is not None
+            and graph_state.get("stable_grads", False)
+        )
         started = time.perf_counter()
         self.optimizer.zero_grad(
-            set_to_none=not _POCA_OPTIMIZATIONS.cuda_graphs
+            set_to_none=not retain_graph_grads
         )
         _poca_record_timing("zero_grad", time.perf_counter() - started)
 
@@ -3752,7 +3804,10 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
 
         started = time.perf_counter()
         cuda_timing = _poca_cuda_timing_begin("optimizer_step")
-        _poca_optimizer_step(self.optimizer)
+        _poca_optimizer_step(
+            self.optimizer,
+            graph_eligible=graph_eligible,
+        )
         _poca_cuda_timing_end(cuda_timing)
         _poca_record_timing("optimizer_step", time.perf_counter() - started)
         _POCA_TIMING_STATE.parallel_streams = ()
