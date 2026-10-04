@@ -3507,28 +3507,31 @@ class _PocaCpuMinibatchPreparer:
         from mlagents.torch_utils import torch
 
         started = time.perf_counter()
+        observation_source = _poca_select_group_prepare_source(
+            self.group_source,
+            indices,
+        )
+        dedup_plan = _poca_build_observation_dedup_plan(
+            observation_source
+        )
         if self.full_minibatch:
             selected = _select_poca_update_tensor_cache(
                 self.cache,
                 indices,
                 device_override=torch.device("cpu"),
                 non_blocking=False,
+                groupmate_obs_override=[],
             )
-            selected["observation_dedup"] = (
-                _poca_build_observation_dedup_plan(selected)
+            selected["prepared_groupmate_obs"] = (
+                observation_source["prepared_groupmate_obs"]
             )
+            selected["observation_dedup"] = dedup_plan
         else:
-            observation_source = _poca_select_group_prepare_source(
-                self.group_source,
-                indices,
-            )
             selected = {
-                "groupmate_obs": observation_source["groupmate_obs"],
-                "observation_dedup": (
-                    _poca_build_observation_dedup_plan(
-                        observation_source
-                    )
+                "prepared_groupmate_obs": (
+                    observation_source["prepared_groupmate_obs"]
                 ),
+                "observation_dedup": dedup_plan,
             }
         selected = _poca_pin_selected_minibatch(selected)
         return selected, time.perf_counter() - started
@@ -3559,6 +3562,17 @@ class _PocaCpuMinibatchPreparer:
             selected,
             self.device,
         )
+        prepared_group = selected.pop(
+            "prepared_groupmate_obs",
+            None,
+        )
+        if prepared_group is not None:
+            selected["groupmate_obs"] = (
+                _poca_expand_prepared_group_obs(
+                    prepared_group,
+                    self.device,
+                )
+            )
         _poca_cuda_timing_end(marker)
         _poca_record_timing(
             "cpu_prepare_transfer_submit",
