@@ -1022,6 +1022,19 @@ class _PocaUpdateHardwareProfiler:
         except OSError:
             return None
 
+    @staticmethod
+    def _terminate_gpu_process(process):
+        if process is None or process.poll() is not None:
+            return
+        try:
+            process.terminate()
+            process.wait(timeout=1.0)
+        except (OSError, subprocess.SubprocessError):
+            try:
+                process.kill()
+            except OSError:
+                pass
+
     def _sample_loop(self):
         self._gpu_process = self._start_gpu_sampler()
         process = self._gpu_process
@@ -1046,19 +1059,12 @@ class _PocaUpdateHardwareProfiler:
                 process.stdout.close()
             except OSError:
                 pass
+            self._terminate_gpu_process(process)
 
     def stop(self, wall_seconds):
         self._stop.set()
         process = self._gpu_process
-        if process is not None and process.poll() is None:
-            try:
-                process.terminate()
-                process.wait(timeout=1.0)
-            except (OSError, subprocess.SubprocessError):
-                try:
-                    process.kill()
-                except OSError:
-                    pass
+        self._terminate_gpu_process(process)
         if self._thread is not None:
             self._thread.join(timeout=2.0)
             self._thread = None
