@@ -926,7 +926,39 @@ class _PocaUpdateHardwareProfiler:
         self._cuda_start = {}
         self._psutil = None
         self._process = None
-        self._nvidia_smi = shutil.which("nvidia-smi")
+        self._nvidia_smi = self._find_nvidia_smi()
+
+    @staticmethod
+    def _find_nvidia_smi():
+        resolved = shutil.which("nvidia-smi")
+        if resolved:
+            return resolved
+        candidates = []
+        if os.name == "nt":
+            program_files = os.environ.get("ProgramW6432") or os.environ.get(
+                "ProgramFiles",
+                r"C:\Program Files",
+            )
+            system_root = os.environ.get("SystemRoot", r"C:\Windows")
+            candidates.extend(
+                [
+                    os.path.join(
+                        program_files,
+                        "NVIDIA Corporation",
+                        "NVSMI",
+                        "nvidia-smi.exe",
+                    ),
+                    os.path.join(
+                        system_root,
+                        "System32",
+                        "nvidia-smi.exe",
+                    ),
+                ]
+            )
+        for candidate in candidates:
+            if os.path.isfile(candidate):
+                return candidate
+        return None
 
     def start(self):
         self._process_cpu_start = time.process_time()
