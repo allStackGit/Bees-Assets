@@ -29,7 +29,7 @@ function usage() {
     return [
         'Usage:',
         '  node Training/bees_operator.js build [--full-game] [--force] [--preserve-run]',
-        '  node Training/bees_operator.js runtime [--threaded [--policy-lag N]] [--backpressure-queue N] [--local-training]',
+        '  node Training/bees_operator.js runtime [--threaded [--policy-lag N]] [--backpressure-queue N] [--local-training] [--ppo-control | PPO optimization flags]',
         '  node Training/bees_operator.js server',
         '  node Training/bees_operator.js start [--new-run] [--env-arg VALUE ...]',
         '  node Training/bees_operator.js stop [--server]',
@@ -85,6 +85,13 @@ function parseArgs(argv = process.argv.slice(2)) {
         backpressureQueue: null,
         explicitBackpressureQueue: false,
         localTraining: false,
+        ppoControl: false,
+        ppoSyncCleanup: false,
+        ppoStreamShards: 1,
+        ppoPrefetch: false,
+        ppoCriticBaselineOverlap: false,
+        ppoCudaGraphs: false,
+        explicitLearnerOptimizations: false,
         envArgs: [],
         once: false,
         refreshSeconds: 2,
@@ -148,6 +155,46 @@ function parseArgs(argv = process.argv.slice(2)) {
             options.explicitBackpressureQueue = true;
         } else if (arg === '--local-training') {
             options.localTraining = true;
+        } else if (arg === '--ppo-control') {
+            options.ppoControl = true;
+            options.explicitLearnerOptimizations = true;
+        } else if (arg === '--ppo-sync-cleanup') {
+            options.ppoSyncCleanup = true;
+            options.explicitLearnerOptimizations = true;
+        } else if (arg === '--ppo-stream-shards') {
+            options.ppoStreamShards = parseNumber(
+                requireValue(argv, index, arg),
+                arg,
+                1,
+                4,
+                true,
+            );
+            if (![1, 2, 4].includes(options.ppoStreamShards)) {
+                throw new Error('--ppo-stream-shards must be 1, 2, or 4.');
+            }
+            options.explicitLearnerOptimizations = true;
+            index++;
+        } else if (arg.startsWith('--ppo-stream-shards=')) {
+            options.ppoStreamShards = parseNumber(
+                arg.slice('--ppo-stream-shards='.length),
+                '--ppo-stream-shards',
+                1,
+                4,
+                true,
+            );
+            if (![1, 2, 4].includes(options.ppoStreamShards)) {
+                throw new Error('--ppo-stream-shards must be 1, 2, or 4.');
+            }
+            options.explicitLearnerOptimizations = true;
+        } else if (arg === '--ppo-prefetch') {
+            options.ppoPrefetch = true;
+            options.explicitLearnerOptimizations = true;
+        } else if (arg === '--ppo-critic-baseline-overlap') {
+            options.ppoCriticBaselineOverlap = true;
+            options.explicitLearnerOptimizations = true;
+        } else if (arg === '--ppo-cuda-graphs') {
+            options.ppoCudaGraphs = true;
+            options.explicitLearnerOptimizations = true;
         } else if (arg === '--env-arg') {
             options.envArgs.push(String(requireValue(argv, index, arg)));
             index++;
@@ -209,6 +256,21 @@ function parseArgs(argv = process.argv.slice(2)) {
     }
     if (options.explicitBackpressureQueue && command !== 'runtime') {
         throw new Error('--backpressure-queue is only valid with the runtime command.');
+    }
+    if (options.explicitLearnerOptimizations && command !== 'runtime') {
+        throw new Error('PPO learner optimization flags are only valid with the runtime command.');
+    }
+    if (
+        options.ppoControl &&
+        (
+            options.ppoSyncCleanup ||
+            options.ppoStreamShards !== 1 ||
+            options.ppoPrefetch ||
+            options.ppoCriticBaselineOverlap ||
+            options.ppoCudaGraphs
+        )
+    ) {
+        throw new Error('--ppo-control cannot be combined with PPO optimization flags.');
     }
     if (options.explicitLogPercent && command !== 'bundle') {
         throw new Error('--log-percent is only valid with the bundle command.');
