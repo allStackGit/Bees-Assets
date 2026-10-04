@@ -886,6 +886,44 @@ class PocaLearnerOptimizationOptionTests(unittest.TestCase):
         )
 
 
+    def test_cuda_graph_requires_both_faction_parameter_paths(self):
+        compat.configure_poca_learner_optimizations(cuda_graphs=True)
+
+        self.assertTrue(
+            compat._poca_cuda_graph_minibatch_eligible(
+                {
+                    "faction_rows": {
+                        "bee": (0,),
+                        "human": (1,),
+                        "mixed": (),
+                    }
+                }
+            )
+        )
+        self.assertTrue(
+            compat._poca_cuda_graph_minibatch_eligible(
+                {
+                    "faction_rows": {
+                        "bee": (),
+                        "human": (),
+                        "mixed": (0,),
+                    }
+                }
+            )
+        )
+        self.assertFalse(
+            compat._poca_cuda_graph_minibatch_eligible(
+                {
+                    "faction_rows": {
+                        "bee": (0,),
+                        "human": (),
+                        "mixed": (),
+                    }
+                }
+            )
+        )
+
+
 class PocaCudaTimingTests(unittest.TestCase):
     def tearDown(self):
         compat._POCA_TIMING_STATE.timing_totals = None
