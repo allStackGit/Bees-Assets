@@ -1072,6 +1072,10 @@ class PocaGpuCachePromotionTests(unittest.TestCase):
             ),
             mock.patch.object(
                 torch.cuda,
+                "empty_cache",
+            ) as empty_cache,
+            mock.patch.object(
+                torch.cuda,
                 "mem_get_info",
                 return_value=(6 * 1024**3, 6 * 1024**3),
             ) as mem_get_info,
@@ -1093,11 +1097,12 @@ class PocaGpuCachePromotionTests(unittest.TestCase):
         ):
             promoted, info = compat._promote_poca_update_tensor_cache(cache)
 
+        empty_cache.assert_called_once_with()
         mem_get_info.assert_called_once_with(0)
         self.assertEqual(promoted["storage"], "cuda")
         self.assertEqual(info["storage"], "cuda")
 
-    def test_allocator_reusable_memory_allows_gpu_cache_when_driver_free_is_zero(self):
+    def test_allocator_reusable_memory_does_not_expand_driver_capacity(self):
         from mlagents.torch_utils import torch
 
         cache = {
@@ -1114,6 +1119,7 @@ class PocaGpuCachePromotionTests(unittest.TestCase):
             ),
             mock.patch.object(torch.cuda, "is_available", return_value=True),
             mock.patch.object(torch.cuda, "current_device", return_value=0),
+            mock.patch.object(torch.cuda, "empty_cache") as empty_cache,
             mock.patch.object(
                 torch.cuda,
                 "mem_get_info",
@@ -1132,16 +1138,17 @@ class PocaGpuCachePromotionTests(unittest.TestCase):
             mock.patch.object(
                 compat,
                 "_poca_move_cache_tensors",
-                side_effect=lambda value, _device: dict(value),
-            ),
+            ) as move_cache,
         ):
             promoted, info = compat._promote_poca_update_tensor_cache(cache)
 
-        self.assertEqual(promoted["storage"], "cuda")
-        self.assertEqual(info["storage"], "cuda")
+        empty_cache.assert_called_once_with()
+        move_cache.assert_not_called()
+        self.assertIs(promoted, cache)
+        self.assertEqual(info["storage"], "cpu")
         self.assertEqual(info["driver_free_before"], 0)
         self.assertEqual(info["allocator_reusable_before"], 3 * 1024**3)
-        self.assertEqual(info["free_before"], 3 * 1024**3)
+        self.assertEqual(info["free_before"], 0)
 
     def test_packed_group_cache_promotes_after_fixed_cache_when_vram_permits(self):
         import numpy as np
@@ -1171,6 +1178,7 @@ class PocaGpuCachePromotionTests(unittest.TestCase):
             ),
             mock.patch.object(torch.cuda, "is_available", return_value=True),
             mock.patch.object(torch.cuda, "current_device", return_value=0),
+            mock.patch.object(torch.cuda, "empty_cache") as empty_cache,
             mock.patch.object(
                 torch.cuda,
                 "mem_get_info",
@@ -1205,6 +1213,8 @@ class PocaGpuCachePromotionTests(unittest.TestCase):
         self.assertEqual(promoted["storage"], "cuda")
         self.assertEqual(info["group_storage"], "cuda")
         self.assertEqual(info["group_bytes"], 16)
+        self.assertEqual(empty_cache.call_count, 2)
+        self.assertEqual(info["group_driver_free_before"], 5 * 1024**3)
         move_group.assert_called_once()
 
     def test_group_cache_stays_cpu_without_displacing_fixed_gpu_cache(self):
@@ -1235,6 +1245,7 @@ class PocaGpuCachePromotionTests(unittest.TestCase):
             ),
             mock.patch.object(torch.cuda, "is_available", return_value=True),
             mock.patch.object(torch.cuda, "current_device", return_value=0),
+            mock.patch.object(torch.cuda, "empty_cache") as empty_cache,
             mock.patch.object(
                 torch.cuda,
                 "mem_get_info",
@@ -1268,6 +1279,8 @@ class PocaGpuCachePromotionTests(unittest.TestCase):
         self.assertEqual(promoted["storage"], "cuda")
         self.assertIs(promoted["groupmate_obs"], group)
         self.assertEqual(info["group_storage"], "cpu")
+        self.assertEqual(empty_cache.call_count, 2)
+        self.assertEqual(info["group_driver_free_before"], 1024**3)
         move_group.assert_not_called()
 
     def test_cpu_device_keeps_cache_on_cpu(self):
