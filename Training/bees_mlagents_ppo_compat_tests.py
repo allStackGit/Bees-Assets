@@ -924,10 +924,54 @@ class PocaLearnerOptimizationOptionTests(unittest.TestCase):
         )
 
 
+class PocaVariabilityProfilerTests(unittest.TestCase):
+    def test_nvidia_smi_sample_parser_accepts_numeric_and_na_fields(self):
+        sample = compat._poca_parse_nvidia_smi_sample(
+            "37, 12, 1024, 6144, 61, 82.5, 1740, 4001, P2"
+        )
+        self.assertEqual(sample["gpu_util"], 37.0)
+        self.assertEqual(sample["memory_used_mib"], 1024.0)
+        self.assertEqual(sample["power_w"], 82.5)
+        self.assertEqual(sample["pstate"], "P2")
+
+        sample = compat._poca_parse_nvidia_smi_sample(
+            "0, 0, 512, 6144, 45, N/A, 300, 405, P8"
+        )
+        self.assertIsNone(sample["power_w"])
+        self.assertEqual(sample["graphics_clock_mhz"], 300.0)
+
+    def test_percentile_interpolates_small_samples(self):
+        self.assertEqual(compat._poca_percentile([], 50), 0.0)
+        self.assertEqual(compat._poca_percentile([2.0], 90), 2.0)
+        self.assertAlmostEqual(
+            compat._poca_percentile([1.0, 2.0, 3.0, 4.0], 50),
+            2.5,
+        )
+
+    def test_timing_recorder_keeps_per_minibatch_samples(self):
+        compat._POCA_TIMING_STATE.timing_totals = {}
+        compat._POCA_TIMING_STATE.timing_counts = {}
+        compat._POCA_TIMING_STATE.timing_samples = {}
+        try:
+            compat._poca_record_timing("minibatch_total", 1.0)
+            compat._poca_record_timing("minibatch_total", 3.0)
+            distribution = compat._poca_timing_distribution(
+                "minibatch_total"
+            )
+            self.assertEqual(distribution["p50"], 2.0)
+            self.assertEqual(distribution["p90"], 2.8)
+            self.assertEqual(distribution["max"], 3.0)
+        finally:
+            compat._POCA_TIMING_STATE.timing_totals = None
+            compat._POCA_TIMING_STATE.timing_counts = None
+            compat._POCA_TIMING_STATE.timing_samples = None
+
+
 class PocaCudaTimingTests(unittest.TestCase):
     def tearDown(self):
         compat._POCA_TIMING_STATE.timing_totals = None
         compat._POCA_TIMING_STATE.timing_counts = None
+        compat._POCA_TIMING_STATE.timing_samples = None
         compat._POCA_TIMING_STATE.cuda_events = None
 
     def test_cuda_timing_records_elapsed_after_single_flush(self):
