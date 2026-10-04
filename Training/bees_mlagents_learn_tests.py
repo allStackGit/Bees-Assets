@@ -57,6 +57,7 @@ class BeesOptionParsingTests(unittest.TestCase):
             torch_threads,
             batch_inference,
             cpu_inference,
+            optimization_options,
         ) = launcher._extract_bees_options(
             [
                 "Training/rl_1v1_config.yaml",
