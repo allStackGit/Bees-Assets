@@ -1150,7 +1150,7 @@ class PocaGpuCachePromotionTests(unittest.TestCase):
         self.assertEqual(info["allocator_reusable_before"], 3 * 1024**3)
         self.assertEqual(info["free_before"], 0)
 
-    def test_packed_group_cache_promotes_after_fixed_cache_when_vram_permits(self):
+    def test_packed_group_cache_stays_cpu_even_when_vram_permits(self):
         import numpy as np
         from mlagents.torch_utils import torch
 
@@ -1182,10 +1182,7 @@ class PocaGpuCachePromotionTests(unittest.TestCase):
             mock.patch.object(
                 torch.cuda,
                 "mem_get_info",
-                side_effect=[
-                    (6 * 1024**3, 6 * 1024**3),
-                    (5 * 1024**3, 6 * 1024**3),
-                ],
+                return_value=(6 * 1024**3, 6 * 1024**3),
             ),
             mock.patch.object(
                 torch.cuda,
@@ -1205,17 +1202,16 @@ class PocaGpuCachePromotionTests(unittest.TestCase):
             mock.patch.object(
                 compat,
                 "_move_poca_packed_group_obs",
-                return_value=group,
             ) as move_group,
         ):
             promoted, info = compat._promote_poca_update_tensor_cache(cache)
 
         self.assertEqual(promoted["storage"], "cuda")
-        self.assertEqual(info["group_storage"], "cuda")
+        self.assertIs(promoted["groupmate_obs"], group)
+        self.assertEqual(info["group_storage"], "cpu")
         self.assertEqual(info["group_bytes"], 16)
-        self.assertEqual(empty_cache.call_count, 2)
-        self.assertEqual(info["group_driver_free_before"], 5 * 1024**3)
-        move_group.assert_called_once()
+        self.assertEqual(empty_cache.call_count, 1)
+        move_group.assert_not_called()
 
     def test_group_cache_stays_cpu_without_displacing_fixed_gpu_cache(self):
         import numpy as np
@@ -1249,10 +1245,7 @@ class PocaGpuCachePromotionTests(unittest.TestCase):
             mock.patch.object(
                 torch.cuda,
                 "mem_get_info",
-                side_effect=[
-                    (6 * 1024**3, 6 * 1024**3),
-                    (1024**3, 6 * 1024**3),
-                ],
+                return_value=(6 * 1024**3, 6 * 1024**3),
             ),
             mock.patch.object(
                 torch.cuda,
@@ -1279,9 +1272,54 @@ class PocaGpuCachePromotionTests(unittest.TestCase):
         self.assertEqual(promoted["storage"], "cuda")
         self.assertIs(promoted["groupmate_obs"], group)
         self.assertEqual(info["group_storage"], "cpu")
-        self.assertEqual(empty_cache.call_count, 2)
-        self.assertEqual(info["group_driver_free_before"], 1024**3)
+        self.assertEqual(empty_cache.call_count, 1)
         move_group.assert_not_called()
+
+    def test_ragged_group_update_keeps_fixed_cache_on_cpu(self):
+        from mlagents.torch_utils import torch
+
+        cache = {
+            "current_obs": [torch.zeros((2, 3), dtype=torch.float32)],
+            "groupmate_obs": compat._PocaRaggedGroupObs(((),)),
+            "storage": "cpu",
+        }
+        with (
+            mock.patch(
+                "mlagents.torch_utils.default_device",
+                return_value=torch.device("cuda"),
+            ),
+            mock.patch.object(torch.cuda, "is_available", return_value=True),
+            mock.patch.object(torch.cuda, "current_device", return_value=0),
+            mock.patch.object(torch.cuda, "empty_cache"),
+            mock.patch.object(
+                torch.cuda,
+                "mem_get_info",
+                return_value=(6 * 1024**3, 6 * 1024**3),
+            ),
+            mock.patch.object(
+                torch.cuda,
+                "memory_allocated",
+                return_value=512 * 1024**2,
+            ),
+            mock.patch.object(
+                torch.cuda,
+                "memory_reserved",
+                return_value=1024 * 1024**2,
+            ),
+            mock.patch.object(
+                compat,
+                "_poca_move_cache_tensors",
+            ) as move_cache,
+        ):
+            promoted, info = compat._promote_poca_update_tensor_cache(cache)
+
+        self.assertIs(promoted, cache)
+        self.assertEqual(info["storage"], "cpu")
+        self.assertEqual(
+            info["fixed_cache_reason"],
+            "ragged-group-reserve",
+        )
+        move_cache.assert_not_called()
 
     def test_cpu_device_keeps_cache_on_cpu(self):
         from mlagents.torch_utils import torch
@@ -1299,6 +1337,73 @@ class PocaGpuCachePromotionTests(unittest.TestCase):
         self.assertIs(promoted, cache)
         self.assertEqual(info["storage"], "cpu")
         self.assertEqual(info["bytes"], 2 * 3 * 4)
+
+
+class PocaObservationDedupTests(unittest.TestCase):
+    def test_dedup_requires_full_bitwise_row_equality(self):
+        import numpy as np
+        from mlagents.torch_utils import torch
+        from bees_mlagents_structured_policy import (
+            EPISODE_PROGRESS_INDEX,
+            FACTION_INDEX,
+        )
+
+        first = np.zeros((compat.BEES_OBSERVATION_SIZE,), dtype=np.float32)
+        first[0] = 0.25
+        first[EPISODE_PROGRESS_INDEX] = 0.5
+        first[FACTION_INDEX] = 1.0
+        collision = first.copy()
+        collision[10] = 0.75
+
+        current = torch.from_numpy(np.stack([first, collision]))
+        group = torch.from_numpy(np.stack([first, collision]))
+        cached = {
+            "current_obs": [current],
+            "groupmate_obs": [[group]],
+            "groupmate_counts": np.asarray([1, 1], dtype=np.int32),
+        }
+
+        with mock.patch.object(
+            compat,
+            "POCA_DEDUP_MIN_SAVED_ROWS",
+            1,
+        ):
+            plan = compat._poca_build_observation_dedup_plan(cached)
+
+        self.assertIsNotNone(plan)
+        self.assertEqual(plan["input_rows"], 4)
+        self.assertEqual(plan["unique_rows"], 2)
+        self.assertEqual(plan["saved_rows"], 2)
+
+        unique = plan["unique_obs"][0]
+        reconstructed_current = unique.index_select(
+            0,
+            plan["current_inverse"],
+        )
+        reconstructed_group = unique.index_select(
+            0,
+            plan["group_inverse"][0],
+        )
+        self.assertTrue(torch.equal(reconstructed_current, current))
+        self.assertTrue(torch.equal(reconstructed_group, group))
+
+    def test_dedup_shared_encoding_preserves_gradient_multiplicity(self):
+        from mlagents.torch_utils import torch
+
+        base = torch.tensor(
+            [[1.0, 2.0], [3.0, 4.0]],
+            requires_grad=True,
+        )
+        mapping = torch.tensor([0, 1, 0, 1], dtype=torch.long)
+        gathered = base.index_select(0, mapping)
+        gathered.sum().backward()
+
+        self.assertTrue(
+            torch.equal(
+                base.grad,
+                torch.tensor([[2.0, 2.0], [2.0, 2.0]]),
+            )
+        )
 
 
 class PocaBusyTelemetryTests(unittest.TestCase):
