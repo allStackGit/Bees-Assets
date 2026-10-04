@@ -3374,41 +3374,56 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             baseline_memories = []
         _poca_record_timing("memories", time.perf_counter() - started)
 
-        started = time.perf_counter()
-        cuda_timing = _poca_cuda_timing_begin("actor_get_stats")
-        run_out = self.policy.actor.get_stats(
+        parallel_forward = _poca_parallel_forward(
+            self,
             current_obs,
             actions,
-            masks=act_masks,
-            memories=memories,
-            sequence_length=self.policy.sequence_length,
+            act_masks,
+            groupmate_obs,
+            groupmate_actions,
+            memories,
+            value_memories,
+            baseline_memories,
+            cached,
         )
-        _poca_cuda_timing_end(cuda_timing)
-        log_probs = run_out["log_probs"]
-        entropy = run_out["entropy"]
-        _poca_record_timing("actor_get_stats", time.perf_counter() - started)
+        if parallel_forward is None:
+            started = time.perf_counter()
+            cuda_timing = _poca_cuda_timing_begin("actor_get_stats")
+            run_out = self.policy.actor.get_stats(
+                current_obs,
+                actions,
+                masks=act_masks,
+                memories=memories,
+                sequence_length=self.policy.sequence_length,
+            )
+            _poca_cuda_timing_end(cuda_timing)
+            log_probs = run_out["log_probs"]
+            entropy = run_out["entropy"]
+            _poca_record_timing("actor_get_stats", time.perf_counter() - started)
 
-        started = time.perf_counter()
-        cuda_timing = _poca_cuda_timing_begin("critic_pass")
-        all_obs = [current_obs] + groupmate_obs
-        values, _ = self.critic.critic_pass(
-            all_obs,
-            memories=value_memories,
-            sequence_length=self.policy.sequence_length,
-        )
-        _poca_cuda_timing_end(cuda_timing)
-        _poca_record_timing("critic_pass", time.perf_counter() - started)
+            started = time.perf_counter()
+            cuda_timing = _poca_cuda_timing_begin("critic_pass")
+            all_obs = [current_obs] + groupmate_obs
+            values, _ = self.critic.critic_pass(
+                all_obs,
+                memories=value_memories,
+                sequence_length=self.policy.sequence_length,
+            )
+            _poca_cuda_timing_end(cuda_timing)
+            _poca_record_timing("critic_pass", time.perf_counter() - started)
 
-        started = time.perf_counter()
-        cuda_timing = _poca_cuda_timing_begin("baseline")
-        baselines, _ = self.critic.baseline(
-            current_obs,
-            (groupmate_obs, groupmate_actions),
-            memories=baseline_memories,
-            sequence_length=self.policy.sequence_length,
-        )
-        _poca_cuda_timing_end(cuda_timing)
-        _poca_record_timing("baseline", time.perf_counter() - started)
+            started = time.perf_counter()
+            cuda_timing = _poca_cuda_timing_begin("baseline")
+            baselines, _ = self.critic.baseline(
+                current_obs,
+                (groupmate_obs, groupmate_actions),
+                memories=baseline_memories,
+                sequence_length=self.policy.sequence_length,
+            )
+            _poca_cuda_timing_end(cuda_timing)
+            _poca_record_timing("baseline", time.perf_counter() - started)
+        else:
+            log_probs, entropy, values, baselines = parallel_forward
 
         started = time.perf_counter()
         if cached is None:
@@ -3461,20 +3476,33 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         _poca_record_timing("learning_rate", time.perf_counter() - started)
 
         started = time.perf_counter()
-        self.optimizer.zero_grad()
+        self.optimizer.zero_grad(
+            set_to_none=not _POCA_OPTIMIZATIONS.cuda_graphs
+        )
         _poca_record_timing("zero_grad", time.perf_counter() - started)
 
         started = time.perf_counter()
         cuda_timing = _poca_cuda_timing_begin("backward")
         loss.backward()
         _poca_cuda_timing_end(cuda_timing)
+        parallel_streams = getattr(_POCA_TIMING_STATE, "parallel_streams", ())
+        if parallel_streams:
+            join_started = time.perf_counter()
+            current_stream = torch.cuda.current_stream()
+            for stream in parallel_streams:
+                current_stream.wait_stream(stream)
+            _poca_record_timing(
+                "backward_stream_join",
+                time.perf_counter() - join_started,
+            )
         _poca_record_timing("backward", time.perf_counter() - started)
 
         started = time.perf_counter()
         cuda_timing = _poca_cuda_timing_begin("optimizer_step")
-        self.optimizer.step()
+        _poca_optimizer_step(self.optimizer)
         _poca_cuda_timing_end(cuda_timing)
         _poca_record_timing("optimizer_step", time.perf_counter() - started)
+        _POCA_TIMING_STATE.parallel_streams = ()
 
         started = time.perf_counter()
         if _POCA_OPTIMIZATIONS.effective_sync_cleanup:
