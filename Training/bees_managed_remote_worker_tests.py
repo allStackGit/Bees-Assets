@@ -924,6 +924,71 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
         self.assertEqual(process.poll.call_count, 3)
         self.assertGreaterEqual(updater.request_refresh.call_count, 2)
 
+    def test_fresh_stopped_unapplied_training_worker_requires_recovery(self):
+        status = {
+            "desired": {
+                "training_enabled": True,
+                "pending_release": None,
+                "revision": 241,
+            }
+        }
+        record = {
+            "stale": False,
+            "process_state": "stopped",
+            "applied_revision": -1,
+            "last_error": "",
+            "preparation_error": "",
+            "metrics": {},
+        }
+
+        self.assertTrue(
+            managed._unapplied_training_worker(status, record)
+        )
+
+        self.assertFalse(
+            managed._unapplied_training_worker(
+                status,
+                dict(record, process_state="starting"),
+            )
+        )
+        self.assertFalse(
+            managed._unapplied_training_worker(
+                status,
+                dict(record, applied_revision=241),
+            )
+        )
+        self.assertFalse(
+            managed._unapplied_training_worker(
+                status,
+                dict(record, last_error="managed child failed"),
+            )
+        )
+        self.assertFalse(
+            managed._unapplied_training_worker(
+                {
+                    "desired": {
+                        "training_enabled": True,
+                        "pending_release": {"phase": "stopping"},
+                        "revision": 241,
+                    }
+                },
+                record,
+            )
+        )
+        self.assertFalse(
+            managed._unapplied_training_worker(
+                status,
+                dict(
+                    record,
+                    metrics={
+                        "reconciliation": {
+                            "phase": "ensuring canonical build"
+                        }
+                    },
+                ),
+            )
+        )
+
     def test_stale_record_recycles_worker_without_tearing_down_reachable_transport(self):
         record = {"stale": True}
 
