@@ -164,6 +164,30 @@ class ContinualElasticWanServiceTests(unittest.TestCase):
             )
 
 
+    def test_learner_optimization_flags_are_forwarded_past_service_parser(self):
+        cleaned, selected = service.extract_learner_optimization_args(
+            [
+                "--root", "state",
+                "--bees-ppo-sync-cleanup=true",
+                "--bees-ppo-stream-shards=2",
+                "--bees-ppo-prefetch",
+                "--bees-ppo-critic-baseline-overlap=false",
+                "--bees-ppo-cuda-graphs=on",
+            ]
+        )
+
+        self.assertEqual(cleaned, ["--root", "state"])
+        self.assertEqual(
+            selected,
+            [
+                "--bees-ppo-sync-cleanup=true",
+                "--bees-ppo-stream-shards=2",
+                "--bees-ppo-prefetch",
+                "--bees-ppo-critic-baseline-overlap=false",
+                "--bees-ppo-cuda-graphs=on",
+            ],
+        )
+
     def test_wan_flags_append_when_no_environment_args_exist(self):
         self.assertEqual(
             service.insert_wan_args_before_environment_args(
