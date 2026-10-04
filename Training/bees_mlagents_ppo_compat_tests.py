@@ -1417,6 +1417,13 @@ class PocaCpuMinibatchPreparerTests(unittest.TestCase):
 
         cache = {"storage": "cpu"}
         selected = {"observation_dedup": None}
+        observation_source = {
+            "current_obs": [
+                torch.zeros((2, compat.BEES_OBSERVATION_SIZE))
+            ],
+            "prepared_groupmate_obs": compat._PocaPreparedGroupObs((), 2),
+            "groupmate_counts": [0, 0],
+        }
         compat._POCA_TIMING_STATE.dedup_input_rows = 0
         compat._POCA_TIMING_STATE.dedup_unique_rows = 0
 
@@ -1431,6 +1438,11 @@ class PocaCpuMinibatchPreparerTests(unittest.TestCase):
                 compat.PocaLearnerOptimizationOptions(sync_cleanup=True),
             ),
             mock.patch.object(torch.cuda, "is_available", return_value=True),
+            mock.patch.object(
+                compat,
+                "_poca_select_group_prepare_source",
+                return_value=observation_source,
+            ),
             mock.patch.object(
                 compat,
                 "_select_poca_update_tensor_cache",
@@ -1491,7 +1503,7 @@ class PocaCpuMinibatchPreparerTests(unittest.TestCase):
         }
         observation_source = {
             "current_obs": [torch.zeros((2, compat.BEES_OBSERVATION_SIZE))],
-            "groupmate_obs": [],
+            "prepared_groupmate_obs": compat._PocaPreparedGroupObs((), 2),
             "groupmate_counts": [0, 0],
         }
         compat._POCA_TIMING_STATE.dedup_input_rows = 0
