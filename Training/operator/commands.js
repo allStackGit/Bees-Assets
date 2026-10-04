@@ -141,6 +141,23 @@ async function invokeRuntime(options = {}) {
     if (options.explicitBackpressureQueue) {
         runtimeOverrides.wanMaxQueuedBatches = Number(options.backpressureQueue);
     }
+    if (options.explicitLearnerOptimizations) {
+        runtimeOverrides.learnerOptimizations = options.ppoControl
+            ? {
+                syncCleanup: false,
+                streamShards: 1,
+                minibatchPrefetch: false,
+                criticBaselineOverlap: false,
+                cudaGraphs: false,
+            }
+            : {
+                syncCleanup: Boolean(options.ppoSyncCleanup),
+                streamShards: Number(options.ppoStreamShards),
+                minibatchPrefetch: Boolean(options.ppoPrefetch),
+                criticBaselineOverlap: Boolean(options.ppoCriticBaselineOverlap),
+                cudaGraphs: Boolean(options.ppoCudaGraphs),
+            };
+    }
     config = applyRuntimeTrainingOptions(config, runtimeOverrides);
     if (!exists(paths.latestReleasePath)) {
         throw new Error(
@@ -245,6 +262,7 @@ async function invokeRuntime(options = {}) {
             typeof config.localActor === 'object' &&
             config.localActor.enabled
         ),
+        learnerOptimizations: config.learnerOptimizations,
     });
 
     const unity = resolveUnityEditor(config);
@@ -285,6 +303,19 @@ async function invokeRuntime(options = {}) {
         ' backpressure_queue=' + Number(config.wanMaxQueuedBatches) +
         ' local_training=' + (
             config.localActor && config.localActor.enabled ? 'on' : 'off'
+        ) +
+        ' ppo_sync_cleanup=' + (
+            config.learnerOptimizations.syncCleanup ? 'on' : 'off'
+        ) +
+        ' ppo_stream_shards=' + Number(config.learnerOptimizations.streamShards) +
+        ' ppo_prefetch=' + (
+            config.learnerOptimizations.minibatchPrefetch ? 'on' : 'off'
+        ) +
+        ' ppo_overlap=' + (
+            config.learnerOptimizations.criticBaselineOverlap ? 'on' : 'off'
+        ) +
+        ' ppo_cuda_graphs=' + (
+            config.learnerOptimizations.cudaGraphs ? 'on' : 'off'
         ) + '.'
     );
 }
