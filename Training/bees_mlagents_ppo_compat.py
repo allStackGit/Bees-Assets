@@ -921,6 +921,7 @@ class _PocaUpdateHardwareProfiler:
         self._cpu_samples = []
         self._gpu_samples = []
         self._thread = None
+        self._gpu_process = None
         self._process_cpu_start = 0.0
         self._cuda_start = {}
         self._psutil = None
@@ -987,64 +988,85 @@ class _PocaUpdateHardwareProfiler:
         except (OSError, RuntimeError):
             return
 
-    def _sample_gpu(self):
+    def _start_gpu_sampler(self):
         if not self._nvidia_smi:
-            return
+            return None
         command = [
             self._nvidia_smi,
             "--query-gpu=utilization.gpu,utilization.memory,memory.used,memory.total,"
             "temperature.gpu,power.draw,clocks.current.graphics,clocks.current.memory,pstate",
             "--format=csv,noheader,nounits",
+            "-l",
+            str(max(1, int(POCA_HARDWARE_SAMPLE_SECONDS))),
         ]
         if self._cuda_start:
             command.extend(["-i", str(self._cuda_start.get("device", 0))])
         try:
-            completed = subprocess.run(
+            return subprocess.Popen(
                 command,
-                capture_output=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
                 text=True,
-                timeout=2.0,
-                check=False,
+                bufsize=1,
                 creationflags=(
                     subprocess.CREATE_NO_WINDOW
                     if hasattr(subprocess, "CREATE_NO_WINDOW")
                     else 0
                 ),
             )
-        except (OSError, subprocess.SubprocessError):
-            return
-        if completed.returncode != 0:
-            return
-        first_line = next(
-            (line for line in completed.stdout.splitlines() if line.strip()),
-            "",
-        )
-        sample = _poca_parse_nvidia_smi_sample(first_line)
-        if sample is not None:
-            self._gpu_samples.append(sample)
+        except OSError:
+            return None
 
     def _sample_loop(self):
-        # Sample immediately, then at one-second intervals. Each nvidia-smi call is
-        # short-lived so a learner exception cannot orphan a persistent telemetry process.
-        while not self._stop.is_set():
-            self._sample_cpu()
-            self._sample_gpu()
-            if self._stop.wait(POCA_HARDWARE_SAMPLE_SECONDS):
-                break
+        self._gpu_process = self._start_gpu_sampler()
+        process = self._gpu_process
+        if process is None or process.stdout is None:
+            while not self._stop.wait(POCA_HARDWARE_SAMPLE_SECONDS):
+                self._sample_cpu()
+            return
+
+        try:
+            while not self._stop.is_set():
+                line = process.stdout.readline()
+                if not line:
+                    if process.poll() is not None:
+                        break
+                    continue
+                sample = _poca_parse_nvidia_smi_sample(line)
+                if sample is not None:
+                    self._gpu_samples.append(sample)
+                self._sample_cpu()
+        finally:
+            try:
+                process.stdout.close()
+            except OSError:
+                pass
 
     def stop(self, wall_seconds):
         self._stop.set()
+        process = self._gpu_process
+        if process is not None and process.poll() is None:
+            try:
+                process.terminate()
+                process.wait(timeout=1.0)
+            except (OSError, subprocess.SubprocessError):
+                try:
+                    process.kill()
+                except OSError:
+                    pass
         if self._thread is not None:
-            self._thread.join(timeout=3.0)
+            self._thread.join(timeout=2.0)
             self._thread = None
+        self._gpu_process = None
 
+        process_cpu_seconds = max(
+            0.0,
+            time.process_time() - self._process_cpu_start,
+        )
         result = {
-            "process_cpu_seconds": max(
-                0.0,
-                time.process_time() - self._process_cpu_start,
-            ),
+            "process_cpu_seconds": process_cpu_seconds,
             "process_cpu_equivalent_percent": (
-                max(0.0, time.process_time() - self._process_cpu_start)
+                process_cpu_seconds
                 * 100.0
                 / max(float(wall_seconds), 1e-9)
             ),
