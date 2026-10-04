@@ -375,12 +375,21 @@ def plan_run(
     *,
     force_new: bool = False,
     preserve_run: bool = False,
+    resume_run_id: Optional[str] = None,
     build_id: Optional[str] = None,
     environment_args: Optional[Sequence[str]] = None,
 ) -> dict[str, Any]:
     now = now or _utc_now()
-    if force_new and preserve_run:
-        raise ValueError("force_new and preserve_run are mutually exclusive")
+    if sum(bool(value) for value in (force_new, preserve_run, resume_run_id)) > 1:
+        raise ValueError(
+            "force_new, preserve_run, and resume_run_id are mutually exclusive"
+        )
+    if resume_run_id is not None:
+        resume_run_id = str(resume_run_id).strip()
+        if not re.fullmatch(r"[A-Za-z0-9._-]+", resume_run_id):
+            raise ValueError(
+                "resume_run_id must contain only safe run-id characters"
+            )
     if build_id is not None:
         if not isinstance(build_id, str) or not re.fullmatch(r"[A-Za-z0-9._-]+", build_id):
             raise ValueError("build_id must contain only safe release-id characters")
@@ -400,6 +409,8 @@ def plan_run(
     previous = _load_state(state_path)
     if preserve_run and previous is None:
         raise ValueError("preserve_run requires an existing training run")
+    if resume_run_id and previous is None:
+        raise ValueError("resume_run_id requires an existing training run")
 
     previous_normalized_key = None
     if previous is not None:
@@ -413,6 +424,9 @@ def plan_run(
         and previous_normalized_key != key
     )
     preserve_run_override = bool(preserve_run and contract_changed)
+    resume_existing_run = bool(
+        resume_run_id and previous is not None and resume_run_id != previous["run_id"]
+    )
     if preserve_run_override:
         previous_contract = previous.get("contract")
         if not isinstance(previous_contract, Mapping):
@@ -430,9 +444,16 @@ def plan_run(
                 + ", ".join(changed_checkpoint_fields)
             )
 
-    incompatible = previous is not None and (contract_changed or force_new)
-    new_run = previous is None or (incompatible and not preserve_run_override)
-    run_id = _run_id(payload, key, now) if new_run else str(previous["run_id"])
+    incompatible = previous is not None and (
+        contract_changed or force_new or resume_existing_run
+    )
+    new_run = previous is None or (
+        incompatible and not preserve_run_override and not resume_existing_run
+    )
+    if resume_run_id:
+        run_id = resume_run_id
+    else:
+        run_id = _run_id(payload, key, now) if new_run else str(previous["run_id"])
     return {
         "schema_version": SCHEMA_VERSION,
         "planned_utc": now.isoformat(),
@@ -446,6 +467,7 @@ def plan_run(
         "new_run": new_run,
         "forced_new_run": bool(force_new),
         "preserve_run_override": preserve_run_override,
+        "resume_existing_run": resume_existing_run,
         "build_id": build_id,
         "environment_args": normalized_environment_args,
         "contract": payload,
@@ -547,6 +569,14 @@ def _parser() -> argparse.ArgumentParser:
         help="Create a new run even when the compatibility contract is unchanged.",
     )
     plan.add_argument(
+        "--resume-run-id",
+        default=None,
+        help=(
+            "Adopt an existing run/checkpoint lineage explicitly while keeping the "
+            "current compatibility contract."
+        ),
+    )
+    plan.add_argument(
         "--preserve-run",
         action="store_true",
         help=(
@@ -609,6 +639,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             Path(args.state),
             force_new=bool(args.force_new),
             preserve_run=bool(args.preserve_run),
+            resume_run_id=args.resume_run_id,
             build_id=args.build_id,
             environment_args=environment_args,
         )
