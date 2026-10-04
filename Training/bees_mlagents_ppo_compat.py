@@ -1093,6 +1093,7 @@ class _PocaUpdateHardwareProfiler:
                 sample.get(key) for sample in self._cpu_samples
             )
             result[f"{key}_avg"] = summary["avg"]
+            result[f"{key}_min"] = summary["min"]
             result[f"{key}_max"] = summary["max"]
 
         if self._cpu_samples:
