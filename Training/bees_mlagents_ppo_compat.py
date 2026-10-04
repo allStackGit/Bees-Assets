@@ -2459,6 +2459,73 @@ def _poca_parallel_forward(
 
 
 
+
+class _PocaMinibatchPrefetcher:
+    """Prepare the next cached minibatch on a worker thread and CUDA copy stream."""
+
+    def __init__(self, cache):
+        from concurrent.futures import ThreadPoolExecutor
+        from mlagents.torch_utils import default_device, torch
+
+        self.cache = cache
+        self.device = default_device()
+        self.enabled = bool(
+            _POCA_OPTIMIZATIONS.minibatch_prefetch
+            and self.device.type == "cuda"
+            and torch.cuda.is_available()
+        )
+        self.executor = ThreadPoolExecutor(
+            max_workers=1,
+            thread_name_prefix="bees-poca-prefetch",
+        ) if self.enabled else None
+        self.stream = torch.cuda.Stream() if self.enabled else None
+
+    def submit(self, indices):
+        if not self.enabled:
+            return None
+        import numpy as np
+
+        copied = np.asarray(indices, dtype=np.int64).copy()
+        return self.executor.submit(self._prepare, copied)
+
+    def _prepare(self, indices):
+        from mlagents.torch_utils import torch
+
+        with torch.cuda.stream(self.stream):
+            start = torch.cuda.Event(enable_timing=True)
+            end = torch.cuda.Event(enable_timing=True)
+            start.record()
+            selected = _select_poca_update_tensor_cache(
+                self.cache,
+                indices,
+                device_override=self.device,
+                non_blocking=True,
+            )
+            end.record()
+        # Keep temporary pinned sources alive until all asynchronous copies finish.
+        end.synchronize()
+        return selected, ("prefetch", start, end)
+
+    def consume(self, future):
+        if future is None:
+            return None
+        wait_started = time.perf_counter()
+        selected, marker = future.result()
+        _poca_record_timing(
+            "prefetch_cpu_wait",
+            time.perf_counter() - wait_started,
+        )
+        events = getattr(_POCA_TIMING_STATE, "cuda_events", None)
+        if events is not None:
+            events.append(marker)
+        return selected
+
+    def close(self):
+        if self.executor is not None:
+            self.executor.shutdown(wait=True)
+            self.executor = None
+
+
 def _poca_optimizer_step(optimizer) -> None:
     """Execute Adam eagerly or replay a captured CUDA optimizer step."""
 
