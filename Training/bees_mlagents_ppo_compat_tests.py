@@ -1626,6 +1626,57 @@ class PocaTrajectoryGroupTensorTests(unittest.TestCase):
             )
 
 
+    def test_parallel_compact_group_rows_expand_to_stock_padding(self):
+        import numpy as np
+        from mlagents.torch_utils import torch
+        from mlagents.trainers.buffer import AgentBuffer
+        from mlagents.trainers.trajectory import GroupObsUtil
+
+        buffer = AgentBuffer()
+        entries = (
+            [np.asarray([1.0, 2.0, 3.0, 4.0], dtype=np.float32)],
+            [],
+            [
+                np.asarray([5.0, 6.0, 7.0, 8.0], dtype=np.float32),
+                np.asarray([9.0, 10.0, 11.0, 12.0], dtype=np.float32),
+            ],
+        )
+        for entry in entries:
+            buffer[GroupObsUtil.get_name_at(0)].append(list(entry))
+
+        counts = np.asarray([1, 0, 2], dtype=np.int32)
+        source = compat._PocaRaggedGroupObs(
+            (buffer[GroupObsUtil.get_name_at(0)],)
+        )
+        prepared = compat._poca_prepare_compact_group_obs(
+            source,
+            np.asarray([0, 1, 2], dtype=np.int64),
+            counts,
+        )
+        self.assertIsInstance(prepared, compat._PocaPreparedGroupObs)
+        self.assertEqual(
+            tuple(
+                None if position is None else int(position.values.shape[0])
+                for position in prepared.fields[0]
+            ),
+            (2, 1),
+        )
+
+        expanded = compat._poca_expand_prepared_group_obs(
+            prepared,
+            torch.device("cpu"),
+        )
+        stock = GroupObsUtil.from_buffer(buffer, 1)
+
+        self.assertEqual(len(expanded), len(stock))
+        for position in range(len(stock)):
+            np.testing.assert_allclose(
+                expanded[position][0].detach().cpu().numpy(),
+                np.asarray(stock[position][0], dtype=np.float32),
+                equal_nan=True,
+            )
+
+
 class PocaTensorCacheTests(unittest.TestCase):
     def test_cached_minibatch_selects_requested_rows_without_repadding(self):
         import numpy as np
