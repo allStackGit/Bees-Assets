@@ -427,6 +427,22 @@ async function getStatusFrameLines(config, adminToken) {
             ' threaded=' + (config.threadedTraining ? 'on' : 'off') +
             ' policy_lag=' + Number(config.threadedPolicyLag)
         );
+        const learnerOptimizations = config.learnerOptimizations || {};
+        lines.push(
+            'Learner opt: sync=' + (
+                learnerOptimizations.syncCleanup ? 'on' : 'off'
+            ) +
+            ' shards=' + Number(learnerOptimizations.streamShards || 1) +
+            ' prefetch=' + (
+                learnerOptimizations.minibatchPrefetch ? 'on' : 'off'
+            ) +
+            ' overlap=' + (
+                learnerOptimizations.criticBaselineOverlap ? 'on' : 'off'
+            ) +
+            ' graphs=' + (
+                learnerOptimizations.cudaGraphs ? 'on' : 'off'
+            )
+        );
 
         if (desired.pending_release) {
             const pending = desired.pending_release;
