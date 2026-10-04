@@ -1743,6 +1743,55 @@ def stale_trainer_recovery_action(
     return "worker"
 
 
+def _unapplied_training_worker(
+    status: object,
+    record: Optional[Mapping[str, object]],
+) -> bool:
+    """Detect a fresh worker heartbeat that never applied active training intent.
+
+    A dedicated worker may legitimately report stopped while a release is staged or while
+    it is actively reconciling a build. Outside those states, a fresh heartbeat that stays
+    stopped on an older revision with no reported error cannot produce rollout and should
+    be recycled without disturbing a proven-live private transport.
+    """
+    if not isinstance(status, Mapping) or not isinstance(record, Mapping):
+        return False
+    desired = status.get("desired")
+    desired_map = desired if isinstance(desired, Mapping) else {}
+    if not bool(desired_map.get("training_enabled", False)):
+        return False
+    if desired_map.get("pending_release"):
+        return False
+    if bool(record.get("stale", False)):
+        return False
+    if str(record.get("process_state", "") or "") != "stopped":
+        return False
+    if str(record.get("last_error", "") or "").strip():
+        return False
+    if str(record.get("preparation_error", "") or "").strip():
+        return False
+
+    metrics = record.get("metrics")
+    metrics_map = metrics if isinstance(metrics, Mapping) else {}
+    reconciliation = metrics_map.get("reconciliation")
+    reconciliation_map = (
+        reconciliation if isinstance(reconciliation, Mapping) else {}
+    )
+    if str(reconciliation_map.get("phase", "") or "").strip():
+        return False
+
+    desired_revision = desired_map.get("revision")
+    applied_revision = record.get("applied_revision")
+    if (
+        not isinstance(desired_revision, int)
+        or isinstance(desired_revision, bool)
+        or not isinstance(applied_revision, int)
+        or isinstance(applied_revision, bool)
+    ):
+        return False
+    return int(applied_revision) < int(desired_revision)
+
+
 def _inner_control_stalled(
     status: object,
     record: Optional[Mapping[str, object]],
@@ -2426,6 +2475,41 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                             # that historical record to trigger another recycle; otherwise the
                             # supervisor can kill every replacement before its first heartbeat.
                             if control_healthy and not record_stale and not registration_grace:
+                                if _unapplied_training_worker(status, record):
+                                    print(
+                                        "[Bees remote] inner worker remained stopped without applying "
+                                        "the active training revision after its registration grace; "
+                                        "recycling the managed worker without disturbing the healthy "
+                                        "private transport.",
+                                        file=sys.stderr,
+                                        flush=True,
+                                    )
+                                    try:
+                                        worker, worker_log_thread = (
+                                            _restart_managed_worker_preserving_transport(
+                                                args,
+                                                root,
+                                                actor_key,
+                                                worker,
+                                                worker_log_thread,
+                                            )
+                                        )
+                                    except RuntimeError as exc:
+                                        raise _SupervisorProcessRestartRequired(
+                                            "unapplied managed worker could not be replaced cleanly: "
+                                            + str(exc)
+                                        ) from exc
+                                    restarted_now = time.monotonic()
+                                    worker_started_monotonic = restarted_now
+                                    stale_recycle_grace_started_monotonic = restarted_now
+                                    control_failure_watchdog.reset()
+                                    inner_control_stall_watchdog.observe(
+                                        True,
+                                        restarted_now,
+                                    )
+                                    next_status = 0.0
+                                    continue
+
                                 if inner_control_stall_watchdog.observe(
                                     not _inner_control_stalled(status, record),
                                     now,
