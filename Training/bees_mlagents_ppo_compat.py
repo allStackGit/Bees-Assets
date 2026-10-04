@@ -3128,6 +3128,11 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
 
         completed_minibatches = 0
         _POCA_UPDATE_CACHE_STATE.cache = tensor_cache
+        prefetcher = (
+            _PocaMinibatchPrefetcher(tensor_cache)
+            if tensor_cache is not None
+            else None
+        )
         try:
             for _epoch_index in range(num_epoch):
                 epoch_order = None
@@ -3142,11 +3147,26 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                     )
                     np.random.shuffle(epoch_order)
 
-                for i in range(
-                    0,
-                    max_num_batch * batch_size,
-                    batch_size,
+                offsets = list(
+                    range(
+                        0,
+                        max_num_batch * batch_size,
+                        batch_size,
+                    )
+                )
+                pending_prefetch = None
+                if (
+                    tensor_cache is not None
+                    and prefetcher is not None
+                    and prefetcher.enabled
+                    and offsets
                 ):
+                    first = offsets[0]
+                    pending_prefetch = prefetcher.submit(
+                        epoch_order[first : first + batch_size]
+                    )
+
+                for offset_index, i in enumerate(offsets):
                     completed_minibatches += 1
                     minibatch_started = time.perf_counter()
                     if tensor_cache is None:
@@ -3156,9 +3176,28 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                         )
                         _POCA_UPDATE_CACHE_STATE.indices = None
                     else:
-                        _POCA_UPDATE_CACHE_STATE.indices = epoch_order[
-                            i : i + batch_size
-                        ]
+                        indices = epoch_order[i : i + batch_size]
+                        if (
+                            prefetcher is not None
+                            and prefetcher.enabled
+                        ):
+                            _POCA_UPDATE_CACHE_STATE.minibatch = (
+                                prefetcher.consume(pending_prefetch)
+                            )
+                            _POCA_UPDATE_CACHE_STATE.indices = None
+                            next_offset_index = offset_index + 1
+                            pending_prefetch = (
+                                prefetcher.submit(
+                                    epoch_order[
+                                        offsets[next_offset_index] :
+                                        offsets[next_offset_index] + batch_size
+                                    ]
+                                )
+                                if next_offset_index < len(offsets)
+                                else None
+                            )
+                        else:
+                            _POCA_UPDATE_CACHE_STATE.indices = indices
                         # The optimizer reads the selected rows from the cache.
                         # Passing the original buffer preserves the public
                         # ML-Agents optimizer signature without copying fields.
@@ -3195,6 +3234,8 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                     for stat_name, value in update_stats.items():
                         batch_update_stats[stat_name].append(value)
         finally:
+            if prefetcher is not None:
+                prefetcher.close()
             _POCA_UPDATE_CACHE_STATE.cache = None
             _POCA_UPDATE_CACHE_STATE.indices = None
             _POCA_UPDATE_CACHE_STATE.minibatch = None
@@ -3707,9 +3748,9 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         prepare_started = time.perf_counter()
         tensor_cache = getattr(_POCA_UPDATE_CACHE_STATE, "cache", None)
         indices = getattr(_POCA_UPDATE_CACHE_STATE, "indices", None)
-        cached = None
+        cached = getattr(_POCA_UPDATE_CACHE_STATE, "minibatch", None)
 
-        if tensor_cache is not None and indices is not None:
+        if cached is None and tensor_cache is not None and indices is not None:
             transfer_started = time.perf_counter()
             cached = _select_poca_update_tensor_cache(
                 tensor_cache,
@@ -3721,6 +3762,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                 time.perf_counter() - transfer_started,
             )
 
+        if cached is not None:
             groupmate_counts = cached["groupmate_counts"]
             communication_activity = _poca_communication_activity(
                 groupmate_counts
