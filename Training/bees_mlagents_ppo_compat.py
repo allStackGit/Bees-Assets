@@ -2794,6 +2794,46 @@ def _poca_move_selected_minibatch(cached, device):
     return _poca_transform_selected_minibatch(cached, move)
 
 
+def _poca_expand_dedup_encoding(
+    unique_encoded,
+    mapping,
+    valid_rows,
+    batch_size: int,
+):
+    """Fan unique encoded rows back to their exact POCA member positions."""
+
+    from mlagents.torch_utils import torch
+
+    mapping = mapping.to(
+        device=unique_encoded.device,
+        dtype=torch.long,
+    )
+    part = unique_encoded.index_select(0, mapping)
+    if valid_rows is None:
+        if int(part.shape[0]) != int(batch_size):
+            raise RuntimeError(
+                "POCA dedup current-observation mapping has unexpected size."
+            )
+        return part
+
+    if int(part.shape[0]) != int(len(valid_rows)):
+        raise RuntimeError(
+            "POCA dedup group-observation mapping has unexpected size."
+        )
+    index = torch.as_tensor(
+        valid_rows,
+        dtype=torch.long,
+        device=unique_encoded.device,
+    )
+    return part.new_zeros(
+        (int(batch_size), int(part.shape[1]))
+    ).index_copy(
+        0,
+        index,
+        part,
+    )
+
+
 def _poca_cuda_streams(count: int):
     """Reuse non-default CUDA streams for opt-in intra-minibatch parallelism."""
 
@@ -3635,24 +3675,15 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                         mapping.device == source.device
                         and int(mapping.numel()) == expected
                     ):
-                        part = unique_encoded.index_select(
-                            0,
-                            mapping.to(dtype=torch.long),
+                        encoded = _poca_expand_dedup_encoding(
+                            unique_encoded,
+                            mapping,
+                            valid,
+                            batch_size,
                         )
-                        if valid is None:
-                            encoded = part
-                        else:
-                            index = torch.as_tensor(
-                                valid,
-                                dtype=torch.long,
-                                device=source.device,
-                            )
-                            encoded = part.new_zeros(
-                                (batch_size, encoded_size)
-                            ).index_copy(
-                                0,
-                                index,
-                                part,
+                        if int(encoded.shape[1]) != encoded_size:
+                            raise RuntimeError(
+                                "POCA dedup encoded width changed unexpectedly."
                             )
                         cache[cache_key] = encoded
                         outputs[position] = encoded
