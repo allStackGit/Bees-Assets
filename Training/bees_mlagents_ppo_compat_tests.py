@@ -1395,7 +1395,12 @@ class PocaObservationDedupTests(unittest.TestCase):
             requires_grad=True,
         )
         mapping = torch.tensor([0, 1, 0, 1], dtype=torch.long)
-        gathered = base.index_select(0, mapping)
+        gathered = compat._poca_expand_dedup_encoding(
+            base,
+            mapping,
+            None,
+            4,
+        )
         gathered.sum().backward()
 
         self.assertTrue(
@@ -1403,6 +1408,71 @@ class PocaObservationDedupTests(unittest.TestCase):
                 base.grad,
                 torch.tensor([[2.0, 2.0], [2.0, 2.0]]),
             )
+        )
+
+
+class PocaCpuMinibatchPreparerTests(unittest.TestCase):
+    def test_cpu_preparer_never_runs_cuda_work_on_worker(self):
+        from mlagents.torch_utils import torch
+
+        cache = {"storage": "cpu"}
+        selected = {"observation_dedup": None}
+        compat._POCA_TIMING_STATE.dedup_input_rows = 0
+        compat._POCA_TIMING_STATE.dedup_unique_rows = 0
+
+        with (
+            mock.patch(
+                "mlagents.torch_utils.default_device",
+                return_value=torch.device("cuda"),
+            ),
+            mock.patch.object(torch.cuda, "is_available", return_value=True),
+            mock.patch.object(
+                compat,
+                "_select_poca_update_tensor_cache",
+                return_value=dict(selected),
+            ) as select_cache,
+            mock.patch.object(
+                compat,
+                "_poca_build_observation_dedup_plan",
+                return_value=None,
+            ),
+            mock.patch.object(
+                compat,
+                "_poca_pin_selected_minibatch",
+                side_effect=lambda value: value,
+            ),
+            mock.patch.object(
+                compat,
+                "_poca_move_selected_minibatch",
+                side_effect=lambda value, _device: value,
+            ) as move_cache,
+            mock.patch.object(
+                compat,
+                "_poca_cuda_timing_begin",
+                return_value=None,
+            ),
+            mock.patch.object(
+                compat,
+                "_poca_cuda_timing_end",
+            ),
+        ):
+            preparer = compat._PocaCpuMinibatchPreparer(cache)
+            self.assertTrue(preparer.enabled)
+            future = preparer.submit([0, 1])
+            result = preparer.consume(future)
+            preparer.close()
+
+        self.assertIsNotNone(result)
+        call = select_cache.call_args
+        self.assertEqual(
+            call.kwargs["device_override"],
+            torch.device("cpu"),
+        )
+        self.assertFalse(call.kwargs["non_blocking"])
+        move_cache.assert_called_once()
+        self.assertEqual(
+            move_cache.call_args.args[1],
+            torch.device("cuda"),
         )
 
 
