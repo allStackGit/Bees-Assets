@@ -2106,6 +2106,358 @@ def _select_poca_update_tensor_cache(
     }
 
 
+
+def _poca_cuda_streams(count: int):
+    """Reuse non-default CUDA streams for opt-in intra-minibatch parallelism."""
+
+    from mlagents.torch_utils import torch
+
+    if count <= 0 or not torch.cuda.is_available():
+        return ()
+    pool = getattr(_POCA_TIMING_STATE, "stream_pool", None)
+    if pool is None:
+        pool = {}
+        _POCA_TIMING_STATE.stream_pool = pool
+    streams = pool.get(int(count))
+    if streams is None:
+        streams = tuple(torch.cuda.Stream() for _ in range(int(count)))
+        pool[int(count)] = streams
+    return streams
+
+
+def _poca_remap_rows(rows, start: int, end: int):
+    import numpy as np
+
+    if rows is None:
+        return None
+    values = np.asarray(rows, dtype=np.int64)
+    selected = values[(values >= start) & (values < end)]
+    return selected - int(start)
+
+
+def _poca_shard_faction_rows(rows, start: int, end: int):
+    if rows is None:
+        return None
+    return {
+        name: _poca_remap_rows(rows.get(name, ()), start, end)
+        for name in ("bee", "human", "mixed")
+    }
+
+
+def _poca_prepare_parallel_max_agents(optimizer, groupmate_counts) -> None:
+    """Advance POCA's running max-agent normalizer before parallel critic branches."""
+
+    import numpy as np
+    from mlagents.torch_utils import torch
+
+    body = getattr(getattr(optimizer, "critic", None), "network_body", None)
+    current = getattr(body, "_current_max_agents", None)
+    if current is None:
+        return
+    counts = np.asarray(groupmate_counts, dtype=np.int32)
+    batch_max = 1 + (int(counts.max()) if counts.size else 0)
+    with torch.no_grad():
+        candidate = current.new_tensor(batch_max)
+        current.copy_(torch.maximum(current, candidate))
+
+
+def _poca_parallel_forward(
+    optimizer,
+    current_obs,
+    actions,
+    act_masks,
+    groupmate_obs,
+    groupmate_actions,
+    memories,
+    value_memories,
+    baseline_memories,
+    cached,
+):
+    """Run one logical minibatch on independent CUDA streams without extra Adam steps."""
+
+    opts = _POCA_OPTIMIZATIONS
+    if opts.stream_shards <= 1 and not opts.critic_baseline_overlap:
+        return None
+
+    from mlagents.torch_utils import torch
+    from mlagents.trainers.torch_entities.action_log_probs import ActionLogProbs
+    from bees_mlagents_structured_policy import (
+        reset_training_faction_rows,
+        set_training_faction_rows,
+    )
+
+    if (
+        cached is None
+        or not torch.cuda.is_available()
+        or current_obs[0].device.type != "cuda"
+        or memories
+        or value_memories
+        or baseline_memories
+    ):
+        return None
+
+    batch_size = int(current_obs[0].shape[0])
+    shard_count = min(int(opts.stream_shards), batch_size)
+    if shard_count <= 0:
+        return None
+
+    ranges = []
+    for shard in range(shard_count):
+        start = (batch_size * shard) // shard_count
+        end = (batch_size * (shard + 1)) // shard_count
+        if end > start:
+            ranges.append((start, end))
+    if not ranges:
+        return None
+
+    overlap = bool(opts.critic_baseline_overlap)
+    streams_per_shard = 3 if overlap else 1
+    streams = _poca_cuda_streams(len(ranges) * streams_per_shard)
+    if len(streams) != len(ranges) * streams_per_shard:
+        return None
+
+    full_valid_rows = getattr(_POCA_GROUP_BATCH_STATE, "valid_rows", None)
+    full_encoded_cache = getattr(_POCA_GROUP_BATCH_STATE, "encoded_cache", None)
+    full_freeze = bool(
+        getattr(_POCA_GROUP_BATCH_STATE, "freeze_max_agents", False)
+    )
+    faction_rows = cached.get("faction_rows")
+    groupmate_counts = cached.get("groupmate_counts", ())
+    _poca_prepare_parallel_max_agents(optimizer, groupmate_counts)
+
+    default_stream = torch.cuda.current_stream()
+    span_marker = _poca_cuda_timing_begin("parallel_forward")
+    submit_started = time.perf_counter()
+
+    actor_outputs = []
+    value_outputs = []
+    baseline_outputs = []
+
+    def shard_obs(values, start, end):
+        return [tensor[start:end] for tensor in values]
+
+    def shard_group_obs(values, start, end):
+        return [
+            [tensor[start:end] for tensor in member]
+            for member in values
+        ]
+
+    def shard_group_actions(values, start, end):
+        return [value.slice(start, end) for value in values]
+
+    def install_shard_context(start, end, encoded_cache):
+        if full_valid_rows is None:
+            _POCA_GROUP_BATCH_STATE.valid_rows = None
+        else:
+            _POCA_GROUP_BATCH_STATE.valid_rows = [
+                _poca_remap_rows(rows, start, end)
+                for rows in full_valid_rows
+            ]
+        _POCA_GROUP_BATCH_STATE.encoded_cache = encoded_cache
+        _POCA_GROUP_BATCH_STATE.freeze_max_agents = True
+        return set_training_faction_rows(
+            _poca_shard_faction_rows(faction_rows, start, end)
+        )
+
+    try:
+        for shard_index, (start, end) in enumerate(ranges):
+            obs = shard_obs(current_obs, start, end)
+            group_obs = shard_group_obs(groupmate_obs, start, end)
+            shard_actions = actions.slice(start, end)
+            shard_masks = act_masks[start:end]
+            shard_group_act = shard_group_actions(
+                groupmate_actions,
+                start,
+                end,
+            )
+
+            if overlap:
+                actor_stream = streams[shard_index * 3]
+                critic_stream = streams[shard_index * 3 + 1]
+                baseline_stream = streams[shard_index * 3 + 2]
+
+                with torch.cuda.stream(actor_stream):
+                    actor_stream.wait_stream(default_stream)
+                    faction_token = install_shard_context(
+                        start,
+                        end,
+                        {},
+                    )
+                    try:
+                        actor_marker = _poca_cuda_timing_begin(
+                            "actor_get_stats"
+                        )
+                        actor_output = optimizer.policy.actor.get_stats(
+                            obs,
+                            shard_actions,
+                            masks=shard_masks,
+                            memories=[],
+                            sequence_length=optimizer.policy.sequence_length,
+                        )
+                        _poca_cuda_timing_end(actor_marker)
+                    finally:
+                        reset_training_faction_rows(faction_token)
+                    actor_outputs.append(actor_output)
+
+                with torch.cuda.stream(critic_stream):
+                    critic_stream.wait_stream(default_stream)
+                    faction_token = install_shard_context(
+                        start,
+                        end,
+                        {},
+                    )
+                    try:
+                        critic_marker = _poca_cuda_timing_begin("critic_pass")
+                        values, _ = optimizer.critic.critic_pass(
+                            [obs] + group_obs,
+                            memories=[],
+                            sequence_length=optimizer.policy.sequence_length,
+                        )
+                        _poca_cuda_timing_end(critic_marker)
+                    finally:
+                        reset_training_faction_rows(faction_token)
+                    value_outputs.append(values)
+
+                with torch.cuda.stream(baseline_stream):
+                    baseline_stream.wait_stream(default_stream)
+                    faction_token = install_shard_context(
+                        start,
+                        end,
+                        {},
+                    )
+                    try:
+                        baseline_marker = _poca_cuda_timing_begin("baseline")
+                        baselines, _ = optimizer.critic.baseline(
+                            obs,
+                            (group_obs, shard_group_act),
+                            memories=[],
+                            sequence_length=optimizer.policy.sequence_length,
+                        )
+                        _poca_cuda_timing_end(baseline_marker)
+                    finally:
+                        reset_training_faction_rows(faction_token)
+                    baseline_outputs.append(baselines)
+            else:
+                stream = streams[shard_index]
+                encoded_cache = {}
+                with torch.cuda.stream(stream):
+                    stream.wait_stream(default_stream)
+                    faction_token = install_shard_context(
+                        start,
+                        end,
+                        encoded_cache,
+                    )
+                    try:
+                        actor_marker = _poca_cuda_timing_begin(
+                            "actor_get_stats"
+                        )
+                        actor_output = optimizer.policy.actor.get_stats(
+                            obs,
+                            shard_actions,
+                            masks=shard_masks,
+                            memories=[],
+                            sequence_length=optimizer.policy.sequence_length,
+                        )
+                        _poca_cuda_timing_end(actor_marker)
+
+                        critic_marker = _poca_cuda_timing_begin("critic_pass")
+                        values, _ = optimizer.critic.critic_pass(
+                            [obs] + group_obs,
+                            memories=[],
+                            sequence_length=optimizer.policy.sequence_length,
+                        )
+                        _poca_cuda_timing_end(critic_marker)
+
+                        baseline_marker = _poca_cuda_timing_begin("baseline")
+                        baselines, _ = optimizer.critic.baseline(
+                            obs,
+                            (group_obs, shard_group_act),
+                            memories=[],
+                            sequence_length=optimizer.policy.sequence_length,
+                        )
+                        _poca_cuda_timing_end(baseline_marker)
+                    finally:
+                        reset_training_faction_rows(faction_token)
+                    actor_outputs.append(actor_output)
+                    value_outputs.append(values)
+                    baseline_outputs.append(baselines)
+
+        _poca_record_timing(
+            "parallel_forward_submit",
+            time.perf_counter() - submit_started,
+        )
+        join_started = time.perf_counter()
+        for stream in streams:
+            default_stream.wait_stream(stream)
+        _poca_cuda_timing_end(span_marker)
+        _poca_record_timing(
+            "parallel_forward_join",
+            time.perf_counter() - join_started,
+        )
+        _POCA_TIMING_STATE.parallel_streams = streams
+
+        def cat_optional(values):
+            non_null = [value for value in values if value is not None]
+            return torch.cat(non_null, dim=0) if non_null else None
+
+        log_probs = ActionLogProbs(
+            cat_optional(
+                [output["log_probs"].continuous_tensor for output in actor_outputs]
+            ),
+            (
+                [
+                    torch.cat(parts, dim=0)
+                    for parts in zip(
+                        *[
+                            output["log_probs"].discrete_list
+                            for output in actor_outputs
+                        ]
+                    )
+                ]
+                if actor_outputs
+                and actor_outputs[0]["log_probs"].discrete_list is not None
+                else None
+            ),
+            (
+                [
+                    torch.cat(parts, dim=0)
+                    for parts in zip(
+                        *[
+                            output["log_probs"].all_discrete_list
+                            for output in actor_outputs
+                        ]
+                    )
+                ]
+                if actor_outputs
+                and actor_outputs[0]["log_probs"].all_discrete_list is not None
+                else None
+            ),
+        )
+        entropy = torch.cat(
+            [output["entropy"] for output in actor_outputs],
+            dim=0,
+        )
+        values = {
+            name: torch.cat(
+                [output[name] for output in value_outputs],
+                dim=0,
+            )
+            for name in value_outputs[0]
+        }
+        baselines = {
+            name: torch.cat(
+                [output[name] for output in baseline_outputs],
+                dim=0,
+            )
+            for name in baseline_outputs[0]
+        }
+        return log_probs, entropy, values, baselines
+    finally:
+        _POCA_GROUP_BATCH_STATE.valid_rows = full_valid_rows
+        _POCA_GROUP_BATCH_STATE.encoded_cache = full_encoded_cache
+        _POCA_GROUP_BATCH_STATE.freeze_max_agents = full_freeze
+
+
 def install_inactive_continuous_action_masking() -> Optional[Callable]:
     """Mask nonexistent weapon actions and normalize MA-POCA fleet-size gradients."""
 
