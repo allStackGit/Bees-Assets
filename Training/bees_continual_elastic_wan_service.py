@@ -16,6 +16,48 @@ from typing import List, Optional, Sequence, Tuple
 
 import bees_continual_service as service
 import bees_elastic_wan_training as elastic
+import bees_mlagents_learn as learner_launcher
+
+
+
+def extract_learner_optimization_args(
+    argv: Sequence[str],
+) -> Tuple[List[str], List[str]]:
+    """Strip learner-only execution flags so the outer service parser never sees them."""
+
+    boolean_flags = {
+        learner_launcher.PPO_SYNC_CLEANUP_FLAG,
+        learner_launcher.PPO_PREFETCH_FLAG,
+        learner_launcher.PPO_CRITIC_BASELINE_OVERLAP_FLAG,
+        learner_launcher.PPO_CUDA_GRAPHS_FLAG,
+    }
+    value_flags = {learner_launcher.PPO_STREAM_SHARDS_FLAG}
+    cleaned: List[str] = []
+    selected: List[str] = []
+    index = 0
+    while index < len(argv):
+        argument = argv[index]
+        if argument in boolean_flags:
+            selected.append(argument)
+            index += 1
+            continue
+        if any(argument.startswith(flag + "=") for flag in boolean_flags):
+            selected.append(argument)
+            index += 1
+            continue
+        if argument in value_flags:
+            if index + 1 >= len(argv):
+                raise ValueError(f"{argument} requires a value")
+            selected.extend([argument, argv[index + 1]])
+            index += 2
+            continue
+        if any(argument.startswith(flag + "=") for flag in value_flags):
+            selected.append(argument)
+            index += 1
+            continue
+        cleaned.append(argument)
+        index += 1
+    return cleaned, selected
 
 
 def _normalize_zero_local_num_envs(argv: Sequence[str]) -> Tuple[List[str], bool]:
@@ -110,6 +152,9 @@ def trainer_config_for_threading(config_path: Path, enabled: bool) -> Path:
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     raw_args = list(sys.argv[1:] if argv is None else argv)
+    raw_args, learner_optimization_args = extract_learner_optimization_args(
+        raw_args
+    )
     raw_args, threaded_mode, max_policy_lag = elastic.extract_threaded_options(raw_args)
     service_args, actor_options = elastic.extract_elastic_wan_options(raw_args)
     if not actor_options.enabled:
@@ -165,6 +210,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     f"{elastic.POLICY_LAG_FLAG}={max_policy_lag}",
                 ]
             )
+        wan_args.extend(learner_optimization_args)
         # ML-Agents --env-args consumes the remainder of the command. Keep elastic WAN
         # trainer flags before it so only the server-owned Unity arguments reach the player.
         return insert_wan_args_before_environment_args(command, wan_args)
