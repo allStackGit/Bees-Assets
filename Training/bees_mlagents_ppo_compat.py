@@ -38,7 +38,7 @@ POCA_TRAJECTORY_TIMING_REPORT_SECONDS = 30.0
 POCA_PACKED_GROUP_CACHE_MAX_BYTES = 4 * 1024 * 1024 * 1024
 POCA_GPU_CACHE_MIN_RESERVE_BYTES = 2 * 1024 * 1024 * 1024
 POCA_GPU_CACHE_RESERVE_FRACTION = 0.30
-POCA_HARDWARE_SAMPLE_SECONDS = 1.0
+POCA_HARDWARE_SAMPLE_SECONDS = 2.0
 POCA_VARIABILITY_HISTORY_LIMIT = 64
 _POCA_VARIABILITY_HISTORY = []
 
@@ -3611,6 +3611,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         update_started = time.perf_counter()
         _POCA_TIMING_STATE.timing_totals = {}
         _POCA_TIMING_STATE.timing_counts = {}
+        _POCA_TIMING_STATE.timing_samples = {}
         _POCA_TIMING_STATE.cuda_events = []
         _POCA_TIMING_STATE.graph_warmups = 0
         _POCA_TIMING_STATE.graph_captures = 0
@@ -3632,8 +3633,36 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         )
         materialize_seconds = time.perf_counter() - materialize_started
         _poca_record_timing("materialize", materialize_seconds)
+
+        diagnostic_profile_started = time.perf_counter()
+        workload_profile = _poca_update_workload_profile(
+            tensor_cache,
+            {},
+        )
+        diagnostic_profile_seconds = (
+            time.perf_counter() - diagnostic_profile_started
+        )
+        _poca_record_timing(
+            "diagnostic_profile",
+            diagnostic_profile_seconds,
+        )
+
         tensor_cache, device_cache = _promote_poca_update_tensor_cache(
             tensor_cache
+        )
+        workload_profile.update(
+            {
+                "cache_storage": str(device_cache.get("storage", "off")),
+                "cache_mib": float(device_cache.get("bytes", 0))
+                / (1024.0 * 1024.0),
+                "group_cache_storage": str(
+                    device_cache.get("group_storage", "off")
+                ),
+                "group_cache_mib": float(
+                    device_cache.get("group_bytes", 0)
+                )
+                / (1024.0 * 1024.0),
+            }
         )
         _poca_record_timing(
             "device_cache_copy",
@@ -3669,7 +3698,46 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             f"group_cache_storage={device_cache.get('group_storage', 'off')} "
             f"group_cache_mib={device_cache.get('group_bytes', 0) / (1024 * 1024):.1f} "
             f"group_cache_copy={device_cache.get('group_copy_seconds', 0.0):.6f} "
-            f"materialize={materialize_seconds:.6f}",
+            f"materialize={materialize_seconds:.6f} "
+            f"diagnostic_profile={diagnostic_profile_seconds:.6f}",
+            flush=True,
+        )
+        print(
+            "[Bees PPO variability] workload "
+            f"experiences={int(workload_profile.get('experiences', 0))} "
+            f"group_rows={int(workload_profile.get('groupmate_rows', 0))} "
+            f"group_mean={workload_profile.get('groupmates_mean', 0.0):.2f} "
+            f"group_p50={workload_profile.get('groupmates_p50', 0.0):.1f} "
+            f"group_p90={workload_profile.get('groupmates_p90', 0.0):.1f} "
+            f"group_p99={workload_profile.get('groupmates_p99', 0.0):.1f} "
+            f"group_max={int(workload_profile.get('groupmates_max', 0))} "
+            f"factions=bee:{int(workload_profile.get('bee_rows', 0))},"
+            f"human:{int(workload_profile.get('human_rows', 0))},"
+            f"mixed:{int(workload_profile.get('mixed_rows', 0))} "
+            f"slot_rows={int(workload_profile.get('slot_profile_rows', 0))} "
+            f"allies=p50:{workload_profile.get('allies_p50', 0.0):.1f},"
+            f"p90:{workload_profile.get('allies_p90', 0.0):.1f},"
+            f"p99:{workload_profile.get('allies_p99', 0.0):.1f},"
+            f"max:{int(workload_profile.get('allies_max', 0))} "
+            f"enemies=p50:{workload_profile.get('enemies_p50', 0.0):.1f},"
+            f"p90:{workload_profile.get('enemies_p90', 0.0):.1f},"
+            f"p99:{workload_profile.get('enemies_p99', 0.0):.1f},"
+            f"max:{int(workload_profile.get('enemies_max', 0))} "
+            f"collisions=p90:{workload_profile.get('collisions_p90', 0.0):.1f},"
+            f"p99:{workload_profile.get('collisions_p99', 0.0):.1f},"
+            f"max:{int(workload_profile.get('collisions_max', 0))} "
+            f"mining_p90={workload_profile.get('mining_p90', 0.0):.1f} "
+            f"map_p90={workload_profile.get('map_objects_p90', 0.0):.1f} "
+            f"limits=allies:{int(workload_profile.get('limit_allies', 0))},"
+            f"enemies:{int(workload_profile.get('limit_enemies', 0))},"
+            f"weapons:{int(workload_profile.get('limit_entity_weapons', 0))},"
+            f"mining:{int(workload_profile.get('limit_mining', 0))},"
+            f"map:{int(workload_profile.get('limit_map_objects', 0))},"
+            f"collisions:{int(workload_profile.get('limit_collisions', 0))} "
+            f"cache={workload_profile.get('cache_storage', 'off')}:"
+            f"{workload_profile.get('cache_mib', 0.0):.1f}MiB "
+            f"group_cache={workload_profile.get('group_cache_storage', 'off')}:"
+            f"{workload_profile.get('group_cache_mib', 0.0):.1f}MiB",
             flush=True,
         )
 
@@ -3680,6 +3748,9 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             if tensor_cache is not None
             else None
         )
+        hardware_profiler = _PocaUpdateHardwareProfiler().start()
+        hardware_started = time.perf_counter()
+        hardware_summary = {}
         try:
             for _epoch_index in range(num_epoch):
                 epoch_order = None
@@ -3781,6 +3852,10 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                     for stat_name, value in update_stats.items():
                         batch_update_stats[stat_name].append(value)
         finally:
+            hardware_loop_seconds = time.perf_counter() - hardware_started
+            hardware_summary = hardware_profiler.stop(
+                hardware_loop_seconds
+            )
             if prefetcher is not None:
                 prefetcher.close()
             _POCA_UPDATE_CACHE_STATE.cache = None
@@ -3796,6 +3871,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             f"seconds={update_seconds:.6f} "
             f"normalize={_poca_average_timing('advantage_normalization'):.6f} "
             f"materialize={_poca_average_timing('materialize'):.6f} "
+            f"diagnostic_profile={_poca_average_timing('diagnostic_profile'):.6f} "
             f"cache_copy={_poca_average_timing('device_cache_copy'):.6f} "
             f"group_cache_copy={_poca_average_timing('group_cache_copy'):.6f} "
             f"cache_storage={device_cache['storage']} "
@@ -3844,8 +3920,68 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             flush=True,
         )
 
+        minibatch_distribution = _poca_timing_distribution(
+            "minibatch_total"
+        )
+        cuda_span_distribution = _poca_timing_distribution(
+            "cuda_optimizer_total"
+        )
+        cuda_unattributed = _poca_cuda_unattributed_distribution()
+        print(
+            "[Bees PPO variability] hardware "
+            f"optimizer_wall={hardware_loop_seconds:.3f} "
+            f"cpu_samples={int(hardware_summary.get('cpu_samples', 0))} "
+            f"gpu_samples={int(hardware_summary.get('gpu_samples', 0))} "
+            f"process_cpu_avg={hardware_summary.get('process_cpu_avg', 0.0):.1f} "
+            f"process_cpu_max={hardware_summary.get('process_cpu_max', 0.0):.1f} "
+            f"process_cpu_equiv={hardware_summary.get('process_cpu_equivalent_percent', 0.0):.1f} "
+            f"system_cpu_avg={hardware_summary.get('system_cpu_avg', 0.0):.1f} "
+            f"hottest_core_avg={hardware_summary.get('hottest_core_avg', 0.0):.1f} "
+            f"hottest_core_max={hardware_summary.get('hottest_core_max', 0.0):.1f} "
+            f"rss_max_mib={hardware_summary.get('rss_mib_max', 0.0):.1f} "
+            f"swap_max={hardware_summary.get('swap_percent_max', 0.0):.1f} "
+            f"ctx_voluntary={hardware_summary.get('ctx_voluntary_delta', 0.0):.0f} "
+            f"ctx_involuntary={hardware_summary.get('ctx_involuntary_delta', 0.0):.0f} "
+            f"gpu_util_avg={hardware_summary.get('gpu_util_avg', 0.0):.1f} "
+            f"gpu_util_min={hardware_summary.get('gpu_util_min', 0.0):.1f} "
+            f"gpu_util_max={hardware_summary.get('gpu_util_max', 0.0):.1f} "
+            f"gpu_mem_util_avg={hardware_summary.get('memory_util_avg', 0.0):.1f} "
+            f"gpu_clock_avg={hardware_summary.get('graphics_clock_mhz_avg', 0.0):.0f} "
+            f"gpu_clock_min={hardware_summary.get('graphics_clock_mhz_min', 0.0):.0f} "
+            f"gpu_clock_max={hardware_summary.get('graphics_clock_mhz_max', 0.0):.0f} "
+            f"gpu_mem_clock_avg={hardware_summary.get('memory_clock_mhz_avg', 0.0):.0f} "
+            f"temp_max_c={hardware_summary.get('temperature_c_max', 0.0):.1f} "
+            f"power_avg_w={hardware_summary.get('power_w_avg', 0.0):.1f} "
+            f"power_max_w={hardware_summary.get('power_w_max', 0.0):.1f} "
+            f"pstate={hardware_summary.get('pstate', '-')} "
+            f"vram_used_max_mib={hardware_summary.get('memory_used_mib_max', 0.0):.1f} "
+            f"cuda_peak_alloc_mib={hardware_summary.get('cuda_peak_allocated_mib', 0.0):.1f} "
+            f"cuda_peak_reserved_mib={hardware_summary.get('cuda_peak_reserved_mib', 0.0):.1f} "
+            f"cuda_free_end_mib={hardware_summary.get('cuda_free_end_mib', 0.0):.1f}",
+            flush=True,
+        )
+        print(
+            "[Bees PPO variability] timing "
+            f"minibatch_p50={minibatch_distribution['p50']:.6f} "
+            f"minibatch_p90={minibatch_distribution['p90']:.6f} "
+            f"minibatch_max={minibatch_distribution['max']:.6f} "
+            f"cuda_span_p50={cuda_span_distribution['p50']:.6f} "
+            f"cuda_span_p90={cuda_span_distribution['p90']:.6f} "
+            f"cuda_span_max={cuda_span_distribution['max']:.6f} "
+            f"cuda_unattributed_p50={cuda_unattributed['p50']:.6f} "
+            f"cuda_unattributed_p90={cuda_unattributed['p90']:.6f} "
+            f"cuda_unattributed_max={cuda_unattributed['max']:.6f}",
+            flush=True,
+        )
+        _poca_record_variability_history(
+            update_seconds,
+            workload_profile,
+            hardware_summary,
+        )
+
         _POCA_TIMING_STATE.timing_totals = None
         _POCA_TIMING_STATE.timing_counts = None
+        _POCA_TIMING_STATE.timing_samples = None
         _POCA_TIMING_STATE.cuda_events = None
         _POCA_TIMING_STATE.graph_warmups = 0
         _POCA_TIMING_STATE.graph_captures = 0
