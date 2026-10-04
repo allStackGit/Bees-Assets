@@ -22,9 +22,14 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
     private const int SummaryIntervalEpisodes = 100;
     private const int FullEpisodeDiagnosticsInterval = 1000;
     private const long TrainingDiagnosticMaxBytes = 8L * 1024L * 1024L;
+    private const long CommunicationDiagnosticMaxBytes = 48L * 1024L * 1024L;
+    private const int CommunicationDiagnosticFlushChars = 4 * 1024 * 1024;
     private static readonly object TrainingDiagnosticLogLock = new object();
+    private static readonly object CommunicationDiagnosticLogLock = new object();
     private static readonly Encoding TrainingDiagnosticEncoding = new UTF8Encoding(false);
     private static bool _trainingDiagnosticWriteWarningEmitted;
+    private static bool _communicationDiagnosticWriteWarningEmitted;
+    private static int _communicationDiagnosticSegment;
 
     internal readonly struct EpisodeResult
     {
@@ -140,8 +145,20 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
     private int _humanFireRequestsThisEpisode;
     private int _beeHitsThisEpisode;
     private int _humanHitsThisEpisode;
+    private int _beeTurretHitsThisEpisode;
+    private int _humanTurretHitsThisEpisode;
+    private int _beeSpecialHitsThisEpisode;
+    private int _humanSpecialHitsThisEpisode;
+    private int _beeOtherHitsThisEpisode;
+    private int _humanOtherHitsThisEpisode;
     private int _beeDamageThisEpisode;
     private int _humanDamageThisEpisode;
+    private int _beeTurretDamageThisEpisode;
+    private int _humanTurretDamageThisEpisode;
+    private int _beeSpecialDamageThisEpisode;
+    private int _humanSpecialDamageThisEpisode;
+    private int _beeOtherDamageThisEpisode;
+    private int _humanOtherDamageThisEpisode;
     private float _beeTsvRewardThisEpisode;
     private float _humanTsvRewardThisEpisode;
     private float _beeEconomicRewardThisEpisode;
@@ -169,6 +186,7 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
     private int _beeContactLossCount;
     private int _humanContactLossCount;
 
+    private readonly StringBuilder _communicationTrace = new StringBuilder();
     private readonly HashSet<long>[] _initialShipIds = { new HashSet<long>(), new HashSet<long>() };
     private readonly HashSet<long>[] _seenShipIds = { new HashSet<long>(), new HashSet<long>() };
     private readonly HashSet<long>[] _policyEligibleShipIds = { new HashSet<long>(), new HashSet<long>() };
@@ -213,10 +231,22 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
     private int _timeouts;
     private long _beeShotsTotal;
     private long _beeHitsTotal;
+    private long _beeTurretHitsTotal;
+    private long _beeSpecialHitsTotal;
+    private long _beeOtherHitsTotal;
     private long _beeDamageTotal;
+    private long _beeTurretDamageTotal;
+    private long _beeSpecialDamageTotal;
+    private long _beeOtherDamageTotal;
     private long _humanShotsTotal;
     private long _humanHitsTotal;
+    private long _humanTurretHitsTotal;
+    private long _humanSpecialHitsTotal;
+    private long _humanOtherHitsTotal;
     private long _humanDamageTotal;
+    private long _humanTurretDamageTotal;
+    private long _humanSpecialDamageTotal;
+    private long _humanOtherDamageTotal;
     private long _beeRetainedMinedTsvTotal;
     private long _humanRetainedMinedTsvTotal;
     private long _beeEnemyMinedTsvDestroyedTotal;
@@ -298,6 +328,7 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
 
     private void OnDestroy()
     {
+        FlushCommunicationDiagnostics();
         RlOneVsOneEpisodeDiagnostics.End(_level);
         if (_level != null && Coordinators.TryGetValue(_level, out RlOneVsOneEpisodeCoordinator coordinator) && coordinator == this)
         {
@@ -493,6 +524,16 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
     /// </summary>
     internal static void RecordHit(Ship attacker, Ship target, int damage, int tsvLoss)
     {
+        RecordHitWithSource(attacker, target, damage, tsvLoss, "gun");
+    }
+
+    internal static void RecordHitWithSource(
+        Ship attacker,
+        Ship target,
+        int damage,
+        int tsvLoss,
+        string damageSource)
+    {
         if (ConfigData.Configuration == null || attacker == null || target == null ||
             attacker.Level == null || attacker.Level != target.Level)
         {
@@ -528,10 +569,27 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
 
         if (isEnemyDamage && appliedDamage > 0)
         {
+            bool specialActionHit = IsSpecialActionDamageSource(damageSource);
+            bool turretHit = IsTurretDamageSource(damageSource);
             if (attacker.Side == beeSide)
             {
                 coordinator._beeHitsThisEpisode++;
                 coordinator._beeDamageThisEpisode += appliedDamage;
+                if (specialActionHit)
+                {
+                    coordinator._beeSpecialHitsThisEpisode++;
+                    coordinator._beeSpecialDamageThisEpisode += appliedDamage;
+                }
+                else if (turretHit)
+                {
+                    coordinator._beeTurretHitsThisEpisode++;
+                    coordinator._beeTurretDamageThisEpisode += appliedDamage;
+                }
+                else
+                {
+                    coordinator._beeOtherHitsThisEpisode++;
+                    coordinator._beeOtherDamageThisEpisode += appliedDamage;
+                }
                 if (coordinator._beeFirstHitSeconds < 0f)
                 {
                     coordinator._beeFirstHitSeconds = coordinator.ElapsedEpisodeSeconds;
@@ -541,6 +599,21 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
             {
                 coordinator._humanHitsThisEpisode++;
                 coordinator._humanDamageThisEpisode += appliedDamage;
+                if (specialActionHit)
+                {
+                    coordinator._humanSpecialHitsThisEpisode++;
+                    coordinator._humanSpecialDamageThisEpisode += appliedDamage;
+                }
+                else if (turretHit)
+                {
+                    coordinator._humanTurretHitsThisEpisode++;
+                    coordinator._humanTurretDamageThisEpisode += appliedDamage;
+                }
+                else
+                {
+                    coordinator._humanOtherHitsThisEpisode++;
+                    coordinator._humanOtherDamageThisEpisode += appliedDamage;
+                }
                 if (coordinator._humanFirstHitSeconds < 0f)
                 {
                     coordinator._humanFirstHitSeconds = coordinator.ElapsedEpisodeSeconds;
@@ -560,6 +633,44 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
             coordinator.ApplyImmediateTsvReward(attacker.Side, reward);
         }
         coordinator.ApplyImmediateTsvReward(target.Side, -reward);
+    }
+
+    private static bool IsTurretDamageSource(string damageSource)
+    {
+        return string.IsNullOrEmpty(damageSource) ||
+               string.Equals(damageSource, "gun", StringComparison.Ordinal);
+    }
+
+    internal static bool IsSpecialActionDamageSource(string damageSource)
+    {
+        return string.Equals(damageSource, "bomb", StringComparison.Ordinal) ||
+               string.Equals(damageSource, "charge", StringComparison.Ordinal) ||
+               string.Equals(damageSource, "explosion", StringComparison.Ordinal);
+    }
+
+    internal static void RecordCommunicationAction(Ship ship, Vector4 communication)
+    {
+        if (!TryGetTrackedSide(ship, out RlOneVsOneEpisodeCoordinator coordinator, out int sideIndex))
+        {
+            return;
+        }
+
+        string sideName = sideIndex == 0 ? "bee" : "human";
+        int teamId = sideIndex == 0 ? coordinator._beeTeamId : coordinator._humanTeamId;
+        Vector2 position = ship.GetPosition();
+        float healthFraction = ship.MaxHealth > 0
+            ? Mathf.Clamp01((float)ship.Health / ship.MaxHealth)
+            : 0f;
+        coordinator._communicationTrace.Append(
+            $"RL comm episode={coordinator._episodeNumber} arena={coordinator.GetArenaIndex()} t={coordinator.ElapsedEpisodeSeconds:F3}s " +
+            $"side={sideName} team={teamId} ship_id={ship.Id} ship_type={ship.ShipType} " +
+            $"x={position.x:F2} y={position.y:F2} health={healthFraction:F4} " +
+            $"c0={communication.x:F5} c1={communication.y:F5} c2={communication.z:F5} c3={communication.w:F5}");
+        coordinator._communicationTrace.AppendLine();
+        if (coordinator._communicationTrace.Length >= CommunicationDiagnosticFlushChars)
+        {
+            coordinator.FlushCommunicationDiagnostics();
+        }
     }
 
     internal static void RecordUnattributedTsvLoss(Ship target, int tsvLoss)
@@ -987,8 +1098,20 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         _humanFireRequestsThisEpisode = 0;
         _beeHitsThisEpisode = 0;
         _humanHitsThisEpisode = 0;
+        _beeTurretHitsThisEpisode = 0;
+        _humanTurretHitsThisEpisode = 0;
+        _beeSpecialHitsThisEpisode = 0;
+        _humanSpecialHitsThisEpisode = 0;
+        _beeOtherHitsThisEpisode = 0;
+        _humanOtherHitsThisEpisode = 0;
         _beeDamageThisEpisode = 0;
         _humanDamageThisEpisode = 0;
+        _beeTurretDamageThisEpisode = 0;
+        _humanTurretDamageThisEpisode = 0;
+        _beeSpecialDamageThisEpisode = 0;
+        _humanSpecialDamageThisEpisode = 0;
+        _beeOtherDamageThisEpisode = 0;
+        _humanOtherDamageThisEpisode = 0;
         _beeTsvRewardThisEpisode = 0f;
         _humanTsvRewardThisEpisode = 0f;
         _beeEconomicRewardThisEpisode = 0f;
@@ -1020,6 +1143,7 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         _humanContactLossCount = 0;
         _beeExplorationGrid.Reset();
         _humanExplorationGrid.Reset();
+        _communicationTrace.Clear();
         ResetShipDiagnostics(beeShips, humanShips);
         RlOneVsOneEpisodeDiagnostics.Begin(level);
         CaptureDiscoveryBaselines(level, beeSide, humanSide);
@@ -1496,7 +1620,11 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
                 $"ships_per_side={RlOneVsOneTrainingBootstrap.CurrentShipsPerSide} map_size={mapSize:F0} winner={winningSide} timeout={timedOut} duration={durationSeconds:F2}s " +
                 $"bee_tsv={_beeStartingTsv}->{beeFinalTsv} human_tsv={_humanStartingTsv}->{humanFinalTsv} " +
                 $"bee_fire_requests={_beeFireRequestsThisEpisode} bee_shots={_beeShotsThisEpisode} bee_hits={_beeHitsThisEpisode} bee_damage={_beeDamageThisEpisode} " +
+                $"bee_turret_shots={_beeShotsThisEpisode} bee_turret_hits={_beeTurretHitsThisEpisode} bee_turret_damage={_beeTurretDamageThisEpisode} " +
+                $"bee_special_hits={_beeSpecialHitsThisEpisode} bee_special_damage={_beeSpecialDamageThisEpisode} bee_other_hits={_beeOtherHitsThisEpisode} bee_other_damage={_beeOtherDamageThisEpisode} " +
                 $"human_fire_requests={_humanFireRequestsThisEpisode} human_shots={_humanShotsThisEpisode} human_hits={_humanHitsThisEpisode} human_damage={_humanDamageThisEpisode} " +
+                $"human_turret_shots={_humanShotsThisEpisode} human_turret_hits={_humanTurretHitsThisEpisode} human_turret_damage={_humanTurretDamageThisEpisode} " +
+                $"human_special_hits={_humanSpecialHitsThisEpisode} human_special_damage={_humanSpecialDamageThisEpisode} human_other_hits={_humanOtherHitsThisEpisode} human_other_damage={_humanOtherDamageThisEpisode} " +
                 environmentTelemetry + " " + combatTelemetry);
         }
 
@@ -1519,6 +1647,7 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
                 $"human_mined_retained_tsv={_humanRetainedMinedTsvThisEpisode} human_enemy_mined_destroyed_tsv={_humanDestroyedMinedTsvThisEpisode} " +
                 behaviorDiagnostics);
         }
+        FlushCommunicationDiagnostics();
         RlOneVsOneEpisodeDiagnostics.End(level);
 
         if (_completedEpisodes % SummaryIntervalEpisodes == 0)
@@ -1546,10 +1675,22 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         _totalDurationSeconds += result.DurationSeconds;
         _beeShotsTotal += result.BeeShotsFired;
         _beeHitsTotal += result.BeeShotsHit;
+        _beeTurretHitsTotal += _beeTurretHitsThisEpisode;
+        _beeSpecialHitsTotal += _beeSpecialHitsThisEpisode;
+        _beeOtherHitsTotal += _beeOtherHitsThisEpisode;
         _beeDamageTotal += result.BeeDamageDealt;
+        _beeTurretDamageTotal += _beeTurretDamageThisEpisode;
+        _beeSpecialDamageTotal += _beeSpecialDamageThisEpisode;
+        _beeOtherDamageTotal += _beeOtherDamageThisEpisode;
         _humanShotsTotal += result.HumanShotsFired;
         _humanHitsTotal += result.HumanShotsHit;
+        _humanTurretHitsTotal += _humanTurretHitsThisEpisode;
+        _humanSpecialHitsTotal += _humanSpecialHitsThisEpisode;
+        _humanOtherHitsTotal += _humanOtherHitsThisEpisode;
         _humanDamageTotal += result.HumanDamageDealt;
+        _humanTurretDamageTotal += _humanTurretDamageThisEpisode;
+        _humanSpecialDamageTotal += _humanSpecialDamageThisEpisode;
+        _humanOtherDamageTotal += _humanOtherDamageThisEpisode;
         _beeRetainedMinedTsvTotal += _beeRetainedMinedTsvThisEpisode;
         _humanRetainedMinedTsvTotal += _humanRetainedMinedTsvThisEpisode;
         _beeEnemyMinedTsvDestroyedTotal += _beeDestroyedMinedTsvThisEpisode;
@@ -1646,6 +1787,8 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         float averageDuration = _completedEpisodes > 0 ? _totalDurationSeconds / _completedEpisodes : 0f;
         float beeHitRate = _beeShotsTotal > 0 ? (float)_beeHitsTotal / _beeShotsTotal : 0f;
         float humanHitRate = _humanShotsTotal > 0 ? (float)_humanHitsTotal / _humanShotsTotal : 0f;
+        float beeTurretHitsPerShot = _beeShotsTotal > 0 ? (float)_beeTurretHitsTotal / _beeShotsTotal : 0f;
+        float humanTurretHitsPerShot = _humanShotsTotal > 0 ? (float)_humanTurretHitsTotal / _humanShotsTotal : 0f;
         float averageStaticObstacleCount = _staticObstacleEpisodes > 0
             ? (float)_staticObstacleCountTotal / _staticObstacleEpisodes
             : 0f;
@@ -1687,7 +1830,11 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
             $"RL 1v1 summary episodes={_completedEpisodes} arena={GetArenaIndex()} bee_record={_beeWins}-{_beeLosses} human_record={_humanWins}-{_humanLosses} " +
             $"draws={_draws} timeouts={_timeouts} avg_duration={averageDuration:F2}s " +
             $"bee_shots={_beeShotsTotal} bee_hits={_beeHitsTotal} bee_hit_rate={beeHitRate:P2} bee_damage={_beeDamageTotal} " +
+            $"bee_turret_shots={_beeShotsTotal} bee_turret_hits={_beeTurretHitsTotal} bee_turret_hits_per_shot={beeTurretHitsPerShot:F4} bee_turret_damage={_beeTurretDamageTotal} " +
+            $"bee_special_hits={_beeSpecialHitsTotal} bee_special_damage={_beeSpecialDamageTotal} bee_other_hits={_beeOtherHitsTotal} bee_other_damage={_beeOtherDamageTotal} " +
             $"human_shots={_humanShotsTotal} human_hits={_humanHitsTotal} human_hit_rate={humanHitRate:P2} human_damage={_humanDamageTotal} " +
+            $"human_turret_shots={_humanShotsTotal} human_turret_hits={_humanTurretHitsTotal} human_turret_hits_per_shot={humanTurretHitsPerShot:F4} human_turret_damage={_humanTurretDamageTotal} " +
+            $"human_special_hits={_humanSpecialHitsTotal} human_special_damage={_humanSpecialDamageTotal} human_other_hits={_humanOtherHitsTotal} human_other_damage={_humanOtherDamageTotal} " +
             $"env_episodes=static:{_staticObstacleEpisodes},collision:{_collisionAsteroidEpisodes},mining:{_miningAsteroidEpisodes} " +
             $"env_opportunity_episodes=static:{_staticObstacleOpportunityEpisodes},collision:{_collisionAsteroidOpportunityEpisodes},mining:{_miningAsteroidOpportunityEpisodes} " +
             $"static_layout_empty={_staticLayoutEmptyEpisodes} avg_static_obstacles={averageStaticObstacleCount:F2} avg_static_area_pct={averageStaticAreaFraction:P2} " +
@@ -1776,6 +1923,60 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
                 Debug.LogWarning($"RL training diagnostic sidecar failed; reverting to Unity log output: {exception.Message}");
             }
             Debug.Log(message);
+        }
+    }
+
+    private void FlushCommunicationDiagnostics()
+    {
+        if (_communicationTrace.Length == 0)
+        {
+            return;
+        }
+
+        string payload = _communicationTrace.ToString();
+        _communicationTrace.Clear();
+        WriteCommunicationDiagnostic(payload);
+    }
+
+    private static void WriteCommunicationDiagnostic(string message)
+    {
+        string logRoot = Environment.GetEnvironmentVariable("BEES_TRAINING_LOG_DIR");
+        if (string.IsNullOrWhiteSpace(logRoot))
+        {
+            return;
+        }
+
+        try
+        {
+            Directory.CreateDirectory(logRoot);
+            int processId = System.Diagnostics.Process.GetCurrentProcess().Id;
+            string payload = message.EndsWith("\n", StringComparison.Ordinal)
+                ? message
+                : message + Environment.NewLine;
+            int incomingBytes = TrainingDiagnosticEncoding.GetByteCount(payload);
+            lock (CommunicationDiagnosticLogLock)
+            {
+                string path = Path.Combine(
+                    logRoot,
+                    $"BeesCommunication-{processId}-{_communicationDiagnosticSegment:D5}.log");
+                if (File.Exists(path) &&
+                    new FileInfo(path).Length + incomingBytes > CommunicationDiagnosticMaxBytes)
+                {
+                    _communicationDiagnosticSegment++;
+                    path = Path.Combine(
+                        logRoot,
+                        $"BeesCommunication-{processId}-{_communicationDiagnosticSegment:D5}.log");
+                }
+                File.AppendAllText(path, payload, TrainingDiagnosticEncoding);
+            }
+        }
+        catch (Exception exception)
+        {
+            if (!_communicationDiagnosticWriteWarningEmitted)
+            {
+                _communicationDiagnosticWriteWarningEmitted = true;
+                Debug.LogWarning($"RL communication diagnostic sidecar failed; communication tracing is disabled until the next successful write: {exception.Message}");
+            }
         }
     }
 

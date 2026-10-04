@@ -15,6 +15,7 @@ namespace Assets.Scripts.Entities.Ships
         private readonly ScaledTimer _delayedKillTimer = new ScaledTimer();
         private bool _waitingForDelayedRelease;
         private bool _rlSelfDetonationRequested;
+        internal bool RlSelfDetonationRequested => _rlSelfDetonationRequested;
 
         public override void Create(Stage stage)
         {

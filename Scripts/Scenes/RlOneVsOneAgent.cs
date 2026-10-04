@@ -1329,11 +1329,13 @@ internal sealed class RlOneVsOneAgent : Agent
             return;
         }
 
-        ShipCommunications[ship] = new Vector4(
+        Vector4 communication = new Vector4(
             Mathf.Clamp(continuous[CommunicationContinuousActionStart], -1f, 1f),
             Mathf.Clamp(continuous[CommunicationContinuousActionStart + 1], -1f, 1f),
             Mathf.Clamp(continuous[CommunicationContinuousActionStart + 2], -1f, 1f),
             Mathf.Clamp(continuous[CommunicationContinuousActionStart + 3], -1f, 1f));
+        ShipCommunications[ship] = communication;
+        RlOneVsOneEpisodeCoordinator.RecordCommunicationAction(ship, communication);
     }
 
     internal static void ResetCommunication(Ship ship)

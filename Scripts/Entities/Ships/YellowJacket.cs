@@ -141,7 +141,12 @@ namespace Assets.Scripts.Entities.Ships
             }
             else
             {
-                global::RlOneVsOneEpisodeCoordinator.RecordHit(attacker, target, appliedDamage, -_targetTSVLoss);
+                global::RlOneVsOneEpisodeCoordinator.RecordHitWithSource(
+                    attacker,
+                    target,
+                    appliedDamage,
+                    -_targetTSVLoss,
+                    "bomb");
             }
 
             // LogHitStats owns attacker/target command TSV accounting as well as persistent

@@ -110,7 +110,12 @@ namespace Assets.Scripts.Entities.Ships
             {
                 // The exact combat TSV loss only exists after health and TSV have been recalculated.
                 // Emit RL hit shaping here so it is credited at impact rather than at episode timeout.
-                global::RlOneVsOneEpisodeCoordinator.RecordHit(attacker, target, appliedDamage, -_targetTSVChange);
+                global::RlOneVsOneEpisodeCoordinator.RecordHitWithSource(
+                    attacker,
+                    target,
+                    appliedDamage,
+                    -_targetTSVChange,
+                    rlDamageSource);
             }
             LogHitStats(attacker, attackerFleetShip, attackerSavedSquad, target, target.Squad, -_targetTSVChange, attackerCommandOutcomeId);
 

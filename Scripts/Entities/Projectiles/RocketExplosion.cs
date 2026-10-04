@@ -115,7 +115,13 @@ namespace Assets.Scripts.Entities.Projectiles
                 HasHitShip(ship)))
             {
                 ContactTarget(ship);
-                string rlDamageSource = Type == ConfigData.ProjectileTypes.FireBargeExplosion ? "explosion" : "gun";
+                string rlDamageSource = "gun";
+                if (Type == ConfigData.ProjectileTypes.FireBargeExplosion)
+                {
+                    rlDamageSource = Shooter is FireBarge fireBarge && fireBarge.RlSelfDetonationRequested
+                        ? "explosion"
+                        : "death_explosion";
+                }
                 Ship.LogAttackingDamage(
                     Power,
                     Shooter,
