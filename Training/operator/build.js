@@ -730,6 +730,7 @@ module.exports = {
     invokeBuild,
     invokeUnityBuild,
     packageBuild,
+    queryUnityProcesses,
     reconcileLatestReleaseBeforeBuild,
     resetBuildDirectory,
 };

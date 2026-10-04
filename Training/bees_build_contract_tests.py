@@ -35,7 +35,8 @@ class OperatorBehaviorTests(unittest.TestCase):
             "process.stdout.write(JSON.stringify({"
             "start:op.parseArgs(['start','--new-run','--env-arg','--rl-map-size-min=32',"
             "'--env-arg','--rl-human-ship-types=Scout,Gunship']),"
-            "preserve:op.parseArgs(['build','--preserve-run'])"
+            "preserve:op.parseArgs(['build','--preserve-run']),"
+            "observe:op.parseArgs(['observe'])"
             "}));"
         )
         completed = subprocess.run(
@@ -63,6 +64,38 @@ class OperatorBehaviorTests(unittest.TestCase):
         preserve = parsed["preserve"]
         self.assertEqual(preserve["command"], "build")
         self.assertTrue(preserve["options"]["preserveRun"])
+
+        observe = parsed["observe"]
+        self.assertEqual(observe["command"], "observe")
+
+    def test_observe_visual_args_preserve_scenario_and_force_one_arena(self):
+        node = node_executable()
+        if not node:
+            self.skipTest("node is not available")
+        observe = OPERATOR_ROOT / "observe.js"
+        script = (
+            "const o=require(process.argv[1]);"
+            "process.stdout.write(JSON.stringify(o.visualEnvironmentArgs(["
+            "'--rl-ships-per-side=2','--bees-rl-arenas-per-env','8',"
+            "'--rl-static-obstacles=true'])));"
+        )
+        completed = subprocess.run(
+            [node, "-e", script, str(observe)],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+        self.assertEqual(completed.returncode, 0, msg=completed.stderr)
+        self.assertEqual(
+            json.loads(completed.stdout),
+            [
+                "--rl-ships-per-side=2",
+                "--rl-static-obstacles=true",
+                "--bees-rl-arenas-per-env=1",
+            ],
+        )
 
     def test_control_client_retries_transient_reset_for_idempotent_admin_post(self):
         node = node_executable()

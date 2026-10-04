@@ -11,6 +11,7 @@ const {
     invokeStop,
 } = require('./operator/commands');
 const { invokeBundle } = require('./operator/diagnostics');
+const { invokeObserve } = require('./operator/observe');
 
 const COMMANDS = new Set([
     'build',
@@ -20,6 +21,7 @@ const COMMANDS = new Set([
     'stop',
     'status',
     'bundle',
+    'observe',
     'qualify',
 ]);
 
@@ -33,6 +35,7 @@ function usage() {
         '  node Training/bees_operator.js stop [--server]',
         '  node Training/bees_operator.js status [--once] [--refresh-seconds N]',
         '  node Training/bees_operator.js bundle [--run-id ID] [--log-percent PCT] [--evaluate]',
+        '  node Training/bees_operator.js observe',
         '  node Training/bees_operator.js qualify',
         '',
         'The public PowerShell shim Assets\\bees.ps1 preserves the existing operator syntax.',
@@ -233,6 +236,7 @@ async function dispatch(parsed) {
     else if (command === 'stop') await invokeStop(options);
     else if (command === 'status') await invokeStatus(options);
     else if (command === 'bundle') await invokeBundle(options);
+    else if (command === 'observe') await invokeObserve(options);
     else if (command === 'qualify') await invokeQualify(options);
     return 0;
 }
