@@ -484,7 +484,7 @@ async function invokeBuild(options = {}) {
     });
     if (plan.incompatible && plan.preserve_run_override) {
         console.warn(
-            'Training contract changed incompatibly; preserving existing run by explicit override: ' +
+            'Training contract changed incompatibly but checkpoint shape is compatible; preserving existing run: ' +
             plan.run_id + '. Trainers will stop together before the new compatibility contract becomes active.'
         );
     } else if (plan.incompatible) {
