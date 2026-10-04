@@ -106,6 +106,13 @@ async function reconcilePersistedTrainingAfterServerStart(config, admin) {
 
     removeUtf8BomIfPresent(paths.latestReleasePath);
     const release = getLatestRelease();
+    if (isInterruptedIncompatibleCutover(release, status.desired || {})) {
+        console.warn(
+            'Training control is still on the predecessor of the latest incompatible release; ' +
+            'leaving the current central ownership unchanged until the cutover is explicitly resumed.'
+        );
+        return;
+    }
     const bootstrapPython = resolvePython(config);
     if (!testPythonCode(
         bootstrapPython,
