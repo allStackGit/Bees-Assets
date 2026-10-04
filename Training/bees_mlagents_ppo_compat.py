@@ -1973,6 +1973,26 @@ class _PocaPackedGroupObs:
         self.nbytes = int(nbytes)
 
 
+class _PocaPreparedGroupPosition:
+    """Compact selected group rows plus their destination minibatch rows."""
+
+    __slots__ = ("valid_rows", "values")
+
+    def __init__(self, valid_rows, values) -> None:
+        self.valid_rows = valid_rows
+        self.values = values
+
+
+class _PocaPreparedGroupObs:
+    """CPU-prepared compact group observations before GPU padding."""
+
+    __slots__ = ("fields", "batch_size")
+
+    def __init__(self, fields, batch_size: int) -> None:
+        self.fields = tuple(tuple(field) for field in fields)
+        self.batch_size = int(batch_size)
+
+
 def _build_poca_group_obs_cache(policy, buffer, groupmate_counts):
     """Pack actual groupmate rows once when the compact cache is safely bounded."""
 
@@ -2657,8 +2677,150 @@ def _select_poca_update_tensor_cache(
     }
 
 
+def _poca_prepare_compact_group_obs(
+    source,
+    indices,
+    groupmate_counts,
+):
+    """Select only real group rows on CPU; leave minibatch padding for CUDA."""
+
+    import numpy as np
+    from mlagents.torch_utils import torch
+
+    if not isinstance(
+        source,
+        (_PocaRaggedGroupObs, _PocaPackedGroupObs),
+    ):
+        return _PocaPreparedGroupObs((), len(indices))
+
+    indices = np.asarray(indices, dtype=np.int64)
+    counts = np.asarray(groupmate_counts, dtype=np.int32)
+    max_groupmates = int(counts.max()) if counts.size else 0
+    prepared_fields = []
+
+    for field in source.fields:
+        positions = []
+        for position in range(max_groupmates):
+            valid_rows = np.flatnonzero(counts > position).astype(
+                np.int64,
+                copy=False,
+            )
+            if valid_rows.size == 0:
+                positions.append(None)
+                continue
+
+            if isinstance(source, _PocaPackedGroupObs):
+                packed_position = field[position]
+                if packed_position is None:
+                    positions.append(None)
+                    continue
+                compact_ids = packed_position.lookup[indices]
+                selected_ids = compact_ids[valid_rows].astype(
+                    np.int64,
+                    copy=False,
+                )
+                values = packed_position.values.index_select(
+                    0,
+                    torch.as_tensor(
+                        selected_ids,
+                        dtype=torch.long,
+                        device=packed_position.values.device,
+                    ),
+                )
+                if values.device.type != "cpu":
+                    raise RuntimeError(
+                        "POCA CPU group preparation received a non-CPU packed cache."
+                    )
+            else:
+                compact = np.stack(
+                    [
+                        np.asarray(
+                            field[int(indices[row])][position],
+                            dtype=np.float32,
+                        )
+                        for row in valid_rows
+                    ],
+                    axis=0,
+                )
+                values = _poca_cpu_tensor(
+                    compact,
+                    torch.float32,
+                )
+
+            positions.append(
+                _PocaPreparedGroupPosition(
+                    valid_rows,
+                    values,
+                )
+            )
+        prepared_fields.append(tuple(positions))
+
+    return _PocaPreparedGroupObs(
+        prepared_fields,
+        len(indices),
+    )
+
+
+def _poca_expand_prepared_group_obs(prepared, device):
+    """Pad compact prepared rows on the target device in POCA's expected shape."""
+
+    from mlagents.torch_utils import torch
+
+    if not isinstance(prepared, _PocaPreparedGroupObs):
+        return []
+    if not prepared.fields:
+        return []
+
+    separated = []
+    max_positions = max((len(field) for field in prepared.fields), default=0)
+    for field in prepared.fields:
+        positions = []
+        for position in range(max_positions):
+            prepared_position = (
+                field[position]
+                if position < len(field)
+                else None
+            )
+            if prepared_position is None:
+                positions.append(None)
+                continue
+            values = prepared_position.values
+            if values.device != device:
+                values = values.to(device=device, non_blocking=True)
+            padded = torch.full(
+                (prepared.batch_size, *tuple(values.shape[1:])),
+                float("nan"),
+                dtype=values.dtype,
+                device=device,
+            )
+            padded.index_copy_(
+                0,
+                torch.as_tensor(
+                    prepared_position.valid_rows,
+                    dtype=torch.long,
+                    device=device,
+                ),
+                values,
+            )
+            positions.append(padded)
+        separated.append(tuple(positions))
+
+    members = []
+    for position in range(max_positions):
+        member = []
+        for field in separated:
+            value = field[position]
+            if value is None:
+                raise RuntimeError(
+                    "POCA prepared group fields disagree on groupmate positions."
+                )
+            member.append(value)
+        members.append(member)
+    return members
+
+
 def _poca_select_group_prepare_source(source, indices):
-    """Select only CPU observation data needed by the POCA group hot path."""
+    """Select CPU observations used by group padding and row deduplication."""
 
     import numpy as np
     from mlagents.torch_utils import torch
@@ -2673,16 +2835,13 @@ def _poca_select_group_prepare_source(source, indices):
         tensor.index_select(0, index_tensor)
         for tensor in source["current_obs"]
     ]
-    groupmate_obs = _select_poca_ragged_group_obs(
-        source["groupmate_obs"],
-        indices,
-        counts,
-        torch.device("cpu"),
-        non_blocking=False,
-    )
     return {
         "current_obs": current_obs,
-        "groupmate_obs": groupmate_obs,
+        "prepared_groupmate_obs": _poca_prepare_compact_group_obs(
+            source["groupmate_obs"],
+            indices,
+            counts,
+        ),
         "groupmate_counts": counts,
     }
 
@@ -2742,30 +2901,60 @@ def _poca_build_observation_dedup_plan(cached):
 
     group_inverse = []
     input_rows = int(current_rows.shape[0])
-    for position, member in enumerate(cached.get("groupmate_obs", ())):
-        if (
-            len(member) != 1
-            or member[0].device.type != "cpu"
-            or member[0].ndim != 2
-            or int(member[0].shape[1]) != BEES_OBSERVATION_SIZE
-        ):
+    prepared_group = cached.get("prepared_groupmate_obs")
+    if isinstance(prepared_group, _PocaPreparedGroupObs):
+        if len(prepared_group.fields) != 1:
             return None
-        valid_rows = np.flatnonzero(counts > position).astype(
-            np.int64,
-            copy=False,
-        )
-        compact_inverse = np.empty((valid_rows.size,), dtype=np.int64)
-        if valid_rows.size:
+        for prepared_position in prepared_group.fields[0]:
+            if prepared_position is None:
+                group_inverse.append(
+                    torch.empty((0,), dtype=torch.long)
+                )
+                continue
+            values = prepared_position.values
+            if (
+                values.device.type != "cpu"
+                or values.ndim != 2
+                or int(values.shape[1]) != BEES_OBSERVATION_SIZE
+            ):
+                return None
             member_rows = np.asarray(
-                member[0].detach().numpy(),
+                values.detach().numpy(),
                 dtype=np.float32,
             )
-            for compact_index, row_index in enumerate(valid_rows):
-                compact_inverse[compact_index] = intern(
-                    member_rows[int(row_index)]
+            compact_inverse = np.empty(
+                (member_rows.shape[0],),
+                dtype=np.int64,
+            )
+            for compact_index, row in enumerate(member_rows):
+                compact_inverse[compact_index] = intern(row)
+            input_rows += int(member_rows.shape[0])
+            group_inverse.append(torch.from_numpy(compact_inverse))
+    else:
+        for position, member in enumerate(cached.get("groupmate_obs", ())):
+            if (
+                len(member) != 1
+                or member[0].device.type != "cpu"
+                or member[0].ndim != 2
+                or int(member[0].shape[1]) != BEES_OBSERVATION_SIZE
+            ):
+                return None
+            valid_rows = np.flatnonzero(counts > position).astype(
+                np.int64,
+                copy=False,
+            )
+            compact_inverse = np.empty((valid_rows.size,), dtype=np.int64)
+            if valid_rows.size:
+                member_rows = np.asarray(
+                    member[0].detach().numpy(),
+                    dtype=np.float32,
                 )
-        input_rows += int(valid_rows.size)
-        group_inverse.append(torch.from_numpy(compact_inverse))
+                for compact_index, row_index in enumerate(valid_rows):
+                    compact_inverse[compact_index] = intern(
+                        member_rows[int(row_index)]
+                    )
+            input_rows += int(valid_rows.size)
+            group_inverse.append(torch.from_numpy(compact_inverse))
 
     unique_count = len(unique_rows)
     saved_rows = input_rows - unique_count
@@ -2792,6 +2981,22 @@ def _poca_transform_selected_minibatch(value, tensor_transform):
 
     if isinstance(value, torch.Tensor):
         return tensor_transform(value)
+    if isinstance(value, _PocaPreparedGroupObs):
+        fields = []
+        for field in value.fields:
+            positions = []
+            for position in field:
+                if position is None:
+                    positions.append(None)
+                else:
+                    positions.append(
+                        _PocaPreparedGroupPosition(
+                            position.valid_rows,
+                            tensor_transform(position.values),
+                        )
+                    )
+            fields.append(tuple(positions))
+        return _PocaPreparedGroupObs(fields, value.batch_size)
     if isinstance(value, AgentAction):
         continuous = (
             None
