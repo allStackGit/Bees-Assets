@@ -4316,10 +4316,28 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                             cpu_preparer is not None
                             and cpu_preparer.enabled
                         ):
-                            _POCA_UPDATE_CACHE_STATE.minibatch = (
-                                cpu_preparer.consume(
-                                    pending_cpu.pop(offset_index)
+                            prepared_cpu = cpu_preparer.consume(
+                                pending_cpu.pop(offset_index)
+                            )
+                            if cpu_preparer.full_minibatch:
+                                selected_minibatch = prepared_cpu
+                            else:
+                                selected_minibatch = (
+                                    _select_poca_update_tensor_cache(
+                                        tensor_cache,
+                                        indices,
+                                        groupmate_obs_override=(
+                                            prepared_cpu["groupmate_obs"]
+                                        ),
+                                    )
                                 )
+                                selected_minibatch[
+                                    "observation_dedup"
+                                ] = prepared_cpu.get(
+                                    "observation_dedup"
+                                )
+                            _POCA_UPDATE_CACHE_STATE.minibatch = (
+                                selected_minibatch
                             )
                             _POCA_UPDATE_CACHE_STATE.indices = None
                             next_prepare_index = (
