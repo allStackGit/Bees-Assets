@@ -38,6 +38,8 @@ POCA_TRAJECTORY_TIMING_REPORT_SECONDS = 30.0
 POCA_PACKED_GROUP_CACHE_MAX_BYTES = 4 * 1024 * 1024 * 1024
 POCA_GPU_CACHE_MIN_RESERVE_BYTES = 2 * 1024 * 1024 * 1024
 POCA_GPU_CACHE_RESERVE_FRACTION = 0.30
+POCA_CPU_PREPARE_MAX_WORKERS = 6
+POCA_DEDUP_MIN_SAVED_ROWS = 8
 POCA_HARDWARE_SAMPLE_SECONDS = 2.0
 POCA_VARIABILITY_HISTORY_LIMIT = 64
 _POCA_VARIABILITY_HISTORY = []
@@ -2641,6 +2643,156 @@ def _select_poca_update_tensor_cache(
     }
 
 
+def _poca_build_observation_dedup_plan(cached):
+    """Find bit-identical current/group observations off the CUDA critical path.
+
+    Episode ship identity + progress + faction form a cheap candidate key. Full
+    float32 bit equality is still required before two rows share an encoding, so
+    hash/key collisions cannot change the network's numerical semantics.
+    """
+
+    import numpy as np
+    from mlagents.torch_utils import torch
+    from bees_mlagents_structured_policy import (
+        EPISODE_PROGRESS_INDEX,
+        FACTION_INDEX,
+    )
+
+    if cached is None or len(cached.get("current_obs", ())) != 1:
+        return None
+    current = cached["current_obs"][0]
+    if current.device.type != "cpu" or current.ndim != 2:
+        return None
+    if int(current.shape[1]) != BEES_OBSERVATION_SIZE:
+        return None
+
+    counts = np.asarray(cached.get("groupmate_counts", ()), dtype=np.int32)
+    if counts.shape[0] != int(current.shape[0]):
+        return None
+
+    current_rows = np.asarray(current.detach().numpy(), dtype=np.float32)
+    unique_rows = []
+    unique_bits = []
+    candidates = {}
+
+    def intern(row):
+        row = np.asarray(row, dtype=np.float32)
+        bits = row.view(np.uint32)
+        key = (
+            int(bits[0]),
+            int(bits[EPISODE_PROGRESS_INDEX]),
+            int(bits[FACTION_INDEX]),
+        )
+        for unique_index in candidates.get(key, ()):
+            if np.array_equal(bits, unique_bits[unique_index]):
+                return unique_index
+        unique_index = len(unique_rows)
+        stored = np.array(row, dtype=np.float32, copy=True)
+        unique_rows.append(stored)
+        unique_bits.append(stored.view(np.uint32))
+        candidates.setdefault(key, []).append(unique_index)
+        return unique_index
+
+    current_inverse = np.empty((current_rows.shape[0],), dtype=np.int64)
+    for row_index, row in enumerate(current_rows):
+        current_inverse[row_index] = intern(row)
+
+    group_inverse = []
+    input_rows = int(current_rows.shape[0])
+    for position, member in enumerate(cached.get("groupmate_obs", ())):
+        if len(member) != 1 or member[0].device.type != "cpu":
+            return None
+        valid_rows = np.flatnonzero(counts > position).astype(
+            np.int64,
+            copy=False,
+        )
+        compact_inverse = np.empty((valid_rows.size,), dtype=np.int64)
+        if valid_rows.size:
+            member_rows = np.asarray(
+                member[0].detach().numpy(),
+                dtype=np.float32,
+            )
+            for compact_index, row_index in enumerate(valid_rows):
+                compact_inverse[compact_index] = intern(
+                    member_rows[int(row_index)]
+                )
+        input_rows += int(valid_rows.size)
+        group_inverse.append(torch.from_numpy(compact_inverse))
+
+    unique_count = len(unique_rows)
+    saved_rows = input_rows - unique_count
+    if saved_rows < POCA_DEDUP_MIN_SAVED_ROWS:
+        return None
+
+    return {
+        "unique_obs": [
+            torch.from_numpy(np.stack(unique_rows, axis=0))
+        ],
+        "current_inverse": torch.from_numpy(current_inverse),
+        "group_inverse": group_inverse,
+        "input_rows": int(input_rows),
+        "unique_rows": int(unique_count),
+        "saved_rows": int(saved_rows),
+    }
+
+
+def _poca_transform_selected_minibatch(value, tensor_transform):
+    """Apply one tensor transform while preserving AgentAction/container shape."""
+
+    from mlagents.torch_utils import torch
+    from mlagents.trainers.torch_entities.agent_action import AgentAction
+
+    if isinstance(value, torch.Tensor):
+        return tensor_transform(value)
+    if isinstance(value, AgentAction):
+        continuous = (
+            None
+            if value.continuous_tensor is None
+            else tensor_transform(value.continuous_tensor)
+        )
+        discrete = (
+            None
+            if value.discrete_list is None
+            else [tensor_transform(item) for item in value.discrete_list]
+        )
+        return AgentAction(continuous, discrete)
+    if isinstance(value, dict):
+        return {
+            key: _poca_transform_selected_minibatch(child, tensor_transform)
+            for key, child in value.items()
+        }
+    if isinstance(value, list):
+        return [
+            _poca_transform_selected_minibatch(child, tensor_transform)
+            for child in value
+        ]
+    if isinstance(value, tuple):
+        return tuple(
+            _poca_transform_selected_minibatch(child, tensor_transform)
+            for child in value
+        )
+    return value
+
+
+def _poca_pin_selected_minibatch(cached):
+    from mlagents.torch_utils import torch
+
+    def pin(tensor):
+        if tensor.device.type == "cpu" and not tensor.is_pinned():
+            return tensor.pin_memory()
+        return tensor
+
+    return _poca_transform_selected_minibatch(cached, pin)
+
+
+def _poca_move_selected_minibatch(cached, device):
+    def move(tensor):
+        if tensor.device == device:
+            return tensor
+        return tensor.to(device=device, non_blocking=True)
+
+    return _poca_transform_selected_minibatch(cached, move)
+
 
 def _poca_cuda_streams(count: int):
     """Reuse non-default CUDA streams for opt-in intra-minibatch parallelism."""
@@ -3001,6 +3153,101 @@ def _poca_parallel_forward(
         _POLICY_DIMENSION_MASK_STATE.mask = full_dimension_mask
 
 
+
+
+class _PocaCpuMinibatchPreparer:
+    """Prepare and pin CPU minibatches concurrently; CUDA stays on its default stream."""
+
+    def __init__(self, cache):
+        from concurrent.futures import ThreadPoolExecutor
+        from mlagents.torch_utils import default_device, torch
+
+        self.cache = cache
+        self.device = default_device()
+        logical_cpus = max(1, int(os.cpu_count() or 1))
+        self.workers = min(
+            POCA_CPU_PREPARE_MAX_WORKERS,
+            max(2, logical_cpus - 2),
+        )
+        self.enabled = bool(
+            cache is not None
+            and str(cache.get("storage", "cpu")) == "cpu"
+            and _POCA_OPTIMIZATIONS.effective_sync_cleanup
+            and not _POCA_OPTIMIZATIONS.minibatch_prefetch
+            and self.device.type == "cuda"
+            and torch.cuda.is_available()
+        )
+        self.executor = (
+            ThreadPoolExecutor(
+                max_workers=self.workers,
+                thread_name_prefix="bees-poca-cpu-prepare",
+            )
+            if self.enabled
+            else None
+        )
+        self.depth = self.workers if self.enabled else 0
+
+    def submit(self, indices):
+        if not self.enabled:
+            return None
+        import numpy as np
+
+        copied = np.asarray(indices, dtype=np.int64).copy()
+        return self.executor.submit(self._prepare, copied)
+
+    def _prepare(self, indices):
+        from mlagents.torch_utils import torch
+
+        started = time.perf_counter()
+        selected = _select_poca_update_tensor_cache(
+            self.cache,
+            indices,
+            device_override=torch.device("cpu"),
+            non_blocking=False,
+        )
+        selected["observation_dedup"] = (
+            _poca_build_observation_dedup_plan(selected)
+        )
+        selected = _poca_pin_selected_minibatch(selected)
+        return selected, time.perf_counter() - started
+
+    def consume(self, future):
+        if future is None:
+            return None
+        wait_started = time.perf_counter()
+        selected, prepare_seconds = future.result()
+        _poca_record_timing(
+            "cpu_prepare_wait",
+            time.perf_counter() - wait_started,
+        )
+        _poca_record_timing("cpu_prepare_work", prepare_seconds)
+
+        plan = selected.get("observation_dedup")
+        if plan is not None:
+            _POCA_TIMING_STATE.dedup_input_rows += int(
+                plan.get("input_rows", 0)
+            )
+            _POCA_TIMING_STATE.dedup_unique_rows += int(
+                plan.get("unique_rows", 0)
+            )
+
+        transfer_started = time.perf_counter()
+        marker = _poca_cuda_timing_begin("cpu_prepare_transfer")
+        selected = _poca_move_selected_minibatch(
+            selected,
+            self.device,
+        )
+        _poca_cuda_timing_end(marker)
+        _poca_record_timing(
+            "cpu_prepare_transfer_submit",
+            time.perf_counter() - transfer_started,
+        )
+        return selected
+
+    def close(self):
+        if self.executor is not None:
+            self.executor.shutdown(wait=True)
+            self.executor = None
 
 
 class _PocaMinibatchPrefetcher:
