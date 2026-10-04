@@ -2218,6 +2218,7 @@ def _poca_parallel_forward(
 
     full_valid_rows = getattr(_POCA_GROUP_BATCH_STATE, "valid_rows", None)
     full_encoded_cache = getattr(_POCA_GROUP_BATCH_STATE, "encoded_cache", None)
+    full_dimension_mask = getattr(_POLICY_DIMENSION_MASK_STATE, "mask", None)
     full_freeze = bool(
         getattr(_POCA_GROUP_BATCH_STATE, "freeze_max_agents", False)
     )
@@ -2245,7 +2246,7 @@ def _poca_parallel_forward(
     def shard_group_actions(values, start, end):
         return [value.slice(start, end) for value in values]
 
-    def install_shard_context(start, end, encoded_cache):
+    def install_shard_context(start, end, encoded_cache, *, actor=False):
         if full_valid_rows is None:
             _POCA_GROUP_BATCH_STATE.valid_rows = None
         else:
@@ -2255,6 +2256,8 @@ def _poca_parallel_forward(
             ]
         _POCA_GROUP_BATCH_STATE.encoded_cache = encoded_cache
         _POCA_GROUP_BATCH_STATE.freeze_max_agents = True
+        if actor and full_dimension_mask is not None:
+            _POLICY_DIMENSION_MASK_STATE.mask = full_dimension_mask[start:end]
         return set_training_faction_rows(
             _poca_shard_faction_rows(faction_rows, start, end)
         )
@@ -2282,6 +2285,7 @@ def _poca_parallel_forward(
                         start,
                         end,
                         {},
+                        actor=True,
                     )
                     try:
                         actor_marker = _poca_cuda_timing_begin(
@@ -2297,6 +2301,7 @@ def _poca_parallel_forward(
                         _poca_cuda_timing_end(actor_marker)
                     finally:
                         reset_training_faction_rows(faction_token)
+                        _POLICY_DIMENSION_MASK_STATE.mask = full_dimension_mask
                     actor_outputs.append(actor_output)
 
                 with torch.cuda.stream(critic_stream):
@@ -2346,6 +2351,7 @@ def _poca_parallel_forward(
                         start,
                         end,
                         encoded_cache,
+                        actor=True,
                     )
                     try:
                         actor_marker = _poca_cuda_timing_begin(
@@ -2359,6 +2365,7 @@ def _poca_parallel_forward(
                             sequence_length=optimizer.policy.sequence_length,
                         )
                         _poca_cuda_timing_end(actor_marker)
+                        _POLICY_DIMENSION_MASK_STATE.mask = full_dimension_mask
 
                         critic_marker = _poca_cuda_timing_begin("critic_pass")
                         values, _ = optimizer.critic.critic_pass(
@@ -2456,6 +2463,7 @@ def _poca_parallel_forward(
         _POCA_GROUP_BATCH_STATE.valid_rows = full_valid_rows
         _POCA_GROUP_BATCH_STATE.encoded_cache = full_encoded_cache
         _POCA_GROUP_BATCH_STATE.freeze_max_agents = full_freeze
+        _POLICY_DIMENSION_MASK_STATE.mask = full_dimension_mask
 
 
 
