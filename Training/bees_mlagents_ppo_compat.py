@@ -3912,6 +3912,8 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         _POCA_TIMING_STATE.graph_replays = 0
         _POCA_TIMING_STATE.graph_skips = 0
         _POCA_TIMING_STATE.parallel_streams = ()
+        _POCA_TIMING_STATE.dedup_input_rows = 0
+        _POCA_TIMING_STATE.dedup_unique_rows = 0
 
         normalization_started = time.perf_counter()
         _normalize_poca_advantages(self.policy, self.update_buffer)
@@ -3971,6 +3973,19 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         batch_update_stats = defaultdict(list)
         max_num_batch = buffer_length // batch_size
         total_minibatches = num_epoch * max_num_batch
+        cpu_preparer = (
+            _PocaCpuMinibatchPreparer(tensor_cache)
+            if tensor_cache is not None
+            else None
+        )
+        prefetcher = (
+            _PocaMinibatchPrefetcher(tensor_cache)
+            if (
+                tensor_cache is not None
+                and not (cpu_preparer is not None and cpu_preparer.enabled)
+            )
+            else None
+        )
         print(
             "[Bees PPO timing] update begin "
             f"buffer={buffer_length} batch={batch_size} epochs={num_epoch} "
@@ -3978,6 +3993,8 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             f"sync_cleanup={'on' if _POCA_OPTIMIZATIONS.effective_sync_cleanup else 'off'} "
             f"stream_shards={_POCA_OPTIMIZATIONS.stream_shards} "
             f"prefetch={'on' if _POCA_OPTIMIZATIONS.minibatch_prefetch else 'off'} "
+            f"cpu_prepare={'on' if cpu_preparer is not None and cpu_preparer.enabled else 'off'} "
+            f"cpu_prepare_workers={cpu_preparer.workers if cpu_preparer is not None and cpu_preparer.enabled else 0} "
             f"critic_baseline_overlap={'on' if _POCA_OPTIMIZATIONS.critic_baseline_overlap else 'off'} "
             f"cuda_graphs={'on' if _POCA_OPTIMIZATIONS.cuda_graphs else 'off'} "
             f"tensor_cache={'on' if tensor_cache is not None else 'off'} "
@@ -4041,11 +4058,6 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
 
         completed_minibatches = 0
         _POCA_UPDATE_CACHE_STATE.cache = tensor_cache
-        prefetcher = (
-            _PocaMinibatchPrefetcher(tensor_cache)
-            if tensor_cache is not None
-            else None
-        )
         hardware_profiler = _PocaUpdateHardwareProfiler().start()
         hardware_started = time.perf_counter()
         hardware_summary = {}
@@ -4070,9 +4082,28 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                         batch_size,
                     )
                 )
+                pending_cpu = {}
+                if (
+                    tensor_cache is not None
+                    and cpu_preparer is not None
+                    and cpu_preparer.enabled
+                    and offsets
+                ):
+                    for prepare_index in range(
+                        min(cpu_preparer.depth, len(offsets))
+                    ):
+                        prepare_offset = offsets[prepare_index]
+                        pending_cpu[prepare_index] = cpu_preparer.submit(
+                            epoch_order[
+                                prepare_offset :
+                                prepare_offset + batch_size
+                            ]
+                        )
+
                 pending_prefetch = None
                 if (
                     tensor_cache is not None
+                    and not pending_cpu
                     and prefetcher is not None
                     and prefetcher.enabled
                     and offsets
@@ -4094,6 +4125,29 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                     else:
                         indices = epoch_order[i : i + batch_size]
                         if (
+                            cpu_preparer is not None
+                            and cpu_preparer.enabled
+                        ):
+                            _POCA_UPDATE_CACHE_STATE.minibatch = (
+                                cpu_preparer.consume(
+                                    pending_cpu.pop(offset_index)
+                                )
+                            )
+                            _POCA_UPDATE_CACHE_STATE.indices = None
+                            next_prepare_index = (
+                                offset_index + cpu_preparer.depth
+                            )
+                            if next_prepare_index < len(offsets):
+                                prepare_offset = offsets[next_prepare_index]
+                                pending_cpu[next_prepare_index] = (
+                                    cpu_preparer.submit(
+                                        epoch_order[
+                                            prepare_offset :
+                                            prepare_offset + batch_size
+                                        ]
+                                    )
+                                )
+                        elif (
                             prefetcher is not None
                             and prefetcher.enabled
                         ):
@@ -4154,6 +4208,8 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             hardware_summary = hardware_profiler.stop(
                 hardware_loop_seconds
             )
+            if cpu_preparer is not None:
+                cpu_preparer.close()
             if prefetcher is not None:
                 prefetcher.close()
             _POCA_UPDATE_CACHE_STATE.cache = None
@@ -4205,6 +4261,12 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             f"backward_join={_poca_average_timing('backward_stream_join'):.6f} "
             f"prefetch_wait={_poca_average_timing('prefetch_cpu_wait'):.6f} "
             f"cuda_prefetch={_poca_average_timing('cuda_prefetch'):.6f} "
+            f"cpu_prepare_wait={_poca_average_timing('cpu_prepare_wait'):.6f} "
+            f"cpu_prepare_work={_poca_average_timing('cpu_prepare_work'):.6f} "
+            f"cpu_prepare_transfer={_poca_average_timing('cpu_prepare_transfer_submit'):.6f} "
+            f"cuda_cpu_prepare_transfer={_poca_average_timing('cuda_cpu_prepare_transfer'):.6f} "
+            f"dedup_rows={int(getattr(_POCA_TIMING_STATE, 'dedup_input_rows', 0))} "
+            f"dedup_unique={int(getattr(_POCA_TIMING_STATE, 'dedup_unique_rows', 0))} "
             f"graph_warmups={int(getattr(_POCA_TIMING_STATE, 'graph_warmups', 0))} "
             f"graph_captures={int(getattr(_POCA_TIMING_STATE, 'graph_captures', 0))} "
             f"graph_replays={int(getattr(_POCA_TIMING_STATE, 'graph_replays', 0))} "
@@ -4288,6 +4350,8 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         _POCA_TIMING_STATE.graph_replays = 0
         _POCA_TIMING_STATE.graph_skips = 0
         _POCA_TIMING_STATE.parallel_streams = ()
+        _POCA_TIMING_STATE.dedup_input_rows = 0
+        _POCA_TIMING_STATE.dedup_unique_rows = 0
 
         for stat, stat_list in batch_update_stats.items():
             if (
