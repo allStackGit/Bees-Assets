@@ -30,6 +30,7 @@ internal sealed class RlOneVsOneTrainingOptions
     internal const string CollisionAsteroidSpawnSecondsFlag = "--rl-collision-asteroid-spawn-seconds";
     internal const string StaticObstaclesFlag = "--rl-static-obstacles";
     internal const string MiningAsteroidsFlag = "--rl-mining-asteroids";
+    internal const string CommunicationLoggingFlag = "--rl-log-communications";
     internal const string ValidationOnlyFlag = "--rl-validate-options-only";
 
     internal const float DefaultHealthRatio = 0.25f;
@@ -95,6 +96,7 @@ internal sealed class RlOneVsOneTrainingOptions
     internal float CollisionAsteroidSpawnSeconds { get; private set; }
     internal bool StaticObstaclesEnabled { get; private set; }
     internal bool MiningAsteroidsEnabled { get; private set; }
+    internal bool CommunicationLoggingEnabled { get; private set; }
     internal RlOneVsOneMatchupMode MatchupMode { get; private set; }
     internal IReadOnlyList<ConfigData.ShipTypes> BeeShipTypes => _beeShipTypes;
     internal IReadOnlyList<ConfigData.ShipTypes> HumanShipTypes => _humanShipTypes;
@@ -111,6 +113,7 @@ internal sealed class RlOneVsOneTrainingOptions
         CollisionAsteroidSpawnSeconds = DefaultCollisionAsteroidSpawnSeconds;
         StaticObstaclesEnabled = false;
         MiningAsteroidsEnabled = false;
+        CommunicationLoggingEnabled = false;
         MatchupMode = DefaultMatchupMode;
         _beeShipTypes = new List<ConfigData.ShipTypes> { ConfigData.ShipTypes.Wasp };
         _humanShipTypes = new List<ConfigData.ShipTypes> { ConfigData.ShipTypes.Gunship };
@@ -190,6 +193,10 @@ internal sealed class RlOneVsOneTrainingOptions
             {
                 options.MiningAsteroidsEnabled = miningAsteroids;
             }
+            else if (TryReadBooleanOption(argument, CommunicationLoggingFlag, args, ref i, out bool communicationLogging))
+            {
+                options.CommunicationLoggingEnabled = communicationLogging;
+            }
             else if (argument.Equals(ValidationOnlyFlag, StringComparison.OrdinalIgnoreCase))
             {
                 // Validation-only is an operator/preflight control flag, not an environment value.
@@ -229,6 +236,7 @@ internal sealed class RlOneVsOneTrainingOptions
                $"collision_asteroid_spawn={collisionAsteroidDescription} " +
                $"static_obstacles={(StaticObstaclesEnabled ? "on" : "off")} " +
                $"mining_asteroids={(MiningAsteroidsEnabled ? "on" : "off")} " +
+               $"communication_logging={(CommunicationLoggingEnabled ? "on" : "off")} " +
                $"bee_ship_types={JoinShipTypes(_beeShipTypes)} human_ship_types={JoinShipTypes(_humanShipTypes)}";
     }
 
