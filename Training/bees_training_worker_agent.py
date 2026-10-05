@@ -932,6 +932,7 @@ class TrainingLogUploader:
         self._prefix_anchors: dict[Path, tuple[int, str]] = {}
         self._remote_paths: dict[Path, str] = {}
         self._next_path: Optional[Path] = None
+        self._operation_lock = threading.RLock()
 
     def _generation_remote_path(
         self,
@@ -983,6 +984,20 @@ class TrainingLogUploader:
         )
 
     def flush_once(
+        self,
+        client: TrainingControlClient,
+        *,
+        trainer_id: str,
+        run_id: str,
+    ) -> int:
+        with self._operation_lock:
+            return self._flush_once_locked(
+                client,
+                trainer_id=trainer_id,
+                run_id=run_id,
+            )
+
+    def _flush_once_locked(
         self,
         client: TrainingControlClient,
         *,
@@ -1227,6 +1242,83 @@ class TrainingLogUploader:
             keepalive_stop.set()
             if keepalive_thread is not None:
                 keepalive_thread.join(timeout=1.0)
+
+
+class BackgroundTrainingLogUploader:
+    """Mirror routine logs without allowing WAN/file latency to consume the control lease."""
+
+    def __init__(self, root: Path) -> None:
+        self._uploader = TrainingLogUploader(root)
+        self._lock = threading.Lock()
+        self._thread: Optional[threading.Thread] = None
+        self._last_error = ""
+
+    def _flush_once(
+        self,
+        client: TrainingControlClient,
+        trainer_id: str,
+        run_id: str,
+    ) -> None:
+        try:
+            self._uploader.flush_once(
+                client,
+                trainer_id=trainer_id,
+                run_id=run_id,
+            )
+        except Exception as exc:
+            with self._lock:
+                self._last_error = f"{type(exc).__name__}: {exc}"
+
+    def request(
+        self,
+        client: TrainingControlClient,
+        *,
+        trainer_id: str,
+        run_id: str,
+    ) -> bool:
+        with self._lock:
+            if self._thread is not None and self._thread.is_alive():
+                return False
+            thread = threading.Thread(
+                target=self._flush_once,
+                args=(client, trainer_id, run_id),
+                name="bees-training-log-upload",
+                daemon=True,
+            )
+            self._thread = thread
+            try:
+                thread.start()
+            except Exception as exc:
+                self._thread = None
+                self._last_error = f"{type(exc).__name__}: {exc}"
+                return False
+            return True
+
+    def take_error(self) -> str:
+        with self._lock:
+            value = self._last_error
+            self._last_error = ""
+            return value
+
+    def flush_all(
+        self,
+        client: TrainingControlClient,
+        *,
+        trainer_id: str,
+        run_id: str,
+        maximum_passes: int = 10000,
+        progress_callback: Optional[Callable[[], None]] = None,
+    ) -> None:
+        # TrainingLogUploader serializes its own mutation. If a routine upload is still
+        # finishing, its finalization keepalive continues refreshing the control lease while
+        # this call waits for that operation and then drains the remaining bytes.
+        self._uploader.flush_all(
+            client,
+            trainer_id=trainer_id,
+            run_id=run_id,
+            maximum_passes=maximum_passes,
+            progress_callback=progress_callback,
+        )
 
 
 def _is_windows() -> bool:
@@ -2078,7 +2170,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     )
     managed = ManagedProcess()
     preparer = BackgroundBuildPreparer(builds, client)
-    log_uploader = TrainingLogUploader(install_root / "logs")
+    log_uploader = BackgroundTrainingLogUploader(install_root / "logs")
     stop = False
     last_contact = 0.0
     lease_seconds = max(1.0, args.heartbeat_seconds * 2.0)
@@ -2604,17 +2696,17 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 else:
                     raise RuntimeError(f"unsupported desired mode {mode!r}")
 
-                try:
-                    log_uploader.flush_once(
-                        client,
-                        trainer_id=args.trainer_id,
-                        run_id=run_id,
-                    )
-                except (ControlUnavailable, ControlRejected, OSError, ValueError) as exc:
+                upload_error = log_uploader.take_error()
+                if upload_error:
                     print(
-                        f"[Bees control] log upload deferred: {type(exc).__name__}: {exc}",
+                        f"[Bees control] log upload deferred: {upload_error}",
                         file=sys.stderr,
                     )
+                log_uploader.request(
+                    client,
+                    trainer_id=args.trainer_id,
+                    run_id=run_id,
+                )
 
                 # Publish training only after build/config reconciliation completed successfully.
                 # A live full game with a pending canonical update already wrote an inference state

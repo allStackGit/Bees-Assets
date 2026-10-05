@@ -277,6 +277,46 @@ class TrainingEnvOptimizer {
         return state;
     }
 
+    restoreProvenEnvCount(
+        trainerId,
+        envCount,
+        {
+            capacity: rawCapacity,
+            contextKey = '',
+            buildId = '',
+            now = Date.now(),
+        } = {},
+    ) {
+        if (typeof trainerId !== 'string' || !trainerId || !finiteInteger(envCount)) {
+            return false;
+        }
+        const capacity = normalizeCapacity(rawCapacity);
+        if (!capacity || !capacity.auto) return false;
+
+        const existing = this.states.get(trainerId);
+        if (existing && !['manual', 'paused'].includes(existing.phase)) {
+            return false;
+        }
+
+        const target = Math.max(
+            capacity.min_envs,
+            Math.min(capacity.max_envs, envCount),
+        );
+        const state = this._newState(
+            trainerId,
+            String(contextKey || ''),
+            capacity,
+            Number(now),
+        );
+        state.build_id = String(buildId || '');
+        state.desired_envs = target;
+        state.phase = capacity.current_envs === target ? 'settling' : 'resizing';
+        state.last_decision =
+            'restoring persisted proven ' + target + ' envs before remeasurement';
+        this.states.set(trainerId, state);
+        return true;
+    }
+
     _releaseProbe(trainerId) {
         if (this.activeProbeTrainerId === trainerId) {
             this.activeProbeTrainerId = null;

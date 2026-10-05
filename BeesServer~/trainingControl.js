@@ -502,6 +502,12 @@ class TrainingControlStore {
                 typeof trainer.platform !== 'string' ||
                 !/^[A-Za-z0-9._-]+$/.test(trainer.platform) ||
                 !Number.isFinite(trainer.last_seen_ms) || trainer.last_seen_ms < 0 ||
+                (
+                    trainer.proven_envs !== undefined &&
+                    (!Number.isInteger(trainer.proven_envs) ||
+                        trainer.proven_envs < 1 ||
+                        trainer.proven_envs > 64)
+                ) ||
                 knownTrainerIds.has(trainer.trainer_id)) {
                 throw new Error('training-control known trainer registry is invalid');
             }
@@ -716,6 +722,7 @@ class TrainingControlStore {
         if (existing.platform !== record.platform) {
             existing.platform = record.platform;
             existing.last_seen_ms = record.last_seen_ms;
+            delete existing.proven_envs;
             return true;
         }
         if (record.last_seen_ms - existing.last_seen_ms >= refreshAfterMs) {
@@ -723,6 +730,40 @@ class TrainingControlStore {
             return true;
         }
         return false;
+    }
+
+    _persistedProvenEnvCount(record) {
+        if (record.role !== 'dedicated' ||
+            !record.worker_capacity ||
+            record.worker_capacity.auto !== true) {
+            return null;
+        }
+        const existing = this.state.known_dedicated_trainers.find(
+            item => item.trainer_id === record.trainer_id &&
+                item.platform === record.platform);
+        return existing && Number.isInteger(existing.proven_envs)
+            ? existing.proven_envs
+            : null;
+    }
+
+    _rememberProvenEnvCapacity(record, optimizerState) {
+        if (record.role !== 'dedicated' ||
+            !record.worker_capacity ||
+            record.worker_capacity.auto !== true ||
+            !optimizerState ||
+            !Number.isInteger(optimizerState.baseline_envs) ||
+            typeof optimizerState.baseline_sps !== 'number' ||
+            !Number.isFinite(optimizerState.baseline_sps)) {
+            return false;
+        }
+        const existing = this.state.known_dedicated_trainers.find(
+            item => item.trainer_id === record.trainer_id &&
+                item.platform === record.platform);
+        if (!existing || existing.proven_envs === optimizerState.baseline_envs) {
+            return false;
+        }
+        existing.proven_envs = optimizerState.baseline_envs;
+        return true;
     }
 
     _ensurePendingTrainer(record) {
@@ -1730,6 +1771,19 @@ class TrainingControlStore {
             this.state.run_id,
             JSON.stringify(this.state.environment_args),
         ].join('|');
+        const persistedProvenEnvCount = this._persistedProvenEnvCount(record);
+        if (persistedProvenEnvCount !== null) {
+            this.envOptimizer.restoreProvenEnvCount(
+                trainerId,
+                persistedProvenEnvCount,
+                {
+                    capacity: record.worker_capacity,
+                    contextKey: optimizerContextKey,
+                    buildId: this.state.canonical_build_id,
+                    now,
+                },
+            );
+        }
         record.env_optimizer = this.envOptimizer.update(record, {
             now,
             contextKey: optimizerContextKey,
@@ -1738,6 +1792,18 @@ class TrainingControlStore {
                 !this.state.pending_release &&
                 Boolean(canonicalBuild),
         });
+        const capacityStateBeforePersist = this._snapshotState();
+        if (this._rememberProvenEnvCapacity(record, record.env_optimizer)) {
+            try {
+                this._persist();
+            } catch (_error) {
+                // Proven capacity is a performance hint, not training authority. A transient
+                // state-file write failure must not reject the heartbeat or disconnect an
+                // otherwise healthy actor; retain the previous durable value and retry after
+                // the next completed optimizer measurement.
+                this.state = capacityStateBeforePersist;
+            }
+        }
         this._advanceRollout();
         return this.stateFor({ trainerId, role, platform });
     }
