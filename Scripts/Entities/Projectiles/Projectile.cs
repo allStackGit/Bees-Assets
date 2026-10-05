@@ -161,6 +161,12 @@ namespace Assets.Scripts.Entities.Projectiles
             {
                 DamageObstacle((CollisionAsteroid)obstacle);
             }
+            else if (obstacle.ObstacleType == ConfigData.ObstacleTypes.StaticObstacle)
+            {
+                global::RlOneVsOneEpisodeCoordinator.RecordProjectileStaticObstacleImpact(
+                    this,
+                    obstacle);
+            }
             KillSequence();
         }
 
