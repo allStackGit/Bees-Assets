@@ -105,6 +105,7 @@ _ORIGINAL_POCA_UPDATE = None
 _ORIGINAL_POCA_TRAJECTORY_VALUES = None
 _ORIGINAL_POCA_UPDATE_POLICY = None
 _ORIGINAL_POCA_ADVANCE = None
+_ORIGINAL_POCA_SAVE_MODEL = None
 _ORIGINAL_MULTI_AGENT_FORWARD = None
 _ORIGINAL_TRUST_REGION_POLICY_LOSS = None
 _ORIGINAL_MASKED_MEAN = None
@@ -3857,6 +3858,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
     global _ORIGINAL_POCA_TRAJECTORY_VALUES
     global _ORIGINAL_POCA_UPDATE_POLICY
     global _ORIGINAL_POCA_ADVANCE
+    global _ORIGINAL_POCA_SAVE_MODEL
     global _ORIGINAL_MULTI_AGENT_FORWARD
     global _ORIGINAL_TRUST_REGION_POLICY_LOSS
     global _ORIGINAL_MASKED_MEAN
@@ -3875,6 +3877,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
     )
     original_poca_update_policy = POCATrainer._update_policy
     original_poca_advance = POCATrainer.advance
+    original_poca_save_model = POCATrainer.save_model
     original_poca_process_trajectory = POCATrainer._process_trajectory
     original_multi_agent_forward = MultiAgentNetworkBody.forward
     original_policy_loss = ModelUtils.trust_region_policy_loss
@@ -4460,6 +4463,19 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         elif self.threaded and not queried:
             time.sleep(0.0001)
 
+
+    def pipelined_poca_save_model(self):
+        """Wait for an in-flight asynchronous PPO update before final checkpoint export."""
+
+        future = getattr(self, "_bees_poca_update_future", None)
+        if future is not None:
+            future.result()
+            self._bees_poca_update_future = None
+        executor = getattr(self, "_bees_poca_update_executor", None)
+        if executor is not None:
+            executor.shutdown(wait=True)
+            self._bees_poca_update_executor = None
+        return original_poca_save_model(self)
 
     def weighted_poca_update_policy(self):
         """ML-Agents 1.1.0 on-policy update with cached feed-forward minibatch tensors."""
@@ -5560,6 +5576,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
     )
     POCATrainer._update_policy = weighted_poca_update_policy
     POCATrainer.advance = batched_poca_advance
+    POCATrainer.save_model = pipelined_poca_save_model
     MultiAgentNetworkBody.forward = optimized_multi_agent_forward
     ModelUtils.trust_region_policy_loss = staticmethod(masked_policy_loss)
     ModelUtils.masked_mean = staticmethod(weighted_masked_mean)
@@ -5573,6 +5590,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
     _ORIGINAL_POCA_TRAJECTORY_VALUES = original_poca_trajectory_values
     _ORIGINAL_POCA_UPDATE_POLICY = original_poca_update_policy
     _ORIGINAL_POCA_ADVANCE = original_poca_advance
+    _ORIGINAL_POCA_SAVE_MODEL = original_poca_save_model
     _ORIGINAL_MULTI_AGENT_FORWARD = original_multi_agent_forward
     _ORIGINAL_TRUST_REGION_POLICY_LOSS = original_policy_loss
     _ORIGINAL_MASKED_MEAN = original_masked_mean
@@ -5591,6 +5609,7 @@ def restore_inactive_continuous_action_masking() -> None:
     global _ORIGINAL_POCA_TRAJECTORY_VALUES
     global _ORIGINAL_POCA_UPDATE_POLICY
     global _ORIGINAL_POCA_ADVANCE
+    global _ORIGINAL_POCA_SAVE_MODEL
     global _ORIGINAL_MULTI_AGENT_FORWARD
     global _ORIGINAL_TRUST_REGION_POLICY_LOSS
     global _ORIGINAL_MASKED_MEAN
@@ -5617,6 +5636,7 @@ def restore_inactive_continuous_action_masking() -> None:
     )
     POCATrainer._update_policy = _ORIGINAL_POCA_UPDATE_POLICY
     POCATrainer.advance = _ORIGINAL_POCA_ADVANCE
+    POCATrainer.save_model = _ORIGINAL_POCA_SAVE_MODEL
     MultiAgentNetworkBody.forward = _ORIGINAL_MULTI_AGENT_FORWARD
     ModelUtils.trust_region_policy_loss = staticmethod(
         _ORIGINAL_TRUST_REGION_POLICY_LOSS
@@ -5642,6 +5662,7 @@ def restore_inactive_continuous_action_masking() -> None:
     _ORIGINAL_POCA_TRAJECTORY_VALUES = None
     _ORIGINAL_POCA_UPDATE_POLICY = None
     _ORIGINAL_POCA_ADVANCE = None
+    _ORIGINAL_POCA_SAVE_MODEL = None
     _ORIGINAL_MULTI_AGENT_FORWARD = None
     _ORIGINAL_TRUST_REGION_POLICY_LOSS = None
     _ORIGINAL_MASKED_MEAN = None
