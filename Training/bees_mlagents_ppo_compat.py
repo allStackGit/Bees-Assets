@@ -261,16 +261,20 @@ def _build_bees_continuous_activity_mask(action_spec, masks, reference):
         return None
 
     activity = reference.new_ones(reference.shape)
-    for slot in range(BEES_WEAPON_SLOTS):
-        fire_action_index = slot * 2 + 1
-        slot_active = (masks[:, fire_action_index] > 0.5).to(activity.dtype)
-        aim_start = (
-            BEES_MOVEMENT_CONTINUOUS_ACTIONS
-            + slot * BEES_WEAPON_AIM_ACTIONS_PER_SLOT
-        )
-        activity[:, aim_start : aim_start + BEES_WEAPON_AIM_ACTIONS_PER_SLOT] = (
-            slot_active.unsqueeze(1)
-        )
+    fire_mask_end = BEES_WEAPON_SLOTS * 2
+    weapon_activity = (
+        masks[:, 1:fire_mask_end:2] > 0.5
+    ).to(activity.dtype)
+    aim_start = BEES_MOVEMENT_CONTINUOUS_ACTIONS
+    aim_end = (
+        aim_start
+        + BEES_WEAPON_SLOTS * BEES_WEAPON_AIM_ACTIONS_PER_SLOT
+    )
+    activity[:, aim_start:aim_end] = weapon_activity.unsqueeze(2).expand(
+        -1,
+        -1,
+        BEES_WEAPON_AIM_ACTIONS_PER_SLOT,
+    ).reshape(activity.shape[0], -1)
     return activity
 
 
@@ -519,9 +523,25 @@ def _masked_action_log_probs_and_entropy(action_model, actions, dists, masks):
             actions.discrete_list,
             dists.discrete,
         )):
-            discrete_log_probs.append(discrete_dist.log_prob(discrete_action))
-            all_discrete_log_probs.append(discrete_dist.all_log_prob())
-            branch_entropy = discrete_dist.entropy()
+            # ML-Agents 1.1.0 CategoricalDistInstance.log_prob() constructs a
+            # batch-by-batch advanced-indexing temporary before taking its diagonal.
+            # Gather directly from the already-normalized branch probabilities and
+            # reuse the same log tensor for selected log-prob, entropy, and PPO state.
+            all_log_prob = torch.log(
+                discrete_dist.probs + ACTION_ENTROPY_EPSILON
+            )
+            selected_log_prob = torch.gather(
+                all_log_prob,
+                1,
+                discrete_action.reshape(-1, 1).long(),
+            ).squeeze(1)
+            discrete_log_probs.append(selected_log_prob)
+            all_discrete_log_probs.append(all_log_prob)
+            branch_entropy = -torch.sum(
+                discrete_dist.probs * all_log_prob,
+                dim=1,
+                keepdim=True,
+            )
             if (
                 policy_dimension_mask is not None
                 and policy_dimension_mask.shape[0] == branch_entropy.shape[0]
@@ -616,14 +636,13 @@ def _build_bees_policy_dimension_mask(
             != BEES_HEALING_SPECIAL_ACTION
         ).to(discrete_activity.dtype)
 
-    for slot in range(BEES_WEAPON_SLOTS):
-        fire_action_index = slot * 2 + 1
-        slot_activity = (
-            action_masks[:, fire_action_index] > 0.5
-        ).to(discrete_activity.dtype)
-        if fire_effective is not None:
-            slot_activity = slot_activity * fire_effective
-        discrete_activity[:, slot] = slot_activity
+    fire_mask_end = BEES_WEAPON_SLOTS * 2
+    slot_activity = (
+        action_masks[:, 1:fire_mask_end:2] > 0.5
+    ).to(discrete_activity.dtype)
+    if fire_effective is not None:
+        slot_activity = slot_activity * fire_effective.unsqueeze(1)
+    discrete_activity[:, :BEES_WEAPON_SLOTS] = slot_activity
 
     special_start = sum(BEES_DISCRETE_BRANCHES[:-1])
     discrete_activity[:, BEES_WEAPON_SLOTS] = (
@@ -4190,18 +4209,43 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                     else None
                 ),
             )
-            concat_f_inp = []
-            for encoded, action in zip(encoded_obs, actions):
-                concat_f_inp.append(
-                    torch.cat(
-                        [
-                            encoded,
-                            action.to_flat(self.action_spec.discrete_branches),
-                        ],
-                        dim=1,
-                    )
+            # Groupmate action flattening is a major small-kernel hotspot in
+            # ML-Agents 1.1.0: AgentAction.to_flat() one-hots every branch for
+            # every group position independently. Stack the group dimension first
+            # so each discrete branch needs one one-hot kernel, not one per agent.
+            encoded_tensor = torch.stack(encoded_obs, dim=1)
+            continuous_actions = torch.stack(
+                [action.continuous_tensor for action in actions],
+                dim=1,
+            )
+            discrete_one_hot = []
+            for branch_index, branch_size in enumerate(
+                self.action_spec.discrete_branches
+            ):
+                branch_actions = torch.stack(
+                    [
+                        action.discrete_list[branch_index]
+                        for action in actions
+                    ],
+                    dim=1,
+                ).reshape(batch_size, len(actions))
+                discrete_one_hot.append(
+                    torch.nn.functional.one_hot(
+                        branch_actions.long(),
+                        int(branch_size),
+                    ).to(dtype=continuous_actions.dtype)
                 )
-            f_inp = torch.stack(concat_f_inp, dim=1)
+            flat_actions = torch.cat(
+                [
+                    continuous_actions,
+                    torch.cat(discrete_one_hot, dim=2),
+                ],
+                dim=2,
+            )
+            f_inp = torch.cat(
+                [encoded_tensor, flat_actions],
+                dim=2,
+            )
             self_attn_masks.append(obs_attn_mask)
             self_attn_inputs.append(self.obs_action_encoder(None, f_inp))
 
