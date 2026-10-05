@@ -224,10 +224,10 @@ def _owned_child_main(argv: Sequence[str]) -> int:
                 signal_child_group(signal.SIGKILL)
                 child_group_kill_sent = True
 
-    # A learner/actor may exit while one of its Unity environment workers remains alive.
-    # The guardian must not report completion until that entire owned process group is gone;
-    # otherwise an outer supervisor can truthfully observe this wrapper as stopped while orphaned
-    # Unity children continue consuming CPU.
+    # Do not report completion while descendants that remained in this owned process group
+    # are still alive. ML-Agents launches Unity itself with start_new_session=True on POSIX, so
+    # detached Unity players are not members of this group; the WAN actor explicitly reclaims
+    # those players by managed-build path and reserved ML-Agents port during session teardown.
     try:
         os.killpg(child.pid, signal.SIGTERM)
     except ProcessLookupError:

@@ -48,6 +48,158 @@ THROUGHPUT_METRICS_ENV = "BEES_TRAINING_THROUGHPUT_FILE"
 TRAINING_RUN_ID_ENV = "BEES_TRAINING_RUN_ID"
 NETWORK_TRAFFIC_STATE_FILE = "worker-network-traffic.json"
 MIB_BYTES = 1024 * 1024
+MAX_LOCAL_UNITY_ENVS = 64
+DETACHED_UNITY_SHUTDOWN_SECONDS = 2.0
+
+
+def _actor_builds_root(env_path: Path) -> Optional[Path]:
+    """Return the managed build store that owns this Unity executable."""
+    try:
+        build_dir = env_path.expanduser().resolve().parent
+        builds_root = build_dir.parent.resolve()
+    except OSError:
+        return None
+    return builds_root if builds_root.name == "builds" else None
+
+
+def _actor_unity_process_matches(
+    pid: int,
+    *,
+    builds_root: Path,
+    local_base_port: int,
+) -> bool:
+    """Identify only this worker's managed Unity environments by executable path and port."""
+    if pid <= 0 or pid == os.getpid() or os.name == "nt":
+        return False
+    proc_root = Path("/proc") / str(pid)
+    try:
+        raw = (proc_root / "cmdline").read_bytes()
+    except OSError:
+        return False
+    argv = [
+        os.fsdecode(value)
+        for value in raw.split(b"\0")
+        if value
+    ]
+    if not argv:
+        return False
+    try:
+        executable = Path(argv[0]).expanduser().resolve()
+        executable.relative_to(builds_root)
+    except (OSError, ValueError):
+        return False
+
+    try:
+        port_index = argv.index("--mlagents-port") + 1
+        port = int(argv[port_index])
+    except (ValueError, IndexError):
+        return False
+    return local_base_port <= port < local_base_port + MAX_LOCAL_UNITY_ENVS
+
+
+def _matching_actor_unity_pids(
+    env_path: Path,
+    local_base_port: int,
+) -> List[int]:
+    """Find detached Unity players owned by this worker's reserved ML-Agents port range."""
+    if os.name == "nt":
+        return []
+    builds_root = _actor_builds_root(env_path)
+    proc_root = Path("/proc")
+    if builds_root is None or not proc_root.is_dir():
+        return []
+
+    result: List[int] = []
+    try:
+        entries = tuple(proc_root.iterdir())
+    except OSError:
+        return []
+    for entry in entries:
+        if not entry.name.isdigit():
+            continue
+        pid = int(entry.name)
+        if _actor_unity_process_matches(
+            pid,
+            builds_root=builds_root,
+            local_base_port=local_base_port,
+        ):
+            result.append(pid)
+    return result
+
+
+def _terminate_detached_actor_unity(
+    env_path: Path,
+    local_base_port: int,
+    *,
+    reason: str,
+) -> int:
+    """Stop Unity players that escaped their ML-Agents Python environment worker.
+
+    ML-Agents launches Unity with start_new_session=True on POSIX, so Unity is not in the
+    actor's process group. If an environment-worker Python process dies before calling
+    UnityEnvironment.close(), process-group cleanup cannot reach the detached Unity player.
+    """
+    if os.name == "nt":
+        return 0
+    builds_root = _actor_builds_root(env_path)
+    if builds_root is None:
+        return 0
+
+    pids = _matching_actor_unity_pids(env_path, local_base_port)
+    if not pids:
+        return 0
+
+    for pid in pids:
+        # Revalidate immediately before signalling to avoid acting on a reused PID.
+        if not _actor_unity_process_matches(
+            pid,
+            builds_root=builds_root,
+            local_base_port=local_base_port,
+        ):
+            continue
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+        except OSError:
+            pass
+
+    deadline = time.monotonic() + DETACHED_UNITY_SHUTDOWN_SECONDS
+    remaining = set(pids)
+    while remaining and time.monotonic() < deadline:
+        for pid in tuple(remaining):
+            if not _actor_unity_process_matches(
+                pid,
+                builds_root=builds_root,
+                local_base_port=local_base_port,
+            ):
+                remaining.discard(pid)
+        if remaining:
+            time.sleep(0.05)
+
+    for pid in tuple(remaining):
+        if not _actor_unity_process_matches(
+            pid,
+            builds_root=builds_root,
+            local_base_port=local_base_port,
+        ):
+            remaining.discard(pid)
+            continue
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            remaining.discard(pid)
+        except OSError:
+            pass
+
+    if pids:
+        print(
+            "[Bees WAN actor] cleaned up detached Unity environment process(es) "
+            + ",".join(str(pid) for pid in pids)
+            + f" ({reason}).",
+            flush=True,
+        )
+    return len(pids)
 
 
 def _resolve_actor_seed(
@@ -766,9 +918,20 @@ class ActorSession:
         if self.manager is not None:
             try:
                 self.manager.close()
-            except Exception:
-                pass
-            self.manager = None
+            except Exception as exc:
+                print(
+                    "[Bees WAN actor] ML-Agents manager shutdown failed; "
+                    f"checking for detached Unity environments: {type(exc).__name__}: {exc}",
+                    file=sys.stderr,
+                    flush=True,
+                )
+            finally:
+                self.manager = None
+                _terminate_detached_actor_unity(
+                    self.env_path,
+                    self.local_base_port,
+                    reason="session shutdown",
+                )
         if self._watcher is not None:
             self._watcher.join(timeout=2.0)
         if self._uploader is not None:
@@ -880,6 +1043,14 @@ class ActorSession:
         _install_batched_inference(cpu_inference=False)
         _install_fast_env_manager()
         self._report_startup_phase("preparing-session")
+        # A previous ML-Agents session can leave Unity alive because Unity is deliberately
+        # launched in its own POSIX session. Reclaim this worker's reserved ports before
+        # constructing the next manager so stale players cannot consume CPU or block startup.
+        _terminate_detached_actor_unity(
+            self.env_path,
+            self.local_base_port,
+            reason="session startup",
+        )
         options = self._remote_run_options()
         run_logs_dir = self._run_logs_dir(options)
         set_torch_config(options.torch_settings)
