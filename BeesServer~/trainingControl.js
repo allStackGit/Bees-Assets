@@ -1792,16 +1792,27 @@ class TrainingControlStore {
                 !this.state.pending_release &&
                 Boolean(canonicalBuild),
         });
-        const capacityStateBeforePersist = this._snapshotState();
-        if (this._rememberProvenEnvCapacity(record, record.env_optimizer)) {
-            try {
-                this._persist();
-            } catch (_error) {
-                // Proven capacity is a performance hint, not training authority. A transient
-                // state-file write failure must not reject the heartbeat or disconnect an
-                // otherwise healthy actor; retain the previous durable value and retry after
-                // the next completed optimizer measurement.
-                this.state = capacityStateBeforePersist;
+        const measuredProvenEnvCount = (
+            record.worker_capacity?.auto === true &&
+            Number.isInteger(record.env_optimizer?.baseline_envs) &&
+            typeof record.env_optimizer?.baseline_sps === 'number' &&
+            Number.isFinite(record.env_optimizer.baseline_sps)
+        ) ? record.env_optimizer.baseline_envs : null;
+        if (
+            measuredProvenEnvCount !== null &&
+            measuredProvenEnvCount !== persistedProvenEnvCount
+        ) {
+            const capacityStateBeforePersist = this._snapshotState();
+            if (this._rememberProvenEnvCapacity(record, record.env_optimizer)) {
+                try {
+                    this._persist();
+                } catch (_error) {
+                    // Proven capacity is a performance hint, not training authority. A transient
+                    // state-file write failure must not reject the heartbeat or disconnect an
+                    // otherwise healthy actor; retain the previous durable value and retry after
+                    // the next completed optimizer measurement.
+                    this.state = capacityStateBeforePersist;
+                }
             }
         }
         this._advanceRollout();
