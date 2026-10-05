@@ -441,6 +441,9 @@ async function getStatusFrameLines(config, adminToken) {
             ) +
             ' graphs=' + (
                 learnerOptimizations.cudaGraphs ? 'on' : 'off'
+            ) +
+            ' profile=' + (
+                learnerOptimizations.profileOnce ? 'on' : 'off'
             )
         );
 
