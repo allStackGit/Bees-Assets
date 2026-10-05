@@ -30,6 +30,7 @@ def extract_learner_optimization_args(
         learner_launcher.PPO_PREFETCH_FLAG,
         learner_launcher.PPO_CRITIC_BASELINE_OVERLAP_FLAG,
         learner_launcher.PPO_CUDA_GRAPHS_FLAG,
+        learner_launcher.PPO_PROFILE_FLAG,
     }
     value_flags = {learner_launcher.PPO_STREAM_SHARDS_FLAG}
     cleaned: List[str] = []
