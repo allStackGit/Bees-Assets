@@ -17,6 +17,7 @@ param(
     [switch]$PpoPrefetch,
     [switch]$PpoCriticBaselineOverlap,
     [switch]$PpoCudaGraphs,
+    [switch]$PpoProfile,
     [string[]]$EnvArg,
     [switch]$Once,
     [ValidateRange(1,60)][int]$RefreshSeconds=2,
@@ -65,7 +66,8 @@ $ppoExperimentRequested=(
     $PSBoundParameters.ContainsKey('PpoStreamShards') -or
     $PpoPrefetch -or
     $PpoCriticBaselineOverlap -or
-    $PpoCudaGraphs
+    $PpoCudaGraphs -or
+    $PpoProfile
 )
 if($ppoExperimentRequested -and $Command -ne 'runtime'){
     throw 'PPO learner optimization options are only valid with the runtime command.'
@@ -75,7 +77,8 @@ if($PpoControl -and (
     $PSBoundParameters.ContainsKey('PpoStreamShards') -or
     $PpoPrefetch -or
     $PpoCriticBaselineOverlap -or
-    $PpoCudaGraphs
+    $PpoCudaGraphs -or
+    $PpoProfile
 )){
     throw '-PpoControl cannot be combined with PPO optimization options.'
 }
@@ -134,6 +137,7 @@ if($PSBoundParameters.ContainsKey('PpoStreamShards')){
 if($PpoPrefetch){$arguments+='--ppo-prefetch'}
 if($PpoCriticBaselineOverlap){$arguments+='--ppo-critic-baseline-overlap'}
 if($PpoCudaGraphs){$arguments+='--ppo-cuda-graphs'}
+if($PpoProfile){$arguments+='--ppo-profile'}
 foreach($value in @($EnvArg)){
     if($null -ne $value){$arguments+=@('--env-arg',[string]$value)}
 }
