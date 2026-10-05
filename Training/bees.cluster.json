@@ -33,6 +33,7 @@
     "streamShards": 1,
     "minibatchPrefetch": false,
     "criticBaselineOverlap": false,
-    "cudaGraphs": false
+    "cudaGraphs": false,
+    "profileOnce": false
   }
 }
