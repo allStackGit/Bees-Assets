@@ -83,14 +83,20 @@ function isInterruptedIncompatibleCutover(release, desired) {
     const releaseRun = String(release.run_id || '').trim();
     const previousRun = String(release.previous_run_id || '').trim();
     const releaseKey = String(release.compatibility_key || '').trim().toLowerCase();
+    const previousKey = String(
+        release.previous_compatibility_key || ''
+    ).trim().toLowerCase();
     const activeRun = String(desired.run_id || '').trim();
     const activeKey = String(desired.compatibility_key || '').trim().toLowerCase();
     if (!releaseRun || !previousRun || !releaseKey || !activeRun || !activeKey) {
         return false;
     }
-    return (
-        activeRun === previousRun &&
-        activeRun !== releaseRun
+    if (activeRun !== previousRun) return false;
+    if (activeRun !== releaseRun) return true;
+    return Boolean(
+        previousKey &&
+        activeKey === previousKey &&
+        activeKey !== releaseKey
     );
 }
 
