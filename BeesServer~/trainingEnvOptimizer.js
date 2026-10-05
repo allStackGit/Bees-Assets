@@ -199,6 +199,7 @@ class TrainingEnvOptimizer {
         return {
             trainer_id: trainerId,
             context_key: contextKey,
+            build_id: '',
             desired_envs: capacity.current_envs,
             min_envs: capacity.min_envs,
             max_envs: capacity.max_envs,
@@ -235,6 +236,45 @@ class TrainingEnvOptimizer {
             producer_sps: null,
             producer_efficiency: null,
         };
+    }
+
+    _resetForReleaseChange(
+        previous,
+        contextKey,
+        capacity,
+        now,
+        {
+            buildId = '',
+            runtimeVersionValue = '',
+            reason = 'worker release changed',
+        } = {},
+    ) {
+        const trainerId = previous.trainer_id;
+        this._releaseProbe(trainerId);
+        const state = this._newState(trainerId, contextKey, capacity, now);
+        state.build_id = String(buildId || '');
+        state.runtime_version = String(runtimeVersionValue || '');
+
+        const previousBaseline = finiteInteger(previous.baseline_envs)
+            ? Math.max(
+                capacity.min_envs,
+                Math.min(capacity.max_envs, previous.baseline_envs),
+            )
+            : null;
+        if (previousBaseline !== null) {
+            state.baseline_envs = previousBaseline;
+            state.baseline_sps = null;
+            state.desired_envs = previousBaseline;
+            state.phase =
+                capacity.current_envs === previousBaseline ? 'settling' : 'resizing';
+            state.last_decision =
+                reason + '; restoring previously proven ' + previousBaseline +
+                ' envs before remeasurement';
+        } else {
+            state.last_decision = reason + '; collecting new baseline';
+        }
+        this.states.set(trainerId, state);
+        return state;
     }
 
     _releaseProbe(trainerId) {
@@ -602,6 +642,7 @@ class TrainingEnvOptimizer {
         const lastSessionFailureMessage = sessionFailureMessage(record && record.metrics);
         const resizeFailure = envResizeFailure(record && record.metrics);
         const contextKey = String(context.contextKey || '');
+        const buildId = String(context.buildId || '');
         if (this.activeProbeTrainerId && this.activeProbeTrainerId !== record?.trainer_id) {
             const active = this.states.get(this.activeProbeTrainerId);
             const staleAfter = this.warmupMs + this.measurementMs + this.cooldownMs + 60_000;
@@ -631,21 +672,45 @@ class TrainingEnvOptimizer {
         if (!state || state.context_key !== contextKey || capacityChanged) {
             this._releaseProbe(record.trainer_id);
             state = this._newState(record.trainer_id, contextKey, capacity, timestamp);
+            state.build_id = buildId;
             if (capacityChanged) {
                 state.last_decision = 'worker capacity changed; collecting new baseline';
             }
             this.states.set(record.trainer_id, state);
         }
+
+        if (buildId && state.build_id && buildId !== state.build_id) {
+            state = this._resetForReleaseChange(
+                state,
+                contextKey,
+                capacity,
+                timestamp,
+                {
+                    buildId,
+                    runtimeVersionValue: currentRuntimeVersion,
+                    reason: 'worker build changed',
+                },
+            );
+        } else if (buildId && !state.build_id) {
+            state.build_id = buildId;
+        }
+
         if (
             currentRuntimeVersion &&
             state.runtime_version &&
             currentRuntimeVersion !== state.runtime_version
         ) {
-            this._releaseProbe(record.trainer_id);
-            state = this._newState(record.trainer_id, contextKey, capacity, timestamp);
-            state.runtime_version = currentRuntimeVersion;
-            state.last_decision = 'worker runtime changed; collecting new baseline';
-            this.states.set(record.trainer_id, state);
+            state = this._resetForReleaseChange(
+                state,
+                contextKey,
+                capacity,
+                timestamp,
+                {
+                    buildId: state.build_id || buildId,
+                    runtimeVersionValue: currentRuntimeVersion,
+                    reason: 'worker runtime changed',
+                },
+            );
         } else if (currentRuntimeVersion && !state.runtime_version) {
             state.runtime_version = currentRuntimeVersion;
         }
