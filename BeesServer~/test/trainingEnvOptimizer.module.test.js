@@ -75,7 +75,12 @@ function record(
 function update(optimizer, trainerId, envs, consumed, now, options = {}) {
     return optimizer.update(
         record(trainerId, envs, consumed, options),
-        { now, contextKey: 'run|build|args', enabled: true },
+        {
+            now,
+            contextKey: options.contextKey || 'run|args',
+            buildId: options.buildId || '',
+            enabled: true,
+        },
     );
 }
 
@@ -1131,7 +1136,7 @@ test('failed rollback to prior baseline reconciles to live capacity and releases
     assert.match(state.decision, /accepting live 8 envs and collecting a fresh baseline/);
 });
 
-test('runtime cutover clears old optimizer instability and baseline state', () => {
+test('runtime cutover clears stale measurements but retains proven safe capacity', () => {
     const optimizer = new TrainingEnvOptimizer({
         warmupMs: 1000,
         measurementMs: 1000,
@@ -1169,10 +1174,78 @@ test('runtime cutover clears old optimizer instability and baseline state', () =
     );
 
     assert.equal(state.phase, 'settling');
-    assert.equal(state.baseline_envs, null);
+    assert.equal(state.baseline_envs, 4);
+    assert.equal(state.baseline_sps, null);
     assert.equal(state.desired_envs, 4);
     assert.equal(state.stability_hold_until_ms, 0);
     assert.match(state.decision, /worker runtime changed/);
+    assert.match(state.decision, /restoring previously proven 4 envs/);
+});
+
+test('compatible build cutover restores prior accepted capacity before remeasurement', () => {
+    const optimizer = new TrainingEnvOptimizer({
+        warmupMs: 1000,
+        measurementMs: 1000,
+    });
+    const oldRuntime = 'a'.repeat(64);
+    const newRuntime = 'b'.repeat(64);
+
+    update(
+        optimizer,
+        'remote-a',
+        16,
+        1000,
+        0,
+        {
+            max: 19,
+            buildId: 'old-build',
+            runtimeVersionValue: oldRuntime,
+        },
+    );
+    const internal = optimizer.states.get('remote-a');
+    Object.assign(internal, {
+        baseline_envs: 16,
+        baseline_sps: 90,
+        desired_envs: 16,
+        phase: 'stable',
+    });
+
+    let state = update(
+        optimizer,
+        'remote-a',
+        4,
+        1010,
+        1000,
+        {
+            max: 19,
+            buildId: 'new-build',
+            runtimeVersionValue: newRuntime,
+        },
+    );
+
+    assert.equal(state.phase, 'resizing');
+    assert.equal(state.baseline_envs, 16);
+    assert.equal(state.baseline_sps, null);
+    assert.equal(state.desired_envs, 16);
+    assert.equal(state.stability_hold_until_ms, 0);
+    assert.match(state.decision, /worker build changed/);
+    assert.match(state.decision, /restoring previously proven 16 envs/);
+
+    state = update(
+        optimizer,
+        'remote-a',
+        16,
+        1100,
+        1100,
+        {
+            max: 19,
+            buildId: 'new-build',
+            runtimeVersionValue: newRuntime,
+        },
+    );
+    assert.equal(state.phase, 'settling');
+    assert.equal(state.desired_envs, 16);
+    assert.equal(state.baseline_sps, null);
 });
 
 test('recent WAN failure aborts a probe with the correct reason', () => {
