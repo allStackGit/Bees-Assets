@@ -4106,6 +4106,11 @@ def _poca_full_cuda_graph_update(
     if not opts.cuda_graphs:
         return None
     optimizer._bees_full_cuda_graph_managed = True
+    existing_state = getattr(
+        optimizer,
+        "_bees_full_cuda_graph_state",
+        None,
+    )
 
     from mlagents.torch_utils import torch
     from mlagents.trainers.torch_entities.utils import ModelUtils
@@ -4123,6 +4128,11 @@ def _poca_full_cuda_graph_update(
         or current_obs[0].device.type != "cuda"
         or not _poca_cuda_graph_minibatch_eligible(cached)
     ):
+        if (
+            existing_state is not None
+            and existing_state.get("graph") is not None
+        ):
+            _poca_release_full_cuda_graph(optimizer)
         _POCA_TIMING_STATE.graph_skips = int(
             getattr(_POCA_TIMING_STATE, "graph_skips", 0)
         ) + 1
@@ -4144,6 +4154,11 @@ def _poca_full_cuda_graph_update(
         or dimension_mask.device.type != "cuda"
         or sample_weights.device.type != "cuda"
     ):
+        if (
+            existing_state is not None
+            and existing_state.get("graph") is not None
+        ):
+            _poca_release_full_cuda_graph(optimizer)
         _POCA_TIMING_STATE.graph_skips = int(
             getattr(_POCA_TIMING_STATE, "graph_skips", 0)
         ) + 1
@@ -4168,6 +4183,11 @@ def _poca_full_cuda_graph_update(
         or group_plan is None
         or group_signature is None
     ):
+        if (
+            existing_state is not None
+            and existing_state.get("graph") is not None
+        ):
+            _poca_release_full_cuda_graph(optimizer)
         _POCA_TIMING_STATE.graph_skips = int(
             getattr(_POCA_TIMING_STATE, "graph_skips", 0)
         ) + 1
@@ -4196,6 +4216,7 @@ def _poca_full_cuda_graph_update(
             "signature": None,
             "static": None,
             "outputs": None,
+            "grads": None,
         }
         optimizer._bees_full_cuda_graph_state = state
 
@@ -4385,6 +4406,10 @@ def _poca_full_cuda_graph_update(
         policy_loss,
         value_loss,
         baseline_loss,
+    )
+    state["grads"] = tuple(
+        parameter.grad
+        for parameter in trainable
     )
     _POCA_TIMING_STATE.graph_captures = int(
         getattr(_POCA_TIMING_STATE, "graph_captures", 0)
@@ -6264,15 +6289,31 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             "_bees_cuda_graph_state",
             None,
         )
+        full_graph_state = getattr(
+            self.optimizer,
+            "_bees_full_cuda_graph_state",
+            None,
+        )
         retain_graph_grads = bool(
-            graph_eligible
-            and not getattr(
-                self.optimizer,
-                "_bees_full_cuda_graph_managed",
-                False,
+            (
+                getattr(
+                    self.optimizer,
+                    "_bees_full_cuda_graph_managed",
+                    False,
+                )
+                and full_graph_state is not None
+                and full_graph_state.get("graph") is not None
             )
-            and graph_state is not None
-            and graph_state.get("stable_grads", False)
+            or (
+                graph_eligible
+                and not getattr(
+                    self.optimizer,
+                    "_bees_full_cuda_graph_managed",
+                    False,
+                )
+                and graph_state is not None
+                and graph_state.get("stable_grads", False)
+            )
         )
         started = time.perf_counter()
         self.optimizer.zero_grad(
