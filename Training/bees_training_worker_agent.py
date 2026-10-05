@@ -405,72 +405,6 @@ class EpisodeLogMetrics:
                 # Oversized or malformed fields in a damaged log must not terminate the supervisor.
                 continue
 
-class BackgroundEpisodeLogMetrics:
-    """Keep filesystem-heavy episode statistics out of the control heartbeat path."""
-
-    def __init__(
-        self,
-        root: Path,
-        window: int = 100,
-        *,
-        minimum_refresh_seconds: float = 10.0,
-    ) -> None:
-        self._metrics = EpisodeLogMetrics(root, window)
-        self._minimum_refresh_seconds = max(1.0, float(minimum_refresh_seconds))
-        self._lock = threading.Lock()
-        self._thread: Optional[threading.Thread] = None
-        self._run_id = ""
-        self._snapshot: dict[str, object] = {"window_episodes": 0}
-        self._last_completed_monotonic = 0.0
-
-    def _refresh(self, run_id: str) -> None:
-        snapshot: Optional[dict[str, object]] = None
-        try:
-            snapshot = self._metrics.refresh(run_id)
-        except Exception:
-            # Episode statistics are diagnostic only. A filesystem/parser problem must never
-            # consume the trainer control lease or terminate the background refresh thread.
-            snapshot = None
-        completed = time.monotonic()
-        with self._lock:
-            if snapshot is not None:
-                self._run_id = run_id
-                self._snapshot = dict(snapshot)
-            self._last_completed_monotonic = completed
-
-    def snapshot(self, run_id: str) -> dict[str, object]:
-        run_id = _validate_run_id(run_id)
-        now = time.monotonic()
-        start_thread: Optional[threading.Thread] = None
-        with self._lock:
-            cached = (
-                dict(self._snapshot)
-                if self._run_id == run_id
-                else {"window_episodes": 0}
-            )
-            running = self._thread is not None and self._thread.is_alive()
-            refresh_due = (
-                self._run_id != run_id
-                or now - self._last_completed_monotonic >= self._minimum_refresh_seconds
-            )
-            if not running and refresh_due:
-                start_thread = threading.Thread(
-                    target=self._refresh,
-                    args=(run_id,),
-                    name="bees-episode-metrics",
-                    daemon=True,
-                )
-                self._thread = start_thread
-        if start_thread is not None:
-            try:
-                start_thread.start()
-            except RuntimeError:
-                with self._lock:
-                    if self._thread is start_thread:
-                        self._thread = None
-        return cached
-
-
     def snapshot(self) -> dict[str, object]:
         episodes = list(self._episodes)
         count = len(episodes)
@@ -546,6 +480,72 @@ class BackgroundEpisodeLogMetrics:
                 "human_aim_samples", "human_turret_aligned_pct"
             ),
         }
+
+
+class BackgroundEpisodeLogMetrics:
+    """Keep filesystem-heavy episode statistics out of the control heartbeat path."""
+
+    def __init__(
+        self,
+        root: Path,
+        window: int = 100,
+        *,
+        minimum_refresh_seconds: float = 10.0,
+    ) -> None:
+        self._metrics = EpisodeLogMetrics(root, window)
+        self._minimum_refresh_seconds = max(1.0, float(minimum_refresh_seconds))
+        self._lock = threading.Lock()
+        self._thread: Optional[threading.Thread] = None
+        self._run_id = ""
+        self._snapshot: dict[str, object] = {"window_episodes": 0}
+        self._last_completed_monotonic = 0.0
+
+    def _refresh(self, run_id: str) -> None:
+        snapshot: Optional[dict[str, object]] = None
+        try:
+            snapshot = self._metrics.refresh(run_id)
+        except Exception:
+            # Episode statistics are diagnostic only. A filesystem/parser problem must never
+            # consume the trainer control lease or terminate the background refresh thread.
+            snapshot = None
+        completed = time.monotonic()
+        with self._lock:
+            if snapshot is not None:
+                self._run_id = run_id
+                self._snapshot = dict(snapshot)
+            self._last_completed_monotonic = completed
+
+    def snapshot(self, run_id: str) -> dict[str, object]:
+        run_id = _validate_run_id(run_id)
+        now = time.monotonic()
+        start_thread: Optional[threading.Thread] = None
+        with self._lock:
+            cached = (
+                dict(self._snapshot)
+                if self._run_id == run_id
+                else {"window_episodes": 0}
+            )
+            running = self._thread is not None and self._thread.is_alive()
+            refresh_due = (
+                self._run_id != run_id
+                or now - self._last_completed_monotonic >= self._minimum_refresh_seconds
+            )
+            if not running and refresh_due:
+                start_thread = threading.Thread(
+                    target=self._refresh,
+                    args=(run_id,),
+                    name="bees-episode-metrics",
+                    daemon=True,
+                )
+                self._thread = start_thread
+        if start_thread is not None:
+            try:
+                start_thread.start()
+            except RuntimeError:
+                with self._lock:
+                    if self._thread is start_thread:
+                        self._thread = None
+        return cached
 
 
 def read_throughput_metrics(
