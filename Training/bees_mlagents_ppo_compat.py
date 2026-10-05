@@ -5926,19 +5926,36 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         )
 
     def weighted_masked_mean(tensor, masks):
+        # ML-Agents 1.1.0 builds permutation dimensions with torch.arange().
+        # Under CUDA graph capture those dimensions become Tensor objects, while
+        # Tensor.permute() requires Python ints. Keep the exact masked-mean
+        # algebra but make the dimension order static Python metadata.
+        from mlagents.torch_utils import torch
+
         sample_weights = getattr(
             _POLICY_DIMENSION_MASK_STATE,
             "sample_weights",
             None,
         )
         if (
-            sample_weights is None
-            or masks is None
-            or sample_weights.shape[0] != masks.shape[0]
+            sample_weights is not None
+            and masks is not None
+            and sample_weights.shape[0] == masks.shape[0]
         ):
-            return original_masked_mean(tensor, masks)
-        effective_masks = masks.to(sample_weights.dtype) * sample_weights
-        return original_masked_mean(tensor, effective_masks)
+            masks = masks.to(sample_weights.dtype) * sample_weights
+
+        masks = masks.to(tensor.device)
+        if tensor.ndim == 0:
+            weighted = tensor * masks
+            denominator = (torch.ones_like(tensor) * masks).float().sum()
+        else:
+            reverse_dims = tuple(range(tensor.ndim - 1, -1, -1))
+            permuted = tensor.permute(*reverse_dims)
+            weighted = permuted * masks
+            denominator = (
+                torch.ones_like(permuted) * masks
+            ).float().sum()
+        return weighted.sum() / torch.clamp(denominator, min=1.0)
 
     def masked_policy_loss(
         advantages,
