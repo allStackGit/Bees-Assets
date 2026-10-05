@@ -23,7 +23,8 @@ Optimize for a working, understandable system rather than documentation volume, 
 
 - Reproduce reported failures before changing code when practical, and trace the causal chain before patching symptoms.
 - Exercise the changed executable path whenever practical. Static/source-text/contract tests are supporting evidence, not proof that runtime behavior works.
-- If a test cannot be run in the available environment, do not spend substantial effort adding it unless it protects a clear durable contract or known regression.
+- Do not add regression tests for bug fixes or previously observed failures. Do not propose, recommend, request, or leave TODO/comments suggesting regression tests unless the user explicitly asks for them.
+- When validating a bug fix, prefer exercising the changed executable path and existing relevant tests; do not create a new test whose purpose is to prevent recurrence of that specific bug.
 - Prefer simplifying states, components, ownership, and recovery paths over adding another watchdog, retry loop, flag, compatibility layer, or special case.
 - When repeated local patches expose new failures, stop patching locally and reassess the design/root cause.
 - Make coherent changes small enough to reason about and validate, without adding artificial ceremony or unnecessary delay.
@@ -41,7 +42,7 @@ For distributed training, networking, process lifecycle, checkpointing, rollout,
 - Correlate all symptoms from the same run before treating them as independent bugs. Classify each as root cause, contributing cause, downstream symptom, or still unresolved.
 - When a diagnostic bundle is provided, inspect the run as a whole for correlated failures before changing code; do not stop at the first obvious error.
 - Prefer removing faulty complexity or fixing ownership/state/lifecycle design over adding retries, watchdogs, guards, exception swallowing, compatibility branches, or recovery logic around symptoms.
-- Do not add brittle source-coupled regression tests merely to mirror implementation. Add automated protection only when it exercises a durable behavior/contract and is practical in the available environment.
+- Do not add regression tests, including source-coupled tests that mirror implementation. Do not suggest adding them unless the user explicitly requests regression tests. Existing automated checks may still be run when relevant.
 - If the root cause is not established, continue investigating and report the unresolved hypotheses rather than presenting a speculative patch as the solution.
 - Before handing a runtime/infrastructure change back for operator validation, state: what failed; the evidence for the diagnosed cause; what changed; what material behavior remains unverified because the live Unity/multi-machine environment is unavailable; and the specific next-run observation that would confirm or falsify the diagnosis.
 
@@ -50,7 +51,7 @@ For distributed training, networking, process lifecycle, checkpointing, rollout,
 - Before behavior changes, understand the relevant contracts, dependencies, ownership/lifecycle, and any persistence/network/UI/physics/performance implications that actually apply.
 - Once the change is sufficiently understood, make it promptly. For multi-part work, preserve coherent completed changes rather than delaying everything for unrelated investigation.
 - After each coherent edit, inspect the touched code/diff and run the strongest practical focused validation. Broaden only when risk or evidence warrants it.
-- Never weaken, delete, or skip a valid test merely to pass. Add focused regression protection when it is useful and executable.
+- Never weaken, delete, or skip a valid test merely to pass. Do not add focused regression protection for bug fixes unless the user explicitly requests it.
 - Prefer executable behavior/contract tests over source-text assertions. Do not add tests that depend on exact implementation strings, function ordering, formatting, comments, or incidental call shapes unless that text itself is the public contract. Remove or replace brittle representation tests when they create maintenance noise without detecting product regressions.
 - Never claim old logs/results validate changed source. Do not use GitHub Actions for development, testing, patching, builds, qualification, or verification.
 - If important validation cannot be executed, keep safe completed work, run what is available, and state exactly what remains unverified.
