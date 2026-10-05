@@ -4245,7 +4245,11 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
     def _stage_poca_trajectories(trainer):
         from mlagents.trainers.agent_processor import AgentManagerQueue
 
-        _ensure_poca_pipeline_state(trainer)
+        if getattr(trainer, "_bees_poca_staged_trajectories", None) is None:
+            from collections import deque
+
+            trainer._bees_poca_staged_trajectories = deque()
+            trainer._bees_poca_staged_experiences = 0
         staged = trainer._bees_poca_staged_trajectories
         staged_experiences = int(trainer._bees_poca_staged_experiences)
         staging_limit = max(
@@ -4419,8 +4423,15 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
 
         from mlagents_envs.timers import hierarchical_timer
 
-        _ensure_poca_pipeline_state(self)
-        _finish_poca_async_update(self)
+        if self.threaded:
+            _ensure_poca_pipeline_state(self)
+            _finish_poca_async_update(self)
+        else:
+            if getattr(self, "_bees_poca_staged_trajectories", None) is None:
+                from collections import deque
+
+                self._bees_poca_staged_trajectories = deque()
+                self._bees_poca_staged_experiences = 0
 
         queried = False
         with hierarchical_timer("process_trajectory"):
@@ -4437,7 +4448,15 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             _drain_prepared_poca_trajectories(self)
 
         if self.should_still_train and self._is_ready_update():
-            _start_poca_async_update(self)
+            if self.threaded:
+                _start_poca_async_update(self)
+            else:
+                with hierarchical_timer("_update_policy"):
+                    if self._update_policy():
+                        for policy_queue in self.policy_queues:
+                            policy_queue.put(
+                                self.get_policy(policy_queue.behavior_id)
+                            )
         elif self.threaded and not queried:
             time.sleep(0.0001)
 
