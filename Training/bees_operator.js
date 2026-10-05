@@ -92,6 +92,7 @@ function parseArgs(argv = process.argv.slice(2)) {
         ppoPrefetch: false,
         ppoCriticBaselineOverlap: false,
         ppoCudaGraphs: false,
+        ppoProfile: false,
         explicitLearnerOptimizations: false,
         envArgs: [],
         once: false,
@@ -201,6 +202,9 @@ function parseArgs(argv = process.argv.slice(2)) {
         } else if (arg === '--ppo-cuda-graphs') {
             options.ppoCudaGraphs = true;
             options.explicitLearnerOptimizations = true;
+        } else if (arg === '--ppo-profile') {
+            options.ppoProfile = true;
+            options.explicitLearnerOptimizations = true;
         } else if (arg === '--env-arg') {
             options.envArgs.push(String(requireValue(argv, index, arg)));
             index++;
@@ -282,7 +286,8 @@ function parseArgs(argv = process.argv.slice(2)) {
             options.ppoStreamShards !== 1 ||
             options.ppoPrefetch ||
             options.ppoCriticBaselineOverlap ||
-            options.ppoCudaGraphs
+            options.ppoCudaGraphs ||
+            options.ppoProfile
         )
     ) {
         throw new Error('--ppo-control cannot be combined with PPO optimization flags.');
