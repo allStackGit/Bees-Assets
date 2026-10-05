@@ -1441,39 +1441,68 @@ class BeesStructuredActionModel(_OriginalActionModel):
             bee_mask,
         )
 
-        weapon_means = []
-        weapon_stds = []
-        discrete = []
-        mask_offset = 0
-        for slot in range(BEES_WEAPON_SLOTS):
-            weapon_input = torch.cat(
-                [global_encoding, weapon_embeddings[:, slot, :]],
-                dim=1,
-            )
-            bee_aim = self.bee_weapon_aim(weapon_input)
-            human_aim = self.human_weapon_aim(weapon_input)
-            weapon_means.append(
-                self._mix(bee_aim.mean, human_aim.mean, bee_mask)
-            )
-            weapon_stds.append(
-                self._mix(bee_aim.std, human_aim.std, bee_mask)
-            )
+        # All weapon slots share the same aim/fire modules. Evaluate the five slots
+        # as one larger matrix multiply instead of launching the same small CUDA
+        # kernels five times per faction.
+        weapon_input = torch.cat(
+            [
+                global_encoding.unsqueeze(1).expand(
+                    -1,
+                    BEES_WEAPON_SLOTS,
+                    -1,
+                ),
+                weapon_embeddings,
+            ],
+            dim=2,
+        ).reshape(
+            -1,
+            FACTION_TRUNK_SIZE + WEAPON_SLOT_EMBED,
+        )
+        weapon_bee_mask = bee_mask.unsqueeze(1).expand(
+            -1,
+            BEES_WEAPON_SLOTS,
+            -1,
+        ).reshape(-1, 1)
 
-            bee_fire = self.bee_weapon_fire(weapon_input)
-            human_fire = self.human_weapon_fire(weapon_input)
-            fire_logits = self._mix(
-                bee_fire,
-                human_fire,
-                bee_mask,
-            )
-            branch_size = BEES_DISCRETE_BRANCHES[slot]
-            allow = masks[:, mask_offset : mask_offset + branch_size]
-            mask_offset += branch_size
-            discrete.append(
-                CategoricalDistInstance(
-                    self._masked_logits(fire_logits, allow)
-                )
-            )
+        bee_aim = self.bee_weapon_aim(weapon_input)
+        human_aim = self.human_weapon_aim(weapon_input)
+        weapon_means = self._mix(
+            bee_aim.mean,
+            human_aim.mean,
+            weapon_bee_mask,
+        ).reshape(inputs.shape[0], -1)
+        weapon_stds = self._mix(
+            bee_aim.std,
+            human_aim.std,
+            weapon_bee_mask,
+        ).reshape(inputs.shape[0], -1)
+
+        bee_fire = self.bee_weapon_fire(weapon_input)
+        human_fire = self.human_weapon_fire(weapon_input)
+        fire_logits = self._mix(
+            bee_fire,
+            human_fire,
+            weapon_bee_mask,
+        ).reshape(
+            inputs.shape[0],
+            BEES_WEAPON_SLOTS,
+            BEES_DISCRETE_BRANCHES[0],
+        )
+        fire_mask_width = sum(BEES_DISCRETE_BRANCHES[:BEES_WEAPON_SLOTS])
+        fire_masks = masks[:, :fire_mask_width].reshape(
+            inputs.shape[0],
+            BEES_WEAPON_SLOTS,
+            BEES_DISCRETE_BRANCHES[0],
+        )
+        masked_fire_logits = self._masked_logits(
+            fire_logits,
+            fire_masks,
+        )
+        discrete = [
+            CategoricalDistInstance(masked_fire_logits[:, slot, :])
+            for slot in range(BEES_WEAPON_SLOTS)
+        ]
+        mask_offset = fire_mask_width
 
         bee_communication = self.bee_communication(global_encoding)
         human_communication = self.human_communication(global_encoding)
@@ -1490,11 +1519,11 @@ class BeesStructuredActionModel(_OriginalActionModel):
 
         continuous = GaussianDistInstance(
             torch.cat(
-                [movement_mean, *weapon_means, communication_mean],
+                [movement_mean, weapon_means, communication_mean],
                 dim=1,
             ),
             torch.cat(
-                [movement_std, *weapon_stds, communication_std],
+                [movement_std, weapon_stds, communication_std],
                 dim=1,
             ),
         )
