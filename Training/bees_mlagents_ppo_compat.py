@@ -35,10 +35,11 @@ ACTION_ENTROPY_EPSILON = 1e-7
 POCA_ENCODER_CHUNK_ROWS = 2048
 POCA_TRAJECTORY_BATCH_MAX_EXPERIENCES = 2048
 POCA_TRAJECTORY_TIMING_REPORT_SECONDS = 30.0
-POCA_PACKED_GROUP_CACHE_MAX_BYTES = 4 * 1024 * 1024 * 1024
+POCA_PACKED_GROUP_CACHE_MAX_BYTES = 8 * 1024 * 1024 * 1024
+POCA_PACKED_GROUP_CACHE_MIN_RAM_RESERVE_BYTES = 6 * 1024 * 1024 * 1024
 POCA_GPU_CACHE_MIN_RESERVE_BYTES = 2 * 1024 * 1024 * 1024
 POCA_GPU_CACHE_RESERVE_FRACTION = 0.30
-POCA_CPU_PREPARE_MAX_WORKERS = 6
+POCA_CPU_PREPARE_RESERVED_LOGICAL_CPUS = 2
 POCA_DEDUP_MIN_SAVED_ROWS = 8
 POCA_HARDWARE_SAMPLE_SECONDS = 2.0
 POCA_VARIABILITY_HISTORY_LIMIT = 64
@@ -116,6 +117,7 @@ _BC_MASK_STATE = threading.local()
 _POCA_TIMING_STATE = threading.local()
 _POCA_GROUP_BATCH_STATE = threading.local()
 _POCA_UPDATE_CACHE_STATE = threading.local()
+_POCA_ASYNC_UPDATE_STATE = threading.local()
 _POCA_UPDATE_BUSY_LOCK = threading.Lock()
 _POCA_UPDATE_BUSY_SECONDS_TOTAL = 0.0
 _POCA_TRAJECTORY_TIMING_LOCK = threading.Lock()
@@ -1849,15 +1851,14 @@ def _complete_poca_trajectory(
         trainer.collected_group_rewards.pop(agent_id)
 
 
-def _process_poca_trajectory_batch(trainer, trajectories):
-    """Process multiple short feed-forward trajectories with shared critic passes."""
+def _process_prepared_poca_trajectory_batch(trainer, trajectories, buffers):
+    """Finish a CPU-materialized trajectory batch once the learner model is available."""
 
     import numpy as np
     from mlagents.trainers.trainer.rl_trainer import RLTrainer
 
     batch_started = time.perf_counter()
     prepare_started = batch_started
-    buffers = [trajectory.to_agentbuffer() for trajectory in trajectories]
     merged = _merge_agent_buffers(buffers)
     if trainer.is_training:
         trainer.policy.actor.update_normalization(merged)
@@ -1928,6 +1929,24 @@ def _process_poca_trajectory_batch(trainer, trajectories):
         complete_seconds=complete_seconds,
         total_seconds=time.perf_counter() - batch_started,
     )
+
+
+def _process_poca_trajectory_batch(trainer, trajectories):
+    """Process multiple short feed-forward trajectories with shared critic passes."""
+
+    prepare_started = time.perf_counter()
+    buffers = [trajectory.to_agentbuffer() for trajectory in trajectories]
+    materialize_seconds = time.perf_counter() - prepare_started
+    batch_started = time.perf_counter()
+    _process_prepared_poca_trajectory_batch(trainer, trajectories, buffers)
+    # The prepared helper reports model-side preparation separately. Preserve visibility
+    # into raw trajectory materialization without putting it back on the critical GPU path.
+    if materialize_seconds >= 0.05:
+        print(
+            "[Bees PPO pipeline] trajectory materialization "
+            f"trajectories={len(trajectories)} seconds={materialize_seconds:.6f}",
+            flush=True,
+        )
 
 
 def _poca_cpu_tensor(values, dtype):
@@ -2018,7 +2037,19 @@ def _build_poca_group_obs_cache(policy, buffer, groupmate_counts):
     for spec in policy.behavior_spec.observation_specs:
         elements = int(np.prod(spec.shape, dtype=np.int64))
         estimated_bytes += actual_members * elements * np.dtype(np.float32).itemsize
-    if estimated_bytes > POCA_PACKED_GROUP_CACHE_MAX_BYTES:
+    packed_limit = POCA_PACKED_GROUP_CACHE_MAX_BYTES
+    try:
+        import psutil
+
+        memory = psutil.virtual_memory()
+        ram_headroom = max(
+            0,
+            int(memory.available) - POCA_PACKED_GROUP_CACHE_MIN_RAM_RESERVE_BYTES,
+        )
+        packed_limit = min(packed_limit, ram_headroom)
+    except (ImportError, AttributeError, OSError):
+        pass
+    if estimated_bytes > packed_limit:
         return _PocaRaggedGroupObs(fields)
 
     packed_fields = []
@@ -3471,9 +3502,9 @@ class _PocaCpuMinibatchPreparer:
             )
         )
         logical_cpus = max(1, int(os.cpu_count() or 1))
-        self.workers = min(
-            POCA_CPU_PREPARE_MAX_WORKERS,
-            max(1, logical_cpus - 2),
+        self.workers = max(
+            1,
+            logical_cpus - POCA_CPU_PREPARE_RESERVED_LOGICAL_CPUS,
         )
         self.enabled = bool(
             cache is not None
@@ -4188,8 +4219,192 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             expert_actions,
         )
 
+    def _poca_async_update_buffer():
+        return getattr(_POCA_ASYNC_UPDATE_STATE, "buffer", None)
+
+    def _run_poca_async_update(trainer, frozen_buffer):
+        _POCA_ASYNC_UPDATE_STATE.buffer = frozen_buffer
+        try:
+            return trainer._update_policy()
+        finally:
+            _POCA_ASYNC_UPDATE_STATE.buffer = None
+
+    def _ensure_poca_pipeline_state(trainer):
+        from collections import deque
+        from concurrent.futures import ThreadPoolExecutor
+
+        if getattr(trainer, "_bees_poca_update_executor", None) is None:
+            trainer._bees_poca_update_executor = ThreadPoolExecutor(
+                max_workers=1,
+                thread_name_prefix="bees-poca-update",
+            )
+            trainer._bees_poca_update_future = None
+            trainer._bees_poca_staged_trajectories = deque()
+            trainer._bees_poca_staged_experiences = 0
+
+    def _stage_poca_trajectories(trainer):
+        from mlagents.trainers.agent_processor import AgentManagerQueue
+
+        _ensure_poca_pipeline_state(trainer)
+        staged = trainer._bees_poca_staged_trajectories
+        staged_experiences = int(trainer._bees_poca_staged_experiences)
+        staging_limit = max(
+            int(trainer.hyperparameters.buffer_size) * 2,
+            int(trainer.hyperparameters.buffer_size)
+            + POCA_TRAJECTORY_BATCH_MAX_EXPERIENCES,
+        )
+        queried = False
+        for trajectory_queue in trainer.trajectory_queues:
+            queue_size = trajectory_queue.qsize()
+            for _ in range(queue_size):
+                if staged_experiences >= staging_limit:
+                    break
+                try:
+                    trajectory = trajectory_queue.get_nowait()
+                except AgentManagerQueue.Empty:
+                    break
+                queried = True
+                buffer = trajectory.to_agentbuffer()
+                staged.append((trajectory, buffer))
+                staged_experiences += len(trajectory.steps)
+        trainer._bees_poca_staged_experiences = staged_experiences
+        return queried
+
+    def _drain_prepared_poca_trajectories(trainer):
+        staged = trainer._bees_poca_staged_trajectories
+        pending = []
+        pending_experiences = 0
+
+        def next_bookkeeping_boundary():
+            next_summary = trainer._next_summary_step
+            if next_summary == 0:
+                next_summary = trainer._get_next_interval_step(
+                    trainer.summary_freq
+                )
+            next_save = trainer._next_save_step
+            if next_save == 0:
+                next_save = trainer._get_next_interval_step(
+                    trainer.trainer_settings.checkpoint_interval
+                )
+            candidates = [
+                step
+                for step in (next_summary, next_save)
+                if step > trainer.get_step
+            ]
+            return min(candidates) if candidates else None
+
+        def remove_staged():
+            trajectory, buffer = staged.popleft()
+            trainer._bees_poca_staged_experiences = max(
+                0,
+                int(trainer._bees_poca_staged_experiences)
+                - len(trajectory.steps),
+            )
+            return trajectory, buffer
+
+        def flush_pending():
+            nonlocal pending
+            nonlocal pending_experiences
+            if not pending:
+                return
+            _process_prepared_poca_trajectory_batch(
+                trainer,
+                [record[0] for record in pending],
+                [record[1] for record in pending],
+            )
+            pending = []
+            pending_experiences = 0
+
+        while staged and not trainer._is_ready_update():
+            trajectory, buffer = staged[0]
+            trajectory_experiences = len(trajectory.steps)
+            boundary = next_bookkeeping_boundary()
+
+            if (
+                pending
+                and boundary is not None
+                and trainer.get_step
+                + pending_experiences
+                + trajectory_experiences
+                >= boundary
+            ):
+                flush_pending()
+                continue
+
+            trajectory, buffer = remove_staged()
+            if (
+                not pending
+                and boundary is not None
+                and trainer.get_step != 0
+                and trainer.get_step + trajectory_experiences >= boundary
+            ):
+                original_poca_process_trajectory(trainer, trajectory)
+                continue
+
+            if not trajectory.steps:
+                flush_pending()
+                original_poca_process_trajectory(trainer, trajectory)
+                continue
+
+            if (
+                pending
+                and pending_experiences + trajectory_experiences
+                > POCA_TRAJECTORY_BATCH_MAX_EXPERIENCES
+            ):
+                flush_pending()
+
+            pending.append((trajectory, buffer))
+            pending_experiences += trajectory_experiences
+
+        flush_pending()
+
+    def _finish_poca_async_update(trainer):
+        future = getattr(trainer, "_bees_poca_update_future", None)
+        if future is None or not future.done():
+            return False
+        trainer._bees_poca_update_future = None
+        updated = future.result()
+        if updated:
+            for policy_queue in trainer.policy_queues:
+                policy_queue.put(
+                    trainer.get_policy(policy_queue.behavior_id)
+                )
+        print(
+            "[Bees PPO pipeline] async update complete "
+            f"staged_experiences={int(trainer._bees_poca_staged_experiences)}",
+            flush=True,
+        )
+        return True
+
+    def _start_poca_async_update(trainer):
+        from mlagents.trainers.buffer import AgentBuffer
+
+        _ensure_poca_pipeline_state(trainer)
+        if trainer._bees_poca_update_future is not None:
+            return False
+        frozen_buffer = trainer.update_buffer
+        frozen_experiences = int(frozen_buffer.num_experiences)
+        trainer.update_buffer = AgentBuffer()
+        # Stock POCA clears this at update start. No trajectory completion occurs while
+        # the async optimizer owns the model, so clearing here preserves that boundary.
+        trainer.cumulative_returns_since_policy_update.clear()
+        trainer._bees_poca_update_future = (
+            trainer._bees_poca_update_executor.submit(
+                _run_poca_async_update,
+                trainer,
+                frozen_buffer,
+            )
+        )
+        print(
+            "[Bees PPO pipeline] async update started "
+            f"buffer={frozen_experiences} "
+            f"staged_experiences={int(trainer._bees_poca_staged_experiences)}",
+            flush=True,
+        )
+        return True
+
     def batched_poca_advance(self):
-        """Drain queued short trajectories into shared feed-forward POCA critic passes."""
+        """Pipeline WAN trajectory CPU staging with a frozen-buffer PPO update."""
 
         if self.policy is None or self.policy.use_recurrent:
             return original_poca_advance(self)
@@ -4203,103 +4418,29 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             return original_poca_advance(self)
 
         from mlagents_envs.timers import hierarchical_timer
-        from mlagents.trainers.agent_processor import AgentManagerQueue
 
-        pending = []
-        pending_experiences = 0
+        _ensure_poca_pipeline_state(self)
+        _finish_poca_async_update(self)
+
         queried = False
-
-        def flush_pending():
-            nonlocal pending
-            nonlocal pending_experiences
-            if not pending:
-                return
-            if len(pending) == 1:
-                original_poca_process_trajectory(self, pending[0])
-            else:
-                _process_poca_trajectory_batch(self, pending)
-            pending = []
-            pending_experiences = 0
-
-        def next_bookkeeping_boundary():
-            # Keep batches away from ML-Agents summary/checkpoint boundaries.
-            # Batched value inference updates the running normalizers once for
-            # the batch; a boundary trajectory therefore stays on the stock
-            # per-trajectory path so a checkpoint cannot observe normalization
-            # statistics from future experiences.
-            next_summary = self._next_summary_step
-            if next_summary == 0:
-                next_summary = self._get_next_interval_step(
-                    self.summary_freq
-                )
-            next_save = self._next_save_step
-            if next_save == 0:
-                next_save = self._get_next_interval_step(
-                    self.trainer_settings.checkpoint_interval
-                )
-            candidates = [
-                step
-                for step in (next_summary, next_save)
-                if step > self.get_step
-            ]
-            return min(candidates) if candidates else None
-
         with hierarchical_timer("process_trajectory"):
-            for trajectory_queue in self.trajectory_queues:
-                queue_size = trajectory_queue.qsize()
-                for _ in range(queue_size):
-                    try:
-                        trajectory = trajectory_queue.get_nowait()
-                    except AgentManagerQueue.Empty:
-                        break
-                    queried = True
-                    trajectory_experiences = len(trajectory.steps)
+            queried = _stage_poca_trajectories(self)
 
-                    boundary = next_bookkeeping_boundary()
-                    if (
-                        pending
-                        and boundary is not None
-                        and self.get_step
-                        + pending_experiences
-                        + trajectory_experiences
-                        >= boundary
-                    ):
-                        flush_pending()
-                        boundary = next_bookkeeping_boundary()
+            # The optimizer owns the policy/critic while it updates a frozen buffer.
+            # Keep doing CPU-only trajectory materialization, but do not mutate
+            # normalization, stats, checkpoints, or model state until it finishes.
+            if self._bees_poca_update_future is not None:
+                if self.threaded and not queried:
+                    time.sleep(0.0001)
+                return
 
-                    if (
-                        not pending
-                        and boundary is not None
-                        and self.get_step != 0
-                        and self.get_step + trajectory_experiences >= boundary
-                    ):
-                        original_poca_process_trajectory(self, trajectory)
-                        continue
-
-                    if (
-                        pending
-                        and pending_experiences + trajectory_experiences
-                        > POCA_TRAJECTORY_BATCH_MAX_EXPERIENCES
-                    ):
-                        flush_pending()
-
-                    if not trajectory.steps:
-                        flush_pending()
-                        original_poca_process_trajectory(self, trajectory)
-                        continue
-
-                    pending.append(trajectory)
-                    pending_experiences += trajectory_experiences
-
-            flush_pending()
-            if self.threaded and not queried:
-                time.sleep(0.0001)
+            _drain_prepared_poca_trajectories(self)
 
         if self.should_still_train and self._is_ready_update():
-            with hierarchical_timer("_update_policy"):
-                if self._update_policy():
-                    for queue in self.policy_queues:
-                        queue.put(self.get_policy(queue.behavior_id))
+            _start_poca_async_update(self)
+        elif self.threaded and not queried:
+            time.sleep(0.0001)
+
 
     def weighted_poca_update_policy(self):
         """ML-Agents 1.1.0 on-policy update with cached feed-forward minibatch tensors."""
@@ -4307,8 +4448,11 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         import numpy as np
         from collections import defaultdict
 
-        buffer_length = self.update_buffer.num_experiences
-        self.cumulative_returns_since_policy_update.clear()
+        async_buffer = _poca_async_update_buffer()
+        update_buffer = self.update_buffer if async_buffer is None else async_buffer
+        buffer_length = update_buffer.num_experiences
+        if async_buffer is None:
+            self.cumulative_returns_since_policy_update.clear()
 
         batch_size = (
             self.hyperparameters.batch_size
@@ -4334,7 +4478,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         _POCA_TIMING_STATE.dedup_unique_rows = 0
 
         normalization_started = time.perf_counter()
-        _normalize_poca_advantages(self.policy, self.update_buffer)
+        _normalize_poca_advantages(self.policy, update_buffer)
         _poca_record_timing(
             "advantage_normalization",
             time.perf_counter() - normalization_started,
@@ -4343,7 +4487,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         materialize_started = time.perf_counter()
         tensor_cache = _build_poca_update_tensor_cache(
             self.optimizer,
-            self.update_buffer,
+            update_buffer,
         )
         materialize_seconds = time.perf_counter() - materialize_started
         _poca_record_timing("materialize", materialize_seconds)
@@ -4486,7 +4630,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             for _epoch_index in range(num_epoch):
                 epoch_order = None
                 if tensor_cache is None:
-                    self.update_buffer.shuffle(
+                    update_buffer.shuffle(
                         sequence_length=self.policy.sequence_length
                     )
                 else:
@@ -4538,7 +4682,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                     completed_minibatches += 1
                     minibatch_started = time.perf_counter()
                     if tensor_cache is None:
-                        minibatch = self.update_buffer.make_mini_batch(
+                        minibatch = update_buffer.make_mini_batch(
                             i,
                             i + batch_size,
                         )
@@ -4610,7 +4754,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                         # The optimizer reads the selected rows from the cache.
                         # Passing the original buffer preserves the public
                         # ML-Agents optimizer signature without copying fields.
-                        minibatch = self.update_buffer
+                        minibatch = update_buffer
 
                     try:
                         update_stats = self.optimizer.update(
@@ -4815,7 +4959,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             update_stats = self.optimizer.bc_module.update()
             for stat, val in update_stats.items():
                 self._stats_reporter.add_stat(stat, val)
-        self._clear_update_buffer()
+        update_buffer.reset_agent()
         return True
 
     def masked_forward(self, inputs, masks):
