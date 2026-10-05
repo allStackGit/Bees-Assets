@@ -608,6 +608,9 @@ async function invokeBuild(options = {}) {
         run_id: String(plan.run_id),
         previous_run_id: plan.previous_run_id ? String(plan.previous_run_id) : null,
         compatibility_key: String(plan.compatibility_key),
+        previous_compatibility_key: plan.previous_compatibility_key
+            ? String(plan.previous_compatibility_key)
+            : null,
         incompatible: Boolean(plan.incompatible),
         preserve_run_override: Boolean(plan.preserve_run_override),
         contract: plan.contract,
