@@ -173,19 +173,27 @@ def _start_poca_one_update_profile():
     activities = [torch.profiler.ProfilerActivity.CPU]
     if torch.cuda.is_available():
         activities.append(torch.profiler.ProfilerActivity.CUDA)
-    profiler = torch.profiler.profile(
-        activities=activities,
-        schedule=torch.profiler.schedule(
-            wait=POCA_PROFILE_WAIT_MINIBATCHES,
-            warmup=POCA_PROFILE_WARMUP_MINIBATCHES,
-            active=POCA_PROFILE_ACTIVE_MINIBATCHES,
-            repeat=1,
-        ),
-        record_shapes=True,
-        profile_memory=False,
-        with_stack=False,
-    )
-    profiler.__enter__()
+    try:
+        profiler = torch.profiler.profile(
+            activities=activities,
+            schedule=torch.profiler.schedule(
+                wait=POCA_PROFILE_WAIT_MINIBATCHES,
+                warmup=POCA_PROFILE_WARMUP_MINIBATCHES,
+                active=POCA_PROFILE_ACTIVE_MINIBATCHES,
+                repeat=1,
+            ),
+            record_shapes=True,
+            profile_memory=False,
+            with_stack=False,
+        )
+        profiler.__enter__()
+    except Exception as exc:
+        print(
+            "[Bees PPO profile] could not start; continuing unprofiled: "
+            f"{type(exc).__name__}: {exc}",
+            flush=True,
+        )
+        return None
     print(
         "[Bees PPO profile] armed one-update sample "
         f"wait={POCA_PROFILE_WAIT_MINIBATCHES} "
@@ -4907,7 +4915,19 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                     for stat_name, value in update_stats.items():
                         batch_update_stats[stat_name].append(value)
                     if operator_profiler is not None:
-                        operator_profiler.step()
+                        try:
+                            operator_profiler.step()
+                        except Exception as exc:
+                            print(
+                                "[Bees PPO profile] sample step failed; "
+                                "continuing unprofiled: "
+                                f"{type(exc).__name__}: {exc}",
+                                flush=True,
+                            )
+                            _finish_poca_one_update_profile(
+                                operator_profiler
+                            )
+                            operator_profiler = None
         finally:
             _finish_poca_one_update_profile(operator_profiler)
             hardware_loop_seconds = time.perf_counter() - hardware_started
