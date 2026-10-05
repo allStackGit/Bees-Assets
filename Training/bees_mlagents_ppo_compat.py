@@ -4369,8 +4369,8 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         future = getattr(trainer, "_bees_poca_update_future", None)
         if future is None or not future.done():
             return False
-        trainer._bees_poca_update_future = None
         updated = future.result()
+        trainer._bees_poca_update_future = None
         if updated:
             for policy_queue in trainer.policy_queues:
                 policy_queue.put(
@@ -4443,7 +4443,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             # The optimizer owns the policy/critic while it updates a frozen buffer.
             # Keep doing CPU-only trajectory materialization, but do not mutate
             # normalization, stats, checkpoints, or model state until it finishes.
-            if self._bees_poca_update_future is not None:
+            if getattr(self, "_bees_poca_update_future", None) is not None:
                 if self.threaded and not queried:
                     time.sleep(0.0001)
                 return
