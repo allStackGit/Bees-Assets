@@ -650,7 +650,8 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
 
     internal static void RecordCommunicationAction(Ship ship, Vector4 communication)
     {
-        if (!TryGetTrackedSide(ship, out RlOneVsOneEpisodeCoordinator coordinator, out int sideIndex))
+        if (!RlOneVsOneTrainingBootstrap.CurrentCommunicationLoggingEnabled ||
+            !TryGetTrackedSide(ship, out RlOneVsOneEpisodeCoordinator coordinator, out int sideIndex))
         {
             return;
         }
