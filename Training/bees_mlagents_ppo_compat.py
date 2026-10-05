@@ -3894,10 +3894,17 @@ def _poca_optimizer_step(optimizer, *, graph_eligible: bool = False) -> None:
             for parameter in group["params"]
         ]
 
-    def active_parameters():
+    def trainable_parameters():
         return [
             parameter
             for parameter in all_parameters()
+            if parameter.requires_grad
+        ]
+
+    def active_parameters():
+        return [
+            parameter
+            for parameter in trainable_parameters()
             if parameter.grad is not None
         ]
 
@@ -3912,8 +3919,9 @@ def _poca_optimizer_step(optimizer, *, graph_eligible: bool = False) -> None:
     def migrate_step_state() -> None:
         _poca_prepare_cuda_capturable_adam(optimizer)
 
+    trainable = trainable_parameters()
     parameters = active_parameters()
-    complete_parameter_set = len(parameters) == len(all_parameters())
+    complete_parameter_set = len(parameters) == len(trainable)
     if not graph_eligible or not complete_parameter_set:
         eager_step_and_invalidate()
         _POCA_TIMING_STATE.graph_skips = int(
