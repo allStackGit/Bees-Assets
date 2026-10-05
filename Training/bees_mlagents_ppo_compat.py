@@ -4284,13 +4284,18 @@ def _poca_full_cuda_graph_update(
         }
 
     # Avoid pinning a large graph allocation when the current workload already
-    # leaves too little physical VRAM headroom. This is memory-based rather than
-    # ship-count based; any 1-64 workload remains valid and falls back to eager PPO.
-    free_bytes, _total_bytes = torch.cuda.mem_get_info(
-        current_obs[0].device.index
-        if current_obs[0].device.index is not None
-        else torch.cuda.current_device()
-    )
+    # leaves too little physical VRAM headroom. Release only unused allocator
+    # blocks first, then ask the CUDA driver for true physical free VRAM. On
+    # Windows/WDDM, reserved virtual memory must not be added to driver-free
+    # memory because it can exceed physical VRAM. Active tensors remain intact.
+    # This is memory-based rather than ship-count based; any 1-64 workload
+    # remains valid and falls back to eager PPO.
+    device_index = current_obs[0].device.index
+    if device_index is None:
+        device_index = torch.cuda.current_device()
+    device_index = int(device_index)
+    torch.cuda.empty_cache()
+    free_bytes, _total_bytes = torch.cuda.mem_get_info(device_index)
     if int(free_bytes) < 768 * 1024 * 1024:
         _POCA_TIMING_STATE.graph_skips = int(
             getattr(_POCA_TIMING_STATE, "graph_skips", 0)
