@@ -43,6 +43,9 @@ POCA_CPU_PREPARE_RESERVED_LOGICAL_CPUS = 2
 POCA_DEDUP_MIN_SAVED_ROWS = 8
 POCA_HARDWARE_SAMPLE_SECONDS = 2.0
 POCA_VARIABILITY_HISTORY_LIMIT = 64
+POCA_PROFILE_WAIT_MINIBATCHES = 2
+POCA_PROFILE_WARMUP_MINIBATCHES = 1
+POCA_PROFILE_ACTIVE_MINIBATCHES = 6
 _POCA_VARIABILITY_HISTORY = []
 
 
@@ -55,6 +58,7 @@ class PocaLearnerOptimizationOptions:
     minibatch_prefetch: bool = False
     critic_baseline_overlap: bool = False
     cuda_graphs: bool = False
+    profile_once: bool = False
 
     @property
     def effective_sync_cleanup(self) -> bool:
@@ -76,6 +80,7 @@ def configure_poca_learner_optimizations(
     minibatch_prefetch: bool = False,
     critic_baseline_overlap: bool = False,
     cuda_graphs: bool = False,
+    profile_once: bool = False,
 ) -> PocaLearnerOptimizationOptions:
     """Configure experimental execution optimizations before trainer construction."""
 
@@ -89,6 +94,7 @@ def configure_poca_learner_optimizations(
         minibatch_prefetch=bool(minibatch_prefetch),
         critic_baseline_overlap=bool(critic_baseline_overlap),
         cuda_graphs=bool(cuda_graphs),
+        profile_once=bool(profile_once),
     )
     return _POCA_OPTIMIZATIONS
 
@@ -120,6 +126,8 @@ _POCA_GROUP_BATCH_STATE = threading.local()
 _POCA_UPDATE_CACHE_STATE = threading.local()
 _POCA_ASYNC_UPDATE_STATE = threading.local()
 _POCA_UPDATE_BUSY_LOCK = threading.Lock()
+_POCA_PROFILE_LOCK = threading.Lock()
+_POCA_PROFILE_CLAIMED = False
 _POCA_UPDATE_BUSY_SECONDS_TOTAL = 0.0
 _POCA_TRAJECTORY_TIMING_LOCK = threading.Lock()
 _POCA_TRAJECTORY_TIMING = {
@@ -147,6 +155,70 @@ def _record_poca_update_busy_seconds(seconds: float) -> None:
     value = max(0.0, float(seconds))
     with _POCA_UPDATE_BUSY_LOCK:
         _POCA_UPDATE_BUSY_SECONDS_TOTAL += value
+
+
+def _start_poca_one_update_profile():
+    """Profile a representative slice of exactly one PPO update."""
+
+    global _POCA_PROFILE_CLAIMED
+    if not _POCA_OPTIMIZATIONS.profile_once:
+        return None
+    with _POCA_PROFILE_LOCK:
+        if _POCA_PROFILE_CLAIMED:
+            return None
+        _POCA_PROFILE_CLAIMED = True
+
+    from mlagents.torch_utils import torch
+
+    activities = [torch.profiler.ProfilerActivity.CPU]
+    if torch.cuda.is_available():
+        activities.append(torch.profiler.ProfilerActivity.CUDA)
+    profiler = torch.profiler.profile(
+        activities=activities,
+        schedule=torch.profiler.schedule(
+            wait=POCA_PROFILE_WAIT_MINIBATCHES,
+            warmup=POCA_PROFILE_WARMUP_MINIBATCHES,
+            active=POCA_PROFILE_ACTIVE_MINIBATCHES,
+            repeat=1,
+        ),
+        record_shapes=True,
+        profile_memory=False,
+        with_stack=False,
+    )
+    profiler.__enter__()
+    print(
+        "[Bees PPO profile] armed one-update sample "
+        f"wait={POCA_PROFILE_WAIT_MINIBATCHES} "
+        f"warmup={POCA_PROFILE_WARMUP_MINIBATCHES} "
+        f"active={POCA_PROFILE_ACTIVE_MINIBATCHES}",
+        flush=True,
+    )
+    return profiler
+
+
+def _finish_poca_one_update_profile(profiler) -> None:
+    if profiler is None:
+        return
+    try:
+        profiler.__exit__(None, None, None)
+        averages = profiler.key_averages(group_by_input_shape=True)
+        print(
+            "[Bees PPO profile] top CUDA operators\n"
+            + averages.table(sort_by="self_cuda_time_total", row_limit=30),
+            flush=True,
+        )
+        print(
+            "[Bees PPO profile] top CPU operators\n"
+            + averages.table(sort_by="self_cpu_time_total", row_limit=20),
+            flush=True,
+        )
+        print("[Bees PPO profile] sample complete", flush=True)
+    except Exception as exc:
+        print(
+            "[Bees PPO profile] reporting failed: "
+            f"{type(exc).__name__}: {exc}",
+            flush=True,
+        )
 
 
 def _is_bees_action_spec(action_spec) -> bool:
@@ -4671,6 +4743,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         completed_minibatches = 0
         _POCA_UPDATE_CACHE_STATE.cache = tensor_cache
         hardware_profiler = _PocaUpdateHardwareProfiler().start()
+        operator_profiler = _start_poca_one_update_profile()
         hardware_started = time.perf_counter()
         hardware_summary = {}
         try:
@@ -4833,7 +4906,10 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                     )
                     for stat_name, value in update_stats.items():
                         batch_update_stats[stat_name].append(value)
+                    if operator_profiler is not None:
+                        operator_profiler.step()
         finally:
+            _finish_poca_one_update_profile(operator_profiler)
             hardware_loop_seconds = time.perf_counter() - hardware_started
             hardware_summary = hardware_profiler.stop(
                 hardware_loop_seconds
