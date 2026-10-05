@@ -257,6 +257,16 @@ class ElasticActorSession(worker.ActorSession):
         manager.env_workers.pop()
         manager.recent_restart_timestamps.pop()
         manager.restart_counts.pop()
+
+        # ML-Agents launches Unity with start_new_session=True. If the Python environment
+        # worker had to be terminated while UnityEnvironment.close() was still waiting,
+        # the detached Unity player survives unless we reclaim this exact retired port.
+        worker._terminate_detached_actor_unity(
+            self.env_path,
+            self.local_base_port + local_worker_id,
+            reason=f"live resize worker {local_worker_id}",
+            port_count=1,
+        )
         if not closed:
             # Forced termination is still a successful retirement as long as the process is gone;
             # there is no remaining worker that can emit stale steps for this worker id.

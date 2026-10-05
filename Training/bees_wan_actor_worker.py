@@ -67,6 +67,7 @@ def _actor_unity_process_matches(
     *,
     builds_root: Path,
     local_base_port: int,
+    port_count: int = MAX_LOCAL_UNITY_ENVS,
 ) -> bool:
     """Identify only this worker's managed Unity environments by executable path and port."""
     if pid <= 0 or pid == os.getpid() or os.name == "nt":
@@ -94,12 +95,14 @@ def _actor_unity_process_matches(
         port = int(argv[port_index])
     except (ValueError, IndexError):
         return False
-    return local_base_port <= port < local_base_port + MAX_LOCAL_UNITY_ENVS
+    return local_base_port <= port < local_base_port + max(1, int(port_count))
 
 
 def _matching_actor_unity_pids(
     env_path: Path,
     local_base_port: int,
+    *,
+    port_count: int = MAX_LOCAL_UNITY_ENVS,
 ) -> List[int]:
     """Find detached Unity players owned by this worker's reserved ML-Agents port range."""
     if os.name == "nt":
@@ -122,6 +125,7 @@ def _matching_actor_unity_pids(
             pid,
             builds_root=builds_root,
             local_base_port=local_base_port,
+            port_count=port_count,
         ):
             result.append(pid)
     return result
@@ -132,6 +136,7 @@ def _terminate_detached_actor_unity(
     local_base_port: int,
     *,
     reason: str,
+    port_count: int = MAX_LOCAL_UNITY_ENVS,
 ) -> int:
     """Stop Unity players that escaped their ML-Agents Python environment worker.
 
@@ -145,7 +150,11 @@ def _terminate_detached_actor_unity(
     if builds_root is None:
         return 0
 
-    pids = _matching_actor_unity_pids(env_path, local_base_port)
+    pids = _matching_actor_unity_pids(
+        env_path,
+        local_base_port,
+        port_count=port_count,
+    )
     if not pids:
         return 0
 
@@ -155,6 +164,7 @@ def _terminate_detached_actor_unity(
             pid,
             builds_root=builds_root,
             local_base_port=local_base_port,
+            port_count=port_count,
         ):
             continue
         try:
@@ -182,6 +192,7 @@ def _terminate_detached_actor_unity(
             pid,
             builds_root=builds_root,
             local_base_port=local_base_port,
+            port_count=port_count,
         ):
             remaining.discard(pid)
             continue
