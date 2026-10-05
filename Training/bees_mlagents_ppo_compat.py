@@ -157,6 +157,13 @@ def _record_poca_update_busy_seconds(seconds: float) -> None:
         _POCA_UPDATE_BUSY_SECONDS_TOTAL += value
 
 
+def _poca_profile_pending() -> bool:
+    if not _POCA_OPTIMIZATIONS.profile_once:
+        return False
+    with _POCA_PROFILE_LOCK:
+        return not _POCA_PROFILE_CLAIMED
+
+
 def _start_poca_one_update_profile():
     """Profile a representative slice of exactly one PPO update."""
 
@@ -4543,7 +4550,22 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             _drain_prepared_poca_trajectories(self)
 
         if self.should_still_train and self._is_ready_update():
-            if self.threaded:
+            # PyTorch's profiler is deliberately kept on ML-Agents' original trainer
+            # thread. The normal asynchronous PPO worker has its own CUDA/default-device
+            # context and remains the steady-state path after this one diagnostic update.
+            if self.threaded and _poca_profile_pending():
+                print(
+                    "[Bees PPO profile] running one synchronous profiled update "
+                    "before resuming async PPO",
+                    flush=True,
+                )
+                with hierarchical_timer("_update_policy"):
+                    if self._update_policy():
+                        for policy_queue in self.policy_queues:
+                            policy_queue.put(
+                                self.get_policy(policy_queue.behavior_id)
+                            )
+            elif self.threaded:
                 _start_poca_async_update(self)
             else:
                 with hierarchical_timer("_update_policy"):
