@@ -4226,20 +4226,21 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         return getattr(_POCA_ASYNC_UPDATE_STATE, "buffer", None)
 
     def _run_poca_async_update(trainer, frozen_buffer):
-        # PyTorch's default-device context is thread-local. ML-Agents configures CUDA
-        # on the trainer thread, but a new ThreadPoolExecutor worker otherwise falls
-        # back to CPU for implicit tensor creation (AgentAction.from_buffer(),
-        # torch.arange() in categorical log-prob, etc.) while the model stays on CUDA.
+        # ML-Agents configures a process-wide preferred device, but PyTorch's temporary
+        # default-device TorchFunctionMode must be entered on the thread that creates
+        # implicit tensors. Do not call torch.set_default_device() here: in PyTorch
+        # 2.1.x that function owns one global DeviceContext and attempts to exit the
+        # trainer thread's context from this worker thread.
         from mlagents.torch_utils import default_device, torch
 
         device = default_device()
-        torch.set_default_device(device)
-        if getattr(device, "type", None) == "cuda":
-            torch.cuda.set_device(device)
-
         _POCA_ASYNC_UPDATE_STATE.buffer = frozen_buffer
         try:
-            return trainer._update_policy()
+            if getattr(device, "type", None) == "cuda":
+                with torch.cuda.device(device), torch.device(device):
+                    return trainer._update_policy()
+            with torch.device(device):
+                return trainer._update_policy()
         finally:
             _POCA_ASYNC_UPDATE_STATE.buffer = None
 
