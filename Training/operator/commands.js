@@ -93,11 +93,10 @@ function isInterruptedIncompatibleCutover(release, desired) {
     }
     if (activeRun !== previousRun) return false;
     if (activeRun !== releaseRun) return true;
-    return Boolean(
-        previousKey &&
-        activeKey === previousKey &&
-        activeKey !== releaseKey
-    );
+    if (!Boolean(release.preserve_run_override) || activeKey === releaseKey) {
+        return false;
+    }
+    return !previousKey || activeKey === previousKey;
 }
 
 async function reconcilePersistedTrainingAfterServerStart(config, admin) {
