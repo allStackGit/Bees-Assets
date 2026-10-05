@@ -267,6 +267,7 @@ class EpisodeLogMetrics:
         self._episodes = deque(maxlen=self.window)
         self._positions: dict[Path, int] = {}
         self._file_identities: dict[Path, Optional[tuple[int, int]]] = {}
+        self._file_mtimes_ns: dict[Path, int] = {}
         self._pending: dict[Path, str] = {}
         self._run_id = ""
 
@@ -277,6 +278,7 @@ class EpisodeLogMetrics:
             self._episodes.clear()
             self._positions.clear()
             self._file_identities.clear()
+            self._file_mtimes_ns.clear()
             self._pending.clear()
         scan_root = self.root / run_id if run_id else self.root
         if scan_root.is_dir():
@@ -299,13 +301,22 @@ class EpisodeLogMetrics:
         except OSError:
             return
         identity = _log_file_identity(file_stat)
+        mtime_ns = int(file_stat.st_mtime_ns)
         position = self._positions.get(log_path)
         previous_identity = self._file_identities.get(log_path)
+        previous_mtime_ns = self._file_mtimes_ns.get(log_path)
         identity_changed = (
             previous_identity is not None
             and identity is not None
             and previous_identity != identity
         )
+        if (
+            position is not None
+            and not identity_changed
+            and size == position
+            and previous_mtime_ns == mtime_ns
+        ):
+            return
         if identity_changed:
             position = 0
             self._pending.pop(log_path, None)
@@ -339,6 +350,7 @@ class EpisodeLogMetrics:
             data = data[min(separators) + 1:] if separators else b""
         self._positions[log_path] = position + len(raw_data)
         self._file_identities[log_path] = identity
+        self._file_mtimes_ns[log_path] = mtime_ns
         if not data:
             return
         text = self._pending.get(log_path, "") + data.decode("utf-8", errors="replace")
@@ -987,6 +999,7 @@ def _sha256_prefix(path: Path, byte_count: int) -> Optional[str]:
 
 class TrainingLogUploader:
     CHUNK_BYTES = 1024 * 1024
+    MAX_FILES_PER_PASS = 128
     MAX_FILE_UPLOAD_BYTES = 64 * 1024 * 1024
     GENERATION_FINGERPRINT_BYTES = 1024
     FINALIZE_KEEPALIVE_SECONDS = 5.0
@@ -995,6 +1008,7 @@ class TrainingLogUploader:
         self.root = root
         self._positions: dict[Path, int] = {}
         self._file_identities: dict[Path, Optional[tuple[int, int]]] = {}
+        self._file_mtimes_ns: dict[Path, int] = {}
         self._prefix_anchors: dict[Path, tuple[int, str]] = {}
         self._remote_paths: dict[Path, str] = {}
         self._next_path: Optional[Path] = None
@@ -1084,8 +1098,10 @@ class TrainingLogUploader:
         if self._next_path in log_paths:
             start_index = log_paths.index(self._next_path)
             log_paths = log_paths[start_index:] + log_paths[:start_index]
+        last_examined_index: Optional[int] = None
+        examined_files = 0
         for path_index, log_path in enumerate(log_paths):
-            if budget <= 0:
+            if budget <= 0 or examined_files >= self.MAX_FILES_PER_PASS:
                 break
             if (
                 not log_path.is_file()
@@ -1093,6 +1109,8 @@ class TrainingLogUploader:
                 or log_path.suffix.lower() not in (".log", ".txt", ".json")
             ):
                 continue
+            examined_files += 1
+            last_examined_index = path_index
             relative = log_path.relative_to(run_root).as_posix()
             remote_relative = self._remote_paths.get(log_path, relative)
             try:
@@ -1101,13 +1119,23 @@ class TrainingLogUploader:
             except OSError:
                 continue
             identity = _log_file_identity(file_stat)
+            mtime_ns = int(file_stat.st_mtime_ns)
             previous_identity = self._file_identities.get(log_path)
+            previous_mtime_ns = self._file_mtimes_ns.get(log_path)
             identity_changed = (
                 previous_identity is not None
                 and identity is not None
                 and previous_identity != identity
             )
             position = self._positions.get(log_path, 0)
+            terminal_offset = min(size, self.MAX_FILE_UPLOAD_BYTES)
+            if (
+                log_path in self._positions
+                and position == terminal_offset
+                and not identity_changed
+                and previous_mtime_ns == mtime_ns
+            ):
+                continue
             prefix_replaced = False
             known_anchor = self._prefix_anchors.get(log_path)
             if (
@@ -1135,6 +1163,7 @@ class TrainingLogUploader:
                 self._positions[log_path] = 0
                 self._prefix_anchors.pop(log_path, None)
             self._file_identities[log_path] = identity
+            self._file_mtimes_ns[log_path] = mtime_ns
             if size <= position or position >= self.MAX_FILE_UPLOAD_BYTES:
                 continue
             amount = min(
@@ -1226,7 +1255,8 @@ class TrainingLogUploader:
                 self._prefix_anchors.pop(log_path, None)
             budget -= len(data)
             uploaded += len(data)
-            self._next_path = log_paths[(path_index + 1) % len(log_paths)]
+        if last_examined_index is not None:
+            self._next_path = log_paths[(last_examined_index + 1) % len(log_paths)]
         return uploaded
 
     def _has_pending_local_bytes(self, run_id: str) -> bool:
@@ -1311,13 +1341,16 @@ class TrainingLogUploader:
 
 
 class BackgroundTrainingLogUploader:
-    """Mirror routine logs without allowing WAN/file latency to consume the control lease."""
+    """Mirror routine logs without allowing diagnostics to compete continuously with rollout."""
+
+    MIN_REQUEST_INTERVAL_SECONDS = 10.0
 
     def __init__(self, root: Path) -> None:
         self._uploader = TrainingLogUploader(root)
         self._lock = threading.Lock()
         self._thread: Optional[threading.Thread] = None
         self._last_error = ""
+        self._last_started_monotonic = 0.0
 
     def _flush_once(
         self,
@@ -1345,6 +1378,12 @@ class BackgroundTrainingLogUploader:
         with self._lock:
             if self._thread is not None and self._thread.is_alive():
                 return False
+            now = time.monotonic()
+            if (
+                self._last_started_monotonic > 0.0
+                and now - self._last_started_monotonic < self.MIN_REQUEST_INTERVAL_SECONDS
+            ):
+                return False
             thread = threading.Thread(
                 target=self._flush_once,
                 args=(client, trainer_id, run_id),
@@ -1352,10 +1391,12 @@ class BackgroundTrainingLogUploader:
                 daemon=True,
             )
             self._thread = thread
+            self._last_started_monotonic = now
             try:
                 thread.start()
             except Exception as exc:
                 self._thread = None
+                self._last_started_monotonic = 0.0
                 self._last_error = f"{type(exc).__name__}: {exc}"
                 return False
             return True
