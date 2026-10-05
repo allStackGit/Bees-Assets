@@ -5676,6 +5676,9 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             _POCA_UPDATE_CACHE_STATE.cache = None
             _POCA_UPDATE_CACHE_STATE.indices = None
             _POCA_UPDATE_CACHE_STATE.minibatch = None
+            _poca_release_full_cuda_graph(
+                getattr(self.optimizer, "optimizer", None)
+            )
 
         _poca_flush_cuda_timings()
         update_seconds = time.perf_counter() - update_started
@@ -5734,6 +5737,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             f"graph_replays={int(getattr(_POCA_TIMING_STATE, 'graph_replays', 0))} "
             f"graph_skips={int(getattr(_POCA_TIMING_STATE, 'graph_skips', 0))} "
             f"graph_capture={_poca_average_timing('cuda_graph_capture'):.6f} "
+            f"graph_input_copy={_poca_average_timing('cuda_graph_input_copy'):.6f} "
             f"graph_replay_submit={_poca_average_timing('cuda_graph_replay_submit'):.6f} "
             f"stats={_poca_average_timing('stats'):.6f} "
             f"optimizer_total={_poca_average_timing('optimizer_total'):.6f} "
@@ -6448,6 +6452,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             _POCA_GROUP_BATCH_STATE.valid_rows = None
             _POCA_GROUP_BATCH_STATE.encoded_cache = None
             _POCA_GROUP_BATCH_STATE.dedup_plan = None
+            _POCA_GROUP_BATCH_STATE.graph_plan = None
             _POCA_UPDATE_CACHE_STATE.minibatch = None
 
     ActionModel.forward = masked_forward
@@ -6534,6 +6539,7 @@ def restore_inactive_continuous_action_masking() -> None:
     _POCA_GROUP_BATCH_STATE.valid_rows = None
     _POCA_GROUP_BATCH_STATE.encoded_cache = None
     _POCA_GROUP_BATCH_STATE.dedup_plan = None
+    _POCA_GROUP_BATCH_STATE.graph_plan = None
     _POCA_UPDATE_CACHE_STATE.cache = None
     _POCA_UPDATE_CACHE_STATE.indices = None
     _POCA_UPDATE_CACHE_STATE.minibatch = None
