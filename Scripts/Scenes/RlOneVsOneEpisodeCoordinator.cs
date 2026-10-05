@@ -1,6 +1,7 @@
 using Assets.Scripts;
 using Assets.Scripts.Data;
 using Assets.Scripts.Entities;
+using Assets.Scripts.Entities.Projectiles;
 using Assets.Scripts.Entities.Ships;
 using Assets.Scripts.Entities.Ships.Weapons;
 using Assets.Scripts.Levels;
@@ -141,6 +142,8 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
     private int _humanStartingTsv;
     private int _beeShotsThisEpisode;
     private int _humanShotsThisEpisode;
+    private int _beeTurretStaticObstacleImpactsThisEpisode;
+    private int _humanTurretStaticObstacleImpactsThisEpisode;
     private int _beeFireRequestsThisEpisode;
     private int _humanFireRequestsThisEpisode;
     private int _beeHitsThisEpisode;
@@ -230,6 +233,7 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
     private int _draws;
     private int _timeouts;
     private long _beeShotsTotal;
+    private long _beeTurretStaticObstacleImpactsTotal;
     private long _beeHitsTotal;
     private long _beeTurretHitsTotal;
     private long _beeSpecialHitsTotal;
@@ -239,6 +243,7 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
     private long _beeSpecialDamageTotal;
     private long _beeOtherDamageTotal;
     private long _humanShotsTotal;
+    private long _humanTurretStaticObstacleImpactsTotal;
     private long _humanHitsTotal;
     private long _humanTurretHitsTotal;
     private long _humanSpecialHitsTotal;
@@ -465,6 +470,32 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
             }
         }
         IncrementWeaponCount(coordinator._shotsByWeapon[sideIndex], weapon);
+    }
+
+    internal static void RecordProjectileStaticObstacleImpact(
+        Projectile projectile,
+        Obstacle obstacle)
+    {
+        if (projectile == null ||
+            obstacle == null ||
+            obstacle.ObstacleType != ConfigData.ObstacleTypes.StaticObstacle ||
+            !(projectile.Weapon is Turret) ||
+            !TryGetTrackedSide(
+                projectile.Shooter,
+                out RlOneVsOneEpisodeCoordinator coordinator,
+                out int sideIndex))
+        {
+            return;
+        }
+
+        if (sideIndex == 0)
+        {
+            coordinator._beeTurretStaticObstacleImpactsThisEpisode++;
+        }
+        else
+        {
+            coordinator._humanTurretStaticObstacleImpactsThisEpisode++;
+        }
     }
 
     private static bool TryGetTrackedSide(
@@ -1095,6 +1126,8 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         _humanStartingTsv = humanStartingTsv;
         _beeShotsThisEpisode = 0;
         _humanShotsThisEpisode = 0;
+        _beeTurretStaticObstacleImpactsThisEpisode = 0;
+        _humanTurretStaticObstacleImpactsThisEpisode = 0;
         _beeFireRequestsThisEpisode = 0;
         _humanFireRequestsThisEpisode = 0;
         _beeHitsThisEpisode = 0;
@@ -1617,15 +1650,23 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
             string environmentTelemetry = RlOneVsOneEpisodeDiagnostics.BuildEnvironmentEpisodeFields(level);
             string combatTelemetry = RlOneVsOneCombatTelemetry.BuildEpisodeFields(level);
             string fireBargeTelemetry = RlOneVsOneEpisodeDiagnostics.BuildFireBargeEpisodeFields(level, timedOut);
+            float beeTurretStaticObstacleImpactRate = _beeShotsThisEpisode > 0
+                ? (float)_beeTurretStaticObstacleImpactsThisEpisode / _beeShotsThisEpisode
+                : 0f;
+            float humanTurretStaticObstacleImpactRate = _humanShotsThisEpisode > 0
+                ? (float)_humanTurretStaticObstacleImpactsThisEpisode / _humanShotsThisEpisode
+                : 0f;
             WriteTrainingDiagnostic(
                 $"RL 1v1 episode={result.EpisodeNumber} arena={GetArenaIndex()} outcome={outcome} bee_team={_beeTeamId} human_team={_humanTeamId} " +
                 $"ships_per_side={RlOneVsOneTrainingBootstrap.CurrentShipsPerSide} map_size={mapSize:F0} winner={winningSide} timeout={timedOut} duration={durationSeconds:F2}s " +
                 $"bee_tsv={_beeStartingTsv}->{beeFinalTsv} human_tsv={_humanStartingTsv}->{humanFinalTsv} " +
                 $"bee_fire_requests={_beeFireRequestsThisEpisode} bee_shots={_beeShotsThisEpisode} bee_hits={_beeHitsThisEpisode} bee_damage={_beeDamageThisEpisode} " +
                 $"bee_turret_shots={_beeShotsThisEpisode} bee_turret_hits={_beeTurretHitsThisEpisode} bee_turret_damage={_beeTurretDamageThisEpisode} " +
+                $"bee_turret_static_obstacle_impacts={_beeTurretStaticObstacleImpactsThisEpisode} bee_turret_static_obstacle_impacts_per_shot={beeTurretStaticObstacleImpactRate:F4} " +
                 $"bee_special_hits={_beeSpecialHitsThisEpisode} bee_special_damage={_beeSpecialDamageThisEpisode} bee_other_hits={_beeOtherHitsThisEpisode} bee_other_damage={_beeOtherDamageThisEpisode} " +
                 $"human_fire_requests={_humanFireRequestsThisEpisode} human_shots={_humanShotsThisEpisode} human_hits={_humanHitsThisEpisode} human_damage={_humanDamageThisEpisode} " +
                 $"human_turret_shots={_humanShotsThisEpisode} human_turret_hits={_humanTurretHitsThisEpisode} human_turret_damage={_humanTurretDamageThisEpisode} " +
+                $"human_turret_static_obstacle_impacts={_humanTurretStaticObstacleImpactsThisEpisode} human_turret_static_obstacle_impacts_per_shot={humanTurretStaticObstacleImpactRate:F4} " +
                 $"human_special_hits={_humanSpecialHitsThisEpisode} human_special_damage={_humanSpecialDamageThisEpisode} human_other_hits={_humanOtherHitsThisEpisode} human_other_damage={_humanOtherDamageThisEpisode} " +
                 fireBargeTelemetry + " " + environmentTelemetry + " " + combatTelemetry);
         }
@@ -1676,6 +1717,7 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         _completedEpisodes++;
         _totalDurationSeconds += result.DurationSeconds;
         _beeShotsTotal += result.BeeShotsFired;
+        _beeTurretStaticObstacleImpactsTotal += _beeTurretStaticObstacleImpactsThisEpisode;
         _beeHitsTotal += result.BeeShotsHit;
         _beeTurretHitsTotal += _beeTurretHitsThisEpisode;
         _beeSpecialHitsTotal += _beeSpecialHitsThisEpisode;
@@ -1685,6 +1727,7 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         _beeSpecialDamageTotal += _beeSpecialDamageThisEpisode;
         _beeOtherDamageTotal += _beeOtherDamageThisEpisode;
         _humanShotsTotal += result.HumanShotsFired;
+        _humanTurretStaticObstacleImpactsTotal += _humanTurretStaticObstacleImpactsThisEpisode;
         _humanHitsTotal += result.HumanShotsHit;
         _humanTurretHitsTotal += _humanTurretHitsThisEpisode;
         _humanSpecialHitsTotal += _humanSpecialHitsThisEpisode;
@@ -1827,15 +1870,23 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         float humanAverageResourcesMined = _miningAsteroidOpportunityEpisodes > 0
             ? (float)_humanResourcesMinedTotal / _miningAsteroidOpportunityEpisodes
             : 0f;
+        float beeTurretStaticObstacleImpactRate = _beeShotsTotal > 0
+            ? (float)_beeTurretStaticObstacleImpactsTotal / _beeShotsTotal
+            : 0f;
+        float humanTurretStaticObstacleImpactRate = _humanShotsTotal > 0
+            ? (float)_humanTurretStaticObstacleImpactsTotal / _humanShotsTotal
+            : 0f;
 
         WriteTrainingDiagnostic(
             $"RL 1v1 summary episodes={_completedEpisodes} arena={GetArenaIndex()} bee_record={_beeWins}-{_beeLosses} human_record={_humanWins}-{_humanLosses} " +
             $"draws={_draws} timeouts={_timeouts} avg_duration={averageDuration:F2}s " +
             $"bee_shots={_beeShotsTotal} bee_hits={_beeHitsTotal} bee_hit_rate={beeHitRate:P2} bee_damage={_beeDamageTotal} " +
             $"bee_turret_shots={_beeShotsTotal} bee_turret_hits={_beeTurretHitsTotal} bee_turret_hits_per_shot={beeTurretHitsPerShot:F4} bee_turret_damage={_beeTurretDamageTotal} " +
+            $"bee_turret_static_obstacle_impacts={_beeTurretStaticObstacleImpactsTotal} bee_turret_static_obstacle_impacts_per_shot={beeTurretStaticObstacleImpactRate:F4} " +
             $"bee_special_hits={_beeSpecialHitsTotal} bee_special_damage={_beeSpecialDamageTotal} bee_other_hits={_beeOtherHitsTotal} bee_other_damage={_beeOtherDamageTotal} " +
             $"human_shots={_humanShotsTotal} human_hits={_humanHitsTotal} human_hit_rate={humanHitRate:P2} human_damage={_humanDamageTotal} " +
             $"human_turret_shots={_humanShotsTotal} human_turret_hits={_humanTurretHitsTotal} human_turret_hits_per_shot={humanTurretHitsPerShot:F4} human_turret_damage={_humanTurretDamageTotal} " +
+            $"human_turret_static_obstacle_impacts={_humanTurretStaticObstacleImpactsTotal} human_turret_static_obstacle_impacts_per_shot={humanTurretStaticObstacleImpactRate:F4} " +
             $"human_special_hits={_humanSpecialHitsTotal} human_special_damage={_humanSpecialDamageTotal} human_other_hits={_humanOtherHitsTotal} human_other_damage={_humanOtherDamageTotal} " +
             $"env_episodes=static:{_staticObstacleEpisodes},collision:{_collisionAsteroidEpisodes},mining:{_miningAsteroidEpisodes} " +
             $"env_opportunity_episodes=static:{_staticObstacleOpportunityEpisodes},collision:{_collisionAsteroidOpportunityEpisodes},mining:{_miningAsteroidOpportunityEpisodes} " +
