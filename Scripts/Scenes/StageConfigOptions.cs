@@ -12,10 +12,20 @@ public static class StageConfigOptions
             stage.TimeoutTime = int.MaxValue;
         }
 
-        stage.TimeScale = stage.OverrideTimeScale == 0
-            ? ConfigData.Configuration.TimeScale
-            : stage.OverrideTimeScale;
-        Time.timeScale = stage.TimeScale;
+        if (RlOneVsOneTrainingBootstrap.IsActiveFor(stage))
+        {
+            // ML-Agents configures the accelerated engine time scale through its side channel
+            // before Bees finishes loading server settings. Episode reset must preserve that
+            // trainer-owned value rather than replacing it with the ordinary gameplay setting.
+            stage.TimeScale = Time.timeScale;
+        }
+        else
+        {
+            stage.TimeScale = stage.OverrideTimeScale == 0
+                ? ConfigData.Configuration.TimeScale
+                : stage.OverrideTimeScale;
+            Time.timeScale = stage.TimeScale;
+        }
 
         if (stage.GeneratedSquadCountOverride > 0)
         {

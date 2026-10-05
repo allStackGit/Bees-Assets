@@ -530,16 +530,24 @@ public class Stage : Scene
             TimeoutTime = int.MaxValue;
         }
 
-        if (OverrideTimeScale == 0)
+        if (RlOneVsOneTrainingBootstrap.IsActiveFor(this))
         {
-            TimeScale = ConfigData.Configuration.TimeScale;
+            // Dedicated ML-Agents training owns Unity's engine time scale. Do not overwrite
+            // the value supplied by the EngineConfigurationChannel during level configuration.
+            TimeScale = Time.timeScale;
         }
         else
         {
-            TimeScale = OverrideTimeScale;
-
+            if (OverrideTimeScale == 0)
+            {
+                TimeScale = ConfigData.Configuration.TimeScale;
+            }
+            else
+            {
+                TimeScale = OverrideTimeScale;
+            }
+            Time.timeScale = TimeScale;
         }
-        Time.timeScale = TimeScale;
         if (GeneratedSquadCountOverride > 0)
         {
             level.CurrentLevelOptions.EnemySquadGenerationCount = GeneratedSquadCountOverride;

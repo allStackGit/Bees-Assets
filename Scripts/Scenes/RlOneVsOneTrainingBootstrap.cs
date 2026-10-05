@@ -367,7 +367,12 @@ internal static class RlOneVsOneTrainingBootstrap
         stage.OverrideBeeShipTypes = new List<ConfigData.ShipTypes>(options.BeeShipTypes);
         stage.OverrideHumanShipTypes = new List<ConfigData.ShipTypes>(options.HumanShipTypes);
 
-        Debug.Log($"RL training configuration {options.Describe()}");
+        // ML-Agents owns Time.timeScale for dedicated training through its engine side channel.
+        // Mirror the live value into Stage so any gameplay code that restores Stage.TimeScale keeps
+        // the accelerated trainer setting instead of reverting to the ordinary game speed.
+        stage.TimeScale = Time.timeScale;
+
+        Debug.Log($"RL training configuration {options.Describe()} engine_time_scale={Time.timeScale:F2}");
 
         RlOneVsOneTrainingRuntimeGuard guard = stage.GetComponent<RlOneVsOneTrainingRuntimeGuard>();
         if (guard == null)
