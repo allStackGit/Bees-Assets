@@ -1728,12 +1728,12 @@ class TrainingControlStore {
         const canonicalBuild = this._catalogForRole(role)[platform]?.[this.state.canonical_build_id];
         const optimizerContextKey = [
             this.state.run_id,
-            this.state.canonical_build_id,
             JSON.stringify(this.state.environment_args),
         ].join('|');
         record.env_optimizer = this.envOptimizer.update(record, {
             now,
             contextKey: optimizerContextKey,
+            buildId: this.state.canonical_build_id,
             enabled: this.state.training_enabled &&
                 !this.state.pending_release &&
                 Boolean(canonicalBuild),
