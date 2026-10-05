@@ -5676,11 +5676,11 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             _POCA_UPDATE_CACHE_STATE.cache = None
             _POCA_UPDATE_CACHE_STATE.indices = None
             _POCA_UPDATE_CACHE_STATE.minibatch = None
-            _poca_release_full_cuda_graph(
-                getattr(self.optimizer, "optimizer", None)
-            )
 
         _poca_flush_cuda_timings()
+        _poca_release_full_cuda_graph(
+            getattr(self.optimizer, "optimizer", None)
+        )
         update_seconds = time.perf_counter() - update_started
         _record_poca_update_busy_seconds(update_seconds)
         print(
