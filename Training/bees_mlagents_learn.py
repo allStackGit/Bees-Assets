@@ -42,6 +42,7 @@ PPO_STREAM_SHARDS_FLAG = "--bees-ppo-stream-shards"
 PPO_PREFETCH_FLAG = "--bees-ppo-prefetch"
 PPO_CRITIC_BASELINE_OVERLAP_FLAG = "--bees-ppo-critic-baseline-overlap"
 PPO_CUDA_GRAPHS_FLAG = "--bees-ppo-cuda-graphs"
+PPO_PROFILE_FLAG = "--bees-ppo-profile"
 RESULTS_DIR_FLAG = "--results-dir"
 DEFAULT_RESULTS_DIR = ".results"
 WORKER_TIMER_SAMPLE_STEPS = 64
@@ -239,12 +240,14 @@ def _extract_bees_options(
         "minibatch_prefetch": False,
         "critic_baseline_overlap": False,
         "cuda_graphs": False,
+        "profile_once": False,
     }
     boolean_flags = {
         PPO_SYNC_CLEANUP_FLAG: "sync_cleanup",
         PPO_PREFETCH_FLAG: "minibatch_prefetch",
         PPO_CRITIC_BASELINE_OVERLAP_FLAG: "critic_baseline_overlap",
         PPO_CUDA_GRAPHS_FLAG: "cuda_graphs",
+        PPO_PROFILE_FLAG: "profile_once",
     }
     index = 0
 
@@ -1210,7 +1213,8 @@ def main() -> None:
         f"stream_shards={configured_optimizations.stream_shards} "
         f"prefetch={'on' if configured_optimizations.minibatch_prefetch else 'off'} "
         f"critic_baseline_overlap={'on' if configured_optimizations.critic_baseline_overlap else 'off'} "
-        f"cuda_graphs={'on' if configured_optimizations.cuda_graphs else 'off'}"
+        f"cuda_graphs={'on' if configured_optimizations.cuda_graphs else 'off'} "
+        f"profile_once={'on' if configured_optimizations.profile_once else 'off'}"
     )
 
     if torch_threads is not None:
