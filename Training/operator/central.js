@@ -116,6 +116,9 @@ function buildCentralLearnerArgv(config, learnerPython, unity, runtimeRoot) {
         '--bees-ppo-cuda-graphs=' + (
             learnerOptimizations.cudaGraphs ? 'true' : 'false'
         ),
+        '--bees-ppo-profile=' + (
+            learnerOptimizations.profileOnce ? 'true' : 'false'
+        ),
     );
     return argv;
 }
