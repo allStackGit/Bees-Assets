@@ -3860,10 +3860,557 @@ def _poca_cuda_graph_minibatch_eligible(cached) -> bool:
     return bool((bee or mixed) and (human or mixed))
 
 
+def _poca_cuda_graph_bucket(value: int, quantum: int, maximum: int) -> int:
+    value = max(0, int(value))
+    if value == 0:
+        return 0
+    return min(
+        int(maximum),
+        ((value + int(quantum) - 1) // int(quantum)) * int(quantum),
+    )
+
+
+def _poca_build_faction_cuda_graph_plan(cached, reference):
+    import numpy as np
+    from mlagents.torch_utils import torch
+
+    rows = cached.get("faction_rows") if cached is not None else None
+    if not isinstance(rows, dict):
+        return None, None
+    batch_size = int(reference.shape[0])
+    plan = {}
+    signature = []
+    for name in ("bee", "human", "mixed"):
+        values = np.asarray(rows.get(name, ()), dtype=np.int64)
+        count = int(values.size)
+        if count <= 0:
+            plan[name] = None
+            signature.append(0)
+            continue
+        bucket = _poca_cuda_graph_bucket(
+            count,
+            POCA_CUDA_GRAPH_FACTION_BUCKET_ROWS,
+            batch_size,
+        )
+        padded = np.full(bucket, batch_size, dtype=np.int64)
+        padded[:count] = values
+        mask = np.zeros((bucket, 1), dtype=np.float32)
+        mask[:count, 0] = 1.0
+        plan[name] = {
+            "indices": torch.as_tensor(
+                padded,
+                dtype=torch.long,
+                device=reference.device,
+            ),
+            "mask": reference.new_tensor(mask),
+            "bucket": bucket,
+        }
+        signature.append(bucket)
+    return plan, tuple(signature)
+
+
+def _poca_build_group_cuda_graph_plan(groupmate_counts, group_count, reference):
+    import numpy as np
+    from mlagents.torch_utils import torch
+
+    counts = np.asarray(groupmate_counts, dtype=np.int32)
+    batch_size = int(reference.shape[0])
+    if counts.ndim != 1 or int(counts.shape[0]) != batch_size:
+        return None, None
+    if int(group_count) <= 0:
+        return {"group_count": 0, "positions": ()}, ()
+
+    positions = []
+    signature = []
+    for position in range(int(group_count)):
+        rows = np.flatnonzero(counts > position).astype(
+            np.int64,
+            copy=False,
+        )
+        count = int(rows.size)
+        if count <= 0:
+            return None, None
+        bucket = _poca_cuda_graph_bucket(
+            count,
+            POCA_CUDA_GRAPH_GROUP_BUCKET_ROWS,
+            batch_size,
+        )
+        padded = np.zeros(bucket, dtype=np.int64)
+        padded[:count] = rows
+        mask = np.zeros((bucket, 1), dtype=np.float32)
+        mask[:count, 0] = 1.0
+        positions.append(
+            {
+                "indices": torch.as_tensor(
+                    padded,
+                    dtype=torch.long,
+                    device=reference.device,
+                ),
+                "mask": reference.new_tensor(mask),
+                "bucket": bucket,
+            }
+        )
+        signature.append(bucket)
+    return {
+        "group_count": int(group_count),
+        "positions": tuple(positions),
+    }, tuple(signature)
+
+
+def _poca_copy_cuda_graph_plan(target, source) -> None:
+    if target is None or source is None:
+        return
+    for name in ("bee", "human", "mixed"):
+        target_entry = target.get(name)
+        source_entry = source.get(name)
+        if target_entry is None or source_entry is None:
+            continue
+        target_entry["indices"].copy_(source_entry["indices"])
+        target_entry["mask"].copy_(source_entry["mask"])
+
+
+def _poca_copy_group_cuda_graph_plan(target, source) -> None:
+    if target is None or source is None:
+        return
+    for target_entry, source_entry in zip(
+        target["positions"],
+        source["positions"],
+    ):
+        target_entry["indices"].copy_(source_entry["indices"])
+        target_entry["mask"].copy_(source_entry["mask"])
+
+
+def _poca_copy_agent_action(target, source) -> None:
+    if target.continuous_tensor is not None:
+        target.continuous_tensor.copy_(source.continuous_tensor)
+    for target_branch, source_branch in zip(
+        target.discrete_list,
+        source.discrete_list,
+    ):
+        target_branch.copy_(source_branch)
+
+
+def _poca_full_cuda_graph_signature(
+    cached,
+    current_obs,
+    groupmate_obs,
+    actions,
+    faction_signature,
+    group_signature,
+    decay_lr,
+    decay_eps,
+    decay_bet,
+    optimizer,
+):
+    slot_limits = cached.get("slot_limits", {}) if cached is not None else {}
+    return (
+        tuple(
+            (tuple(tensor.shape), str(tensor.dtype))
+            for tensor in current_obs
+        ),
+        int(len(groupmate_obs)),
+        tuple(
+            tuple(tensor.shape)
+            for member in groupmate_obs
+            for tensor in member
+        ),
+        tuple(actions.continuous_tensor.shape),
+        tuple(
+            tuple(branch.shape)
+            for branch in actions.discrete_list
+        ),
+        tuple(faction_signature),
+        tuple(group_signature),
+        tuple(
+            (str(name), int(value))
+            for name, value in sorted(slot_limits.items())
+        ),
+        tuple(float(group["lr"]) for group in optimizer.param_groups),
+        float(decay_lr),
+        float(decay_eps),
+        float(decay_bet),
+    )
+
+
+def _poca_copy_full_cuda_graph_inputs(static, live) -> None:
+    from mlagents.torch_utils import torch
+
+    with torch.no_grad():
+        for target, source in zip(
+            static["current_obs"],
+            live["current_obs"],
+        ):
+            target.copy_(source)
+        for target_member, source_member in zip(
+            static["groupmate_obs"],
+            live["groupmate_obs"],
+        ):
+            for target, source in zip(target_member, source_member):
+                target.copy_(source)
+        _poca_copy_agent_action(static["actions"], live["actions"])
+        for target, source in zip(
+            static["groupmate_actions"],
+            live["groupmate_actions"],
+        ):
+            _poca_copy_agent_action(target, source)
+        static["act_masks"].copy_(live["act_masks"])
+        static["old_log_probs"].copy_(live["old_log_probs"])
+        static["loss_masks"].copy_(live["loss_masks"])
+        static["advantages"].copy_(live["advantages"])
+        for name in static["returns"]:
+            static["returns"][name].copy_(live["returns"][name])
+            static["old_values"][name].copy_(live["old_values"][name])
+            static["old_baselines"][name].copy_(
+                live["old_baselines"][name]
+            )
+        static["dimension_mask"].copy_(live["dimension_mask"])
+        static["sample_weights"].copy_(live["sample_weights"])
+        _poca_copy_cuda_graph_plan(
+            static["faction_plan"],
+            live["faction_plan"],
+        )
+        _poca_copy_group_cuda_graph_plan(
+            static["group_plan"],
+            live["group_plan"],
+        )
+
+
+def _poca_release_full_cuda_graph(optimizer) -> None:
+    if optimizer is None:
+        return
+    optimizer._bees_full_cuda_graph_state = None
+    optimizer._bees_full_cuda_graph_managed = False
+
+
+def _poca_full_cuda_graph_update(
+    poca_optimizer,
+    *,
+    cached,
+    current_obs,
+    groupmate_obs,
+    actions,
+    groupmate_actions,
+    act_masks,
+    returns,
+    old_values,
+    old_baseline_values,
+    old_log_probs,
+    loss_masks,
+    advantages,
+    decay_lr,
+    decay_eps,
+    decay_bet,
+):
+    opts = _POCA_OPTIMIZATIONS
+    optimizer = poca_optimizer.optimizer
+    if not opts.cuda_graphs:
+        return None
+    optimizer._bees_full_cuda_graph_managed = True
+
+    from mlagents.torch_utils import torch
+    from mlagents.trainers.torch_entities.utils import ModelUtils
+    from bees_mlagents_structured_policy import (
+        reset_training_faction_graph_plan,
+        set_training_faction_graph_plan,
+    )
+
+    if (
+        cached is None
+        or not torch.cuda.is_available()
+        or opts.stream_shards != 1
+        or opts.critic_baseline_overlap
+        or not current_obs
+        or current_obs[0].device.type != "cuda"
+        or not _poca_cuda_graph_minibatch_eligible(cached)
+    ):
+        _POCA_TIMING_STATE.graph_skips = int(
+            getattr(_POCA_TIMING_STATE, "graph_skips", 0)
+        ) + 1
+        return None
+
+    dimension_mask = getattr(
+        _POLICY_DIMENSION_MASK_STATE,
+        "mask",
+        None,
+    )
+    sample_weights = getattr(
+        _POLICY_DIMENSION_MASK_STATE,
+        "sample_weights",
+        None,
+    )
+    if (
+        dimension_mask is None
+        or sample_weights is None
+        or dimension_mask.device.type != "cuda"
+        or sample_weights.device.type != "cuda"
+    ):
+        _POCA_TIMING_STATE.graph_skips = int(
+            getattr(_POCA_TIMING_STATE, "graph_skips", 0)
+        ) + 1
+        return None
+
+    faction_plan, faction_signature = (
+        _poca_build_faction_cuda_graph_plan(
+            cached,
+            current_obs[0],
+        )
+    )
+    group_plan, group_signature = (
+        _poca_build_group_cuda_graph_plan(
+            cached.get("groupmate_counts"),
+            len(groupmate_obs),
+            current_obs[0],
+        )
+    )
+    if (
+        faction_plan is None
+        or faction_signature is None
+        or group_plan is None
+        or group_signature is None
+    ):
+        _POCA_TIMING_STATE.graph_skips = int(
+            getattr(_POCA_TIMING_STATE, "graph_skips", 0)
+        ) + 1
+        return None
+
+    signature = _poca_full_cuda_graph_signature(
+        cached,
+        current_obs,
+        groupmate_obs,
+        actions,
+        faction_signature,
+        group_signature,
+        decay_lr,
+        decay_eps,
+        decay_bet,
+        optimizer,
+    )
+    state = getattr(
+        optimizer,
+        "_bees_full_cuda_graph_state",
+        None,
+    )
+    if state is None:
+        state = {
+            "graph": None,
+            "signature": None,
+            "static": None,
+            "outputs": None,
+        }
+        optimizer._bees_full_cuda_graph_state = state
+
+    trainable = [
+        parameter
+        for group in optimizer.param_groups
+        for parameter in group["params"]
+        if parameter.requires_grad
+    ]
+    if any(not optimizer.state.get(parameter) for parameter in trainable):
+        _POCA_TIMING_STATE.graph_warmups = int(
+            getattr(_POCA_TIMING_STATE, "graph_warmups", 0)
+        ) + 1
+        return None
+
+    live = {
+        "current_obs": current_obs,
+        "groupmate_obs": groupmate_obs,
+        "actions": actions,
+        "groupmate_actions": groupmate_actions,
+        "act_masks": act_masks,
+        "returns": returns,
+        "old_values": old_values,
+        "old_baselines": old_baseline_values,
+        "old_log_probs": old_log_probs,
+        "loss_masks": loss_masks,
+        "advantages": advantages,
+        "dimension_mask": dimension_mask,
+        "sample_weights": sample_weights,
+        "faction_plan": faction_plan,
+        "group_plan": group_plan,
+    }
+
+    if state["graph"] is not None:
+        if state["signature"] != signature:
+            _POCA_TIMING_STATE.graph_skips = int(
+                getattr(_POCA_TIMING_STATE, "graph_skips", 0)
+            ) + 1
+            return None
+        copy_started = time.perf_counter()
+        _poca_copy_full_cuda_graph_inputs(state["static"], live)
+        _poca_record_timing(
+            "cuda_graph_input_copy",
+            time.perf_counter() - copy_started,
+        )
+        replay_started = time.perf_counter()
+        state["graph"].replay()
+        _POCA_TIMING_STATE.graph_replays = int(
+            getattr(_POCA_TIMING_STATE, "graph_replays", 0)
+        ) + 1
+        _poca_record_timing(
+            "cuda_graph_replay_submit",
+            time.perf_counter() - replay_started,
+        )
+        policy_loss, value_loss, baseline_loss = state["outputs"]
+        return {
+            "Losses/Policy Loss": torch.abs(policy_loss).detach().clone(),
+            "Losses/Value Loss": value_loss.detach().clone(),
+            "Losses/Baseline Loss": baseline_loss.detach().clone(),
+            "Policy/Learning Rate": decay_lr,
+            "Policy/Epsilon": decay_eps,
+            "Policy/Beta": decay_bet,
+        }
+
+    # Avoid pinning a large graph allocation when the current workload already
+    # leaves too little physical VRAM headroom. This is memory-based rather than
+    # ship-count based; any 1-64 workload remains valid and falls back to eager PPO.
+    free_bytes, _total_bytes = torch.cuda.mem_get_info(
+        current_obs[0].device.index
+        if current_obs[0].device.index is not None
+        else torch.cuda.current_device()
+    )
+    if int(free_bytes) < 768 * 1024 * 1024:
+        _POCA_TIMING_STATE.graph_skips = int(
+            getattr(_POCA_TIMING_STATE, "graph_skips", 0)
+        ) + 1
+        return None
+
+    _poca_prepare_cuda_capturable_adam(optimizer)
+    for parameter in trainable:
+        if parameter.grad is None:
+            parameter.grad = torch.zeros_like(parameter)
+
+    static = live
+    previous_group_plan = getattr(
+        _POCA_GROUP_BATCH_STATE,
+        "graph_plan",
+        None,
+    )
+    previous_cache = getattr(
+        _POCA_GROUP_BATCH_STATE,
+        "encoded_cache",
+        None,
+    )
+    previous_dedup = getattr(
+        _POCA_GROUP_BATCH_STATE,
+        "dedup_plan",
+        None,
+    )
+    previous_dimension_mask = dimension_mask
+    previous_sample_weights = sample_weights
+    faction_token = set_training_faction_graph_plan(
+        static["faction_plan"]
+    )
+
+    capture_started = time.perf_counter()
+    try:
+        _POCA_GROUP_BATCH_STATE.graph_plan = static["group_plan"]
+        _POCA_GROUP_BATCH_STATE.encoded_cache = {}
+        _POCA_GROUP_BATCH_STATE.dedup_plan = None
+        _POLICY_DIMENSION_MASK_STATE.mask = static["dimension_mask"]
+        _POLICY_DIMENSION_MASK_STATE.sample_weights = static[
+            "sample_weights"
+        ]
+
+        torch.cuda.synchronize()
+        graph = torch.cuda.CUDAGraph()
+        with torch.cuda.graph(graph):
+            optimizer.zero_grad(set_to_none=False)
+            run_out = poca_optimizer.policy.actor.get_stats(
+                static["current_obs"],
+                static["actions"],
+                masks=static["act_masks"],
+                memories=[],
+                sequence_length=poca_optimizer.policy.sequence_length,
+            )
+            log_probs = run_out["log_probs"].flatten()
+            entropy = run_out["entropy"]
+            values, _ = poca_optimizer.critic.critic_pass(
+                [static["current_obs"]] + static["groupmate_obs"],
+                memories=[],
+                sequence_length=poca_optimizer.policy.sequence_length,
+            )
+            baselines, _ = poca_optimizer.critic.baseline(
+                static["current_obs"],
+                (
+                    static["groupmate_obs"],
+                    static["groupmate_actions"],
+                ),
+                memories=[],
+                sequence_length=poca_optimizer.policy.sequence_length,
+            )
+            baseline_loss = ModelUtils.trust_region_value_loss(
+                baselines,
+                static["old_baselines"],
+                static["returns"],
+                decay_eps,
+                static["loss_masks"],
+            )
+            value_loss = ModelUtils.trust_region_value_loss(
+                values,
+                static["old_values"],
+                static["returns"],
+                decay_eps,
+                static["loss_masks"],
+            )
+            policy_loss = ModelUtils.trust_region_policy_loss(
+                static["advantages"],
+                log_probs,
+                static["old_log_probs"],
+                static["loss_masks"],
+                decay_eps,
+            )
+            loss = (
+                policy_loss
+                + 0.5 * (value_loss + 0.5 * baseline_loss)
+                - decay_bet
+                * ModelUtils.masked_mean(
+                    entropy,
+                    static["loss_masks"],
+                )
+            )
+            loss.backward()
+            optimizer.step()
+    finally:
+        reset_training_faction_graph_plan(faction_token)
+        _POCA_GROUP_BATCH_STATE.graph_plan = previous_group_plan
+        _POCA_GROUP_BATCH_STATE.encoded_cache = previous_cache
+        _POCA_GROUP_BATCH_STATE.dedup_plan = previous_dedup
+        _POLICY_DIMENSION_MASK_STATE.mask = previous_dimension_mask
+        _POLICY_DIMENSION_MASK_STATE.sample_weights = previous_sample_weights
+
+    state["graph"] = graph
+    state["signature"] = signature
+    state["static"] = static
+    state["outputs"] = (
+        policy_loss,
+        value_loss,
+        baseline_loss,
+    )
+    _POCA_TIMING_STATE.graph_captures = int(
+        getattr(_POCA_TIMING_STATE, "graph_captures", 0)
+    ) + 1
+    _poca_record_timing(
+        "cuda_graph_capture",
+        time.perf_counter() - capture_started,
+    )
+    return {
+        "Losses/Policy Loss": torch.abs(policy_loss).detach().clone(),
+        "Losses/Value Loss": value_loss.detach().clone(),
+        "Losses/Baseline Loss": baseline_loss.detach().clone(),
+        "Policy/Learning Rate": decay_lr,
+        "Policy/Epsilon": decay_eps,
+        "Policy/Beta": decay_bet,
+    }
+
+
 def _poca_optimizer_step(optimizer, *, graph_eligible: bool = False) -> None:
     """Execute Adam eagerly or replay a captured CUDA optimizer step."""
 
     opts = _POCA_OPTIMIZATIONS
+    if getattr(optimizer, "_bees_full_cuda_graph_managed", False):
+        _poca_prepare_cuda_capturable_adam(optimizer)
+        optimizer.step()
+        return
     if not opts.cuda_graphs:
         _poca_prepare_cuda_capturable_adam(optimizer)
         optimizer.step()
