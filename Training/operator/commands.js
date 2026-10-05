@@ -172,6 +172,7 @@ async function invokeRuntime(options = {}) {
                 minibatchPrefetch: false,
                 criticBaselineOverlap: false,
                 cudaGraphs: false,
+                profileOnce: false,
             }
             : {
                 syncCleanup: Boolean(options.ppoSyncCleanup),
@@ -179,6 +180,7 @@ async function invokeRuntime(options = {}) {
                 minibatchPrefetch: Boolean(options.ppoPrefetch),
                 criticBaselineOverlap: Boolean(options.ppoCriticBaselineOverlap),
                 cudaGraphs: Boolean(options.ppoCudaGraphs),
+                profileOnce: Boolean(options.ppoProfile),
             };
     }
     config = applyRuntimeTrainingOptions(config, runtimeOverrides);
@@ -358,6 +360,9 @@ async function invokeRuntime(options = {}) {
         ) +
         ' ppo_cuda_graphs=' + (
             config.learnerOptimizations.cudaGraphs ? 'on' : 'off'
+        ) +
+        ' ppo_profile=' + (
+            config.learnerOptimizations.profileOnce ? 'on' : 'off'
         ) + '.'
     );
 }
