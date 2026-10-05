@@ -75,6 +75,7 @@ internal static class RlOneVsOneTrainingBootstrap
     internal static float CurrentCollisionAsteroidSpawnSeconds => RuntimeOptions.CollisionAsteroidSpawnSeconds;
     internal static bool CurrentStaticObstaclesEnabled => RuntimeOptions.StaticObstaclesEnabled;
     internal static bool CurrentMiningAsteroidsEnabled => RuntimeOptions.MiningAsteroidsEnabled;
+    internal static bool CurrentCommunicationLoggingEnabled => RuntimeOptions.CommunicationLoggingEnabled;
 
     internal static bool ShouldConstrainShipsToArena(bool staticObstaclesEnabled)
     {
