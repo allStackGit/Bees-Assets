@@ -1003,9 +1003,18 @@ class TrainingLogUploader:
     MAX_FILE_UPLOAD_BYTES = 64 * 1024 * 1024
     GENERATION_FINGERPRINT_BYTES = 1024
     FINALIZE_KEEPALIVE_SECONDS = 5.0
+    STATE_SCHEMA_VERSION = 1
+    STATE_WRITE_INTERVAL_SECONDS = 30.0
 
-    def __init__(self, root: Path) -> None:
+    def __init__(self, root: Path, state_path: Optional[Path] = None) -> None:
         self.root = root
+        self._state_path = (
+            state_path.expanduser().resolve() if state_path is not None else None
+        )
+        self._state_run_id = ""
+        self._state_run_root: Optional[Path] = None
+        self._state_dirty = False
+        self._last_state_write_monotonic = 0.0
         self._positions: dict[Path, int] = {}
         self._file_identities: dict[Path, Optional[tuple[int, int]]] = {}
         self._file_mtimes_ns: dict[Path, int] = {}
@@ -1013,6 +1022,179 @@ class TrainingLogUploader:
         self._remote_paths: dict[Path, str] = {}
         self._next_path: Optional[Path] = None
         self._operation_lock = threading.RLock()
+
+    def _clear_run_state(self) -> None:
+        self._positions.clear()
+        self._file_identities.clear()
+        self._file_mtimes_ns.clear()
+        self._prefix_anchors.clear()
+        self._remote_paths.clear()
+        self._next_path = None
+
+    @staticmethod
+    def _safe_relative_path(run_root: Path, relative: str) -> Optional[Path]:
+        value = str(relative or "").strip()
+        if not value or "\\" in value:
+            return None
+        parts = value.split("/")
+        if any(part in ("", ".", "..") for part in parts):
+            return None
+        candidate = run_root.joinpath(*parts)
+        try:
+            resolved_root = run_root.resolve()
+            resolved = candidate.resolve()
+            resolved.relative_to(resolved_root)
+        except (OSError, ValueError):
+            return None
+        return resolved
+
+    @staticmethod
+    def _safe_remote_path(value: object, fallback: str) -> str:
+        remote = str(value or "").strip()
+        if not remote:
+            return fallback
+        parts = remote.split("/")
+        if (
+            remote.startswith("/")
+            or "\\" in remote
+            or any(part in ("", ".", "..") for part in parts)
+        ):
+            return fallback
+        return remote
+
+    def _load_state(self, run_id: str, run_root: Path) -> None:
+        if self._state_run_id == run_id:
+            return
+        self._persist_state(force=True)
+        self._clear_run_state()
+        self._state_run_id = run_id
+        self._state_run_root = run_root
+        self._state_dirty = False
+        state_path = self._state_path
+        if state_path is None:
+            return
+        try:
+            value = json.loads(state_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            return
+        if (
+            not isinstance(value, Mapping)
+            or value.get("schema_version") != self.STATE_SCHEMA_VERSION
+            or str(value.get("run_id") or "") != run_id
+        ):
+            return
+        files = value.get("files")
+        if not isinstance(files, Mapping):
+            return
+        for relative, raw_entry in files.items():
+            if not isinstance(relative, str) or not isinstance(raw_entry, Mapping):
+                continue
+            path = self._safe_relative_path(run_root, relative)
+            if path is None:
+                continue
+            position = raw_entry.get("position")
+            mtime_ns = raw_entry.get("mtime_ns")
+            if (
+                not isinstance(position, int)
+                or isinstance(position, bool)
+                or position < 0
+                or position > self.MAX_FILE_UPLOAD_BYTES
+                or not isinstance(mtime_ns, int)
+                or isinstance(mtime_ns, bool)
+                or mtime_ns < 0
+            ):
+                continue
+            identity_value = raw_entry.get("identity")
+            identity: Optional[tuple[int, int]] = None
+            if (
+                isinstance(identity_value, list)
+                and len(identity_value) == 2
+                and all(
+                    isinstance(item, int) and not isinstance(item, bool)
+                    for item in identity_value
+                )
+            ):
+                identity = (int(identity_value[0]), int(identity_value[1]))
+            anchor_value = raw_entry.get("prefix_anchor")
+            anchor: Optional[tuple[int, str]] = None
+            if (
+                isinstance(anchor_value, list)
+                and len(anchor_value) == 2
+                and isinstance(anchor_value[0], int)
+                and not isinstance(anchor_value[0], bool)
+                and 0 <= int(anchor_value[0]) <= self.MAX_FILE_UPLOAD_BYTES
+                and isinstance(anchor_value[1], str)
+                and len(anchor_value[1]) == 64
+            ):
+                anchor = (int(anchor_value[0]), anchor_value[1])
+            self._positions[path] = int(position)
+            self._file_identities[path] = identity
+            self._file_mtimes_ns[path] = int(mtime_ns)
+            if anchor is not None:
+                self._prefix_anchors[path] = anchor
+            self._remote_paths[path] = self._safe_remote_path(
+                raw_entry.get("remote_path"),
+                relative,
+            )
+        next_relative = value.get("next_path")
+        if isinstance(next_relative, str):
+            self._next_path = self._safe_relative_path(run_root, next_relative)
+
+    def _persist_state(self, *, force: bool = False) -> bool:
+        state_path = self._state_path
+        run_root = self._state_run_root
+        run_id = self._state_run_id
+        if state_path is None or run_root is None or not run_id or not self._state_dirty:
+            return False
+        now = time.monotonic()
+        if (
+            not force
+            and self._last_state_write_monotonic > 0.0
+            and now - self._last_state_write_monotonic < self.STATE_WRITE_INTERVAL_SECONDS
+        ):
+            return False
+        files: dict[str, object] = {}
+        for path, position in self._positions.items():
+            try:
+                relative = path.relative_to(run_root).as_posix()
+            except ValueError:
+                continue
+            identity = self._file_identities.get(path)
+            anchor = self._prefix_anchors.get(path)
+            entry: dict[str, object] = {
+                "position": int(position),
+                "mtime_ns": int(self._file_mtimes_ns.get(path, 0)),
+                "remote_path": self._remote_paths.get(path, relative),
+            }
+            if identity is not None:
+                entry["identity"] = [int(identity[0]), int(identity[1])]
+            if anchor is not None:
+                entry["prefix_anchor"] = [int(anchor[0]), str(anchor[1])]
+            files[relative] = entry
+        next_relative = None
+        if self._next_path is not None:
+            try:
+                next_relative = self._next_path.relative_to(run_root).as_posix()
+            except ValueError:
+                next_relative = None
+        payload = {
+            "schema_version": self.STATE_SCHEMA_VERSION,
+            "run_id": run_id,
+            "updated_unix_seconds": time.time(),
+            "next_path": next_relative,
+            "files": files,
+        }
+        try:
+            atomic_write_text(
+                state_path,
+                json.dumps(payload, separators=(",", ":"), sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+        except OSError:
+            return False
+        self._state_dirty = False
+        self._last_state_write_monotonic = now
+        return True
 
     def _generation_remote_path(
         self,
@@ -1090,6 +1272,7 @@ class TrainingLogUploader:
         run_root = self.root / run_id
         if not run_root.is_dir():
             return 0
+        self._load_state(run_id, run_root)
         budget = self.CHUNK_BYTES
         uploaded = 0
         log_paths = sorted(run_root.rglob("*"))
@@ -1162,6 +1345,9 @@ class TrainingLogUploader:
                 position = 0
                 self._positions[log_path] = 0
                 self._prefix_anchors.pop(log_path, None)
+                self._state_dirty = True
+            if previous_identity != identity or previous_mtime_ns != mtime_ns:
+                self._state_dirty = True
             self._file_identities[log_path] = identity
             self._file_mtimes_ns[log_path] = mtime_ns
             if size <= position or position >= self.MAX_FILE_UPLOAD_BYTES:
@@ -1199,6 +1385,7 @@ class TrainingLogUploader:
                 expected_offset = mismatch.expected_offset
                 if expected_offset == 0:
                     self._positions[log_path] = 0
+                    self._state_dirty = True
                     continue
                 local_prefix_sha256 = (
                     _sha256_prefix(log_path, expected_offset)
@@ -1239,6 +1426,7 @@ class TrainingLogUploader:
                     self._remote_paths[log_path] = next_remote_relative
                     self._positions[log_path] = 0
                     self._prefix_anchors.pop(log_path, None)
+                    self._state_dirty = True
                     continue
                 self._positions[log_path] = expected_offset
                 anchor = _sampled_prefix_anchor(log_path, expected_offset)
@@ -1246,6 +1434,7 @@ class TrainingLogUploader:
                     self._prefix_anchors[log_path] = (expected_offset, anchor)
                 else:
                     self._prefix_anchors.pop(log_path, None)
+                self._state_dirty = True
                 continue
             self._positions[log_path] = next_offset
             anchor = _sampled_prefix_anchor(log_path, next_offset)
@@ -1253,10 +1442,15 @@ class TrainingLogUploader:
                 self._prefix_anchors[log_path] = (next_offset, anchor)
             else:
                 self._prefix_anchors.pop(log_path, None)
+            self._state_dirty = True
             budget -= len(data)
             uploaded += len(data)
         if last_examined_index is not None:
-            self._next_path = log_paths[(last_examined_index + 1) % len(log_paths)]
+            next_path = log_paths[(last_examined_index + 1) % len(log_paths)]
+            if next_path != self._next_path:
+                self._next_path = next_path
+                self._state_dirty = True
+        self._persist_state()
         return uploaded
 
     def _has_pending_local_bytes(self, run_id: str) -> bool:
@@ -1330,6 +1524,8 @@ class TrainingLogUploader:
                     except Exception:
                         pass
                 if not self._has_pending_local_bytes(run_id):
+                    with self._operation_lock:
+                        self._persist_state(force=True)
                     return
             raise RuntimeError(
                 f"training log flush exceeded {maximum_passes} passes for run {run_id}"
@@ -1345,8 +1541,8 @@ class BackgroundTrainingLogUploader:
 
     MIN_REQUEST_INTERVAL_SECONDS = 10.0
 
-    def __init__(self, root: Path) -> None:
-        self._uploader = TrainingLogUploader(root)
+    def __init__(self, root: Path, state_path: Optional[Path] = None) -> None:
+        self._uploader = TrainingLogUploader(root, state_path=state_path)
         self._lock = threading.Lock()
         self._thread: Optional[threading.Thread] = None
         self._last_error = ""
@@ -2277,7 +2473,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     )
     managed = ManagedProcess()
     preparer = BackgroundBuildPreparer(builds, client)
-    log_uploader = BackgroundTrainingLogUploader(install_root / "logs")
+    log_uploader = BackgroundTrainingLogUploader(
+        install_root / "logs",
+        state_path=install_root / "log-upload-state.json",
+    )
     stop = False
     last_contact = 0.0
     lease_seconds = max(1.0, args.heartbeat_seconds * 2.0)
