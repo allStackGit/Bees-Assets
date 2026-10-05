@@ -6118,6 +6118,60 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             baseline_memories = []
         _poca_record_timing("memories", time.perf_counter() - started)
 
+        started = time.perf_counter()
+        if cached is None:
+            old_log_probs = ActionLogProbs.from_buffer(batch).flatten()
+            loss_masks = ModelUtils.list_to_tensor(
+                batch[BufferKey.MASKS],
+                dtype=torch.bool,
+            )
+            advantages = ModelUtils.list_to_tensor(
+                batch[BufferKey.ADVANTAGES]
+            )
+        else:
+            old_log_probs = cached["old_log_probs"]
+            loss_masks = cached["loss_masks"]
+            advantages = cached["advantages"]
+        _poca_record_timing(
+            "old_probs_masks",
+            time.perf_counter() - started,
+        )
+
+        started = time.perf_counter()
+        ModelUtils.update_learning_rate(self.optimizer, decay_lr)
+        _poca_record_timing(
+            "learning_rate",
+            time.perf_counter() - started,
+        )
+
+        if (
+            cached is not None
+            and not memories
+            and not value_memories
+            and not baseline_memories
+        ):
+            graph_update = _poca_full_cuda_graph_update(
+                self,
+                cached=cached,
+                current_obs=current_obs,
+                groupmate_obs=groupmate_obs,
+                actions=actions,
+                groupmate_actions=groupmate_actions,
+                act_masks=act_masks,
+                returns=returns,
+                old_values=old_values,
+                old_baseline_values=old_baseline_values,
+                old_log_probs=old_log_probs,
+                loss_masks=loss_masks,
+                advantages=advantages,
+                decay_lr=decay_lr,
+                decay_eps=decay_eps,
+                decay_bet=decay_bet,
+            )
+            if graph_update is not None:
+                _POCA_TIMING_STATE.parallel_streams = ()
+                return graph_update
+
         parallel_forward = _poca_parallel_forward(
             self,
             current_obs,
@@ -6169,22 +6223,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         else:
             log_probs, entropy, values, baselines = parallel_forward
 
-        started = time.perf_counter()
-        if cached is None:
-            old_log_probs = ActionLogProbs.from_buffer(batch).flatten()
-            loss_masks = ModelUtils.list_to_tensor(
-                batch[BufferKey.MASKS],
-                dtype=torch.bool,
-            )
-            advantages = ModelUtils.list_to_tensor(
-                batch[BufferKey.ADVANTAGES]
-            )
-        else:
-            old_log_probs = cached["old_log_probs"]
-            loss_masks = cached["loss_masks"]
-            advantages = cached["advantages"]
         log_probs = log_probs.flatten()
-        _poca_record_timing("old_probs_masks", time.perf_counter() - started)
 
         started = time.perf_counter()
         baseline_loss = ModelUtils.trust_region_value_loss(
@@ -6215,10 +6254,6 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         )
         _poca_record_timing("losses", time.perf_counter() - started)
 
-        started = time.perf_counter()
-        ModelUtils.update_learning_rate(self.optimizer, decay_lr)
-        _poca_record_timing("learning_rate", time.perf_counter() - started)
-
         graph_eligible = _poca_cuda_graph_minibatch_eligible(cached)
         graph_state = getattr(
             self.optimizer,
@@ -6227,6 +6262,11 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         )
         retain_graph_grads = bool(
             graph_eligible
+            and not getattr(
+                self.optimizer,
+                "_bees_full_cuda_graph_managed",
+                False,
+            )
             and graph_state is not None
             and graph_state.get("stable_grads", False)
         )
