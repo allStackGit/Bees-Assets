@@ -182,6 +182,7 @@ def _terminate_detached_actor_unity(
                 pid,
                 builds_root=builds_root,
                 local_base_port=local_base_port,
+                port_count=port_count,
             ):
                 remaining.discard(pid)
         if remaining:
