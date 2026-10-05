@@ -321,6 +321,7 @@ function normalizeLearnerOptimizations(value, fallback = null) {
             minibatchPrefetch: false,
             criticBaselineOverlap: false,
             cudaGraphs: false,
+            profileOnce: false,
         };
     const source = value && typeof value === 'object' ? value : base;
     const streamShards = Number(
@@ -349,6 +350,9 @@ function normalizeLearnerOptimizations(value, fallback = null) {
         ),
         cudaGraphs: Boolean(
             source.cudaGraphs == null ? base.cudaGraphs : source.cudaGraphs
+        ),
+        profileOnce: Boolean(
+            source.profileOnce == null ? base.profileOnce : source.profileOnce
         ),
     };
 }
