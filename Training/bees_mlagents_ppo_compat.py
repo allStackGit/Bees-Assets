@@ -4217,6 +4217,8 @@ def _poca_full_cuda_graph_update(
             "static": None,
             "outputs": None,
             "grads": None,
+            "capture_stream": torch.cuda.Stream(),
+            "capture_warmed": False,
         }
         optimizer._bees_full_cuda_graph_state = state
 
@@ -4322,6 +4324,66 @@ def _poca_full_cuda_graph_update(
         static["faction_plan"]
     )
 
+    def graph_body(*, optimizer_step: bool):
+        optimizer.zero_grad(set_to_none=False)
+        run_out = poca_optimizer.policy.actor.get_stats(
+            static["current_obs"],
+            static["actions"],
+            masks=static["act_masks"],
+            memories=[],
+            sequence_length=poca_optimizer.policy.sequence_length,
+        )
+        log_probs = run_out["log_probs"].flatten()
+        entropy = run_out["entropy"]
+        values, _ = poca_optimizer.critic.critic_pass(
+            [static["current_obs"]] + static["groupmate_obs"],
+            memories=[],
+            sequence_length=poca_optimizer.policy.sequence_length,
+        )
+        baselines, _ = poca_optimizer.critic.baseline(
+            static["current_obs"],
+            (
+                static["groupmate_obs"],
+                static["groupmate_actions"],
+            ),
+            memories=[],
+            sequence_length=poca_optimizer.policy.sequence_length,
+        )
+        baseline_loss = ModelUtils.trust_region_value_loss(
+            baselines,
+            static["old_baselines"],
+            static["returns"],
+            decay_eps,
+            static["loss_masks"],
+        )
+        value_loss = ModelUtils.trust_region_value_loss(
+            values,
+            static["old_values"],
+            static["returns"],
+            decay_eps,
+            static["loss_masks"],
+        )
+        policy_loss = ModelUtils.trust_region_policy_loss(
+            static["advantages"],
+            log_probs,
+            static["old_log_probs"],
+            static["loss_masks"],
+            decay_eps,
+        )
+        loss = (
+            policy_loss
+            + 0.5 * (value_loss + 0.5 * baseline_loss)
+            - decay_bet
+            * ModelUtils.masked_mean(
+                entropy,
+                static["loss_masks"],
+            )
+        )
+        loss.backward()
+        if optimizer_step:
+            optimizer.step()
+        return policy_loss, value_loss, baseline_loss
+
     capture_started = time.perf_counter()
     try:
         _POCA_GROUP_BATCH_STATE.graph_plan = static["group_plan"]
@@ -4332,65 +4394,34 @@ def _poca_full_cuda_graph_update(
             "sample_weights"
         ]
 
+        capture_stream = state["capture_stream"]
+        if not state["capture_warmed"]:
+            # PyTorch warms graph workloads on the same side stream before
+            # capture so cuBLAS/cuDNN/workspace initialization happens outside
+            # cudaStreamBeginCapture. Do the exact graph-safe forward/backward
+            # path once, but deliberately do not step Adam; the enclosing eager
+            # PPO path will apply this minibatch's one real optimizer step.
+            torch.cuda.synchronize()
+            with torch.cuda.stream(capture_stream):
+                graph_body(optimizer_step=False)
+            capture_stream.synchronize()
+            optimizer.zero_grad(set_to_none=False)
+            state["capture_warmed"] = True
+            _POCA_TIMING_STATE.graph_warmups = int(
+                getattr(_POCA_TIMING_STATE, "graph_warmups", 0)
+            ) + 1
+            return None
+
         torch.cuda.synchronize()
         graph = torch.cuda.CUDAGraph()
-        with torch.cuda.graph(graph):
-            optimizer.zero_grad(set_to_none=False)
-            run_out = poca_optimizer.policy.actor.get_stats(
-                static["current_obs"],
-                static["actions"],
-                masks=static["act_masks"],
-                memories=[],
-                sequence_length=poca_optimizer.policy.sequence_length,
+        with torch.cuda.graph(
+            graph,
+            stream=capture_stream,
+            capture_error_mode="thread_local",
+        ):
+            policy_loss, value_loss, baseline_loss = graph_body(
+                optimizer_step=True
             )
-            log_probs = run_out["log_probs"].flatten()
-            entropy = run_out["entropy"]
-            values, _ = poca_optimizer.critic.critic_pass(
-                [static["current_obs"]] + static["groupmate_obs"],
-                memories=[],
-                sequence_length=poca_optimizer.policy.sequence_length,
-            )
-            baselines, _ = poca_optimizer.critic.baseline(
-                static["current_obs"],
-                (
-                    static["groupmate_obs"],
-                    static["groupmate_actions"],
-                ),
-                memories=[],
-                sequence_length=poca_optimizer.policy.sequence_length,
-            )
-            baseline_loss = ModelUtils.trust_region_value_loss(
-                baselines,
-                static["old_baselines"],
-                static["returns"],
-                decay_eps,
-                static["loss_masks"],
-            )
-            value_loss = ModelUtils.trust_region_value_loss(
-                values,
-                static["old_values"],
-                static["returns"],
-                decay_eps,
-                static["loss_masks"],
-            )
-            policy_loss = ModelUtils.trust_region_policy_loss(
-                static["advantages"],
-                log_probs,
-                static["old_log_probs"],
-                static["loss_masks"],
-                decay_eps,
-            )
-            loss = (
-                policy_loss
-                + 0.5 * (value_loss + 0.5 * baseline_loss)
-                - decay_bet
-                * ModelUtils.masked_mean(
-                    entropy,
-                    static["loss_masks"],
-                )
-            )
-            loss.backward()
-            optimizer.step()
     finally:
         reset_training_faction_graph_plan(faction_token)
         _POCA_GROUP_BATCH_STATE.graph_plan = previous_group_plan
