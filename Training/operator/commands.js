@@ -251,6 +251,25 @@ async function invokeRuntime(options = {}) {
 
     if (activeRun !== releaseRun || activeKey !== releaseKey) {
         if (isInterruptedIncompatibleCutover(release, desired)) {
+            const sourceSha = getGitShortSha();
+            const packageRoot = path.join(paths.buildsRoot, 'Packages', buildId);
+            ensureDir(packageRoot);
+            const runtimeArchive = path.join(
+                packageRoot,
+                'training-runtime-' + sourceSha + '.zip',
+            );
+            const runtime = newReleaseTrainingRuntime(
+                python,
+                buildId,
+                sourceSha,
+                runtimeArchive,
+            );
+            saveLatestRelease({
+                ...release,
+                training_runtime: runtime,
+                runtime_source_commit: sourceSha,
+                runtime_updated_utc: new Date().toISOString(),
+            });
             saveRuntimeTrainingOptions({
                 threadedTraining: Boolean(config.threadedTraining),
                 threadedPolicyLag: Number(config.threadedPolicyLag),
@@ -264,7 +283,8 @@ async function invokeRuntime(options = {}) {
             });
             console.log(
                 'Latest release is an interrupted incompatible cutover. ' +
-                'Saved the requested runtime settings and resuming that cutover now.'
+                'Pinned the current training runtime, saved the requested settings, ' +
+                'and resuming that cutover now.'
             );
             await invokeStart({});
             return;
