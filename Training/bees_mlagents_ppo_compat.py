@@ -3791,6 +3791,59 @@ class _PocaMinibatchPrefetcher:
 
 
 
+def _poca_prepare_cuda_capturable_adam(optimizer) -> bool:
+    """Keep CUDA Adam step state on-device without resetting optimizer history."""
+
+    from mlagents.torch_utils import torch
+
+    if (
+        not torch.cuda.is_available()
+        or not isinstance(optimizer, torch.optim.Adam)
+        or not optimizer.param_groups
+    ):
+        return False
+
+    parameters = [
+        parameter
+        for group in optimizer.param_groups
+        for parameter in group["params"]
+    ]
+    if not parameters or any(parameter.device.type != "cuda" for parameter in parameters):
+        return False
+
+    # PyTorch 2.1.1's foreach Adam reads each CUDA step tensor back to the host
+    # twice per parameter when capturable=False. Keeping the step state on CUDA
+    # removes those per-parameter synchronization points while leaving Adam's
+    # moments, step counts, and parameter-group hyperparameters unchanged.
+    for group in optimizer.param_groups:
+        group["capturable"] = True
+    optimizer.defaults["capturable"] = True
+
+    if getattr(optimizer, "_bees_capturable_adam_prepared", False):
+        return True
+
+    for group in optimizer.param_groups:
+        for parameter in group["params"]:
+            parameter_state = optimizer.state.get(parameter)
+            if not parameter_state:
+                continue
+            step = parameter_state.get("step")
+            if step is None:
+                continue
+            if torch.is_tensor(step):
+                if step.device != parameter.device:
+                    parameter_state["step"] = step.to(device=parameter.device)
+            else:
+                parameter_state["step"] = torch.tensor(
+                    float(step),
+                    dtype=torch.float,
+                    device=parameter.device,
+                )
+
+    optimizer._bees_capturable_adam_prepared = True
+    return True
+
+
 def _poca_cuda_graph_minibatch_eligible(cached) -> bool:
     """Require all conditionally executed faction actor parameters to participate."""
 
@@ -3810,6 +3863,7 @@ def _poca_optimizer_step(optimizer, *, graph_eligible: bool = False) -> None:
 
     opts = _POCA_OPTIMIZATIONS
     if not opts.cuda_graphs:
+        _poca_prepare_cuda_capturable_adam(optimizer)
         optimizer.step()
         return
 
@@ -3848,8 +3902,7 @@ def _poca_optimizer_step(optimizer, *, graph_eligible: bool = False) -> None:
         ]
 
     def eager_step_and_invalidate() -> None:
-        for group in optimizer.param_groups:
-            group["capturable"] = False
+        _poca_prepare_cuda_capturable_adam(optimizer)
         optimizer.step()
         state["graph"] = None
         state["signature"] = None
@@ -3857,15 +3910,7 @@ def _poca_optimizer_step(optimizer, *, graph_eligible: bool = False) -> None:
         state["stable_grads"] = False
 
     def migrate_step_state() -> None:
-        for group in optimizer.param_groups:
-            group["capturable"] = True
-            for parameter in group["params"]:
-                parameter_state = optimizer.state.get(parameter)
-                if not parameter_state:
-                    continue
-                step = parameter_state.get("step")
-                if step is not None and step.device != parameter.device:
-                    parameter_state["step"] = step.to(device=parameter.device)
+        _poca_prepare_cuda_capturable_adam(optimizer)
 
     parameters = active_parameters()
     complete_parameter_set = len(parameters) == len(all_parameters())
