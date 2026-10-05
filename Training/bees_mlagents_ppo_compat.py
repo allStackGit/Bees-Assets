@@ -46,6 +46,8 @@ POCA_VARIABILITY_HISTORY_LIMIT = 64
 POCA_PROFILE_WAIT_MINIBATCHES = 2
 POCA_PROFILE_WARMUP_MINIBATCHES = 1
 POCA_PROFILE_ACTIVE_MINIBATCHES = 6
+POCA_CUDA_GRAPH_FACTION_BUCKET_ROWS = 32
+POCA_CUDA_GRAPH_GROUP_BUCKET_ROWS = 32
 _POCA_VARIABILITY_HISTORY = []
 
 
@@ -4057,8 +4059,9 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         valid_rows = getattr(_POCA_GROUP_BATCH_STATE, "valid_rows", None)
         cache = getattr(_POCA_GROUP_BATCH_STATE, "encoded_cache", None)
         dedup_plan = getattr(_POCA_GROUP_BATCH_STATE, "dedup_plan", None)
+        graph_plan = getattr(_POCA_GROUP_BATCH_STATE, "graph_plan", None)
         if (
-            valid_rows is None
+            (valid_rows is None and graph_plan is None)
             or cache is None
             or not getattr(self.observation_encoder, "_bees", False)
             or len(getattr(self.observation_encoder, "processors", ())) != 1
@@ -4074,7 +4077,11 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
 
         from mlagents.torch_utils import torch
 
-        groupmate_count = len(valid_rows)
+        groupmate_count = (
+            int(graph_plan["group_count"])
+            if graph_plan is not None
+            else len(valid_rows)
+        )
         if len(obs) > groupmate_count or max(0, len(obs_only) - 1) > groupmate_count:
             return original_multi_agent_forward(
                 self,
@@ -4129,6 +4136,66 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             member_valid_rows,
             dedup_mappings=None,
         ):
+            if graph_plan is not None:
+                has_current = bool(
+                    member_valid_rows
+                    and member_valid_rows[0] is None
+                )
+                current_members = members[:1] if has_current else []
+                group_members = members[1:] if has_current else members
+                outputs = []
+
+                if current_members:
+                    source = current_members[0][0]
+                    cache_key = id(source)
+                    encoded = cache.get(cache_key)
+                    if encoded is None:
+                        encoded = self.observation_encoder([source])
+                        cache[cache_key] = encoded
+                    outputs.append(encoded)
+
+                if group_members:
+                    entries = graph_plan["positions"][: len(group_members)]
+                    cached_group = [
+                        cache.get(id(member[0]))
+                        for member in group_members
+                    ]
+                    if all(value is not None for value in cached_group):
+                        outputs.extend(cached_group)
+                        return outputs
+
+                    selected = []
+                    for member, entry in zip(group_members, entries):
+                        source = member[0]
+                        selected.append(
+                            source.index_select(0, entry["indices"])
+                        )
+                    merged = (
+                        selected[0]
+                        if len(selected) == 1
+                        else torch.cat(selected, dim=0)
+                    )
+                    merged_encoded = self.observation_encoder([merged])
+
+                    offset = 0
+                    encoded_group = []
+                    for member, entry in zip(group_members, entries):
+                        bucket = int(entry["bucket"])
+                        part = merged_encoded[offset : offset + bucket]
+                        offset += bucket
+                        part = part * entry["mask"]
+                        encoded = part.new_zeros(
+                            (batch_size, encoded_size)
+                        ).index_add(
+                            0,
+                            entry["indices"],
+                            part,
+                        )
+                        cache[id(member[0])] = encoded
+                        encoded_group.append(encoded)
+                    outputs.extend(encoded_group)
+                return outputs
+
             outputs = [None] * len(members)
             pending = []
             unique_encoded = (
@@ -4240,6 +4307,8 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         self_attn_masks = []
         self_attn_inputs = []
 
+        if graph_plan is not None:
+            dedup_plan = None
         group_dedup_mappings = (
             dedup_plan.get("group_inverse", ())
             if dedup_plan is not None
