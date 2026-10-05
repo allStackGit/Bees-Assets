@@ -1747,12 +1747,13 @@ def _unapplied_training_worker(
     status: object,
     record: Optional[Mapping[str, object]],
 ) -> bool:
-    """Detect a fresh worker heartbeat that never applied active training intent.
+    """Detect a fresh worker heartbeat that never received/applied active training intent.
 
     A dedicated worker may legitimately report stopped while a release is staged or while
-    it is actively reconciling a build. Outside those states, a fresh heartbeat that stays
-    stopped on an older revision with no reported error cannot produce rollout and should
-    be recycled without disturbing a proven-live private transport.
+    it is actively reconciling a build. Outside those states, repeated fresh stopped heartbeats
+    on an older revision prove requests are reaching central control but do not prove the inner
+    worker receives the heartbeat responses carrying desired state. Recovery must therefore
+    repair the private control path without destroying the worker that is trying to reconcile.
     """
     if not isinstance(status, Mapping) or not isinstance(record, Mapping):
         return False
@@ -2477,36 +2478,30 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                             if control_healthy and not record_stale and not registration_grace:
                                 if _unapplied_training_worker(status, record):
                                     print(
-                                        "[Bees remote] inner worker remained stopped without applying "
-                                        "the active training revision after its registration grace; "
-                                        "recycling the managed worker without disturbing the healthy "
-                                        "private transport.",
+                                        "[Bees remote] inner worker remains stopped on an older "
+                                        "revision while its heartbeats still reach central control; "
+                                        "recycling private transport so heartbeat responses can "
+                                        "recover without restarting the managed worker.",
                                         file=sys.stderr,
                                         flush=True,
                                     )
                                     try:
-                                        worker, worker_log_thread = (
-                                            _restart_managed_worker_preserving_transport(
-                                                args,
-                                                root,
-                                                actor_key,
-                                                worker,
-                                                worker_log_thread,
-                                            )
-                                        )
+                                        _terminate(tailnet)
                                     except RuntimeError as exc:
                                         raise _SupervisorProcessRestartRequired(
-                                            "unapplied managed worker could not be replaced cleanly: "
+                                            "private control transport could not be recycled: "
                                             + str(exc)
                                         ) from exc
-                                    restarted_now = time.monotonic()
-                                    worker_started_monotonic = restarted_now
-                                    stale_recycle_grace_started_monotonic = restarted_now
+                                    if tailnet_log_thread is not None:
+                                        tailnet_log_thread.join(timeout=1.0)
+                                    tailnet = None
+                                    tailnet_log_thread = None
+                                    recovered_now = time.monotonic()
+                                    stale_recycle_grace_started_monotonic = recovered_now
+                                    private_path_watchdog.observe(True, recovered_now)
+                                    broker_path_watchdog.observe(True, recovered_now)
                                     control_failure_watchdog.reset()
-                                    inner_control_stall_watchdog.observe(
-                                        True,
-                                        restarted_now,
-                                    )
+                                    inner_control_stall_watchdog.observe(True, recovered_now)
                                     next_status = 0.0
                                     continue
 
