@@ -450,6 +450,27 @@ class BeesStructuredObservationEncoder(nn.Module):
             "The Bees combat policy does not define goal-signal observations."
         )
 
+    def _normalized_slice(
+        self,
+        raw: torch.Tensor,
+        start: int,
+        size: int,
+    ) -> torch.Tensor:
+        values = raw[:, start : start + size]
+        normalizer = self.vector_input.normalizer
+        if normalizer is None:
+            return values
+        mean = normalizer.running_mean[start : start + size]
+        variance = normalizer.running_variance[start : start + size]
+        return torch.clamp(
+            (values - mean)
+            / torch.sqrt(
+                variance / normalizer.normalization_steps
+            ),
+            -5,
+            5,
+        )
+
     def _entity_weapon_embeddings(
         self,
         normalized: torch.Tensor,
@@ -888,8 +909,7 @@ class BeesStructuredObservationEncoder(nn.Module):
             )
 
         raw = inputs[0]
-        normalized = self.vector_input(raw)
-        if normalized.shape[1] != BEES_OBSERVATION_SIZE:
+        if raw.shape[1] != BEES_OBSERVATION_SIZE:
             raise UnityTrainerException(
                 "Bees structured policy received an unexpected observation size."
             )
@@ -899,14 +919,19 @@ class BeesStructuredObservationEncoder(nn.Module):
         # has identical encoder inputs regardless of which absolute slot it occupies.
         # The full-vector running normalizer remains useful for fixed-position global
         # state (self, capability, objectives and grids).
-        self_obs = normalized[:, SELF_START : SELF_START + SELF_SIZE]
+        self_obs = self._normalized_slice(
+            raw,
+            SELF_START,
+            SELF_SIZE,
+        )
         self_embedding = self.self_encoder(self_obs)
 
         capability = self.capability_encoder(
-            normalized[
-                :,
-                CAPABILITY_START : CAPABILITY_START + CAPABILITY_SIZE,
-            ]
+            self._normalized_slice(
+                raw,
+                CAPABILITY_START,
+                CAPABILITY_SIZE,
+            )
         )
 
         parent_norm = raw[:, PARENT_START : PARENT_START + PARENT_SIZE].reshape(
@@ -1087,31 +1112,39 @@ class BeesStructuredObservationEncoder(nn.Module):
         )
 
         objective = self.objective_encoder(
-            normalized[
-                :,
-                OBJECTIVE_START : OBJECTIVE_START + OBJECTIVE_SIZE,
-            ]
+            self._normalized_slice(
+                raw,
+                OBJECTIVE_START,
+                OBJECTIVE_SIZE,
+            )
         )
         navigation = self.navigation_encoder(
-            normalized[
-                :,
-                NAVIGATION_START : NAVIGATION_START + NAVIGATION_SIZE,
-            ]
+            self._normalized_slice(
+                raw,
+                NAVIGATION_START,
+                NAVIGATION_SIZE,
+            )
         )
         exploration = self.exploration_encoder(
-            normalized[
-                :,
-                EXPLORATION_START : EXPLORATION_START + EXPLORATION_SIZE,
-            ]
+            self._normalized_slice(
+                raw,
+                EXPLORATION_START,
+                EXPLORATION_SIZE,
+            )
         )
         tail = self.tail_encoder(
             torch.cat(
                 [
-                    normalized[
-                        :,
-                        EPISODE_PROGRESS_INDEX : EPISODE_PROGRESS_INDEX + 1,
-                    ],
-                    normalized[:, RESERVED_START:],
+                    self._normalized_slice(
+                        raw,
+                        EPISODE_PROGRESS_INDEX,
+                        1,
+                    ),
+                    self._normalized_slice(
+                        raw,
+                        RESERVED_START,
+                        RESERVED_SIZE,
+                    ),
                 ],
                 dim=1,
             )
