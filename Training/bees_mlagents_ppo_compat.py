@@ -2256,6 +2256,7 @@ def _select_poca_ragged_group_obs(
     device,
     *,
     non_blocking: bool = False,
+    factorized: bool = False,
 ):
     """Pack only the selected minibatch's real groupmate rows.
 
@@ -2331,6 +2332,14 @@ def _select_poca_ragged_group_obs(
                     ],
                     axis=0,
                 )
+                if factorized:
+                    from bees_mlagents_factorized_poca import (
+                        compact_group_observation_numpy,
+                    )
+
+                    compact = compact_group_observation_numpy(
+                        compact
+                    )
                 compact_tensor = _poca_cpu_tensor(
                     compact,
                     torch.float32,
@@ -2778,6 +2787,9 @@ def _select_poca_update_tensor_cache(
             selected_groupmate_counts,
             device,
             non_blocking=non_blocking,
+            factorized=bool(
+                cache.get("factorized_group_obs", False)
+            ),
         )
     )
     continuous_actions = take(cache["continuous_actions"])
