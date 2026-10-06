@@ -54,7 +54,12 @@ GROUP_STATE_WIDTH = (
 )
 GROUP_ACTION_WIDTH = BEES_CONTINUOUS_ACTIONS + sum(BEES_DISCRETE_BRANCHES)
 GROUP_NAVIGATION_SIDE = 7
-GROUP_NAVIGATION_SIZE = GROUP_NAVIGATION_SIDE * GROUP_NAVIGATION_SIDE
+GROUP_NAVIGATION_CHANNELS = 3
+GROUP_NAVIGATION_SIZE = (
+    GROUP_NAVIGATION_SIDE
+    * GROUP_NAVIGATION_SIDE
+    * GROUP_NAVIGATION_CHANNELS
+)
 GROUP_COMPACT_WIDTH = GROUP_STATE_WIDTH + GROUP_NAVIGATION_SIZE
 CRITIC_WIDTH = 128
 GROUP_NAV_WIDTH = 64
@@ -266,13 +271,18 @@ class BeesFactorizedPOCACritic(nn.Module):
             ],
             dim=1,
         )
-        navigation = clean[
+        navigation_blocks = clean[
             :,
             NAVIGATION_START : NAVIGATION_START + NAVIGATION_SIZE,
-        ].reshape(-1, 7, 3, 7, 3).amax(dim=(2, 4)).reshape(
-            -1,
-            GROUP_NAVIGATION_SIZE,
-        )
+        ].reshape(-1, 7, 3, 7, 3)
+        navigation = torch.stack(
+            [
+                navigation_blocks.amin(dim=(2, 4)),
+                navigation_blocks.amax(dim=(2, 4)),
+                navigation_blocks.mean(dim=(2, 4)),
+            ],
+            dim=3,
+        ).reshape(-1, GROUP_NAVIGATION_SIZE)
         return compact, navigation, valid
 
     @staticmethod
@@ -800,7 +810,7 @@ def compact_group_observation_numpy(raw):
             "Bees compact group observation requires full Bees observation rows."
         )
 
-    navigation = values[
+    navigation_blocks = values[
         :,
         NAVIGATION_START : NAVIGATION_START + NAVIGATION_SIZE,
     ].reshape(
@@ -809,10 +819,15 @@ def compact_group_observation_numpy(raw):
         3,
         7,
         3,
-    ).max(axis=(2, 4)).reshape(
-        -1,
-        GROUP_NAVIGATION_SIZE,
     )
+    navigation = np.stack(
+        [
+            navigation_blocks.min(axis=(2, 4)),
+            navigation_blocks.max(axis=(2, 4)),
+            navigation_blocks.mean(axis=(2, 4)),
+        ],
+        axis=3,
+    ).reshape(-1, GROUP_NAVIGATION_SIZE)
     compact = np.concatenate(
         [
             values[:, SELF_START : SELF_START + SELF_SIZE],
