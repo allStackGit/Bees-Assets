@@ -17,6 +17,8 @@ The actor and exported policy are unchanged.
 
 from __future__ import annotations
 
+import contextvars
+
 from typing import Dict, List, Optional, Sequence, Tuple
 
 from mlagents.torch_utils import default_device, nn, torch
@@ -61,6 +63,19 @@ GROUP_ACTION_EMBED = 64
 CRITIC_BOOTSTRAP_BUFFERS = 3
 
 _ORIGINAL_POCA_INIT = None
+_GROUP_VALID_ROWS = contextvars.ContextVar(
+    "bees_factorized_poca_group_valid_rows",
+    default=None,
+)
+
+
+def set_factorized_group_valid_rows(rows):
+    return _GROUP_VALID_ROWS.set(rows)
+
+
+def reset_factorized_group_valid_rows(token) -> None:
+    _GROUP_VALID_ROWS.reset(token)
+
 
 
 def _mlp(input_size: int, hidden_size: int, output_size: int) -> nn.Sequential:
@@ -283,16 +298,162 @@ class BeesFactorizedPOCACritic(nn.Module):
         groupmate_obs,
         batch_size: int,
         reference: torch.Tensor,
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> Tuple[
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        Optional[torch.Tensor],
+    ]:
         if not groupmate_obs:
-            empty_tokens = reference.new_zeros((batch_size, 0, CRITIC_WIDTH))
+            empty_tokens = reference.new_zeros(
+                (batch_size, 0, CRITIC_WIDTH)
+            )
             empty_valid = torch.zeros(
                 (batch_size, 0),
                 dtype=torch.bool,
                 device=reference.device,
             )
             empty_count = reference.new_zeros((batch_size, 1))
-            return empty_tokens, empty_valid, empty_count
+            return (
+                empty_tokens,
+                empty_valid,
+                empty_count,
+                None,
+            )
+
+        packed_rows = _GROUP_VALID_ROWS.get()
+        if (
+            isinstance(packed_rows, (list, tuple))
+            and len(packed_rows) == len(groupmate_obs)
+        ):
+            group_count = len(groupmate_obs)
+            state_parts = []
+            navigation_parts = []
+            destination_parts = []
+            validity_parts = []
+
+            for position, member in enumerate(groupmate_obs):
+                if len(member) != 1:
+                    raise RuntimeError(
+                        "Bees factorized POCA critic expects one vector observation per groupmate."
+                    )
+                raw = member[0]
+                if int(raw.shape[0]) != batch_size:
+                    raise RuntimeError(
+                        "Bees factorized POCA groupmate batch size changed unexpectedly."
+                    )
+                rows = packed_rows[position]
+                if not isinstance(rows, torch.Tensor):
+                    rows = torch.as_tensor(
+                        rows,
+                        dtype=torch.long,
+                        device=raw.device,
+                    )
+                elif rows.device != raw.device:
+                    rows = rows.to(
+                        device=raw.device,
+                        dtype=torch.long,
+                        non_blocking=True,
+                    )
+                else:
+                    rows = rows.to(dtype=torch.long)
+
+                if int(rows.numel()) == 0:
+                    continue
+                selected = raw.index_select(0, rows)
+                compact, navigation, selected_valid = (
+                    self._compact_group_state(selected)
+                )
+                state_parts.append(compact)
+                navigation_parts.append(navigation)
+                destination_parts.append(
+                    rows * group_count + int(position)
+                )
+                validity_parts.append(selected_valid)
+
+            if not state_parts:
+                empty_tokens = reference.new_zeros(
+                    (batch_size, group_count, CRITIC_WIDTH)
+                )
+                empty_valid = torch.zeros(
+                    (batch_size, group_count),
+                    dtype=torch.bool,
+                    device=reference.device,
+                )
+                empty_count = reference.new_zeros(
+                    (batch_size, 1)
+                )
+                return (
+                    empty_tokens,
+                    empty_valid,
+                    empty_count,
+                    reference.new_empty(
+                        (0,),
+                        dtype=torch.long,
+                    ),
+                )
+
+            compact_tensor = torch.cat(state_parts, dim=0)
+            navigation_tensor = torch.cat(
+                navigation_parts,
+                dim=0,
+            )
+            destinations = torch.cat(
+                destination_parts,
+                dim=0,
+            ).to(dtype=torch.long)
+            packed_valid = torch.cat(validity_parts, dim=0)
+
+            state = self.group_state_encoder(compact_tensor)
+            navigation = self.group_navigation_encoder(
+                navigation_tensor
+            )
+            packed_tokens = self.group_state_fuse(
+                torch.cat([state, navigation], dim=1)
+            )
+            packed_tokens = (
+                packed_tokens
+                * packed_valid.to(
+                    packed_tokens.dtype
+                ).unsqueeze(1)
+            )
+
+            flat_tokens = reference.new_zeros(
+                (
+                    batch_size * group_count,
+                    CRITIC_WIDTH,
+                )
+            ).index_copy(
+                0,
+                destinations,
+                packed_tokens,
+            )
+            flat_valid = torch.zeros(
+                (batch_size * group_count,),
+                dtype=torch.bool,
+                device=reference.device,
+            ).index_copy(
+                0,
+                destinations,
+                packed_valid,
+            )
+            tokens = flat_tokens.reshape(
+                batch_size,
+                group_count,
+                CRITIC_WIDTH,
+            )
+            valid = flat_valid.reshape(
+                batch_size,
+                group_count,
+            )
+            count = (
+                valid.to(tokens.dtype).sum(
+                    dim=1,
+                    keepdim=True,
+                )
+                / 64.0
+            )
+            return tokens, valid, count, destinations
 
         compact_parts = []
         navigation_parts = []
@@ -318,7 +479,10 @@ class BeesFactorizedPOCACritic(nn.Module):
 
         group_count = int(compact_tensor.shape[1])
         state = self.group_state_encoder(
-            compact_tensor.reshape(batch_size * group_count, GROUP_STATE_WIDTH)
+            compact_tensor.reshape(
+                batch_size * group_count,
+                GROUP_STATE_WIDTH,
+            )
         )
         navigation = self.group_navigation_encoder(
             navigation_tensor.reshape(
@@ -329,9 +493,18 @@ class BeesFactorizedPOCACritic(nn.Module):
         tokens = self.group_state_fuse(
             torch.cat([state, navigation], dim=1)
         ).reshape(batch_size, group_count, CRITIC_WIDTH)
-        tokens = tokens * valid.to(tokens.dtype).unsqueeze(2)
-        count = valid.to(tokens.dtype).sum(dim=1, keepdim=True) / 64.0
-        return tokens, valid, count
+        tokens = (
+            tokens
+            * valid.to(tokens.dtype).unsqueeze(2)
+        )
+        count = (
+            valid.to(tokens.dtype).sum(
+                dim=1,
+                keepdim=True,
+            )
+            / 64.0
+        )
+        return tokens, valid, count, None
 
     def _flatten_group_actions(
         self,
@@ -407,7 +580,12 @@ class BeesFactorizedPOCACritic(nn.Module):
         raw = current_obs[0]
         batch_size = int(raw.shape[0])
         focal = self.focal_encoder(self.observation_encoder(current_obs))
-        group_tokens, valid, count = self._encode_group_states(
+        (
+            group_tokens,
+            valid,
+            count,
+            packed_destinations,
+        ) = self._encode_group_states(
             groupmate_obs,
             batch_size,
             raw,
@@ -426,6 +604,7 @@ class BeesFactorizedPOCACritic(nn.Module):
             "group_tokens": group_tokens,
             "valid": valid,
             "count": count,
+            "packed_destinations": packed_destinations,
             "state_pool": state_pool,
         }
         self._shared_cache = cached
@@ -482,28 +661,86 @@ class BeesFactorizedPOCACritic(nn.Module):
                 (batch_size, CRITIC_WIDTH)
             )
         else:
-            action_embedding = self.group_action_encoder(
-                flat_actions.reshape(
-                    batch_size * group_count,
-                    GROUP_ACTION_WIDTH,
-                )
-            ).reshape(
-                batch_size,
-                group_count,
-                GROUP_ACTION_EMBED,
+            destinations = shared.get(
+                "packed_destinations"
             )
-            action_tokens = self.group_action_fuse(
-                torch.cat(
-                    [group_tokens, action_embedding],
-                    dim=2,
-                ).reshape(
-                    batch_size * group_count,
-                    CRITIC_WIDTH + GROUP_ACTION_EMBED,
+            flat_action_values = flat_actions.reshape(
+                batch_size * group_count,
+                GROUP_ACTION_WIDTH,
+            )
+            flat_group_tokens = group_tokens.reshape(
+                batch_size * group_count,
+                CRITIC_WIDTH,
+            )
+            if destinations is not None:
+                selected_actions = (
+                    flat_action_values.index_select(
+                        0,
+                        destinations,
+                    )
                 )
-            ).reshape(batch_size, group_count, CRITIC_WIDTH)
+                selected_group_tokens = (
+                    flat_group_tokens.index_select(
+                        0,
+                        destinations,
+                    )
+                )
+                action_embedding = self.group_action_encoder(
+                    selected_actions
+                )
+                selected_action_tokens = (
+                    self.group_action_fuse(
+                        torch.cat(
+                            [
+                                selected_group_tokens,
+                                action_embedding,
+                            ],
+                            dim=1,
+                        )
+                    )
+                )
+                flat_action_tokens = (
+                    flat_group_tokens.new_zeros(
+                        flat_group_tokens.shape
+                    ).index_copy(
+                        0,
+                        destinations,
+                        selected_action_tokens,
+                    )
+                )
+                action_tokens = flat_action_tokens.reshape(
+                    batch_size,
+                    group_count,
+                    CRITIC_WIDTH,
+                )
+            else:
+                action_embedding = self.group_action_encoder(
+                    flat_action_values
+                ).reshape(
+                    batch_size,
+                    group_count,
+                    GROUP_ACTION_EMBED,
+                )
+                action_tokens = self.group_action_fuse(
+                    torch.cat(
+                        [group_tokens, action_embedding],
+                        dim=2,
+                    ).reshape(
+                        batch_size * group_count,
+                        CRITIC_WIDTH
+                        + GROUP_ACTION_EMBED,
+                    )
+                ).reshape(
+                    batch_size,
+                    group_count,
+                    CRITIC_WIDTH,
+                )
+
             action_tokens = (
                 action_tokens
-                * shared["valid"].to(action_tokens.dtype).unsqueeze(2)
+                * shared["valid"].to(
+                    action_tokens.dtype
+                ).unsqueeze(2)
             )
             action_pool = self._masked_pool(
                 action_tokens,
