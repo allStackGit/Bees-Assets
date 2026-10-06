@@ -3018,6 +3018,127 @@ def _poca_select_group_prepare_source(source, indices):
     }
 
 
+def _poca_current_obs_slot_limits(current_obs):
+    """Find exact occupied structured prefixes in selected focal observations."""
+
+    import numpy as np
+    from bees_mlagents_structured_policy import (
+        ALLY_COUNT,
+        ALLY_SIZE,
+        ALLY_START,
+        BEES_OBSERVATION_SIZE,
+        COLLISION_COUNT,
+        COLLISION_SIZE,
+        COLLISION_START,
+        ENEMY_COUNT,
+        ENEMY_SIZE,
+        ENEMY_START,
+        ENTITY_BASE_SIZE,
+        ENTITY_WEAPON_COUNT,
+        MAP_OBJECT_COUNT,
+        MAP_OBJECT_SIZE,
+        MAP_OBJECT_START,
+        MINING_COUNT,
+        MINING_SIZE,
+        MINING_START,
+        OBSERVED_WEAPON_SIZE,
+        PARENT_SIZE,
+        PARENT_START,
+    )
+
+    if len(current_obs) != 1:
+        return None
+    tensor = current_obs[0]
+    if (
+        tensor.device.type != "cpu"
+        or tensor.ndim != 2
+        or int(tensor.shape[1]) != BEES_OBSERVATION_SIZE
+        or int(tensor.shape[0]) <= 0
+    ):
+        return None
+
+    values = np.asarray(
+        tensor.detach().numpy(),
+        dtype=np.float32,
+    )
+    families = {
+        "allies": (ALLY_START, ALLY_COUNT, ALLY_SIZE),
+        "enemies": (ENEMY_START, ENEMY_COUNT, ENEMY_SIZE),
+        "mining": (MINING_START, MINING_COUNT, MINING_SIZE),
+        "map_objects": (
+            MAP_OBJECT_START,
+            MAP_OBJECT_COUNT,
+            MAP_OBJECT_SIZE,
+        ),
+        "collisions": (
+            COLLISION_START,
+            COLLISION_COUNT,
+            COLLISION_SIZE,
+        ),
+    }
+    limits = {}
+    for name, (start, count, width) in families.items():
+        presence = values[
+            :,
+            np.asarray(
+                [
+                    start + slot * width
+                    for slot in range(count)
+                ],
+                dtype=np.int64,
+            ),
+        ]
+        occupied = np.any(
+            np.isfinite(presence) & (presence > 0.0),
+            axis=0,
+        )
+        indices = np.flatnonzero(occupied)
+        limits[name] = max(
+            1,
+            min(
+                count,
+                int(indices[-1]) + 1
+                if indices.size
+                else 1,
+            ),
+        )
+
+    entity_weapon_highest = 0
+    entity_families = (
+        (PARENT_START, 1, PARENT_SIZE),
+        (ALLY_START, limits["allies"], ALLY_SIZE),
+        (ENEMY_START, limits["enemies"], ENEMY_SIZE),
+    )
+    for weapon_index in range(ENTITY_WEAPON_COUNT):
+        indices = []
+        for start, count, width in entity_families:
+            indices.extend(
+                start
+                + slot * width
+                + ENTITY_BASE_SIZE
+                + weapon_index * OBSERVED_WEAPON_SIZE
+                for slot in range(count)
+            )
+        if indices:
+            presence = values[
+                :,
+                np.asarray(indices, dtype=np.int64),
+            ]
+            if np.any(
+                np.isfinite(presence)
+                & (presence > 0.0)
+            ):
+                entity_weapon_highest = weapon_index + 1
+    limits["entity_weapons"] = max(
+        1,
+        min(
+            ENTITY_WEAPON_COUNT,
+            entity_weapon_highest,
+        ),
+    )
+    return limits
+
+
 def _poca_build_packed_entity_plan(current_obs, slot_limits):
     """Build exact occupied-slot indices on CPU for structured training."""
 
@@ -3794,9 +3915,24 @@ class _PocaCpuMinibatchPreparer:
         dedup_plan = _poca_build_observation_dedup_plan(
             observation_source
         )
+        selected_slot_limits = (
+            _poca_current_obs_slot_limits(
+                observation_source["current_obs"]
+            )
+            if self.cache.get(
+                "factorized_group_obs",
+                False,
+            )
+            else None
+        )
+        effective_slot_limits = (
+            selected_slot_limits
+            if selected_slot_limits is not None
+            else self.cache.get("slot_limits", {})
+        )
         packed_entity_plan = _poca_build_packed_entity_plan(
             observation_source["current_obs"],
-            self.cache.get("slot_limits", {}),
+            effective_slot_limits,
         )
         if self.full_minibatch:
             selected = _select_poca_update_tensor_cache(
@@ -3811,6 +3947,8 @@ class _PocaCpuMinibatchPreparer:
             )
             selected["observation_dedup"] = dedup_plan
             selected["packed_entity_plan"] = packed_entity_plan
+            if selected_slot_limits is not None:
+                selected["slot_limits"] = selected_slot_limits
         else:
             selected = {
                 "prepared_groupmate_obs": (
@@ -3818,6 +3956,7 @@ class _PocaCpuMinibatchPreparer:
                 ),
                 "observation_dedup": dedup_plan,
                 "packed_entity_plan": packed_entity_plan,
+                "slot_limits": selected_slot_limits,
             }
         selected = _poca_pin_selected_minibatch(selected)
         return selected, time.perf_counter() - started
@@ -5841,6 +5980,14 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                                 ] = prepared_cpu.get(
                                     "packed_entity_plan"
                                 )
+                                if prepared_cpu.get(
+                                    "slot_limits"
+                                ) is not None:
+                                    selected_minibatch[
+                                        "slot_limits"
+                                    ] = prepared_cpu[
+                                        "slot_limits"
+                                    ]
                             _POCA_UPDATE_CACHE_STATE.minibatch = (
                                 selected_minibatch
                             )
