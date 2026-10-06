@@ -2500,6 +2500,9 @@ def _build_poca_update_tensor_cache(optimizer, buffer):
         "size": size,
         "current_obs": current_obs,
         "groupmate_obs": groupmate_obs,
+        "factorized_group_obs": bool(
+            getattr(optimizer, "_bees_factorized_poca", False)
+        ),
         "continuous_actions": continuous_actions,
         "discrete_actions": discrete_actions,
         "group_continuous": group_continuous,
@@ -3029,7 +3032,11 @@ def _poca_build_observation_dedup_plan(cached):
         FACTION_INDEX,
     )
 
-    if cached is None or len(cached.get("current_obs", ())) != 1:
+    if (
+        cached is None
+        or cached.get("factorized_group_obs", False)
+        or len(cached.get("current_obs", ())) != 1
+    ):
         return None
     current = cached["current_obs"][0]
     if current.device.type != "cpu" or current.ndim != 2:
