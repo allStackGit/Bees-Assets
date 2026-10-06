@@ -3155,6 +3155,7 @@ def _poca_build_packed_entity_plan(current_obs, slot_limits):
         ENEMY_COUNT,
         ENEMY_SIZE,
         ENEMY_START,
+        FACTION_INDEX,
         MAP_OBJECT_COUNT,
         MAP_OBJECT_SIZE,
         MAP_OBJECT_START,
