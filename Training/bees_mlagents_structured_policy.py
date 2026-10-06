@@ -1001,33 +1001,18 @@ class BeesStructuredObservationEncoder(nn.Module):
         output = output.index_copy(0, active, embedded)
         return output.reshape(batch, weapon_count, WEAPON_SLOT_EMBED)
 
-    def _encode_entities_packed(
+    def _encode_entity_rows(
         self,
-        normalized: torch.Tensor,
-        raw: torch.Tensor,
-        active_indices: torch.Tensor,
+        active_normalized: torch.Tensor,
+        active_raw: torch.Tensor,
     ):
-        flat_normalized = normalized.reshape(
-            -1,
-            normalized.shape[2],
-        )
-        flat_raw = raw.reshape(-1, raw.shape[2])
-        active_normalized = flat_normalized.index_select(
-            0,
-            active_indices,
-        )
-        active_raw = flat_raw.index_select(
-            0,
-            active_indices,
-        )
-        if int(active_indices.numel()) == 0:
+        if int(active_normalized.shape[0]) == 0:
             return (
-                normalized.new_zeros(
+                active_normalized.new_zeros(
                     (0, ENTITY_EMBED)
                 ),
-                normalized.new_zeros((0,)),
+                active_normalized.new_zeros((0,)),
             )
-
         base = self.entity_base_encoder(
             active_normalized[:, :ENTITY_BASE_SIZE]
         )
@@ -1044,6 +1029,35 @@ class BeesStructuredObservationEncoder(nn.Module):
             1.0,
         )
         return embedded * presence.unsqueeze(1), presence
+
+    def _encode_entities_packed(
+        self,
+        normalized: torch.Tensor,
+        raw: torch.Tensor,
+        active_indices: torch.Tensor,
+    ):
+        if int(active_indices.numel()) == 0:
+            return (
+                normalized.new_zeros(
+                    (0, ENTITY_EMBED)
+                ),
+                normalized.new_zeros((0,)),
+            )
+        flat_normalized = normalized.reshape(
+            -1,
+            normalized.shape[2],
+        )
+        flat_raw = raw.reshape(-1, raw.shape[2])
+        return self._encode_entity_rows(
+            flat_normalized.index_select(
+                0,
+                active_indices,
+            ),
+            flat_raw.index_select(
+                0,
+                active_indices,
+            ),
+        )
 
     def _encode_allies_packed(
         self,
@@ -1072,20 +1086,9 @@ class BeesStructuredObservationEncoder(nn.Module):
                 normalized.new_zeros((0,)),
             )
 
-        entity, presence = self._encode_entities_packed(
-            active_normalized[
-                :,
-                :ENEMY_SIZE,
-            ].unsqueeze(1),
-            active_raw[
-                :,
-                :ENEMY_SIZE,
-            ].unsqueeze(1),
-            torch.arange(
-                int(active_indices.numel()),
-                dtype=torch.long,
-                device=active_indices.device,
-            ),
+        entity, presence = self._encode_entity_rows(
+            active_normalized[:, :ENEMY_SIZE],
+            active_raw[:, :ENEMY_SIZE],
         )
         communication = self.ally_communication_encoder(
             active_normalized[:, ENEMY_SIZE:ALLY_SIZE]
@@ -1100,6 +1103,7 @@ class BeesStructuredObservationEncoder(nn.Module):
         normalized: torch.Tensor,
         raw: torch.Tensor,
         encoder,
+        output_size: int,
         active_indices: torch.Tensor,
     ):
         flat = normalized.reshape(
@@ -1114,9 +1118,7 @@ class BeesStructuredObservationEncoder(nn.Module):
         if int(active_indices.numel()) == 0:
             return (
                 normalized.new_zeros(
-                    (0, int(encoder[-2].out_features))
-                    if isinstance(encoder, nn.Sequential)
-                    else (0, 0)
+                    (0, int(output_size))
                 ),
                 normalized.new_zeros((0,)),
             )
@@ -1361,6 +1363,7 @@ class BeesStructuredObservationEncoder(nn.Module):
                     mining_norm,
                     mining_raw,
                     self.mining_encoder,
+                    48,
                     mining_active,
                 )
             )
@@ -1407,6 +1410,7 @@ class BeesStructuredObservationEncoder(nn.Module):
                     map_norm,
                     map_raw,
                     self.map_object_encoder,
+                    64,
                     map_active,
                 )
             )
@@ -1456,6 +1460,7 @@ class BeesStructuredObservationEncoder(nn.Module):
                     collision_norm,
                     collision_raw,
                     self.collision_encoder,
+                    64,
                     collision_active,
                 )
             )
