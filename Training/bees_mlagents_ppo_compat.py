@@ -5589,9 +5589,26 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             actor_single_epoch = bool(
                 getattr(self.optimizer, "_bees_factorized_poca", False)
             )
+            factorized_critic = (
+                getattr(self.optimizer, "critic", None)
+                if actor_single_epoch
+                else None
+            )
+            actor_training_enabled = bool(
+                factorized_critic is None
+                or not hasattr(
+                    factorized_critic,
+                    "actor_training_enabled",
+                )
+                or factorized_critic.actor_training_enabled()
+            )
             for _epoch_index in range(num_epoch):
                 _POCA_UPDATE_CACHE_STATE.actor_update = bool(
-                    not actor_single_epoch or _epoch_index == 0
+                    actor_training_enabled
+                    and (
+                        not actor_single_epoch
+                        or _epoch_index == 0
+                    )
                 )
                 epoch_order = None
                 if tensor_cache is None:
@@ -5944,6 +5961,26 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             update_stats = self.optimizer.bc_module.update()
             for stat, val in update_stats.items():
                 self._stats_reporter.add_stat(stat, val)
+
+        factorized_critic = getattr(self.optimizer, "critic", None)
+        if (
+            getattr(self.optimizer, "_bees_factorized_poca", False)
+            and factorized_critic is not None
+            and hasattr(
+                factorized_critic,
+                "complete_training_buffer",
+            )
+        ):
+            bootstrap_remaining = (
+                factorized_critic.complete_training_buffer()
+            )
+            if bootstrap_remaining > 0 or not actor_training_enabled:
+                print(
+                    "[Bees POCA factorized] critic bootstrap "
+                    f"buffers_remaining={bootstrap_remaining}",
+                    flush=True,
+                )
+
         update_buffer.reset_agent()
         return True
 
