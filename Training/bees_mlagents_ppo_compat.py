@@ -687,8 +687,14 @@ def _trust_region_policy_loss_with_dimension_mask(
     return (element_loss * weights).sum() / torch.clamp(weights.sum(), min=1.0)
 
 
-def _structured_training_slot_limits(policy, batch, extra_observations=()):
-    """Find occupied structured-slot prefixes without padding MA-POCA group observations."""
+def _structured_training_slot_limits(
+    policy,
+    batch,
+    extra_observations=(),
+    *,
+    include_group_observations: bool = True,
+):
+    """Find occupied structured-slot prefixes needed by the active structured encoders."""
 
     import numpy as np
     from mlagents.trainers.trajectory import GroupObsUtil, ObsUtil
@@ -796,18 +802,20 @@ def _structured_training_slot_limits(policy, batch, extra_observations=()):
 
     scan(current)
 
-    # Group observations are already stored as ragged lists on the CPU. Scan only
-    # actual observations in small chunks instead of materializing a
-    # [batch, max_group, 7743] padded representation merely to read presence bits.
-    group_field = batch[GroupObsUtil.get_name_at(0)]
-    group_chunk = []
-    for group_entry in group_field:
-        group_chunk.extend(group_entry)
-        while len(group_chunk) >= 128:
-            scan(np.asarray(group_chunk[:128], dtype=np.float32))
-            del group_chunk[:128]
-    if group_chunk:
-        scan(np.asarray(group_chunk, dtype=np.float32))
+    if include_group_observations:
+        # Generic POCA feeds full groupmate observations through the structured
+        # encoder, so its slot limits must include group rows. The factorized
+        # critic never does; scanning those 7,743-wide rows would recreate the
+        # dominant CPU data multiplication that this learner removes.
+        group_field = batch[GroupObsUtil.get_name_at(0)]
+        group_chunk = []
+        for group_entry in group_field:
+            group_chunk.extend(group_entry)
+            while len(group_chunk) >= 128:
+                scan(np.asarray(group_chunk[:128], dtype=np.float32))
+                del group_chunk[:128]
+        if group_chunk:
+            scan(np.asarray(group_chunk, dtype=np.float32))
 
     def add_extra(value):
         if isinstance(value, (list, tuple)):
@@ -1767,13 +1775,17 @@ def _evaluate_poca_trajectory_batch(trainer, merged, trajectories):
 
     n_obs = len(trainer.policy.behavior_spec.observation_specs)
     next_buffer = _build_poca_next_observation_buffer(trajectories, n_obs)
+    factorized_poca = bool(
+        getattr(trainer.optimizer, "_bees_factorized_poca", False)
+    )
     slot_limits = _structured_training_slot_limits(
         trainer.policy,
         merged,
         extra_observations=[
-            (trajectory.next_obs, trajectory.next_group_obs)
+            trajectory.next_obs
             for trajectory in trajectories
         ],
+        include_group_observations=not factorized_poca,
     )
     slot_token = set_training_slot_limits(slot_limits)
     try:
@@ -2455,13 +2467,14 @@ def _build_poca_update_tensor_cache(optimizer, buffer):
             len(policy.behavior_spec.observation_specs),
         )
     ]
+    factorized_group_obs = bool(
+        getattr(optimizer, "_bees_factorized_poca", False)
+    )
     groupmate_obs = _build_poca_group_obs_cache(
         policy,
         buffer,
         groupmate_counts,
-        factorized=bool(
-            getattr(optimizer, "_bees_factorized_poca", False)
-        ),
+        factorized=factorized_group_obs,
     )
 
     def field_tensor(key, dtype):
@@ -2549,9 +2562,7 @@ def _build_poca_update_tensor_cache(optimizer, buffer):
         "size": size,
         "current_obs": current_obs,
         "groupmate_obs": groupmate_obs,
-        "factorized_group_obs": bool(
-            getattr(optimizer, "_bees_factorized_poca", False)
-        ),
+        "factorized_group_obs": factorized_group_obs,
         "continuous_actions": continuous_actions,
         "discrete_actions": discrete_actions,
         "group_continuous": group_continuous,
@@ -2569,7 +2580,11 @@ def _build_poca_update_tensor_cache(optimizer, buffer):
             dtype=np.int32,
         ),
         "faction_values": faction_values,
-        "slot_limits": _structured_training_slot_limits(policy, buffer),
+        "slot_limits": _structured_training_slot_limits(
+            policy,
+            buffer,
+            include_group_observations=not factorized_group_obs,
+        ),
         "storage": "cpu",
     }
 
@@ -6604,10 +6619,18 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             set_training_slot_limits,
         )
 
+        factorized_poca = bool(
+            getattr(self, "_bees_factorized_poca", False)
+        )
         slot_limits = _structured_training_slot_limits(
             self.policy,
             batch,
-            extra_observations=(next_obs, next_groupmate_obs),
+            extra_observations=(
+                next_obs
+                if factorized_poca
+                else (next_obs, next_groupmate_obs)
+            ),
+            include_group_observations=not factorized_poca,
         )
         slot_token = set_training_slot_limits(slot_limits)
         try:
