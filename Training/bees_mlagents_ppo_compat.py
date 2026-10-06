@@ -1690,8 +1690,19 @@ def _build_poca_next_observation_buffer(trajectories, n_obs):
     return buffer
 
 
-def _poca_group_obs_tensors_from_buffer(policy, buffer, counts, device):
-    """Create stock-equivalent NaN-padded group tensors while copying only real rows."""
+def _poca_group_obs_tensors_from_buffer(
+    policy,
+    buffer,
+    counts,
+    device,
+    *,
+    factorized: bool = False,
+):
+    """Create group tensors for trajectory value evaluation.
+
+    Factorized POCA transfers only real compact critic rows. Generic POCA keeps
+    stock-equivalent NaN-padded full observations.
+    """
 
     import numpy as np
     from mlagents.torch_utils import torch
@@ -1724,11 +1735,21 @@ def _poca_group_obs_tensors_from_buffer(policy, buffer, counts, device):
                 ],
                 axis=0,
             )
+            if factorized:
+                from bees_mlagents_factorized_poca import (
+                    compact_group_observation_numpy,
+                )
+
+                compact = compact_group_observation_numpy(compact)
             compact_tensor = torch.as_tensor(
                 np.ascontiguousarray(compact),
                 dtype=torch.float32,
                 device=device,
             )
+            if factorized:
+                positions.append(compact_tensor)
+                continue
+
             padded = torch.full(
                 (batch_size, *tuple(spec.shape)),
                 float("nan"),
@@ -1805,6 +1826,7 @@ def _evaluate_poca_trajectory_batch(trainer, merged, trajectories):
                 merged,
                 current_counts,
                 current_obs[0].device,
+                factorized=factorized_poca,
             )
             groupmate_actions = AgentAction.group_from_buffer(merged)
             current_valid_rows = (
@@ -1855,6 +1877,7 @@ def _evaluate_poca_trajectory_batch(trainer, merged, trajectories):
                 next_buffer,
                 next_counts,
                 next_obs[0].device,
+                factorized=factorized_poca,
             )
             next_valid_rows = (
                 _poca_groupmate_valid_row_indices(next_counts)
