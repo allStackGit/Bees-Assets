@@ -6809,13 +6809,14 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             value_stat = value_loss.item()
             baseline_stat = baseline_loss.item()
         update_stats = {
-            "Losses/Policy Loss": policy_stat,
             "Losses/Value Loss": value_stat,
             "Losses/Baseline Loss": baseline_stat,
             "Policy/Learning Rate": decay_lr,
             "Policy/Epsilon": decay_eps,
             "Policy/Beta": decay_bet,
         }
+        if actor_update:
+            update_stats["Losses/Policy Loss"] = policy_stat
         _poca_record_timing("stats", time.perf_counter() - started)
         return update_stats
 
