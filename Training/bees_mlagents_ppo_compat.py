@@ -4125,6 +4125,13 @@ class _PocaCpuMinibatchPreparer:
             observation_source["current_obs"],
             effective_slot_limits,
         )
+        if dedup_plan is not None:
+            dedup_plan["packed_entity_plan"] = (
+                _poca_build_packed_entity_plan(
+                    dedup_plan["unique_obs"],
+                    effective_slot_limits,
+                )
+            )
         if self.full_minibatch:
             selected = _select_poca_update_tensor_cache(
                 self.cache,
@@ -5222,7 +5229,32 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             cache_key = ("dedup-unique", id(self))
             encoded = cache.get(cache_key)
             if encoded is None:
-                encoded = self.observation_encoder(unique_obs)
+                packed_plan = dedup_plan.get("packed_entity_plan")
+                if packed_plan is None:
+                    encoded = self.observation_encoder(unique_obs)
+                else:
+                    from bees_mlagents_structured_policy import (
+                        reset_training_packed_entity_plan,
+                        reset_training_packed_entity_scope,
+                        set_training_packed_entity_plan,
+                        set_training_packed_entity_scope,
+                    )
+
+                    plan_token = set_training_packed_entity_plan(
+                        packed_plan
+                    )
+                    scope_token = set_training_packed_entity_scope(
+                        "full"
+                    )
+                    try:
+                        encoded = self.observation_encoder(unique_obs)
+                    finally:
+                        reset_training_packed_entity_scope(
+                            scope_token
+                        )
+                        reset_training_packed_entity_plan(
+                            plan_token
+                        )
                 cache[cache_key] = encoded
             return encoded
 
