@@ -3739,12 +3739,6 @@ def _poca_parallel_forward(
         return None
 
     opts = _POCA_OPTIMIZATIONS
-    if getattr(optimizer, "_bees_factorized_poca", False):
-        # The factorized critic deliberately shares focal/group features between
-        # value and baseline. Legacy multi-stream sharding/overlap mutates the
-        # same packed-row contexts concurrently and is therefore not a valid
-        # execution mode for this critic.
-        return None
     if opts.stream_shards <= 1 and not opts.critic_baseline_overlap:
         return None
 
