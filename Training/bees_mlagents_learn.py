@@ -1169,6 +1169,10 @@ def main() -> None:
         restore_inactive_continuous_action_masking,
         restore_value_estimate_key,
     )
+    from bees_mlagents_factorized_poca import (
+        install_factorized_poca_critic,
+        restore_factorized_poca_critic,
+    )
     from bees_mlagents_structured_policy import (
         install_structured_policy,
         restore_structured_policy,
@@ -1190,7 +1194,9 @@ def main() -> None:
     original_explicit_outcome_elo = _install_explicit_outcome_elo()
     original_value_estimate_key = None
     original_sigma_forward = None
+    original_factorized_poca_init = None
     try:
+        original_factorized_poca_init = install_factorized_poca_critic()
         original_value_estimate_key = install_value_estimate_key_fix()
         install_inactive_continuous_action_masking()
         original_sigma_forward = install_continuous_sigma_guard()
@@ -1198,10 +1204,12 @@ def main() -> None:
         restore_continuous_sigma_guard(original_sigma_forward)
         restore_inactive_continuous_action_masking()
         restore_value_estimate_key(original_value_estimate_key)
+        restore_factorized_poca_critic(original_factorized_poca_init)
         _restore_explicit_outcome_elo(original_explicit_outcome_elo)
         restore_structured_policy(structured_policy_state)
         raise
     print("[Bees RL] Structured dual-faction entity/weapon policy: enabled")
+    print("[Bees RL] Factorized Bees POCA critic: enabled")
     print("[Bees RL] MA-POCA inverse-group-size gradient balancing: enabled")
     print("[Bees RL] Inactive weapon-action masking: enabled")
     print("[Bees RL] Continuous sigma guard: enabled")
@@ -1283,6 +1291,7 @@ def main() -> None:
         restore_continuous_sigma_guard(original_sigma_forward)
         restore_inactive_continuous_action_masking()
         restore_value_estimate_key(original_value_estimate_key)
+        restore_factorized_poca_critic(original_factorized_poca_init)
         _restore_explicit_outcome_elo(original_explicit_outcome_elo)
         restore_structured_policy(structured_policy_state)
         if original_queue_steps is not None:
