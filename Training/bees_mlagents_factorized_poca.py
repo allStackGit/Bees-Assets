@@ -351,10 +351,6 @@ class BeesFactorizedPOCACritic(nn.Module):
                         "Bees factorized POCA critic expects one vector observation per groupmate."
                     )
                 raw = member[0]
-                if int(raw.shape[0]) != batch_size:
-                    raise RuntimeError(
-                        "Bees factorized POCA groupmate batch size changed unexpectedly."
-                    )
                 rows = packed_rows[position]
                 if not isinstance(rows, torch.Tensor):
                     rows = torch.as_tensor(
@@ -371,9 +367,18 @@ class BeesFactorizedPOCACritic(nn.Module):
                 else:
                     rows = rows.to(dtype=torch.long)
 
-                if int(rows.numel()) == 0:
+                row_count = int(rows.numel())
+                if row_count == 0:
                     continue
-                selected = raw.index_select(0, rows)
+                if int(raw.shape[0]) == batch_size:
+                    selected = raw.index_select(0, rows)
+                elif int(raw.shape[0]) == row_count:
+                    selected = raw
+                else:
+                    raise RuntimeError(
+                        "Bees factorized POCA groupmate rows do not match "
+                        "the minibatch membership plan."
+                    )
                 compact, navigation, selected_valid = (
                     self._compact_group_state(selected)
                 )
