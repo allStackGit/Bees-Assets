@@ -8,8 +8,8 @@ BeesRL1v1 model. Inside that model, Bees replaces ML-Agents' flat vector MLP wit
 * per-slot weapon embeddings retained for shared weapon action heads;
 * independent Bee and Human actor encoders, trunks, and action heads selected by an
   explicit faction observation channel; and
-* the ordinary ML-Agents MA-POCA centralized critic, which automatically consumes
-  the structured observation encoding through the patched ObservationEncoder.
+* a training-only Bees factorized MA-POCA critic that reuses the same structured
+  focal observation contract while keeping the exported actor ABI unchanged.
 
 The patch is deliberately limited to the exact Bees v22 observation/action shapes.
 All other ML-Agents behaviors retain the upstream implementation.
@@ -1205,8 +1205,8 @@ class BeesStructuredObservationEncoder(nn.Module):
         # Variable slots are already emitted as bounded semantic features by Unity.
         # Feed those raw values to the shared encoders so an identical entity or weapon
         # has identical encoder inputs regardless of which absolute slot it occupies.
-        # The full-vector running normalizer remains useful for fixed-position global
-        # state (self, capability, objectives and grids).
+        # Running normalization is applied only to the fixed-position global state
+        # channels that the structured encoder actually consumes normalized.
         self_obs = self._normalized_slice(
             raw,
             SELF_START,
