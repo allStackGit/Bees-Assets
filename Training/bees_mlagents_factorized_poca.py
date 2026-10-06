@@ -51,7 +51,9 @@ GROUP_STATE_WIDTH = (
     + BEES_WEAPON_SLOTS * SELF_WEAPON_SIZE
 )
 GROUP_ACTION_WIDTH = BEES_CONTINUOUS_ACTIONS + sum(BEES_DISCRETE_BRANCHES)
-GROUP_COMPACT_WIDTH = GROUP_STATE_WIDTH + NAVIGATION_SIZE
+GROUP_NAVIGATION_SIDE = 7
+GROUP_NAVIGATION_SIZE = GROUP_NAVIGATION_SIDE * GROUP_NAVIGATION_SIDE
+GROUP_COMPACT_WIDTH = GROUP_STATE_WIDTH + GROUP_NAVIGATION_SIZE
 CRITIC_WIDTH = 128
 GROUP_NAV_WIDTH = 64
 GROUP_STATE_EMBED = 128
@@ -127,8 +129,8 @@ class BeesFactorizedPOCACritic(nn.Module):
             GROUP_STATE_EMBED,
         )
         self.group_navigation_encoder = _mlp(
-            NAVIGATION_SIZE,
-            128,
+            GROUP_NAVIGATION_SIZE,
+            64,
             GROUP_NAV_WIDTH,
         )
         self.group_state_fuse = _mlp(
@@ -222,7 +224,7 @@ class BeesFactorizedPOCACritic(nn.Module):
                 clean[
                     :,
                     GROUP_STATE_WIDTH
-                    : GROUP_STATE_WIDTH + NAVIGATION_SIZE,
+                    : GROUP_STATE_WIDTH + GROUP_NAVIGATION_SIZE,
                 ],
                 valid,
             )
@@ -252,7 +254,10 @@ class BeesFactorizedPOCACritic(nn.Module):
         navigation = clean[
             :,
             NAVIGATION_START : NAVIGATION_START + NAVIGATION_SIZE,
-        ]
+        ].reshape(-1, 7, 3, 7, 3).amax(dim=(2, 4)).reshape(
+            -1,
+            GROUP_NAVIGATION_SIZE,
+        )
         return compact, navigation, valid
 
     @staticmethod
@@ -316,7 +321,10 @@ class BeesFactorizedPOCACritic(nn.Module):
             compact_tensor.reshape(batch_size * group_count, GROUP_STATE_WIDTH)
         )
         navigation = self.group_navigation_encoder(
-            navigation_tensor.reshape(batch_size * group_count, NAVIGATION_SIZE)
+            navigation_tensor.reshape(
+                batch_size * group_count,
+                GROUP_NAVIGATION_SIZE,
+            )
         )
         tokens = self.group_state_fuse(
             torch.cat([state, navigation], dim=1)
@@ -527,7 +535,9 @@ def compact_group_observation_numpy(raw):
             ],
             values[
                 NAVIGATION_START : NAVIGATION_START + NAVIGATION_SIZE
-            ],
+            ].reshape(7, 3, 7, 3).max(axis=(1, 3)).reshape(
+                GROUP_NAVIGATION_SIZE
+            ),
         ]
     ).astype(np.float32, copy=False)
 
