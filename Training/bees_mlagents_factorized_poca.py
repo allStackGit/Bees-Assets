@@ -448,6 +448,34 @@ class BeesFactorizedPOCACritic(nn.Module):
         return output, memories
 
 
+def compact_group_observation_numpy(raw):
+    """Project one full Bees groupmate observation onto critic-only local state."""
+
+    import numpy as np
+
+    values = np.asarray(raw, dtype=np.float32)
+    if values.ndim != 1 or int(values.shape[0]) != BEES_OBSERVATION_SIZE:
+        raise ValueError(
+            "Bees compact group observation requires one full Bees observation."
+        )
+    return np.concatenate(
+        [
+            values[SELF_START : SELF_START + SELF_SIZE],
+            values[
+                CAPABILITY_START : CAPABILITY_START + CAPABILITY_SIZE
+            ],
+            values[PARENT_START : PARENT_START + PARENT_SIZE],
+            values[
+                SELF_WEAPON_START
+                : SELF_WEAPON_START + BEES_WEAPON_SLOTS * SELF_WEAPON_SIZE
+            ],
+            values[
+                NAVIGATION_START : NAVIGATION_START + NAVIGATION_SIZE
+            ],
+        ]
+    ).astype(np.float32, copy=False)
+
+
 def install_factorized_poca_critic():
     """Install the Bees factorized critic before ML-Agents creates its optimizer."""
 
