@@ -3598,6 +3598,15 @@ def _poca_parallel_forward(
 ):
     """Run one logical minibatch on independent CUDA streams without extra Adam steps."""
 
+    # The factorized critic deliberately keeps value/baseline focal and group
+    # features in one per-minibatch cache. Its compact group tensors also contain
+    # only real rows, so they are not sliceable by dense minibatch ranges. The
+    # legacy stream-shard/critic-overlap experiment therefore cannot preserve
+    # factorized critic semantics. Fall back to the normal sequential forward
+    # rather than racing the shared cache or slicing compact rows incorrectly.
+    if getattr(optimizer, "_bees_factorized_poca", False):
+        return None
+
     opts = _POCA_OPTIMIZATIONS
     if opts.stream_shards <= 1 and not opts.critic_baseline_overlap:
         return None
