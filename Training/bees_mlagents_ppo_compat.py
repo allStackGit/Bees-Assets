@@ -37,6 +37,7 @@ POCA_TRAJECTORY_BATCH_MAX_EXPERIENCES = 2048
 POCA_TRAJECTORY_TIMING_REPORT_SECONDS = 30.0
 POCA_PACKED_GROUP_CACHE_MAX_BYTES = 8 * 1024 * 1024 * 1024
 POCA_PACKED_GROUP_CACHE_MIN_RAM_RESERVE_BYTES = 6 * 1024 * 1024 * 1024
+POCA_GROUP_COMPACT_PROJECT_CHUNK_ROWS = 512
 POCA_GPU_CACHE_MIN_RESERVE_BYTES = 2 * 1024 * 1024 * 1024
 POCA_GPU_CACHE_RESERVE_FRACTION = 0.30
 POCA_CPU_PREPARE_RESERVED_LOGICAL_CPUS = 2
@@ -2248,18 +2249,45 @@ def _build_poca_group_obs_cache(
             if source_rows.size == 0:
                 positions.append(None)
                 continue
-            compact = np.stack(
-                [
-                    np.asarray(
-                        field[int(row)][position],
-                        dtype=np.float32,
+            if compact_projector is None:
+                compact = np.stack(
+                    [
+                        np.asarray(
+                            field[int(row)][position],
+                            dtype=np.float32,
+                        )
+                        for row in source_rows
+                    ],
+                    axis=0,
+                )
+            else:
+                compact = np.empty(
+                    (int(source_rows.size), int(compact_width)),
+                    dtype=np.float32,
+                )
+                for chunk_start in range(
+                    0,
+                    int(source_rows.size),
+                    POCA_GROUP_COMPACT_PROJECT_CHUNK_ROWS,
+                ):
+                    chunk_rows = source_rows[
+                        chunk_start :
+                        chunk_start + POCA_GROUP_COMPACT_PROJECT_CHUNK_ROWS
+                    ]
+                    full_chunk = np.stack(
+                        [
+                            np.asarray(
+                                field[int(row)][position],
+                                dtype=np.float32,
+                            )
+                            for row in chunk_rows
+                        ],
+                        axis=0,
                     )
-                    for row in source_rows
-                ],
-                axis=0,
-            )
-            if compact_projector is not None:
-                compact = compact_projector(compact)
+                    compact[
+                        chunk_start :
+                        chunk_start + int(chunk_rows.size)
+                    ] = compact_projector(full_chunk)
             values = _poca_cpu_tensor(compact, torch.float32)
             lookup = np.full(size, -1, dtype=np.int32)
             lookup[source_rows] = np.arange(
