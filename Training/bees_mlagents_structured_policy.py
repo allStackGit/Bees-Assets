@@ -1390,7 +1390,17 @@ class BeesStructuredNetworkBody(nn.Module):
                     value.index_select(0, indices)
                     for value in padded_inputs
                 ]
-                structured = observation_encoder(subset_inputs)
+                scope_token = set_training_packed_entity_scope(
+                    name
+                )
+                try:
+                    structured = observation_encoder(
+                        subset_inputs
+                    )
+                finally:
+                    reset_training_packed_entity_scope(
+                        scope_token
+                    )
                 context = structured[:, :CONTEXT_SIZE]
                 weapons = structured[:, weapon_start:weapon_end]
                 faction_encoding = trunk(context)
@@ -1433,12 +1443,20 @@ class BeesStructuredNetworkBody(nn.Module):
                     0.0,
                     1.0,
                 )
-                bee_structured = self.bee_observation_encoder(
-                    subset_inputs
+                scope_token = set_training_packed_entity_scope(
+                    "mixed"
                 )
-                human_structured = self.human_observation_encoder(
-                    subset_inputs
-                )
+                try:
+                    bee_structured = self.bee_observation_encoder(
+                        subset_inputs
+                    )
+                    human_structured = self.human_observation_encoder(
+                        subset_inputs
+                    )
+                finally:
+                    reset_training_packed_entity_scope(
+                        scope_token
+                    )
                 structured = (
                     bee_structured * weights
                     + human_structured * (1.0 - weights)
@@ -1505,12 +1523,27 @@ class BeesStructuredNetworkBody(nn.Module):
                         device=inputs[0].device,
                     )
 
-                def encode_single_faction(indices, observation_encoder, trunk):
+                def encode_single_faction(
+                    name,
+                    indices,
+                    observation_encoder,
+                    trunk,
+                ):
                     subset_inputs = [
                         value.index_select(0, indices)
                         for value in inputs
                     ]
-                    structured = observation_encoder(subset_inputs)
+                    scope_token = set_training_packed_entity_scope(
+                        name
+                    )
+                    try:
+                        structured = observation_encoder(
+                            subset_inputs
+                        )
+                    finally:
+                        reset_training_packed_entity_scope(
+                            scope_token
+                        )
                     context = structured[:, :CONTEXT_SIZE]
                     weapons = structured[:, weapon_start:weapon_end]
                     faction_encoding = trunk(context)
@@ -1526,6 +1559,7 @@ class BeesStructuredNetworkBody(nn.Module):
                         0,
                         indices,
                         encode_single_faction(
+                            "bee",
                             indices,
                             self.bee_observation_encoder,
                             self.bee_trunk,
@@ -1537,6 +1571,7 @@ class BeesStructuredNetworkBody(nn.Module):
                         0,
                         indices,
                         encode_single_faction(
+                            "human",
                             indices,
                             self.human_observation_encoder,
                             self.human_trunk,
@@ -1549,12 +1584,24 @@ class BeesStructuredNetworkBody(nn.Module):
                         for value in inputs
                     ]
                     weights = bee_weight.index_select(0, indices)
-                    bee_structured = self.bee_observation_encoder(
-                        subset_inputs
+                    scope_token = set_training_packed_entity_scope(
+                        "mixed"
                     )
-                    human_structured = self.human_observation_encoder(
-                        subset_inputs
-                    )
+                    try:
+                        bee_structured = (
+                            self.bee_observation_encoder(
+                                subset_inputs
+                            )
+                        )
+                        human_structured = (
+                            self.human_observation_encoder(
+                                subset_inputs
+                            )
+                        )
+                    finally:
+                        reset_training_packed_entity_scope(
+                            scope_token
+                        )
                     structured = (
                         bee_structured * weights
                         + human_structured * (1.0 - weights)
