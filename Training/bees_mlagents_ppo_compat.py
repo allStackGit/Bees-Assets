@@ -2935,6 +2935,45 @@ def _poca_prepare_compact_group_obs(
     )
 
 
+def _poca_transfer_prepared_group_obs_compact(
+    prepared,
+    device,
+):
+    """Transfer only real prepared group rows for the factorized critic."""
+
+    if not isinstance(prepared, _PocaPreparedGroupObs):
+        return []
+    if not prepared.fields:
+        return []
+
+    max_positions = max(
+        (len(field) for field in prepared.fields),
+        default=0,
+    )
+    members = []
+    for position in range(max_positions):
+        member = []
+        for field in prepared.fields:
+            prepared_position = (
+                field[position]
+                if position < len(field)
+                else None
+            )
+            if prepared_position is None:
+                raise RuntimeError(
+                    "POCA prepared group fields disagree on groupmate positions."
+                )
+            values = prepared_position.values
+            if values.device != device:
+                values = values.to(
+                    device=device,
+                    non_blocking=True,
+                )
+            member.append(values)
+        members.append(member)
+    return members
+
+
 def _poca_expand_prepared_group_obs(prepared, device):
     """Pad compact prepared rows on the target device in POCA's expected shape."""
 
@@ -3995,12 +4034,23 @@ class _PocaCpuMinibatchPreparer:
             None,
         )
         if prepared_group is not None:
-            selected["groupmate_obs"] = (
-                _poca_expand_prepared_group_obs(
-                    prepared_group,
-                    self.device,
+            if self.cache.get(
+                "factorized_group_obs",
+                False,
+            ):
+                selected["groupmate_obs"] = (
+                    _poca_transfer_prepared_group_obs_compact(
+                        prepared_group,
+                        self.device,
+                    )
                 )
-            )
+            else:
+                selected["groupmate_obs"] = (
+                    _poca_expand_prepared_group_obs(
+                        prepared_group,
+                        self.device,
+                    )
+                )
         _poca_cuda_timing_end(marker)
         _poca_record_timing(
             "cpu_prepare_transfer_submit",
