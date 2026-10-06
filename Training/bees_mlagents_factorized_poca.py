@@ -375,10 +375,20 @@ class BeesFactorizedPOCACritic(nn.Module):
         )
 
     @staticmethod
-    def _cache_key(current_obs, groupmate_obs) -> Tuple[int, Tuple[int, ...]]:
-        return (
-            id(current_obs[0]),
-            tuple(id(member[0]) for member in groupmate_obs),
+    def _cache_matches(cached, current_obs, groupmate_obs) -> bool:
+        if cached is None:
+            return False
+        if cached.get("current_ref") is not current_obs[0]:
+            return False
+        group_refs = cached.get("group_refs", ())
+        if len(group_refs) != len(groupmate_obs):
+            return False
+        return all(
+            reference is member[0]
+            for reference, member in zip(
+                group_refs,
+                groupmate_obs,
+            )
         )
 
     def _shared_state(self, current_obs, groupmate_obs):
@@ -386,9 +396,12 @@ class BeesFactorizedPOCACritic(nn.Module):
             raise RuntimeError(
                 "Bees factorized POCA critic expects one focal vector observation."
             )
-        key = self._cache_key(current_obs, groupmate_obs)
         cached = self._shared_cache
-        if cached is not None and cached["key"] == key:
+        if self._cache_matches(
+            cached,
+            current_obs,
+            groupmate_obs,
+        ):
             return cached
 
         raw = current_obs[0]
@@ -405,7 +418,10 @@ class BeesFactorizedPOCACritic(nn.Module):
             self.group_state_score,
         )
         cached = {
-            "key": key,
+            "current_ref": current_obs[0],
+            "group_refs": tuple(
+                member[0] for member in groupmate_obs
+            ),
             "focal": focal,
             "group_tokens": group_tokens,
             "valid": valid,
