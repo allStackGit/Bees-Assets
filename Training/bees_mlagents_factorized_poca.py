@@ -174,7 +174,7 @@ class BeesFactorizedPOCACritic(nn.Module):
         self.observation_encoder.update_normalization(buffer)
 
     @staticmethod
-    def _compact_group_state(raw: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def _compact_group_state(\n        raw: torch.Tensor,\n    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         valid = torch.isfinite(raw[:, SELF_START])
         clean = torch.nan_to_num(raw, nan=0.0, posinf=0.0, neginf=0.0)
         compact = torch.cat(
@@ -463,7 +463,7 @@ def install_factorized_poca_critic():
             return
 
         critic = BeesFactorizedPOCACritic(
-            list(self.reward_signals.keys()),
+            list(self.stream_names),
             policy.behavior_spec.observation_specs,
             trainer_settings.network_settings,
             policy.behavior_spec.action_spec,
