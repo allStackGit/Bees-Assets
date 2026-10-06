@@ -7334,34 +7334,6 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             set_training_packed_entity_plan,
             set_training_slot_limits,
         )
-        from bees_mlagents_factorized_poca import (
-            reset_factorized_group_valid_rows,
-            set_factorized_group_valid_rows,
-        )
-
-        factorized_group_rows = None
-        if getattr(self, "_bees_factorized_poca", False):
-            from mlagents.torch_utils import torch
-
-            valid_rows = (
-                _POCA_GROUP_BATCH_STATE.valid_rows
-                if _POCA_GROUP_BATCH_STATE.valid_rows is not None
-                else ()
-            )
-            factorized_group_rows = [
-                torch.as_tensor(
-                    rows,
-                    dtype=torch.long,
-                    device=action_masks.device,
-                )
-                for rows in valid_rows
-            ]
-
-        factorized_group_token = (
-            set_factorized_group_valid_rows(
-                factorized_group_rows
-            )
-        )
         slot_token = set_training_slot_limits(slot_limits)
         faction_token = set_training_faction_rows(
             None if cached is None else cached["faction_rows"]
@@ -7385,9 +7357,6 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             _poca_record_timing(
                 "optimizer_total",
                 time.perf_counter() - optimizer_started,
-            )
-            reset_factorized_group_valid_rows(
-                factorized_group_token
             )
             reset_training_packed_entity_plan(
                 packed_entity_token
