@@ -5573,8 +5573,42 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
 
         num_epoch = self.hyperparameters.num_epoch
         batch_update_stats = defaultdict(list)
-        max_num_batch = buffer_length // batch_size
-        total_minibatches = num_epoch * max_num_batch
+        actor_single_epoch = bool(
+            getattr(self.optimizer, "_bees_factorized_poca", False)
+        )
+        factorized_critic = (
+            getattr(self.optimizer, "critic", None)
+            if actor_single_epoch
+            else None
+        )
+        actor_training_enabled = bool(
+            factorized_critic is None
+            or not hasattr(
+                factorized_critic,
+                "actor_training_enabled",
+            )
+            or factorized_critic.actor_training_enabled()
+        )
+        critic_batch_size = (
+            min(buffer_length, batch_size * 2)
+            if actor_single_epoch
+            else batch_size
+        )
+
+        def epoch_batch_size(epoch_index: int) -> int:
+            actor_epoch = bool(
+                actor_training_enabled
+                and (
+                    not actor_single_epoch
+                    or epoch_index == 0
+                )
+            )
+            return batch_size if actor_epoch else critic_batch_size
+
+        total_minibatches = sum(
+            buffer_length // epoch_batch_size(epoch_index)
+            for epoch_index in range(num_epoch)
+        )
         cpu_preparer = (
             _PocaCpuMinibatchPreparer(tensor_cache)
             if tensor_cache is not None
@@ -5590,7 +5624,9 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         )
         print(
             "[Bees PPO timing] update begin "
-            f"buffer={buffer_length} batch={batch_size} epochs={num_epoch} "
+            f"buffer={buffer_length} actor_batch={batch_size} "
+            f"critic_batch={critic_batch_size} epochs={num_epoch} "
+            f"actor_epochs={1 if actor_single_epoch and actor_training_enabled else (0 if actor_single_epoch else num_epoch)} "
             f"minibatches={total_minibatches} "
             f"sync_cleanup={'on' if _POCA_OPTIMIZATIONS.effective_sync_cleanup else 'off'} "
             f"stream_shards={_POCA_OPTIMIZATIONS.stream_shards} "
@@ -5668,22 +5704,6 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         hardware_started = time.perf_counter()
         hardware_summary = {}
         try:
-            actor_single_epoch = bool(
-                getattr(self.optimizer, "_bees_factorized_poca", False)
-            )
-            factorized_critic = (
-                getattr(self.optimizer, "critic", None)
-                if actor_single_epoch
-                else None
-            )
-            actor_training_enabled = bool(
-                factorized_critic is None
-                or not hasattr(
-                    factorized_critic,
-                    "actor_training_enabled",
-                )
-                or factorized_critic.actor_training_enabled()
-            )
             for _epoch_index in range(num_epoch):
                 _POCA_UPDATE_CACHE_STATE.actor_update = bool(
                     actor_training_enabled
@@ -5691,6 +5711,14 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                         not actor_single_epoch
                         or _epoch_index == 0
                     )
+                )
+                current_batch_size = epoch_batch_size(_epoch_index)
+                current_n_sequences = max(
+                    int(
+                        current_batch_size
+                        / self.policy.sequence_length
+                    ),
+                    1,
                 )
                 epoch_order = None
                 if tensor_cache is None:
@@ -5704,11 +5732,14 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                     )
                     np.random.shuffle(epoch_order)
 
+                epoch_num_batches = (
+                    buffer_length // current_batch_size
+                )
                 offsets = list(
                     range(
                         0,
-                        max_num_batch * batch_size,
-                        batch_size,
+                        epoch_num_batches * current_batch_size,
+                        current_batch_size,
                     )
                 )
                 pending_cpu = {}
@@ -5725,7 +5756,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                         pending_cpu[prepare_index] = cpu_preparer.submit(
                             epoch_order[
                                 prepare_offset :
-                                prepare_offset + batch_size
+                                prepare_offset + current_batch_size
                             ]
                         )
 
@@ -5748,11 +5779,13 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                     if tensor_cache is None:
                         minibatch = update_buffer.make_mini_batch(
                             i,
-                            i + batch_size,
+                            i + current_batch_size,
                         )
                         _POCA_UPDATE_CACHE_STATE.indices = None
                     else:
-                        indices = epoch_order[i : i + batch_size]
+                        indices = epoch_order[
+                            i : i + current_batch_size
+                        ]
                         if (
                             cpu_preparer is not None
                             and cpu_preparer.enabled
@@ -5828,7 +5861,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                     try:
                         update_stats = self.optimizer.update(
                             minibatch,
-                            n_sequences,
+                            current_n_sequences,
                         )
                     finally:
                         _POCA_UPDATE_CACHE_STATE.indices = None
