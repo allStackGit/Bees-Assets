@@ -84,6 +84,16 @@ FACTION_INDEX = EPISODE_PROGRESS_INDEX + 1
 RESERVED_START = FACTION_INDEX + 1
 RESERVED_SIZE = BEES_OBSERVATION_SIZE - RESERVED_START
 
+_NORMALIZED_FIXED_RANGES = (
+    (SELF_START, SELF_SIZE),
+    (CAPABILITY_START, CAPABILITY_SIZE),
+    (OBJECTIVE_START, OBJECTIVE_SIZE),
+    (NAVIGATION_START, NAVIGATION_SIZE),
+    (EXPLORATION_START, EXPLORATION_SIZE),
+    (EPISODE_PROGRESS_INDEX, 1),
+    (RESERVED_START, RESERVED_SIZE),
+)
+
 ENTITY_BASE_SIZE = 16
 OBSERVED_WEAPON_SIZE = 5
 ENTITY_WEAPON_COUNT = 5
@@ -221,6 +231,73 @@ def _use_dense_structured_path() -> bool:
         torch.is_grad_enabled()
         or torch.onnx.is_in_onnx_export()
     )
+
+
+def _update_fixed_normalizer(normalizer, raw_values) -> None:
+    """Update only channels that the structured encoder consumes normalized."""
+
+    if normalizer is None:
+        return
+
+    import numpy as np
+
+    values = np.asarray(raw_values, dtype=np.float32)
+    if (
+        values.ndim != 2
+        or values.shape[0] <= 0
+        or values.shape[1] != BEES_OBSERVATION_SIZE
+    ):
+        return
+
+    compact = np.concatenate(
+        [
+            values[:, start : start + size]
+            for start, size in _NORMALIZED_FIXED_RANGES
+        ],
+        axis=1,
+    )
+    compact_tensor = torch.as_tensor(
+        compact,
+        device=normalizer.running_mean.device,
+        dtype=normalizer.running_mean.dtype,
+    )
+
+    with torch.no_grad():
+        steps_increment = int(compact_tensor.shape[0])
+        total_new_steps = (
+            normalizer.normalization_steps
+            + steps_increment
+        )
+        compact_offset = 0
+        for start, size in _NORMALIZED_FIXED_RANGES:
+            selected = compact_tensor[
+                :,
+                compact_offset : compact_offset + size,
+            ]
+            old_mean = normalizer.running_mean[
+                start : start + size
+            ]
+            old_variance = normalizer.running_variance[
+                start : start + size
+            ]
+            input_to_old_mean = selected - old_mean
+            new_mean = old_mean + (
+                input_to_old_mean / total_new_steps
+            ).sum(0)
+            input_to_new_mean = selected - new_mean
+            new_variance = old_variance + (
+                input_to_new_mean * input_to_old_mean
+            ).sum(0)
+            normalizer.running_mean[
+                start : start + size
+            ].copy_(new_mean)
+            normalizer.running_variance[
+                start : start + size
+            ].copy_(new_variance)
+            compact_offset += size
+        normalizer.normalization_steps.copy_(
+            total_new_steps
+        )
 
 
 def _is_bees_observation_specs(observation_specs) -> bool:
@@ -434,14 +511,10 @@ class BeesStructuredObservationEncoder(nn.Module):
             self._fallback.update_normalization(buffer)
             return
         obs = ObsUtil.from_buffer(buffer, 1)
-        values = torch.as_tensor(obs[0].to_ndarray())
-        normalizer = self.vector_input.normalizer
-        if normalizer is not None:
-            values = values.to(
-                device=normalizer.running_mean.device,
-                dtype=normalizer.running_mean.dtype,
-            )
-        self.vector_input.update_normalization(values)
+        _update_fixed_normalizer(
+            self.vector_input.normalizer,
+            obs[0].to_ndarray(),
+        )
 
     def copy_normalization(self, other_encoder) -> None:
         if self._fallback is not None:
@@ -1290,23 +1363,15 @@ class BeesStructuredNetworkBody(nn.Module):
         bee_rows = raw[:, FACTION_INDEX] > 0.0
         human_rows = ~bee_rows
         if bee_rows.any():
-            bee_vector_input = self.bee_observation_encoder.vector_input
-            bee_values = torch.as_tensor(raw[bee_rows])
-            if bee_vector_input.normalizer is not None:
-                bee_values = bee_values.to(
-                    device=bee_vector_input.normalizer.running_mean.device,
-                    dtype=bee_vector_input.normalizer.running_mean.dtype,
-                )
-            bee_vector_input.update_normalization(bee_values)
+            _update_fixed_normalizer(
+                self.bee_observation_encoder.vector_input.normalizer,
+                raw[bee_rows],
+            )
         if human_rows.any():
-            human_vector_input = self.human_observation_encoder.vector_input
-            human_values = torch.as_tensor(raw[human_rows])
-            if human_vector_input.normalizer is not None:
-                human_values = human_values.to(
-                    device=human_vector_input.normalizer.running_mean.device,
-                    dtype=human_vector_input.normalizer.running_mean.dtype,
-                )
-            human_vector_input.update_normalization(human_values)
+            _update_fixed_normalizer(
+                self.human_observation_encoder.vector_input.normalizer,
+                raw[human_rows],
+            )
 
     def copy_normalization(self, other_network) -> None:
         if self._fallback is not None:
