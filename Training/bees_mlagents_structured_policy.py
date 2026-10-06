@@ -370,6 +370,76 @@ class _MaskedAttentionPool(nn.Module):
         )
         return torch.sum(entities * weights.unsqueeze(2), dim=1)
 
+    def forward_packed(
+        self,
+        query: torch.Tensor,
+        entities: torch.Tensor,
+        flat_indices: torch.Tensor,
+        slot_count: int,
+        presence: torch.Tensor,
+    ) -> torch.Tensor:
+        """Exact masked attention over only occupied rows."""
+
+        batch_size = int(query.shape[0])
+        if int(entities.shape[0]) == 0:
+            return entities.new_zeros(
+                (batch_size, entities.shape[1])
+            )
+
+        rows = torch.div(
+            flat_indices,
+            int(slot_count),
+            rounding_mode="floor",
+        ).to(dtype=torch.long)
+        mask = torch.clamp(
+            presence.to(dtype=entities.dtype),
+            0.0,
+            1.0,
+        )
+        q = self.query(query)
+        k = self.key(entities)
+        scores = (
+            torch.sum(
+                q.index_select(0, rows) * k,
+                dim=1,
+            )
+            / self.scale
+        )
+        masked_scores = scores + (1.0 - mask) * -10000.0
+
+        maxima = masked_scores.new_full(
+            (batch_size,),
+            float("-inf"),
+        )
+        maxima.scatter_reduce_(
+            0,
+            rows,
+            masked_scores,
+            reduce="amax",
+            include_self=True,
+        )
+        exponentials = torch.exp(
+            masked_scores - maxima.index_select(0, rows)
+        ) * mask
+        denominator = exponentials.new_zeros(
+            (batch_size,)
+        ).index_add(
+            0,
+            rows,
+            exponentials,
+        )
+        weights = exponentials / torch.clamp(
+            denominator.index_select(0, rows),
+            min=1.0e-6,
+        )
+        return entities.new_zeros(
+            (batch_size, entities.shape[1])
+        ).index_add(
+            0,
+            rows,
+            entities * weights.unsqueeze(1),
+        )
+
 
 class _MaskedScalarPool(nn.Module):
     def __init__(self, entity_size: int) -> None:
@@ -931,6 +1001,134 @@ class BeesStructuredObservationEncoder(nn.Module):
         output = output.index_copy(0, active, embedded)
         return output.reshape(batch, weapon_count, WEAPON_SLOT_EMBED)
 
+    def _encode_entities_packed(
+        self,
+        normalized: torch.Tensor,
+        raw: torch.Tensor,
+        active_indices: torch.Tensor,
+    ):
+        flat_normalized = normalized.reshape(
+            -1,
+            normalized.shape[2],
+        )
+        flat_raw = raw.reshape(-1, raw.shape[2])
+        active_normalized = flat_normalized.index_select(
+            0,
+            active_indices,
+        )
+        active_raw = flat_raw.index_select(
+            0,
+            active_indices,
+        )
+        if int(active_indices.numel()) == 0:
+            return (
+                normalized.new_zeros(
+                    (0, ENTITY_EMBED)
+                ),
+                normalized.new_zeros((0,)),
+            )
+
+        base = self.entity_base_encoder(
+            active_normalized[:, :ENTITY_BASE_SIZE]
+        )
+        weapons = self._entity_weapon_embeddings(
+            active_normalized.unsqueeze(1),
+            active_raw.unsqueeze(1),
+        )[:, 0, :]
+        embedded = self.entity_fuse(
+            torch.cat([base, weapons], dim=1)
+        )
+        presence = torch.clamp(
+            active_raw[:, 0],
+            0.0,
+            1.0,
+        )
+        return embedded * presence.unsqueeze(1), presence
+
+    def _encode_allies_packed(
+        self,
+        normalized: torch.Tensor,
+        raw: torch.Tensor,
+        active_indices: torch.Tensor,
+    ):
+        flat_normalized = normalized.reshape(
+            -1,
+            normalized.shape[2],
+        )
+        flat_raw = raw.reshape(-1, raw.shape[2])
+        active_normalized = flat_normalized.index_select(
+            0,
+            active_indices,
+        )
+        active_raw = flat_raw.index_select(
+            0,
+            active_indices,
+        )
+        if int(active_indices.numel()) == 0:
+            return (
+                normalized.new_zeros(
+                    (0, ENTITY_EMBED)
+                ),
+                normalized.new_zeros((0,)),
+            )
+
+        entity, presence = self._encode_entities_packed(
+            active_normalized[
+                :,
+                :ENEMY_SIZE,
+            ].unsqueeze(1),
+            active_raw[
+                :,
+                :ENEMY_SIZE,
+            ].unsqueeze(1),
+            torch.arange(
+                int(active_indices.numel()),
+                dtype=torch.long,
+                device=active_indices.device,
+            ),
+        )
+        communication = self.ally_communication_encoder(
+            active_normalized[:, ENEMY_SIZE:ALLY_SIZE]
+        )
+        embedded = self.ally_fuse(
+            torch.cat([entity, communication], dim=1)
+        )
+        return embedded * presence.unsqueeze(1), presence
+
+    def _encode_set_packed(
+        self,
+        normalized: torch.Tensor,
+        raw: torch.Tensor,
+        encoder,
+        active_indices: torch.Tensor,
+    ):
+        flat = normalized.reshape(
+            -1,
+            normalized.shape[2],
+        )
+        flat_presence = torch.clamp(
+            raw[:, :, 0].reshape(-1),
+            0.0,
+            1.0,
+        )
+        if int(active_indices.numel()) == 0:
+            return (
+                normalized.new_zeros(
+                    (0, int(encoder[-2].out_features))
+                    if isinstance(encoder, nn.Sequential)
+                    else (0, 0)
+                ),
+                normalized.new_zeros((0,)),
+            )
+        presence = flat_presence.index_select(
+            0,
+            active_indices,
+        )
+        embedded = encoder(
+            flat.index_select(0, active_indices)
+        )
+        return embedded * presence.unsqueeze(1), presence
+
     def _encode_set(
         self,
         normalized,
@@ -1049,16 +1247,31 @@ class BeesStructuredObservationEncoder(nn.Module):
             ally_count,
             raw.device,
         )
-        ally_embedding, ally_presence = self._encode_allies(
-            ally_norm,
-            ally_raw,
-            active_indices=ally_active,
-        )
-        allies = self.ally_pool(
-            self_embedding,
-            ally_embedding,
-            ally_presence,
-        )
+        if ally_active is not None:
+            ally_embedding, ally_presence = (
+                self._encode_allies_packed(
+                    ally_norm,
+                    ally_raw,
+                    ally_active,
+                )
+            )
+            allies = self.ally_pool.forward_packed(
+                self_embedding,
+                ally_embedding,
+                ally_active,
+                ally_count,
+                ally_presence,
+            )
+        else:
+            ally_embedding, ally_presence = self._encode_allies(
+                ally_norm,
+                ally_raw,
+            )
+            allies = self.ally_pool(
+                self_embedding,
+                ally_embedding,
+                ally_presence,
+            )
 
         enemy_count = _slot_limit("enemies", ENEMY_COUNT)
         enemy_norm = raw[
@@ -1075,17 +1288,36 @@ class BeesStructuredObservationEncoder(nn.Module):
             enemy_count,
             raw.device,
         )
-        enemy_embedding = self._encode_entities(
-            enemy_norm,
-            enemy_raw,
-            active_indices=enemy_active,
-        )
-        enemy_presence = torch.clamp(enemy_raw[:, :, 0], 0.0, 1.0)
-        enemies = self.enemy_pool(
-            self_embedding,
-            enemy_embedding,
-            enemy_presence,
-        )
+        if enemy_active is not None:
+            enemy_embedding, enemy_presence = (
+                self._encode_entities_packed(
+                    enemy_norm,
+                    enemy_raw,
+                    enemy_active,
+                )
+            )
+            enemies = self.enemy_pool.forward_packed(
+                self_embedding,
+                enemy_embedding,
+                enemy_active,
+                enemy_count,
+                enemy_presence,
+            )
+        else:
+            enemy_embedding = self._encode_entities(
+                enemy_norm,
+                enemy_raw,
+            )
+            enemy_presence = torch.clamp(
+                enemy_raw[:, :, 0],
+                0.0,
+                1.0,
+            )
+            enemies = self.enemy_pool(
+                self_embedding,
+                enemy_embedding,
+                enemy_presence,
+            )
 
         weapon_norm = raw[
             :,
@@ -1123,18 +1355,34 @@ class BeesStructuredObservationEncoder(nn.Module):
             mining_count,
             raw.device,
         )
-        mining_entities, mining_presence = self._encode_set(
-            mining_norm,
-            mining_raw,
-            self.mining_encoder,
-            48,
-            active_indices=mining_active,
-        )
-        mining = self.mining_pool(
-            self_embedding,
-            mining_entities,
-            mining_presence,
-        )
+        if mining_active is not None:
+            mining_entities, mining_presence = (
+                self._encode_set_packed(
+                    mining_norm,
+                    mining_raw,
+                    self.mining_encoder,
+                    mining_active,
+                )
+            )
+            mining = self.mining_pool.forward_packed(
+                self_embedding,
+                mining_entities,
+                mining_active,
+                mining_count,
+                mining_presence,
+            )
+        else:
+            mining_entities, mining_presence = self._encode_set(
+                mining_norm,
+                mining_raw,
+                self.mining_encoder,
+                48,
+            )
+            mining = self.mining_pool(
+                self_embedding,
+                mining_entities,
+                mining_presence,
+            )
 
         map_count = _slot_limit("map_objects", MAP_OBJECT_COUNT)
         map_norm = raw[
@@ -1153,18 +1401,34 @@ class BeesStructuredObservationEncoder(nn.Module):
             map_count,
             raw.device,
         )
-        map_entities, map_presence = self._encode_set(
-            map_norm,
-            map_raw,
-            self.map_object_encoder,
-            64,
-            active_indices=map_active,
-        )
-        map_objects = self.map_object_pool(
-            self_embedding,
-            map_entities,
-            map_presence,
-        )
+        if map_active is not None:
+            map_entities, map_presence = (
+                self._encode_set_packed(
+                    map_norm,
+                    map_raw,
+                    self.map_object_encoder,
+                    map_active,
+                )
+            )
+            map_objects = self.map_object_pool.forward_packed(
+                self_embedding,
+                map_entities,
+                map_active,
+                map_count,
+                map_presence,
+            )
+        else:
+            map_entities, map_presence = self._encode_set(
+                map_norm,
+                map_raw,
+                self.map_object_encoder,
+                64,
+            )
+            map_objects = self.map_object_pool(
+                self_embedding,
+                map_entities,
+                map_presence,
+            )
 
         collision_count = _slot_limit(
             "collisions",
@@ -1186,18 +1450,34 @@ class BeesStructuredObservationEncoder(nn.Module):
             collision_count,
             raw.device,
         )
-        collision_entities, collision_presence = self._encode_set(
-            collision_norm,
-            collision_raw,
-            self.collision_encoder,
-            64,
-            active_indices=collision_active,
-        )
-        collisions = self.collision_pool(
-            self_embedding,
-            collision_entities,
-            collision_presence,
-        )
+        if collision_active is not None:
+            collision_entities, collision_presence = (
+                self._encode_set_packed(
+                    collision_norm,
+                    collision_raw,
+                    self.collision_encoder,
+                    collision_active,
+                )
+            )
+            collisions = self.collision_pool.forward_packed(
+                self_embedding,
+                collision_entities,
+                collision_active,
+                collision_count,
+                collision_presence,
+            )
+        else:
+            collision_entities, collision_presence = self._encode_set(
+                collision_norm,
+                collision_raw,
+                self.collision_encoder,
+                64,
+            )
+            collisions = self.collision_pool(
+                self_embedding,
+                collision_entities,
+                collision_presence,
+            )
 
         objective = self.objective_encoder(
             self._normalized_slice(
