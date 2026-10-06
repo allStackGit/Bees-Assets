@@ -116,6 +116,10 @@ _TRAINING_PACKED_ENTITY_PLAN = contextvars.ContextVar(
     "bees_structured_training_packed_entity_plan",
     default=None,
 )
+_TRAINING_PACKED_ENTITY_SCOPE = contextvars.ContextVar(
+    "bees_structured_training_packed_entity_scope",
+    default="full",
+)
 
 
 def set_training_slot_limits(limits: Optional[Mapping[str, int]]):
@@ -156,6 +160,14 @@ def reset_training_packed_entity_plan(token) -> None:
     _TRAINING_PACKED_ENTITY_PLAN.reset(token)
 
 
+def set_training_packed_entity_scope(scope: str):
+    return _TRAINING_PACKED_ENTITY_SCOPE.set(str(scope))
+
+
+def reset_training_packed_entity_scope(token) -> None:
+    _TRAINING_PACKED_ENTITY_SCOPE.reset(token)
+
+
 def _packed_training_indices(
     name: str,
     batch_size: int,
@@ -167,6 +179,9 @@ def _packed_training_indices(
     plan = _TRAINING_PACKED_ENTITY_PLAN.get()
     if not isinstance(plan, Mapping):
         return None
+    scoped = plan.get(_TRAINING_PACKED_ENTITY_SCOPE.get())
+    if isinstance(scoped, Mapping):
+        plan = scoped
     entry = plan.get(name)
     if not isinstance(entry, Mapping):
         return None
