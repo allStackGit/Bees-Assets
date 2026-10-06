@@ -779,33 +779,53 @@ class BeesFactorizedPOCACritic(nn.Module):
 
 
 def compact_group_observation_numpy(raw):
-    """Project one full Bees groupmate observation onto critic-only local state."""
+    """Project one or more full Bees groupmate observations onto critic-local state."""
 
     import numpy as np
 
     values = np.asarray(raw, dtype=np.float32)
-    if values.ndim != 1 or int(values.shape[0]) != BEES_OBSERVATION_SIZE:
+    single = values.ndim == 1
+    if single:
+        values = values.reshape(1, -1)
+    if (
+        values.ndim != 2
+        or int(values.shape[1]) != BEES_OBSERVATION_SIZE
+    ):
         raise ValueError(
-            "Bees compact group observation requires one full Bees observation."
+            "Bees compact group observation requires full Bees observation rows."
         )
-    return np.concatenate(
+
+    navigation = values[
+        :,
+        NAVIGATION_START : NAVIGATION_START + NAVIGATION_SIZE,
+    ].reshape(
+        -1,
+        7,
+        3,
+        7,
+        3,
+    ).max(axis=(2, 4)).reshape(
+        -1,
+        GROUP_NAVIGATION_SIZE,
+    )
+    compact = np.concatenate(
         [
-            values[SELF_START : SELF_START + SELF_SIZE],
+            values[:, SELF_START : SELF_START + SELF_SIZE],
             values[
-                CAPABILITY_START : CAPABILITY_START + CAPABILITY_SIZE
+                :,
+                CAPABILITY_START : CAPABILITY_START + CAPABILITY_SIZE,
             ],
-            values[PARENT_START : PARENT_START + PARENT_SIZE],
+            values[:, PARENT_START : PARENT_START + PARENT_SIZE],
             values[
+                :,
                 SELF_WEAPON_START
-                : SELF_WEAPON_START + BEES_WEAPON_SLOTS * SELF_WEAPON_SIZE
+                : SELF_WEAPON_START + BEES_WEAPON_SLOTS * SELF_WEAPON_SIZE,
             ],
-            values[
-                NAVIGATION_START : NAVIGATION_START + NAVIGATION_SIZE
-            ].reshape(7, 3, 7, 3).max(axis=(1, 3)).reshape(
-                GROUP_NAVIGATION_SIZE
-            ),
-        ]
+            navigation,
+        ],
+        axis=1,
     ).astype(np.float32, copy=False)
+    return compact[0] if single else compact
 
 
 def install_factorized_poca_critic():
