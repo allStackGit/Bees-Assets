@@ -5586,7 +5586,13 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         hardware_started = time.perf_counter()
         hardware_summary = {}
         try:
+            actor_single_epoch = bool(
+                getattr(self.optimizer, "_bees_factorized_poca", False)
+            )
             for _epoch_index in range(num_epoch):
+                _POCA_UPDATE_CACHE_STATE.actor_update = bool(
+                    not actor_single_epoch or _epoch_index == 0
+                )
                 epoch_order = None
                 if tensor_cache is None:
                     update_buffer.shuffle(
@@ -5772,6 +5778,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             _POCA_UPDATE_CACHE_STATE.cache = None
             _POCA_UPDATE_CACHE_STATE.indices = None
             _POCA_UPDATE_CACHE_STATE.minibatch = None
+            _POCA_UPDATE_CACHE_STATE.actor_update = True
 
         _poca_flush_cuda_timings()
         _poca_release_full_cuda_graph(
@@ -6122,6 +6129,9 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         from mlagents.torch_utils import torch
 
         cached = getattr(_POCA_UPDATE_CACHE_STATE, "minibatch", None)
+        actor_update = bool(
+            getattr(_POCA_UPDATE_CACHE_STATE, "actor_update", True)
+        )
 
         started = time.perf_counter()
         decay_lr = self.decay_learning_rate.get_value(self.policy.get_current_step())
@@ -6262,7 +6272,8 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         )
 
         if (
-            cached is not None
+            actor_update
+            and cached is not None
             and not memories
             and not value_memories
             and not baseline_memories
@@ -6289,32 +6300,42 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                 _POCA_TIMING_STATE.parallel_streams = ()
                 return graph_update
 
-        parallel_forward = _poca_parallel_forward(
-            self,
-            current_obs,
-            actions,
-            act_masks,
-            groupmate_obs,
-            groupmate_actions,
-            memories,
-            value_memories,
-            baseline_memories,
-            cached,
-        )
-        if parallel_forward is None:
-            started = time.perf_counter()
-            cuda_timing = _poca_cuda_timing_begin("actor_get_stats")
-            run_out = self.policy.actor.get_stats(
+        parallel_forward = (
+            _poca_parallel_forward(
+                self,
                 current_obs,
                 actions,
-                masks=act_masks,
-                memories=memories,
-                sequence_length=self.policy.sequence_length,
+                act_masks,
+                groupmate_obs,
+                groupmate_actions,
+                memories,
+                value_memories,
+                baseline_memories,
+                cached,
             )
-            _poca_cuda_timing_end(cuda_timing)
-            log_probs = run_out["log_probs"]
-            entropy = run_out["entropy"]
-            _poca_record_timing("actor_get_stats", time.perf_counter() - started)
+            if actor_update
+            else None
+        )
+        if parallel_forward is None:
+            log_probs = None
+            entropy = None
+            if actor_update:
+                started = time.perf_counter()
+                cuda_timing = _poca_cuda_timing_begin("actor_get_stats")
+                run_out = self.policy.actor.get_stats(
+                    current_obs,
+                    actions,
+                    masks=act_masks,
+                    memories=memories,
+                    sequence_length=self.policy.sequence_length,
+                )
+                _poca_cuda_timing_end(cuda_timing)
+                log_probs = run_out["log_probs"]
+                entropy = run_out["entropy"]
+                _poca_record_timing(
+                    "actor_get_stats",
+                    time.perf_counter() - started,
+                )
 
             started = time.perf_counter()
             cuda_timing = _poca_cuda_timing_begin("critic_pass")
@@ -6340,7 +6361,8 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         else:
             log_probs, entropy, values, baselines = parallel_forward
 
-        log_probs = log_probs.flatten()
+        if log_probs is not None:
+            log_probs = log_probs.flatten()
 
         started = time.perf_counter()
         baseline_loss = ModelUtils.trust_region_value_loss(
@@ -6357,21 +6379,27 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             decay_eps,
             loss_masks,
         )
-        policy_loss = ModelUtils.trust_region_policy_loss(
-            advantages,
-            log_probs,
-            old_log_probs,
-            loss_masks,
-            decay_eps,
-        )
-        loss = (
-            policy_loss
-            + 0.5 * (value_loss + 0.5 * baseline_loss)
-            - decay_bet * ModelUtils.masked_mean(entropy, loss_masks)
-        )
+        if actor_update:
+            policy_loss = ModelUtils.trust_region_policy_loss(
+                advantages,
+                log_probs,
+                old_log_probs,
+                loss_masks,
+                decay_eps,
+            )
+            loss = (
+                policy_loss
+                + 0.5 * (value_loss + 0.5 * baseline_loss)
+                - decay_bet * ModelUtils.masked_mean(entropy, loss_masks)
+            )
+        else:
+            policy_loss = value_loss.detach().new_zeros(())
+            loss = 0.5 * (value_loss + 0.5 * baseline_loss)
         _poca_record_timing("losses", time.perf_counter() - started)
 
-        graph_eligible = _poca_cuda_graph_minibatch_eligible(cached)
+        graph_eligible = bool(
+            actor_update and _poca_cuda_graph_minibatch_eligible(cached)
+        )
         graph_state = getattr(
             self.optimizer,
             "_bees_cuda_graph_state",
