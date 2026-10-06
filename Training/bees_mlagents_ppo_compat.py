@@ -5737,6 +5737,16 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                 "Bees factorized learner branch reached PPO without the "
                 "factorized POCA optimizer installed."
             )
+        if factorized_poca:
+            from bees_mlagents_factorized_poca import (
+                GROUP_COMPACT_WIDTH,
+            )
+
+            group_observation_width = int(
+                GROUP_COMPACT_WIDTH
+            )
+        else:
+            group_observation_width = BEES_OBSERVATION_SIZE
 
         batch_size = (
             self.hyperparameters.batch_size
@@ -5873,7 +5883,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             f"actor_epochs={1 if actor_single_epoch and actor_training_enabled else (0 if actor_single_epoch else num_epoch)} "
             f"minibatches={total_minibatches} "
             f"factorized={'on' if factorized_poca else 'off'} "
-            f"group_width={202 if factorized_poca else BEES_OBSERVATION_SIZE} "
+            f"group_width={group_observation_width} "
             f"sync_cleanup={'on' if _POCA_OPTIMIZATIONS.effective_sync_cleanup else 'off'} "
             f"stream_shards={_POCA_OPTIMIZATIONS.stream_shards} "
             f"prefetch={'on' if _POCA_OPTIMIZATIONS.minibatch_prefetch else 'off'} "
