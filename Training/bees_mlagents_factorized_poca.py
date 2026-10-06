@@ -334,6 +334,18 @@ class BeesFactorizedPOCACritic(nn.Module):
         packed_rows = _GROUP_VALID_ROWS.get()
         if (
             packed_rows is None
+            and any(
+                int(member[0].shape[1]) == GROUP_COMPACT_WIDTH
+                and int(member[0].shape[0]) != batch_size
+                for member in groupmate_obs
+            )
+        ):
+            raise RuntimeError(
+                "Compact factorized group rows require their destination-row "
+                "membership plan; refusing to infer incorrect minibatch rows."
+            )
+        if (
+            packed_rows is None
             and not torch.is_grad_enabled()
         ):
             packed_rows = [
