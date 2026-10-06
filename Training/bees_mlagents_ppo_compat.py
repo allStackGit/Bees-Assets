@@ -3017,6 +3017,82 @@ def _poca_select_group_prepare_source(source, indices):
     }
 
 
+def _poca_build_packed_entity_plan(current_obs, slot_limits):
+    """Build exact occupied-slot indices on CPU for structured training."""
+
+    import numpy as np
+    from mlagents.torch_utils import torch
+    from bees_mlagents_structured_policy import (
+        ALLY_COUNT,
+        ALLY_SIZE,
+        ALLY_START,
+        BEES_OBSERVATION_SIZE,
+        COLLISION_COUNT,
+        COLLISION_SIZE,
+        COLLISION_START,
+        ENEMY_COUNT,
+        ENEMY_SIZE,
+        ENEMY_START,
+        MAP_OBJECT_COUNT,
+        MAP_OBJECT_SIZE,
+        MAP_OBJECT_START,
+        MINING_COUNT,
+        MINING_SIZE,
+        MINING_START,
+    )
+
+    if len(current_obs) != 1:
+        return None
+    tensor = current_obs[0]
+    if (
+        tensor.device.type != "cpu"
+        or tensor.ndim != 2
+        or int(tensor.shape[1]) != BEES_OBSERVATION_SIZE
+    ):
+        return None
+
+    values = np.asarray(tensor.detach().numpy(), dtype=np.float32)
+    batch_size = int(values.shape[0])
+    families = {
+        "allies": (ALLY_START, ALLY_COUNT, ALLY_SIZE),
+        "enemies": (ENEMY_START, ENEMY_COUNT, ENEMY_SIZE),
+        "mining": (MINING_START, MINING_COUNT, MINING_SIZE),
+        "map_objects": (
+            MAP_OBJECT_START,
+            MAP_OBJECT_COUNT,
+            MAP_OBJECT_SIZE,
+        ),
+        "collisions": (
+            COLLISION_START,
+            COLLISION_COUNT,
+            COLLISION_SIZE,
+        ),
+    }
+    plan = {}
+    for name, (start, full_count, width) in families.items():
+        slot_count = max(
+            1,
+            min(
+                int(full_count),
+                int(slot_limits.get(name, full_count)),
+            ),
+        )
+        family = values[
+            :,
+            start : start + full_count * width,
+        ].reshape(batch_size, full_count, width)
+        presence = family[:, :slot_count, 0].reshape(-1)
+        active = np.flatnonzero(
+            np.isfinite(presence) & (presence > 0.0)
+        ).astype(np.int64, copy=False)
+        plan[name] = {
+            "batch_size": batch_size,
+            "slot_count": slot_count,
+            "active": torch.from_numpy(active.copy()),
+        }
+    return plan
+
+
 def _poca_build_observation_dedup_plan(cached):
     """Find bit-identical current/group observations off the CUDA critical path.
 
@@ -3689,6 +3765,10 @@ class _PocaCpuMinibatchPreparer:
         dedup_plan = _poca_build_observation_dedup_plan(
             observation_source
         )
+        packed_entity_plan = _poca_build_packed_entity_plan(
+            observation_source["current_obs"],
+            self.cache.get("slot_limits", {}),
+        )
         if self.full_minibatch:
             selected = _select_poca_update_tensor_cache(
                 self.cache,
@@ -3701,12 +3781,14 @@ class _PocaCpuMinibatchPreparer:
                 observation_source["prepared_groupmate_obs"]
             )
             selected["observation_dedup"] = dedup_plan
+            selected["packed_entity_plan"] = packed_entity_plan
         else:
             selected = {
                 "prepared_groupmate_obs": (
                     observation_source["prepared_groupmate_obs"]
                 ),
                 "observation_dedup": dedup_plan,
+                "packed_entity_plan": packed_entity_plan,
             }
         selected = _poca_pin_selected_minibatch(selected)
         return selected, time.perf_counter() - started
@@ -5695,6 +5777,11 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                                 ] = prepared_cpu.get(
                                     "observation_dedup"
                                 )
+                                selected_minibatch[
+                                    "packed_entity_plan"
+                                ] = prepared_cpu.get(
+                                    "packed_entity_plan"
+                                )
                             _POCA_UPDATE_CACHE_STATE.minibatch = (
                                 selected_minibatch
                             )
@@ -6615,14 +6702,21 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
 
         from bees_mlagents_structured_policy import (
             reset_training_faction_rows,
+            reset_training_packed_entity_plan,
             reset_training_slot_limits,
             set_training_faction_rows,
+            set_training_packed_entity_plan,
             set_training_slot_limits,
         )
 
         slot_token = set_training_slot_limits(slot_limits)
         faction_token = set_training_faction_rows(
             None if cached is None else cached["faction_rows"]
+        )
+        packed_entity_token = set_training_packed_entity_plan(
+            None
+            if cached is None
+            else cached.get("packed_entity_plan")
         )
         _poca_record_timing(
             "prepare",
@@ -6638,6 +6732,9 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             _poca_record_timing(
                 "optimizer_total",
                 time.perf_counter() - optimizer_started,
+            )
+            reset_training_packed_entity_plan(
+                packed_entity_token
             )
             reset_training_faction_rows(faction_token)
             reset_training_slot_limits(slot_token)
