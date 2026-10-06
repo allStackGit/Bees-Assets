@@ -1755,6 +1755,10 @@ def _evaluate_poca_trajectory_batch(trainer, merged, trajectories):
         reset_training_slot_limits,
         set_training_slot_limits,
     )
+    from bees_mlagents_factorized_poca import (
+        reset_factorized_group_valid_rows,
+        set_factorized_group_valid_rows,
+    )
 
     if trainer.policy.use_recurrent:
         raise RuntimeError(
@@ -1790,23 +1794,39 @@ def _evaluate_poca_trajectory_batch(trainer, merged, trajectories):
                 current_obs[0].device,
             )
             groupmate_actions = AgentAction.group_from_buffer(merged)
-            _POCA_GROUP_BATCH_STATE.valid_rows = (
+            current_valid_rows = (
                 _poca_groupmate_valid_row_indices(current_counts)
             )
+            _POCA_GROUP_BATCH_STATE.valid_rows = current_valid_rows
             _POCA_GROUP_BATCH_STATE.encoded_cache = {}
-
-            all_obs = [current_obs] + groupmate_obs
-            value_estimates, _ = trainer.optimizer.critic.critic_pass(
-                all_obs,
-                memories=None,
-                sequence_length=merged.num_experiences,
+            current_factorized_token = (
+                set_factorized_group_valid_rows(
+                    current_valid_rows
+                    if getattr(
+                        trainer.optimizer,
+                        "_bees_factorized_poca",
+                        False,
+                    )
+                    else None
+                )
             )
-            baseline_estimates, _ = trainer.optimizer.critic.baseline(
-                current_obs,
-                (groupmate_obs, groupmate_actions),
-                memories=None,
-                sequence_length=merged.num_experiences,
-            )
+            try:
+                all_obs = [current_obs] + groupmate_obs
+                value_estimates, _ = trainer.optimizer.critic.critic_pass(
+                    all_obs,
+                    memories=None,
+                    sequence_length=merged.num_experiences,
+                )
+                baseline_estimates, _ = trainer.optimizer.critic.baseline(
+                    current_obs,
+                    (groupmate_obs, groupmate_actions),
+                    memories=None,
+                    sequence_length=merged.num_experiences,
+                )
+            finally:
+                reset_factorized_group_valid_rows(
+                    current_factorized_token
+                )
 
             next_obs = [
                 ModelUtils.list_to_tensor(obs)
@@ -1823,15 +1843,32 @@ def _evaluate_poca_trajectory_batch(trainer, merged, trajectories):
                 next_counts,
                 next_obs[0].device,
             )
-            _POCA_GROUP_BATCH_STATE.valid_rows = (
+            next_valid_rows = (
                 _poca_groupmate_valid_row_indices(next_counts)
             )
+            _POCA_GROUP_BATCH_STATE.valid_rows = next_valid_rows
             _POCA_GROUP_BATCH_STATE.encoded_cache = {}
-            next_value_estimates, _ = trainer.optimizer.critic.critic_pass(
-                [next_obs] + next_groupmate_obs,
-                memories=None,
-                sequence_length=next_buffer.num_experiences,
+            next_factorized_token = (
+                set_factorized_group_valid_rows(
+                    next_valid_rows
+                    if getattr(
+                        trainer.optimizer,
+                        "_bees_factorized_poca",
+                        False,
+                    )
+                    else None
+                )
             )
+            try:
+                next_value_estimates, _ = trainer.optimizer.critic.critic_pass(
+                    [next_obs] + next_groupmate_obs,
+                    memories=None,
+                    sequence_length=next_buffer.num_experiences,
+                )
+            finally:
+                reset_factorized_group_valid_rows(
+                    next_factorized_token
+                )
     finally:
         reset_training_slot_limits(slot_token)
         _POCA_GROUP_BATCH_STATE.valid_rows = None
@@ -3955,13 +3992,22 @@ class _PocaCpuMinibatchPreparer:
             1,
             logical_cpus - POCA_CPU_PREPARE_RESERVED_LOGICAL_CPUS,
         )
+        factorized = bool(
+            cache is not None
+            and cache.get("factorized_group_obs", False)
+        )
         self.enabled = bool(
             cache is not None
             and self.group_source is not None
-            and _POCA_OPTIMIZATIONS.effective_sync_cleanup
-            and _POCA_OPTIMIZATIONS.stream_shards == 1
-            and not _POCA_OPTIMIZATIONS.critic_baseline_overlap
-            and not _POCA_OPTIMIZATIONS.minibatch_prefetch
+            and (
+                factorized
+                or (
+                    _POCA_OPTIMIZATIONS.effective_sync_cleanup
+                    and _POCA_OPTIMIZATIONS.stream_shards == 1
+                    and not _POCA_OPTIMIZATIONS.critic_baseline_overlap
+                    and not _POCA_OPTIMIZATIONS.minibatch_prefetch
+                )
+            )
             and self.device.type == "cuda"
             and torch.cuda.is_available()
         )
