@@ -414,10 +414,13 @@ class _MaskedAttentionPool(nn.Module):
         maxima.scatter_reduce_(
             0,
             rows,
-            masked_scores,
+            masked_scores.detach(),
             reduce="amax",
             include_self=True,
         )
+        # The per-row maximum is only a numerical-stability shift. Detaching it
+        # preserves the exact softmax gradient while keeping packed attention
+        # independent of scatter-reduce backward behavior.
         exponentials = torch.exp(
             masked_scores - maxima.index_select(0, rows)
         ) * mask
