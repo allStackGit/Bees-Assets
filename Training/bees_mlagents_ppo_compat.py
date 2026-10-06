@@ -1330,6 +1330,7 @@ def _poca_structured_slot_profile(cache):
         ENEMY_COUNT,
         ENEMY_SIZE,
         ENEMY_START,
+        FACTION_INDEX,
         MAP_OBJECT_COUNT,
         MAP_OBJECT_SIZE,
         MAP_OBJECT_START,
@@ -3068,7 +3069,28 @@ def _poca_build_packed_entity_plan(current_obs, slot_limits):
             COLLISION_SIZE,
         ),
     }
-    plan = {}
+    faction = values[:, FACTION_INDEX]
+    bee_weight = np.clip(
+        (faction + 1.0) * 0.5,
+        0.0,
+        1.0,
+    )
+    scope_rows = {
+        "full": np.arange(batch_size, dtype=np.int64),
+        "bee": np.flatnonzero(bee_weight >= 1.0).astype(
+            np.int64,
+            copy=False,
+        ),
+        "human": np.flatnonzero(bee_weight <= 0.0).astype(
+            np.int64,
+            copy=False,
+        ),
+        "mixed": np.flatnonzero(
+            (bee_weight > 0.0) & (bee_weight < 1.0)
+        ).astype(np.int64, copy=False),
+    }
+
+    plan = {scope: {} for scope in scope_rows}
     for name, (start, full_count, width) in families.items():
         slot_count = max(
             1,
@@ -3081,15 +3103,22 @@ def _poca_build_packed_entity_plan(current_obs, slot_limits):
             :,
             start : start + full_count * width,
         ].reshape(batch_size, full_count, width)
-        presence = family[:, :slot_count, 0].reshape(-1)
-        active = np.flatnonzero(
-            np.isfinite(presence) & (presence > 0.0)
-        ).astype(np.int64, copy=False)
-        plan[name] = {
-            "batch_size": batch_size,
-            "slot_count": slot_count,
-            "active": torch.from_numpy(active.copy()),
-        }
+        for scope, rows in scope_rows.items():
+            scoped_family = family[
+                rows,
+                :slot_count,
+                :,
+            ]
+            presence = scoped_family[:, :, 0].reshape(-1)
+            active = np.flatnonzero(
+                np.isfinite(presence)
+                & (presence > 0.0)
+            ).astype(np.int64, copy=False)
+            plan[scope][name] = {
+                "batch_size": int(rows.size),
+                "slot_count": slot_count,
+                "active": torch.from_numpy(active.copy()),
+            }
     return plan
 
 
