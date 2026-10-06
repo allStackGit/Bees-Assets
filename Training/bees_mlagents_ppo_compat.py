@@ -5662,6 +5662,29 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         if async_buffer is None:
             self.cumulative_returns_since_policy_update.clear()
 
+        bees_behavior = bool(
+            len(self.policy.behavior_spec.observation_specs) == 1
+            and tuple(
+                self.policy.behavior_spec.observation_specs[0].shape
+            )
+            == (BEES_OBSERVATION_SIZE,)
+            and _is_bees_action_spec(
+                self.policy.behavior_spec.action_spec
+            )
+        )
+        factorized_poca = bool(
+            getattr(
+                self.optimizer,
+                "_bees_factorized_poca",
+                False,
+            )
+        )
+        if bees_behavior and not factorized_poca:
+            raise RuntimeError(
+                "Bees factorized learner branch reached PPO without the "
+                "factorized POCA optimizer installed."
+            )
+
         batch_size = (
             self.hyperparameters.batch_size
             - self.hyperparameters.batch_size % self.policy.sequence_length
@@ -5692,6 +5715,11 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             self.optimizer,
             update_buffer,
         )
+        if factorized_poca and tensor_cache is None:
+            raise RuntimeError(
+                "Bees factorized POCA requires the cached feed-forward "
+                "minibatch path; refusing to fall back to full group observations."
+            )
         materialize_seconds = time.perf_counter() - materialize_started
         _poca_record_timing("materialize", materialize_seconds)
 
@@ -5791,6 +5819,8 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             f"critic_batch={critic_batch_size} epochs={num_epoch} "
             f"actor_epochs={1 if actor_single_epoch and actor_training_enabled else (0 if actor_single_epoch else num_epoch)} "
             f"minibatches={total_minibatches} "
+            f"factorized={'on' if factorized_poca else 'off'} "
+            f"group_width={202 if factorized_poca else BEES_OBSERVATION_SIZE} "
             f"sync_cleanup={'on' if _POCA_OPTIMIZATIONS.effective_sync_cleanup else 'off'} "
             f"stream_shards={_POCA_OPTIMIZATIONS.stream_shards} "
             f"prefetch={'on' if _POCA_OPTIMIZATIONS.minibatch_prefetch else 'off'} "
