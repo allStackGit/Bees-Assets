@@ -5499,11 +5499,6 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             - self.hyperparameters.batch_size % self.policy.sequence_length
         )
         batch_size = max(batch_size, self.policy.sequence_length)
-        n_sequences = max(
-            int(self.hyperparameters.batch_size / self.policy.sequence_length),
-            1,
-        )
-
         update_started = time.perf_counter()
         _POCA_TIMING_STATE.timing_totals = {}
         _POCA_TIMING_STATE.timing_counts = {}
@@ -5770,7 +5765,9 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                 ):
                     first = offsets[0]
                     pending_prefetch = prefetcher.submit(
-                        epoch_order[first : first + batch_size]
+                        epoch_order[
+                            first : first + current_batch_size
+                        ]
                     )
 
                 for offset_index, i in enumerate(offsets):
@@ -5828,7 +5825,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                                     cpu_preparer.submit(
                                         epoch_order[
                                             prepare_offset :
-                                            prepare_offset + batch_size
+                                            prepare_offset + current_batch_size
                                         ]
                                     )
                                 )
@@ -5845,7 +5842,8 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                                 prefetcher.submit(
                                     epoch_order[
                                         offsets[next_offset_index] :
-                                        offsets[next_offset_index] + batch_size
+                                        offsets[next_offset_index]
+                                        + current_batch_size
                                     ]
                                 )
                                 if next_offset_index < len(offsets)
