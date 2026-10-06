@@ -6685,18 +6685,166 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         )
         slot_token = set_training_slot_limits(slot_limits)
         try:
-            # ML-Agents 1.1.0 places its bootstrap critic call outside the
-            # internal no_grad block. Keep the entire feed-forward trajectory
-            # value path graph-free.
-            with torch.no_grad():
-                return original_poca_trajectory_values(
-                    self,
-                    batch,
-                    next_obs,
-                    next_groupmate_obs,
-                    done,
-                    agent_id,
+            # Generic POCA retains the vendor path. The factorized critic must
+            # not re-enter ML-Agents' full [batch,max_group,7743] padding path
+            # merely because one trajectory is processed at a bookkeeping
+            # boundary.
+            if not factorized_poca:
+                with torch.no_grad():
+                    return original_poca_trajectory_values(
+                        self,
+                        batch,
+                        next_obs,
+                        next_groupmate_obs,
+                        done,
+                        agent_id,
+                    )
+
+            import numpy as np
+            from mlagents.trainers.torch_entities.agent_action import (
+                AgentAction,
+            )
+            from mlagents.trainers.torch_entities.utils import (
+                ModelUtils,
+            )
+            from mlagents.trainers.trajectory import ObsUtil
+            from bees_mlagents_factorized_poca import (
+                compact_group_observation_numpy,
+                reset_factorized_group_valid_rows,
+                set_factorized_group_valid_rows,
+            )
+
+            n_obs = len(
+                self.policy.behavior_spec.observation_specs
+            )
+            current_obs = [
+                ModelUtils.list_to_tensor(obs)
+                for obs in ObsUtil.from_buffer(batch, n_obs)
+            ]
+            current_counts = _poca_groupmate_counts(
+                self.policy,
+                batch,
+                batch.num_experiences,
+            )
+            groupmate_obs = _poca_group_obs_tensors_from_buffer(
+                self.policy,
+                batch,
+                current_counts,
+                current_obs[0].device,
+                factorized=True,
+            )
+            groupmate_actions = AgentAction.group_from_buffer(batch)
+            current_valid_rows = (
+                _poca_groupmate_valid_row_indices(
+                    current_counts
                 )
+            )
+            current_group_token = (
+                set_factorized_group_valid_rows(
+                    current_valid_rows
+                )
+            )
+            try:
+                with torch.no_grad():
+                    value_estimates, _ = self.critic.critic_pass(
+                        [current_obs] + groupmate_obs,
+                        memories=None,
+                        sequence_length=batch.num_experiences,
+                    )
+                    baseline_estimates, _ = self.critic.baseline(
+                        current_obs,
+                        (
+                            groupmate_obs,
+                            groupmate_actions,
+                        ),
+                        memories=None,
+                        sequence_length=batch.num_experiences,
+                    )
+            finally:
+                reset_factorized_group_valid_rows(
+                    current_group_token
+                )
+
+            next_obs_tensors = [
+                ModelUtils.list_to_tensor(obs).unsqueeze(0)
+                for obs in next_obs
+            ]
+            next_group_tensors = []
+            for groupmate in next_groupmate_obs:
+                if len(groupmate) != 1:
+                    raise RuntimeError(
+                        "Bees factorized POCA requires one vector "
+                        "observation per next groupmate."
+                    )
+                compact = compact_group_observation_numpy(
+                    np.asarray(
+                        groupmate[0],
+                        dtype=np.float32,
+                    )
+                )
+                next_group_tensors.append(
+                    [
+                        torch.as_tensor(
+                            compact,
+                            dtype=torch.float32,
+                            device=next_obs_tensors[0].device,
+                        ).unsqueeze(0)
+                    ]
+                )
+
+            next_valid_rows = [
+                np.asarray([0], dtype=np.int64)
+                for _ in next_group_tensors
+            ]
+            next_group_token = (
+                set_factorized_group_valid_rows(
+                    next_valid_rows
+                )
+            )
+            try:
+                with torch.no_grad():
+                    next_value_estimates, _ = (
+                        self.critic.critic_pass(
+                            [next_obs_tensors]
+                            + next_group_tensors,
+                            memories=None,
+                            sequence_length=1,
+                        )
+                    )
+            finally:
+                reset_factorized_group_valid_rows(
+                    next_group_token
+                )
+
+            self.value_memory_dict[agent_id] = None
+            self.baseline_memory_dict[agent_id] = None
+
+            value_numpy = {
+                name: ModelUtils.to_numpy(value)
+                for name, value in value_estimates.items()
+            }
+            baseline_numpy = {
+                name: ModelUtils.to_numpy(value)
+                for name, value in baseline_estimates.items()
+            }
+            next_numpy = {
+                name: ModelUtils.to_numpy(value)
+                for name, value in next_value_estimates.items()
+            }
+            if done:
+                for name, estimate in next_numpy.items():
+                    if not self.reward_signals[
+                        name
+                    ].ignore_done:
+                        estimate[-1] = 0.0
+
+            return (
+                value_numpy,
+                baseline_numpy,
+                next_numpy,
+                None,
+                None,
+            )
         finally:
             reset_training_slot_limits(slot_token)
 
