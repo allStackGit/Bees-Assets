@@ -5864,16 +5864,6 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         if async_buffer is None:
             self.cumulative_returns_since_policy_update.clear()
 
-        bees_behavior = bool(
-            len(self.policy.behavior_spec.observation_specs) == 1
-            and tuple(
-                self.policy.behavior_spec.observation_specs[0].shape
-            )
-            == (BEES_OBSERVATION_SIZE,)
-            and _is_bees_action_spec(
-                self.policy.behavior_spec.action_spec
-            )
-        )
         factorized_poca = bool(
             getattr(
                 self.optimizer,
@@ -5881,11 +5871,6 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                 False,
             )
         )
-        if bees_behavior and not factorized_poca:
-            raise RuntimeError(
-                "Bees factorized learner branch reached PPO without the "
-                "factorized POCA optimizer installed."
-            )
         if factorized_poca:
             from bees_mlagents_factorized_poca import (
                 GROUP_COMPACT_WIDTH,
