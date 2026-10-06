@@ -6397,6 +6397,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
 
         if (
             actor_update
+            and not getattr(self, "_bees_factorized_poca", False)
             and cached is not None
             and not memories
             and not value_memories
@@ -6522,7 +6523,9 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         _poca_record_timing("losses", time.perf_counter() - started)
 
         graph_eligible = bool(
-            actor_update and _poca_cuda_graph_minibatch_eligible(cached)
+            actor_update
+            and not getattr(self, "_bees_factorized_poca", False)
+            and _poca_cuda_graph_minibatch_eligible(cached)
         )
         graph_state = getattr(
             self.optimizer,
