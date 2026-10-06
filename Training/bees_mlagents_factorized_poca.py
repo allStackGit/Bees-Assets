@@ -323,6 +323,19 @@ class BeesFactorizedPOCACritic(nn.Module):
 
         packed_rows = _GROUP_VALID_ROWS.get()
         if (
+            packed_rows is None
+            and not torch.is_grad_enabled()
+        ):
+            packed_rows = [
+                torch.nonzero(
+                    torch.isfinite(
+                        member[0][:, SELF_START]
+                    ),
+                    as_tuple=False,
+                ).squeeze(1)
+                for member in groupmate_obs
+            ]
+        if (
             isinstance(packed_rows, (list, tuple))
             and len(packed_rows) == len(groupmate_obs)
         ):
