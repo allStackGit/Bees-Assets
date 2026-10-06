@@ -565,8 +565,8 @@ def _validate_session_release_identity(
         or compatibility_key != str(expected.get("compatibility_key", "")).strip().lower()
         or environment_id != str(expected.get("environment_id", "")).strip().lower()
     ):
-        raise RuntimeError(
-            "Elastic WAN learner semantic release identity does not match this managed actor"
+        raise worker.BrokerSessionChanged(
+            "Elastic WAN learner semantic release identity changed; waiting for managed release reconciliation"
         )
 
 
