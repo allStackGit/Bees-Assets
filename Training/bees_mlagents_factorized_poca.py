@@ -56,6 +56,7 @@ CRITIC_WIDTH = 128
 GROUP_NAV_WIDTH = 64
 GROUP_STATE_EMBED = 128
 GROUP_ACTION_EMBED = 64
+CRITIC_BOOTSTRAP_BUFFERS = 3
 
 _ORIGINAL_POCA_INIT = None
 
@@ -165,11 +166,41 @@ class BeesFactorizedPOCACritic(nn.Module):
             CRITIC_WIDTH,
             1,
         )
+        self.register_buffer(
+            "actor_bootstrap_buffers_remaining",
+            torch.as_tensor(
+                CRITIC_BOOTSTRAP_BUFFERS,
+                dtype=torch.int64,
+            ),
+        )
         self._shared_cache = None
 
     @property
     def memory_size(self) -> int:
         return 0
+
+    def actor_training_enabled(self) -> bool:
+        return bool(
+            int(
+                self.actor_bootstrap_buffers_remaining
+                .detach()
+                .cpu()
+                .item()
+            )
+            <= 0
+        )
+
+    def complete_training_buffer(self) -> int:
+        with torch.no_grad():
+            if int(self.actor_bootstrap_buffers_remaining.item()) > 0:
+                self.actor_bootstrap_buffers_remaining.sub_(1)
+            self.actor_bootstrap_buffers_remaining.clamp_(min=0)
+        return int(
+            self.actor_bootstrap_buffers_remaining
+            .detach()
+            .cpu()
+            .item()
+        )
 
     def update_normalization(self, buffer: AgentBuffer) -> None:
         self.observation_encoder.update_normalization(buffer)
