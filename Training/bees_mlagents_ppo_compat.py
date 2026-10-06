@@ -2199,16 +2199,18 @@ def _build_poca_group_obs_cache(
             if source_rows.size == 0:
                 positions.append(None)
                 continue
-            rows = []
-            for row in source_rows:
-                value = np.asarray(
-                    field[int(row)][position],
-                    dtype=np.float32,
-                )
-                if compact_projector is not None:
-                    value = compact_projector(value)
-                rows.append(value)
-            compact = np.stack(rows, axis=0)
+            compact = np.stack(
+                [
+                    np.asarray(
+                        field[int(row)][position],
+                        dtype=np.float32,
+                    )
+                    for row in source_rows
+                ],
+                axis=0,
+            )
+            if compact_projector is not None:
+                compact = compact_projector(compact)
             values = _poca_cpu_tensor(compact, torch.float32)
             lookup = np.full(size, -1, dtype=np.int32)
             lookup[source_rows] = np.arange(
