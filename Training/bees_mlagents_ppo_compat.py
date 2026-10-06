@@ -2679,6 +2679,9 @@ def _promote_poca_update_tensor_cache(cache):
             "current_obs": cache["current_obs"],
             "groupmate_obs": cache["groupmate_obs"],
             "groupmate_counts": cache["groupmate_counts"],
+            "factorized_group_obs": bool(
+                cache.get("factorized_group_obs", False)
+            ),
         }
     result["storage"] = "cuda"
     result["copy_seconds"] = time.perf_counter() - started
@@ -2855,6 +2858,8 @@ def _poca_prepare_compact_group_obs(
     source,
     indices,
     groupmate_counts,
+    *,
+    factorized: bool = False,
 ):
     """Select only real group rows on CPU; leave minibatch padding for CUDA."""
 
@@ -2916,6 +2921,14 @@ def _poca_prepare_compact_group_obs(
                     ],
                     axis=0,
                 )
+                if factorized:
+                    from bees_mlagents_factorized_poca import (
+                        compact_group_observation_numpy,
+                    )
+
+                    compact = compact_group_observation_numpy(
+                        compact
+                    )
                 values = _poca_cpu_tensor(
                     compact,
                     torch.float32,
@@ -3054,6 +3067,9 @@ def _poca_select_group_prepare_source(source, indices):
             source["groupmate_obs"],
             indices,
             counts,
+            factorized=bool(
+                source.get("factorized_group_obs", False)
+            ),
         ),
         "groupmate_counts": counts,
     }
