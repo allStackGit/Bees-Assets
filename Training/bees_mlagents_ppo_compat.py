@@ -2121,12 +2121,29 @@ class _PocaPreparedGroupObs:
         self.batch_size = int(batch_size)
 
 
-def _build_poca_group_obs_cache(policy, buffer, groupmate_counts):
-    """Pack actual groupmate rows once when the compact cache is safely bounded."""
+def _build_poca_group_obs_cache(
+    policy,
+    buffer,
+    groupmate_counts,
+    *,
+    factorized: bool = False,
+):
+    """Pack only the groupmate fields required by the active critic."""
 
     import numpy as np
     from mlagents.torch_utils import torch
     from mlagents.trainers.trajectory import GroupObsUtil
+
+    compact_projector = None
+    compact_width = None
+    if factorized:
+        from bees_mlagents_factorized_poca import (
+            GROUP_COMPACT_WIDTH,
+            compact_group_observation_numpy,
+        )
+
+        compact_projector = compact_group_observation_numpy
+        compact_width = int(GROUP_COMPACT_WIDTH)
 
     counts = np.asarray(groupmate_counts, dtype=np.int32)
     size = int(counts.shape[0])
@@ -2144,8 +2161,16 @@ def _build_poca_group_obs_cache(policy, buffer, groupmate_counts):
     estimated_bytes = 0
     actual_members = int(counts.astype(np.int64, copy=False).sum())
     for spec in policy.behavior_spec.observation_specs:
-        elements = int(np.prod(spec.shape, dtype=np.int64))
-        estimated_bytes += actual_members * elements * np.dtype(np.float32).itemsize
+        elements = (
+            compact_width
+            if compact_width is not None
+            else int(np.prod(spec.shape, dtype=np.int64))
+        )
+        estimated_bytes += (
+            actual_members
+            * elements
+            * np.dtype(np.float32).itemsize
+        )
     packed_limit = POCA_PACKED_GROUP_CACHE_MAX_BYTES
     try:
         import psutil
@@ -2173,16 +2198,16 @@ def _build_poca_group_obs_cache(policy, buffer, groupmate_counts):
             if source_rows.size == 0:
                 positions.append(None)
                 continue
-            compact = np.stack(
-                [
-                    np.asarray(
-                        field[int(row)][position],
-                        dtype=np.float32,
-                    )
-                    for row in source_rows
-                ],
-                axis=0,
-            )
+            rows = []
+            for row in source_rows:
+                value = np.asarray(
+                    field[int(row)][position],
+                    dtype=np.float32,
+                )
+                if compact_projector is not None:
+                    value = compact_projector(value)
+                rows.append(value)
+            compact = np.stack(rows, axis=0)
             values = _poca_cpu_tensor(compact, torch.float32)
             lookup = np.full(size, -1, dtype=np.int32)
             lookup[source_rows] = np.arange(
@@ -2385,6 +2410,9 @@ def _build_poca_update_tensor_cache(optimizer, buffer):
         policy,
         buffer,
         groupmate_counts,
+        factorized=bool(
+            getattr(optimizer, "_bees_factorized_poca", False)
+        ),
     )
 
     def field_tensor(key, dtype):
