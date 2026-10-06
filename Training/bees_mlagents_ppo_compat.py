@@ -1785,11 +1785,6 @@ def _evaluate_poca_trajectory_batch(trainer, merged, trajectories):
         reset_training_slot_limits,
         set_training_slot_limits,
     )
-    from bees_mlagents_factorized_poca import (
-        reset_factorized_group_valid_rows,
-        set_factorized_group_valid_rows,
-    )
-
     if trainer.policy.use_recurrent:
         raise RuntimeError(
             "Batched Bees POCA trajectory evaluation requires a feed-forward policy."
@@ -1834,34 +1829,18 @@ def _evaluate_poca_trajectory_batch(trainer, merged, trajectories):
             )
             _POCA_GROUP_BATCH_STATE.valid_rows = current_valid_rows
             _POCA_GROUP_BATCH_STATE.encoded_cache = {}
-            current_factorized_token = (
-                set_factorized_group_valid_rows(
-                    current_valid_rows
-                    if getattr(
-                        trainer.optimizer,
-                        "_bees_factorized_poca",
-                        False,
-                    )
-                    else None
-                )
+            all_obs = [current_obs] + groupmate_obs
+            value_estimates, _ = trainer.optimizer.critic.critic_pass(
+                all_obs,
+                memories=None,
+                sequence_length=merged.num_experiences,
             )
-            try:
-                all_obs = [current_obs] + groupmate_obs
-                value_estimates, _ = trainer.optimizer.critic.critic_pass(
-                    all_obs,
-                    memories=None,
-                    sequence_length=merged.num_experiences,
-                )
-                baseline_estimates, _ = trainer.optimizer.critic.baseline(
-                    current_obs,
-                    (groupmate_obs, groupmate_actions),
-                    memories=None,
-                    sequence_length=merged.num_experiences,
-                )
-            finally:
-                reset_factorized_group_valid_rows(
-                    current_factorized_token
-                )
+            baseline_estimates, _ = trainer.optimizer.critic.baseline(
+                current_obs,
+                (groupmate_obs, groupmate_actions),
+                memories=None,
+                sequence_length=merged.num_experiences,
+            )
 
             next_obs = [
                 ModelUtils.list_to_tensor(obs)
@@ -1884,27 +1863,11 @@ def _evaluate_poca_trajectory_batch(trainer, merged, trajectories):
             )
             _POCA_GROUP_BATCH_STATE.valid_rows = next_valid_rows
             _POCA_GROUP_BATCH_STATE.encoded_cache = {}
-            next_factorized_token = (
-                set_factorized_group_valid_rows(
-                    next_valid_rows
-                    if getattr(
-                        trainer.optimizer,
-                        "_bees_factorized_poca",
-                        False,
-                    )
-                    else None
-                )
+            next_value_estimates, _ = trainer.optimizer.critic.critic_pass(
+                [next_obs] + next_groupmate_obs,
+                memories=None,
+                sequence_length=next_buffer.num_experiences,
             )
-            try:
-                next_value_estimates, _ = trainer.optimizer.critic.critic_pass(
-                    [next_obs] + next_groupmate_obs,
-                    memories=None,
-                    sequence_length=next_buffer.num_experiences,
-                )
-            finally:
-                reset_factorized_group_valid_rows(
-                    next_factorized_token
-                )
     finally:
         reset_training_slot_limits(slot_token)
         _POCA_GROUP_BATCH_STATE.valid_rows = None
