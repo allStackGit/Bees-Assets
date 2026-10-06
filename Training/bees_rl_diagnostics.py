@@ -431,23 +431,71 @@ def _install_diagnostics(fresh_optimizer_state: bool, diagnostic_every: int):
                     value_memories = torch.stack(value_memories).unsqueeze(0)
 
                 critic_obs = current_obs
+                factorized_group_token = None
+                reset_factorized_group_valid_rows = None
                 if isinstance(self, TorchPOCAOptimizer):
-                    groupmate_obs = GroupObsUtil.from_buffer(batch, n_obs)
-                    groupmate_obs = [
-                        [
-                            ModelUtils.list_to_tensor(observation)
-                            for observation in groupmate
+                    if getattr(self, "_bees_factorized_poca", False):
+                        from bees_mlagents_ppo_compat import (
+                            _poca_group_obs_tensors_from_buffer,
+                            _poca_groupmate_counts,
+                            _poca_groupmate_valid_row_indices,
+                        )
+                        from bees_mlagents_factorized_poca import (
+                            reset_factorized_group_valid_rows,
+                            set_factorized_group_valid_rows,
+                        )
+
+                        counts = _poca_groupmate_counts(
+                            self.policy,
+                            batch,
+                            batch.num_experiences,
+                        )
+                        groupmate_obs = (
+                            _poca_group_obs_tensors_from_buffer(
+                                self.policy,
+                                batch,
+                                counts,
+                                current_obs[0].device,
+                                factorized=True,
+                            )
+                        )
+                        factorized_group_token = (
+                            set_factorized_group_valid_rows(
+                                _poca_groupmate_valid_row_indices(
+                                    counts
+                                )
+                            )
+                        )
+                    else:
+                        groupmate_obs = GroupObsUtil.from_buffer(
+                            batch,
+                            n_obs,
+                        )
+                        groupmate_obs = [
+                            [
+                                ModelUtils.list_to_tensor(observation)
+                                for observation in groupmate
+                            ]
+                            for groupmate in groupmate_obs
                         ]
-                        for groupmate in groupmate_obs
-                    ]
                     critic_obs = [current_obs] + groupmate_obs
 
-                with torch.no_grad():
-                    current_values, _ = self.critic.critic_pass(
-                        critic_obs,
-                        memories=value_memories,
-                        sequence_length=self.policy.sequence_length,
-                    )
+                try:
+                    with torch.no_grad():
+                        current_values, _ = self.critic.critic_pass(
+                            critic_obs,
+                            memories=value_memories,
+                            sequence_length=self.policy.sequence_length,
+                        )
+                finally:
+                    if (
+                        factorized_group_token is not None
+                        and reset_factorized_group_valid_rows
+                        is not None
+                    ):
+                        reset_factorized_group_valid_rows(
+                            factorized_group_token
+                        )
                 for name, value in current_values.items():
                     print(
                         f"[Bees RL diag update] update={index} stream={name} "
