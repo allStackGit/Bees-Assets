@@ -51,6 +51,7 @@ GROUP_STATE_WIDTH = (
     + BEES_WEAPON_SLOTS * SELF_WEAPON_SIZE
 )
 GROUP_ACTION_WIDTH = BEES_CONTINUOUS_ACTIONS + sum(BEES_DISCRETE_BRANCHES)
+GROUP_COMPACT_WIDTH = GROUP_STATE_WIDTH + NAVIGATION_SIZE
 CRITIC_WIDTH = 128
 GROUP_NAV_WIDTH = 64
 GROUP_STATE_EMBED = 128
@@ -174,7 +175,31 @@ class BeesFactorizedPOCACritic(nn.Module):
         self.observation_encoder.update_normalization(buffer)
 
     @staticmethod
-    def _compact_group_state(\n        raw: torch.Tensor,\n    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def _compact_group_state(
+        raw: torch.Tensor,
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        if int(raw.shape[1]) == GROUP_COMPACT_WIDTH:
+            valid = torch.isfinite(raw[:, 0])
+            clean = torch.nan_to_num(
+                raw,
+                nan=0.0,
+                posinf=0.0,
+                neginf=0.0,
+            )
+            return (
+                clean[:, :GROUP_STATE_WIDTH],
+                clean[
+                    :,
+                    GROUP_STATE_WIDTH
+                    : GROUP_STATE_WIDTH + NAVIGATION_SIZE,
+                ],
+                valid,
+            )
+
+        if int(raw.shape[1]) != BEES_OBSERVATION_SIZE:
+            raise RuntimeError(
+                "Bees factorized POCA critic received an unexpected groupmate observation width."
+            )
         valid = torch.isfinite(raw[:, SELF_START])
         clean = torch.nan_to_num(raw, nan=0.0, posinf=0.0, neginf=0.0)
         compact = torch.cat(
