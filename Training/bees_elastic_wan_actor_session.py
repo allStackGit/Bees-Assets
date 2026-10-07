@@ -367,12 +367,15 @@ class ElasticActorSession(worker.ActorSession):
             candidate.conn.close()
         except Exception:
             pass
-        worker._terminate_detached_actor_unity(
-            self.env_path,
-            self.local_base_port + local_worker_id,
-            reason=f"failed live resize worker {local_worker_id}",
-            port_count=1,
-        )
+        env_path = getattr(self, "env_path", None)
+        local_base_port = getattr(self, "local_base_port", None)
+        if env_path is not None and isinstance(local_base_port, int):
+            worker._terminate_detached_actor_unity(
+                env_path,
+                local_base_port + local_worker_id,
+                reason=f"failed live resize worker {local_worker_id}",
+                port_count=1,
+            )
 
     def _scale_up_one(self, requested_target: int) -> bool:
         from mlagents.trainers.env_manager import EnvironmentStep
