@@ -5705,9 +5705,108 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             )
 
         encoded_entity = torch.cat(self_attn_inputs, dim=1)
-        encoded_state = self.self_attn(encoded_entity, self_attn_masks)
+        combined_mask = torch.cat(self_attn_masks, dim=1)
 
-        flipped_masks = 1 - torch.cat(self_attn_masks, dim=1)
+        # The vendor ResidualSelfAttention computes Q/K/V for every padded group slot,
+        # even though padded keys are forced to -1e6 and padded queries are discarded
+        # by the final masked average.  Pack real agents to the front and run the same
+        # attention module in small width buckets.  The same learned layers, masks and
+        # averaging are used; only zero-gradient padded work is skipped.
+        encoded_state = None
+        if graph_plan is None and valid_rows is not None and batch_size >= 64:
+            import numpy as np
+
+            row_counts = np.ones((batch_size,), dtype=np.int32)
+            for rows in valid_rows[:groupmate_count]:
+                row_counts[np.asarray(rows, dtype=np.int64)] += 1
+
+            dense_width = int(encoded_entity.shape[1])
+            bucket_rows = {}
+            packed_slots = 0
+            for row_index, count in enumerate(row_counts):
+                count = max(1, min(int(count), dense_width))
+                width = min(
+                    dense_width,
+                    max(4, ((count + 3) // 4) * 4),
+                )
+                bucket_rows.setdefault(width, []).append(row_index)
+                packed_slots += width
+
+            dense_slots = batch_size * dense_width
+            if packed_slots * 4 <= dense_slots * 3:
+                sparse_started = time.perf_counter()
+                sparse_output = encoded_entity.new_zeros(
+                    (batch_size, int(encoded_entity.shape[2]))
+                )
+                valid_mask = combined_mask < 0.5
+                for width, cpu_rows in sorted(bucket_rows.items()):
+                    rows = torch.as_tensor(
+                        cpu_rows,
+                        dtype=torch.long,
+                        device=encoded_entity.device,
+                    )
+                    bucket_entities = encoded_entity.index_select(0, rows)
+                    bucket_valid = valid_mask.index_select(0, rows)
+                    bucket_counts = torch.as_tensor(
+                        row_counts[np.asarray(cpu_rows, dtype=np.int64)],
+                        dtype=torch.long,
+                        device=encoded_entity.device,
+                    )
+                    ranks = torch.cumsum(
+                        bucket_valid.to(dtype=torch.long),
+                        dim=1,
+                    ) - 1
+                    active = torch.nonzero(
+                        bucket_valid,
+                        as_tuple=False,
+                    )
+                    active_ranks = ranks[
+                        active[:, 0],
+                        active[:, 1],
+                    ]
+                    selected = bucket_entities[
+                        active[:, 0],
+                        active[:, 1],
+                    ]
+                    packed = bucket_entities.new_zeros(
+                        (
+                            len(cpu_rows),
+                            int(width),
+                            int(bucket_entities.shape[2]),
+                        )
+                    ).index_put(
+                        (active[:, 0], active_ranks),
+                        selected,
+                    )
+                    packed_mask = (
+                        torch.arange(
+                            int(width),
+                            device=encoded_entity.device,
+                        ).unsqueeze(0)
+                        >= bucket_counts.unsqueeze(1)
+                    ).to(dtype=combined_mask.dtype)
+                    bucket_output = self.self_attn(
+                        packed,
+                        [packed_mask],
+                    )
+                    sparse_output = sparse_output.index_copy(
+                        0,
+                        rows,
+                        bucket_output,
+                    )
+                encoded_state = sparse_output
+                _poca_record_timing(
+                    "critic_sparse_attention",
+                    time.perf_counter() - sparse_started,
+                )
+
+        if encoded_state is None:
+            encoded_state = self.self_attn(
+                encoded_entity,
+                self_attn_masks,
+            )
+
+        flipped_masks = 1 - combined_mask
         num_agents = torch.sum(flipped_masks, dim=1, keepdim=True)
         freeze_max_agents = bool(
             getattr(_POCA_GROUP_BATCH_STATE, "freeze_max_agents", False)
