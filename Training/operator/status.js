@@ -444,6 +444,9 @@ async function getStatusFrameLines(config, adminToken) {
             ) +
             ' profile=' + (
                 learnerOptimizations.profileOnce ? 'on' : 'off'
+            ) +
+            ' entropy_beta=' + (
+                config.entropyBeta == null ? 'base' : Number(config.entropyBeta)
             )
         );
 

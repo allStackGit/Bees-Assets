@@ -169,6 +169,9 @@ async function invokeRuntime(options = {}) {
     if (options.explicitBackpressureQueue) {
         runtimeOverrides.wanMaxQueuedBatches = Number(options.backpressureQueue);
     }
+    if (options.explicitEntropy) {
+        runtimeOverrides.entropyBeta = Number(options.entropy);
+    }
     if (options.explicitLearnerOptimizations) {
         runtimeOverrides.learnerOptimizations = options.ppoControl
             ? {
@@ -280,6 +283,7 @@ async function invokeRuntime(options = {}) {
                     config.localActor.enabled
                 ),
                 learnerOptimizations: config.learnerOptimizations,
+                entropyBeta: config.entropyBeta,
             });
             console.log(
                 'Latest release is an interrupted incompatible cutover. ' +
@@ -332,6 +336,7 @@ async function invokeRuntime(options = {}) {
             config.localActor.enabled
         ),
         learnerOptimizations: config.learnerOptimizations,
+        entropyBeta: config.entropyBeta,
     });
 
     const unity = resolveUnityEditor(config);
@@ -388,6 +393,9 @@ async function invokeRuntime(options = {}) {
         ) +
         ' ppo_profile=' + (
             config.learnerOptimizations.profileOnce ? 'on' : 'off'
+        ) +
+        ' entropy_beta=' + (
+            config.entropyBeta == null ? 'base' : String(config.entropyBeta)
         ) + '.'
     );
 }

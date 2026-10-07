@@ -18,6 +18,7 @@ param(
     [switch]$PpoCriticBaselineOverlap,
     [switch]$PpoCudaGraphs,
     [switch]$PpoProfile,
+    [ValidateRange(0.0,100.0)][double]$Entropy,
     [string[]]$EnvArg,
     [switch]$Once,
     [ValidateRange(1,60)][int]$RefreshSeconds=2,
@@ -71,6 +72,9 @@ $ppoExperimentRequested=(
 )
 if($ppoExperimentRequested -and $Command -ne 'runtime'){
     throw 'PPO learner optimization options are only valid with the runtime command.'
+}
+if($PSBoundParameters.ContainsKey('Entropy') -and $Command -ne 'runtime'){
+    throw '-Entropy is only valid with the runtime command.'
 }
 if($PpoControl -and (
     $PpoSyncCleanup -or
@@ -138,6 +142,9 @@ if($PpoPrefetch){$arguments+='--ppo-prefetch'}
 if($PpoCriticBaselineOverlap){$arguments+='--ppo-critic-baseline-overlap'}
 if($PpoCudaGraphs){$arguments+='--ppo-cuda-graphs'}
 if($PpoProfile){$arguments+='--ppo-profile'}
+if($PSBoundParameters.ContainsKey('Entropy')){
+    $arguments+=@('--entropy',$Entropy.ToString('G',[Globalization.CultureInfo]::InvariantCulture))
+}
 foreach($value in @($EnvArg)){
     if($null -ne $value){$arguments+=@('--env-arg',[string]$value)}
 }

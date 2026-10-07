@@ -80,6 +80,19 @@ def resolve_run_id(
     raise ValueError("could not determine a training run id")
 
 
+def _log_window_start_epoch(
+    run_start_epoch: Optional[float],
+    generated_utc: datetime,
+    percent: float,
+) -> Optional[float]:
+    if run_start_epoch is None:
+        return None
+    generated_epoch = generated_utc.timestamp()
+    elapsed = max(0.0, generated_epoch - run_start_epoch)
+    retained_fraction = min(1.0, max(0.0, percent / 100.0))
+    return run_start_epoch + elapsed * (1.0 - retained_fraction)
+
+
 def _run_start_epoch(run_id: str) -> Optional[float]:
     match = RUN_TIMESTAMP_RE.search(str(run_id or ""))
     if not match:
@@ -211,11 +224,11 @@ def _collect_log_group(
         suffix = source.suffix.lower()
         if suffix in TEXT_LOG_SUFFIXES:
             offset = tail_offset(size, percent)
-            destination = staging_root / archive_root / rel
-            included = _copy_range(source, destination, offset)
+            included = max(0, size - offset)
+            section_path = f"{archive_root}/{rel}"
             combined.write(
                 (
-                    f"\n===== {archive_root}/{rel} | original={size} bytes | "
+                    f"\n===== {section_path} | original={size} bytes | "
                     f"offset={offset} | included={included} =====\n"
                 ).encode("utf-8")
             )
@@ -225,7 +238,8 @@ def _collect_log_group(
             combined.write(b"\n")
             records.append(
                 {
-                    "archive_path": f"{archive_root}/{rel}",
+                    "archive_path": "combined-logs.txt",
+                    "section_path": section_path,
                     "source": str(source),
                     "original_size_bytes": size,
                     "included_offset_bytes": offset,
@@ -501,6 +515,11 @@ def create_bundle(
     generated_utc = datetime.now(timezone.utc)
     timestamp = generated_utc.strftime("%Y%m%dT%H%M%SZ")
     run_start_epoch = _run_start_epoch(resolved_run)
+    log_window_start_epoch = _log_window_start_epoch(
+        run_start_epoch,
+        generated_utc,
+        log_percent,
+    )
     status_value = _json(status_json) if status_json else None
     snapshot_value = _json(snapshot_json) if snapshot_json else None
     benchmark_value = _json(benchmark_json) if benchmark_json else None
@@ -536,25 +555,20 @@ def create_bundle(
     ) as temporary:
         staging = Path(temporary)
         combined_path = staging / "combined-logs.txt"
-        historical_path = staging / "historical-logs.txt"
-        with (
-            combined_path.open("wb") as combined,
-            historical_path.open("wb") as historical,
-        ):
+        with combined_path.open("wb") as combined:
+            window_text = (
+                datetime.fromtimestamp(log_window_start_epoch, tz=timezone.utc).isoformat()
+                if log_window_start_epoch is not None
+                else "unavailable (run id has no timestamp)"
+            )
             combined.write(
                 (
                     "Bees training diagnostic logs\n"
                     f"Run: {resolved_run}\n"
-                    f"Generated UTC: {datetime.now(timezone.utc).isoformat()}\n"
-                    f"Tail percentage per text log: {log_percent:g}%\n"
-                    "Generic server/learner logs are limited to files modified during this run.\n"
-                ).encode("utf-8")
-            )
-            historical.write(
-                (
-                    "Bees historical diagnostic logs\n"
-                    f"Current run: {resolved_run}\n"
-                    "These files predate the current run and are retained only for historical context.\n"
+                    f"Generated UTC: {generated_utc.isoformat()}\n"
+                    f"Tail percentage per selected text log: {log_percent:g}%\n"
+                    f"Log modification window begins UTC: {window_text}\n"
+                    "Text log tails are stored only in this combined file.\n"
                 ).encode("utf-8")
             )
             _collect_log_group(
@@ -565,19 +579,8 @@ def create_bundle(
                 combined,
                 records,
                 warnings,
-                minimum_mtime=run_start_epoch,
+                minimum_mtime=log_window_start_epoch,
             )
-            if run_start_epoch is not None:
-                _collect_log_group(
-                    bees_root / "Logs" / "Server",
-                    staging,
-                    "logs/historical/server",
-                    log_percent,
-                    historical,
-                    records,
-                    warnings,
-                    maximum_mtime=run_start_epoch,
-                )
             _collect_log_group(
                 bees_root / "Logs" / "Training",
                 staging,
@@ -586,19 +589,8 @@ def create_bundle(
                 combined,
                 records,
                 warnings,
-                minimum_mtime=run_start_epoch,
+                minimum_mtime=log_window_start_epoch,
             )
-            if run_start_epoch is not None:
-                _collect_log_group(
-                    bees_root / "Logs" / "Training",
-                    staging,
-                    "logs/historical/learner",
-                    log_percent,
-                    historical,
-                    records,
-                    warnings,
-                    maximum_mtime=run_start_epoch,
-                )
             _collect_log_group(
                 trainer_logs_root,
                 staging,
@@ -607,6 +599,7 @@ def create_bundle(
                 combined,
                 records,
                 warnings,
+                minimum_mtime=log_window_start_epoch,
             )
 
         metadata_sources = [
@@ -822,6 +815,11 @@ def create_bundle(
             "generated_utc": generated_utc.isoformat(),
             "run_id": resolved_run,
             "log_percent": log_percent,
+            "log_window_start_utc": (
+                datetime.fromtimestamp(log_window_start_epoch, tz=timezone.utc).isoformat()
+                if log_window_start_epoch is not None
+                else None
+            ),
             "learner_step": learner_step,
             "reported_learner_step": reported_learner_step,
             "model_step": model_step,

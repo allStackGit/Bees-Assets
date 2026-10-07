@@ -92,6 +92,9 @@ function buildCentralLearnerArgv(config, learnerPython, unity, runtimeRoot) {
             String(Number(config.threadedPolicyLag)),
         );
     }
+    if (config.entropyBeta != null) {
+        argv.push('--entropy-beta', String(Number(config.entropyBeta)));
+    }
     const learnerOptimizations = (
         config.learnerOptimizations &&
         typeof config.learnerOptimizations === 'object'

@@ -106,7 +106,7 @@ class TrainingBundleTests(unittest.TestCase):
                 self.assertIn("model/new.onnx", names)
                 self.assertNotIn("model/old.onnx", names)
                 self.assertIn("timers/run_logs/timers.json", names)
-                self.assertIn(
+                self.assertNotIn(
                     "logs/trainers/Warwick/Player-0.log",
                     names,
                 )
@@ -147,16 +147,17 @@ class TrainingBundleTests(unittest.TestCase):
             )
 
             with zipfile.ZipFile(archive) as zipped:
-                captured = zipped.read(
-                    "logs/server/bees-server.err.log"
-                ).decode("utf-8")
-                self.assertEqual(captured, error_text)
+                names = set(zipped.namelist())
+                self.assertNotIn("logs/server/bees-server.err.log", names)
+                captured = zipped.read("combined-logs.txt").decode("utf-8")
+                self.assertIn(error_text, captured)
                 manifest = json.loads(zipped.read("manifest.json"))
                 record = next(
                     item
                     for item in manifest["files"]
-                    if item["archive_path"] == "logs/server/bees-server.err.log"
+                    if item.get("section_path") == "logs/server/bees-server.err.log"
                 )
+                self.assertEqual(record["archive_path"], "combined-logs.txt")
                 self.assertEqual(
                     record["included_size_bytes"],
                     record["original_size_bytes"],
@@ -277,9 +278,13 @@ class TrainingBundleTests(unittest.TestCase):
                     "trainer central-learner: no uploaded logs for bundled run",
                     warnings,
                 )
-                self.assertIn(
+                self.assertNotIn(
                     "logs/trainers/remote-warwick/remote-supervisor.log",
                     zipped.namelist(),
+                )
+                self.assertIn(
+                    "worker output",
+                    zipped.read("combined-logs.txt").decode("utf-8"),
                 )
             self.assertFalse(live.exists())
 
@@ -530,17 +535,15 @@ class TrainingBundleTests(unittest.TestCase):
             )
 
             with zipfile.ZipFile(archive) as zipped:
+                names = set(zipped.namelist())
                 combined = zipped.read("combined-logs.txt").decode("utf-8")
-                historical = zipped.read("historical-logs.txt").decode("utf-8")
                 self.assertIn("current-only", combined)
                 self.assertNotIn("historical-only", combined)
-                self.assertIn("historical-only", historical)
-                self.assertNotIn("current-only", historical)
-                self.assertIn("logs/server/current.log", zipped.namelist())
-                self.assertIn(
-                    "logs/historical/server/old.log",
-                    zipped.namelist(),
-                )
+                self.assertNotIn("historical-logs.txt", names)
+                self.assertNotIn("logs/server/current.log", names)
+                self.assertNotIn("logs/historical/server/old.log", names)
+                manifest = json.loads(zipped.read("manifest.json"))
+                self.assertIsNotNone(manifest["log_window_start_utc"])
 
     def test_run_scoped_learner_step_ignores_pre_run_logs(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

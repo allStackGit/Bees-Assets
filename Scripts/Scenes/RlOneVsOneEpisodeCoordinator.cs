@@ -1234,21 +1234,13 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
 
     private void TrackEnemyVisibility(Level level, int beeSide, int humanSide)
     {
-        TrackSideEnemyVisibility(level, beeSide, humanSide, 0);
-        TrackSideEnemyVisibility(level, humanSide, beeSide, 1);
+        TrackSideEnemyVisibility(level, beeSide, 0);
+        TrackSideEnemyVisibility(level, humanSide, 1);
     }
 
-    private void TrackSideEnemyVisibility(Level level, int observerSide, int enemySide, int sideIndex)
+    private void TrackSideEnemyVisibility(Level level, int observerSide, int sideIndex)
     {
-        bool hasVisibleEnemy = false;
-        foreach (Ship candidate in level.State.GetShipsVisibleToHiveMind(observerSide))
-        {
-            if (candidate != null && !candidate.IsDead && candidate.Side == enemySide)
-            {
-                hasVisibleEnemy = true;
-                break;
-            }
-        }
+        bool hasVisibleEnemy = level.State.HasLiveEnemyVisibleToHiveMind(observerSide);
 
         float elapsed = ElapsedEpisodeSeconds;
         bool previousVisible = sideIndex == 0 ? _beeHasVisibleEnemy : _humanHasVisibleEnemy;

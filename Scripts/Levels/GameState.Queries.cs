@@ -34,9 +34,13 @@ namespace Assets.Scripts.Levels
                 : Ships;
         }
 
+        private bool SuppressHiveMindLearningDuringRlSetup =>
+            Level != null && Level.IsRlShipSetupInProgress;
+
         public bool RecordHiveMindSighting(Ship observer, Ship spotted)
         {
-            if (observer == null || spotted == null || observer.IsDead || spotted.IsDead || observer.Side == spotted.Side)
+            if (observer == null || spotted == null || observer.IsDead || spotted.IsDead || observer.Side == spotted.Side ||
+                SuppressHiveMindLearningDuringRlSetup)
             {
                 return false;
             }
@@ -66,7 +70,8 @@ namespace Assets.Scripts.Levels
         public bool RecordHiveMindObstacleSighting(Ship observer, Obstacle obstacle)
         {
             if (observer == null || obstacle == null || observer.IsDead || obstacle.IsDead ||
-                !observer.IsHiveMindControlled)
+                !observer.IsHiveMindControlled ||
+                SuppressHiveMindLearningDuringRlSetup)
             {
                 return false;
             }
@@ -100,7 +105,8 @@ namespace Assets.Scripts.Levels
         public bool RecordHiveMindMapObjectSighting(Ship observer, MapObject mapObject)
         {
             if (observer == null || mapObject == null || observer.IsDead || mapObject.IsDead ||
-                !observer.IsHiveMindControlled)
+                !observer.IsHiveMindControlled ||
+                SuppressHiveMindLearningDuringRlSetup)
             {
                 return false;
             }
@@ -130,7 +136,8 @@ namespace Assets.Scripts.Levels
         /// </summary>
         public bool RecordHiveMindMiningAsteroidSighting(Ship observer, MiningAsteroid asteroid)
         {
-            if (observer == null || asteroid == null || observer.IsDead || asteroid.IsDead || !observer.IsHiveMindControlled)
+            if (observer == null || asteroid == null || observer.IsDead || asteroid.IsDead ||
+                !observer.IsHiveMindControlled || SuppressHiveMindLearningDuringRlSetup)
             {
                 return false;
             }
@@ -163,7 +170,8 @@ namespace Assets.Scripts.Levels
         public void RefreshHiveMindMapObjectVision(int side)
         {
             int sideIndex = side - 1;
-            if (sideIndex < 0 || sideIndex >= HiveMindMiningAsteroidCache.Length || Level == null || Level.Map == null)
+            if (sideIndex < 0 || sideIndex >= HiveMindMiningAsteroidCache.Length || Level == null || Level.Map == null ||
+                SuppressHiveMindLearningDuringRlSetup)
             {
                 return;
             }
@@ -172,6 +180,7 @@ namespace Assets.Scripts.Levels
                 return;
             }
             HiveMindMapObjectRefreshFrame[sideIndex] = Time.frameCount;
+            HiveMindLiveEnemyVisible[sideIndex] = false;
 
             List<Ship> observers = ShipsBySide[sideIndex];
             if (observers.Count == 0)
@@ -202,6 +211,7 @@ namespace Assets.Scripts.Levels
                     }
                     if (observer.HiveMindVision.CanSee(spotted.Collider, spotted.GetPosition()))
                     {
+                        HiveMindLiveEnemyVisible[sideIndex] = true;
                         RecordHiveMindSighting(observer, spotted);
                     }
                 }
@@ -244,6 +254,17 @@ namespace Assets.Scripts.Levels
                     }
                 }
             }
+        }
+
+        public bool HasLiveEnemyVisibleToHiveMind(int side)
+        {
+            int sideIndex = side - 1;
+            if (sideIndex < 0 || sideIndex >= HiveMindLiveEnemyVisible.Length)
+            {
+                return false;
+            }
+            RefreshHiveMindMapObjectVision(side);
+            return HiveMindLiveEnemyVisible[sideIndex];
         }
 
         public HashSet<MiningAsteroid> GetMiningAsteroidsVisibleToHiveMind(int side)

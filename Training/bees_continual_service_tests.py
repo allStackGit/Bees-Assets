@@ -317,6 +317,23 @@ class ContinualServiceTests(unittest.TestCase):
             self.assertIn("batch_size: 1024", revised.read_text(encoding="utf-8"))
             self.assertEqual(service.write_generation_config(options, 0), revised)
 
+            entropy_options = service.ServiceOptions(
+                **{**options.__dict__, "entropy_beta": 0.002}
+            )
+            entropy_revised = service.write_generation_config(entropy_options, 0)
+            self.assertEqual(
+                entropy_revised.name,
+                "generation-00000000-batch-1024-beta-0.002.yaml",
+            )
+            self.assertIn(
+                "beta: 0.002",
+                entropy_revised.read_text(encoding="utf-8"),
+            )
+            self.assertEqual(
+                service.write_generation_config(entropy_options, 0),
+                entropy_revised,
+            )
+
     def test_active_generation_rejects_non_resume_safe_hyperparameter_revision(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -815,6 +832,7 @@ class ContinualServiceTests(unittest.TestCase):
             "    hyperparameters:\n"
             "      batch_size: 512\n"
             "      learning_rate: 0.0003\n"
+            "      beta: 0.001\n"
             "    max_steps: 2000000000\n",
             encoding="utf-8",
         )
