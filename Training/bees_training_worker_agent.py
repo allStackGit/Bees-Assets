@@ -234,10 +234,19 @@ def environment_args_identity(environment_args: Sequence[str]) -> str:
     ).encode("utf-8")
     return hashlib.sha256(payload).hexdigest()
 EPISODE_LOG_PATTERN = re.compile(
-    r"RL 1v1 episode=(\d+).*?timeout=(True|False) duration=([\d.]+)s "
-    r"bee_tsv=(\d+)->(\d+) human_tsv=(\d+)->(\d+).*?"
-    r"bee_fire_requests=(\d+) bee_shots=(\d+) bee_hits=(\d+) bee_damage=(\d+).*?"
-    r"human_fire_requests=(\d+) human_shots=(\d+) human_hits=(\d+) human_damage=(\d+)"
+    r"RL 1v1 episode=(\d+).*?"
+    r"timeout=(True|False).*?"
+    r"duration=([\d.]+)s.*?"
+    r"bee_tsv=(\d+)->(\d+).*?"
+    r"human_tsv=(\d+)->(\d+).*?"
+    r"bee_fire_requests=(\d+).*?"
+    r"bee_shots=(\d+).*?"
+    r"bee_hits=(\d+).*?"
+    r"bee_damage=(\d+).*?"
+    r"human_fire_requests=(\d+).*?"
+    r"human_shots=(\d+).*?"
+    r"human_hits=(\d+).*?"
+    r"human_damage=(\d+)"
 )
 
 
