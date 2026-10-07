@@ -719,12 +719,7 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         }
 
         RlOneVsOneEpisodeCoordinator coordinator = GetCoordinator(victim);
-        if (coordinator == null)
-        {
-            return;
-        }
-        coordinator.TryBeginEpisode(victim.Level);
-        if (!coordinator._episodeActive)
+        if (coordinator == null || !coordinator._episodeActive)
         {
             return;
         }
