@@ -1664,11 +1664,15 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
 
         bool beeNonOpponentElimination =
             !timedOut &&
+            winningSide != 0 &&
+            winningSide != beeSide &&
             level.State.IsSideKilled(beeSide) &&
             _hasRecordedDeathAttribution[0] &&
             !_lastDeathWasOpponentCaused[0];
         bool humanNonOpponentElimination =
             !timedOut &&
+            winningSide != 0 &&
+            winningSide != humanSide &&
             level.State.IsSideKilled(humanSide) &&
             _hasRecordedDeathAttribution[1] &&
             !_lastDeathWasOpponentCaused[1];
