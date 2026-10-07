@@ -305,6 +305,11 @@ namespace Assets.Scripts.Entities.Ships
             string rlDeathCause = this is YellowJacket yellowJacket && yellowJacket.HasCompletedRun
                 ? "self_detonate"
                 : null;
+            global::RlOneVsOneEpisodeCoordinator.RecordShipDeathAttribution(
+                this,
+                killer,
+                endKill,
+                !string.IsNullOrEmpty(rlDeathCause));
             global::RlOneVsOneEpisodeDiagnostics.RecordShipDeath(this, killer, endKill, rlDeathCause);
             global::RlOneVsOneEpisodeCoordinator.RecordMiningShipExit(this, killer, endKill);
             IsDead = true;
