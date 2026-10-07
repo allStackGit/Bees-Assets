@@ -6728,6 +6728,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             f"actor={_poca_average_timing('actor_get_stats'):.6f} "
             f"critic={_poca_average_timing('critic_pass'):.6f} "
             f"baseline={_poca_average_timing('baseline'):.6f} "
+            f"sparse_attention={_poca_average_timing('critic_sparse_attention'):.6f} "
             f"cuda_actor={_poca_average_timing('cuda_actor_get_stats'):.6f} "
             f"cuda_critic={_poca_average_timing('cuda_critic_pass'):.6f} "
             f"cuda_baseline={_poca_average_timing('cuda_baseline'):.6f} "
