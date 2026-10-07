@@ -282,13 +282,23 @@ class EpisodeLogMetrics:
             self._pending.clear()
         scan_root = self.root / run_id if run_id else self.root
         if scan_root.is_dir():
-            bounded_logs = sorted(
+            bounded_logs = [
                 path for path in scan_root.rglob("BeesEpisode-*.log")
                 if not path.is_symlink()
-            )
-            log_paths = bounded_logs or sorted(
+            ]
+            player_logs = [
                 path for path in scan_root.rglob("Player-*.log")
                 if not path.is_symlink()
+            ]
+            # Episode diagnostics normally go to the bounded BeesEpisode sidecar, but
+            # WriteTrainingDiagnostic deliberately falls back to Unity's Player log when
+            # that sidecar cannot be written. Old sidecars remain in the run directory, so
+            # treating their mere existence as a reason to ignore Player logs can freeze
+            # status metrics forever after a sidecar failure. Each episode line is emitted
+            # to only one destination, so both sources can be consumed safely.
+            log_paths = sorted(
+                bounded_logs + player_logs,
+                key=lambda path: (path.stat().st_mtime_ns, str(path)),
             )
             for log_path in log_paths:
                 self._read_new(log_path)
