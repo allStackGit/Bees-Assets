@@ -1612,7 +1612,7 @@ class TrainingControlClientTests(unittest.TestCase):
                 {},
             )
 
-    def test_episode_metrics_prefers_bounded_sidecar_over_player_log(self):
+    def test_episode_metrics_reads_sidecar_and_player_fallback_logs(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             (root / "Player-0.log").write_text(
@@ -1632,10 +1632,11 @@ class TrainingControlClientTests(unittest.TestCase):
 
             metrics = agent.EpisodeLogMetrics(root, window=10).refresh()
 
-            self.assertEqual(metrics["window_episodes"], 1)
+            self.assertEqual(metrics["window_episodes"], 2)
             self.assertEqual(metrics["last_episode"], 7)
-            self.assertEqual(metrics["bee_win_pct"], 100.0)
-            self.assertEqual(metrics["timeout_pct"], 0.0)
+            self.assertEqual(metrics["bee_win_pct"], 50.0)
+            self.assertEqual(metrics["human_win_pct"], 0.0)
+            self.assertEqual(metrics["timeout_pct"], 50.0)
 
     def test_training_control_protocol_schema_matches_server_generation(self):
         self.assertEqual(control.CONTROL_SCHEMA_VERSION, 5)
