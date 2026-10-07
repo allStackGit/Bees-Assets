@@ -713,7 +713,7 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         bool endKill,
         bool explicitlyNonOpponentCaused)
     {
-        if (victim == null || endKill || ConfigData.Configuration == null)
+        if (victim == null || ConfigData.Configuration == null)
         {
             return;
         }
