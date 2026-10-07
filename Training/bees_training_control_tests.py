@@ -1432,6 +1432,7 @@ class TrainingControlClientTests(unittest.TestCase):
             new.mkdir()
             old_line = (
                 "RL 1v1 episode=1 timeout=False duration=10.0s "
+                "bee_non_opponent_elimination=0 human_non_opponent_elimination=0 "
                 "bee_tsv=100->50 human_tsv=100->0 "
                 "bee_fire_requests=1 bee_shots=1 bee_hits=1 bee_damage=10 "
                 "human_fire_requests=1 human_shots=1 human_hits=0 human_damage=0\n"
