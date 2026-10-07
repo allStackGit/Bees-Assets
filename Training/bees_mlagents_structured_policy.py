@@ -1239,7 +1239,6 @@ class BeesStructuredObservationEncoder(nn.Module):
             1,
             PARENT_SIZE,
         )
-        parent = self._encode_entities(parent_norm, parent_raw)[:, 0, :]
 
         ally_count = _slot_limit("allies", ALLY_COUNT)
         ally_norm = raw[
@@ -1256,31 +1255,6 @@ class BeesStructuredObservationEncoder(nn.Module):
             ally_count,
             raw.device,
         )
-        if ally_active is not None:
-            ally_embedding, ally_presence = (
-                self._encode_allies_packed(
-                    ally_norm,
-                    ally_raw,
-                    ally_active,
-                )
-            )
-            allies = self.ally_pool.forward_packed(
-                self_embedding,
-                ally_embedding,
-                ally_active,
-                ally_count,
-                ally_presence,
-            )
-        else:
-            ally_embedding, ally_presence = self._encode_allies(
-                ally_norm,
-                ally_raw,
-            )
-            allies = self.ally_pool(
-                self_embedding,
-                ally_embedding,
-                ally_presence,
-            )
 
         enemy_count = _slot_limit("enemies", ENEMY_COUNT)
         enemy_norm = raw[
@@ -1297,14 +1271,160 @@ class BeesStructuredObservationEncoder(nn.Module):
             enemy_count,
             raw.device,
         )
-        if enemy_active is not None:
-            enemy_embedding, enemy_presence = (
-                self._encode_entities_packed(
-                    enemy_norm,
-                    enemy_raw,
-                    enemy_active,
-                )
+
+        # Parent, ally-core and enemy rows all use exactly the same shared entity
+        # encoder. During packed training, execute that shared network once on one
+        # larger batch instead of launching the same small MLP stack three times.
+        # The split/fusion below reproduces the existing per-family computation.
+        if ally_active is not None and enemy_active is not None:
+            batch_size = int(raw.shape[0])
+            parent_presence_full = torch.clamp(
+                parent_raw[:, 0, 0],
+                0.0,
+                1.0,
             )
+            parent_active = torch.nonzero(
+                parent_presence_full > 0.0,
+                as_tuple=False,
+            ).squeeze(1)
+
+            ally_flat_norm = ally_norm.reshape(-1, ALLY_SIZE)
+            ally_flat_raw = ally_raw.reshape(-1, ALLY_SIZE)
+            enemy_flat_norm = enemy_norm.reshape(-1, ENEMY_SIZE)
+            enemy_flat_raw = enemy_raw.reshape(-1, ENEMY_SIZE)
+
+            normalized_parts = []
+            raw_parts = []
+            part_sizes = []
+
+            if int(parent_active.numel()) > 0:
+                normalized_parts.append(
+                    parent_norm[:, 0, :].index_select(
+                        0,
+                        parent_active,
+                    )
+                )
+                raw_parts.append(
+                    parent_raw[:, 0, :].index_select(
+                        0,
+                        parent_active,
+                    )
+                )
+            part_sizes.append(int(parent_active.numel()))
+
+            if int(ally_active.numel()) > 0:
+                normalized_parts.append(
+                    ally_flat_norm.index_select(
+                        0,
+                        ally_active,
+                    )[:, :ENEMY_SIZE]
+                )
+                raw_parts.append(
+                    ally_flat_raw.index_select(
+                        0,
+                        ally_active,
+                    )[:, :ENEMY_SIZE]
+                )
+            part_sizes.append(int(ally_active.numel()))
+
+            if int(enemy_active.numel()) > 0:
+                normalized_parts.append(
+                    enemy_flat_norm.index_select(
+                        0,
+                        enemy_active,
+                    )
+                )
+                raw_parts.append(
+                    enemy_flat_raw.index_select(
+                        0,
+                        enemy_active,
+                    )
+                )
+            part_sizes.append(int(enemy_active.numel()))
+
+            if normalized_parts:
+                merged_normalized = (
+                    normalized_parts[0]
+                    if len(normalized_parts) == 1
+                    else torch.cat(normalized_parts, dim=0)
+                )
+                merged_raw = (
+                    raw_parts[0]
+                    if len(raw_parts) == 1
+                    else torch.cat(raw_parts, dim=0)
+                )
+                merged_entities, merged_presence = (
+                    self._encode_entity_rows(
+                        merged_normalized,
+                        merged_raw,
+                    )
+                )
+            else:
+                merged_entities = raw.new_zeros(
+                    (0, ENTITY_EMBED)
+                )
+                merged_presence = raw.new_zeros((0,))
+
+            parent_size, ally_size, enemy_size = part_sizes
+            offset = 0
+
+            parent = raw.new_zeros(
+                (batch_size, ENTITY_EMBED)
+            )
+            if parent_size:
+                parent_values = merged_entities[
+                    offset : offset + parent_size
+                ]
+                parent = parent.index_copy(
+                    0,
+                    parent_active,
+                    parent_values,
+                )
+            offset += parent_size
+
+            ally_entity = merged_entities[
+                offset : offset + ally_size
+            ]
+            ally_presence = merged_presence[
+                offset : offset + ally_size
+            ]
+            if ally_size:
+                ally_active_norm = ally_flat_norm.index_select(
+                    0,
+                    ally_active,
+                )
+                communication = self.ally_communication_encoder(
+                    ally_active_norm[:, ENEMY_SIZE:ALLY_SIZE]
+                )
+                ally_embedding = self.ally_fuse(
+                    torch.cat(
+                        [ally_entity, communication],
+                        dim=1,
+                    )
+                )
+                ally_embedding = (
+                    ally_embedding
+                    * ally_presence.unsqueeze(1)
+                )
+            else:
+                ally_embedding = raw.new_zeros(
+                    (0, ENTITY_EMBED)
+                )
+            allies = self.ally_pool.forward_packed(
+                self_embedding,
+                ally_embedding,
+                ally_active,
+                ally_count,
+                ally_presence,
+            )
+            offset += ally_size
+
+            enemy_embedding = merged_entities[
+                offset : offset + enemy_size
+            ]
+            enemy_presence = merged_presence[
+                offset : offset + enemy_size
+            ]
             enemies = self.enemy_pool.forward_packed(
                 self_embedding,
                 enemy_embedding,
@@ -1313,20 +1433,67 @@ class BeesStructuredObservationEncoder(nn.Module):
                 enemy_presence,
             )
         else:
-            enemy_embedding = self._encode_entities(
-                enemy_norm,
-                enemy_raw,
-            )
-            enemy_presence = torch.clamp(
-                enemy_raw[:, :, 0],
-                0.0,
-                1.0,
-            )
-            enemies = self.enemy_pool(
-                self_embedding,
-                enemy_embedding,
-                enemy_presence,
-            )
+            parent = self._encode_entities(
+                parent_norm,
+                parent_raw,
+            )[:, 0, :]
+
+            if ally_active is not None:
+                ally_embedding, ally_presence = (
+                    self._encode_allies_packed(
+                        ally_norm,
+                        ally_raw,
+                        ally_active,
+                    )
+                )
+                allies = self.ally_pool.forward_packed(
+                    self_embedding,
+                    ally_embedding,
+                    ally_active,
+                    ally_count,
+                    ally_presence,
+                )
+            else:
+                ally_embedding, ally_presence = self._encode_allies(
+                    ally_norm,
+                    ally_raw,
+                )
+                allies = self.ally_pool(
+                    self_embedding,
+                    ally_embedding,
+                    ally_presence,
+                )
+
+            if enemy_active is not None:
+                enemy_embedding, enemy_presence = (
+                    self._encode_entities_packed(
+                        enemy_norm,
+                        enemy_raw,
+                        enemy_active,
+                    )
+                )
+                enemies = self.enemy_pool.forward_packed(
+                    self_embedding,
+                    enemy_embedding,
+                    enemy_active,
+                    enemy_count,
+                    enemy_presence,
+                )
+            else:
+                enemy_embedding = self._encode_entities(
+                    enemy_norm,
+                    enemy_raw,
+                )
+                enemy_presence = torch.clamp(
+                    enemy_raw[:, :, 0],
+                    0.0,
+                    1.0,
+                )
+                enemies = self.enemy_pool(
+                    self_embedding,
+                    enemy_embedding,
+                    enemy_presence,
+                )
 
         weapon_norm = raw[
             :,
