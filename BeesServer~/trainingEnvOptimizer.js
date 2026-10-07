@@ -584,7 +584,7 @@ class TrainingEnvOptimizer {
             state.moved_direction = 0;
             state.blocked_up = capacity.current_envs >= capacity.max_envs;
             state.blocked_down = capacity.current_envs <= capacity.min_envs;
-            state.last_decision = 'baseline ' + sps.toFixed(1) + ' global learner steps/s';
+            state.last_decision = 'baseline ' + sps.toFixed(1) + ' accepted rollout steps/s';
             this._chooseProbe(state, capacity, now);
             return;
         }
@@ -593,7 +593,7 @@ class TrainingEnvOptimizer {
             state.baseline_sps = sps;
             state.desired_envs = state.baseline_envs;
             state.last_decision =
-                'baseline refreshed at ' + sps.toFixed(1) + ' global learner steps/s';
+                'baseline refreshed at ' + sps.toFixed(1) + ' accepted rollout steps/s';
             this._chooseProbe(state, capacity, now);
             return;
         }
@@ -619,7 +619,7 @@ class TrainingEnvOptimizer {
             }
             state.last_decision =
                 'accepted ' + capacity.current_envs + ' envs at ' +
-                sps.toFixed(1) + ' global learner steps/s';
+                sps.toFixed(1) + ' accepted rollout steps/s';
             this._invalidateOtherMeasurements(state.trainer_id);
 
             if (
@@ -673,7 +673,6 @@ class TrainingEnvOptimizer {
         const capacity = normalizeCapacity(record && record.worker_capacity);
         const totalSteps = optimizationSteps(record && record.metrics);
         const producedSteps = producerAcceptedSteps(record && record.metrics);
-        const busySeconds = optimizerBusySeconds(record && record.metrics);
         const currentRuntimeVersion = runtimeVersion(record && record.metrics);
         const sessionFailureAgeSeconds = recentSessionFailureAgeSeconds(
             record && record.metrics);
@@ -1094,7 +1093,12 @@ class TrainingEnvOptimizer {
             return this.snapshot(record.trainer_id);
         }
 
-        if (totalSteps === null) {
+        const missingMetric = totalSteps === null
+            ? 'global learner-step'
+            : producedSteps === null
+                ? 'accepted-rollout'
+                : '';
+        if (missingMetric) {
             if (probingAwayFromBaseline) {
                 if (state.metrics_missing_since_ms === null) {
                     state.metrics_missing_since_ms = timestamp;
@@ -1105,12 +1109,17 @@ class TrainingEnvOptimizer {
                         state,
                         capacity,
                         timestamp,
-                        'probe produced no global learner-step metrics',
+                        'probe produced no ' + missingMetric + ' metrics',
                     );
                     return this.snapshot(record.trainer_id);
                 }
             }
-            this._resetMeasurement(state, timestamp, null, 'waiting for global learner-step metrics');
+            this._resetMeasurement(
+                state,
+                timestamp,
+                totalSteps,
+                'waiting for ' + missingMetric + ' metrics',
+            );
             return this.snapshot(record.trainer_id);
         }
         state.metrics_missing_since_ms = null;
@@ -1160,50 +1169,27 @@ class TrainingEnvOptimizer {
             if (timestamp - state.phase_started_ms < this.warmupMs) {
                 return this.snapshot(record.trainer_id);
             }
-            if (busySeconds === null) {
-                state.last_decision =
-                    'waiting for cumulative learner optimizer-busy metrics';
-                return this.snapshot(record.trainer_id);
-            }
             state.phase = 'measuring';
             state.measurement_started_ms = timestamp;
             state.measurement_start_steps = totalSteps;
             state.measurement_start_produced_steps = producedSteps;
-            state.measurement_start_busy_seconds = busySeconds;
+            state.measurement_start_busy_seconds = null;
             state.last_decision =
-                'measuring global learner throughput for ' +
+                'measuring accepted rollout throughput for ' +
                 Math.round(this.measurementMs / 1000) +
-                ' active learner seconds';
+                ' wall-clock seconds';
             return this.snapshot(record.trainer_id);
         }
 
         if (state.phase === 'measuring') {
-            if (busySeconds === null) {
-                state.last_decision =
-                    'waiting for cumulative learner optimizer-busy metrics';
-                return this.snapshot(record.trainer_id);
-            }
-            if (busySeconds < state.measurement_start_busy_seconds) {
-                this._resetMeasurement(
-                    state,
-                    timestamp,
-                    totalSteps,
-                    'learner optimizer-busy counter restarted',
-                );
-                return this.snapshot(record.trainer_id);
-            }
-
             const producedDelta =
-                producedSteps !== null &&
-                state.measurement_start_produced_steps !== null
-                    ? producedSteps - state.measurement_start_produced_steps
-                    : null;
-            if (producedDelta !== null && producedDelta < 0) {
+                producedSteps - state.measurement_start_produced_steps;
+            if (producedDelta < 0) {
                 this._resetMeasurement(
                     state,
                     timestamp,
                     totalSteps,
-                    'producer throughput counter restarted',
+                    'accepted-rollout counter restarted',
                 );
                 return this.snapshot(record.trainer_id);
             }
@@ -1212,17 +1198,12 @@ class TrainingEnvOptimizer {
                 0,
                 timestamp - state.measurement_started_ms,
             );
-            const busyElapsed = Math.max(
-                0,
-                (busySeconds - state.measurement_start_busy_seconds) * 1000,
-            );
-            const elapsed = Math.max(0, wallElapsed - busyElapsed);
-            if (elapsed < this.measurementMs) {
+            if (wallElapsed < this.measurementMs) {
                 return this.snapshot(record.trainer_id);
             }
 
-            const delta = totalSteps - state.measurement_start_steps;
-            if (delta < 0) {
+            const learnerDelta = totalSteps - state.measurement_start_steps;
+            if (learnerDelta < 0) {
                 this._resetMeasurement(
                     state,
                     timestamp,
@@ -1231,7 +1212,15 @@ class TrainingEnvOptimizer {
                 );
                 return this.snapshot(record.trainer_id);
             }
-            const sps = elapsed > 0 ? (delta * 1000) / elapsed : 0;
+            if (learnerDelta === 0) {
+                state.last_decision =
+                    'rollout sample complete; waiting for learner progress before accepting it';
+                return this.snapshot(record.trainer_id);
+            }
+
+            const sps = wallElapsed > 0
+                ? (producedDelta * 1000) / wallElapsed
+                : 0;
             this._finishMeasurement(state, capacity, timestamp, sps);
             return this.snapshot(record.trainer_id);
         }

@@ -171,7 +171,7 @@ test('optimizer defaults to 60 seconds settling and five minutes measuring', () 
     assert.equal(state.phase, 'resizing');
 });
 
-test('optimizer excludes learner-stall intervals from throughput measurement', () => {
+test('optimizer measures accepted rollout over wall time during PPO', () => {
     const optimizer = new TrainingEnvOptimizer({
         settleMs: 0,
         measurementMs: 1000,
@@ -199,7 +199,7 @@ test('optimizer excludes learner-stall intervals from throughput measurement', (
     assert.equal(state.phase, 'measuring');
     assert.equal(state.baseline_sps, null);
 
-    // Simulate one second of PPO: actors keep producing, learner step does not move.
+    // PPO busy time remains real wall time because remote rollout continues through it.
     state = update(
         optimizer,
         'remote-a',
@@ -208,23 +208,12 @@ test('optimizer excludes learner-stall intervals from throughput measurement', (
         1500,
         { max: 8, accepted: 1500, optimizerBusySecondsValue: 1.0 },
     );
-    assert.equal(state.phase, 'measuring');
-    assert.equal(state.baseline_sps, null);
-
-    state = update(
-        optimizer,
-        'remote-a',
-        4,
-        1000,
-        2000,
-        { max: 8, accepted: 2000, optimizerBusySecondsValue: 1.0 },
-    );
     assert.equal(state.baseline_envs, 4);
     assert.equal(state.baseline_sps, 1000);
     assert.equal(state.desired_envs, 8);
 });
 
-test('optimizer uses wall-clock settling and active learner time instead of policy-cycle gating', () => {
+test('optimizer uses wall-clock settling and measurement instead of policy-cycle gating', () => {
     const optimizer = new TrainingEnvOptimizer({
         settleMs: 1000,
         measurementMs: 5000,
@@ -386,15 +375,15 @@ test('optimizer waits through a learner stall without resizing capacity', () => 
         'remote-a',
         8,
         850,
-        2001,
-        { max: 16, accepted: 1750, optimizerBusySecondsValue: 1.001 },
+        2000,
+        { max: 16, accepted: 1700, optimizerBusySecondsValue: 1.001 },
     );
     assert.equal(state.baseline_envs, 8);
     assert.equal(state.baseline_sps, 850);
     assert.equal(state.desired_envs, 16);
 });
 
-test('optimizer restarts measurement when learner busy counter restarts', () => {
+test('optimizer measurement ignores learner busy counter resets', () => {
     const optimizer = new TrainingEnvOptimizer({
         settleMs: 0,
         measurementMs: 1000,
@@ -406,7 +395,17 @@ test('optimizer restarts measurement when learner busy counter restarts', () => 
         4,
         0,
         0,
-        { max: 8, optimizerBusySecondsValue: 10.0 },
+        { max: 8, accepted: 0, optimizerBusySecondsValue: 10.0 },
+    );
+    assert.equal(state.phase, 'measuring');
+
+    state = update(
+        optimizer,
+        'remote-a',
+        4,
+        50,
+        500,
+        { max: 8, accepted: 50, optimizerBusySecondsValue: 1.0 },
     );
     assert.equal(state.phase, 'measuring');
 
@@ -415,11 +414,11 @@ test('optimizer restarts measurement when learner busy counter restarts', () => 
         'remote-a',
         4,
         100,
-        500,
-        { max: 8, optimizerBusySecondsValue: 1.0 },
+        1000,
+        { max: 8, accepted: 100, optimizerBusySecondsValue: 1.0 },
     );
-    assert.equal(state.phase, 'settling');
-    assert.match(state.decision, /optimizer-busy counter restarted/);
+    assert.equal(state.baseline_envs, 4);
+    assert.equal(state.baseline_sps, 100);
 });
 
 test('one worker owns the capacity search while other workers wait', () => {
