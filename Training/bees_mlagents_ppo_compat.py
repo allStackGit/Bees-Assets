@@ -1439,6 +1439,12 @@ def _poca_update_workload_profile(cache, device_cache):
         "group_cache_storage": str(device_cache.get("group_storage", "off")),
         "group_cache_mib": float(device_cache.get("group_bytes", 0))
         / (1024.0 * 1024.0),
+        "group_cache_input_rows": int(
+            getattr(cache.get("groupmate_obs"), "input_rows", 0)
+        ),
+        "group_cache_unique_rows": int(
+            getattr(cache.get("groupmate_obs"), "unique_rows", 0)
+        ),
     }
     for name, value in limits.items():
         result[f"limit_{name}"] = int(value)
@@ -2131,11 +2137,20 @@ class _PocaPackedGroupPosition:
 class _PocaPackedGroupObs:
     """Compact CPU cache for ragged group observations reused across PPO epochs."""
 
-    __slots__ = ("fields", "nbytes")
+    __slots__ = ("fields", "nbytes", "input_rows", "unique_rows")
 
-    def __init__(self, fields, nbytes: int) -> None:
+    def __init__(
+        self,
+        fields,
+        nbytes: int,
+        *,
+        input_rows: int = 0,
+        unique_rows: int = 0,
+    ) -> None:
         self.fields = tuple(tuple(field) for field in fields)
         self.nbytes = int(nbytes)
+        self.input_rows = int(input_rows)
+        self.unique_rows = int(unique_rows)
 
 
 class _PocaPreparedGroupPosition:
@@ -2164,12 +2179,24 @@ def _build_poca_group_obs_cache(
     groupmate_counts,
     *,
     factorized: bool = False,
+    current_obs=None,
 ):
-    """Pack only the groupmate fields required by the active critic."""
+    """Pack real groupmate rows once, sharing bit-identical full observations.
+
+    Stock MA-POCA repeats each ship's 7,743-float observation in multiple teammates'
+    group lists.  Keep one float32 copy of every bit-identical observation for the
+    complete PPO update and let each group position reference it by integer id.  This
+    is storage deduplication only: minibatches reconstruct the exact original float32
+    rows before the unchanged critic sees them.
+    """
 
     import numpy as np
     from mlagents.torch_utils import torch
     from mlagents.trainers.trajectory import GroupObsUtil
+    from bees_mlagents_structured_policy import (
+        EPISODE_PROGRESS_INDEX,
+        FACTION_INDEX,
+    )
 
     compact_projector = None
     compact_width = None
@@ -2195,6 +2222,181 @@ def _build_poca_group_obs_cache(
             0,
         )
 
+    packed_limit = POCA_PACKED_GROUP_CACHE_MAX_BYTES
+    try:
+        import psutil
+
+        memory = psutil.virtual_memory()
+        ram_headroom = max(
+            0,
+            int(memory.available) - POCA_PACKED_GROUP_CACHE_MIN_RAM_RESERVE_BYTES,
+        )
+        packed_limit = min(packed_limit, ram_headroom)
+    except (ImportError, AttributeError, OSError):
+        pass
+
+    # The active Bees contract has one fixed vector observation.  In the stock
+    # critic path, exploit exact repetition across focal/group rows before
+    # allocating the multi-GiB packed cache.  The fallback below preserves the
+    # existing generic behavior for any other shape or for the retired factorized
+    # critic path.
+    can_share_full_rows = bool(
+        not factorized
+        and len(fields) == 1
+        and isinstance(current_obs, (list, tuple))
+        and len(current_obs) == 1
+        and getattr(current_obs[0], "device", None) is not None
+        and current_obs[0].device.type == "cpu"
+        and current_obs[0].ndim == 2
+        and int(current_obs[0].shape[0]) == size
+        and int(current_obs[0].shape[1]) == BEES_OBSERVATION_SIZE
+    )
+    if can_share_full_rows:
+        field = fields[0]
+        focal = np.asarray(
+            current_obs[0].detach().numpy(),
+            dtype=np.float32,
+        )
+        # A few exact float bits form a cheap candidate key.  Equality is still
+        # checked across all 7,743 float32 values, so key collisions cannot alter
+        # critic inputs.
+        key_indices = (
+            0,
+            1,
+            2,
+            3,
+            EPISODE_PROGRESS_INDEX,
+            FACTION_INDEX,
+        )
+        focal_candidates = {}
+        for row_index, row in enumerate(focal):
+            bits = row.view(np.uint32)
+            key = tuple(int(bits[index]) for index in key_indices)
+            focal_candidates.setdefault(key, []).append(row_index)
+
+        unique_sources = []
+        unique_candidates = {}
+        focal_to_unique = {}
+        position_lookups = []
+        input_rows = 0
+
+        def source_row(source):
+            kind, first, second = source
+            if kind == "focal":
+                return focal[first]
+            return np.asarray(
+                field[first][second],
+                dtype=np.float32,
+            )
+
+        def intern_group_row(row, source):
+            nonlocal input_rows
+            input_rows += 1
+            row = np.asarray(row, dtype=np.float32)
+            if not row.flags.c_contiguous:
+                row = np.ascontiguousarray(row)
+            bits = row.view(np.uint32)
+            key = tuple(int(bits[index]) for index in key_indices)
+
+            for focal_index in focal_candidates.get(key, ()):
+                candidate = focal[focal_index]
+                if np.array_equal(
+                    bits,
+                    candidate.view(np.uint32),
+                ):
+                    unique_index = focal_to_unique.get(focal_index)
+                    if unique_index is None:
+                        unique_index = len(unique_sources)
+                        unique_sources.append(
+                            ("focal", int(focal_index), -1)
+                        )
+                        focal_to_unique[focal_index] = unique_index
+                        unique_candidates.setdefault(key, []).append(
+                            unique_index
+                        )
+                    return unique_index
+
+            for unique_index in unique_candidates.get(key, ()):
+                candidate = np.asarray(
+                    source_row(unique_sources[unique_index]),
+                    dtype=np.float32,
+                )
+                if np.array_equal(
+                    bits,
+                    candidate.view(np.uint32),
+                ):
+                    return unique_index
+
+            unique_index = len(unique_sources)
+            unique_sources.append(source)
+            unique_candidates.setdefault(key, []).append(unique_index)
+            return unique_index
+
+        for position in range(max_groupmates):
+            source_rows = np.flatnonzero(counts > position).astype(
+                np.int64,
+                copy=False,
+            )
+            if source_rows.size == 0:
+                position_lookups.append(None)
+                continue
+            lookup = np.full(size, -1, dtype=np.int32)
+            for source_index in source_rows:
+                row = np.asarray(
+                    field[int(source_index)][position],
+                    dtype=np.float32,
+                )
+                lookup[int(source_index)] = intern_group_row(
+                    row,
+                    ("group", int(source_index), int(position)),
+                )
+            position_lookups.append(lookup)
+
+        unique_rows = len(unique_sources)
+        values_bytes = (
+            unique_rows
+            * BEES_OBSERVATION_SIZE
+            * np.dtype(np.float32).itemsize
+        )
+        lookup_bytes = sum(
+            int(lookup.nbytes)
+            for lookup in position_lookups
+            if lookup is not None
+        )
+        if values_bytes + lookup_bytes <= packed_limit:
+            unique_values = np.empty(
+                (unique_rows, BEES_OBSERVATION_SIZE),
+                dtype=np.float32,
+            )
+            for unique_index, source in enumerate(unique_sources):
+                unique_values[unique_index] = source_row(source)
+            shared_values = _poca_cpu_tensor(
+                unique_values,
+                torch.float32,
+            )
+            positions = [
+                (
+                    None
+                    if lookup is None
+                    else _PocaPackedGroupPosition(
+                        lookup,
+                        shared_values,
+                    )
+                )
+                for lookup in position_lookups
+            ]
+            return _PocaPackedGroupObs(
+                (tuple(positions),),
+                int(values_bytes + lookup_bytes),
+                input_rows=input_rows,
+                unique_rows=unique_rows,
+            )
+
+        # The exact unique pool itself would violate the same RAM reserve used by
+        # the previous packed implementation.  Fall back rather than weakening
+        # that safety boundary.
+        return _PocaRaggedGroupObs(fields)
+
     estimated_bytes = 0
     actual_members = int(counts.astype(np.int64, copy=False).sum())
     for spec in policy.behavior_spec.observation_specs:
@@ -2208,18 +2410,6 @@ def _build_poca_group_obs_cache(
             * elements
             * np.dtype(np.float32).itemsize
         )
-    packed_limit = POCA_PACKED_GROUP_CACHE_MAX_BYTES
-    try:
-        import psutil
-
-        memory = psutil.virtual_memory()
-        ram_headroom = max(
-            0,
-            int(memory.available) - POCA_PACKED_GROUP_CACHE_MIN_RAM_RESERVE_BYTES,
-        )
-        packed_limit = min(packed_limit, ram_headroom)
-    except (ImportError, AttributeError, OSError):
-        pass
     if estimated_bytes > packed_limit:
         return _PocaRaggedGroupObs(fields)
 
@@ -2281,9 +2471,17 @@ def _build_poca_group_obs_cache(
                 dtype=np.int32,
             )
             positions.append(_PocaPackedGroupPosition(lookup, values))
-            packed_bytes += int(values.numel()) * int(values.element_size())
+            packed_bytes += (
+                int(values.numel()) * int(values.element_size())
+                + int(lookup.nbytes)
+            )
         packed_fields.append(tuple(positions))
-    return _PocaPackedGroupObs(packed_fields, packed_bytes)
+    return _PocaPackedGroupObs(
+        packed_fields,
+        packed_bytes,
+        input_rows=actual_members,
+        unique_rows=actual_members,
+    )
 
 
 def _poca_group_obs_cache_nbytes(value) -> int:
@@ -2309,7 +2507,12 @@ def _move_poca_packed_group_obs(value, device):
                 )
             )
         fields.append(tuple(positions))
-    return _PocaPackedGroupObs(fields, value.nbytes)
+    return _PocaPackedGroupObs(
+        fields,
+        value.nbytes,
+        input_rows=value.input_rows,
+        unique_rows=value.unique_rows,
+    )
 
 
 def _select_poca_ragged_group_obs(
@@ -2489,6 +2692,7 @@ def _build_poca_update_tensor_cache(optimizer, buffer):
         buffer,
         groupmate_counts,
         factorized=factorized_group_obs,
+        current_obs=current_obs,
     )
 
     def field_tensor(key, dtype):
@@ -6078,7 +6282,9 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             f"cache={workload_profile.get('cache_storage', 'off')}:"
             f"{workload_profile.get('cache_mib', 0.0):.1f}MiB "
             f"group_cache={workload_profile.get('group_cache_storage', 'off')}:"
-            f"{workload_profile.get('group_cache_mib', 0.0):.1f}MiB",
+            f"{workload_profile.get('group_cache_mib', 0.0):.1f}MiB "
+            f"group_cache_rows={int(workload_profile.get('group_cache_input_rows', 0))}->"
+            f"{int(workload_profile.get('group_cache_unique_rows', 0))}",
             flush=True,
         )
 
