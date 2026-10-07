@@ -66,6 +66,7 @@ namespace Assets.Scripts.Levels
             new HashSet<MapObject>(ReferenceIdentityComparer<MapObject>.Instance)
         };
         internal readonly int[] HiveMindMapObjectRefreshFrame = { -1, -1 };
+        internal readonly bool[] HiveMindLiveEnemyVisible = { false, false };
         public Dictionary<long, HashSet<Ship>>[] HivemindShips =
         {
             new Dictionary<long, HashSet<Ship>>(),
@@ -201,6 +202,7 @@ namespace Assets.Scripts.Levels
                     HiveMindMapObjectCache[side] = new HashSet<MapObject>(ReferenceIdentityComparer<MapObject>.Instance);
                 else HiveMindMapObjectCache[side].Clear();
                 HiveMindMapObjectRefreshFrame[side] = -1;
+                HiveMindLiveEnemyVisible[side] = false;
                 ShipDamageStatuses[side].Clear();
                 ShipDamageStatusesById[side].Clear();
             }

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import re
 import signal
@@ -75,6 +76,7 @@ class ServiceOptions:
     retry_seconds: float
     once: bool
     environment_args: tuple[str, ...] = ()
+    entropy_beta: Optional[float] = None
 
 
 Runner = Callable[..., subprocess.CompletedProcess]
@@ -102,6 +104,27 @@ def rewrite_max_steps(text: str, max_steps: int) -> str:
     if count != 1:
         raise ValueError(
             f"Expected exactly one integer max_steps entry in trainer config; found {count}."
+        )
+    return updated
+
+
+def rewrite_entropy_beta(text: str, beta: float) -> str:
+    if not math.isfinite(beta) or beta < 0.0 or beta > 100.0:
+        raise ValueError("entropy beta must be a finite number in 0-100")
+    pattern = re.compile(
+        r"^(?P<prefix>\s*beta:\s*)"
+        r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?"
+        r"(?P<suffix>\s*(?:#.*)?)$",
+        re.MULTILINE,
+    )
+    replacement = format(beta, ".12g")
+    updated, count = pattern.subn(
+        lambda match: f"{match.group('prefix')}{replacement}{match.group('suffix')}",
+        text,
+    )
+    if count != 1:
+        raise ValueError(
+            f"Expected exactly one numeric beta entry in trainer config; found {count}."
         )
     return updated
 
@@ -204,6 +227,20 @@ def _torch_device_from_config(text: str) -> str:
     raise ValueError("Trainer config torch_settings block has no device")
 
 
+def _entropy_beta_from_config(text: str) -> Optional[float]:
+    matches = re.findall(
+        r"(?m)^\s*beta:\s*"
+        r"([-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?)"
+        r"\s*(?:#.*)?$",
+        text,
+    )
+    if len(matches) > 1:
+        raise ValueError(
+            f"Expected at most one numeric beta entry in trainer config; found {len(matches)}."
+        )
+    return float(matches[0]) if matches else None
+
+
 def _batch_size_from_config(text: str) -> Optional[int]:
     matches = re.findall(
         r"(?m)^(\s*)batch_size:\s*(\d+)\s*(?:#.*)?$",
@@ -219,10 +256,10 @@ def _batch_size_from_config(text: str) -> Optional[int]:
 def _normalize_resume_safe_generation_settings(text: str) -> str:
     """Normalize trainer settings that may change while resuming one generation.
 
-    Generation YAML files remain immutable audit records. Device placement and PPO
-    minibatch size can change without invalidating the ML-Agents checkpoint shape,
-    so a resumed generation may select a new immutable revision containing those
-    values. Other trainer changes remain fail-closed.
+    Generation YAML files remain immutable audit records. Device placement, PPO
+    minibatch size, and the entropy beta can change without invalidating the
+    ML-Agents checkpoint shape, so a resumed generation may select a new immutable
+    revision containing those values. Other trainer changes remain fail-closed.
     """
 
     lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
@@ -230,6 +267,7 @@ def _normalize_resume_safe_generation_settings(text: str) -> str:
     torch_indent = -1
     normalized = []
     batch_size_count = 0
+    beta_count = 0
     for line in lines:
         stripped = line.strip()
         indent = len(line) - len(line.lstrip())
@@ -253,12 +291,24 @@ def _normalize_resume_safe_generation_settings(text: str) -> str:
             batch_size_count += 1
             normalized.append(" " * indent + "batch_size: <runtime-batch-size>")
             continue
+        if re.fullmatch(
+            r"beta:\s*[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?\s*(?:#.*)?",
+            stripped,
+        ):
+            beta_count += 1
+            normalized.append(" " * indent + "beta: <runtime-entropy-beta>")
+            continue
         normalized.append(line)
 
     if batch_size_count > 1:
         raise ValueError(
             "Trainer config has multiple batch_size entries; cannot determine a "
             "single resumable generation setting."
+        )
+    if beta_count > 1:
+        raise ValueError(
+            "Trainer config has multiple beta entries; cannot determine a "
+            "single resumable entropy setting."
         )
     return "\n".join(normalized)
 
@@ -282,6 +332,8 @@ def _write_immutable_generation_config(path: Path, body: bytes) -> Path:
 
 def write_generation_config(options: ServiceOptions, index: int) -> Path:
     source = options.trainer_config.read_text(encoding="utf-8")
+    if options.entropy_beta is not None:
+        source = rewrite_entropy_beta(source, options.entropy_beta)
     target_steps = generation_target_steps(options, index)
     body = rewrite_max_steps(source, target_steps).encode("utf-8")
     config_root = _service_root(options) / "trainer-configs"
@@ -289,11 +341,9 @@ def write_generation_config(options: ServiceOptions, index: int) -> Path:
     if not destination.exists() or destination.read_bytes() == body:
         return _write_immutable_generation_config(destination, body)
 
-    # Generation configs are immutable audit records, but generation cadence is an operator
-    # setting that may intentionally be increased while a generation is already in progress.
-    # Permit that migration only when max_steps is the sole difference from the existing
-    # generation config. Preserve the original record and write a target-specific immutable
-    # revision instead of mutating history.
+    # Generation configs are immutable audit records. Generation cadence and the explicitly
+    # normalized resume-safe settings below may change while a generation is in progress.
+    # Preserve the original record and write a new immutable revision instead of mutating history.
     existing_text = destination.read_text(encoding="utf-8")
     existing_target = _max_steps_from_config(existing_text)
     candidate_text = body.decode("utf-8")
@@ -325,6 +375,11 @@ def write_generation_config(options: ServiceOptions, index: int) -> Path:
         candidate_batch_size = _batch_size_from_config(candidate_text)
         if candidate_batch_size != existing_batch_size:
             suffix_parts.append(f"batch-{candidate_batch_size}")
+
+        existing_beta = _entropy_beta_from_config(existing_text)
+        candidate_beta = _entropy_beta_from_config(candidate_text)
+        if candidate_beta != existing_beta:
+            suffix_parts.append(f"beta-{format(candidate_beta, '.12g')}")
 
         if suffix_parts:
             suffix = "-" + "-".join(suffix_parts)
@@ -970,6 +1025,7 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--platform", choices=tuple(PLATFORM_BUILD_TARGETS), default="WindowsPlayer")
     parser.add_argument("--retry-seconds", type=float, default=DEFAULT_RETRY_SECONDS)
+    parser.add_argument("--entropy-beta", type=float, default=None)
     parser.add_argument("--once", action="store_true")
     return parser
 
@@ -982,6 +1038,15 @@ def parse_options(argv: Optional[Sequence[str]] = None) -> ServiceOptions:
         raise ValueError("--num-envs must be zero or greater")
     if args.retry_seconds <= 0:
         raise ValueError("--retry-seconds must be greater than zero")
+    if (
+        args.entropy_beta is not None
+        and (
+            not math.isfinite(args.entropy_beta)
+            or args.entropy_beta < 0.0
+            or args.entropy_beta > 100.0
+        )
+    ):
+        raise ValueError("--entropy-beta must be a finite number in 0-100")
     if not isinstance(args.run_id, str) or not args.run_id.strip():
         raise ValueError("--run-id must be non-empty")
     if not isinstance(args.game_build_version, str) or not args.game_build_version.strip():
@@ -1033,6 +1098,7 @@ def parse_options(argv: Optional[Sequence[str]] = None) -> ServiceOptions:
         retry_seconds=args.retry_seconds,
         once=args.once,
         environment_args=parse_environment_args_json(args.environment_args_json),
+        entropy_beta=args.entropy_beta,
     )
 
 

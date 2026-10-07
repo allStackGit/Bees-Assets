@@ -221,7 +221,8 @@ server.listen(0,'127.0.0.1',async()=>{
             "process.stdout.write(JSON.stringify({"
             "control:op.parseArgs(['runtime','--ppo-control']),"
             "combo:op.parseArgs(['runtime','--ppo-sync-cleanup','--ppo-stream-shards','2',"
-            "'--ppo-prefetch','--ppo-critic-baseline-overlap','--ppo-cuda-graphs'])"
+            "'--ppo-prefetch','--ppo-critic-baseline-overlap','--ppo-cuda-graphs']),"
+            "entropy:op.parseArgs(['runtime','--entropy','0.002'])"
             "}));"
         )
         completed = subprocess.run(
@@ -243,6 +244,9 @@ server.listen(0,'127.0.0.1',async()=>{
         self.assertTrue(combo["ppoPrefetch"])
         self.assertTrue(combo["ppoCriticBaselineOverlap"])
         self.assertTrue(combo["ppoCudaGraphs"])
+        entropy = parsed["entropy"]["options"]
+        self.assertTrue(entropy["explicitEntropy"])
+        self.assertEqual(entropy["entropy"], 0.002)
 
     def test_runtime_options_normalize_and_replace_learner_experiments(self):
         node = node_executable()

@@ -43,6 +43,7 @@ namespace Assets.Scripts.Levels
         /// </summary>
         public bool IsLevelConnectedToServer;
         public bool IsRestarting;
+        internal bool IsRlShipSetupInProgress;
         public bool HasPlayer;
         /// <summary>
         /// Some levels have triggers set at the beginning but if a level has continuous triggers then new triggers can be added and need to be checked for throughout the level

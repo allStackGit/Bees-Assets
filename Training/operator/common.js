@@ -312,6 +312,19 @@ function normalizeWanMaxQueuedBatches(value, fallback = 32) {
     return candidate;
 }
 
+function normalizeEntropyBeta(value, fallback = null) {
+    if (value == null || value === '') {
+        return fallback == null ? null : normalizeEntropyBeta(fallback, null);
+    }
+    const candidate = Number(value);
+    if (!Number.isFinite(candidate) || candidate < 0 || candidate > 100) {
+        throw new Error(
+            'Entropy beta must be a finite number in 0-100; got ' + value + '.'
+        );
+    }
+    return candidate;
+}
+
 function normalizeLearnerOptimizations(value, fallback = null) {
     const base = fallback && typeof fallback === 'object'
         ? fallback
@@ -360,6 +373,7 @@ function normalizeLearnerOptimizations(value, fallback = null) {
 function applyRuntimeTrainingOptions(config, options = {}) {
     const result = {
         ...config,
+        entropyBeta: normalizeEntropyBeta(config && config.entropyBeta, null),
         learnerOptimizations: normalizeLearnerOptimizations(
             config && config.learnerOptimizations,
         ),
@@ -403,6 +417,12 @@ function applyRuntimeTrainingOptions(config, options = {}) {
             result.learnerOptimizations,
         );
     }
+    if (Object.prototype.hasOwnProperty.call(options, 'entropyBeta')) {
+        result.entropyBeta = normalizeEntropyBeta(
+            options.entropyBeta,
+            result.entropyBeta,
+        );
+    }
     return result;
 }
 
@@ -410,6 +430,7 @@ function readRuntimeTrainingOptions(
     defaultPolicyLag = 1,
     defaultWanMaxQueuedBatches = 32,
     defaultLearnerOptimizations = null,
+    defaultEntropyBeta = null,
 ) {
     if (!exists(paths.runtimeTrainingOptionsPath)) return null;
     const value = readJson(paths.runtimeTrainingOptionsPath);
@@ -437,6 +458,10 @@ function readRuntimeTrainingOptions(
             value.learnerOptimizations,
             defaultLearnerOptimizations,
         ),
+        entropyBeta: normalizeEntropyBeta(
+            value.entropyBeta,
+            defaultEntropyBeta,
+        ),
     };
 }
 
@@ -456,6 +481,10 @@ function saveRuntimeTrainingOptions(options) {
         learnerOptimizations: normalizeLearnerOptimizations(
             options && options.learnerOptimizations,
         ),
+        entropyBeta: normalizeEntropyBeta(
+            options && options.entropyBeta,
+            null,
+        ),
         updated_utc: new Date().toISOString(),
     };
     writeJsonAtomic(paths.runtimeTrainingOptionsPath, value);
@@ -471,6 +500,7 @@ function loadConfig() {
         normalizeThreadedPolicyLag(config.threadedPolicyLag, 1),
         normalizeWanMaxQueuedBatches(config.wanMaxQueuedBatches, 32),
         normalizeLearnerOptimizations(config.learnerOptimizations),
+        normalizeEntropyBeta(config.entropyBeta, null),
     );
     return runtimeOptions
         ? applyRuntimeTrainingOptions(config, runtimeOptions)

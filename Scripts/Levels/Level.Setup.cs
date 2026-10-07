@@ -53,12 +53,31 @@ namespace Assets.Scripts.Levels
         }
         public void SetupShips()
         {
-            SetupShipsForSide(ConfigData.Configuration.AISide);
-            SetupShipsForSide(ConfigData.Configuration.UserSide);
-            AssignShipClearancesForSetup();
-            if (CurrentLevelOptions.EnemyReinforcementDelay == 0)
+            bool rlShipSetup = global::RlOneVsOneTrainingBootstrap.IsActiveFor(Stage);
+            if (rlShipSetup)
             {
-                CurrentLevelOptions.EnemyReinforcementDelay = ConfigData.StandardReinforcementsDelay;
+                IsRlShipSetupInProgress = true;
+            }
+
+            try
+            {
+                SetupShipsForSide(ConfigData.Configuration.AISide);
+                SetupShipsForSide(ConfigData.Configuration.UserSide);
+                AssignShipClearancesForSetup();
+                if (CurrentLevelOptions.EnemyReinforcementDelay == 0)
+                {
+                    CurrentLevelOptions.EnemyReinforcementDelay = ConfigData.StandardReinforcementsDelay;
+                }
+            }
+            finally
+            {
+                if (rlShipSetup)
+                {
+                    // Ship.Setup activates Hive Mind colliders before PositionSquads places them.
+                    // Publish only the final formation geometry to sight/trigger consumers.
+                    Physics2D.SyncTransforms();
+                    IsRlShipSetupInProgress = false;
+                }
             }
         }
 
