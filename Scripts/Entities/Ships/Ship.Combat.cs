@@ -309,7 +309,7 @@ namespace Assets.Scripts.Entities.Ships
                 this,
                 killer,
                 endKill,
-                !string.IsNullOrEmpty(rlDeathCause));
+                endKill || !string.IsNullOrEmpty(rlDeathCause));
             global::RlOneVsOneEpisodeDiagnostics.RecordShipDeath(this, killer, endKill, rlDeathCause);
             global::RlOneVsOneEpisodeCoordinator.RecordMiningShipExit(this, killer, endKill);
             IsDead = true;
