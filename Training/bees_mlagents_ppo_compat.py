@@ -5814,10 +5814,13 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             trainer._bees_poca_staged_experiences = 0
         staged = trainer._bees_poca_staged_trajectories
         staged_experiences = int(trainer._bees_poca_staged_experiences)
-        staging_limit = max(
-            int(trainer.hyperparameters.buffer_size) * 2,
+        # One complete next PPO buffer is enough to keep the learner continuously
+        # busy when the in-flight update finishes.  Holding a second full buffer here
+        # duplicated several GiB of 7,743-float focal/group observations and eventually
+        # forced the optimizer's packed group cache onto the slower ragged path.
+        staging_limit = (
             int(trainer.hyperparameters.buffer_size)
-            + POCA_TRAJECTORY_BATCH_MAX_EXPERIENCES,
+            + POCA_TRAJECTORY_BATCH_MAX_EXPERIENCES
         )
         queried = False
         for trajectory_queue in trainer.trajectory_queues:
