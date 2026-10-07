@@ -564,7 +564,7 @@ async function getStatusFrameLines(config, adminToken) {
             '  LearnerLiveStep/s=' + (learner.LiveStepsPerSecond == null ? '-' : number(learner.LiveStepsPerSecond, 1))
         );
         lines.push(
-            'Rates: LiveExp/s is recent per-worker learner-consumed experience; OptStep/s is the optimizer five-minute global ML-Agents learner-step sample; learner Step/s is the global ML-Agents training-step rate.'
+            'Rates: LiveExp/s is recent per-worker learner-consumed experience; OptStep/s is the optimizer five-minute accepted-rollout wall-clock sample used for env-count probes; learner Step/s is the global ML-Agents training-step rate.'
         );
         lines.push(
             'Network: SentGiB/RecvGiB are cumulative per-run WAN payload bytes; MiB/s is the current payload rate when a live actor session is available.'
