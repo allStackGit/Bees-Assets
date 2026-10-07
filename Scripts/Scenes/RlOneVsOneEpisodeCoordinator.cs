@@ -737,11 +737,13 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         // ownership so an enemy-triggered Fire Barge explosion remains an ordinary opponent-caused
         // loss. Explicit self-detonations override historical gameplay killer attribution.
         Ship effectiveKiller = killer;
-        if (!explicitlyNonOpponentCaused &&
-            effectiveKiller != null &&
-            effectiveKiller.Side == victim.Side &&
-            effectiveKiller.Killer != null &&
-            effectiveKiller.Killer.Side != victim.Side)
+        int attributionDepth = 0;
+        while (!explicitlyNonOpponentCaused &&
+               effectiveKiller != null &&
+               effectiveKiller.Side == victim.Side &&
+               effectiveKiller.Killer != null &&
+               effectiveKiller.Killer != effectiveKiller &&
+               attributionDepth++ < 16)
         {
             effectiveKiller = effectiveKiller.Killer;
         }
