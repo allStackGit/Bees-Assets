@@ -5713,11 +5713,28 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         # attention module in small width buckets.  The same learned layers, masks and
         # averaging are used; only zero-gradient padded work is skipped.
         encoded_state = None
-        if graph_plan is None and valid_rows is not None and batch_size >= 64:
+        sparse_poca_shape = bool(
+            valid_rows is not None
+            and (
+                (
+                    not obs
+                    and len(obs_only) == len(valid_rows) + 1
+                )
+                or (
+                    len(obs) == len(valid_rows)
+                    and len(obs_only) == 1
+                )
+            )
+        )
+        if (
+            graph_plan is None
+            and sparse_poca_shape
+            and batch_size >= 64
+        ):
             import numpy as np
 
             row_counts = np.ones((batch_size,), dtype=np.int32)
-            for rows in valid_rows[:groupmate_count]:
+            for rows in valid_rows:
                 row_counts[np.asarray(rows, dtype=np.int64)] += 1
 
             dense_width = int(encoded_entity.shape[1])
