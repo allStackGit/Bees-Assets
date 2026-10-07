@@ -3333,6 +3333,37 @@ def _poca_expand_prepared_group_obs(prepared, device):
     return members
 
 
+def _poca_group_obs_placeholders(prepared, device):
+    """Create only POCA's NaN-validity surface when exact dedup mappings own values."""
+
+    from mlagents.torch_utils import torch
+
+    if (
+        not isinstance(prepared, _PocaPreparedGroupObs)
+        or len(prepared.fields) != 1
+    ):
+        return None
+    members = []
+    for position in prepared.fields[0]:
+        if position is None:
+            continue
+        placeholder = torch.full(
+            (prepared.batch_size, 1),
+            float("nan"),
+            dtype=torch.float32,
+            device=device,
+        )
+        rows = torch.as_tensor(
+            position.valid_rows,
+            dtype=torch.long,
+            device=device,
+        )
+        if int(rows.numel()) > 0:
+            placeholder.index_fill_(0, rows, 0.0)
+        members.append([placeholder])
+    return members
+
+
 def _poca_select_group_prepare_source(source, indices):
     """Select CPU observations used by group padding and row deduplication."""
 
@@ -4374,8 +4405,18 @@ class _PocaCpuMinibatchPreparer:
                     )
                 )
             else:
+                placeholders = (
+                    _poca_group_obs_placeholders(
+                        prepared_group,
+                        self.device,
+                    )
+                    if selected.get("observation_dedup") is not None
+                    else None
+                )
                 selected["groupmate_obs"] = (
-                    _poca_expand_prepared_group_obs(
+                    placeholders
+                    if placeholders is not None
+                    else _poca_expand_prepared_group_obs(
                         prepared_group,
                         self.device,
                     )
