@@ -214,6 +214,8 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
     private readonly int[] _mapObjectDiscoveryValue = new int[2];
     private readonly int[] _collisionAsteroidDiscoveryCount = new int[2];
     private readonly double[] _rawPositiveShapingReward = new double[2];
+    private readonly bool[] _hasRecordedDeathAttribution = new bool[2];
+    private readonly bool[] _lastDeathWasOpponentCaused = new bool[2];
     private readonly HashSet<long>[] _rewardedShipDiscoveryIds = { new HashSet<long>(), new HashSet<long>() };
     private readonly HashSet<int>[] _rewardedMiningAsteroidDiscoveryIds = { new HashSet<int>(), new HashSet<int>() };
     private readonly HashSet<int>[] _rewardedObstacleDiscoveryIds = { new HashSet<int>(), new HashSet<int>() };
@@ -705,6 +707,60 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         }
     }
 
+    internal static void RecordShipDeathAttribution(
+        Ship victim,
+        Ship killer,
+        bool endKill,
+        bool explicitlyNonOpponentCaused)
+    {
+        if (victim == null || endKill || ConfigData.Configuration == null)
+        {
+            return;
+        }
+
+        RlOneVsOneEpisodeCoordinator coordinator = GetCoordinator(victim);
+        if (coordinator == null)
+        {
+            return;
+        }
+        coordinator.TryBeginEpisode(victim.Level);
+        if (!coordinator._episodeActive)
+        {
+            return;
+        }
+
+        int beeSide = ConfigData.Configuration.BeeSide;
+        int humanSide = ConfigData.Configuration.HumanSide;
+        int sideIndex = victim.Side == beeSide ? 0 :
+            victim.Side == humanSide ? 1 : -1;
+        if (sideIndex < 0)
+        {
+            return;
+        }
+
+        // A same-side explosive can be a chain reaction owned by an opposing killer. Preserve that
+        // ownership so an enemy-triggered Fire Barge explosion remains an ordinary opponent-caused
+        // loss. Explicit self-detonations override historical gameplay killer attribution.
+        Ship effectiveKiller = killer;
+        if (!explicitlyNonOpponentCaused &&
+            effectiveKiller != null &&
+            effectiveKiller.Side == victim.Side &&
+            effectiveKiller.Killer != null &&
+            effectiveKiller.Killer.Side != victim.Side)
+        {
+            effectiveKiller = effectiveKiller.Killer;
+        }
+
+        bool opponentCaused =
+            !explicitlyNonOpponentCaused &&
+            effectiveKiller != null &&
+            effectiveKiller.Side != victim.Side &&
+            (effectiveKiller.Side == beeSide || effectiveKiller.Side == humanSide);
+
+        coordinator._hasRecordedDeathAttribution[sideIndex] = true;
+        coordinator._lastDeathWasOpponentCaused[sideIndex] = opponentCaused;
+    }
+
     internal static void RecordUnattributedTsvLoss(Ship target, int tsvLoss)
     {
         if (ConfigData.Configuration == null || target == null)
@@ -1150,6 +1206,10 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         _humanTsvRewardThisEpisode = 0f;
         _beeEconomicRewardThisEpisode = 0f;
         _humanEconomicRewardThisEpisode = 0f;
+        _hasRecordedDeathAttribution[0] = false;
+        _hasRecordedDeathAttribution[1] = false;
+        _lastDeathWasOpponentCaused[0] = false;
+        _lastDeathWasOpponentCaused[1] = false;
         _beeDestroyedMinedTsvThisEpisode = 0;
         _humanDestroyedMinedTsvThisEpisode = 0;
         _beeRetainedMinedTsvThisEpisode = 0;
@@ -1605,8 +1665,21 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         float humanFirstContactToFire = _humanFirstContactSeconds >= 0f && _humanFirstFireSeconds >= _humanFirstContactSeconds
             ? _humanFirstFireSeconds - _humanFirstContactSeconds : -1f;
 
-        float beeTerminal = RlOneVsOneReward.CalculateTerminalReward(beeSide, winningSide, timedOut);
-        float humanTerminal = RlOneVsOneReward.CalculateTerminalReward(humanSide, winningSide, timedOut);
+        bool beeNonOpponentElimination =
+            !timedOut &&
+            level.State.IsSideKilled(beeSide) &&
+            _hasRecordedDeathAttribution[0] &&
+            !_lastDeathWasOpponentCaused[0];
+        bool humanNonOpponentElimination =
+            !timedOut &&
+            level.State.IsSideKilled(humanSide) &&
+            _hasRecordedDeathAttribution[1] &&
+            !_lastDeathWasOpponentCaused[1];
+
+        float beeTerminal = RlOneVsOneReward.CalculateTerminalReward(
+            beeSide, winningSide, timedOut, beeNonOpponentElimination);
+        float humanTerminal = RlOneVsOneReward.CalculateTerminalReward(
+            humanSide, winningSide, timedOut, humanNonOpponentElimination);
         float beeTimeReward = winningSide == beeSide ? RlOneVsOneReward.CalculateTimePenalty(durationSeconds) : 0f;
         float humanTimeReward = winningSide == humanSide ? RlOneVsOneReward.CalculateTimePenalty(durationSeconds) : 0f;
 
@@ -1651,6 +1724,7 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
             WriteTrainingDiagnostic(
                 $"RL 1v1 episode={result.EpisodeNumber} arena={GetArenaIndex()} outcome={outcome} bee_team={_beeTeamId} human_team={_humanTeamId} " +
                 $"ships_per_side={RlOneVsOneTrainingBootstrap.CurrentShipsPerSide} map_size={mapSize:F0} winner={winningSide} timeout={timedOut} duration={durationSeconds:F2}s " +
+                $"bee_non_opponent_elimination={(beeNonOpponentElimination ? 1 : 0)} human_non_opponent_elimination={(humanNonOpponentElimination ? 1 : 0)} " +
                 $"bee_tsv={_beeStartingTsv}->{beeFinalTsv} human_tsv={_humanStartingTsv}->{humanFinalTsv} " +
                 $"bee_fire_requests={_beeFireRequestsThisEpisode} bee_shots={_beeShotsThisEpisode} bee_hits={_beeHitsThisEpisode} bee_damage={_beeDamageThisEpisode} " +
                 $"bee_turret_shots={_beeShotsThisEpisode} bee_turret_hits={_beeTurretHitsThisEpisode} bee_turret_damage={_beeTurretDamageThisEpisode} " +
