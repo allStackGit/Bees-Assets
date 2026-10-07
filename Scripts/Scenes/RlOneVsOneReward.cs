@@ -159,9 +159,9 @@ internal static class RlOneVsOneReward
     /// <summary>
     /// Timeouts remain failures for both sides so avoiding combat is never preferable to engaging.
     /// A side that eliminates itself through neutral geometry, hazards, friendly damage, or an
-    /// explicitly self-inflicted action receives the same terminal value as a timeout. Existing TSV
-    /// loss shaping then makes destroying remaining fleet value strictly worse than waiting out the
-    /// clock, while an ordinary opponent-caused loss remains preferable to a timeout.
+    /// explicitly self-inflicted action receives the same terminal value as a timeout. When fleet
+    /// value is destroyed, existing TSV loss shaping makes that exit strictly worse than waiting out
+    /// the clock, while an ordinary opponent-caused loss remains preferable to a timeout.
     /// </summary>
     internal static float CalculateTerminalReward(
         int side,
