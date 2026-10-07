@@ -2494,16 +2494,22 @@ def _move_poca_packed_group_obs(value, device):
     if not isinstance(value, _PocaPackedGroupObs):
         return value
     fields = []
+    moved_values = {}
     for field in value.fields:
         positions = []
         for position in field:
             if position is None:
                 positions.append(None)
                 continue
+            identity = id(position.values)
+            moved = moved_values.get(identity)
+            if moved is None:
+                moved = position.values.to(device=device)
+                moved_values[identity] = moved
             positions.append(
                 _PocaPackedGroupPosition(
                     position.lookup,
-                    position.values.to(device=device),
+                    moved,
                 )
             )
         fields.append(tuple(positions))
