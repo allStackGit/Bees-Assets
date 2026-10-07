@@ -296,10 +296,7 @@ class EpisodeLogMetrics:
             # treating their mere existence as a reason to ignore Player logs can freeze
             # status metrics forever after a sidecar failure. Each episode line is emitted
             # to only one destination, so both sources can be consumed safely.
-            log_paths = sorted(
-                bounded_logs + player_logs,
-                key=lambda path: (path.stat().st_mtime_ns, str(path)),
-            )
+            log_paths = sorted(bounded_logs + player_logs)
             for log_path in log_paths:
                 self._read_new(log_path)
         return self.snapshot()
