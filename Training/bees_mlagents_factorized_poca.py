@@ -552,6 +552,7 @@ class BeesFactorizedPOCACritic(nn.Module):
         batch_size: int,
         group_count: int,
         reference: torch.Tensor,
+        packed_destinations: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         if group_count == 0:
             return reference.new_zeros((batch_size, 0, GROUP_ACTION_WIDTH))
@@ -564,6 +565,13 @@ class BeesFactorizedPOCACritic(nn.Module):
             [action.continuous_tensor for action in actions],
             dim=1,
         )
+        if packed_destinations is not None:
+            # Compact POCA trains on real group members only. Gather their actions
+            # before expanding discrete branches to one-hot vectors instead of
+            # encoding every padded slot and immediately throwing those rows away.
+            continuous = continuous.reshape(
+                batch_size * group_count, BEES_CONTINUOUS_ACTIONS
+            ).index_select(0, packed_destinations)
         discrete_one_hot = []
         for branch_index, branch_size in enumerate(BEES_DISCRETE_BRANCHES):
             branch_actions = torch.stack(
@@ -572,19 +580,28 @@ class BeesFactorizedPOCACritic(nn.Module):
                     for action in actions
                 ],
                 dim=1,
-            ).reshape(batch_size, group_count)
+            ).reshape(batch_size * group_count)
+            if packed_destinations is not None:
+                branch_actions = branch_actions.index_select(
+                    0, packed_destinations
+                )
+            else:
+                branch_actions = branch_actions.reshape(
+                    batch_size, group_count
+                )
             discrete_one_hot.append(
                 torch.nn.functional.one_hot(
                     branch_actions.long(),
                     int(branch_size),
                 ).to(dtype=continuous.dtype)
             )
+        feature_dim = 1 if packed_destinations is not None else 2
         return torch.cat(
             [
                 continuous,
-                torch.cat(discrete_one_hot, dim=2),
+                torch.cat(discrete_one_hot, dim=feature_dim),
             ],
-            dim=2,
+            dim=feature_dim,
         )
 
     @staticmethod
@@ -690,12 +707,6 @@ class BeesFactorizedPOCACritic(nn.Module):
         batch_size = int(shared["focal"].shape[0])
         group_count = int(group_tokens.shape[1])
 
-        flat_actions = self._flatten_group_actions(
-            groupmate_actions,
-            batch_size,
-            group_count,
-            shared["focal"],
-        )
         if group_count == 0:
             action_pool = shared["focal"].new_zeros(
                 (batch_size, CRITIC_WIDTH)
@@ -704,20 +715,17 @@ class BeesFactorizedPOCACritic(nn.Module):
             destinations = shared.get(
                 "packed_destinations"
             )
-            flat_action_values = flat_actions.reshape(
-                batch_size * group_count,
-                GROUP_ACTION_WIDTH,
-            )
             flat_group_tokens = group_tokens.reshape(
                 batch_size * group_count,
                 CRITIC_WIDTH,
             )
             if destinations is not None:
-                selected_actions = (
-                    flat_action_values.index_select(
-                        0,
-                        destinations,
-                    )
+                selected_actions = self._flatten_group_actions(
+                    groupmate_actions,
+                    batch_size,
+                    group_count,
+                    shared["focal"],
+                    packed_destinations=destinations,
                 )
                 selected_group_tokens = (
                     flat_group_tokens.index_select(
@@ -754,6 +762,15 @@ class BeesFactorizedPOCACritic(nn.Module):
                     CRITIC_WIDTH,
                 )
             else:
+                flat_action_values = self._flatten_group_actions(
+                    groupmate_actions,
+                    batch_size,
+                    group_count,
+                    shared["focal"],
+                ).reshape(
+                    batch_size * group_count,
+                    GROUP_ACTION_WIDTH,
+                )
                 action_embedding = self.group_action_encoder(
                     flat_action_values
                 ).reshape(
