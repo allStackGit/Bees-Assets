@@ -1272,6 +1272,12 @@ class ActorSession:
         policy_changed = remote_versions != self.policy_versions
         if not control_changed and not policy_changed:
             self.policy_epoch = int(state.get("policy_epoch", self.policy_epoch))
+            # A stale upload can race with a synchronization that already brought this
+            # actor fully current. In that case there is nothing left to apply, so consume
+            # the notification here instead of leaving the main loop permanently latched
+            # in the synchronization branch.
+            self._state_changed.clear()
+            self._stale.clear()
             return
 
         # Finish already-issued old-policy environment actions so local Unity state is current, but do
@@ -1443,7 +1449,10 @@ class ActorSession:
                     self._synchronize_state,
                     label="policy/control synchronization",
                 )
-                self._report_runtime_progress()
+                # State synchronization is control activity, not rollout progress. If a
+                # future synchronization bug leaves the actor spinning here, preserve the
+                # last real Unity-step timestamp so the existing supervisor stall detector
+                # can recycle the owned actor process tree.
                 continue
 
             if self._reconcile_env_count():
