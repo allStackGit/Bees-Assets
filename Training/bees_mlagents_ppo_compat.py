@@ -1839,6 +1839,8 @@ def _evaluate_poca_trajectory_batch(
 ):
     """Evaluate feed-forward POCA value, baseline and bootstrap targets in batches."""
 
+    import numpy as np
+
     from mlagents.torch_utils import torch
     from mlagents.trainers.torch_entities.agent_action import AgentAction
     from mlagents.trainers.torch_entities.utils import ModelUtils
@@ -1876,7 +1878,7 @@ def _evaluate_poca_trajectory_batch(
                 ModelUtils.list_to_tensor(obs)
                 if critic_override is None
                 else torch.as_tensor(
-                    obs.get_batch(), dtype=torch.float32, device="cpu"
+                    np.asanyarray(obs), dtype=torch.float32, device="cpu"
                 )
                 for obs in ObsUtil.from_buffer(merged, n_obs)
             ]
@@ -1915,7 +1917,7 @@ def _evaluate_poca_trajectory_batch(
                 ModelUtils.list_to_tensor(obs)
                 if critic_override is None
                 else torch.as_tensor(
-                    obs.get_batch(), dtype=torch.float32, device="cpu"
+                    np.asanyarray(obs), dtype=torch.float32, device="cpu"
                 )
                 for obs in ObsUtil.from_buffer(next_buffer, n_obs)
             ]
