@@ -95,6 +95,36 @@ internal static class RlOneVsOneEpisodeDiagnostics
         internal string Type;
     }
 
+    // Count ships rather than damage events, so each tracked ship has exactly one outcome.
+    private struct CompactShipOutcomes
+    {
+        internal int Total, Enemy, Self, Friendly, Border, Static, Asteroid, Other, WarpReturn, Alive, TimeoutAlive;
+
+        internal void Add(string cause, bool timedOut)
+        {
+            Total++;
+            if (cause == null)
+            {
+                if (timedOut) TimeoutAlive++;
+                else Alive++;
+            }
+            else if (cause.StartsWith("enemy-", StringComparison.Ordinal)) Enemy++;
+            else if (cause.StartsWith("friendly-", StringComparison.Ordinal)) Friendly++;
+            else if (cause == "self" || cause.StartsWith("self_", StringComparison.Ordinal) ||
+                     cause.StartsWith("self-", StringComparison.Ordinal)) Self++;
+            else if (cause == "map_border") Border++;
+            else if (cause == "static_obstacle") Static++;
+            else if (cause == "collision_asteroid") Asteroid++;
+            else if (cause == "warp_return") WarpReturn++;
+            else Other++;
+        }
+
+        public override string ToString()
+        {
+            return $"total:{Total},enemy:{Enemy},self:{Self},friendly:{Friendly},border:{Border},static:{Static},asteroid:{Asteroid},other:{Other},warp_return:{WarpReturn},alive:{Alive},timeout_alive:{TimeoutAlive}";
+        }
+    }
+
     private sealed class ChildSummary
     {
         internal int Spawned;
@@ -488,6 +518,36 @@ internal static class RlOneVsOneEpisodeDiagnostics
             }
         }
         state.DeathCauses[sideIndex][victim.Id] = cause;
+    }
+
+    // Emitted on every episode; the detailed per-type root outcomes remain sampled.
+    internal static string BuildCompactShipOutcomeFields(Level level, bool timedOut)
+    {
+        if (!TryGetState(level, out ArenaState state))
+        {
+            return "bee_ship_outcomes=none bee_root_outcome_counts=none human_ship_outcomes=none human_root_outcome_counts=none";
+        }
+
+        return FormatCompactSideOutcomes(state, 0, "bee", timedOut) + " " +
+               FormatCompactSideOutcomes(state, 1, "human", timedOut);
+    }
+
+    private static string FormatCompactSideOutcomes(ArenaState state, int sideIndex, string sideName, bool timedOut)
+    {
+        CompactShipOutcomes roots = default;
+        CompactShipOutcomes all = default;
+        foreach (RootShipRecord root in state.RootShips[sideIndex].Values)
+        {
+            state.DeathCauses[sideIndex].TryGetValue(root.Id, out string cause);
+            roots.Add(cause, timedOut);
+            all.Add(cause, timedOut);
+        }
+        foreach (long id in state.ChildShipTypes[sideIndex].Keys)
+        {
+            state.DeathCauses[sideIndex].TryGetValue(id, out string cause);
+            all.Add(cause, timedOut);
+        }
+        return $"{sideName}_ship_outcomes={all} {sideName}_root_outcome_counts={roots}";
     }
 
     internal static string BuildFireBargeEpisodeFields(Level level, bool timedOut)
