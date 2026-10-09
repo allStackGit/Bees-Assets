@@ -1642,6 +1642,7 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
             string environmentTelemetry = RlOneVsOneEpisodeDiagnostics.BuildEnvironmentEpisodeFields(level);
             string combatTelemetry = RlOneVsOneCombatTelemetry.BuildEpisodeFields(level);
             string fireBargeTelemetry = RlOneVsOneEpisodeDiagnostics.BuildFireBargeEpisodeFields(level, timedOut);
+            string shipOutcomeTelemetry = RlOneVsOneEpisodeDiagnostics.BuildCompactShipOutcomeFields(level, timedOut);
             float beeTurretStaticObstacleImpactRate = _beeShotsThisEpisode > 0
                 ? (float)_beeTurretStaticObstacleImpactsThisEpisode / _beeShotsThisEpisode
                 : 0f;
@@ -1660,7 +1661,7 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
                 $"human_turret_shots={_humanShotsThisEpisode} human_turret_hits={_humanTurretHitsThisEpisode} human_turret_damage={_humanTurretDamageThisEpisode} " +
                 $"human_turret_static_obstacle_impacts={_humanTurretStaticObstacleImpactsThisEpisode} human_turret_static_obstacle_impacts_per_shot={humanTurretStaticObstacleImpactRate:F4} " +
                 $"human_special_hits={_humanSpecialHitsThisEpisode} human_special_damage={_humanSpecialDamageThisEpisode} human_other_hits={_humanOtherHitsThisEpisode} human_other_damage={_humanOtherDamageThisEpisode} " +
-                fireBargeTelemetry + " " + environmentTelemetry + " " + combatTelemetry);
+                fireBargeTelemetry + " " + shipOutcomeTelemetry + " " + environmentTelemetry + " " + combatTelemetry);
         }
 
         if (_completedEpisodes == 1 || _completedEpisodes % FullEpisodeDiagnosticsInterval == 0)
