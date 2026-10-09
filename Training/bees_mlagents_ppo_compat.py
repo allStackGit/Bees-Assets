@@ -3605,6 +3605,9 @@ def _poca_build_packed_entity_plan(current_obs, slot_limits):
         ENEMY_SIZE,
         ENEMY_START,
         FACTION_INDEX,
+        ENTITY_BASE_SIZE,
+        PARENT_SIZE,
+        PARENT_START,
         MAP_OBJECT_COUNT,
         MAP_OBJECT_SIZE,
         MAP_OBJECT_START,
@@ -3689,6 +3692,55 @@ def _poca_build_packed_entity_plan(current_obs, slot_limits):
                 "batch_size": int(rows.size),
                 "slot_count": slot_count,
                 "active": torch.from_numpy(active.copy()),
+            }
+    # Weapon sets contain observer-independent raw semantic features. Intern their
+    # exact float32 bits in the same parent/ally/enemy order used by the encoder.
+    for scope, rows in scope_rows.items():
+        parent = values[rows, PARENT_START : PARENT_START + PARENT_SIZE]
+        parent_active = np.flatnonzero(parent[:, 0] > 0.0)
+        plan[scope]["parent"] = {
+            "batch_size": int(rows.size),
+            "slot_count": 1,
+            "active": torch.from_numpy(
+                parent_active.astype(np.int64, copy=False)
+            ),
+        }
+        parts = [parent[parent_active, ENTITY_BASE_SIZE:]]
+        for name in ("allies", "enemies"):
+            start, full_count, width = families[name]
+            entry = plan[scope][name]
+            family = values[rows, start : start + full_count * width].reshape(
+                int(rows.size), full_count, width
+            )[:, :entry["slot_count"], :].reshape(-1, width)
+            parts.append(
+                family[entry["active"].numpy(), ENTITY_BASE_SIZE:ENEMY_SIZE]
+            )
+        weapon_sets = np.ascontiguousarray(np.concatenate(parts, axis=0))
+        input_rows = int(weapon_sets.shape[0])
+        if input_rows == 0:
+            continue
+        keys = weapon_sets.view(
+            np.dtype((np.void, weapon_sets.shape[1] * 4))
+        ).reshape(-1)
+        _, first, inverse = np.unique(
+            keys, return_index=True, return_inverse=True
+        )
+        if int(first.size) * 2 <= input_rows:
+            plan[scope]["entity_weapon_sets"] = {
+                "input_rows": input_rows,
+                "unique": torch.from_numpy(
+                    first.astype(np.int64, copy=False)
+                ),
+                "inverse": torch.from_numpy(
+                    inverse.astype(np.int64, copy=False)
+                ),
+                "active": torch.from_numpy(
+                    np.flatnonzero(
+                        weapon_sets[first].reshape(
+                            int(first.size), -1, 5
+                        )[:, :, 0].reshape(-1) > 0.0
+                    ).astype(np.int64, copy=False)
+                ),
             }
     return plan
 
