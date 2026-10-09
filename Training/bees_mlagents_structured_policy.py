@@ -620,18 +620,22 @@ class BeesStructuredObservationEncoder(nn.Module):
         raw: torch.Tensor,
         start: int,
         size: int,
+        normalization_divisor=None,
     ) -> torch.Tensor:
         values = raw[:, start : start + size]
         normalizer = self.vector_input.normalizer
         if normalizer is None:
             return values
         mean = normalizer.running_mean[start : start + size]
-        variance = normalizer.running_variance[start : start + size]
-        return torch.clamp(
-            (values - mean)
-            / torch.sqrt(
+        if normalization_divisor is None:
+            variance = normalizer.running_variance[start : start + size]
+            divisor = torch.sqrt(
                 variance / normalizer.normalization_steps
-            ),
+            )
+        else:
+            divisor = normalization_divisor[start : start + size]
+        return torch.clamp(
+            (values - mean) / divisor,
             -5,
             5,
         )
@@ -1243,6 +1247,18 @@ class BeesStructuredObservationEncoder(nn.Module):
                 "Bees structured policy received an unexpected observation size."
             )
 
+        # All fixed-feature slices use the same statistics during this call.
+        # Share their divisor calculation without retaining it across calls or
+        # replacing division with a differently rounded multiply.
+        normalizer = self.vector_input.normalizer
+        normalization_divisor = (
+            None
+            if normalizer is None
+            else torch.sqrt(
+                normalizer.running_variance / normalizer.normalization_steps
+            )
+        )
+
         # Variable slots are already emitted as bounded semantic features by Unity.
         # Feed those raw values to the shared encoders so an identical entity or weapon
         # has identical encoder inputs regardless of which absolute slot it occupies.
@@ -1252,6 +1268,7 @@ class BeesStructuredObservationEncoder(nn.Module):
             raw,
             SELF_START,
             SELF_SIZE,
+            normalization_divisor=normalization_divisor,
         )
         self_embedding = self.self_encoder(self_obs)
 
@@ -1260,6 +1277,7 @@ class BeesStructuredObservationEncoder(nn.Module):
                 raw,
                 CAPABILITY_START,
                 CAPABILITY_SIZE,
+                normalization_divisor=normalization_divisor,
             )
         )
 
@@ -1706,6 +1724,7 @@ class BeesStructuredObservationEncoder(nn.Module):
                 raw,
                 OBJECTIVE_START,
                 OBJECTIVE_SIZE,
+                normalization_divisor=normalization_divisor,
             )
         )
         navigation = self.navigation_encoder(
@@ -1713,6 +1732,7 @@ class BeesStructuredObservationEncoder(nn.Module):
                 raw,
                 NAVIGATION_START,
                 NAVIGATION_SIZE,
+                normalization_divisor=normalization_divisor,
             )
         )
         exploration = self.exploration_encoder(
@@ -1720,6 +1740,7 @@ class BeesStructuredObservationEncoder(nn.Module):
                 raw,
                 EXPLORATION_START,
                 EXPLORATION_SIZE,
+                normalization_divisor=normalization_divisor,
             )
         )
         tail = self.tail_encoder(
@@ -1729,11 +1750,13 @@ class BeesStructuredObservationEncoder(nn.Module):
                         raw,
                         EPISODE_PROGRESS_INDEX,
                         1,
+                        normalization_divisor=normalization_divisor,
                     ),
                     self._normalized_slice(
                         raw,
                         RESERVED_START,
                         RESERVED_SIZE,
+                        normalization_divisor=normalization_divisor,
                     ),
                 ],
                 dim=1,
