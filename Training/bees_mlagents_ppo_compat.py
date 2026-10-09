@@ -1834,12 +1834,8 @@ def _poca_group_obs_tensors_from_buffer(
     ]
 
 
-def _evaluate_poca_trajectory_batch(
-    trainer, merged, trajectories, *, critic_override=None
-):
+def _evaluate_poca_trajectory_batch(trainer, merged, trajectories):
     """Evaluate feed-forward POCA value, baseline and bootstrap targets in batches."""
-
-    import numpy as np
 
     from mlagents.torch_utils import torch
     from mlagents.trainers.torch_entities.agent_action import AgentAction
@@ -1869,17 +1865,10 @@ def _evaluate_poca_trajectory_batch(
         include_group_observations=not factorized_poca,
     )
     slot_token = set_training_slot_limits(slot_limits)
-    selected_critic = (
-        trainer.optimizer.critic if critic_override is None else critic_override
-    )
     try:
         with torch.no_grad():
             current_obs = [
                 ModelUtils.list_to_tensor(obs)
-                if critic_override is None
-                else torch.as_tensor(
-                    np.asanyarray(obs), dtype=torch.float32, device="cpu"
-                )
                 for obs in ObsUtil.from_buffer(merged, n_obs)
             ]
             current_counts = _poca_groupmate_counts(
@@ -1901,12 +1890,12 @@ def _evaluate_poca_trajectory_batch(
             _POCA_GROUP_BATCH_STATE.valid_rows = current_valid_rows
             _POCA_GROUP_BATCH_STATE.encoded_cache = {}
             all_obs = [current_obs] + groupmate_obs
-            value_estimates, _ = selected_critic.critic_pass(
+            value_estimates, _ = trainer.optimizer.critic.critic_pass(
                 all_obs,
                 memories=None,
                 sequence_length=merged.num_experiences,
             )
-            baseline_estimates, _ = selected_critic.baseline(
+            baseline_estimates, _ = trainer.optimizer.critic.baseline(
                 current_obs,
                 (groupmate_obs, groupmate_actions),
                 memories=None,
@@ -1915,10 +1904,6 @@ def _evaluate_poca_trajectory_batch(
 
             next_obs = [
                 ModelUtils.list_to_tensor(obs)
-                if critic_override is None
-                else torch.as_tensor(
-                    np.asanyarray(obs), dtype=torch.float32, device="cpu"
-                )
                 for obs in ObsUtil.from_buffer(next_buffer, n_obs)
             ]
             next_counts = _poca_groupmate_counts(
@@ -1938,7 +1923,7 @@ def _evaluate_poca_trajectory_batch(
             )
             _POCA_GROUP_BATCH_STATE.valid_rows = next_valid_rows
             _POCA_GROUP_BATCH_STATE.encoded_cache = {}
-            next_value_estimates, _ = selected_critic.critic_pass(
+            next_value_estimates, _ = trainer.optimizer.critic.critic_pass(
                 [next_obs] + next_groupmate_obs,
                 memories=None,
                 sequence_length=next_buffer.num_experiences,
@@ -2087,38 +2072,15 @@ def _process_prepared_poca_trajectory_batch(trainer, trajectories, buffers):
     prepare_seconds = time.perf_counter() - prepare_started
 
     evaluate_started = time.perf_counter()
-    # A CPU snapshot can compute these values while the live critic is updating.
-    # Missing entries retain the existing live-critic path.
-    precalculated = getattr(trainer, "_bees_poca_snapshot_values", None)
-    cached = [
-        precalculated.pop(id(trajectory), None)
-        if precalculated is not None else None
-        for trajectory in trajectories
-    ]
-    missing = [index for index, result in enumerate(cached) if result is None]
-    live_slices = {}
-    if missing:
-        live_trajectories = [trajectories[index] for index in missing]
-        live_buffers = [buffers[index] for index in missing]
-        values, baselines, next_values = _evaluate_poca_trajectory_batch(
-            trainer,
-            merged if len(missing) == len(buffers)
-            else _merge_agent_buffers(live_buffers),
-            live_trajectories,
-        )
-        offset = 0
-        for local_index, batch_index in enumerate(missing):
-            end = offset + live_buffers[local_index].num_experiences
-            live_slices[batch_index] = (
-                {name: value[offset:end] for name, value in values.items()},
-                {name: value[offset:end] for name, value in baselines.items()},
-                {name: value[local_index : local_index + 1]
-                 for name, value in next_values.items()},
-            )
-            offset = end
+    values, baselines, next_values = _evaluate_poca_trajectory_batch(
+        trainer,
+        merged,
+        trajectories,
+    )
     evaluate_seconds = time.perf_counter() - evaluate_started
 
     complete_started = time.perf_counter()
+    offset = 0
     for trajectory_index, (trajectory, buffer) in enumerate(
         zip(trajectories, buffers)
     ):
@@ -2126,19 +2088,27 @@ def _process_prepared_poca_trajectory_batch(trainer, trajectories, buffers):
         # inference is intentionally batched before this bookkeeping; no policy
         # weights are changed by that inference.
         RLTrainer._process_trajectory(trainer, trajectory)
-        trajectory_values, trajectory_baselines, next_for_trajectory = (
-            cached[trajectory_index]
-            if cached[trajectory_index] is not None
-            else live_slices[trajectory_index]
-        )
+        length = buffer.num_experiences
+        end = offset + length
+
+        trajectory_values = {
+            name: np.asarray(value[offset:end])
+            for name, value in values.items()
+        }
+        trajectory_baselines = {
+            name: np.asarray(value[offset:end])
+            for name, value in baselines.items()
+        }
         trajectory_next = {}
         terminal = (
             trajectory.all_group_dones_reached
             and trajectory.done_reached
             and not trajectory.interrupted
         )
-        for name, value in next_for_trajectory.items():
-            next_slice = np.asarray(value).copy()
+        for name, value in next_values.items():
+            next_slice = np.asarray(
+                value[trajectory_index : trajectory_index + 1]
+            ).copy()
             if (
                 terminal
                 and not trainer.optimizer.reward_signals[name].ignore_done
@@ -2154,6 +2124,8 @@ def _process_prepared_poca_trajectory_batch(trainer, trajectories, buffers):
             trajectory_baselines,
             trajectory_next,
         )
+        offset = end
+
     complete_seconds = time.perf_counter() - complete_started
     _record_poca_trajectory_batch_timing(
         trajectories=len(trajectories),
@@ -6050,85 +6022,6 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         finally:
             _POCA_ASYNC_UPDATE_STATE.buffer = None
 
-    def _snapshot_poca_cpu_critic(trainer):
-        """Copy the critic without ever allocating a second GPU parameter set."""
-        import copy
-
-        from mlagents.torch_utils import torch
-
-        critic = trainer.optimizer.critic
-        replacements = {}
-        with torch.no_grad():
-            for parameter in critic.parameters():
-                replacements[id(parameter)] = torch.nn.Parameter(
-                    parameter.detach().to("cpu", copy=True),
-                    requires_grad=False,
-                )
-            for buffer in critic.buffers():
-                replacements[id(buffer)] = buffer.detach().to(
-                    "cpu", copy=True
-                )
-            # The factorized critic keeps temporary GPU activations here.
-            # Copying them would defeat the memory-saving snapshot.
-            shared_cache = getattr(critic, "_shared_cache", None)
-            if shared_cache is not None:
-                replacements[id(shared_cache)] = None
-            frozen = copy.deepcopy(critic, replacements)
-            frozen.requires_grad_(False)
-        return frozen
-
-    def _evaluate_poca_staged_with_snapshot(trainer):
-        """Evaluate bounded trajectory batches on a frozen CPU critic during PPO."""
-        import time
-
-        from mlagents.torch_utils import torch
-
-        frozen = getattr(trainer, "_bees_poca_snapshot_critic", None)
-        if frozen is None:
-            return
-        cached = trainer._bees_poca_snapshot_values
-        staged = trainer._bees_poca_staged_trajectories
-        if not staged or len(cached) == len(staged):
-            return
-        pending = []
-        experiences = 0
-        # Short CPU batches avoid monopolizing the trainer thread while the
-        # central broker and live GPU optimizer continue making progress.
-        for trajectory, buffer in staged:
-            if id(trajectory) in cached:
-                continue
-            size = len(trajectory.steps)
-            if pending and experiences + size > 512:
-                break
-            pending.append((trajectory, buffer))
-            experiences += size
-            if experiences >= 512:
-                break
-        if not pending:
-            return
-        trajectories = [record[0] for record in pending]
-        buffers = [record[1] for record in pending]
-        started = time.perf_counter()
-        # CPU tensors and a CPU-only critic prevent a second GPU forward pass
-        # from competing for the nearly full 6 GiB device.
-        with torch.device("cpu"), torch.inference_mode():
-            merged = _merge_agent_buffers(buffers)
-            values, baselines, next_values = _evaluate_poca_trajectory_batch(
-                trainer, merged, trajectories, critic_override=frozen
-            )
-        offset = 0
-        for index, (trajectory, buffer) in enumerate(pending):
-            end = offset + buffer.num_experiences
-            cached[id(trajectory)] = (
-                {name: value[offset:end] for name, value in values.items()},
-                {name: value[offset:end] for name, value in baselines.items()},
-                {name: value[index : index + 1]
-                 for name, value in next_values.items()},
-            )
-            offset = end
-        trainer._bees_poca_snapshot_experiences += experiences
-        trainer._bees_poca_snapshot_seconds += time.perf_counter() - started
-
     def _ensure_poca_pipeline_state(trainer):
         from collections import deque
         from concurrent.futures import ThreadPoolExecutor
@@ -6284,12 +6177,9 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                 policy_queue.put(
                     trainer.get_policy(policy_queue.behavior_id)
                 )
-        trainer._bees_poca_snapshot_critic = None
         print(
             "[Bees PPO pipeline] async update complete "
-            f"staged_experiences={int(trainer._bees_poca_staged_experiences)} "
-            f"snapshot_exp={int(trainer._bees_poca_snapshot_experiences)} "
-            f"snapshot_cpu_seconds={trainer._bees_poca_snapshot_seconds:.3f}",
+            f"staged_experiences={int(trainer._bees_poca_staged_experiences)}",
             flush=True,
         )
         return True
@@ -6302,12 +6192,6 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             return False
         frozen_buffer = trainer.update_buffer
         frozen_experiences = int(frozen_buffer.num_experiences)
-        # Capture the model before the optimizer starts mutating its parameters.
-        # Predictions may be one PPO update old when appended to the next buffer.
-        trainer._bees_poca_snapshot_critic = _snapshot_poca_cpu_critic(trainer)
-        trainer._bees_poca_snapshot_values = {}
-        trainer._bees_poca_snapshot_experiences = 0
-        trainer._bees_poca_snapshot_seconds = 0.0
         trainer.update_buffer = AgentBuffer()
         # Stock POCA clears this at update start. No trajectory completion occurs while
         # the async optimizer owns the model, so clearing here preserves that boundary.
@@ -6361,7 +6245,6 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             # Keep doing CPU-only trajectory materialization, but do not mutate
             # normalization, stats, checkpoints, or model state until it finishes.
             if getattr(self, "_bees_poca_update_future", None) is not None:
-                _evaluate_poca_staged_with_snapshot(self)
                 if self.threaded and not queried:
                     time.sleep(0.0001)
                 return
