@@ -6087,11 +6087,14 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         if frozen is None:
             return
         cached = trainer._bees_poca_snapshot_values
+        staged = trainer._bees_poca_staged_trajectories
+        if not staged or len(cached) == len(staged):
+            return
         pending = []
         experiences = 0
         # Short CPU batches avoid monopolizing the trainer thread while the
         # central broker and live GPU optimizer continue making progress.
-        for trajectory, buffer in trainer._bees_poca_staged_trajectories:
+        for trajectory, buffer in staged:
             if id(trajectory) in cached:
                 continue
             size = len(trajectory.steps)
