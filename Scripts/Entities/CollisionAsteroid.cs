@@ -20,6 +20,9 @@ namespace Assets.Scripts.Entities
         public bool IsShard;
         public Sprite OriginalSprite, CrackedSprite;
         public bool IsDelayKilled;
+        // OriginalHealth remains the authored durability (and is used by collision damage).
+        // The effective maximum is restored on every pooled Setup, including for shards.
+        internal int EffectiveMaxHealth { get; private set; }
 
         public override void Create(Stage stage)
         {
@@ -40,6 +43,10 @@ namespace Assets.Scripts.Entities
         public override void Setup(Level level)
         {
             base.Setup(level);
+            EffectiveMaxHealth = global::RlOneVsOneTrainingBootstrap.IsActiveFor(Stage)
+                ? global::RlOneVsOneTrainingDurabilityGuard.CalculateTrainingHealth(OriginalHealth)
+                : OriginalHealth;
+            Health = EffectiveMaxHealth;
             transform.parent = Level.Map.Transform;
             Level.State.AddObstacle(this);
             MapPointsIndex = Level.Pathfinder.AddObstacle(this);
@@ -134,7 +141,7 @@ namespace Assets.Scripts.Entities
 
         public bool CheckForCrackedSprite()
         {
-            return HasCrackedSprite && (float)Health / OriginalHealth < .5f;
+            return HasCrackedSprite && EffectiveMaxHealth > 0 && (float)Health / EffectiveMaxHealth < .5f;
         }
 
         public void SwitchToCrackedSprite()
