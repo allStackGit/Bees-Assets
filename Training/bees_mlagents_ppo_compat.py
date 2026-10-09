@@ -37,6 +37,7 @@ POCA_TRAJECTORY_BATCH_MAX_EXPERIENCES = 2048
 POCA_TRAJECTORY_TIMING_REPORT_SECONDS = 30.0
 POCA_PACKED_GROUP_CACHE_MAX_BYTES = 8 * 1024 * 1024 * 1024
 POCA_PACKED_GROUP_CACHE_MIN_RAM_RESERVE_BYTES = 6 * 1024 * 1024 * 1024
+POCA_GROUP_COMPACT_PROJECT_CHUNK_ROWS = 512
 POCA_GPU_CACHE_MIN_RESERVE_BYTES = 2 * 1024 * 1024 * 1024
 POCA_GPU_CACHE_RESERVE_FRACTION = 0.30
 POCA_CPU_PREPARE_RESERVED_LOGICAL_CPUS = 2
@@ -114,6 +115,7 @@ _ORIGINAL_POCA_TRAJECTORY_VALUES = None
 _ORIGINAL_POCA_UPDATE_POLICY = None
 _ORIGINAL_POCA_ADVANCE = None
 _ORIGINAL_POCA_SAVE_MODEL = None
+_ORIGINAL_POCA_APPEND_UPDATE_BUFFER = None
 _ORIGINAL_MULTI_AGENT_FORWARD = None
 _ORIGINAL_TRUST_REGION_POLICY_LOSS = None
 _ORIGINAL_MASKED_MEAN = None
@@ -687,8 +689,14 @@ def _trust_region_policy_loss_with_dimension_mask(
     return (element_loss * weights).sum() / torch.clamp(weights.sum(), min=1.0)
 
 
-def _structured_training_slot_limits(policy, batch, extra_observations=()):
-    """Find occupied structured-slot prefixes without padding MA-POCA group observations."""
+def _structured_training_slot_limits(
+    policy,
+    batch,
+    extra_observations=(),
+    *,
+    include_group_observations: bool = True,
+):
+    """Find occupied structured-slot prefixes needed by the active structured encoders."""
 
     import numpy as np
     from mlagents.trainers.trajectory import GroupObsUtil, ObsUtil
@@ -796,18 +804,20 @@ def _structured_training_slot_limits(policy, batch, extra_observations=()):
 
     scan(current)
 
-    # Group observations are already stored as ragged lists on the CPU. Scan only
-    # actual observations in small chunks instead of materializing a
-    # [batch, max_group, 7743] padded representation merely to read presence bits.
-    group_field = batch[GroupObsUtil.get_name_at(0)]
-    group_chunk = []
-    for group_entry in group_field:
-        group_chunk.extend(group_entry)
-        while len(group_chunk) >= 128:
-            scan(np.asarray(group_chunk[:128], dtype=np.float32))
-            del group_chunk[:128]
-    if group_chunk:
-        scan(np.asarray(group_chunk, dtype=np.float32))
+    if include_group_observations:
+        # Generic POCA feeds full groupmate observations through the structured
+        # encoder, so its slot limits must include group rows. The factorized
+        # critic never does; scanning those 7,743-wide rows would recreate the
+        # dominant CPU data multiplication that this learner removes.
+        group_field = batch[GroupObsUtil.get_name_at(0)]
+        group_chunk = []
+        for group_entry in group_field:
+            group_chunk.extend(group_entry)
+            while len(group_chunk) >= 128:
+                scan(np.asarray(group_chunk[:128], dtype=np.float32))
+                del group_chunk[:128]
+        if group_chunk:
+            scan(np.asarray(group_chunk, dtype=np.float32))
 
     def add_extra(value):
         if isinstance(value, (list, tuple)):
@@ -859,6 +869,59 @@ def _poca_groupmate_counts(policy, batch, batch_size):
     except TypeError:
         return None
     return counts
+
+
+def _compact_factorized_poca_buffer_group_observations(buffer):
+    """Store only the factorized critic's groupmate inputs in PPO buffers.
+
+    Full focal observations remain untouched. Trajectory value/bootstrap
+    inference runs before the persistent PPO-buffer append.
+    """
+
+    import numpy as np
+    from mlagents.trainers.trajectory import GroupObsUtil
+    from bees_mlagents_factorized_poca import (
+        GROUP_COMPACT_WIDTH,
+        compact_group_observation_numpy,
+    )
+
+    field = buffer[GroupObsUtil.get_name_at(0)]
+    if not field:
+        return
+
+    groups = []
+    pending = []
+    destinations = []
+
+    def project_pending():
+        if not pending:
+            return
+        # Bound temporary projection storage independently of group size.
+        compact = compact_group_observation_numpy(np.stack(pending, axis=0))
+        for (destination, position), row in zip(destinations, compact):
+            destination[position] = row
+        pending.clear()
+        destinations.clear()
+
+    for original_group in field:
+        group = [None] * len(original_group)
+        groups.append(group)
+        for position, original in enumerate(original_group):
+            values = np.asarray(original, dtype=np.float32)
+            if values.ndim != 1:
+                raise RuntimeError("POCA groupmate observation must be one vector.")
+            if int(values.shape[0]) == GROUP_COMPACT_WIDTH:
+                group[position] = values
+            elif int(values.shape[0]) == BEES_OBSERVATION_SIZE:
+                pending.append(values)
+                destinations.append((group, position))
+                if len(pending) >= 128:
+                    project_pending()
+            else:
+                raise RuntimeError("Unexpected POCA groupmate observation width.")
+
+    project_pending()
+    field.set(groups)
 
 
 def _poca_groupmate_valid_row_indices(groupmate_counts):
@@ -1330,6 +1393,7 @@ def _poca_structured_slot_profile(cache):
         ENEMY_COUNT,
         ENEMY_SIZE,
         ENEMY_START,
+        FACTION_INDEX,
         MAP_OBJECT_COUNT,
         MAP_OBJECT_SIZE,
         MAP_OBJECT_START,
@@ -1429,6 +1493,12 @@ def _poca_update_workload_profile(cache, device_cache):
         "group_cache_storage": str(device_cache.get("group_storage", "off")),
         "group_cache_mib": float(device_cache.get("group_bytes", 0))
         / (1024.0 * 1024.0),
+        "group_cache_input_rows": int(
+            getattr(cache.get("groupmate_obs"), "input_rows", 0)
+        ),
+        "group_cache_unique_rows": int(
+            getattr(cache.get("groupmate_obs"), "unique_rows", 0)
+        ),
     }
     for name, value in limits.items():
         result[f"limit_{name}"] = int(value)
@@ -1680,8 +1750,19 @@ def _build_poca_next_observation_buffer(trajectories, n_obs):
     return buffer
 
 
-def _poca_group_obs_tensors_from_buffer(policy, buffer, counts, device):
-    """Create stock-equivalent NaN-padded group tensors while copying only real rows."""
+def _poca_group_obs_tensors_from_buffer(
+    policy,
+    buffer,
+    counts,
+    device,
+    *,
+    factorized: bool = False,
+):
+    """Create group tensors for trajectory value evaluation.
+
+    Factorized POCA transfers only real compact critic rows. Generic POCA keeps
+    stock-equivalent NaN-padded full observations.
+    """
 
     import numpy as np
     from mlagents.torch_utils import torch
@@ -1714,11 +1795,21 @@ def _poca_group_obs_tensors_from_buffer(policy, buffer, counts, device):
                 ],
                 axis=0,
             )
+            if factorized:
+                from bees_mlagents_factorized_poca import (
+                    compact_group_observation_numpy,
+                )
+
+                compact = compact_group_observation_numpy(compact)
             compact_tensor = torch.as_tensor(
                 np.ascontiguousarray(compact),
                 dtype=torch.float32,
                 device=device,
             )
+            if factorized:
+                positions.append(compact_tensor)
+                continue
+
             padded = torch.full(
                 (batch_size, *tuple(spec.shape)),
                 float("nan"),
@@ -1754,7 +1845,6 @@ def _evaluate_poca_trajectory_batch(trainer, merged, trajectories):
         reset_training_slot_limits,
         set_training_slot_limits,
     )
-
     if trainer.policy.use_recurrent:
         raise RuntimeError(
             "Batched Bees POCA trajectory evaluation requires a feed-forward policy."
@@ -1762,13 +1852,17 @@ def _evaluate_poca_trajectory_batch(trainer, merged, trajectories):
 
     n_obs = len(trainer.policy.behavior_spec.observation_specs)
     next_buffer = _build_poca_next_observation_buffer(trajectories, n_obs)
+    factorized_poca = bool(
+        getattr(trainer.optimizer, "_bees_factorized_poca", False)
+    )
     slot_limits = _structured_training_slot_limits(
         trainer.policy,
         merged,
         extra_observations=[
-            (trajectory.next_obs, trajectory.next_group_obs)
+            trajectory.next_obs
             for trajectory in trajectories
         ],
+        include_group_observations=not factorized_poca,
     )
     slot_token = set_training_slot_limits(slot_limits)
     try:
@@ -1787,13 +1881,14 @@ def _evaluate_poca_trajectory_batch(trainer, merged, trajectories):
                 merged,
                 current_counts,
                 current_obs[0].device,
+                factorized=factorized_poca,
             )
             groupmate_actions = AgentAction.group_from_buffer(merged)
-            _POCA_GROUP_BATCH_STATE.valid_rows = (
+            current_valid_rows = (
                 _poca_groupmate_valid_row_indices(current_counts)
             )
+            _POCA_GROUP_BATCH_STATE.valid_rows = current_valid_rows
             _POCA_GROUP_BATCH_STATE.encoded_cache = {}
-
             all_obs = [current_obs] + groupmate_obs
             value_estimates, _ = trainer.optimizer.critic.critic_pass(
                 all_obs,
@@ -1821,10 +1916,12 @@ def _evaluate_poca_trajectory_batch(trainer, merged, trajectories):
                 next_buffer,
                 next_counts,
                 next_obs[0].device,
+                factorized=factorized_poca,
             )
-            _POCA_GROUP_BATCH_STATE.valid_rows = (
+            next_valid_rows = (
                 _poca_groupmate_valid_row_indices(next_counts)
             )
+            _POCA_GROUP_BATCH_STATE.valid_rows = next_valid_rows
             _POCA_GROUP_BATCH_STATE.encoded_cache = {}
             next_value_estimates, _ = trainer.optimizer.critic.critic_pass(
                 [next_obs] + next_groupmate_obs,
@@ -2094,11 +2191,20 @@ class _PocaPackedGroupPosition:
 class _PocaPackedGroupObs:
     """Compact CPU cache for ragged group observations reused across PPO epochs."""
 
-    __slots__ = ("fields", "nbytes")
+    __slots__ = ("fields", "nbytes", "input_rows", "unique_rows")
 
-    def __init__(self, fields, nbytes: int) -> None:
+    def __init__(
+        self,
+        fields,
+        nbytes: int,
+        *,
+        input_rows: int = 0,
+        unique_rows: int = 0,
+    ) -> None:
         self.fields = tuple(tuple(field) for field in fields)
         self.nbytes = int(nbytes)
+        self.input_rows = int(input_rows)
+        self.unique_rows = int(unique_rows)
 
 
 class _PocaPreparedGroupPosition:
@@ -2121,12 +2227,41 @@ class _PocaPreparedGroupObs:
         self.batch_size = int(batch_size)
 
 
-def _build_poca_group_obs_cache(policy, buffer, groupmate_counts):
-    """Pack actual groupmate rows once when the compact cache is safely bounded."""
+def _build_poca_group_obs_cache(
+    policy,
+    buffer,
+    groupmate_counts,
+    *,
+    factorized: bool = False,
+    current_obs=None,
+):
+    """Pack real groupmate rows once, sharing bit-identical full observations.
+
+    Stock MA-POCA repeats each ship's 7,743-float observation in multiple teammates'
+    group lists.  Keep one float32 copy of every bit-identical observation for the
+    complete PPO update and let each group position reference it by integer id.  This
+    is storage deduplication only: minibatches reconstruct the exact original float32
+    rows before the unchanged critic sees them.
+    """
 
     import numpy as np
     from mlagents.torch_utils import torch
     from mlagents.trainers.trajectory import GroupObsUtil
+    from bees_mlagents_structured_policy import (
+        EPISODE_PROGRESS_INDEX,
+        FACTION_INDEX,
+    )
+
+    compact_projector = None
+    compact_width = None
+    if factorized:
+        from bees_mlagents_factorized_poca import (
+            GROUP_COMPACT_WIDTH,
+            compact_group_observation_numpy,
+        )
+
+        compact_projector = compact_group_observation_numpy
+        compact_width = int(GROUP_COMPACT_WIDTH)
 
     counts = np.asarray(groupmate_counts, dtype=np.int32)
     size = int(counts.shape[0])
@@ -2141,11 +2276,6 @@ def _build_poca_group_obs_cache(policy, buffer, groupmate_counts):
             0,
         )
 
-    estimated_bytes = 0
-    actual_members = int(counts.astype(np.int64, copy=False).sum())
-    for spec in policy.behavior_spec.observation_specs:
-        elements = int(np.prod(spec.shape, dtype=np.int64))
-        estimated_bytes += actual_members * elements * np.dtype(np.float32).itemsize
     packed_limit = POCA_PACKED_GROUP_CACHE_MAX_BYTES
     try:
         import psutil
@@ -2158,6 +2288,182 @@ def _build_poca_group_obs_cache(policy, buffer, groupmate_counts):
         packed_limit = min(packed_limit, ram_headroom)
     except (ImportError, AttributeError, OSError):
         pass
+
+    # The active Bees contract has one fixed vector observation.  In the stock
+    # critic path, exploit exact repetition across focal/group rows before
+    # allocating the multi-GiB packed cache.  The fallback below preserves the
+    # existing generic behavior for any other shape or for the retired factorized
+    # critic path.
+    can_share_full_rows = bool(
+        not factorized
+        and len(fields) == 1
+        and isinstance(current_obs, (list, tuple))
+        and len(current_obs) == 1
+        and getattr(current_obs[0], "device", None) is not None
+        and current_obs[0].device.type == "cpu"
+        and current_obs[0].ndim == 2
+        and int(current_obs[0].shape[0]) == size
+        and int(current_obs[0].shape[1]) == BEES_OBSERVATION_SIZE
+    )
+    if can_share_full_rows:
+        field = fields[0]
+        focal = np.asarray(
+            current_obs[0].detach().numpy(),
+            dtype=np.float32,
+        )
+        # A few exact float bits form a cheap candidate key.  Equality is still
+        # checked across all 7,743 float32 values, so key collisions cannot alter
+        # critic inputs.
+        key_indices = (
+            0,
+            1,
+            2,
+            3,
+            EPISODE_PROGRESS_INDEX,
+            FACTION_INDEX,
+        )
+        focal_candidates = {}
+        for row_index, row in enumerate(focal):
+            bits = row.view(np.uint32)
+            key = tuple(int(bits[index]) for index in key_indices)
+            focal_candidates.setdefault(key, []).append(row_index)
+
+        unique_sources = []
+        unique_candidates = {}
+        focal_to_unique = {}
+        position_lookups = []
+        input_rows = 0
+
+        def source_row(source):
+            kind, first, second = source
+            if kind == "focal":
+                return focal[first]
+            return np.asarray(
+                field[first][second],
+                dtype=np.float32,
+            )
+
+        def intern_group_row(row, source):
+            nonlocal input_rows
+            input_rows += 1
+            row = np.asarray(row, dtype=np.float32)
+            if not row.flags.c_contiguous:
+                row = np.ascontiguousarray(row)
+            bits = row.view(np.uint32)
+            key = tuple(int(bits[index]) for index in key_indices)
+
+            for focal_index in focal_candidates.get(key, ()):
+                candidate = focal[focal_index]
+                if np.array_equal(
+                    bits,
+                    candidate.view(np.uint32),
+                ):
+                    unique_index = focal_to_unique.get(focal_index)
+                    if unique_index is None:
+                        unique_index = len(unique_sources)
+                        unique_sources.append(
+                            ("focal", int(focal_index), -1)
+                        )
+                        focal_to_unique[focal_index] = unique_index
+                        unique_candidates.setdefault(key, []).append(
+                            unique_index
+                        )
+                    return unique_index
+
+            for unique_index in unique_candidates.get(key, ()):
+                candidate = np.asarray(
+                    source_row(unique_sources[unique_index]),
+                    dtype=np.float32,
+                )
+                if np.array_equal(
+                    bits,
+                    candidate.view(np.uint32),
+                ):
+                    return unique_index
+
+            unique_index = len(unique_sources)
+            unique_sources.append(source)
+            unique_candidates.setdefault(key, []).append(unique_index)
+            return unique_index
+
+        for position in range(max_groupmates):
+            source_rows = np.flatnonzero(counts > position).astype(
+                np.int64,
+                copy=False,
+            )
+            if source_rows.size == 0:
+                position_lookups.append(None)
+                continue
+            lookup = np.full(size, -1, dtype=np.int32)
+            for source_index in source_rows:
+                row = np.asarray(
+                    field[int(source_index)][position],
+                    dtype=np.float32,
+                )
+                lookup[int(source_index)] = intern_group_row(
+                    row,
+                    ("group", int(source_index), int(position)),
+                )
+            position_lookups.append(lookup)
+
+        unique_rows = len(unique_sources)
+        values_bytes = (
+            unique_rows
+            * BEES_OBSERVATION_SIZE
+            * np.dtype(np.float32).itemsize
+        )
+        lookup_bytes = sum(
+            int(lookup.nbytes)
+            for lookup in position_lookups
+            if lookup is not None
+        )
+        if values_bytes + lookup_bytes <= packed_limit:
+            unique_values = np.empty(
+                (unique_rows, BEES_OBSERVATION_SIZE),
+                dtype=np.float32,
+            )
+            for unique_index, source in enumerate(unique_sources):
+                unique_values[unique_index] = source_row(source)
+            shared_values = _poca_cpu_tensor(
+                unique_values,
+                torch.float32,
+            )
+            positions = [
+                (
+                    None
+                    if lookup is None
+                    else _PocaPackedGroupPosition(
+                        lookup,
+                        shared_values,
+                    )
+                )
+                for lookup in position_lookups
+            ]
+            return _PocaPackedGroupObs(
+                (tuple(positions),),
+                int(values_bytes + lookup_bytes),
+                input_rows=input_rows,
+                unique_rows=unique_rows,
+            )
+
+        # The exact unique pool itself would violate the same RAM reserve used by
+        # the previous packed implementation.  Fall back rather than weakening
+        # that safety boundary.
+        return _PocaRaggedGroupObs(fields)
+
+    estimated_bytes = 0
+    actual_members = int(counts.astype(np.int64, copy=False).sum())
+    for spec in policy.behavior_spec.observation_specs:
+        elements = (
+            compact_width
+            if compact_width is not None
+            else int(np.prod(spec.shape, dtype=np.int64))
+        )
+        estimated_bytes += (
+            actual_members
+            * elements
+            * np.dtype(np.float32).itemsize
+        )
     if estimated_bytes > packed_limit:
         return _PocaRaggedGroupObs(fields)
 
@@ -2173,16 +2479,45 @@ def _build_poca_group_obs_cache(policy, buffer, groupmate_counts):
             if source_rows.size == 0:
                 positions.append(None)
                 continue
-            compact = np.stack(
-                [
-                    np.asarray(
-                        field[int(row)][position],
-                        dtype=np.float32,
+            if compact_projector is None:
+                compact = np.stack(
+                    [
+                        np.asarray(
+                            field[int(row)][position],
+                            dtype=np.float32,
+                        )
+                        for row in source_rows
+                    ],
+                    axis=0,
+                )
+            else:
+                compact = np.empty(
+                    (int(source_rows.size), int(compact_width)),
+                    dtype=np.float32,
+                )
+                for chunk_start in range(
+                    0,
+                    int(source_rows.size),
+                    POCA_GROUP_COMPACT_PROJECT_CHUNK_ROWS,
+                ):
+                    chunk_rows = source_rows[
+                        chunk_start :
+                        chunk_start + POCA_GROUP_COMPACT_PROJECT_CHUNK_ROWS
+                    ]
+                    full_chunk = np.stack(
+                        [
+                            np.asarray(
+                                field[int(row)][position],
+                                dtype=np.float32,
+                            )
+                            for row in chunk_rows
+                        ],
+                        axis=0,
                     )
-                    for row in source_rows
-                ],
-                axis=0,
-            )
+                    compact[
+                        chunk_start :
+                        chunk_start + int(chunk_rows.size)
+                    ] = compact_projector(full_chunk)
             values = _poca_cpu_tensor(compact, torch.float32)
             lookup = np.full(size, -1, dtype=np.int32)
             lookup[source_rows] = np.arange(
@@ -2190,9 +2525,17 @@ def _build_poca_group_obs_cache(policy, buffer, groupmate_counts):
                 dtype=np.int32,
             )
             positions.append(_PocaPackedGroupPosition(lookup, values))
-            packed_bytes += int(values.numel()) * int(values.element_size())
+            packed_bytes += (
+                int(values.numel()) * int(values.element_size())
+                + int(lookup.nbytes)
+            )
         packed_fields.append(tuple(positions))
-    return _PocaPackedGroupObs(packed_fields, packed_bytes)
+    return _PocaPackedGroupObs(
+        packed_fields,
+        packed_bytes,
+        input_rows=actual_members,
+        unique_rows=actual_members,
+    )
 
 
 def _poca_group_obs_cache_nbytes(value) -> int:
@@ -2205,20 +2548,31 @@ def _move_poca_packed_group_obs(value, device):
     if not isinstance(value, _PocaPackedGroupObs):
         return value
     fields = []
+    moved_values = {}
     for field in value.fields:
         positions = []
         for position in field:
             if position is None:
                 positions.append(None)
                 continue
+            identity = id(position.values)
+            moved = moved_values.get(identity)
+            if moved is None:
+                moved = position.values.to(device=device)
+                moved_values[identity] = moved
             positions.append(
                 _PocaPackedGroupPosition(
                     position.lookup,
-                    position.values.to(device=device),
+                    moved,
                 )
             )
         fields.append(tuple(positions))
-    return _PocaPackedGroupObs(fields, value.nbytes)
+    return _PocaPackedGroupObs(
+        fields,
+        value.nbytes,
+        input_rows=value.input_rows,
+        unique_rows=value.unique_rows,
+    )
 
 
 def _select_poca_ragged_group_obs(
@@ -2228,6 +2582,7 @@ def _select_poca_ragged_group_obs(
     device,
     *,
     non_blocking: bool = False,
+    factorized: bool = False,
 ):
     """Pack only the selected minibatch's real groupmate rows.
 
@@ -2303,6 +2658,14 @@ def _select_poca_ragged_group_obs(
                     ],
                     axis=0,
                 )
+                if factorized:
+                    from bees_mlagents_factorized_poca import (
+                        compact_group_observation_numpy,
+                    )
+
+                    compact = compact_group_observation_numpy(
+                        compact
+                    )
                 compact_tensor = _poca_cpu_tensor(
                     compact,
                     torch.float32,
@@ -2381,10 +2744,15 @@ def _build_poca_update_tensor_cache(optimizer, buffer):
             len(policy.behavior_spec.observation_specs),
         )
     ]
+    factorized_group_obs = bool(
+        getattr(optimizer, "_bees_factorized_poca", False)
+    )
     groupmate_obs = _build_poca_group_obs_cache(
         policy,
         buffer,
         groupmate_counts,
+        factorized=factorized_group_obs,
+        current_obs=current_obs,
     )
 
     def field_tensor(key, dtype):
@@ -2472,6 +2840,7 @@ def _build_poca_update_tensor_cache(optimizer, buffer):
         "size": size,
         "current_obs": current_obs,
         "groupmate_obs": groupmate_obs,
+        "factorized_group_obs": factorized_group_obs,
         "continuous_actions": continuous_actions,
         "discrete_actions": discrete_actions,
         "group_continuous": group_continuous,
@@ -2489,7 +2858,11 @@ def _build_poca_update_tensor_cache(optimizer, buffer):
             dtype=np.int32,
         ),
         "faction_values": faction_values,
-        "slot_limits": _structured_training_slot_limits(policy, buffer),
+        "slot_limits": _structured_training_slot_limits(
+            policy,
+            buffer,
+            include_group_observations=not factorized_group_obs,
+        ),
         "storage": "cpu",
     }
 
@@ -2645,6 +3018,9 @@ def _promote_poca_update_tensor_cache(cache):
             "current_obs": cache["current_obs"],
             "groupmate_obs": cache["groupmate_obs"],
             "groupmate_counts": cache["groupmate_counts"],
+            "factorized_group_obs": bool(
+                cache.get("factorized_group_obs", False)
+            ),
         }
     result["storage"] = "cuda"
     result["copy_seconds"] = time.perf_counter() - started
@@ -2741,6 +3117,9 @@ def _select_poca_update_tensor_cache(
             selected_groupmate_counts,
             device,
             non_blocking=non_blocking,
+            factorized=bool(
+                cache.get("factorized_group_obs", False)
+            ),
         )
     )
     continuous_actions = take(cache["continuous_actions"])
@@ -2821,6 +3200,8 @@ def _poca_prepare_compact_group_obs(
     source,
     indices,
     groupmate_counts,
+    *,
+    factorized: bool = False,
 ):
     """Select only real group rows on CPU; leave minibatch padding for CUDA."""
 
@@ -2882,6 +3263,14 @@ def _poca_prepare_compact_group_obs(
                     ],
                     axis=0,
                 )
+                if factorized:
+                    from bees_mlagents_factorized_poca import (
+                        compact_group_observation_numpy,
+                    )
+
+                    compact = compact_group_observation_numpy(
+                        compact
+                    )
                 values = _poca_cpu_tensor(
                     compact,
                     torch.float32,
@@ -2899,6 +3288,45 @@ def _poca_prepare_compact_group_obs(
         prepared_fields,
         len(indices),
     )
+
+
+def _poca_transfer_prepared_group_obs_compact(
+    prepared,
+    device,
+):
+    """Transfer only real prepared group rows for the factorized critic."""
+
+    if not isinstance(prepared, _PocaPreparedGroupObs):
+        return []
+    if not prepared.fields:
+        return []
+
+    max_positions = max(
+        (len(field) for field in prepared.fields),
+        default=0,
+    )
+    members = []
+    for position in range(max_positions):
+        member = []
+        for field in prepared.fields:
+            prepared_position = (
+                field[position]
+                if position < len(field)
+                else None
+            )
+            if prepared_position is None:
+                raise RuntimeError(
+                    "POCA prepared group fields disagree on groupmate positions."
+                )
+            values = prepared_position.values
+            if values.device != device:
+                values = values.to(
+                    device=device,
+                    non_blocking=True,
+                )
+            member.append(values)
+        members.append(member)
+    return members
 
 
 def _poca_expand_prepared_group_obs(prepared, device):
@@ -2959,6 +3387,48 @@ def _poca_expand_prepared_group_obs(prepared, device):
     return members
 
 
+def _poca_group_obs_placeholders(prepared, device, dedup_plan):
+    """Create only POCA's NaN-validity surface when exact dedup mappings own values."""
+
+    from mlagents.torch_utils import torch
+
+    if (
+        not isinstance(prepared, _PocaPreparedGroupObs)
+        or len(prepared.fields) != 1
+        or not isinstance(dedup_plan, dict)
+    ):
+        return None
+    positions = prepared.fields[0]
+    mappings = dedup_plan.get("group_inverse")
+    if (
+        not isinstance(mappings, (list, tuple))
+        or len(mappings) != len(positions)
+        or any(position is None for position in positions)
+    ):
+        return None
+    for position, mapping in zip(positions, mappings):
+        if int(mapping.numel()) != len(position.valid_rows):
+            return None
+
+    members = []
+    for position in positions:
+        placeholder = torch.full(
+            (prepared.batch_size, 1),
+            float("nan"),
+            dtype=torch.float32,
+            device=device,
+        )
+        rows = torch.as_tensor(
+            position.valid_rows,
+            dtype=torch.long,
+            device=device,
+        )
+        if int(rows.numel()) > 0:
+            placeholder.index_fill_(0, rows, 0.0)
+        members.append([placeholder])
+    return members
+
+
 def _poca_select_group_prepare_source(source, indices):
     """Select CPU observations used by group padding and row deduplication."""
 
@@ -2981,9 +3451,238 @@ def _poca_select_group_prepare_source(source, indices):
             source["groupmate_obs"],
             indices,
             counts,
+            factorized=bool(
+                source.get("factorized_group_obs", False)
+            ),
         ),
         "groupmate_counts": counts,
     }
+
+
+def _poca_current_obs_slot_limits(current_obs):
+    """Find exact occupied structured prefixes in selected focal observations."""
+
+    import numpy as np
+    from bees_mlagents_structured_policy import (
+        ALLY_COUNT,
+        ALLY_SIZE,
+        ALLY_START,
+        BEES_OBSERVATION_SIZE,
+        COLLISION_COUNT,
+        COLLISION_SIZE,
+        COLLISION_START,
+        ENEMY_COUNT,
+        ENEMY_SIZE,
+        ENEMY_START,
+        ENTITY_BASE_SIZE,
+        ENTITY_WEAPON_COUNT,
+        MAP_OBJECT_COUNT,
+        MAP_OBJECT_SIZE,
+        MAP_OBJECT_START,
+        MINING_COUNT,
+        MINING_SIZE,
+        MINING_START,
+        OBSERVED_WEAPON_SIZE,
+        PARENT_SIZE,
+        PARENT_START,
+    )
+
+    if len(current_obs) != 1:
+        return None
+    tensor = current_obs[0]
+    if (
+        tensor.device.type != "cpu"
+        or tensor.ndim != 2
+        or int(tensor.shape[1]) != BEES_OBSERVATION_SIZE
+        or int(tensor.shape[0]) <= 0
+    ):
+        return None
+
+    values = np.asarray(
+        tensor.detach().numpy(),
+        dtype=np.float32,
+    )
+    families = {
+        "allies": (ALLY_START, ALLY_COUNT, ALLY_SIZE),
+        "enemies": (ENEMY_START, ENEMY_COUNT, ENEMY_SIZE),
+        "mining": (MINING_START, MINING_COUNT, MINING_SIZE),
+        "map_objects": (
+            MAP_OBJECT_START,
+            MAP_OBJECT_COUNT,
+            MAP_OBJECT_SIZE,
+        ),
+        "collisions": (
+            COLLISION_START,
+            COLLISION_COUNT,
+            COLLISION_SIZE,
+        ),
+    }
+    limits = {}
+    for name, (start, count, width) in families.items():
+        presence = values[
+            :,
+            np.asarray(
+                [
+                    start + slot * width
+                    for slot in range(count)
+                ],
+                dtype=np.int64,
+            ),
+        ]
+        occupied = np.any(
+            np.isfinite(presence) & (presence > 0.0),
+            axis=0,
+        )
+        indices = np.flatnonzero(occupied)
+        limits[name] = max(
+            1,
+            min(
+                count,
+                int(indices[-1]) + 1
+                if indices.size
+                else 1,
+            ),
+        )
+
+    entity_weapon_highest = 0
+    entity_families = (
+        (PARENT_START, 1, PARENT_SIZE),
+        (ALLY_START, limits["allies"], ALLY_SIZE),
+        (ENEMY_START, limits["enemies"], ENEMY_SIZE),
+    )
+    for weapon_index in range(ENTITY_WEAPON_COUNT):
+        indices = []
+        for start, count, width in entity_families:
+            indices.extend(
+                start
+                + slot * width
+                + ENTITY_BASE_SIZE
+                + weapon_index * OBSERVED_WEAPON_SIZE
+                for slot in range(count)
+            )
+        if indices:
+            presence = values[
+                :,
+                np.asarray(indices, dtype=np.int64),
+            ]
+            if np.any(
+                np.isfinite(presence)
+                & (presence > 0.0)
+            ):
+                entity_weapon_highest = weapon_index + 1
+    limits["entity_weapons"] = max(
+        1,
+        min(
+            ENTITY_WEAPON_COUNT,
+            entity_weapon_highest,
+        ),
+    )
+    return limits
+
+
+def _poca_build_packed_entity_plan(current_obs, slot_limits):
+    """Build exact occupied-slot indices on CPU for structured training."""
+
+    import numpy as np
+    from mlagents.torch_utils import torch
+    from bees_mlagents_structured_policy import (
+        ALLY_COUNT,
+        ALLY_SIZE,
+        ALLY_START,
+        BEES_OBSERVATION_SIZE,
+        COLLISION_COUNT,
+        COLLISION_SIZE,
+        COLLISION_START,
+        ENEMY_COUNT,
+        ENEMY_SIZE,
+        ENEMY_START,
+        FACTION_INDEX,
+        MAP_OBJECT_COUNT,
+        MAP_OBJECT_SIZE,
+        MAP_OBJECT_START,
+        MINING_COUNT,
+        MINING_SIZE,
+        MINING_START,
+    )
+
+    if len(current_obs) != 1:
+        return None
+    tensor = current_obs[0]
+    if (
+        tensor.device.type != "cpu"
+        or tensor.ndim != 2
+        or int(tensor.shape[1]) != BEES_OBSERVATION_SIZE
+    ):
+        return None
+
+    values = np.asarray(tensor.detach().numpy(), dtype=np.float32)
+    batch_size = int(values.shape[0])
+    families = {
+        "allies": (ALLY_START, ALLY_COUNT, ALLY_SIZE),
+        "enemies": (ENEMY_START, ENEMY_COUNT, ENEMY_SIZE),
+        "mining": (MINING_START, MINING_COUNT, MINING_SIZE),
+        "map_objects": (
+            MAP_OBJECT_START,
+            MAP_OBJECT_COUNT,
+            MAP_OBJECT_SIZE,
+        ),
+        "collisions": (
+            COLLISION_START,
+            COLLISION_COUNT,
+            COLLISION_SIZE,
+        ),
+    }
+    faction = values[:, FACTION_INDEX]
+    bee_weight = np.clip(
+        (faction + 1.0) * 0.5,
+        0.0,
+        1.0,
+    )
+    scope_rows = {
+        "full": np.arange(batch_size, dtype=np.int64),
+        "bee": np.flatnonzero(bee_weight >= 1.0).astype(
+            np.int64,
+            copy=False,
+        ),
+        "human": np.flatnonzero(bee_weight <= 0.0).astype(
+            np.int64,
+            copy=False,
+        ),
+        "mixed": np.flatnonzero(
+            (bee_weight > 0.0) & (bee_weight < 1.0)
+        ).astype(np.int64, copy=False),
+    }
+
+    plan = {scope: {} for scope in scope_rows}
+    for name, (start, full_count, width) in families.items():
+        slot_count = max(
+            1,
+            min(
+                int(full_count),
+                int(slot_limits.get(name, full_count)),
+            ),
+        )
+        family = values[
+            :,
+            start : start + full_count * width,
+        ].reshape(batch_size, full_count, width)
+        for scope, rows in scope_rows.items():
+            scoped_family = family[
+                rows,
+                :slot_count,
+                :,
+            ]
+            presence = scoped_family[:, :, 0].reshape(-1)
+            active = np.flatnonzero(
+                np.isfinite(presence)
+                & (presence > 0.0)
+            ).astype(np.int64, copy=False)
+            plan[scope][name] = {
+                "batch_size": int(rows.size),
+                "slot_count": slot_count,
+                "active": torch.from_numpy(active.copy()),
+            }
+    return plan
 
 
 def _poca_build_observation_dedup_plan(cached):
@@ -3001,7 +3700,11 @@ def _poca_build_observation_dedup_plan(cached):
         FACTION_INDEX,
     )
 
-    if cached is None or len(cached.get("current_obs", ())) != 1:
+    if (
+        cached is None
+        or cached.get("factorized_group_obs", False)
+        or len(cached.get("current_obs", ())) != 1
+    ):
         return None
     current = cached["current_obs"][0]
     if current.device.type != "cpu" or current.ndim != 2:
@@ -3294,6 +3997,15 @@ def _poca_parallel_forward(
     cached,
 ):
     """Run one logical minibatch on independent CUDA streams without extra Adam steps."""
+
+    # The factorized critic deliberately keeps value/baseline focal and group
+    # features in one per-minibatch cache. Its compact group tensors also contain
+    # only real rows, so they are not sliceable by dense minibatch ranges. The
+    # legacy stream-shard/critic-overlap experiment therefore cannot preserve
+    # factorized critic semantics. Fall back to the normal sequential forward
+    # rather than racing the shared cache or slicing compact rows incorrectly.
+    if getattr(optimizer, "_bees_factorized_poca", False):
+        return None
 
     opts = _POCA_OPTIMIZATIONS
     if opts.stream_shards <= 1 and not opts.critic_baseline_overlap:
@@ -3615,13 +4327,22 @@ class _PocaCpuMinibatchPreparer:
             1,
             logical_cpus - POCA_CPU_PREPARE_RESERVED_LOGICAL_CPUS,
         )
+        factorized = bool(
+            cache is not None
+            and cache.get("factorized_group_obs", False)
+        )
         self.enabled = bool(
             cache is not None
             and self.group_source is not None
-            and _POCA_OPTIMIZATIONS.effective_sync_cleanup
-            and _POCA_OPTIMIZATIONS.stream_shards == 1
-            and not _POCA_OPTIMIZATIONS.critic_baseline_overlap
-            and not _POCA_OPTIMIZATIONS.minibatch_prefetch
+            and (
+                factorized
+                or (
+                    _POCA_OPTIMIZATIONS.effective_sync_cleanup
+                    and _POCA_OPTIMIZATIONS.stream_shards == 1
+                    and not _POCA_OPTIMIZATIONS.critic_baseline_overlap
+                    and not _POCA_OPTIMIZATIONS.minibatch_prefetch
+                )
+            )
             and self.device.type == "cuda"
             and torch.cuda.is_available()
         )
@@ -3654,6 +4375,32 @@ class _PocaCpuMinibatchPreparer:
         dedup_plan = _poca_build_observation_dedup_plan(
             observation_source
         )
+        selected_slot_limits = (
+            _poca_current_obs_slot_limits(
+                observation_source["current_obs"]
+            )
+            if self.cache.get(
+                "factorized_group_obs",
+                False,
+            )
+            else None
+        )
+        effective_slot_limits = (
+            selected_slot_limits
+            if selected_slot_limits is not None
+            else self.cache.get("slot_limits", {})
+        )
+        packed_entity_plan = _poca_build_packed_entity_plan(
+            observation_source["current_obs"],
+            effective_slot_limits,
+        )
+        if dedup_plan is not None:
+            dedup_plan["packed_entity_plan"] = (
+                _poca_build_packed_entity_plan(
+                    dedup_plan["unique_obs"],
+                    effective_slot_limits,
+                )
+            )
         if self.full_minibatch:
             selected = _select_poca_update_tensor_cache(
                 self.cache,
@@ -3666,12 +4413,17 @@ class _PocaCpuMinibatchPreparer:
                 observation_source["prepared_groupmate_obs"]
             )
             selected["observation_dedup"] = dedup_plan
+            selected["packed_entity_plan"] = packed_entity_plan
+            if selected_slot_limits is not None:
+                selected["slot_limits"] = selected_slot_limits
         else:
             selected = {
                 "prepared_groupmate_obs": (
                     observation_source["prepared_groupmate_obs"]
                 ),
                 "observation_dedup": dedup_plan,
+                "packed_entity_plan": packed_entity_plan,
+                "slot_limits": selected_slot_limits,
             }
         selected = _poca_pin_selected_minibatch(selected)
         return selected, time.perf_counter() - started
@@ -3707,12 +4459,34 @@ class _PocaCpuMinibatchPreparer:
             None,
         )
         if prepared_group is not None:
-            selected["groupmate_obs"] = (
-                _poca_expand_prepared_group_obs(
-                    prepared_group,
-                    self.device,
+            if self.cache.get(
+                "factorized_group_obs",
+                False,
+            ):
+                selected["groupmate_obs"] = (
+                    _poca_transfer_prepared_group_obs_compact(
+                        prepared_group,
+                        self.device,
+                    )
                 )
-            )
+            else:
+                placeholders = (
+                    _poca_group_obs_placeholders(
+                        prepared_group,
+                        self.device,
+                        selected.get("observation_dedup"),
+                    )
+                    if selected.get("observation_dedup") is not None
+                    else None
+                )
+                selected["groupmate_obs"] = (
+                    placeholders
+                    if placeholders is not None
+                    else _poca_expand_prepared_group_obs(
+                        prepared_group,
+                        self.device,
+                    )
+                )
         _poca_cuda_timing_end(marker)
         _poca_record_timing(
             "cpu_prepare_transfer_submit",
@@ -4628,6 +5402,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
     global _ORIGINAL_POCA_UPDATE_POLICY
     global _ORIGINAL_POCA_ADVANCE
     global _ORIGINAL_POCA_SAVE_MODEL
+    global _ORIGINAL_POCA_APPEND_UPDATE_BUFFER
     global _ORIGINAL_MULTI_AGENT_FORWARD
     global _ORIGINAL_TRUST_REGION_POLICY_LOSS
     global _ORIGINAL_MASKED_MEAN
@@ -4647,6 +5422,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
     original_poca_update_policy = POCATrainer._update_policy
     original_poca_advance = POCATrainer.advance
     original_poca_save_model = POCATrainer.save_model
+    original_poca_append_update_buffer = POCATrainer._append_to_update_buffer
     original_poca_process_trajectory = POCATrainer._process_trajectory
     original_multi_agent_forward = MultiAgentNetworkBody.forward
     original_policy_loss = ModelUtils.trust_region_policy_loss
@@ -4735,7 +5511,32 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             cache_key = ("dedup-unique", id(self))
             encoded = cache.get(cache_key)
             if encoded is None:
-                encoded = self.observation_encoder(unique_obs)
+                packed_plan = dedup_plan.get("packed_entity_plan")
+                if packed_plan is None:
+                    encoded = self.observation_encoder(unique_obs)
+                else:
+                    from bees_mlagents_structured_policy import (
+                        reset_training_packed_entity_plan,
+                        reset_training_packed_entity_scope,
+                        set_training_packed_entity_plan,
+                        set_training_packed_entity_scope,
+                    )
+
+                    plan_token = set_training_packed_entity_plan(
+                        packed_plan
+                    )
+                    scope_token = set_training_packed_entity_scope(
+                        "full"
+                    )
+                    try:
+                        encoded = self.observation_encoder(unique_obs)
+                    finally:
+                        reset_training_packed_entity_scope(
+                            scope_token
+                        )
+                        reset_training_packed_entity_plan(
+                            plan_token
+                        )
                 cache[cache_key] = encoded
             return encoded
 
@@ -5013,9 +5814,125 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             )
 
         encoded_entity = torch.cat(self_attn_inputs, dim=1)
-        encoded_state = self.self_attn(encoded_entity, self_attn_masks)
+        combined_mask = torch.cat(self_attn_masks, dim=1)
 
-        flipped_masks = 1 - torch.cat(self_attn_masks, dim=1)
+        # The vendor ResidualSelfAttention computes Q/K/V for every padded group slot,
+        # even though padded keys are forced to -1e6 and padded queries are discarded
+        # by the final masked average.  Pack real agents to the front and run the same
+        # attention module in small width buckets.  The same learned layers, masks and
+        # averaging are used; only zero-gradient padded work is skipped.
+        encoded_state = None
+        sparse_poca_shape = bool(
+            valid_rows is not None
+            and (
+                (
+                    not obs
+                    and len(obs_only) == len(valid_rows) + 1
+                )
+                or (
+                    len(obs) == len(valid_rows)
+                    and len(obs_only) == 1
+                )
+            )
+        )
+        if (
+            graph_plan is None
+            and sparse_poca_shape
+            and batch_size >= 64
+        ):
+            import numpy as np
+
+            row_counts = np.ones((batch_size,), dtype=np.int32)
+            for rows in valid_rows:
+                row_counts[np.asarray(rows, dtype=np.int64)] += 1
+
+            dense_width = int(encoded_entity.shape[1])
+            bucket_rows = {}
+            packed_slots = 0
+            for row_index, count in enumerate(row_counts):
+                count = max(1, min(int(count), dense_width))
+                width = min(
+                    dense_width,
+                    max(4, ((count + 3) // 4) * 4),
+                )
+                bucket_rows.setdefault(width, []).append(row_index)
+                packed_slots += width
+
+            dense_slots = batch_size * dense_width
+            if packed_slots * 4 <= dense_slots * 3:
+                sparse_started = time.perf_counter()
+                sparse_output = encoded_entity.new_zeros(
+                    (batch_size, int(encoded_entity.shape[2]))
+                )
+                valid_mask = combined_mask < 0.5
+                for width, cpu_rows in sorted(bucket_rows.items()):
+                    rows = torch.as_tensor(
+                        cpu_rows,
+                        dtype=torch.long,
+                        device=encoded_entity.device,
+                    )
+                    bucket_entities = encoded_entity.index_select(0, rows)
+                    bucket_valid = valid_mask.index_select(0, rows)
+                    bucket_counts = torch.as_tensor(
+                        row_counts[np.asarray(cpu_rows, dtype=np.int64)],
+                        dtype=torch.long,
+                        device=encoded_entity.device,
+                    )
+                    ranks = torch.cumsum(
+                        bucket_valid.to(dtype=torch.long),
+                        dim=1,
+                    ) - 1
+                    active = torch.nonzero(
+                        bucket_valid,
+                        as_tuple=False,
+                    )
+                    active_ranks = ranks[
+                        active[:, 0],
+                        active[:, 1],
+                    ]
+                    selected = bucket_entities[
+                        active[:, 0],
+                        active[:, 1],
+                    ]
+                    packed = bucket_entities.new_zeros(
+                        (
+                            len(cpu_rows),
+                            int(width),
+                            int(bucket_entities.shape[2]),
+                        )
+                    ).index_put(
+                        (active[:, 0], active_ranks),
+                        selected,
+                    )
+                    packed_mask = (
+                        torch.arange(
+                            int(width),
+                            device=encoded_entity.device,
+                        ).unsqueeze(0)
+                        >= bucket_counts.unsqueeze(1)
+                    ).to(dtype=combined_mask.dtype)
+                    bucket_output = self.self_attn(
+                        packed,
+                        [packed_mask],
+                    )
+                    sparse_output = sparse_output.index_copy(
+                        0,
+                        rows,
+                        bucket_output,
+                    )
+                encoded_state = sparse_output
+                _poca_record_timing(
+                    "critic_sparse_attention",
+                    time.perf_counter() - sparse_started,
+                )
+
+        if encoded_state is None:
+            encoded_state = self.self_attn(
+                encoded_entity,
+                self_attn_masks,
+            )
+
+        flipped_masks = 1 - combined_mask
         num_agents = torch.sum(flipped_masks, dim=1, keepdim=True)
         freeze_max_agents = bool(
             getattr(_POCA_GROUP_BATCH_STATE, "freeze_max_agents", False)
@@ -5118,6 +6035,12 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             trainer._bees_poca_staged_trajectories = deque()
             trainer._bees_poca_staged_experiences = 0
 
+    def compact_poca_append_update_buffer(self, trajectory_buffer):
+        # ML-Agents' stock trajectory handler also runs at bookkeeping boundaries.
+        if getattr(self.optimizer, "_bees_factorized_poca", False):
+            _compact_factorized_poca_buffer_group_observations(trajectory_buffer)
+        return original_poca_append_update_buffer(self, trajectory_buffer)
+
     def _stage_poca_trajectories(trainer):
         from mlagents.trainers.agent_processor import AgentManagerQueue
 
@@ -5128,10 +6051,13 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             trainer._bees_poca_staged_experiences = 0
         staged = trainer._bees_poca_staged_trajectories
         staged_experiences = int(trainer._bees_poca_staged_experiences)
-        staging_limit = max(
-            int(trainer.hyperparameters.buffer_size) * 2,
+        # One complete next PPO buffer is enough to keep the learner continuously
+        # busy when the in-flight update finishes.  Holding a second full buffer here
+        # duplicated several GiB of 7,743-float focal/group observations and eventually
+        # forced the optimizer's packed group cache onto the slower ragged path.
+        staging_limit = (
             int(trainer.hyperparameters.buffer_size)
-            + POCA_TRAJECTORY_BATCH_MAX_EXPERIENCES,
+            + POCA_TRAJECTORY_BATCH_MAX_EXPERIENCES
         )
         queried = False
         for trajectory_queue in trainer.trajectory_queues:
@@ -5145,6 +6071,8 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                     break
                 queried = True
                 buffer = trajectory.to_agentbuffer()
+                if getattr(trainer.optimizer, "_bees_factorized_poca", False):
+                    _compact_factorized_poca_buffer_group_observations(buffer)
                 staged.append((trajectory, buffer))
                 staged_experiences += len(trajectory.steps)
         trainer._bees_poca_staged_experiences = staged_experiences
@@ -5377,16 +6305,29 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         if async_buffer is None:
             self.cumulative_returns_since_policy_update.clear()
 
+        factorized_poca = bool(
+            getattr(
+                self.optimizer,
+                "_bees_factorized_poca",
+                False,
+            )
+        )
+        if factorized_poca:
+            from bees_mlagents_factorized_poca import (
+                GROUP_COMPACT_WIDTH,
+            )
+
+            group_observation_width = int(
+                GROUP_COMPACT_WIDTH
+            )
+        else:
+            group_observation_width = BEES_OBSERVATION_SIZE
+
         batch_size = (
             self.hyperparameters.batch_size
             - self.hyperparameters.batch_size % self.policy.sequence_length
         )
         batch_size = max(batch_size, self.policy.sequence_length)
-        n_sequences = max(
-            int(self.hyperparameters.batch_size / self.policy.sequence_length),
-            1,
-        )
-
         update_started = time.perf_counter()
         _POCA_TIMING_STATE.timing_totals = {}
         _POCA_TIMING_STATE.timing_counts = {}
@@ -5412,6 +6353,11 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             self.optimizer,
             update_buffer,
         )
+        if factorized_poca and tensor_cache is None:
+            raise RuntimeError(
+                "Bees factorized POCA requires the cached feed-forward "
+                "minibatch path; refusing to fall back to full group observations."
+            )
         materialize_seconds = time.perf_counter() - materialize_started
         _poca_record_timing("materialize", materialize_seconds)
 
@@ -5456,8 +6402,42 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
 
         num_epoch = self.hyperparameters.num_epoch
         batch_update_stats = defaultdict(list)
-        max_num_batch = buffer_length // batch_size
-        total_minibatches = num_epoch * max_num_batch
+        actor_single_epoch = bool(
+            getattr(self.optimizer, "_bees_factorized_poca", False)
+        )
+        factorized_critic = (
+            getattr(self.optimizer, "critic", None)
+            if actor_single_epoch
+            else None
+        )
+        actor_training_enabled = bool(
+            factorized_critic is None
+            or not hasattr(
+                factorized_critic,
+                "actor_training_enabled",
+            )
+            or factorized_critic.actor_training_enabled()
+        )
+        critic_batch_size = (
+            min(buffer_length, batch_size * 2)
+            if actor_single_epoch
+            else batch_size
+        )
+
+        def epoch_batch_size(epoch_index: int) -> int:
+            actor_epoch = bool(
+                actor_training_enabled
+                and (
+                    not actor_single_epoch
+                    or epoch_index == 0
+                )
+            )
+            return batch_size if actor_epoch else critic_batch_size
+
+        total_minibatches = sum(
+            buffer_length // epoch_batch_size(epoch_index)
+            for epoch_index in range(num_epoch)
+        )
         cpu_preparer = (
             _PocaCpuMinibatchPreparer(tensor_cache)
             if tensor_cache is not None
@@ -5473,8 +6453,12 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         )
         print(
             "[Bees PPO timing] update begin "
-            f"buffer={buffer_length} batch={batch_size} epochs={num_epoch} "
+            f"buffer={buffer_length} actor_batch={batch_size} "
+            f"critic_batch={critic_batch_size} epochs={num_epoch} "
+            f"actor_epochs={1 if actor_single_epoch and actor_training_enabled else (0 if actor_single_epoch else num_epoch)} "
             f"minibatches={total_minibatches} "
+            f"factorized={'on' if factorized_poca else 'off'} "
+            f"group_width={group_observation_width} "
             f"sync_cleanup={'on' if _POCA_OPTIMIZATIONS.effective_sync_cleanup else 'off'} "
             f"stream_shards={_POCA_OPTIMIZATIONS.stream_shards} "
             f"prefetch={'on' if _POCA_OPTIMIZATIONS.minibatch_prefetch else 'off'} "
@@ -5540,7 +6524,9 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             f"cache={workload_profile.get('cache_storage', 'off')}:"
             f"{workload_profile.get('cache_mib', 0.0):.1f}MiB "
             f"group_cache={workload_profile.get('group_cache_storage', 'off')}:"
-            f"{workload_profile.get('group_cache_mib', 0.0):.1f}MiB",
+            f"{workload_profile.get('group_cache_mib', 0.0):.1f}MiB "
+            f"group_cache_rows={int(workload_profile.get('group_cache_input_rows', 0))}->"
+            f"{int(workload_profile.get('group_cache_unique_rows', 0))}",
             flush=True,
         )
 
@@ -5552,6 +6538,21 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         hardware_summary = {}
         try:
             for _epoch_index in range(num_epoch):
+                _POCA_UPDATE_CACHE_STATE.actor_update = bool(
+                    actor_training_enabled
+                    and (
+                        not actor_single_epoch
+                        or _epoch_index == 0
+                    )
+                )
+                current_batch_size = epoch_batch_size(_epoch_index)
+                current_n_sequences = max(
+                    int(
+                        current_batch_size
+                        / self.policy.sequence_length
+                    ),
+                    1,
+                )
                 epoch_order = None
                 if tensor_cache is None:
                     update_buffer.shuffle(
@@ -5564,11 +6565,14 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                     )
                     np.random.shuffle(epoch_order)
 
+                epoch_num_batches = (
+                    buffer_length // current_batch_size
+                )
                 offsets = list(
                     range(
                         0,
-                        max_num_batch * batch_size,
-                        batch_size,
+                        epoch_num_batches * current_batch_size,
+                        current_batch_size,
                     )
                 )
                 pending_cpu = {}
@@ -5585,7 +6589,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                         pending_cpu[prepare_index] = cpu_preparer.submit(
                             epoch_order[
                                 prepare_offset :
-                                prepare_offset + batch_size
+                                prepare_offset + current_batch_size
                             ]
                         )
 
@@ -5599,7 +6603,9 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                 ):
                     first = offsets[0]
                     pending_prefetch = prefetcher.submit(
-                        epoch_order[first : first + batch_size]
+                        epoch_order[
+                            first : first + current_batch_size
+                        ]
                     )
 
                 for offset_index, i in enumerate(offsets):
@@ -5608,11 +6614,13 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                     if tensor_cache is None:
                         minibatch = update_buffer.make_mini_batch(
                             i,
-                            i + batch_size,
+                            i + current_batch_size,
                         )
                         _POCA_UPDATE_CACHE_STATE.indices = None
                     else:
-                        indices = epoch_order[i : i + batch_size]
+                        indices = epoch_order[
+                            i : i + current_batch_size
+                        ]
                         if (
                             cpu_preparer is not None
                             and cpu_preparer.enabled
@@ -5637,6 +6645,19 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                                 ] = prepared_cpu.get(
                                     "observation_dedup"
                                 )
+                                selected_minibatch[
+                                    "packed_entity_plan"
+                                ] = prepared_cpu.get(
+                                    "packed_entity_plan"
+                                )
+                                if prepared_cpu.get(
+                                    "slot_limits"
+                                ) is not None:
+                                    selected_minibatch[
+                                        "slot_limits"
+                                    ] = prepared_cpu[
+                                        "slot_limits"
+                                    ]
                             _POCA_UPDATE_CACHE_STATE.minibatch = (
                                 selected_minibatch
                             )
@@ -5650,7 +6671,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                                     cpu_preparer.submit(
                                         epoch_order[
                                             prepare_offset :
-                                            prepare_offset + batch_size
+                                            prepare_offset + current_batch_size
                                         ]
                                     )
                                 )
@@ -5667,7 +6688,8 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                                 prefetcher.submit(
                                     epoch_order[
                                         offsets[next_offset_index] :
-                                        offsets[next_offset_index] + batch_size
+                                        offsets[next_offset_index]
+                                        + current_batch_size
                                     ]
                                 )
                                 if next_offset_index < len(offsets)
@@ -5683,7 +6705,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                     try:
                         update_stats = self.optimizer.update(
                             minibatch,
-                            n_sequences,
+                            current_n_sequences,
                         )
                     finally:
                         _POCA_UPDATE_CACHE_STATE.indices = None
@@ -5737,6 +6759,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             _POCA_UPDATE_CACHE_STATE.cache = None
             _POCA_UPDATE_CACHE_STATE.indices = None
             _POCA_UPDATE_CACHE_STATE.minibatch = None
+            _POCA_UPDATE_CACHE_STATE.actor_update = True
 
         _poca_flush_cuda_timings()
         _poca_release_full_cuda_graph(
@@ -5769,6 +6792,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             f"actor={_poca_average_timing('actor_get_stats'):.6f} "
             f"critic={_poca_average_timing('critic_pass'):.6f} "
             f"baseline={_poca_average_timing('baseline'):.6f} "
+            f"sparse_attention={_poca_average_timing('critic_sparse_attention'):.6f} "
             f"cuda_actor={_poca_average_timing('cuda_actor_get_stats'):.6f} "
             f"cuda_critic={_poca_average_timing('cuda_critic_pass'):.6f} "
             f"cuda_baseline={_poca_average_timing('cuda_baseline'):.6f} "
@@ -5902,6 +6926,26 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             update_stats = self.optimizer.bc_module.update()
             for stat, val in update_stats.items():
                 self._stats_reporter.add_stat(stat, val)
+
+        factorized_critic = getattr(self.optimizer, "critic", None)
+        if (
+            getattr(self.optimizer, "_bees_factorized_poca", False)
+            and factorized_critic is not None
+            and hasattr(
+                factorized_critic,
+                "complete_training_buffer",
+            )
+        ):
+            bootstrap_remaining = (
+                factorized_critic.complete_training_buffer()
+            )
+            if bootstrap_remaining > 0 or not actor_training_enabled:
+                print(
+                    "[Bees POCA factorized] critic bootstrap "
+                    f"buffers_remaining={bootstrap_remaining}",
+                    flush=True,
+                )
+
         update_buffer.reset_agent()
         return True
 
@@ -6055,25 +7099,181 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             set_training_slot_limits,
         )
 
+        factorized_poca = bool(
+            getattr(self, "_bees_factorized_poca", False)
+        )
         slot_limits = _structured_training_slot_limits(
             self.policy,
             batch,
-            extra_observations=(next_obs, next_groupmate_obs),
+            extra_observations=(
+                next_obs
+                if factorized_poca
+                else (next_obs, next_groupmate_obs)
+            ),
+            include_group_observations=not factorized_poca,
         )
         slot_token = set_training_slot_limits(slot_limits)
         try:
-            # ML-Agents 1.1.0 places its bootstrap critic call outside the
-            # internal no_grad block. Keep the entire feed-forward trajectory
-            # value path graph-free.
-            with torch.no_grad():
-                return original_poca_trajectory_values(
-                    self,
-                    batch,
-                    next_obs,
-                    next_groupmate_obs,
-                    done,
-                    agent_id,
+            # Generic POCA retains the vendor path. The factorized critic must
+            # not re-enter ML-Agents' full [batch,max_group,7743] padding path
+            # merely because one trajectory is processed at a bookkeeping
+            # boundary.
+            if not factorized_poca:
+                with torch.no_grad():
+                    return original_poca_trajectory_values(
+                        self,
+                        batch,
+                        next_obs,
+                        next_groupmate_obs,
+                        done,
+                        agent_id,
+                    )
+
+            import numpy as np
+            from mlagents.trainers.torch_entities.agent_action import (
+                AgentAction,
+            )
+            from mlagents.trainers.torch_entities.utils import (
+                ModelUtils,
+            )
+            from mlagents.trainers.trajectory import ObsUtil
+            from bees_mlagents_factorized_poca import (
+                compact_group_observation_numpy,
+                reset_factorized_group_valid_rows,
+                set_factorized_group_valid_rows,
+            )
+
+            n_obs = len(
+                self.policy.behavior_spec.observation_specs
+            )
+            current_obs = [
+                ModelUtils.list_to_tensor(obs)
+                for obs in ObsUtil.from_buffer(batch, n_obs)
+            ]
+            current_counts = _poca_groupmate_counts(
+                self.policy,
+                batch,
+                batch.num_experiences,
+            )
+            groupmate_obs = _poca_group_obs_tensors_from_buffer(
+                self.policy,
+                batch,
+                current_counts,
+                current_obs[0].device,
+                factorized=True,
+            )
+            groupmate_actions = AgentAction.group_from_buffer(batch)
+            current_valid_rows = (
+                _poca_groupmate_valid_row_indices(
+                    current_counts
                 )
+            )
+            current_group_token = (
+                set_factorized_group_valid_rows(
+                    current_valid_rows
+                )
+            )
+            try:
+                with torch.no_grad():
+                    value_estimates, _ = self.critic.critic_pass(
+                        [current_obs] + groupmate_obs,
+                        memories=None,
+                        sequence_length=batch.num_experiences,
+                    )
+                    baseline_estimates, _ = self.critic.baseline(
+                        current_obs,
+                        (
+                            groupmate_obs,
+                            groupmate_actions,
+                        ),
+                        memories=None,
+                        sequence_length=batch.num_experiences,
+                    )
+            finally:
+                reset_factorized_group_valid_rows(
+                    current_group_token
+                )
+
+            next_obs_tensors = [
+                ModelUtils.list_to_tensor(obs).unsqueeze(0)
+                for obs in next_obs
+            ]
+            next_group_tensors = []
+            for groupmate in next_groupmate_obs:
+                if len(groupmate) != 1:
+                    raise RuntimeError(
+                        "Bees factorized POCA requires one vector "
+                        "observation per next groupmate."
+                    )
+                compact = compact_group_observation_numpy(
+                    np.asarray(
+                        groupmate[0],
+                        dtype=np.float32,
+                    )
+                )
+                next_group_tensors.append(
+                    [
+                        torch.as_tensor(
+                            compact,
+                            dtype=torch.float32,
+                            device=next_obs_tensors[0].device,
+                        ).unsqueeze(0)
+                    ]
+                )
+
+            next_valid_rows = [
+                np.asarray([0], dtype=np.int64)
+                for _ in next_group_tensors
+            ]
+            next_group_token = (
+                set_factorized_group_valid_rows(
+                    next_valid_rows
+                )
+            )
+            try:
+                with torch.no_grad():
+                    next_value_estimates, _ = (
+                        self.critic.critic_pass(
+                            [next_obs_tensors]
+                            + next_group_tensors,
+                            memories=None,
+                            sequence_length=1,
+                        )
+                    )
+            finally:
+                reset_factorized_group_valid_rows(
+                    next_group_token
+                )
+
+            self.value_memory_dict[agent_id] = None
+            self.baseline_memory_dict[agent_id] = None
+
+            value_numpy = {
+                name: ModelUtils.to_numpy(value)
+                for name, value in value_estimates.items()
+            }
+            baseline_numpy = {
+                name: ModelUtils.to_numpy(value)
+                for name, value in baseline_estimates.items()
+            }
+            next_numpy = {
+                name: ModelUtils.to_numpy(value)
+                for name, value in next_value_estimates.items()
+            }
+            if done:
+                for name, estimate in next_numpy.items():
+                    if not self.reward_signals[
+                        name
+                    ].ignore_done:
+                        estimate[-1] = 0.0
+
+            return (
+                value_numpy,
+                baseline_numpy,
+                next_numpy,
+                None,
+                None,
+            )
         finally:
             reset_training_slot_limits(slot_token)
 
@@ -6087,6 +7287,9 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         from mlagents.torch_utils import torch
 
         cached = getattr(_POCA_UPDATE_CACHE_STATE, "minibatch", None)
+        actor_update = bool(
+            getattr(_POCA_UPDATE_CACHE_STATE, "actor_update", True)
+        )
 
         started = time.perf_counter()
         decay_lr = self.decay_learning_rate.get_value(self.policy.get_current_step())
@@ -6227,7 +7430,9 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         )
 
         if (
-            cached is not None
+            actor_update
+            and not getattr(self, "_bees_factorized_poca", False)
+            and cached is not None
             and not memories
             and not value_memories
             and not baseline_memories
@@ -6254,32 +7459,42 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                 _POCA_TIMING_STATE.parallel_streams = ()
                 return graph_update
 
-        parallel_forward = _poca_parallel_forward(
-            self,
-            current_obs,
-            actions,
-            act_masks,
-            groupmate_obs,
-            groupmate_actions,
-            memories,
-            value_memories,
-            baseline_memories,
-            cached,
-        )
-        if parallel_forward is None:
-            started = time.perf_counter()
-            cuda_timing = _poca_cuda_timing_begin("actor_get_stats")
-            run_out = self.policy.actor.get_stats(
+        parallel_forward = (
+            _poca_parallel_forward(
+                self,
                 current_obs,
                 actions,
-                masks=act_masks,
-                memories=memories,
-                sequence_length=self.policy.sequence_length,
+                act_masks,
+                groupmate_obs,
+                groupmate_actions,
+                memories,
+                value_memories,
+                baseline_memories,
+                cached,
             )
-            _poca_cuda_timing_end(cuda_timing)
-            log_probs = run_out["log_probs"]
-            entropy = run_out["entropy"]
-            _poca_record_timing("actor_get_stats", time.perf_counter() - started)
+            if actor_update
+            else None
+        )
+        if parallel_forward is None:
+            log_probs = None
+            entropy = None
+            if actor_update:
+                started = time.perf_counter()
+                cuda_timing = _poca_cuda_timing_begin("actor_get_stats")
+                run_out = self.policy.actor.get_stats(
+                    current_obs,
+                    actions,
+                    masks=act_masks,
+                    memories=memories,
+                    sequence_length=self.policy.sequence_length,
+                )
+                _poca_cuda_timing_end(cuda_timing)
+                log_probs = run_out["log_probs"]
+                entropy = run_out["entropy"]
+                _poca_record_timing(
+                    "actor_get_stats",
+                    time.perf_counter() - started,
+                )
 
             started = time.perf_counter()
             cuda_timing = _poca_cuda_timing_begin("critic_pass")
@@ -6305,7 +7520,8 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         else:
             log_probs, entropy, values, baselines = parallel_forward
 
-        log_probs = log_probs.flatten()
+        if log_probs is not None:
+            log_probs = log_probs.flatten()
 
         started = time.perf_counter()
         baseline_loss = ModelUtils.trust_region_value_loss(
@@ -6322,21 +7538,29 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             decay_eps,
             loss_masks,
         )
-        policy_loss = ModelUtils.trust_region_policy_loss(
-            advantages,
-            log_probs,
-            old_log_probs,
-            loss_masks,
-            decay_eps,
-        )
-        loss = (
-            policy_loss
-            + 0.5 * (value_loss + 0.5 * baseline_loss)
-            - decay_bet * ModelUtils.masked_mean(entropy, loss_masks)
-        )
+        if actor_update:
+            policy_loss = ModelUtils.trust_region_policy_loss(
+                advantages,
+                log_probs,
+                old_log_probs,
+                loss_masks,
+                decay_eps,
+            )
+            loss = (
+                policy_loss
+                + 0.5 * (value_loss + 0.5 * baseline_loss)
+                - decay_bet * ModelUtils.masked_mean(entropy, loss_masks)
+            )
+        else:
+            policy_loss = value_loss.detach().new_zeros(())
+            loss = 0.5 * (value_loss + 0.5 * baseline_loss)
         _poca_record_timing("losses", time.perf_counter() - started)
 
-        graph_eligible = _poca_cuda_graph_minibatch_eligible(cached)
+        graph_eligible = bool(
+            actor_update
+            and not getattr(self, "_bees_factorized_poca", False)
+            and _poca_cuda_graph_minibatch_eligible(cached)
+        )
         graph_state = getattr(
             self.optimizer,
             "_bees_cuda_graph_state",
@@ -6412,13 +7636,14 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             value_stat = value_loss.item()
             baseline_stat = baseline_loss.item()
         update_stats = {
-            "Losses/Policy Loss": policy_stat,
             "Losses/Value Loss": value_stat,
             "Losses/Baseline Loss": baseline_stat,
             "Policy/Learning Rate": decay_lr,
             "Policy/Epsilon": decay_eps,
             "Policy/Beta": decay_bet,
         }
+        if actor_update:
+            update_stats["Losses/Policy Loss"] = policy_stat
         _poca_record_timing("stats", time.perf_counter() - started)
         return update_stats
 
@@ -6515,14 +7740,20 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
 
         from bees_mlagents_structured_policy import (
             reset_training_faction_rows,
+            reset_training_packed_entity_plan,
             reset_training_slot_limits,
             set_training_faction_rows,
+            set_training_packed_entity_plan,
             set_training_slot_limits,
         )
-
         slot_token = set_training_slot_limits(slot_limits)
         faction_token = set_training_faction_rows(
             None if cached is None else cached["faction_rows"]
+        )
+        packed_entity_token = set_training_packed_entity_plan(
+            None
+            if cached is None
+            else cached.get("packed_entity_plan")
         )
         _poca_record_timing(
             "prepare",
@@ -6538,6 +7769,9 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             _poca_record_timing(
                 "optimizer_total",
                 time.perf_counter() - optimizer_started,
+            )
+            reset_training_packed_entity_plan(
+                packed_entity_token
             )
             reset_training_faction_rows(faction_token)
             reset_training_slot_limits(slot_token)
@@ -6559,6 +7793,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
     POCATrainer._update_policy = weighted_poca_update_policy
     POCATrainer.advance = batched_poca_advance
     POCATrainer.save_model = pipelined_poca_save_model
+    POCATrainer._append_to_update_buffer = compact_poca_append_update_buffer
     MultiAgentNetworkBody.forward = optimized_multi_agent_forward
     ModelUtils.trust_region_policy_loss = staticmethod(masked_policy_loss)
     ModelUtils.masked_mean = staticmethod(weighted_masked_mean)
@@ -6573,6 +7808,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
     _ORIGINAL_POCA_UPDATE_POLICY = original_poca_update_policy
     _ORIGINAL_POCA_ADVANCE = original_poca_advance
     _ORIGINAL_POCA_SAVE_MODEL = original_poca_save_model
+    _ORIGINAL_POCA_APPEND_UPDATE_BUFFER = original_poca_append_update_buffer
     _ORIGINAL_MULTI_AGENT_FORWARD = original_multi_agent_forward
     _ORIGINAL_TRUST_REGION_POLICY_LOSS = original_policy_loss
     _ORIGINAL_MASKED_MEAN = original_masked_mean
@@ -6592,6 +7828,7 @@ def restore_inactive_continuous_action_masking() -> None:
     global _ORIGINAL_POCA_UPDATE_POLICY
     global _ORIGINAL_POCA_ADVANCE
     global _ORIGINAL_POCA_SAVE_MODEL
+    global _ORIGINAL_POCA_APPEND_UPDATE_BUFFER
     global _ORIGINAL_MULTI_AGENT_FORWARD
     global _ORIGINAL_TRUST_REGION_POLICY_LOSS
     global _ORIGINAL_MASKED_MEAN
@@ -6619,6 +7856,7 @@ def restore_inactive_continuous_action_masking() -> None:
     POCATrainer._update_policy = _ORIGINAL_POCA_UPDATE_POLICY
     POCATrainer.advance = _ORIGINAL_POCA_ADVANCE
     POCATrainer.save_model = _ORIGINAL_POCA_SAVE_MODEL
+    POCATrainer._append_to_update_buffer = _ORIGINAL_POCA_APPEND_UPDATE_BUFFER
     MultiAgentNetworkBody.forward = _ORIGINAL_MULTI_AGENT_FORWARD
     ModelUtils.trust_region_policy_loss = staticmethod(
         _ORIGINAL_TRUST_REGION_POLICY_LOSS
@@ -6646,6 +7884,7 @@ def restore_inactive_continuous_action_masking() -> None:
     _ORIGINAL_POCA_UPDATE_POLICY = None
     _ORIGINAL_POCA_ADVANCE = None
     _ORIGINAL_POCA_SAVE_MODEL = None
+    _ORIGINAL_POCA_APPEND_UPDATE_BUFFER = None
     _ORIGINAL_MULTI_AGENT_FORWARD = None
     _ORIGINAL_TRUST_REGION_POLICY_LOSS = None
     _ORIGINAL_MASKED_MEAN = None

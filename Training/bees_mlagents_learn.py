@@ -1202,6 +1202,7 @@ def main() -> None:
         restore_structured_policy(structured_policy_state)
         raise
     print("[Bees RL] Structured dual-faction entity/weapon policy: enabled")
+    print("[Bees RL] Existing MA-POCA critic/checkpoint architecture: preserved")
     print("[Bees RL] MA-POCA inverse-group-size gradient balancing: enabled")
     print("[Bees RL] Inactive weapon-action masking: enabled")
     print("[Bees RL] Continuous sigma guard: enabled")

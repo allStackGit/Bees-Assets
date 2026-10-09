@@ -1,0 +1,940 @@
+"""Bees-specific factorized MA-POCA critic.
+
+ML-Agents' stock POCA critic re-encodes every group member's complete observation
+for both the centralized value and counterfactual baseline passes. Bees observations
+already contain fleet/world context, so that generic dataflow multiplies a 7,743-value
+structured observation by every teammate.
+
+This critic keeps the POCA interfaces expected by TorchPOCAOptimizer but factors the
+state into:
+* one full structured encoding of the focal agent;
+* compact per-groupmate local state (self, capability, parent, weapons);
+* the groupmate's local navigation grid; and
+* groupmate actions only for the counterfactual baseline.
+
+The actor and exported policy are unchanged.
+"""
+
+from __future__ import annotations
+
+import contextvars
+
+from typing import Dict, List, Optional, Sequence, Tuple
+
+from mlagents.torch_utils import default_device, nn, torch
+from mlagents.trainers.buffer import AgentBuffer
+from mlagents.trainers.poca.optimizer_torch import TorchPOCAOptimizer
+from mlagents.trainers.torch_entities.agent_action import AgentAction
+from mlagents.trainers.torch_entities.decoders import ValueHeads
+
+from bees_mlagents_structured_policy import (
+    BEES_CONTINUOUS_ACTIONS,
+    BEES_DISCRETE_BRANCHES,
+    BEES_OBSERVATION_SIZE,
+    BEES_WEAPON_SLOTS,
+    CAPABILITY_SIZE,
+    CAPABILITY_START,
+    NAVIGATION_SIZE,
+    NAVIGATION_START,
+    PARENT_SIZE,
+    PARENT_START,
+    SELF_SIZE,
+    SELF_START,
+    SELF_WEAPON_SIZE,
+    SELF_WEAPON_START,
+    BeesStructuredObservationEncoder,
+)
+
+
+GROUP_STATE_WIDTH = (
+    SELF_SIZE
+    + CAPABILITY_SIZE
+    + PARENT_SIZE
+    + BEES_WEAPON_SLOTS * SELF_WEAPON_SIZE
+)
+GROUP_ACTION_WIDTH = BEES_CONTINUOUS_ACTIONS + sum(BEES_DISCRETE_BRANCHES)
+GROUP_NAVIGATION_SIDE = 7
+GROUP_NAVIGATION_CHANNELS = 3
+GROUP_NAVIGATION_SIZE = (
+    GROUP_NAVIGATION_SIDE
+    * GROUP_NAVIGATION_SIDE
+    * GROUP_NAVIGATION_CHANNELS
+)
+GROUP_COMPACT_WIDTH = GROUP_STATE_WIDTH + GROUP_NAVIGATION_SIZE
+CRITIC_WIDTH = 128
+GROUP_NAV_WIDTH = 64
+GROUP_STATE_EMBED = 128
+GROUP_ACTION_EMBED = 64
+CRITIC_BOOTSTRAP_BUFFERS = 3
+
+_ORIGINAL_POCA_INIT = None
+_GROUP_VALID_ROWS = contextvars.ContextVar(
+    "bees_factorized_poca_group_valid_rows",
+    default=None,
+)
+
+
+def set_factorized_group_valid_rows(rows):
+    return _GROUP_VALID_ROWS.set(rows)
+
+
+def reset_factorized_group_valid_rows(token) -> None:
+    _GROUP_VALID_ROWS.reset(token)
+
+
+
+def _mlp(input_size: int, hidden_size: int, output_size: int) -> nn.Sequential:
+    return nn.Sequential(
+        nn.Linear(input_size, hidden_size),
+        nn.LeakyReLU(),
+        nn.Linear(hidden_size, output_size),
+        nn.LeakyReLU(),
+    )
+
+
+def _is_bees_policy(policy) -> bool:
+    behavior_spec = getattr(policy, "behavior_spec", None)
+    if behavior_spec is None:
+        return False
+    observation_specs = getattr(behavior_spec, "observation_specs", ())
+    action_spec = getattr(behavior_spec, "action_spec", None)
+    return (
+        len(observation_specs) == 1
+        and tuple(observation_specs[0].shape) == (BEES_OBSERVATION_SIZE,)
+        and action_spec is not None
+        and int(action_spec.continuous_size) == BEES_CONTINUOUS_ACTIONS
+        and tuple(int(value) for value in action_spec.discrete_branches)
+        == BEES_DISCRETE_BRANCHES
+    )
+
+
+class BeesFactorizedPOCACritic(nn.Module):
+    """POCA critic that avoids full-observation encoding for every groupmate."""
+
+    def __init__(
+        self,
+        stream_names: Sequence[str],
+        observation_specs,
+        network_settings,
+        action_spec,
+    ) -> None:
+        super().__init__()
+        if (
+            len(observation_specs) != 1
+            or tuple(observation_specs[0].shape) != (BEES_OBSERVATION_SIZE,)
+        ):
+            raise ValueError("Bees factorized POCA critic requires the Bees observation ABI.")
+        if (
+            int(action_spec.continuous_size) != BEES_CONTINUOUS_ACTIONS
+            or tuple(int(value) for value in action_spec.discrete_branches)
+            != BEES_DISCRETE_BRANCHES
+        ):
+            raise ValueError("Bees factorized POCA critic requires the Bees action ABI.")
+        if network_settings.memory is not None:
+            raise ValueError("Bees factorized POCA critic is feed-forward.")
+
+        self.action_spec = action_spec
+        self.observation_encoder = BeesStructuredObservationEncoder(
+            observation_specs,
+            int(network_settings.hidden_units),
+            network_settings.vis_encode_type,
+            bool(network_settings.normalize),
+        )
+        focal_width = int(self.observation_encoder.total_enc_size)
+
+        self.focal_encoder = _mlp(focal_width, 256, CRITIC_WIDTH)
+        self.group_state_encoder = _mlp(
+            GROUP_STATE_WIDTH,
+            GROUP_STATE_EMBED,
+            GROUP_STATE_EMBED,
+        )
+        self.group_navigation_encoder = _mlp(
+            GROUP_NAVIGATION_SIZE,
+            64,
+            GROUP_NAV_WIDTH,
+        )
+        self.group_state_fuse = _mlp(
+            GROUP_STATE_EMBED + GROUP_NAV_WIDTH,
+            CRITIC_WIDTH,
+            CRITIC_WIDTH,
+        )
+        self.group_action_encoder = _mlp(
+            GROUP_ACTION_WIDTH,
+            GROUP_ACTION_EMBED,
+            GROUP_ACTION_EMBED,
+        )
+        self.group_action_fuse = _mlp(
+            CRITIC_WIDTH + GROUP_ACTION_EMBED,
+            CRITIC_WIDTH,
+            CRITIC_WIDTH,
+        )
+        self.group_state_score = nn.Linear(CRITIC_WIDTH, 1)
+        self.group_action_score = nn.Linear(CRITIC_WIDTH, 1)
+        self.value_fuse = _mlp(
+            CRITIC_WIDTH * 2 + 1,
+            CRITIC_WIDTH,
+            CRITIC_WIDTH,
+        )
+        self.baseline_fuse = _mlp(
+            CRITIC_WIDTH * 2 + 1,
+            CRITIC_WIDTH,
+            CRITIC_WIDTH,
+        )
+
+        # Use a distinct module name from stock POCA's "value_heads". Old critic
+        # checkpoints therefore cannot partially populate this architecture.
+        self.factorized_value_heads = ValueHeads(
+            list(stream_names),
+            CRITIC_WIDTH,
+            1,
+        )
+        self.register_buffer(
+            "actor_bootstrap_buffers_remaining",
+            torch.as_tensor(
+                CRITIC_BOOTSTRAP_BUFFERS,
+                dtype=torch.int64,
+            ),
+        )
+        self._shared_cache = None
+
+    @property
+    def memory_size(self) -> int:
+        return 0
+
+    def actor_training_enabled(self) -> bool:
+        return bool(
+            int(
+                self.actor_bootstrap_buffers_remaining
+                .detach()
+                .cpu()
+                .item()
+            )
+            <= 0
+        )
+
+    def complete_training_buffer(self) -> int:
+        with torch.no_grad():
+            if int(self.actor_bootstrap_buffers_remaining.item()) > 0:
+                self.actor_bootstrap_buffers_remaining.sub_(1)
+            self.actor_bootstrap_buffers_remaining.clamp_(min=0)
+        return int(
+            self.actor_bootstrap_buffers_remaining
+            .detach()
+            .cpu()
+            .item()
+        )
+
+    def update_normalization(self, buffer: AgentBuffer) -> None:
+        self.observation_encoder.update_normalization(buffer)
+
+    @staticmethod
+    def _compact_group_state(
+        raw: torch.Tensor,
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        if int(raw.shape[1]) == GROUP_COMPACT_WIDTH:
+            valid = torch.isfinite(raw[:, 0])
+            clean = torch.nan_to_num(
+                raw,
+                nan=0.0,
+                posinf=0.0,
+                neginf=0.0,
+            )
+            return (
+                clean[:, :GROUP_STATE_WIDTH],
+                clean[
+                    :,
+                    GROUP_STATE_WIDTH
+                    : GROUP_STATE_WIDTH + GROUP_NAVIGATION_SIZE,
+                ],
+                valid,
+            )
+
+        if int(raw.shape[1]) != BEES_OBSERVATION_SIZE:
+            raise RuntimeError(
+                "Bees factorized POCA critic received an unexpected groupmate observation width."
+            )
+        valid = torch.isfinite(raw[:, SELF_START])
+        clean = torch.nan_to_num(raw, nan=0.0, posinf=0.0, neginf=0.0)
+        compact = torch.cat(
+            [
+                clean[:, SELF_START : SELF_START + SELF_SIZE],
+                clean[
+                    :,
+                    CAPABILITY_START : CAPABILITY_START + CAPABILITY_SIZE,
+                ],
+                clean[:, PARENT_START : PARENT_START + PARENT_SIZE],
+                clean[
+                    :,
+                    SELF_WEAPON_START
+                    : SELF_WEAPON_START + BEES_WEAPON_SLOTS * SELF_WEAPON_SIZE,
+                ],
+            ],
+            dim=1,
+        )
+        navigation_blocks = clean[
+            :,
+            NAVIGATION_START : NAVIGATION_START + NAVIGATION_SIZE,
+        ].reshape(-1, 7, 3, 7, 3)
+        navigation = torch.stack(
+            [
+                navigation_blocks.amin(dim=(2, 4)),
+                navigation_blocks.amax(dim=(2, 4)),
+                navigation_blocks.mean(dim=(2, 4)),
+            ],
+            dim=3,
+        ).reshape(-1, GROUP_NAVIGATION_SIZE)
+        return compact, navigation, valid
+
+    @staticmethod
+    def _masked_pool(
+        tokens: torch.Tensor,
+        valid: torch.Tensor,
+        scorer: nn.Module,
+    ) -> torch.Tensor:
+        if int(tokens.shape[1]) == 0:
+            return tokens.new_zeros((tokens.shape[0], tokens.shape[2]))
+        mask = valid.to(dtype=tokens.dtype)
+        logits = scorer(tokens).squeeze(2)
+        logits = logits + (1.0 - mask) * -10000.0
+        weights = torch.softmax(logits, dim=1) * mask
+        weights = weights / torch.clamp(
+            weights.sum(dim=1, keepdim=True),
+            min=1.0e-6,
+        )
+        return torch.sum(tokens * weights.unsqueeze(2), dim=1)
+
+    def _encode_group_states(
+        self,
+        groupmate_obs,
+        batch_size: int,
+        reference: torch.Tensor,
+    ) -> Tuple[
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        Optional[torch.Tensor],
+    ]:
+        if not groupmate_obs:
+            empty_tokens = reference.new_zeros(
+                (batch_size, 0, CRITIC_WIDTH)
+            )
+            empty_valid = torch.zeros(
+                (batch_size, 0),
+                dtype=torch.bool,
+                device=reference.device,
+            )
+            empty_count = reference.new_zeros((batch_size, 1))
+            return (
+                empty_tokens,
+                empty_valid,
+                empty_count,
+                None,
+            )
+
+        packed_rows = _GROUP_VALID_ROWS.get()
+        if (
+            packed_rows is None
+            and any(
+                int(member[0].shape[1]) == GROUP_COMPACT_WIDTH
+                and int(member[0].shape[0]) != batch_size
+                for member in groupmate_obs
+            )
+        ):
+            raise RuntimeError(
+                "Compact factorized group rows require their destination-row "
+                "membership plan; refusing to infer incorrect minibatch rows."
+            )
+        if (
+            packed_rows is None
+            and not torch.is_grad_enabled()
+        ):
+            packed_rows = [
+                torch.nonzero(
+                    torch.isfinite(
+                        member[0][:, SELF_START]
+                    ),
+                    as_tuple=False,
+                ).squeeze(1)
+                for member in groupmate_obs
+            ]
+        if (
+            isinstance(packed_rows, (list, tuple))
+            and len(packed_rows) == len(groupmate_obs)
+        ):
+            group_count = len(groupmate_obs)
+            state_parts = []
+            navigation_parts = []
+            destination_parts = []
+            validity_parts = []
+
+            for position, member in enumerate(groupmate_obs):
+                if len(member) != 1:
+                    raise RuntimeError(
+                        "Bees factorized POCA critic expects one vector observation per groupmate."
+                    )
+                raw = member[0]
+                rows = packed_rows[position]
+                if not isinstance(rows, torch.Tensor):
+                    rows = torch.as_tensor(
+                        rows,
+                        dtype=torch.long,
+                        device=raw.device,
+                    )
+                elif rows.device != raw.device:
+                    rows = rows.to(
+                        device=raw.device,
+                        dtype=torch.long,
+                        non_blocking=True,
+                    )
+                else:
+                    rows = rows.to(dtype=torch.long)
+
+                row_count = int(rows.numel())
+                if row_count == 0:
+                    continue
+                if int(raw.shape[0]) == batch_size:
+                    selected = raw.index_select(0, rows)
+                elif int(raw.shape[0]) == row_count:
+                    selected = raw
+                else:
+                    raise RuntimeError(
+                        "Bees factorized POCA groupmate rows do not match "
+                        "the minibatch membership plan."
+                    )
+                compact, navigation, selected_valid = (
+                    self._compact_group_state(selected)
+                )
+                state_parts.append(compact)
+                navigation_parts.append(navigation)
+                destination_parts.append(
+                    rows * group_count + int(position)
+                )
+                validity_parts.append(selected_valid)
+
+            if not state_parts:
+                empty_tokens = reference.new_zeros(
+                    (batch_size, group_count, CRITIC_WIDTH)
+                )
+                empty_valid = torch.zeros(
+                    (batch_size, group_count),
+                    dtype=torch.bool,
+                    device=reference.device,
+                )
+                empty_count = reference.new_zeros(
+                    (batch_size, 1)
+                )
+                return (
+                    empty_tokens,
+                    empty_valid,
+                    empty_count,
+                    reference.new_empty(
+                        (0,),
+                        dtype=torch.long,
+                    ),
+                )
+
+            compact_tensor = torch.cat(state_parts, dim=0)
+            navigation_tensor = torch.cat(
+                navigation_parts,
+                dim=0,
+            )
+            destinations = torch.cat(
+                destination_parts,
+                dim=0,
+            ).to(dtype=torch.long)
+            packed_valid = torch.cat(validity_parts, dim=0)
+
+            state = self.group_state_encoder(compact_tensor)
+            navigation = self.group_navigation_encoder(
+                navigation_tensor
+            )
+            packed_tokens = self.group_state_fuse(
+                torch.cat([state, navigation], dim=1)
+            )
+            packed_tokens = (
+                packed_tokens
+                * packed_valid.to(
+                    packed_tokens.dtype
+                ).unsqueeze(1)
+            )
+
+            flat_tokens = reference.new_zeros(
+                (
+                    batch_size * group_count,
+                    CRITIC_WIDTH,
+                )
+            ).index_copy(
+                0,
+                destinations,
+                packed_tokens,
+            )
+            flat_valid = torch.zeros(
+                (batch_size * group_count,),
+                dtype=torch.bool,
+                device=reference.device,
+            ).index_copy(
+                0,
+                destinations,
+                packed_valid,
+            )
+            tokens = flat_tokens.reshape(
+                batch_size,
+                group_count,
+                CRITIC_WIDTH,
+            )
+            valid = flat_valid.reshape(
+                batch_size,
+                group_count,
+            )
+            count = (
+                valid.to(tokens.dtype).sum(
+                    dim=1,
+                    keepdim=True,
+                )
+                / 64.0
+            )
+            return tokens, valid, count, destinations
+
+        compact_parts = []
+        navigation_parts = []
+        valid_parts = []
+        for member in groupmate_obs:
+            if len(member) != 1:
+                raise RuntimeError(
+                    "Bees factorized POCA critic expects one vector observation per groupmate."
+                )
+            raw = member[0]
+            if int(raw.shape[0]) != batch_size:
+                raise RuntimeError(
+                    "Bees factorized POCA groupmate batch size changed unexpectedly."
+                )
+            compact, navigation, valid = self._compact_group_state(raw)
+            compact_parts.append(compact)
+            navigation_parts.append(navigation)
+            valid_parts.append(valid)
+
+        compact_tensor = torch.stack(compact_parts, dim=1)
+        navigation_tensor = torch.stack(navigation_parts, dim=1)
+        valid = torch.stack(valid_parts, dim=1)
+
+        group_count = int(compact_tensor.shape[1])
+        state = self.group_state_encoder(
+            compact_tensor.reshape(
+                batch_size * group_count,
+                GROUP_STATE_WIDTH,
+            )
+        )
+        navigation = self.group_navigation_encoder(
+            navigation_tensor.reshape(
+                batch_size * group_count,
+                GROUP_NAVIGATION_SIZE,
+            )
+        )
+        tokens = self.group_state_fuse(
+            torch.cat([state, navigation], dim=1)
+        ).reshape(batch_size, group_count, CRITIC_WIDTH)
+        tokens = (
+            tokens
+            * valid.to(tokens.dtype).unsqueeze(2)
+        )
+        count = (
+            valid.to(tokens.dtype).sum(
+                dim=1,
+                keepdim=True,
+            )
+            / 64.0
+        )
+        return tokens, valid, count, None
+
+    def _flatten_group_actions(
+        self,
+        actions: List[AgentAction],
+        batch_size: int,
+        group_count: int,
+        reference: torch.Tensor,
+        packed_destinations: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        if group_count == 0:
+            return reference.new_zeros((batch_size, 0, GROUP_ACTION_WIDTH))
+        if len(actions) != group_count:
+            raise RuntimeError(
+                "Bees factorized POCA groupmate action count does not match group observations."
+            )
+
+        continuous = torch.stack(
+            [action.continuous_tensor for action in actions],
+            dim=1,
+        )
+        if packed_destinations is not None:
+            # Compact POCA trains on real group members only. Gather their actions
+            # before expanding discrete branches to one-hot vectors instead of
+            # encoding every padded slot and immediately throwing those rows away.
+            continuous = continuous.reshape(
+                batch_size * group_count, BEES_CONTINUOUS_ACTIONS
+            ).index_select(0, packed_destinations)
+        discrete_one_hot = []
+        for branch_index, branch_size in enumerate(BEES_DISCRETE_BRANCHES):
+            branch_actions = torch.stack(
+                [
+                    action.discrete_list[branch_index]
+                    for action in actions
+                ],
+                dim=1,
+            ).reshape(batch_size * group_count)
+            if packed_destinations is not None:
+                branch_actions = branch_actions.index_select(
+                    0, packed_destinations
+                )
+            else:
+                branch_actions = branch_actions.reshape(
+                    batch_size, group_count
+                )
+            discrete_one_hot.append(
+                torch.nn.functional.one_hot(
+                    branch_actions.long(),
+                    int(branch_size),
+                ).to(dtype=continuous.dtype)
+            )
+        feature_dim = 1 if packed_destinations is not None else 2
+        return torch.cat(
+            [
+                continuous,
+                torch.cat(discrete_one_hot, dim=feature_dim),
+            ],
+            dim=feature_dim,
+        )
+
+    @staticmethod
+    def _cache_matches(cached, current_obs, groupmate_obs) -> bool:
+        if cached is None:
+            return False
+        if cached.get("current_ref") is not current_obs[0]:
+            return False
+        group_refs = cached.get("group_refs", ())
+        if len(group_refs) != len(groupmate_obs):
+            return False
+        return all(
+            reference is member[0]
+            for reference, member in zip(
+                group_refs,
+                groupmate_obs,
+            )
+        )
+
+    def _shared_state(self, current_obs, groupmate_obs):
+        if len(current_obs) != 1:
+            raise RuntimeError(
+                "Bees factorized POCA critic expects one focal vector observation."
+            )
+        cached = self._shared_cache
+        if self._cache_matches(
+            cached,
+            current_obs,
+            groupmate_obs,
+        ):
+            return cached
+
+        raw = current_obs[0]
+        batch_size = int(raw.shape[0])
+        focal = self.focal_encoder(self.observation_encoder(current_obs))
+        (
+            group_tokens,
+            valid,
+            count,
+            packed_destinations,
+        ) = self._encode_group_states(
+            groupmate_obs,
+            batch_size,
+            raw,
+        )
+        state_pool = self._masked_pool(
+            group_tokens,
+            valid,
+            self.group_state_score,
+        )
+        cached = {
+            "current_ref": current_obs[0],
+            "group_refs": tuple(
+                member[0] for member in groupmate_obs
+            ),
+            "focal": focal,
+            "group_tokens": group_tokens,
+            "valid": valid,
+            "count": count,
+            "packed_destinations": packed_destinations,
+            "state_pool": state_pool,
+        }
+        self._shared_cache = cached
+        return cached
+
+    def critic_pass(
+        self,
+        obs,
+        memories: Optional[torch.Tensor] = None,
+        sequence_length: int = 1,
+    ) -> Tuple[Dict[str, torch.Tensor], Optional[torch.Tensor]]:
+        if memories is not None and not isinstance(memories, list):
+            if getattr(memories, "numel", lambda: 0)() > 0:
+                raise RuntimeError("Bees factorized POCA critic does not use memory.")
+        if not obs:
+            raise RuntimeError("Bees factorized POCA critic received no observations.")
+
+        current_obs = obs[0]
+        groupmate_obs = obs[1:]
+        shared = self._shared_state(current_obs, groupmate_obs)
+        value_encoding = self.value_fuse(
+            torch.cat(
+                [
+                    shared["focal"],
+                    shared["state_pool"],
+                    shared["count"],
+                ],
+                dim=1,
+            )
+        )
+        return self.factorized_value_heads(value_encoding), memories
+
+    def baseline(
+        self,
+        obs_without_actions,
+        obs_with_actions,
+        memories: Optional[torch.Tensor] = None,
+        sequence_length: int = 1,
+    ) -> Tuple[Dict[str, torch.Tensor], Optional[torch.Tensor]]:
+        groupmate_obs, groupmate_actions = obs_with_actions
+        shared = self._shared_state(obs_without_actions, groupmate_obs)
+        group_tokens = shared["group_tokens"]
+        batch_size = int(shared["focal"].shape[0])
+        group_count = int(group_tokens.shape[1])
+
+        if group_count == 0:
+            action_pool = shared["focal"].new_zeros(
+                (batch_size, CRITIC_WIDTH)
+            )
+        else:
+            destinations = shared.get(
+                "packed_destinations"
+            )
+            flat_group_tokens = group_tokens.reshape(
+                batch_size * group_count,
+                CRITIC_WIDTH,
+            )
+            if destinations is not None:
+                selected_actions = self._flatten_group_actions(
+                    groupmate_actions,
+                    batch_size,
+                    group_count,
+                    shared["focal"],
+                    packed_destinations=destinations,
+                )
+                selected_group_tokens = (
+                    flat_group_tokens.index_select(
+                        0,
+                        destinations,
+                    )
+                )
+                action_embedding = self.group_action_encoder(
+                    selected_actions
+                )
+                selected_action_tokens = (
+                    self.group_action_fuse(
+                        torch.cat(
+                            [
+                                selected_group_tokens,
+                                action_embedding,
+                            ],
+                            dim=1,
+                        )
+                    )
+                )
+                flat_action_tokens = (
+                    flat_group_tokens.new_zeros(
+                        flat_group_tokens.shape
+                    ).index_copy(
+                        0,
+                        destinations,
+                        selected_action_tokens,
+                    )
+                )
+                action_tokens = flat_action_tokens.reshape(
+                    batch_size,
+                    group_count,
+                    CRITIC_WIDTH,
+                )
+            else:
+                flat_action_values = self._flatten_group_actions(
+                    groupmate_actions,
+                    batch_size,
+                    group_count,
+                    shared["focal"],
+                ).reshape(
+                    batch_size * group_count,
+                    GROUP_ACTION_WIDTH,
+                )
+                action_embedding = self.group_action_encoder(
+                    flat_action_values
+                ).reshape(
+                    batch_size,
+                    group_count,
+                    GROUP_ACTION_EMBED,
+                )
+                action_tokens = self.group_action_fuse(
+                    torch.cat(
+                        [group_tokens, action_embedding],
+                        dim=2,
+                    ).reshape(
+                        batch_size * group_count,
+                        CRITIC_WIDTH
+                        + GROUP_ACTION_EMBED,
+                    )
+                ).reshape(
+                    batch_size,
+                    group_count,
+                    CRITIC_WIDTH,
+                )
+
+            action_tokens = (
+                action_tokens
+                * shared["valid"].to(
+                    action_tokens.dtype
+                ).unsqueeze(2)
+            )
+            action_pool = self._masked_pool(
+                action_tokens,
+                shared["valid"],
+                self.group_action_score,
+            )
+
+        baseline_encoding = self.baseline_fuse(
+            torch.cat(
+                [
+                    shared["focal"],
+                    action_pool,
+                    shared["count"],
+                ],
+                dim=1,
+            )
+        )
+        output = self.factorized_value_heads(baseline_encoding)
+        # Value and baseline are called consecutively for a minibatch. Release the
+        # graph references after baseline so the next minibatch cannot retain them.
+        self._shared_cache = None
+        return output, memories
+
+
+def compact_group_observation_numpy(raw):
+    """Project one or more full Bees groupmate observations onto critic-local state."""
+
+    import numpy as np
+
+    values = np.asarray(raw, dtype=np.float32)
+    single = values.ndim == 1
+    if single:
+        values = values.reshape(1, -1)
+    # PPO buffers already carry this exact projection after trajectory-value
+    # evaluation.  Keep the projector idempotent for the packed/ragged paths.
+    if values.ndim == 2 and int(values.shape[1]) == GROUP_COMPACT_WIDTH:
+        return values[0] if single else values
+    if (
+        values.ndim != 2
+        or int(values.shape[1]) != BEES_OBSERVATION_SIZE
+    ):
+        raise ValueError(
+            "Bees compact group observation requires full Bees observation rows."
+        )
+
+    navigation_blocks = values[
+        :,
+        NAVIGATION_START : NAVIGATION_START + NAVIGATION_SIZE,
+    ].reshape(
+        -1,
+        7,
+        3,
+        7,
+        3,
+    )
+    navigation = np.stack(
+        [
+            navigation_blocks.min(axis=(2, 4)),
+            navigation_blocks.max(axis=(2, 4)),
+            navigation_blocks.mean(axis=(2, 4)),
+        ],
+        axis=3,
+    ).reshape(-1, GROUP_NAVIGATION_SIZE)
+    compact = np.concatenate(
+        [
+            values[:, SELF_START : SELF_START + SELF_SIZE],
+            values[
+                :,
+                CAPABILITY_START : CAPABILITY_START + CAPABILITY_SIZE,
+            ],
+            values[:, PARENT_START : PARENT_START + PARENT_SIZE],
+            values[
+                :,
+                SELF_WEAPON_START
+                : SELF_WEAPON_START + BEES_WEAPON_SLOTS * SELF_WEAPON_SIZE,
+            ],
+            navigation,
+        ],
+        axis=1,
+    ).astype(np.float32, copy=False)
+    return compact[0] if single else compact
+
+
+def install_factorized_poca_critic():
+    """Install the Bees factorized critic before ML-Agents creates its optimizer."""
+
+    global _ORIGINAL_POCA_INIT
+    if _ORIGINAL_POCA_INIT is not None:
+        return _ORIGINAL_POCA_INIT
+
+    original = TorchPOCAOptimizer.__init__
+
+    def factorized_init(self, policy, trainer_settings):
+        original(self, policy, trainer_settings)
+        if not _is_bees_policy(policy):
+            return
+
+        critic = BeesFactorizedPOCACritic(
+            list(self.stream_names),
+            policy.behavior_spec.observation_specs,
+            trainer_settings.network_settings,
+            policy.behavior_spec.action_spec,
+        )
+        critic.to(default_device())
+        self._critic = critic
+
+        # Two parameter groups intentionally make legacy one-group Adam
+        # checkpoints incompatible. ML-Agents then initializes Adam cleanly while
+        # loading the actor module independently from the same checkpoint.
+        actor_parameters = [
+            parameter
+            for parameter in self.policy.actor.parameters()
+            if parameter.requires_grad
+        ]
+        critic_parameters = [
+            parameter
+            for parameter in self._critic.parameters()
+            if parameter.requires_grad
+        ]
+        self.optimizer = torch.optim.Adam(
+            [
+                {"params": actor_parameters},
+                {"params": critic_parameters},
+            ],
+            lr=trainer_settings.hyperparameters.learning_rate,
+        )
+        self._bees_factorized_poca = True
+
+    TorchPOCAOptimizer.__init__ = factorized_init
+    _ORIGINAL_POCA_INIT = original
+    return original
+
+
+def restore_factorized_poca_critic(original=None) -> None:
+    global _ORIGINAL_POCA_INIT
+    target = original if original is not None else _ORIGINAL_POCA_INIT
+    if target is None:
+        return
+    TorchPOCAOptimizer.__init__ = target
+    _ORIGINAL_POCA_INIT = None

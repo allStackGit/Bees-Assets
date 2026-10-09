@@ -8,8 +8,8 @@ BeesRL1v1 model. Inside that model, Bees replaces ML-Agents' flat vector MLP wit
 * per-slot weapon embeddings retained for shared weapon action heads;
 * independent Bee and Human actor encoders, trunks, and action heads selected by an
   explicit faction observation channel; and
-* the ordinary ML-Agents MA-POCA centralized critic, which automatically consumes
-  the structured observation encoding through the patched ObservationEncoder.
+* a training-only Bees factorized MA-POCA critic that reuses the same structured
+  focal observation contract while keeping the exported actor ABI unchanged.
 
 The patch is deliberately limited to the exact Bees v22 observation/action shapes.
 All other ML-Agents behaviors retain the upstream implementation.
@@ -84,6 +84,16 @@ FACTION_INDEX = EPISODE_PROGRESS_INDEX + 1
 RESERVED_START = FACTION_INDEX + 1
 RESERVED_SIZE = BEES_OBSERVATION_SIZE - RESERVED_START
 
+_NORMALIZED_FIXED_RANGES = (
+    (SELF_START, SELF_SIZE),
+    (CAPABILITY_START, CAPABILITY_SIZE),
+    (OBJECTIVE_START, OBJECTIVE_SIZE),
+    (NAVIGATION_START, NAVIGATION_SIZE),
+    (EXPLORATION_START, EXPLORATION_SIZE),
+    (EPISODE_PROGRESS_INDEX, 1),
+    (RESERVED_START, RESERVED_SIZE),
+)
+
 ENTITY_BASE_SIZE = 16
 OBSERVED_WEAPON_SIZE = 5
 ENTITY_WEAPON_COUNT = 5
@@ -111,6 +121,14 @@ _TRAINING_FACTION_ROWS = contextvars.ContextVar(
 _TRAINING_FACTION_GRAPH_PLAN = contextvars.ContextVar(
     "bees_structured_training_faction_graph_plan",
     default=None,
+)
+_TRAINING_PACKED_ENTITY_PLAN = contextvars.ContextVar(
+    "bees_structured_training_packed_entity_plan",
+    default=None,
+)
+_TRAINING_PACKED_ENTITY_SCOPE = contextvars.ContextVar(
+    "bees_structured_training_packed_entity_scope",
+    default="full",
 )
 
 
@@ -144,6 +162,51 @@ def reset_training_faction_graph_plan(token) -> None:
     _TRAINING_FACTION_GRAPH_PLAN.reset(token)
 
 
+def set_training_packed_entity_plan(plan):
+    return _TRAINING_PACKED_ENTITY_PLAN.set(plan)
+
+
+def reset_training_packed_entity_plan(token) -> None:
+    _TRAINING_PACKED_ENTITY_PLAN.reset(token)
+
+
+def set_training_packed_entity_scope(scope: str):
+    return _TRAINING_PACKED_ENTITY_SCOPE.set(str(scope))
+
+
+def reset_training_packed_entity_scope(token) -> None:
+    _TRAINING_PACKED_ENTITY_SCOPE.reset(token)
+
+
+def _packed_training_indices(
+    name: str,
+    batch_size: int,
+    slot_count: int,
+    device,
+):
+    if torch.onnx.is_in_onnx_export():
+        return None
+    plan = _TRAINING_PACKED_ENTITY_PLAN.get()
+    if not isinstance(plan, Mapping):
+        return None
+    scoped = plan.get(_TRAINING_PACKED_ENTITY_SCOPE.get())
+    if isinstance(scoped, Mapping):
+        plan = scoped
+    entry = plan.get(name)
+    if not isinstance(entry, Mapping):
+        return None
+    if int(entry.get("batch_size", -1)) != int(batch_size):
+        return None
+    if int(entry.get("slot_count", -1)) != int(slot_count):
+        return None
+    active = entry.get("active")
+    if not isinstance(active, torch.Tensor):
+        return None
+    if active.device != device:
+        active = active.to(device=device, non_blocking=True)
+    return active.to(dtype=torch.long)
+
+
 def _slot_limit(name: str, full_count: int) -> int:
     limits = _TRAINING_SLOT_LIMITS.get()
     if not limits or torch.onnx.is_in_onnx_export():
@@ -168,6 +231,73 @@ def _use_dense_structured_path() -> bool:
         torch.is_grad_enabled()
         or torch.onnx.is_in_onnx_export()
     )
+
+
+def _update_fixed_normalizer(normalizer, raw_values) -> None:
+    """Update only channels that the structured encoder consumes normalized."""
+
+    if normalizer is None:
+        return
+
+    import numpy as np
+
+    values = np.asarray(raw_values, dtype=np.float32)
+    if (
+        values.ndim != 2
+        or values.shape[0] <= 0
+        or values.shape[1] != BEES_OBSERVATION_SIZE
+    ):
+        return
+
+    compact = np.concatenate(
+        [
+            values[:, start : start + size]
+            for start, size in _NORMALIZED_FIXED_RANGES
+        ],
+        axis=1,
+    )
+    compact_tensor = torch.as_tensor(
+        compact,
+        device=normalizer.running_mean.device,
+        dtype=normalizer.running_mean.dtype,
+    )
+
+    with torch.no_grad():
+        steps_increment = int(compact_tensor.shape[0])
+        total_new_steps = (
+            normalizer.normalization_steps
+            + steps_increment
+        )
+        compact_offset = 0
+        for start, size in _NORMALIZED_FIXED_RANGES:
+            selected = compact_tensor[
+                :,
+                compact_offset : compact_offset + size,
+            ]
+            old_mean = normalizer.running_mean[
+                start : start + size
+            ]
+            old_variance = normalizer.running_variance[
+                start : start + size
+            ]
+            input_to_old_mean = selected - old_mean
+            new_mean = old_mean + (
+                input_to_old_mean / total_new_steps
+            ).sum(0)
+            input_to_new_mean = selected - new_mean
+            new_variance = old_variance + (
+                input_to_new_mean * input_to_old_mean
+            ).sum(0)
+            normalizer.running_mean[
+                start : start + size
+            ].copy_(new_mean)
+            normalizer.running_variance[
+                start : start + size
+            ].copy_(new_variance)
+            compact_offset += size
+        normalizer.normalization_steps.copy_(
+            total_new_steps
+        )
 
 
 def _is_bees_observation_specs(observation_specs) -> bool:
@@ -239,6 +369,79 @@ class _MaskedAttentionPool(nn.Module):
             min=1.0e-6,
         )
         return torch.sum(entities * weights.unsqueeze(2), dim=1)
+
+    def forward_packed(
+        self,
+        query: torch.Tensor,
+        entities: torch.Tensor,
+        flat_indices: torch.Tensor,
+        slot_count: int,
+        presence: torch.Tensor,
+    ) -> torch.Tensor:
+        """Exact masked attention over only occupied rows."""
+
+        batch_size = int(query.shape[0])
+        if int(entities.shape[0]) == 0:
+            return entities.new_zeros(
+                (batch_size, entities.shape[1])
+            )
+
+        rows = torch.div(
+            flat_indices,
+            int(slot_count),
+            rounding_mode="floor",
+        ).to(dtype=torch.long)
+        mask = torch.clamp(
+            presence.to(dtype=entities.dtype),
+            0.0,
+            1.0,
+        )
+        q = self.query(query)
+        k = self.key(entities)
+        scores = (
+            torch.sum(
+                q.index_select(0, rows) * k,
+                dim=1,
+            )
+            / self.scale
+        )
+        masked_scores = scores + (1.0 - mask) * -10000.0
+
+        maxima = masked_scores.new_full(
+            (batch_size,),
+            float("-inf"),
+        )
+        maxima.scatter_reduce_(
+            0,
+            rows,
+            masked_scores.detach(),
+            reduce="amax",
+            include_self=True,
+        )
+        # The per-row maximum is only a numerical-stability shift. Detaching it
+        # preserves the exact softmax gradient while keeping packed attention
+        # independent of scatter-reduce backward behavior.
+        exponentials = torch.exp(
+            masked_scores - maxima.index_select(0, rows)
+        ) * mask
+        denominator = exponentials.new_zeros(
+            (batch_size,)
+        ).index_add(
+            0,
+            rows,
+            exponentials,
+        )
+        weights = exponentials / torch.clamp(
+            denominator.index_select(0, rows),
+            min=1.0e-6,
+        )
+        return entities.new_zeros(
+            (batch_size, entities.shape[1])
+        ).index_add(
+            0,
+            rows,
+            entities * weights.unsqueeze(1),
+        )
 
 
 class _MaskedScalarPool(nn.Module):
@@ -412,6 +615,27 @@ class BeesStructuredObservationEncoder(nn.Module):
             "The Bees combat policy does not define goal-signal observations."
         )
 
+    def _normalized_slice(
+        self,
+        raw: torch.Tensor,
+        start: int,
+        size: int,
+    ) -> torch.Tensor:
+        values = raw[:, start : start + size]
+        normalizer = self.vector_input.normalizer
+        if normalizer is None:
+            return values
+        mean = normalizer.running_mean[start : start + size]
+        variance = normalizer.running_variance[start : start + size]
+        return torch.clamp(
+            (values - mean)
+            / torch.sqrt(
+                variance / normalizer.normalization_steps
+            ),
+            -5,
+            5,
+        )
+
     def _entity_weapon_embeddings(
         self,
         normalized: torch.Tensor,
@@ -515,7 +739,56 @@ class BeesStructuredObservationEncoder(nn.Module):
         self,
         normalized: torch.Tensor,
         raw: torch.Tensor,
+        active_indices=None,
     ) -> torch.Tensor:
+        if active_indices is not None:
+            batch = normalized.shape[0]
+            entity_count = normalized.shape[1]
+            output = normalized.new_zeros(
+                (batch * entity_count, ENTITY_EMBED)
+            )
+            if int(active_indices.numel()) == 0:
+                return output.reshape(
+                    batch,
+                    entity_count,
+                    ENTITY_EMBED,
+                )
+            flat_normalized = normalized.reshape(
+                -1,
+                normalized.shape[2],
+            )
+            flat_raw = raw.reshape(-1, raw.shape[2])
+            active_normalized = flat_normalized.index_select(
+                0,
+                active_indices,
+            )
+            active_raw = flat_raw.index_select(0, active_indices)
+            base = self.entity_base_encoder(
+                active_normalized[:, :ENTITY_BASE_SIZE]
+            )
+            weapons = self._entity_weapon_embeddings(
+                active_normalized.unsqueeze(1),
+                active_raw.unsqueeze(1),
+            )[:, 0, :]
+            embedded = self.entity_fuse(
+                torch.cat([base, weapons], dim=1)
+            )
+            presence = torch.clamp(
+                active_raw[:, 0],
+                0.0,
+                1.0,
+            ).unsqueeze(1)
+            output = output.index_copy(
+                0,
+                active_indices,
+                embedded * presence,
+            )
+            return output.reshape(
+                batch,
+                entity_count,
+                ENTITY_EMBED,
+            )
+
         if _use_dense_structured_path():
             base = self.entity_base_encoder(
                 normalized[:, :, :ENTITY_BASE_SIZE]
@@ -560,7 +833,70 @@ class BeesStructuredObservationEncoder(nn.Module):
         self,
         normalized: torch.Tensor,
         raw: torch.Tensor,
+        active_indices=None,
     ):
+        if active_indices is not None:
+            batch = normalized.shape[0]
+            ally_count = normalized.shape[1]
+            presence = torch.clamp(raw[:, :, 0], 0.0, 1.0)
+            output = normalized.new_zeros(
+                (batch * ally_count, ENTITY_EMBED)
+            )
+            if int(active_indices.numel()) == 0:
+                return (
+                    output.reshape(
+                        batch,
+                        ally_count,
+                        ENTITY_EMBED,
+                    ),
+                    presence,
+                )
+
+            flat_normalized = normalized.reshape(
+                -1,
+                normalized.shape[2],
+            )
+            flat_raw = raw.reshape(-1, raw.shape[2])
+            active_normalized = flat_normalized.index_select(
+                0,
+                active_indices,
+            )
+            active_raw = flat_raw.index_select(0, active_indices)
+            entity = self._encode_entities(
+                active_normalized[
+                    :,
+                    :ENEMY_SIZE,
+                ].unsqueeze(1),
+                active_raw[
+                    :,
+                    :ENEMY_SIZE,
+                ].unsqueeze(1),
+            )[:, 0, :]
+            communication = self.ally_communication_encoder(
+                active_normalized[:, ENEMY_SIZE:ALLY_SIZE]
+            )
+            embedded = self.ally_fuse(
+                torch.cat([entity, communication], dim=1)
+            )
+            embedded = embedded * torch.clamp(
+                active_raw[:, 0],
+                0.0,
+                1.0,
+            ).unsqueeze(1)
+            output = output.index_copy(
+                0,
+                active_indices,
+                embedded,
+            )
+            return (
+                output.reshape(
+                    batch,
+                    ally_count,
+                    ENTITY_EMBED,
+                ),
+                presence,
+            )
+
         if _use_dense_structured_path():
             entity = self._encode_entities(
                 normalized[:, :, :ENEMY_SIZE],
@@ -672,8 +1008,174 @@ class BeesStructuredObservationEncoder(nn.Module):
         output = output.index_copy(0, active, embedded)
         return output.reshape(batch, weapon_count, WEAPON_SLOT_EMBED)
 
-    def _encode_set(self, normalized, raw, encoder, output_size: int):
+    def _encode_entity_rows(
+        self,
+        active_normalized: torch.Tensor,
+        active_raw: torch.Tensor,
+    ):
+        if int(active_normalized.shape[0]) == 0:
+            return (
+                active_normalized.new_zeros(
+                    (0, ENTITY_EMBED)
+                ),
+                active_normalized.new_zeros((0,)),
+            )
+        base = self.entity_base_encoder(
+            active_normalized[:, :ENTITY_BASE_SIZE]
+        )
+        weapons = self._entity_weapon_embeddings(
+            active_normalized.unsqueeze(1),
+            active_raw.unsqueeze(1),
+        )[:, 0, :]
+        embedded = self.entity_fuse(
+            torch.cat([base, weapons], dim=1)
+        )
+        presence = torch.clamp(
+            active_raw[:, 0],
+            0.0,
+            1.0,
+        )
+        return embedded * presence.unsqueeze(1), presence
+
+    def _encode_entities_packed(
+        self,
+        normalized: torch.Tensor,
+        raw: torch.Tensor,
+        active_indices: torch.Tensor,
+    ):
+        if int(active_indices.numel()) == 0:
+            return (
+                normalized.new_zeros(
+                    (0, ENTITY_EMBED)
+                ),
+                normalized.new_zeros((0,)),
+            )
+        flat_normalized = normalized.reshape(
+            -1,
+            normalized.shape[2],
+        )
+        flat_raw = raw.reshape(-1, raw.shape[2])
+        return self._encode_entity_rows(
+            flat_normalized.index_select(
+                0,
+                active_indices,
+            ),
+            flat_raw.index_select(
+                0,
+                active_indices,
+            ),
+        )
+
+    def _encode_allies_packed(
+        self,
+        normalized: torch.Tensor,
+        raw: torch.Tensor,
+        active_indices: torch.Tensor,
+    ):
+        flat_normalized = normalized.reshape(
+            -1,
+            normalized.shape[2],
+        )
+        flat_raw = raw.reshape(-1, raw.shape[2])
+        active_normalized = flat_normalized.index_select(
+            0,
+            active_indices,
+        )
+        active_raw = flat_raw.index_select(
+            0,
+            active_indices,
+        )
+        if int(active_indices.numel()) == 0:
+            return (
+                normalized.new_zeros(
+                    (0, ENTITY_EMBED)
+                ),
+                normalized.new_zeros((0,)),
+            )
+
+        entity, presence = self._encode_entity_rows(
+            active_normalized[:, :ENEMY_SIZE],
+            active_raw[:, :ENEMY_SIZE],
+        )
+        communication = self.ally_communication_encoder(
+            active_normalized[:, ENEMY_SIZE:ALLY_SIZE]
+        )
+        embedded = self.ally_fuse(
+            torch.cat([entity, communication], dim=1)
+        )
+        return embedded * presence.unsqueeze(1), presence
+
+    def _encode_set_packed(
+        self,
+        normalized: torch.Tensor,
+        raw: torch.Tensor,
+        encoder,
+        output_size: int,
+        active_indices: torch.Tensor,
+    ):
+        flat = normalized.reshape(
+            -1,
+            normalized.shape[2],
+        )
+        flat_presence = torch.clamp(
+            raw[:, :, 0].reshape(-1),
+            0.0,
+            1.0,
+        )
+        if int(active_indices.numel()) == 0:
+            return (
+                normalized.new_zeros(
+                    (0, int(output_size))
+                ),
+                normalized.new_zeros((0,)),
+            )
+        presence = flat_presence.index_select(
+            0,
+            active_indices,
+        )
+        embedded = encoder(
+            flat.index_select(0, active_indices)
+        )
+        return embedded * presence.unsqueeze(1), presence
+
+    def _encode_set(
+        self,
+        normalized,
+        raw,
+        encoder,
+        output_size: int,
+        active_indices=None,
+    ):
         presence = torch.clamp(raw[:, :, 0], 0.0, 1.0)
+        if active_indices is not None:
+            batch = normalized.shape[0]
+            slot_count = normalized.shape[1]
+            output = normalized.new_zeros(
+                (batch * slot_count, output_size)
+            )
+            if int(active_indices.numel()) > 0:
+                flat = normalized.reshape(
+                    -1,
+                    normalized.shape[2],
+                )
+                embedded = encoder(
+                    flat.index_select(0, active_indices)
+                )
+                flat_presence = presence.reshape(-1)
+                embedded = embedded * flat_presence.index_select(
+                    0,
+                    active_indices,
+                ).unsqueeze(1)
+                output = output.index_copy(
+                    0,
+                    active_indices,
+                    embedded,
+                )
+            return (
+                output.reshape(batch, slot_count, output_size),
+                presence,
+            )
+
         if _use_dense_structured_path():
             embedded = encoder(normalized)
             return embedded * presence.unsqueeze(2), presence
@@ -702,8 +1204,7 @@ class BeesStructuredObservationEncoder(nn.Module):
             )
 
         raw = inputs[0]
-        normalized = self.vector_input(raw)
-        if normalized.shape[1] != BEES_OBSERVATION_SIZE:
+        if raw.shape[1] != BEES_OBSERVATION_SIZE:
             raise UnityTrainerException(
                 "Bees structured policy received an unexpected observation size."
             )
@@ -711,16 +1212,21 @@ class BeesStructuredObservationEncoder(nn.Module):
         # Variable slots are already emitted as bounded semantic features by Unity.
         # Feed those raw values to the shared encoders so an identical entity or weapon
         # has identical encoder inputs regardless of which absolute slot it occupies.
-        # The full-vector running normalizer remains useful for fixed-position global
-        # state (self, capability, objectives and grids).
-        self_obs = normalized[:, SELF_START : SELF_START + SELF_SIZE]
+        # Running normalization is applied only to the fixed-position global state
+        # channels that the structured encoder actually consumes normalized.
+        self_obs = self._normalized_slice(
+            raw,
+            SELF_START,
+            SELF_SIZE,
+        )
         self_embedding = self.self_encoder(self_obs)
 
         capability = self.capability_encoder(
-            normalized[
-                :,
-                CAPABILITY_START : CAPABILITY_START + CAPABILITY_SIZE,
-            ]
+            self._normalized_slice(
+                raw,
+                CAPABILITY_START,
+                CAPABILITY_SIZE,
+            )
         )
 
         parent_norm = raw[:, PARENT_START : PARENT_START + PARENT_SIZE].reshape(
@@ -733,7 +1239,6 @@ class BeesStructuredObservationEncoder(nn.Module):
             1,
             PARENT_SIZE,
         )
-        parent = self._encode_entities(parent_norm, parent_raw)[:, 0, :]
 
         ally_count = _slot_limit("allies", ALLY_COUNT)
         ally_norm = raw[
@@ -744,14 +1249,11 @@ class BeesStructuredObservationEncoder(nn.Module):
             :,
             ALLY_START : ALLY_START + ALLY_COUNT * ALLY_SIZE,
         ].reshape(-1, ALLY_COUNT, ALLY_SIZE)[:, :ally_count, :]
-        ally_embedding, ally_presence = self._encode_allies(
-            ally_norm,
-            ally_raw,
-        )
-        allies = self.ally_pool(
-            self_embedding,
-            ally_embedding,
-            ally_presence,
+        ally_active = _packed_training_indices(
+            "allies",
+            raw.shape[0],
+            ally_count,
+            raw.device,
         )
 
         enemy_count = _slot_limit("enemies", ENEMY_COUNT)
@@ -763,13 +1265,235 @@ class BeesStructuredObservationEncoder(nn.Module):
             :,
             ENEMY_START : ENEMY_START + ENEMY_COUNT * ENEMY_SIZE,
         ].reshape(-1, ENEMY_COUNT, ENEMY_SIZE)[:, :enemy_count, :]
-        enemy_embedding = self._encode_entities(enemy_norm, enemy_raw)
-        enemy_presence = torch.clamp(enemy_raw[:, :, 0], 0.0, 1.0)
-        enemies = self.enemy_pool(
-            self_embedding,
-            enemy_embedding,
-            enemy_presence,
+        enemy_active = _packed_training_indices(
+            "enemies",
+            raw.shape[0],
+            enemy_count,
+            raw.device,
         )
+
+        # Parent, ally-core and enemy rows all use exactly the same shared entity
+        # encoder. During packed training, execute that shared network once on one
+        # larger batch instead of launching the same small MLP stack three times.
+        # The split/fusion below reproduces the existing per-family computation.
+        if ally_active is not None and enemy_active is not None:
+            batch_size = int(raw.shape[0])
+            parent_presence_full = torch.clamp(
+                parent_raw[:, 0, 0],
+                0.0,
+                1.0,
+            )
+            parent_active = torch.nonzero(
+                parent_presence_full > 0.0,
+                as_tuple=False,
+            ).squeeze(1)
+
+            ally_flat_norm = ally_norm.reshape(-1, ALLY_SIZE)
+            ally_flat_raw = ally_raw.reshape(-1, ALLY_SIZE)
+            enemy_flat_norm = enemy_norm.reshape(-1, ENEMY_SIZE)
+            enemy_flat_raw = enemy_raw.reshape(-1, ENEMY_SIZE)
+
+            normalized_parts = []
+            raw_parts = []
+            part_sizes = []
+
+            if int(parent_active.numel()) > 0:
+                normalized_parts.append(
+                    parent_norm[:, 0, :].index_select(
+                        0,
+                        parent_active,
+                    )
+                )
+                raw_parts.append(
+                    parent_raw[:, 0, :].index_select(
+                        0,
+                        parent_active,
+                    )
+                )
+            part_sizes.append(int(parent_active.numel()))
+
+            if int(ally_active.numel()) > 0:
+                normalized_parts.append(
+                    ally_flat_norm.index_select(
+                        0,
+                        ally_active,
+                    )[:, :ENEMY_SIZE]
+                )
+                raw_parts.append(
+                    ally_flat_raw.index_select(
+                        0,
+                        ally_active,
+                    )[:, :ENEMY_SIZE]
+                )
+            part_sizes.append(int(ally_active.numel()))
+
+            if int(enemy_active.numel()) > 0:
+                normalized_parts.append(
+                    enemy_flat_norm.index_select(
+                        0,
+                        enemy_active,
+                    )
+                )
+                raw_parts.append(
+                    enemy_flat_raw.index_select(
+                        0,
+                        enemy_active,
+                    )
+                )
+            part_sizes.append(int(enemy_active.numel()))
+
+            if normalized_parts:
+                merged_normalized = (
+                    normalized_parts[0]
+                    if len(normalized_parts) == 1
+                    else torch.cat(normalized_parts, dim=0)
+                )
+                merged_raw = (
+                    raw_parts[0]
+                    if len(raw_parts) == 1
+                    else torch.cat(raw_parts, dim=0)
+                )
+                merged_entities, merged_presence = (
+                    self._encode_entity_rows(
+                        merged_normalized,
+                        merged_raw,
+                    )
+                )
+            else:
+                merged_entities = raw.new_zeros(
+                    (0, ENTITY_EMBED)
+                )
+                merged_presence = raw.new_zeros((0,))
+
+            parent_size, ally_size, enemy_size = part_sizes
+            offset = 0
+
+            parent = raw.new_zeros(
+                (batch_size, ENTITY_EMBED)
+            )
+            if parent_size:
+                parent_values = merged_entities[
+                    offset : offset + parent_size
+                ]
+                parent = parent.index_copy(
+                    0,
+                    parent_active,
+                    parent_values,
+                )
+            offset += parent_size
+
+            ally_entity = merged_entities[
+                offset : offset + ally_size
+            ]
+            ally_presence = merged_presence[
+                offset : offset + ally_size
+            ]
+            if ally_size:
+                ally_active_norm = ally_flat_norm.index_select(
+                    0,
+                    ally_active,
+                )
+                communication = self.ally_communication_encoder(
+                    ally_active_norm[:, ENEMY_SIZE:ALLY_SIZE]
+                )
+                ally_embedding = self.ally_fuse(
+                    torch.cat(
+                        [ally_entity, communication],
+                        dim=1,
+                    )
+                )
+                ally_embedding = (
+                    ally_embedding
+                    * ally_presence.unsqueeze(1)
+                )
+            else:
+                ally_embedding = raw.new_zeros(
+                    (0, ENTITY_EMBED)
+                )
+            allies = self.ally_pool.forward_packed(
+                self_embedding,
+                ally_embedding,
+                ally_active,
+                ally_count,
+                ally_presence,
+            )
+            offset += ally_size
+
+            enemy_embedding = merged_entities[
+                offset : offset + enemy_size
+            ]
+            enemy_presence = merged_presence[
+                offset : offset + enemy_size
+            ]
+            enemies = self.enemy_pool.forward_packed(
+                self_embedding,
+                enemy_embedding,
+                enemy_active,
+                enemy_count,
+                enemy_presence,
+            )
+        else:
+            parent = self._encode_entities(
+                parent_norm,
+                parent_raw,
+            )[:, 0, :]
+
+            if ally_active is not None:
+                ally_embedding, ally_presence = (
+                    self._encode_allies_packed(
+                        ally_norm,
+                        ally_raw,
+                        ally_active,
+                    )
+                )
+                allies = self.ally_pool.forward_packed(
+                    self_embedding,
+                    ally_embedding,
+                    ally_active,
+                    ally_count,
+                    ally_presence,
+                )
+            else:
+                ally_embedding, ally_presence = self._encode_allies(
+                    ally_norm,
+                    ally_raw,
+                )
+                allies = self.ally_pool(
+                    self_embedding,
+                    ally_embedding,
+                    ally_presence,
+                )
+
+            if enemy_active is not None:
+                enemy_embedding, enemy_presence = (
+                    self._encode_entities_packed(
+                        enemy_norm,
+                        enemy_raw,
+                        enemy_active,
+                    )
+                )
+                enemies = self.enemy_pool.forward_packed(
+                    self_embedding,
+                    enemy_embedding,
+                    enemy_active,
+                    enemy_count,
+                    enemy_presence,
+                )
+            else:
+                enemy_embedding = self._encode_entities(
+                    enemy_norm,
+                    enemy_raw,
+                )
+                enemy_presence = torch.clamp(
+                    enemy_raw[:, :, 0],
+                    0.0,
+                    1.0,
+                )
+                enemies = self.enemy_pool(
+                    self_embedding,
+                    enemy_embedding,
+                    enemy_presence,
+                )
 
         weapon_norm = raw[
             :,
@@ -801,17 +1525,41 @@ class BeesStructuredObservationEncoder(nn.Module):
             :,
             MINING_START : MINING_START + MINING_COUNT * MINING_SIZE,
         ].reshape(-1, MINING_COUNT, MINING_SIZE)[:, :mining_count, :]
-        mining_entities, mining_presence = self._encode_set(
-            mining_norm,
-            mining_raw,
-            self.mining_encoder,
-            48,
+        mining_active = _packed_training_indices(
+            "mining",
+            raw.shape[0],
+            mining_count,
+            raw.device,
         )
-        mining = self.mining_pool(
-            self_embedding,
-            mining_entities,
-            mining_presence,
-        )
+        if mining_active is not None:
+            mining_entities, mining_presence = (
+                self._encode_set_packed(
+                    mining_norm,
+                    mining_raw,
+                    self.mining_encoder,
+                    48,
+                    mining_active,
+                )
+            )
+            mining = self.mining_pool.forward_packed(
+                self_embedding,
+                mining_entities,
+                mining_active,
+                mining_count,
+                mining_presence,
+            )
+        else:
+            mining_entities, mining_presence = self._encode_set(
+                mining_norm,
+                mining_raw,
+                self.mining_encoder,
+                48,
+            )
+            mining = self.mining_pool(
+                self_embedding,
+                mining_entities,
+                mining_presence,
+            )
 
         map_count = _slot_limit("map_objects", MAP_OBJECT_COUNT)
         map_norm = raw[
@@ -824,17 +1572,41 @@ class BeesStructuredObservationEncoder(nn.Module):
             MAP_OBJECT_START :
             MAP_OBJECT_START + MAP_OBJECT_COUNT * MAP_OBJECT_SIZE,
         ].reshape(-1, MAP_OBJECT_COUNT, MAP_OBJECT_SIZE)[:, :map_count, :]
-        map_entities, map_presence = self._encode_set(
-            map_norm,
-            map_raw,
-            self.map_object_encoder,
-            64,
+        map_active = _packed_training_indices(
+            "map_objects",
+            raw.shape[0],
+            map_count,
+            raw.device,
         )
-        map_objects = self.map_object_pool(
-            self_embedding,
-            map_entities,
-            map_presence,
-        )
+        if map_active is not None:
+            map_entities, map_presence = (
+                self._encode_set_packed(
+                    map_norm,
+                    map_raw,
+                    self.map_object_encoder,
+                    64,
+                    map_active,
+                )
+            )
+            map_objects = self.map_object_pool.forward_packed(
+                self_embedding,
+                map_entities,
+                map_active,
+                map_count,
+                map_presence,
+            )
+        else:
+            map_entities, map_presence = self._encode_set(
+                map_norm,
+                map_raw,
+                self.map_object_encoder,
+                64,
+            )
+            map_objects = self.map_object_pool(
+                self_embedding,
+                map_entities,
+                map_presence,
+            )
 
         collision_count = _slot_limit(
             "collisions",
@@ -850,44 +1622,76 @@ class BeesStructuredObservationEncoder(nn.Module):
             COLLISION_START :
             COLLISION_START + COLLISION_COUNT * COLLISION_SIZE,
         ].reshape(-1, COLLISION_COUNT, COLLISION_SIZE)[:, :collision_count, :]
-        collision_entities, collision_presence = self._encode_set(
-            collision_norm,
-            collision_raw,
-            self.collision_encoder,
-            64,
+        collision_active = _packed_training_indices(
+            "collisions",
+            raw.shape[0],
+            collision_count,
+            raw.device,
         )
-        collisions = self.collision_pool(
-            self_embedding,
-            collision_entities,
-            collision_presence,
-        )
+        if collision_active is not None:
+            collision_entities, collision_presence = (
+                self._encode_set_packed(
+                    collision_norm,
+                    collision_raw,
+                    self.collision_encoder,
+                    64,
+                    collision_active,
+                )
+            )
+            collisions = self.collision_pool.forward_packed(
+                self_embedding,
+                collision_entities,
+                collision_active,
+                collision_count,
+                collision_presence,
+            )
+        else:
+            collision_entities, collision_presence = self._encode_set(
+                collision_norm,
+                collision_raw,
+                self.collision_encoder,
+                64,
+            )
+            collisions = self.collision_pool(
+                self_embedding,
+                collision_entities,
+                collision_presence,
+            )
 
         objective = self.objective_encoder(
-            normalized[
-                :,
-                OBJECTIVE_START : OBJECTIVE_START + OBJECTIVE_SIZE,
-            ]
+            self._normalized_slice(
+                raw,
+                OBJECTIVE_START,
+                OBJECTIVE_SIZE,
+            )
         )
         navigation = self.navigation_encoder(
-            normalized[
-                :,
-                NAVIGATION_START : NAVIGATION_START + NAVIGATION_SIZE,
-            ]
+            self._normalized_slice(
+                raw,
+                NAVIGATION_START,
+                NAVIGATION_SIZE,
+            )
         )
         exploration = self.exploration_encoder(
-            normalized[
-                :,
-                EXPLORATION_START : EXPLORATION_START + EXPLORATION_SIZE,
-            ]
+            self._normalized_slice(
+                raw,
+                EXPLORATION_START,
+                EXPLORATION_SIZE,
+            )
         )
         tail = self.tail_encoder(
             torch.cat(
                 [
-                    normalized[
-                        :,
-                        EPISODE_PROGRESS_INDEX : EPISODE_PROGRESS_INDEX + 1,
-                    ],
-                    normalized[:, RESERVED_START:],
+                    self._normalized_slice(
+                        raw,
+                        EPISODE_PROGRESS_INDEX,
+                        1,
+                    ),
+                    self._normalized_slice(
+                        raw,
+                        RESERVED_START,
+                        RESERVED_SIZE,
+                    ),
                 ],
                 dim=1,
             )
@@ -1118,7 +1922,17 @@ class BeesStructuredNetworkBody(nn.Module):
                     value.index_select(0, indices)
                     for value in padded_inputs
                 ]
-                structured = observation_encoder(subset_inputs)
+                scope_token = set_training_packed_entity_scope(
+                    name
+                )
+                try:
+                    structured = observation_encoder(
+                        subset_inputs
+                    )
+                finally:
+                    reset_training_packed_entity_scope(
+                        scope_token
+                    )
                 context = structured[:, :CONTEXT_SIZE]
                 weapons = structured[:, weapon_start:weapon_end]
                 faction_encoding = trunk(context)
@@ -1161,12 +1975,20 @@ class BeesStructuredNetworkBody(nn.Module):
                     0.0,
                     1.0,
                 )
-                bee_structured = self.bee_observation_encoder(
-                    subset_inputs
+                scope_token = set_training_packed_entity_scope(
+                    "mixed"
                 )
-                human_structured = self.human_observation_encoder(
-                    subset_inputs
-                )
+                try:
+                    bee_structured = self.bee_observation_encoder(
+                        subset_inputs
+                    )
+                    human_structured = self.human_observation_encoder(
+                        subset_inputs
+                    )
+                finally:
+                    reset_training_packed_entity_scope(
+                        scope_token
+                    )
                 structured = (
                     bee_structured * weights
                     + human_structured * (1.0 - weights)
@@ -1233,12 +2055,27 @@ class BeesStructuredNetworkBody(nn.Module):
                         device=inputs[0].device,
                     )
 
-                def encode_single_faction(indices, observation_encoder, trunk):
+                def encode_single_faction(
+                    name,
+                    indices,
+                    observation_encoder,
+                    trunk,
+                ):
                     subset_inputs = [
                         value.index_select(0, indices)
                         for value in inputs
                     ]
-                    structured = observation_encoder(subset_inputs)
+                    scope_token = set_training_packed_entity_scope(
+                        name
+                    )
+                    try:
+                        structured = observation_encoder(
+                            subset_inputs
+                        )
+                    finally:
+                        reset_training_packed_entity_scope(
+                            scope_token
+                        )
                     context = structured[:, :CONTEXT_SIZE]
                     weapons = structured[:, weapon_start:weapon_end]
                     faction_encoding = trunk(context)
@@ -1254,6 +2091,7 @@ class BeesStructuredNetworkBody(nn.Module):
                         0,
                         indices,
                         encode_single_faction(
+                            "bee",
                             indices,
                             self.bee_observation_encoder,
                             self.bee_trunk,
@@ -1265,6 +2103,7 @@ class BeesStructuredNetworkBody(nn.Module):
                         0,
                         indices,
                         encode_single_faction(
+                            "human",
                             indices,
                             self.human_observation_encoder,
                             self.human_trunk,
@@ -1277,12 +2116,24 @@ class BeesStructuredNetworkBody(nn.Module):
                         for value in inputs
                     ]
                     weights = bee_weight.index_select(0, indices)
-                    bee_structured = self.bee_observation_encoder(
-                        subset_inputs
+                    scope_token = set_training_packed_entity_scope(
+                        "mixed"
                     )
-                    human_structured = self.human_observation_encoder(
-                        subset_inputs
-                    )
+                    try:
+                        bee_structured = (
+                            self.bee_observation_encoder(
+                                subset_inputs
+                            )
+                        )
+                        human_structured = (
+                            self.human_observation_encoder(
+                                subset_inputs
+                            )
+                        )
+                    finally:
+                        reset_training_packed_entity_scope(
+                            scope_token
+                        )
                     structured = (
                         bee_structured * weights
                         + human_structured * (1.0 - weights)

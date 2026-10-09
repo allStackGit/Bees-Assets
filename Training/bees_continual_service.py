@@ -253,13 +253,26 @@ def _batch_size_from_config(text: str) -> Optional[int]:
     return int(matches[0][1]) if matches else None
 
 
+def _checkpoint_interval_from_config(text: str) -> Optional[int]:
+    matches = re.findall(
+        r"(?m)^\s*checkpoint_interval:\s*(\d+)\s*(?:#.*)?$",
+        text,
+    )
+    if len(matches) > 1:
+        raise ValueError(
+            "Trainer config has multiple checkpoint_interval entries; "
+            "cannot determine a single resumable checkpoint cadence."
+        )
+    return int(matches[0]) if matches else None
+
+
 def _normalize_resume_safe_generation_settings(text: str) -> str:
     """Normalize trainer settings that may change while resuming one generation.
 
     Generation YAML files remain immutable audit records. Device placement, PPO
-    minibatch size, and the entropy beta can change without invalidating the
-    ML-Agents checkpoint shape, so a resumed generation may select a new immutable
-    revision containing those values. Other trainer changes remain fail-closed.
+    minibatch size, entropy beta, and checkpoint interval can change without
+    invalidating the ML-Agents checkpoint shape, so a resumed generation may
+    select a new immutable revision. Other trainer changes remain fail-closed.
     """
 
     lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
@@ -268,6 +281,7 @@ def _normalize_resume_safe_generation_settings(text: str) -> str:
     normalized = []
     batch_size_count = 0
     beta_count = 0
+    checkpoint_count = 0
     for line in lines:
         stripped = line.strip()
         indent = len(line) - len(line.lstrip())
@@ -298,6 +312,10 @@ def _normalize_resume_safe_generation_settings(text: str) -> str:
             beta_count += 1
             normalized.append(" " * indent + "beta: <runtime-entropy-beta>")
             continue
+        if re.fullmatch(r"checkpoint_interval:\s*\d+\s*(?:#.*)?", stripped):
+            checkpoint_count += 1
+            normalized.append(" " * indent + "checkpoint_interval: <runtime-checkpoint-interval>")
+            continue
         normalized.append(line)
 
     if batch_size_count > 1:
@@ -309,6 +327,11 @@ def _normalize_resume_safe_generation_settings(text: str) -> str:
         raise ValueError(
             "Trainer config has multiple beta entries; cannot determine a "
             "single resumable entropy setting."
+        )
+    if checkpoint_count > 1:
+        raise ValueError(
+            "Trainer config has multiple checkpoint_interval entries; "
+            "cannot determine a single resumable checkpoint cadence."
         )
     return "\n".join(normalized)
 
@@ -380,6 +403,11 @@ def write_generation_config(options: ServiceOptions, index: int) -> Path:
         candidate_beta = _entropy_beta_from_config(candidate_text)
         if candidate_beta != existing_beta:
             suffix_parts.append(f"beta-{format(candidate_beta, '.12g')}")
+
+        existing_checkpoint = _checkpoint_interval_from_config(existing_text)
+        candidate_checkpoint = _checkpoint_interval_from_config(candidate_text)
+        if candidate_checkpoint != existing_checkpoint:
+            suffix_parts.append(f"checkpoint-{candidate_checkpoint}")
 
         if suffix_parts:
             suffix = "-" + "-".join(suffix_parts)

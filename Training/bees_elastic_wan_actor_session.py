@@ -272,6 +272,111 @@ class ElasticActorSession(worker.ActorSession):
             # there is no remaining worker that can emit stale steps for this worker id.
             pass
 
+    def _live_resize_startup_timeout_seconds(self) -> float:
+        settings = getattr(
+            getattr(self, "central_run_options", None),
+            "env_settings",
+            None,
+        )
+        if settings is None:
+            settings = getattr(
+                getattr(self.manager, "run_options", None),
+                "env_settings",
+                None,
+            )
+        try:
+            timeout_wait = float(getattr(settings, "timeout_wait", 60.0))
+        except (TypeError, ValueError):
+            timeout_wait = 60.0
+        # ML-Agents' Unity communicator gets timeout_wait seconds to establish the
+        # player connection. Give the subsequent RESET/spec handshake a small margin,
+        # but never allow a live capacity probe to block rollout indefinitely.
+        return max(15.0, timeout_wait + 10.0)
+
+    def _recv_scale_up_response(
+        self,
+        candidate,
+        *,
+        deadline: float,
+        expected_command,
+        local_worker_id: int,
+        phase: str,
+    ):
+        while not self.stop.is_set():
+            remaining = deadline - time.monotonic()
+            if remaining <= 0.0:
+                raise TimeoutError(
+                    f"new Unity worker {local_worker_id} did not complete {phase} "
+                    f"within {self._live_resize_startup_timeout_seconds():.1f}s"
+                )
+            if candidate.conn.poll(min(0.25, remaining)):
+                response = candidate.recv()
+                if response.cmd != expected_command:
+                    raise RuntimeError(
+                        f"new Unity worker {local_worker_id} returned {response.cmd!r} "
+                        f"instead of {expected_command.name} during {phase}"
+                    )
+                return response
+            if not candidate.process.is_alive():
+                raise RuntimeError(
+                    f"new Unity worker {local_worker_id} exited during {phase}"
+                )
+            self._report_runtime_progress()
+            self._write_throughput_metrics()
+        raise RuntimeError(
+            f"new Unity worker {local_worker_id} startup interrupted"
+        )
+
+    def _retire_unmanaged_scale_up_worker(self, candidate, local_worker_id: int) -> None:
+        """Retire a failed candidate that was never admitted to manager.env_workers."""
+
+        manager = self.manager
+        try:
+            candidate.request_close()
+        except Exception:
+            pass
+        try:
+            candidate.process.join(timeout=0.5)
+        except Exception:
+            pass
+        if candidate.process.is_alive():
+            candidate.process.terminate()
+            candidate.process.join(timeout=2.0)
+        if candidate.process.is_alive():
+            raise RuntimeError(
+                f"Unity worker {local_worker_id} did not stop after failed live scale-up"
+            )
+
+        # A failed ML-Agents subprocess publishes ENV_EXITED/CLOSED on the shared
+        # manager queue even though this candidate was never admitted to env_workers.
+        # Remove only that candidate's notifications before ordinary manager stepping
+        # resumes; preserve every response from the existing live environments.
+        buffered = []
+        quiet_until = time.monotonic() + 0.25
+        while time.monotonic() < quiet_until:
+            try:
+                response = manager.step_queue.get(timeout=0.05)
+            except queue.Empty:
+                continue
+            if int(response.worker_id) != int(local_worker_id):
+                buffered.append(response)
+        for response in buffered:
+            manager.step_queue.put(response)
+
+        try:
+            candidate.conn.close()
+        except Exception:
+            pass
+        env_path = getattr(self, "env_path", None)
+        local_base_port = getattr(self, "local_base_port", None)
+        if env_path is not None and isinstance(local_base_port, int):
+            worker._terminate_detached_actor_unity(
+                env_path,
+                local_base_port + local_worker_id,
+                reason=f"failed live resize worker {local_worker_id}",
+                port_count=1,
+            )
+
     def _scale_up_one(self, requested_target: int) -> bool:
         from mlagents.trainers.env_manager import EnvironmentStep
         from mlagents.trainers.subprocess_env_manager import EnvironmentCommand
@@ -280,17 +385,22 @@ class ElasticActorSession(worker.ActorSession):
         local_worker_id = len(manager.env_workers)
         if local_worker_id >= MAX_DYNAMIC_ENVS:
             return False
+
+        # Keep the candidate outside manager.env_workers until it has completed
+        # RESET + behavior-spec validation. This prevents a half-started worker from
+        # participating in ordinary rollout or ML-Agents restart handling.
         new_worker = manager.create_worker(
             local_worker_id,
             manager.step_queue,
             manager.env_factory,
             manager.run_options,
         )
-        manager.env_workers.append(new_worker)
-        manager.recent_restart_timestamps.append([])
-        manager.restart_counts.append(0)
-        manager.workers_alive += 1
+        admitted = False
+        previous_count = int(self.env_count)
         try:
+            timeout_seconds = self._live_resize_startup_timeout_seconds()
+            deadline = time.monotonic() + timeout_seconds
+
             # Match normal SubprocessEnvManager startup ordering: establish the current
             # environment parameters and reset the Unity instance before inspecting its
             # behavior specifications. Bees assigns episode/team behavior state during reset,
@@ -299,27 +409,46 @@ class ElasticActorSession(worker.ActorSession):
             if parameters is not None:
                 new_worker.send(EnvironmentCommand.ENVIRONMENT_PARAMETERS, parameters)
             new_worker.send(EnvironmentCommand.RESET, self._current_env_config)
-            reset_response = new_worker.recv()
-            if reset_response.cmd != EnvironmentCommand.RESET:
-                raise RuntimeError(
-                    f"new Unity worker {local_worker_id} returned {reset_response.cmd!r} "
-                    "instead of RESET"
-                )
+            reset_response = self._recv_scale_up_response(
+                new_worker,
+                deadline=deadline,
+                expected_command=EnvironmentCommand.RESET,
+                local_worker_id=local_worker_id,
+                phase="RESET",
+            )
 
             new_worker.send(EnvironmentCommand.BEHAVIOR_SPECS)
-            specs_response = new_worker.recv()
+            specs_response = self._recv_scale_up_response(
+                new_worker,
+                deadline=deadline,
+                expected_command=EnvironmentCommand.BEHAVIOR_SPECS,
+                local_worker_id=local_worker_id,
+                phase="behavior-spec validation",
+            )
             candidate_specs = specs_response.payload
-            if not isinstance(candidate_specs, Mapping) or not self._behavior_specs_match(candidate_specs):
+            if (
+                not isinstance(candidate_specs, Mapping)
+                or not self._behavior_specs_match(candidate_specs)
+            ):
                 raise RuntimeError(
                     f"new Unity worker {local_worker_id} behavior specifications do not match "
                     "the live actor session after reset"
                 )
+
+            # Only now make the worker visible to ML-Agents. Existing environments were
+            # untouched throughout candidate startup, and a failed candidate has no agent
+            # state to unwind.
+            manager.env_workers.append(new_worker)
+            manager.recent_restart_timestamps.append([])
+            manager.restart_counts.append(0)
+            manager.workers_alive += 1
+            admitted = True
+
             initial = EnvironmentStep(reset_response.payload, local_worker_id, {}, {})
             mapped = worker._remap_step(initial, self.worker_offset)
             new_worker.previous_step = mapped
             manager.process_steps([mapped])
 
-            previous_count = int(self.env_count)
             self.env_count = previous_count + 1
             if not self._register_current_capacity():
                 self._cleanup_worker_agent_state(self.worker_offset + local_worker_id)
@@ -338,15 +467,25 @@ class ElasticActorSession(worker.ActorSession):
             return True
         except Exception as exc:
             cleanup_error = None
-            if manager.env_workers and manager.env_workers[-1] is new_worker:
-                try:
-                    self._cleanup_worker_agent_state(self.worker_offset + local_worker_id)
+            try:
+                if admitted and manager.env_workers and manager.env_workers[-1] is new_worker:
+                    self._cleanup_worker_agent_state(
+                        self.worker_offset + local_worker_id
+                    )
                     if not new_worker.waiting:
                         self._close_tail_worker()
                     else:
                         new_worker.request_close()
-                except Exception as cleanup_exc:
-                    cleanup_error = cleanup_exc
+                elif not admitted:
+                    self._retire_unmanaged_scale_up_worker(
+                        new_worker,
+                        local_worker_id,
+                    )
+            except Exception as cleanup_exc:
+                cleanup_error = cleanup_exc
+
+            self.env_count = previous_count
+            self.client.env_count = previous_count
             if cleanup_error is not None:
                 raise RuntimeError(
                     "live resize candidate failed and could not be retired cleanly: "

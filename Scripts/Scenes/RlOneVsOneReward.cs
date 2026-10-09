@@ -158,12 +158,19 @@ internal static class RlOneVsOneReward
 
     /// <summary>
     /// Timeouts remain failures for both sides so avoiding combat is never preferable to engaging.
-    /// A simultaneous elimination is a neutral terminal draw; previously earned TSV/discovery shaping
-    /// remains untouched and can still distinguish which side fought the more valuable exchange.
+    /// A side that loses by eliminating itself through neutral geometry, hazards, friendly damage,
+    /// or an explicitly self-inflicted action receives the same terminal value as a timeout. Mutual
+    /// elimination remains a draw so legitimate sacrificial attacks are not penalized. When fleet
+    /// value is destroyed, existing TSV loss shaping makes a unilateral self-elimination strictly
+    /// worse than waiting out the clock, while an ordinary opponent-caused loss remains preferable.
     /// </summary>
-    internal static float CalculateTerminalReward(int side, int winningSide, bool timedOut)
+    internal static float CalculateTerminalReward(
+        int side,
+        int winningSide,
+        bool timedOut,
+        bool nonOpponentElimination = false)
     {
-        if (timedOut)
+        if (timedOut || nonOpponentElimination)
         {
             return TimeoutReward;
         }

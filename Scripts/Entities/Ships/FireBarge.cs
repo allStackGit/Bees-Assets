@@ -58,6 +58,11 @@ namespace Assets.Scripts.Entities.Ships
             }
 
             string rlDeathCause = _rlSelfDetonationRequested && !endKill ? "self_detonate" : null;
+            global::RlOneVsOneEpisodeCoordinator.RecordShipDeathAttribution(
+                this,
+                killer,
+                endKill,
+                endKill || !string.IsNullOrEmpty(rlDeathCause));
             global::RlOneVsOneEpisodeDiagnostics.RecordShipDeath(this, killer, endKill, rlDeathCause);
 
             Bomb.ReleaseTargetReservation();

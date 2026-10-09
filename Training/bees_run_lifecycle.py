@@ -261,6 +261,7 @@ def contract_payload(assets_root: Path) -> dict[str, Any]:
     trainer_semantic_sources = {
         "structured_policy_source_sha256": assets_root / "Training" / "bees_mlagents_structured_policy.py",
         "optimizer_compat_source_sha256": assets_root / "Training" / "bees_mlagents_ppo_compat.py",
+        "factorized_poca_source_sha256": assets_root / "Training" / "bees_mlagents_factorized_poca.py",
         "learner_launcher_source_sha256": assets_root / "Training" / "bees_mlagents_learn.py",
     }
     for path in (
@@ -309,6 +310,7 @@ def contract_payload(assets_root: Path) -> dict[str, Any]:
 TRAINER_IMPLEMENTATION_AUDIT_FIELDS = (
     "structured_policy_source_sha256",
     "optimizer_compat_source_sha256",
+    "factorized_poca_source_sha256",
     "learner_launcher_source_sha256",
 )
 

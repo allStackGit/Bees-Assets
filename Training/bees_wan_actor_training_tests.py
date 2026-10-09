@@ -516,7 +516,7 @@ class WanOptionTests(unittest.TestCase):
 
         session._retry_broker_unavailable.assert_called_once()
         session._synchronize_state.assert_called_once_with()
-        session._report_runtime_progress.assert_called_once_with()
+        session._report_runtime_progress.assert_not_called()
 
     def test_missing_initial_reset_is_central_availability_not_session_failure(self):
         session = object.__new__(actor.ActorSession)
