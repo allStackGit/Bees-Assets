@@ -115,6 +115,7 @@ _ORIGINAL_POCA_TRAJECTORY_VALUES = None
 _ORIGINAL_POCA_UPDATE_POLICY = None
 _ORIGINAL_POCA_ADVANCE = None
 _ORIGINAL_POCA_SAVE_MODEL = None
+_ORIGINAL_POCA_APPEND_UPDATE_BUFFER = None
 _ORIGINAL_MULTI_AGENT_FORWARD = None
 _ORIGINAL_TRUST_REGION_POLICY_LOSS = None
 _ORIGINAL_MASKED_MEAN = None
@@ -868,6 +869,59 @@ def _poca_groupmate_counts(policy, batch, batch_size):
     except TypeError:
         return None
     return counts
+
+
+def _compact_factorized_poca_buffer_group_observations(buffer):
+    """Store only the factorized critic's groupmate inputs in PPO buffers.
+
+    Full focal observations remain untouched. Trajectory value/bootstrap
+    inference runs before the persistent PPO-buffer append.
+    """
+
+    import numpy as np
+    from mlagents.trainers.trajectory import GroupObsUtil
+    from bees_mlagents_factorized_poca import (
+        GROUP_COMPACT_WIDTH,
+        compact_group_observation_numpy,
+    )
+
+    field = buffer[GroupObsUtil.get_name_at(0)]
+    if not field:
+        return
+
+    groups = []
+    pending = []
+    destinations = []
+
+    def project_pending():
+        if not pending:
+            return
+        # Bound temporary projection storage independently of group size.
+        compact = compact_group_observation_numpy(np.stack(pending, axis=0))
+        for (destination, position), row in zip(destinations, compact):
+            destination[position] = row
+        pending.clear()
+        destinations.clear()
+
+    for original_group in field:
+        group = [None] * len(original_group)
+        groups.append(group)
+        for position, original in enumerate(original_group):
+            values = np.asarray(original, dtype=np.float32)
+            if values.ndim != 1:
+                raise RuntimeError("POCA groupmate observation must be one vector.")
+            if int(values.shape[0]) == GROUP_COMPACT_WIDTH:
+                group[position] = values
+            elif int(values.shape[0]) == BEES_OBSERVATION_SIZE:
+                pending.append(values)
+                destinations.append((group, position))
+                if len(pending) >= 128:
+                    project_pending()
+            else:
+                raise RuntimeError("Unexpected POCA groupmate observation width.")
+
+    project_pending()
+    field.set(groups)
 
 
 def _poca_groupmate_valid_row_indices(groupmate_counts):
@@ -5348,6 +5402,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
     global _ORIGINAL_POCA_UPDATE_POLICY
     global _ORIGINAL_POCA_ADVANCE
     global _ORIGINAL_POCA_SAVE_MODEL
+    global _ORIGINAL_POCA_APPEND_UPDATE_BUFFER
     global _ORIGINAL_MULTI_AGENT_FORWARD
     global _ORIGINAL_TRUST_REGION_POLICY_LOSS
     global _ORIGINAL_MASKED_MEAN
@@ -5367,6 +5422,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
     original_poca_update_policy = POCATrainer._update_policy
     original_poca_advance = POCATrainer.advance
     original_poca_save_model = POCATrainer.save_model
+    original_poca_append_update_buffer = POCATrainer._append_to_update_buffer
     original_poca_process_trajectory = POCATrainer._process_trajectory
     original_multi_agent_forward = MultiAgentNetworkBody.forward
     original_policy_loss = ModelUtils.trust_region_policy_loss
@@ -5979,6 +6035,12 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             trainer._bees_poca_staged_trajectories = deque()
             trainer._bees_poca_staged_experiences = 0
 
+    def compact_poca_append_update_buffer(self, trajectory_buffer):
+        # ML-Agents' stock trajectory handler also runs at bookkeeping boundaries.
+        if getattr(self.optimizer, "_bees_factorized_poca", False):
+            _compact_factorized_poca_buffer_group_observations(trajectory_buffer)
+        return original_poca_append_update_buffer(self, trajectory_buffer)
+
     def _stage_poca_trajectories(trainer):
         from mlagents.trainers.agent_processor import AgentManagerQueue
 
@@ -6009,6 +6071,8 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                     break
                 queried = True
                 buffer = trajectory.to_agentbuffer()
+                if getattr(trainer.optimizer, "_bees_factorized_poca", False):
+                    _compact_factorized_poca_buffer_group_observations(buffer)
                 staged.append((trajectory, buffer))
                 staged_experiences += len(trajectory.steps)
         trainer._bees_poca_staged_experiences = staged_experiences
@@ -7729,6 +7793,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
     POCATrainer._update_policy = weighted_poca_update_policy
     POCATrainer.advance = batched_poca_advance
     POCATrainer.save_model = pipelined_poca_save_model
+    POCATrainer._append_to_update_buffer = compact_poca_append_update_buffer
     MultiAgentNetworkBody.forward = optimized_multi_agent_forward
     ModelUtils.trust_region_policy_loss = staticmethod(masked_policy_loss)
     ModelUtils.masked_mean = staticmethod(weighted_masked_mean)
@@ -7743,6 +7808,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
     _ORIGINAL_POCA_UPDATE_POLICY = original_poca_update_policy
     _ORIGINAL_POCA_ADVANCE = original_poca_advance
     _ORIGINAL_POCA_SAVE_MODEL = original_poca_save_model
+    _ORIGINAL_POCA_APPEND_UPDATE_BUFFER = original_poca_append_update_buffer
     _ORIGINAL_MULTI_AGENT_FORWARD = original_multi_agent_forward
     _ORIGINAL_TRUST_REGION_POLICY_LOSS = original_policy_loss
     _ORIGINAL_MASKED_MEAN = original_masked_mean
@@ -7762,6 +7828,7 @@ def restore_inactive_continuous_action_masking() -> None:
     global _ORIGINAL_POCA_UPDATE_POLICY
     global _ORIGINAL_POCA_ADVANCE
     global _ORIGINAL_POCA_SAVE_MODEL
+    global _ORIGINAL_POCA_APPEND_UPDATE_BUFFER
     global _ORIGINAL_MULTI_AGENT_FORWARD
     global _ORIGINAL_TRUST_REGION_POLICY_LOSS
     global _ORIGINAL_MASKED_MEAN
@@ -7789,6 +7856,7 @@ def restore_inactive_continuous_action_masking() -> None:
     POCATrainer._update_policy = _ORIGINAL_POCA_UPDATE_POLICY
     POCATrainer.advance = _ORIGINAL_POCA_ADVANCE
     POCATrainer.save_model = _ORIGINAL_POCA_SAVE_MODEL
+    POCATrainer._append_to_update_buffer = _ORIGINAL_POCA_APPEND_UPDATE_BUFFER
     MultiAgentNetworkBody.forward = _ORIGINAL_MULTI_AGENT_FORWARD
     ModelUtils.trust_region_policy_loss = staticmethod(
         _ORIGINAL_TRUST_REGION_POLICY_LOSS
@@ -7816,6 +7884,7 @@ def restore_inactive_continuous_action_masking() -> None:
     _ORIGINAL_POCA_UPDATE_POLICY = None
     _ORIGINAL_POCA_ADVANCE = None
     _ORIGINAL_POCA_SAVE_MODEL = None
+_ORIGINAL_POCA_APPEND_UPDATE_BUFFER = None
     _ORIGINAL_MULTI_AGENT_FORWARD = None
     _ORIGINAL_TRUST_REGION_POLICY_LOSS = None
     _ORIGINAL_MASKED_MEAN = None
