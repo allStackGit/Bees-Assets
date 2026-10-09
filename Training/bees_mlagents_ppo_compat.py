@@ -3387,17 +3387,15 @@ def _poca_expand_prepared_group_obs(prepared, device):
     return members
 
 
-def _poca_group_obs_placeholders(prepared, device, dedup_plan):
-    """Create only POCA's NaN-validity surface when exact dedup mappings own values."""
-
-    from mlagents.torch_utils import torch
+def _poca_group_obs_uses_dedup(prepared, dedup_plan):
+    """Check whether exact mappings make the prepared full-width values redundant."""
 
     if (
         not isinstance(prepared, _PocaPreparedGroupObs)
         or len(prepared.fields) != 1
         or not isinstance(dedup_plan, dict)
     ):
-        return None
+        return False
     positions = prepared.fields[0]
     mappings = dedup_plan.get("group_inverse")
     if (
@@ -3405,11 +3403,21 @@ def _poca_group_obs_placeholders(prepared, device, dedup_plan):
         or len(mappings) != len(positions)
         or any(position is None for position in positions)
     ):
-        return None
-    for position, mapping in zip(positions, mappings):
-        if int(mapping.numel()) != len(position.valid_rows):
-            return None
+        return False
+    return all(
+        int(mapping.numel()) == len(position.valid_rows)
+        for position, mapping in zip(positions, mappings)
+    )
 
+
+def _poca_group_obs_placeholders(prepared, device, dedup_plan):
+    """Create only POCA's NaN-validity surface when exact dedup mappings own values."""
+
+    from mlagents.torch_utils import torch
+
+    if not _poca_group_obs_uses_dedup(prepared, dedup_plan):
+        return None
+    positions = prepared.fields[0]
     members = []
     for position in positions:
         placeholder = torch.full(
@@ -3878,6 +3886,21 @@ def _poca_pin_selected_minibatch(cached):
             return tensor.pin_memory()
         return tensor
 
+    if isinstance(cached, dict) and _poca_group_obs_uses_dedup(
+        cached.get("prepared_groupmate_obs"),
+        cached.get("observation_dedup"),
+    ):
+        # Only the unique observations are consumed by the critic. Keep the
+        # redundant prepared values on ordinary CPU memory instead of pinning
+        # another full-width copy for every queued minibatch.
+        selected = {
+            key: value
+            for key, value in cached.items()
+            if key != "prepared_groupmate_obs"
+        }
+        selected = _poca_transform_selected_minibatch(selected, pin)
+        selected["prepared_groupmate_obs"] = cached["prepared_groupmate_obs"]
+        return selected
     return _poca_transform_selected_minibatch(cached, pin)
 
 
@@ -4450,13 +4473,25 @@ class _PocaCpuMinibatchPreparer:
 
         transfer_started = time.perf_counter()
         marker = _poca_cuda_timing_begin("cpu_prepare_transfer")
-        selected = _poca_move_selected_minibatch(
-            selected,
-            self.device,
-        )
+        # Resolve the validity-only surface before moving tensors. A successful
+        # dedup plan owns the critic's exact observation values; copying the
+        # prepared full-width rows too only consumes transfer time and VRAM.
         prepared_group = selected.pop(
             "prepared_groupmate_obs",
             None,
+        )
+        placeholders = (
+            _poca_group_obs_placeholders(
+                prepared_group,
+                self.device,
+                selected.get("observation_dedup"),
+            )
+            if not self.cache.get("factorized_group_obs", False)
+            else None
+        )
+        selected = _poca_move_selected_minibatch(
+            selected,
+            self.device,
         )
         if prepared_group is not None:
             if self.cache.get(
@@ -4470,15 +4505,6 @@ class _PocaCpuMinibatchPreparer:
                     )
                 )
             else:
-                placeholders = (
-                    _poca_group_obs_placeholders(
-                        prepared_group,
-                        self.device,
-                        selected.get("observation_dedup"),
-                    )
-                    if selected.get("observation_dedup") is not None
-                    else None
-                )
                 selected["groupmate_obs"] = (
                     placeholders
                     if placeholders is not None
