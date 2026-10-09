@@ -831,6 +831,10 @@ def compact_group_observation_numpy(raw):
     single = values.ndim == 1
     if single:
         values = values.reshape(1, -1)
+    # PPO buffers already carry this exact projection after trajectory-value
+    # evaluation.  Keep the projector idempotent for the packed/ragged paths.
+    if values.ndim == 2 and int(values.shape[1]) == GROUP_COMPACT_WIDTH:
+        return values[0] if single else values
     if (
         values.ndim != 2
         or int(values.shape[1]) != BEES_OBSERVATION_SIZE
