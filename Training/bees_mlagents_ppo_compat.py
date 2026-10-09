@@ -2100,7 +2100,8 @@ def _process_prepared_poca_trajectory_batch(trainer, trajectories, buffers):
         live_buffers = [buffers[index] for index in missing]
         values, baselines, next_values = _evaluate_poca_trajectory_batch(
             trainer,
-            _merge_agent_buffers(live_buffers),
+            merged if len(missing) == len(buffers)
+            else _merge_agent_buffers(live_buffers),
             live_trajectories,
         )
         offset = 0
