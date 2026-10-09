@@ -659,8 +659,8 @@ internal sealed class RlCombatPerception
                 Vector2 velocity = collisionAsteroid.Body != null
                     ? GetLevelLocalVelocity(ship.Level, collisionAsteroid.Body.linearVelocity)
                     : Vector2.zero;
-                float healthFraction = collisionAsteroid.OriginalHealth > 0
-                    ? Mathf.Clamp01((float)collisionAsteroid.Health / collisionAsteroid.OriginalHealth)
+                float healthFraction = collisionAsteroid.EffectiveMaxHealth > 0
+                    ? Mathf.Clamp01((float)collisionAsteroid.Health / collisionAsteroid.EffectiveMaxHealth)
                     : 0f;
                 _collisionAsteroidCandidates.Add(new ObservedCollisionAsteroid(
                     collisionAsteroid.Id,
