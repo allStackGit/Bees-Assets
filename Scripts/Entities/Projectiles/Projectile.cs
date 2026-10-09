@@ -172,9 +172,17 @@ namespace Assets.Scripts.Entities.Projectiles
 
         public void DamageObstacle(CollisionAsteroid asteroid)
         {
+            if (asteroid == null || asteroid.IsDead)
+            {
+                return;
+            }
+
             asteroid.Health -= Power;
             if (asteroid.Health <= 0)
             {
+                // Includes direct projectiles and their explosion projectiles. Record before
+                // Kill returns pooled asteroids (and shards) to their respective pools.
+                global::RlOneVsOneEpisodeDiagnostics.RecordCollisionAsteroidProjectileKill(Shooter, asteroid);
                 asteroid.Kill(false);
             }
             else if (asteroid.CheckForCrackedSprite())
