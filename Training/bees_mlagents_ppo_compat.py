@@ -3493,9 +3493,6 @@ def _poca_current_obs_slot_limits(current_obs):
         OBSERVED_WEAPON_SIZE,
         PARENT_SIZE,
         PARENT_START,
-        SELF_WEAPON_START,
-        SELF_WEAPON_SIZE,
-        BEES_WEAPON_SLOTS,
     )
 
     if len(current_obs) != 1:
