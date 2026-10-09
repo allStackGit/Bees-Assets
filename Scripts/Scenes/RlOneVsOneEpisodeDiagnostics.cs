@@ -183,6 +183,8 @@ internal static class RlOneVsOneEpisodeDiagnostics
         internal readonly int[] CollisionAsteroidHits = new int[2];
         internal readonly int[] CollisionAsteroidDamage = new int[2];
         internal readonly int[] CollisionAsteroidDeaths = new int[2];
+        internal readonly int[] CollisionAsteroidProjectileKills = new int[2];
+        internal readonly int[] CollisionAsteroidProjectileShardKills = new int[2];
         internal readonly int[] MiningEvents = new int[2];
         internal readonly int[] ResourcesMined = new int[2];
         internal readonly Dictionary<string, int>[] StaticObstacleDeathsByShipType =
@@ -428,6 +430,23 @@ internal static class RlOneVsOneEpisodeDiagnostics
         return EnvironmentSnapshot.FromLevel(level);
     }
 
+    // Called at the lethal projectile impact, before the asteroid returns to its pool.
+    // Projectile explosions use the same damage path, so count both bullets and blast hits.
+    internal static void RecordCollisionAsteroidProjectileKill(Ship shooter, CollisionAsteroid asteroid)
+    {
+        if (asteroid == null || !TryGetSideIndex(shooter, out ArenaState state, out int sideIndex) ||
+            asteroid.Level != state.Level)
+        {
+            return;
+        }
+
+        state.CollisionAsteroidProjectileKills[sideIndex]++;
+        if (asteroid.IsShard)
+        {
+            state.CollisionAsteroidProjectileShardKills[sideIndex]++;
+        }
+    }
+
     internal static string BuildEnvironmentEpisodeFields(Level level)
     {
         if (!TryGetState(level, out ArenaState state))
@@ -437,6 +456,7 @@ internal static class RlOneVsOneEpisodeDiagnostics
                    "bee_static_contacts=0 human_static_contacts=0 bee_static_deaths=0 human_static_deaths=0 " +
                    "bee_border_contacts=0 human_border_contacts=0 bee_border_deaths=0 human_border_deaths=0 " +
                    "bee_asteroid_hits=0 human_asteroid_hits=0 bee_asteroid_damage=0 human_asteroid_damage=0 bee_asteroid_deaths=0 human_asteroid_deaths=0 " +
+                   "bee_asteroid_projectile_kills=0 human_asteroid_projectile_kills=0 bee_asteroid_projectile_shard_kills=0 human_asteroid_projectile_shard_kills=0 " +
                    "bee_mining_events=0 human_mining_events=0 bee_resources_mined=0 human_resources_mined=0 " +
                    "bee_mining_asteroids_mined=0 human_mining_asteroids_mined=0 bee_mining_asteroids_depleted=0 human_mining_asteroids_depleted=0";
         }
@@ -451,6 +471,8 @@ internal static class RlOneVsOneEpisodeDiagnostics
                $"bee_asteroid_hits={state.CollisionAsteroidHits[0]} human_asteroid_hits={state.CollisionAsteroidHits[1]} " +
                $"bee_asteroid_damage={state.CollisionAsteroidDamage[0]} human_asteroid_damage={state.CollisionAsteroidDamage[1]} " +
                $"bee_asteroid_deaths={state.CollisionAsteroidDeaths[0]} human_asteroid_deaths={state.CollisionAsteroidDeaths[1]} " +
+               $"bee_asteroid_projectile_kills={state.CollisionAsteroidProjectileKills[0]} human_asteroid_projectile_kills={state.CollisionAsteroidProjectileKills[1]} " +
+               $"bee_asteroid_projectile_shard_kills={state.CollisionAsteroidProjectileShardKills[0]} human_asteroid_projectile_shard_kills={state.CollisionAsteroidProjectileShardKills[1]} " +
                $"bee_mining_events={state.MiningEvents[0]} human_mining_events={state.MiningEvents[1]} " +
                $"bee_resources_mined={state.ResourcesMined[0]} human_resources_mined={state.ResourcesMined[1]} " +
                $"bee_mining_asteroids_mined={state.MinedAsteroidIds[0].Count} human_mining_asteroids_mined={state.MinedAsteroidIds[1].Count} " +
