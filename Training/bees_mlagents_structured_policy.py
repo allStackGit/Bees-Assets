@@ -640,6 +640,7 @@ class BeesStructuredObservationEncoder(nn.Module):
         self,
         normalized: torch.Tensor,
         raw: torch.Tensor,
+        active_indices=None,
     ) -> torch.Tensor:
         batch = normalized.shape[0]
         entity_count = normalized.shape[1]
@@ -655,7 +656,7 @@ class BeesStructuredObservationEncoder(nn.Module):
             ENTITY_WEAPON_COUNT,
             OBSERVED_WEAPON_SIZE,
         )
-        if _use_dense_structured_path():
+        if _use_dense_structured_path() and active_indices is None:
             weapon_count = _slot_limit(
                 "entity_weapons",
                 ENTITY_WEAPON_COUNT,
@@ -696,7 +697,13 @@ class BeesStructuredObservationEncoder(nn.Module):
             1.0,
         )
         embedded_flat = flat.new_zeros((flat.shape[0], WEAPON_COMMON_EMBED))
-        active = torch.nonzero(flat_presence > 0.0, as_tuple=False).squeeze(1)
+        active = (
+            active_indices.to(
+                device=flat.device, dtype=torch.long, non_blocking=True
+            )
+            if active_indices is not None
+            else torch.nonzero(flat_presence > 0.0, as_tuple=False).squeeze(1)
+        )
         if active.numel() > 0:
             active_embedding = self.weapon_common_encoder(
                 flat.index_select(0, active)
@@ -1012,6 +1019,7 @@ class BeesStructuredObservationEncoder(nn.Module):
         self,
         active_normalized: torch.Tensor,
         active_raw: torch.Tensor,
+        weapon_plan=None,
     ):
         if int(active_normalized.shape[0]) == 0:
             return (
@@ -1023,10 +1031,36 @@ class BeesStructuredObservationEncoder(nn.Module):
         base = self.entity_base_encoder(
             active_normalized[:, :ENTITY_BASE_SIZE]
         )
-        weapons = self._entity_weapon_embeddings(
-            active_normalized.unsqueeze(1),
-            active_raw.unsqueeze(1),
-        )[:, 0, :]
+        # Reuse only raw, bit-identical weapon sets within this forward call.
+        # The gather accumulates every occurrence's gradient into the same
+        # learned weapon encoder/pool; no encoding survives an optimizer step.
+        if (
+            isinstance(weapon_plan, Mapping)
+            and int(weapon_plan.get("input_rows", -1))
+            == int(active_normalized.shape[0])
+            and not active_normalized.requires_grad
+            and not active_raw.requires_grad
+        ):
+            unique = weapon_plan["unique"].to(
+                device=active_normalized.device,
+                dtype=torch.long,
+                non_blocking=True,
+            )
+            inverse = weapon_plan["inverse"].to(
+                device=active_normalized.device,
+                dtype=torch.long,
+                non_blocking=True,
+            )
+            weapons = self._entity_weapon_embeddings(
+                active_normalized.index_select(0, unique).unsqueeze(1),
+                active_raw.index_select(0, unique).unsqueeze(1),
+                active_indices=weapon_plan["active"],
+            )[:, 0, :].index_select(0, inverse)
+        else:
+            weapons = self._entity_weapon_embeddings(
+                active_normalized.unsqueeze(1),
+                active_raw.unsqueeze(1),
+            )[:, 0, :]
         embedded = self.entity_fuse(
             torch.cat([base, weapons], dim=1)
         )
@@ -1283,10 +1317,14 @@ class BeesStructuredObservationEncoder(nn.Module):
                 0.0,
                 1.0,
             )
-            parent_active = torch.nonzero(
-                parent_presence_full > 0.0,
-                as_tuple=False,
-            ).squeeze(1)
+            parent_active = _packed_training_indices(
+                "parent", batch_size, 1, raw.device
+            )
+            if parent_active is None:
+                parent_active = torch.nonzero(
+                    parent_presence_full > 0.0,
+                    as_tuple=False,
+                ).squeeze(1)
 
             ally_flat_norm = ally_norm.reshape(-1, ALLY_SIZE)
             ally_flat_raw = ally_raw.reshape(-1, ALLY_SIZE)
@@ -1357,6 +1395,11 @@ class BeesStructuredObservationEncoder(nn.Module):
                     self._encode_entity_rows(
                         merged_normalized,
                         merged_raw,
+                        weapon_plan=(
+                            (_TRAINING_PACKED_ENTITY_PLAN.get() or {}).get(
+                                _TRAINING_PACKED_ENTITY_SCOPE.get(), {}
+                            ).get("entity_weapon_sets")
+                        ),
                     )
                 )
             else:
