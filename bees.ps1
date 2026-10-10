@@ -27,7 +27,8 @@ param(
     [switch]$Server,
     [ValidateRange(0.1,100.0)][double]$LogPercent=10.0,
     [string]$RunId,
-    [switch]$Evaluate
+    [switch]$Evaluate,
+    [switch]$IncludeCheckpoint
 )
 
 Set-StrictMode -Version Latest
@@ -103,6 +104,9 @@ if($Command -ne 'bundle' -and $RunId){
 if($Evaluate -and $Command -ne 'bundle'){
     throw '-Evaluate is only valid with the bundle command.'
 }
+if($IncludeCheckpoint -and $Command -ne 'bundle'){
+    throw '-IncludeCheckpoint is only valid with the bundle command.'
+}
 
 $assetsRoot=[IO.Path]::GetFullPath($PSScriptRoot)
 $configPath=Join-Path $assetsRoot 'Training\bees.cluster.json'
@@ -168,6 +172,7 @@ if($PSBoundParameters.ContainsKey('LogPercent')){
 }
 if($RunId){$arguments+=@('--run-id',$RunId)}
 if($Evaluate){$arguments+='--evaluate'}
+if($IncludeCheckpoint){$arguments+='--include-checkpoint'}
 
 & $node @arguments
 $exitCode=$LASTEXITCODE
