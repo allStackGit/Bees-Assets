@@ -1,4 +1,5 @@
 using Assets.Scripts;
+using Assets.Scripts.Entities.Projectiles;
 using Assets.Scripts.Entities.Ships;
 using Assets.Scripts.Entities.Ships.Weapons;
 using Assets.Scripts.Levels;
@@ -26,6 +27,11 @@ internal static class RlOneVsOneCombatTelemetry
         internal readonly long[] AlignedTurretSamples = new long[2];
         internal readonly float[] FirstFireDistance = { -1f, -1f };
         internal readonly float[] FirstHitDistance = { -1f, -1f };
+        internal readonly HashSet<long>[] EnemyHitProjectiles =
+        {
+            new HashSet<long>(),
+            new HashSet<long>()
+        };
 
         internal ArenaState(Level level, int beeSide, int humanSide, float episodeMapSize)
         {
@@ -122,6 +128,34 @@ internal static class RlOneVsOneCombatTelemetry
         }
 
         sourceState.FirstHitDistance[sourceIndex] = Vector2.Distance(sourceShip.GetPosition(), target.GetPosition());
+    }
+
+    /// <summary>
+    /// Count each launched turret projectile at most once when it causes actual
+    /// enemy health loss. Rocket explosions and split children carry the root
+    /// launch ID, so multi-target hits cannot exceed the number of shots fired.
+    /// </summary>
+    internal static void RecordProjectileEnemyHit(Projectile projectile, Ship target)
+    {
+        if (projectile == null || target == null || projectile.RlRootProjectileId <= 0 ||
+            !(projectile.Weapon is Turret) ||
+            !TryGetSideIndex(projectile.Shooter, out ArenaState state, out int sideIndex) ||
+            !TryGetSideIndex(target, out ArenaState targetState, out int targetIndex) ||
+            state != targetState || sideIndex == targetIndex ||
+            projectile.Level != state.Level)
+        {
+            return;
+        }
+
+        state.EnemyHitProjectiles[sideIndex].Add(projectile.RlRootProjectileId);
+    }
+
+    internal static int GetProjectileHitCount(Level level, int sideIndex)
+    {
+        return sideIndex >= 0 && sideIndex < 2 &&
+               TryGetState(level, out ArenaState state)
+            ? state.EnemyHitProjectiles[sideIndex].Count
+            : 0;
     }
 
     internal static string BuildEpisodeFields(Level level)
