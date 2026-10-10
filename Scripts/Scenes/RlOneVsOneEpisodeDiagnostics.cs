@@ -674,6 +674,7 @@ internal static class RlOneVsOneEpisodeDiagnostics
             ["friendly_damage"] = state.FriendlyDamage[sideIndex],
             ["unattributed_damage"] = state.UnattributedDamage[sideIndex],
             ["special_actions"] = state.SpecialActions[sideIndex],
+            ["striker_reloads"] = state.StrikerReloads[sideIndex],
             ["border_contacts"] = state.MapBorderContacts[sideIndex],
             ["static_contacts"] = state.StaticObstacleContacts[sideIndex],
             ["asteroid_contacts"] = state.CollisionAsteroidHits[sideIndex],
