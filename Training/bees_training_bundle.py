@@ -233,7 +233,7 @@ def _collect_log_group(
             with source.open("rb") as inp, destination.open("wb") as out:
                 if offset:
                     inp.seek(offset - 1)
-                    preceded_by_newline = inp.read(1) in (b"\\n", b"\\r")
+                    preceded_by_newline = inp.read(1) in (b"\n", b"\r")
                     inp.seek(offset)
                     if not preceded_by_newline:
                         inp.readline()
@@ -241,7 +241,7 @@ def _collect_log_group(
                     line = inp.readline()
                     if not line:
                         break
-                    if not line.endswith(b"\\n"):
+                    if not line.endswith(b"\n"):
                         # An actively appended, incomplete final record is not valid JSONL.
                         break
                     try:
