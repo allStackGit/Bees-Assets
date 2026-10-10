@@ -911,21 +911,25 @@ class ContinualLearningStore:
                 wins = self._nonnegative_int(comparison.get("wins"), "candidate wins", reasons)
                 losses = self._nonnegative_int(comparison.get("losses"), "candidate losses", reasons)
                 draws = self._nonnegative_int(comparison.get("draws", 0), "candidate draws", reasons)
-                if wins is not None and losses is not None and draws is not None:
+                timeouts = self._nonnegative_int(comparison.get("timeouts", 0), "candidate timeouts", reasons)
+                if all(value is not None for value in (wins, losses, draws, timeouts)):
                     matches = wins + losses + draws
+                    if timeouts > draws:
+                        reasons.append("champion timeouts cannot exceed draws")
                     if matches < int(promotion["min_matches_vs_champion"]):
                         reasons.append(
                             f"only {matches} champion matches; "
                             f"minimum is {promotion['min_matches_vs_champion']}"
                         )
-                    if matches > 0:
-                        win_rate = (wins + draws * 0.5) / matches
-                        if win_rate < float(promotion["min_win_rate_vs_champion"]):
+                    if matches > 0 and timeouts <= draws:
+                        # MatchSummary.score_rate awards no credit for timeouts.
+                        score_rate = (wins + 0.5 * (draws - timeouts)) / matches
+                        if score_rate < float(promotion["min_win_rate_vs_champion"]):
                             champion_gate_failed = (
                                 matches >= int(promotion["min_matches_vs_champion"])
                             )
                             reasons.append(
-                                f"champion win rate {win_rate:.4f} below "
+                                f"champion score rate {score_rate:.4f} below "
                                 f"{float(promotion['min_win_rate_vs_champion']):.4f}"
                             )
 

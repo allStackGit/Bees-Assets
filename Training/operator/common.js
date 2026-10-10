@@ -374,6 +374,7 @@ function applyRuntimeTrainingOptions(config, options = {}) {
     const result = {
         ...config,
         entropyBeta: normalizeEntropyBeta(config && config.entropyBeta, null),
+        skipEvaluation: Boolean(config && config.skipEvaluation),
         learnerOptimizations: normalizeLearnerOptimizations(
             config && config.learnerOptimizations,
         ),
@@ -423,6 +424,9 @@ function applyRuntimeTrainingOptions(config, options = {}) {
             result.entropyBeta,
         );
     }
+    if (Object.prototype.hasOwnProperty.call(options, 'skipEvaluation')) {
+        result.skipEvaluation = Boolean(options.skipEvaluation);
+    }
     return result;
 }
 
@@ -462,6 +466,7 @@ function readRuntimeTrainingOptions(
             value.entropyBeta,
             defaultEntropyBeta,
         ),
+        skipEvaluation: Boolean(value.skipEvaluation),
     };
 }
 
@@ -485,6 +490,7 @@ function saveRuntimeTrainingOptions(options) {
             options && options.entropyBeta,
             null,
         ),
+        skipEvaluation: Boolean(options && options.skipEvaluation),
         updated_utc: new Date().toISOString(),
     };
     writeJsonAtomic(paths.runtimeTrainingOptionsPath, value);

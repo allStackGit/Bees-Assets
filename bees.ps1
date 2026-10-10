@@ -19,6 +19,8 @@ param(
     [switch]$PpoCudaGraphs,
     [switch]$PpoProfile,
     [ValidateRange(0.0,100.0)][double]$Entropy,
+    [switch]$SkipEvaluation,
+    [switch]$EnableEvaluation,
     [string[]]$EnvArg,
     [switch]$Once,
     [ValidateRange(1,60)][int]$RefreshSeconds=2,
@@ -75,6 +77,12 @@ if($ppoExperimentRequested -and $Command -ne 'runtime'){
 }
 if($PSBoundParameters.ContainsKey('Entropy') -and $Command -ne 'runtime'){
     throw '-Entropy is only valid with the runtime command.'
+}
+if(($SkipEvaluation -or $EnableEvaluation) -and $Command -ne 'runtime'){
+    throw '-SkipEvaluation and -EnableEvaluation are only valid with the runtime command.'
+}
+if($SkipEvaluation -and $EnableEvaluation){
+    throw '-SkipEvaluation cannot be combined with -EnableEvaluation.'
 }
 if($PpoControl -and (
     $PpoSyncCleanup -or
@@ -145,6 +153,8 @@ if($PpoProfile){$arguments+='--ppo-profile'}
 if($PSBoundParameters.ContainsKey('Entropy')){
     $arguments+=@('--entropy',$Entropy.ToString('G',[Globalization.CultureInfo]::InvariantCulture))
 }
+if($SkipEvaluation){$arguments+='--skip-evaluation'}
+if($EnableEvaluation){$arguments+='--enable-evaluation'}
 foreach($value in @($EnvArg)){
     if($null -ne $value){$arguments+=@('--env-arg',[string]$value)}
 }
