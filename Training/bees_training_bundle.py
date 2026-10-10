@@ -491,6 +491,7 @@ def create_bundle(
     assets_root: Path,
     log_percent: float,
     run_id: str = "",
+    include_checkpoint: bool = False,
     status_json: Optional[Path] = None,
     status_text: Optional[Path] = None,
     snapshot_json: Optional[Path] = None,
@@ -798,6 +799,52 @@ def create_bundle(
         else:
             warnings.append(f"no ONNX file found under {results_root}")
 
+        checkpoint_info = None
+        if include_checkpoint:
+            # Unlike an ONNX export, checkpoint.pt contains the trainer's complete
+            # saved state, including critic and optimizer. The capture is strictly
+            # run-scoped and opt-in: do not add gigabytes to ordinary bundles.
+            checkpoint = latest_file(results_root, "checkpoint.pt")
+            if checkpoint is None:
+                raise FileNotFoundError(
+                    f"--include-checkpoint requested, but no checkpoint.pt exists under {results_root}"
+                )
+            try:
+                checkpoint_relative = checkpoint.resolve().relative_to(results_root.resolve())
+            except ValueError as exc:
+                raise ValueError(
+                    f"checkpoint is outside the requested run results: {checkpoint}"
+                ) from exc
+            checkpoint_archive_path = (
+                "checkpoint/" + checkpoint_relative.as_posix()
+            )
+            destination = staging / checkpoint_archive_path
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            before = checkpoint.stat()
+            # Capture a private, immutable copy for hashing and ZIP creation.
+            # If the live trainer replaces or rewrites the source during copying,
+            # reject it rather than ship a potentially corrupt checkpoint.
+            shutil.copy2(checkpoint, destination)
+            after = checkpoint.stat()
+            signature = lambda st: (
+                st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns
+            )
+            if signature(before) != signature(after) or destination.stat().st_size != before.st_size:
+                raise RuntimeError(
+                    "training checkpoint changed while building the diagnostic bundle; "
+                    "retry --include-checkpoint after a completed checkpoint save"
+                )
+            checkpoint_info = {
+                "archive_path": checkpoint_archive_path,
+                "source": str(checkpoint),
+                "size_bytes": destination.stat().st_size,
+                "sha256": sha256_file(destination),
+                "modified_utc": datetime.fromtimestamp(
+                    before.st_mtime, tz=timezone.utc
+                ).isoformat(),
+            }
+            records.append({"kind": "training-checkpoint", **checkpoint_info})
+
         for trainer_id, freshness in log_freshness.items():
             if freshness.get("age_seconds") is None:
                 warnings.append(f"trainer {trainer_id} has no uploaded run logs")
@@ -827,6 +874,8 @@ def create_bundle(
             "model_snapshot": snapshot_value,
             "deterministic_benchmark": benchmark_value,
             "latest_onnx": model_info,
+            "include_checkpoint": include_checkpoint,
+            "checkpoint": checkpoint_info,
             "trainer_log_freshness": log_freshness,
             "diagnostics": diagnostics,
             "warnings": warnings,
@@ -877,6 +926,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     parser.add_argument("--assets-root", required=True)
     parser.add_argument("--run-id", default="")
     parser.add_argument("--log-percent", type=float, default=10.0)
+    parser.add_argument("--include-checkpoint", action="store_true")
     parser.add_argument("--status-json")
     parser.add_argument("--status-text")
     parser.add_argument("--snapshot-json")
@@ -892,6 +942,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         bees_root=Path(args.bees_root),
         assets_root=Path(args.assets_root),
         log_percent=args.log_percent,
+        include_checkpoint=args.include_checkpoint,
         run_id=args.run_id,
         status_json=Path(args.status_json) if args.status_json else None,
         status_text=Path(args.status_text) if args.status_text else None,
