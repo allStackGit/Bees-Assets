@@ -295,6 +295,10 @@ class EpisodeLogMetrics:
                 path for path in scan_root.rglob("BeesEpisode-*.log")
                 if not path.is_symlink()
             ]
+            episode_jsonl = [
+                path for path in scan_root.rglob("BeesEpisode-*.jsonl")
+                if not path.is_symlink()
+            ]
             player_logs = [
                 path for path in scan_root.rglob("Player-*.log")
                 if not path.is_symlink()
@@ -305,7 +309,7 @@ class EpisodeLogMetrics:
             # treating their mere existence as a reason to ignore Player logs can freeze
             # status metrics forever after a sidecar failure. Each episode line is emitted
             # to only one destination, so both sources can be consumed safely.
-            log_paths = sorted(bounded_logs + player_logs)
+            log_paths = sorted(bounded_logs + episode_jsonl + player_logs)
             for log_path in log_paths:
                 self._read_new(log_path)
         return self.snapshot()
@@ -377,6 +381,52 @@ class EpisodeLogMetrics:
         else:
             self._pending[log_path] = ""
         for line in lines:
+            # Read compact JSONL records while accepting legacy text histories.
+            json_start = line.find('{"schema":1,')
+            if json_start >= 0:
+                try:
+                    record = json.loads(line[json_start:])
+                    duration = float(record["duration_s"])
+                    if not math.isfinite(duration):
+                        continue
+                    bee_combat = record["bee"]["combat"]
+                    human_combat = record["human"]["combat"]
+                    bee_aim = record["bee"]["aim"]
+                    human_aim = record["human"]["aim"]
+                    def aim_metric(value: Mapping[str, object], key: str) -> Optional[float]:
+                        samples = int(value.get("samples") or 0)
+                        if samples <= 0:
+                            return None
+                        if key == "error":
+                            return float(value["error_sum_deg"]) / samples
+                        return 100.0 * int(value[key]) / samples
+                    self._episodes.append({
+                        "episode": int(record["episode"]),
+                        "timeout": record["outcome"] == "timeout",
+                        "duration": duration,
+                        "bee_win": record["outcome"] == "bee",
+                        "human_win": record["outcome"] == "human",
+                        "bee_shots": int(bee_combat["shots"]),
+                        "bee_hits": sum(int(bee_combat[k]) for k in (
+                            "turret_hits", "special_hits", "other_hits"
+                        )),
+                        "human_shots": int(human_combat["shots"]),
+                        "human_hits": sum(int(human_combat[k]) for k in (
+                            "turret_hits", "special_hits", "other_hits"
+                        )),
+                        "bee_aim_samples": int(bee_aim["samples"]),
+                        "bee_aim_error_deg": aim_metric(bee_aim, "error"),
+                        "bee_aim_within_5_pct": aim_metric(bee_aim, "within_5deg"),
+                        "bee_turret_aligned_pct": aim_metric(bee_aim, "turret_aligned"),
+                        "human_aim_samples": int(human_aim["samples"]),
+                        "human_aim_error_deg": aim_metric(human_aim, "error"),
+                        "human_aim_within_5_pct": aim_metric(human_aim, "within_5deg"),
+                        "human_turret_aligned_pct": aim_metric(human_aim, "turret_aligned"),
+                    })
+                except (ValueError, KeyError, TypeError, OverflowError, json.JSONDecodeError):
+                    pass
+                continue
+
             match = EPISODE_LOG_PATTERN.search(line)
             if not match:
                 continue
@@ -1305,7 +1355,7 @@ class TrainingLogUploader:
             if (
                 not log_path.is_file()
                 or log_path.is_symlink()
-                or log_path.suffix.lower() not in (".log", ".txt", ".json")
+                or log_path.suffix.lower() not in (".log", ".txt", ".json", ".jsonl")
             ):
                 continue
             examined_files += 1
@@ -1478,7 +1528,7 @@ class TrainingLogUploader:
             if (
                 not log_path.is_file()
                 or log_path.is_symlink()
-                or log_path.suffix.lower() not in (".log", ".txt", ".json")
+                or log_path.suffix.lower() not in (".log", ".txt", ".json", ".jsonl")
             ):
                 continue
             try:
