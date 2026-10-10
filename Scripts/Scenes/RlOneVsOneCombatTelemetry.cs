@@ -140,6 +140,25 @@ internal static class RlOneVsOneCombatTelemetry
                $"human_turret_aligned={FormatPercent(state.AlignedTurretSamples[1], state.AimSamples[1])} human_first_fire_distance={FormatDistance(state.FirstFireDistance[1])} human_first_hit_distance={FormatDistance(state.FirstHitDistance[1])}";
     }
 
+    internal static Dictionary<string, object> BuildAimData(Level level, int sideIndex)
+    {
+        if (!TryGetState(level, out ArenaState state))
+        {
+            return new Dictionary<string, object>();
+        }
+        return new Dictionary<string, object>
+        {
+            ["samples"] = state.AimSamples[sideIndex],
+            ["error_sum_deg"] = state.AimErrorDegrees[sideIndex],
+            ["within_5deg"] = state.AccurateAimSamples[sideIndex],
+            ["turret_aligned"] = state.AlignedTurretSamples[sideIndex],
+            ["first_fire_distance"] = state.FirstFireDistance[sideIndex] < 0f
+                ? (object)null : state.FirstFireDistance[sideIndex],
+            ["first_hit_distance"] = state.FirstHitDistance[sideIndex] < 0f
+                ? (object)null : state.FirstHitDistance[sideIndex]
+        };
+    }
+
     private static bool TryFindBestAimedEnemy(
         ArenaState state,
         int firingSide,

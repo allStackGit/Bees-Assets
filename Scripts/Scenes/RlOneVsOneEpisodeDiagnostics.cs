@@ -142,6 +142,12 @@ internal static class RlOneVsOneEpisodeDiagnostics
             new Dictionary<long, RootShipRecord>(),
             new Dictionary<long, RootShipRecord>()
         };
+        internal readonly HashSet<long>[] InitialShipIds =
+        {
+            new HashSet<long>(),
+            new HashSet<long>()
+        };
+        internal readonly string[] LastDeathCause = new string[2];
         internal readonly Dictionary<long, string>[] ChildShipTypes =
         {
             new Dictionary<long, string>(),
@@ -540,6 +546,7 @@ internal static class RlOneVsOneEpisodeDiagnostics
             }
         }
         state.DeathCauses[sideIndex][victim.Id] = cause;
+        state.LastDeathCause[sideIndex] = cause;
     }
 
     // Emitted on every episode; the detailed per-type root outcomes remain sampled.
@@ -622,6 +629,90 @@ internal static class RlOneVsOneEpisodeDiagnostics
                environmentTelemetry + " " + combatTelemetry;
     }
 
+    /// <summary>
+    /// Raw, non-duplicated fields for the unified JSONL episode record.
+    /// Ship outcome rows are [type, origin (original/spawned), cause, count].
+    /// Every ship is represented once, so death/survival statistics can be
+    /// reconstructed without the old root/child/Fire Barge summary aliases.
+    /// </summary>
+    internal static Dictionary<string, object> BuildEpisodeData(Level level)
+    {
+        if (!TryGetState(level, out ArenaState state))
+        {
+            return new Dictionary<string, object>();
+        }
+
+        return new Dictionary<string, object>
+        {
+            ["environment"] = new Dictionary<string, object>
+            {
+                ["static_obstacles"] = state.StaticObstacleCount,
+                ["static_area_fraction"] = state.StaticObstacleAreaFraction,
+                ["collision_asteroids"] = state.CollisionAsteroidsSpawned,
+                ["mining_asteroids"] = state.MiningAsteroidsSpawned
+            },
+            ["bee"] = BuildSideData(state, 0),
+            ["human"] = BuildSideData(state, 1)
+        };
+    }
+
+    internal static string GetLastDeathCause(Level level, int sideIndex)
+    {
+        return TryGetState(level, out ArenaState state) && sideIndex >= 0 && sideIndex < 2
+            ? state.LastDeathCause[sideIndex]
+            : null;
+    }
+
+    private static Dictionary<string, object> BuildSideData(ArenaState state, int sideIndex)
+    {
+        return new Dictionary<string, object>
+        {
+            ["ships"] = BuildShipOutcomeRows(state, sideIndex),
+            ["damage_by_source"] = state.DamageSources[sideIndex],
+            ["damage_by_ship_type"] = state.DamageByShipType[sideIndex],
+            ["self_damage"] = state.SelfDamage[sideIndex],
+            ["friendly_damage"] = state.FriendlyDamage[sideIndex],
+            ["unattributed_damage"] = state.UnattributedDamage[sideIndex],
+            ["special_actions"] = state.SpecialActions[sideIndex],
+            ["striker_reloads"] = state.StrikerReloads[sideIndex],
+            ["border_contacts"] = state.MapBorderContacts[sideIndex],
+            ["static_contacts"] = state.StaticObstacleContacts[sideIndex],
+            ["asteroid_contacts"] = state.CollisionAsteroidHits[sideIndex],
+            ["asteroid_damage"] = state.CollisionAsteroidDamage[sideIndex],
+            ["asteroid_projectile_kills"] = state.CollisionAsteroidProjectileKills[sideIndex],
+            ["resources_mined"] = state.ResourcesMined[sideIndex]
+        };
+    }
+
+    private static List<object[]> BuildShipOutcomeRows(ArenaState state, int sideIndex)
+    {
+        var outcomes = new SortedDictionary<string, int>(StringComparer.Ordinal);
+        foreach (RootShipRecord ship in state.RootShips[sideIndex].Values)
+        {
+            state.DeathCauses[sideIndex].TryGetValue(ship.Id, out string cause);
+            string origin = state.InitialShipIds[sideIndex].Contains(ship.Id) ? "original" : "spawned";
+            string key = ship.Type + "|" + origin + "|" + (cause ?? "alive");
+            outcomes.TryGetValue(key, out int previous);
+            outcomes[key] = previous + 1;
+        }
+        foreach (KeyValuePair<long, string> ship in state.ChildShipTypes[sideIndex])
+        {
+            state.DeathCauses[sideIndex].TryGetValue(ship.Key, out string cause);
+            string origin = state.InitialShipIds[sideIndex].Contains(ship.Key) ? "original" : "spawned";
+            string key = ship.Value + "|" + origin + "|" + (cause ?? "alive");
+            outcomes.TryGetValue(key, out int previous);
+            outcomes[key] = previous + 1;
+        }
+
+        var rows = new List<object[]>(outcomes.Count);
+        foreach (KeyValuePair<string, int> entry in outcomes)
+        {
+            string[] parts = entry.Key.Split('|');
+            rows.Add(new object[] { parts[0], parts[1], parts[2], entry.Value });
+        }
+        return rows;
+    }
+
     private static void CaptureEnvironmentBaseline(ArenaState state)
     {
         Level level = state.Level;
@@ -674,6 +765,7 @@ internal static class RlOneVsOneEpisodeDiagnostics
             !state.DeathCauses[sideIndex].ContainsKey(target.Id))
         {
             state.DeathCauses[sideIndex][target.Id] = cause;
+            state.LastDeathCause[sideIndex] = cause;
         }
     }
 
@@ -684,6 +776,7 @@ internal static class RlOneVsOneEpisodeDiagnostics
             Ship ship = ships[i];
             if (ship != null && !ship.IsDead)
             {
+                state.InitialShipIds[sideIndex].Add(ship.Id);
                 TrackShip(state, ship, sideIndex);
             }
         }

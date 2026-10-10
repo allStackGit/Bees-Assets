@@ -144,8 +144,6 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
     private int _humanShotsThisEpisode;
     private int _beeTurretStaticObstacleImpactsThisEpisode;
     private int _humanTurretStaticObstacleImpactsThisEpisode;
-    private int _beeFireRequestsThisEpisode;
-    private int _humanFireRequestsThisEpisode;
     private int _beeHitsThisEpisode;
     private int _humanHitsThisEpisode;
     private int _beeTurretHitsThisEpisode;
@@ -190,21 +188,6 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
     private int _humanContactLossCount;
 
     private readonly StringBuilder _communicationTrace = new StringBuilder();
-    private readonly HashSet<long>[] _initialShipIds = { new HashSet<long>(), new HashSet<long>() };
-    private readonly HashSet<long>[] _seenShipIds = { new HashSet<long>(), new HashSet<long>() };
-    private readonly HashSet<long>[] _policyEligibleShipIds = { new HashSet<long>(), new HashSet<long>() };
-    private readonly HashSet<long>[] _policyControlledShipIds = { new HashSet<long>(), new HashSet<long>() };
-    private readonly Dictionary<ConfigData.WeaponTypes, int>[] _fireRequestsByWeapon =
-    {
-        new Dictionary<ConfigData.WeaponTypes, int>(),
-        new Dictionary<ConfigData.WeaponTypes, int>()
-    };
-    private readonly Dictionary<ConfigData.WeaponTypes, int>[] _shotsByWeapon =
-    {
-        new Dictionary<ConfigData.WeaponTypes, int>(),
-        new Dictionary<ConfigData.WeaponTypes, int>()
-    };
-
     // Discovery denominators are captured before an episode starts rewarding observations. Enemy
     // ships are side-specific; neutral environmental categories have the same denominator for both
     // sides. Collision asteroids are deliberately absent because they can spawn throughout battle.
@@ -214,6 +197,11 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
     private readonly int[] _mapObjectDiscoveryValue = new int[2];
     private readonly int[] _collisionAsteroidDiscoveryCount = new int[2];
     private readonly double[] _rawPositiveShapingReward = new double[2];
+    private readonly Dictionary<string, float>[] _rewardSources =
+    {
+        new Dictionary<string, float>(StringComparer.Ordinal),
+        new Dictionary<string, float>(StringComparer.Ordinal)
+    };
     private readonly bool[] _hasRecordedDeathAttribution = new bool[2];
     private readonly bool[] _lastDeathWasOpponentCaused = new bool[2];
     private readonly HashSet<long>[] _rewardedShipDiscoveryIds = { new HashSet<long>(), new HashSet<long>() };
@@ -226,74 +214,6 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
     private readonly Dictionary<long, int> _minedTsvByShipId = new Dictionary<long, int>();
     private readonly Dictionary<long, int> _miningShipSideById = new Dictionary<long, int>();
     private readonly HashSet<long> _forfeitedMiningShipIds = new HashSet<long>();
-
-    private int _completedEpisodes;
-    private int _beeWins;
-    private int _beeLosses;
-    private int _humanWins;
-    private int _humanLosses;
-    private int _draws;
-    private int _timeouts;
-    private long _beeShotsTotal;
-    private long _beeTurretStaticObstacleImpactsTotal;
-    private long _beeHitsTotal;
-    private long _beeTurretHitsTotal;
-    private long _beeSpecialHitsTotal;
-    private long _beeOtherHitsTotal;
-    private long _beeDamageTotal;
-    private long _beeTurretDamageTotal;
-    private long _beeSpecialDamageTotal;
-    private long _beeOtherDamageTotal;
-    private long _humanShotsTotal;
-    private long _humanTurretStaticObstacleImpactsTotal;
-    private long _humanHitsTotal;
-    private long _humanTurretHitsTotal;
-    private long _humanSpecialHitsTotal;
-    private long _humanOtherHitsTotal;
-    private long _humanDamageTotal;
-    private long _humanTurretDamageTotal;
-    private long _humanSpecialDamageTotal;
-    private long _humanOtherDamageTotal;
-    private long _beeRetainedMinedTsvTotal;
-    private long _humanRetainedMinedTsvTotal;
-    private long _beeEnemyMinedTsvDestroyedTotal;
-    private long _humanEnemyMinedTsvDestroyedTotal;
-    private double _beeEconomicRewardTotal;
-    private double _humanEconomicRewardTotal;
-    private float _totalDurationSeconds;
-    private int _staticObstacleEpisodes;
-    private int _collisionAsteroidEpisodes;
-    private int _miningAsteroidEpisodes;
-    private int _staticObstacleOpportunityEpisodes;
-    private int _collisionAsteroidOpportunityEpisodes;
-    private int _miningAsteroidOpportunityEpisodes;
-    private int _staticLayoutEmptyEpisodes;
-    private int _beeMiningSuccessEpisodes;
-    private int _humanMiningSuccessEpisodes;
-    private long _staticObstacleCountTotal;
-    private double _staticObstacleAreaFractionTotal;
-    private long _collisionAsteroidsSpawnedTotal;
-    private long _miningAsteroidsSpawnedTotal;
-    private long _beeStaticObstacleContactsTotal;
-    private long _humanStaticObstacleContactsTotal;
-    private long _beeStaticObstacleDeathsTotal;
-    private long _humanStaticObstacleDeathsTotal;
-    private long _beeMapBorderContactsTotal;
-    private long _humanMapBorderContactsTotal;
-    private long _beeMapBorderDeathsTotal;
-    private long _humanMapBorderDeathsTotal;
-    private long _beeCollisionAsteroidHitsTotal;
-    private long _humanCollisionAsteroidHitsTotal;
-    private long _beeCollisionAsteroidDamageTotal;
-    private long _humanCollisionAsteroidDamageTotal;
-    private long _beeCollisionAsteroidDeathsTotal;
-    private long _humanCollisionAsteroidDeathsTotal;
-    private long _beeResourcesMinedTotal;
-    private long _humanResourcesMinedTotal;
-    private long _beeMiningAsteroidsMinedTotal;
-    private long _humanMiningAsteroidsMinedTotal;
-    private long _beeMiningAsteroidsDepletedTotal;
-    private long _humanMiningAsteroidsDepletedTotal;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     private static void ResetCoordinatorRegistry()
@@ -430,22 +350,9 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         return -1;
     }
 
+    // Preserve the existing call-site hook without collecting redundant fire requests.
     internal static void RecordFireRequest(Ship ship, Weapon weapon)
     {
-        if (!TryGetTrackedSide(ship, out RlOneVsOneEpisodeCoordinator coordinator, out int sideIndex))
-        {
-            return;
-        }
-
-        if (sideIndex == 0)
-        {
-            coordinator._beeFireRequestsThisEpisode++;
-        }
-        else
-        {
-            coordinator._humanFireRequestsThisEpisode++;
-        }
-        IncrementWeaponCount(coordinator._fireRequestsByWeapon[sideIndex], weapon);
     }
 
     internal static void RecordShotFired(Ship ship, Weapon weapon)
@@ -471,7 +378,6 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
                 coordinator._humanFirstFireSeconds = coordinator.ElapsedEpisodeSeconds;
             }
         }
-        IncrementWeaponCount(coordinator._shotsByWeapon[sideIndex], weapon);
     }
 
     internal static void RecordProjectileStaticObstacleImpact(
@@ -528,16 +434,6 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
             return true;
         }
         return false;
-    }
-
-    private static void IncrementWeaponCount(Dictionary<ConfigData.WeaponTypes, int> counts, Weapon weapon)
-    {
-        if (weapon == null)
-        {
-            return;
-        }
-        counts.TryGetValue(weapon.Type, out int current);
-        counts[weapon.Type] = current + 1;
     }
 
     private static bool HasPersistentFleetValue(Ship ship)
@@ -663,9 +559,9 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         float reward = RlOneVsOneReward.CalculateTsvLossReward(appliedTsvLoss, combinedStartingTsv);
         if (isEnemyDamage)
         {
-            coordinator.ApplyImmediateTsvReward(attacker.Side, reward);
+            coordinator.ApplyImmediateTsvReward(attacker.Side, reward, "damage_dealt");
         }
-        coordinator.ApplyImmediateTsvReward(target.Side, -reward);
+        coordinator.ApplyImmediateTsvReward(target.Side, -reward, "damage_taken");
     }
 
     private static bool IsTurretDamageSource(string damageSource)
@@ -794,7 +690,7 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
 
         int combinedStartingTsv = Mathf.Max(1, coordinator._beeStartingTsv + coordinator._humanStartingTsv);
         float reward = RlOneVsOneReward.CalculateTsvLossReward(appliedTsvLoss, combinedStartingTsv);
-        coordinator.ApplyImmediateTsvReward(target.Side, -reward);
+        coordinator.ApplyImmediateTsvReward(target.Side, -reward, "hazard_loss");
     }
 
     private static int GetShipMinedTsv(Ship ship)
@@ -927,7 +823,7 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         float reward = RlOneVsOneReward.CalculateEconomicValueReward(
             minedTsv,
             GetStartingTsv(ship.Level, killer.Side));
-        coordinator.ApplyEconomicReward(killer.Side, reward);
+        coordinator.ApplyEconomicReward(killer.Side, reward, "enemy_mined_cargo");
         if (killer.Side == ConfigData.Configuration.BeeSide)
         {
             coordinator._beeDestroyedMinedTsvThisEpisode += minedTsv;
@@ -959,7 +855,7 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
 
         int combinedStartingTsv = Mathf.Max(1, coordinator._beeStartingTsv + coordinator._humanStartingTsv);
         float reward = RlOneVsOneReward.CalculateTsvLossReward(value, combinedStartingTsv);
-        coordinator.ApplyImmediateTsvReward(ship.Side, reward);
+        coordinator.ApplyImmediateTsvReward(ship.Side, reward, "capability");
     }
 
     internal static void RecordShipDiscovery(Ship observer, Ship spotted)
@@ -1060,7 +956,7 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
             Mathf.Max(1, spotted.Tsv),
             _enemyShipDiscoveryValue[sideIndex],
             RlOneVsOneReward.EnemyShipDiscoveryBudget);
-        ApplyImmediateTsvReward(side, reward);
+        ApplyImmediateTsvReward(side, reward, "discovery");
     }
 
     private void AwardMiningAsteroidDiscovery(int side, int sideIndex, MiningAsteroid asteroid)
@@ -1073,7 +969,7 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
             GetObstacleDiscoveryValue(asteroid),
             _miningAsteroidDiscoveryValue[sideIndex],
             RlOneVsOneReward.MiningAsteroidDiscoveryBudget);
-        ApplyImmediateTsvReward(side, reward);
+        ApplyImmediateTsvReward(side, reward, "discovery");
     }
 
     private void AwardMapObjectDiscovery(int side, int sideIndex, MapObject mapObject)
@@ -1086,7 +982,7 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
             GetMapObjectDiscoveryValue(mapObject),
             _mapObjectDiscoveryValue[sideIndex],
             RlOneVsOneReward.MapObjectDiscoveryBudget);
-        ApplyImmediateTsvReward(side, reward);
+        ApplyImmediateTsvReward(side, reward, "discovery");
     }
 
     private void AwardObstacleDiscovery(int side, int sideIndex, Obstacle obstacle)
@@ -1114,7 +1010,7 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
                 _staticObstacleDiscoveryValue[sideIndex],
                 RlOneVsOneReward.StaticObstacleDiscoveryBudget);
         }
-        ApplyImmediateTsvReward(side, reward);
+        ApplyImmediateTsvReward(side, reward, "discovery");
     }
 
     internal static void CompleteElimination(Level level)
@@ -1181,8 +1077,6 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         _humanShotsThisEpisode = 0;
         _beeTurretStaticObstacleImpactsThisEpisode = 0;
         _humanTurretStaticObstacleImpactsThisEpisode = 0;
-        _beeFireRequestsThisEpisode = 0;
-        _humanFireRequestsThisEpisode = 0;
         _beeHitsThisEpisode = 0;
         _humanHitsThisEpisode = 0;
         _beeTurretHitsThisEpisode = 0;
@@ -1201,6 +1095,8 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         _humanOtherDamageThisEpisode = 0;
         _beeTsvRewardThisEpisode = 0f;
         _humanTsvRewardThisEpisode = 0f;
+        _rewardSources[0].Clear();
+        _rewardSources[1].Clear();
         _beeEconomicRewardThisEpisode = 0f;
         _humanEconomicRewardThisEpisode = 0f;
         _hasRecordedDeathAttribution[0] = false;
@@ -1235,39 +1131,11 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         _beeExplorationGrid.Reset();
         _humanExplorationGrid.Reset();
         _communicationTrace.Clear();
-        ResetShipDiagnostics(beeShips, humanShips);
         RlOneVsOneEpisodeDiagnostics.Begin(level);
         CaptureDiscoveryBaselines(level, beeSide, humanSide);
         _discoveryRewardsReady = false;
         _episodeActive = true;
         TrackEpisodeShips(level);
-    }
-
-    private void ResetShipDiagnostics(List<Ship> beeShips, List<Ship> humanShips)
-    {
-        for (int sideIndex = 0; sideIndex < 2; sideIndex++)
-        {
-            _initialShipIds[sideIndex].Clear();
-            _seenShipIds[sideIndex].Clear();
-            _policyEligibleShipIds[sideIndex].Clear();
-            _policyControlledShipIds[sideIndex].Clear();
-            _fireRequestsByWeapon[sideIndex].Clear();
-            _shotsByWeapon[sideIndex].Clear();
-        }
-        AddInitialShipIds(beeShips, _initialShipIds[0]);
-        AddInitialShipIds(humanShips, _initialShipIds[1]);
-    }
-
-    private static void AddInitialShipIds(List<Ship> ships, HashSet<long> destination)
-    {
-        for (int i = 0; i < ships.Count; i++)
-        {
-            Ship ship = ships[i];
-            if (ship != null && !ship.IsDead)
-            {
-                destination.Add(ship.Id);
-            }
-        }
     }
 
     private void TrackEpisodeShips(Level level)
@@ -1280,8 +1148,6 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         int humanSide = ConfigData.Configuration.HumanSide;
         List<Ship> beeShips = level.State.GetShips(beeSide);
         List<Ship> humanShips = level.State.GetShips(humanSide);
-        TrackSideShips(beeShips, 0);
-        TrackSideShips(humanShips, 1);
         float episodeProgress = level.GetNormalizedRlEpisodeProgress();
         _beeExplorationGrid.Update(level, beeShips, episodeProgress);
         _humanExplorationGrid.Update(level, humanShips, episodeProgress);
@@ -1398,28 +1264,6 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
                 if (everHadVisibleEnemy)
                 {
                     _humanLostContactSeconds += stateDuration;
-                }
-            }
-        }
-    }
-
-    private void TrackSideShips(List<Ship> ships, int sideIndex)
-    {
-        for (int i = 0; i < ships.Count; i++)
-        {
-            Ship ship = ships[i];
-            if (ship == null)
-            {
-                continue;
-            }
-            _seenShipIds[sideIndex].Add(ship.Id);
-            if (RlOneVsOneAgent.RequiresPolicyControl(ship) &&
-                !RlPlayerDerivedActionReplay.IsScriptedSide(ship.Level, ship.Side))
-            {
-                _policyEligibleShipIds[sideIndex].Add(ship.Id);
-                if (ship.IsRlPolicyControlled)
-                {
-                    _policyControlledShipIds[sideIndex].Add(ship.Id);
                 }
             }
         }
@@ -1581,7 +1425,7 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         return Mathf.Max(1, mapObject.MaxHealth > 0 ? mapObject.MaxHealth : mapObject.Health);
     }
 
-    private void ApplyImmediateTsvReward(int side, float reward)
+    private void ApplyImmediateTsvReward(int side, float reward, string source)
     {
         int sideIndex = side == ConfigData.Configuration.BeeSide ? 0 :
             side == ConfigData.Configuration.HumanSide ? 1 : -1;
@@ -1607,10 +1451,11 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         {
             _humanTsvRewardThisEpisode += emittedReward;
         }
+        AddRewardSource(sideIndex, source, emittedReward);
         TsvRewardOccurred?.Invoke(_level, side, emittedReward);
     }
 
-    private void ApplyEconomicReward(int side, float reward)
+    private void ApplyEconomicReward(int side, float reward, string source)
     {
         if (reward <= 0f)
         {
@@ -1630,7 +1475,111 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
             return;
         }
 
+        AddRewardSource(side == ConfigData.Configuration.BeeSide ? 0 : 1, source, reward);
         EconomicRewardOccurred?.Invoke(_level, side, reward);
+    }
+
+    private void AddRewardSource(int sideIndex, string source, float reward)
+    {
+        _rewardSources[sideIndex].TryGetValue(source, out float previous);
+        _rewardSources[sideIndex][source] = previous + reward;
+    }
+
+    private Dictionary<string, object> BuildUnifiedSideData(
+        bool bee,
+        EpisodeResult result,
+        Dictionary<string, object> diagnostics)
+    {
+        int sideIndex = bee ? 0 : 1;
+        var reward = new Dictionary<string, object>();
+        foreach (KeyValuePair<string, float> source in _rewardSources[sideIndex])
+        {
+            reward[source.Key] = source.Value;
+        }
+        reward["terminal"] = bee ? result.BeeTerminalReward : result.HumanTerminalReward;
+        reward["time"] = bee ? result.BeeTimeReward : result.HumanTimeReward;
+        reward["retained_mining"] = bee ? result.BeeRetainedMiningReward : result.HumanRetainedMiningReward;
+
+        var combat = new Dictionary<string, object>
+        {
+            ["shots"] = bee ? _beeShotsThisEpisode : _humanShotsThisEpisode,
+            ["turret_hits"] = bee ? _beeTurretHitsThisEpisode : _humanTurretHitsThisEpisode,
+            ["turret_damage"] = bee ? _beeTurretDamageThisEpisode : _humanTurretDamageThisEpisode,
+            ["static_obstacle_impacts"] = bee ? _beeTurretStaticObstacleImpactsThisEpisode : _humanTurretStaticObstacleImpactsThisEpisode,
+            ["special_hits"] = bee ? _beeSpecialHitsThisEpisode : _humanSpecialHitsThisEpisode,
+            ["special_damage"] = bee ? _beeSpecialDamageThisEpisode : _humanSpecialDamageThisEpisode,
+            ["other_hits"] = bee ? _beeOtherHitsThisEpisode : _humanOtherHitsThisEpisode,
+            ["other_damage"] = bee ? _beeOtherDamageThisEpisode : _humanOtherDamageThisEpisode
+        };
+
+        var visibility = new Dictionary<string, object>
+        {
+            ["first_contact_s"] = NullableTime(bee ? _beeFirstContactSeconds : _humanFirstContactSeconds),
+            ["first_fire_s"] = NullableTime(bee ? _beeFirstFireSeconds : _humanFirstFireSeconds),
+            ["first_hit_s"] = NullableTime(bee ? _beeFirstHitSeconds : _humanFirstHitSeconds),
+            ["no_enemy_visible_s"] = bee ? _beeNoEnemyVisibleSeconds : _humanNoEnemyVisibleSeconds,
+            ["contact_losses"] = bee ? _beeContactLossCount : _humanContactLossCount,
+            ["lost_contact_s"] = bee ? _beeLostContactSeconds : _humanLostContactSeconds
+        };
+
+        diagnostics["combat"] = combat;
+        diagnostics["aim"] = RlOneVsOneCombatTelemetry.BuildAimData(_level, sideIndex);
+        diagnostics["visibility"] = visibility;
+        diagnostics["rewards"] = reward;
+        diagnostics["retained_mining_tsv"] = bee ? _beeRetainedMinedTsvThisEpisode : _humanRetainedMinedTsvThisEpisode;
+        return diagnostics;
+    }
+
+    private static object NullableTime(float seconds)
+    {
+        return seconds < 0f ? null : (object)seconds;
+    }
+
+    private void WriteUnifiedEpisodeRecord(
+        Level level,
+        EpisodeResult result,
+        float mapSize)
+    {
+        Dictionary<string, object> diagnostic = RlOneVsOneEpisodeDiagnostics.BuildEpisodeData(level);
+        var bee = (Dictionary<string, object>)diagnostic["bee"];
+        var human = (Dictionary<string, object>)diagnostic["human"];
+        var elimination = new Dictionary<string, object>();
+        int beeSide = ConfigData.Configuration.BeeSide;
+        int humanSide = ConfigData.Configuration.HumanSide;
+        if (level.State.IsSideKilled(beeSide))
+        {
+            elimination["bee"] = new Dictionary<string, object>
+            {
+                ["cause"] = RlOneVsOneEpisodeDiagnostics.GetLastDeathCause(level, 0),
+                ["opponent_caused"] = _hasRecordedDeathAttribution[0]
+                    ? (object)_lastDeathWasOpponentCaused[0] : null
+            };
+        }
+        if (level.State.IsSideKilled(humanSide))
+        {
+            elimination["human"] = new Dictionary<string, object>
+            {
+                ["cause"] = RlOneVsOneEpisodeDiagnostics.GetLastDeathCause(level, 1),
+                ["opponent_caused"] = _hasRecordedDeathAttribution[1]
+                    ? (object)_lastDeathWasOpponentCaused[1] : null
+            };
+        }
+
+        RlEpisodeRecordWriter.Write(new Dictionary<string, object>
+        {
+            ["schema"] = 1,
+            ["episode"] = result.EpisodeNumber,
+            ["arena"] = GetArenaIndex(),
+            ["duration_s"] = result.DurationSeconds,
+            ["map_size"] = mapSize,
+            ["outcome"] = result.TimedOut ? "timeout"
+                : result.WinningSide == 0 ? "draw"
+                : result.WinningSide == beeSide ? "bee" : "human",
+            ["final_elimination"] = elimination,
+            ["environment"] = diagnostic["environment"],
+            ["bee"] = BuildUnifiedSideData(true, result, bee),
+            ["human"] = BuildUnifiedSideData(false, result, human)
+        });
     }
 
     private int GetRetainedMiningTsvForWinningSide(int side, int winningSide)
@@ -1704,67 +1653,21 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
             _humanEconomicRewardThisEpisode, humanRetainedMiningReward);
         LastEpisodeResult = result;
 
-        RlOneVsOneEpisodeDiagnostics.EnvironmentSnapshot environmentSnapshot =
-            RlOneVsOneEpisodeDiagnostics.GetEnvironmentSnapshot(level);
-        UpdateRunningDiagnostics(result, beeSide, humanSide, environmentSnapshot);
-
-        string outcome = timedOut ? "timeout" : winningSide == 0 ? "draw" : $"side_{winningSide}_win";
-        int beeSpawned = CountSpawnedShips(0);
-        int humanSpawned = CountSpawnedShips(1);
-        if (_completedEpisodes == 1 || _completedEpisodes % EpisodeMetricsLogInterval == 0)
+        // Diagnostics must never make an otherwise valid training episode fail.
+        try
         {
-            string environmentTelemetry = RlOneVsOneEpisodeDiagnostics.BuildEnvironmentEpisodeFields(level);
-            string combatTelemetry = RlOneVsOneCombatTelemetry.BuildEpisodeFields(level);
-            string fireBargeTelemetry = RlOneVsOneEpisodeDiagnostics.BuildFireBargeEpisodeFields(level, timedOut);
-            string shipOutcomeTelemetry = RlOneVsOneEpisodeDiagnostics.BuildCompactShipOutcomeFields(level, timedOut);
-            float beeTurretStaticObstacleImpactRate = _beeShotsThisEpisode > 0
-                ? (float)_beeTurretStaticObstacleImpactsThisEpisode / _beeShotsThisEpisode
-                : 0f;
-            float humanTurretStaticObstacleImpactRate = _humanShotsThisEpisode > 0
-                ? (float)_humanTurretStaticObstacleImpactsThisEpisode / _humanShotsThisEpisode
-                : 0f;
-            WriteTrainingDiagnostic(
-                $"RL 1v1 episode={result.EpisodeNumber} arena={GetArenaIndex()} outcome={outcome} bee_team={_beeTeamId} human_team={_humanTeamId} " +
-                $"ships_per_side={RlOneVsOneTrainingBootstrap.CurrentShipsPerSide} map_size={mapSize:F0} winner={winningSide} timeout={timedOut} duration={durationSeconds:F2}s " +
-                $"bee_non_opponent_elimination={(beeNonOpponentElimination ? 1 : 0)} human_non_opponent_elimination={(humanNonOpponentElimination ? 1 : 0)} " +
-                $"bee_tsv={_beeStartingTsv}->{beeFinalTsv} human_tsv={_humanStartingTsv}->{humanFinalTsv} " +
-                $"bee_fire_requests={_beeFireRequestsThisEpisode} bee_shots={_beeShotsThisEpisode} bee_hits={_beeHitsThisEpisode} bee_damage={_beeDamageThisEpisode} " +
-                $"bee_turret_shots={_beeShotsThisEpisode} bee_turret_hits={_beeTurretHitsThisEpisode} bee_turret_damage={_beeTurretDamageThisEpisode} " +
-                $"bee_turret_static_obstacle_impacts={_beeTurretStaticObstacleImpactsThisEpisode} bee_turret_static_obstacle_impacts_per_shot={beeTurretStaticObstacleImpactRate:F4} " +
-                $"bee_special_hits={_beeSpecialHitsThisEpisode} bee_special_damage={_beeSpecialDamageThisEpisode} bee_other_hits={_beeOtherHitsThisEpisode} bee_other_damage={_beeOtherDamageThisEpisode} " +
-                $"human_fire_requests={_humanFireRequestsThisEpisode} human_shots={_humanShotsThisEpisode} human_hits={_humanHitsThisEpisode} human_damage={_humanDamageThisEpisode} " +
-                $"human_turret_shots={_humanShotsThisEpisode} human_turret_hits={_humanTurretHitsThisEpisode} human_turret_damage={_humanTurretDamageThisEpisode} " +
-                $"human_turret_static_obstacle_impacts={_humanTurretStaticObstacleImpactsThisEpisode} human_turret_static_obstacle_impacts_per_shot={humanTurretStaticObstacleImpactRate:F4} " +
-                $"human_special_hits={_humanSpecialHitsThisEpisode} human_special_damage={_humanSpecialDamageThisEpisode} human_other_hits={_humanOtherHitsThisEpisode} human_other_damage={_humanOtherDamageThisEpisode} " +
-                fireBargeTelemetry + " " + shipOutcomeTelemetry + " " + environmentTelemetry + " " + combatTelemetry);
+            WriteUnifiedEpisodeRecord(level, result, mapSize);
         }
-
-        if (_completedEpisodes == 1 || _completedEpisodes % FullEpisodeDiagnosticsInterval == 0)
+        catch (Exception exception)
         {
-            string behaviorDiagnostics = RlOneVsOneEpisodeDiagnostics.BuildEpisodeFields(level, timedOut);
-            WriteTrainingDiagnostic(
-                $"RL 1v1 detail episode={result.EpisodeNumber} arena={GetArenaIndex()} " +
-                $"bee_first_contact={FormatTime(_beeFirstContactSeconds)} bee_no_enemy_visible={_beeNoEnemyVisibleSeconds:F2}s bee_no_enemy_visible_pct={beeNoEnemyVisibleFraction:P2} " +
-                $"bee_contact_to_fire={FormatTime(beeFirstContactToFire)} bee_contact_to_end={FormatTime(beeFirstContactToEnd)} " +
-                $"bee_contact_losses={_beeContactLossCount} bee_lost_contact={_beeLostContactSeconds:F2}s bee_first_fire={FormatTime(_beeFirstFireSeconds)} bee_first_hit={FormatTime(_beeFirstHitSeconds)} " +
-                $"bee_spawned={beeSpawned} bee_agent_coverage={_policyControlledShipIds[0].Count}/{_policyEligibleShipIds[0].Count} bee_weapons={FormatWeaponActivity(0)} " +
-                $"bee_rewards=terminal:{beeTerminal:F4},tsv:{_beeTsvRewardThisEpisode:F4},economic:{_beeEconomicRewardThisEpisode:F4},time:{beeTimeReward:F4},total:{result.BeeTotalReward:F4} " +
-                $"bee_mined_retained_tsv={_beeRetainedMinedTsvThisEpisode} bee_enemy_mined_destroyed_tsv={_beeDestroyedMinedTsvThisEpisode} " +
-                $"human_first_contact={FormatTime(_humanFirstContactSeconds)} human_no_enemy_visible={_humanNoEnemyVisibleSeconds:F2}s human_no_enemy_visible_pct={humanNoEnemyVisibleFraction:P2} " +
-                $"human_contact_to_fire={FormatTime(humanFirstContactToFire)} human_contact_to_end={FormatTime(humanFirstContactToEnd)} " +
-                $"human_contact_losses={_humanContactLossCount} human_lost_contact={_humanLostContactSeconds:F2}s human_first_fire={FormatTime(_humanFirstFireSeconds)} human_first_hit={FormatTime(_humanFirstHitSeconds)} " +
-                $"human_spawned={humanSpawned} human_agent_coverage={_policyControlledShipIds[1].Count}/{_policyEligibleShipIds[1].Count} human_weapons={FormatWeaponActivity(1)} " +
-                $"human_rewards=terminal:{humanTerminal:F4},tsv:{_humanTsvRewardThisEpisode:F4},economic:{_humanEconomicRewardThisEpisode:F4},time:{humanTimeReward:F4},total:{result.HumanTotalReward:F4} " +
-                $"human_mined_retained_tsv={_humanRetainedMinedTsvThisEpisode} human_enemy_mined_destroyed_tsv={_humanDestroyedMinedTsvThisEpisode} " +
-                behaviorDiagnostics);
+            if (!_trainingDiagnosticWriteWarningEmitted)
+            {
+                _trainingDiagnosticWriteWarningEmitted = true;
+                Debug.LogWarning("RL episode record failed: " + exception.Message);
+            }
         }
         FlushCommunicationDiagnostics();
         RlOneVsOneEpisodeDiagnostics.End(level);
-
-        if (_completedEpisodes % SummaryIntervalEpisodes == 0)
-        {
-            LogRunningSummary();
-        }
 
         _episodeActive = false;
         _discoveryRewardsReady = false;
@@ -1774,277 +1677,6 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         // coordinate frame only after every terminal handler has run so those resets cannot create
         // competing next-episode frames while this event is still being dispatched.
         RlPolicyCoordinateFrame.EndEpisode(level);
-    }
-
-    private void UpdateRunningDiagnostics(
-        EpisodeResult result,
-        int beeSide,
-        int humanSide,
-        RlOneVsOneEpisodeDiagnostics.EnvironmentSnapshot environment)
-    {
-        _completedEpisodes++;
-        _totalDurationSeconds += result.DurationSeconds;
-        _beeShotsTotal += result.BeeShotsFired;
-        _beeTurretStaticObstacleImpactsTotal += _beeTurretStaticObstacleImpactsThisEpisode;
-        _beeHitsTotal += result.BeeShotsHit;
-        _beeTurretHitsTotal += _beeTurretHitsThisEpisode;
-        _beeSpecialHitsTotal += _beeSpecialHitsThisEpisode;
-        _beeOtherHitsTotal += _beeOtherHitsThisEpisode;
-        _beeDamageTotal += result.BeeDamageDealt;
-        _beeTurretDamageTotal += _beeTurretDamageThisEpisode;
-        _beeSpecialDamageTotal += _beeSpecialDamageThisEpisode;
-        _beeOtherDamageTotal += _beeOtherDamageThisEpisode;
-        _humanShotsTotal += result.HumanShotsFired;
-        _humanTurretStaticObstacleImpactsTotal += _humanTurretStaticObstacleImpactsThisEpisode;
-        _humanHitsTotal += result.HumanShotsHit;
-        _humanTurretHitsTotal += _humanTurretHitsThisEpisode;
-        _humanSpecialHitsTotal += _humanSpecialHitsThisEpisode;
-        _humanOtherHitsTotal += _humanOtherHitsThisEpisode;
-        _humanDamageTotal += result.HumanDamageDealt;
-        _humanTurretDamageTotal += _humanTurretDamageThisEpisode;
-        _humanSpecialDamageTotal += _humanSpecialDamageThisEpisode;
-        _humanOtherDamageTotal += _humanOtherDamageThisEpisode;
-        _beeRetainedMinedTsvTotal += _beeRetainedMinedTsvThisEpisode;
-        _humanRetainedMinedTsvTotal += _humanRetainedMinedTsvThisEpisode;
-        _beeEnemyMinedTsvDestroyedTotal += _beeDestroyedMinedTsvThisEpisode;
-        _humanEnemyMinedTsvDestroyedTotal += _humanDestroyedMinedTsvThisEpisode;
-        _beeEconomicRewardTotal += result.BeeEconomicReward;
-        _humanEconomicRewardTotal += result.HumanEconomicReward;
-
-        if (environment.StaticObstaclesEnabled)
-        {
-            _staticObstacleEpisodes++;
-            _staticObstacleCountTotal += environment.StaticObstacleCount;
-            _staticObstacleAreaFractionTotal += environment.StaticObstacleAreaFraction;
-            if (environment.StaticObstacleCount > 0)
-            {
-                _staticObstacleOpportunityEpisodes++;
-            }
-            if (environment.StaticLayoutEmpty)
-            {
-                _staticLayoutEmptyEpisodes++;
-            }
-        }
-        if (environment.CollisionAsteroidsEnabled)
-        {
-            _collisionAsteroidEpisodes++;
-            if (environment.CollisionAsteroidsSpawned > 0)
-            {
-                _collisionAsteroidOpportunityEpisodes++;
-            }
-        }
-        if (environment.MiningAsteroidsEnabled)
-        {
-            _miningAsteroidEpisodes++;
-            if (environment.MiningAsteroidsSpawned > 0)
-            {
-                _miningAsteroidOpportunityEpisodes++;
-                if (environment.BeeResourcesMined > 0)
-                {
-                    _beeMiningSuccessEpisodes++;
-                }
-                if (environment.HumanResourcesMined > 0)
-                {
-                    _humanMiningSuccessEpisodes++;
-                }
-            }
-        }
-
-        _collisionAsteroidsSpawnedTotal += environment.CollisionAsteroidsSpawned;
-        _miningAsteroidsSpawnedTotal += environment.MiningAsteroidsSpawned;
-        _beeStaticObstacleContactsTotal += environment.BeeStaticObstacleContacts;
-        _humanStaticObstacleContactsTotal += environment.HumanStaticObstacleContacts;
-        _beeStaticObstacleDeathsTotal += environment.BeeStaticObstacleDeaths;
-        _humanStaticObstacleDeathsTotal += environment.HumanStaticObstacleDeaths;
-        _beeMapBorderContactsTotal += environment.BeeMapBorderContacts;
-        _humanMapBorderContactsTotal += environment.HumanMapBorderContacts;
-        _beeMapBorderDeathsTotal += environment.BeeMapBorderDeaths;
-        _humanMapBorderDeathsTotal += environment.HumanMapBorderDeaths;
-        _beeCollisionAsteroidHitsTotal += environment.BeeCollisionAsteroidHits;
-        _humanCollisionAsteroidHitsTotal += environment.HumanCollisionAsteroidHits;
-        _beeCollisionAsteroidDamageTotal += environment.BeeCollisionAsteroidDamage;
-        _humanCollisionAsteroidDamageTotal += environment.HumanCollisionAsteroidDamage;
-        _beeCollisionAsteroidDeathsTotal += environment.BeeCollisionAsteroidDeaths;
-        _humanCollisionAsteroidDeathsTotal += environment.HumanCollisionAsteroidDeaths;
-        _beeResourcesMinedTotal += environment.BeeResourcesMined;
-        _humanResourcesMinedTotal += environment.HumanResourcesMined;
-        _beeMiningAsteroidsMinedTotal += environment.BeeMiningAsteroidsMined;
-        _humanMiningAsteroidsMinedTotal += environment.HumanMiningAsteroidsMined;
-        _beeMiningAsteroidsDepletedTotal += environment.BeeMiningAsteroidsDepleted;
-        _humanMiningAsteroidsDepletedTotal += environment.HumanMiningAsteroidsDepleted;
-
-        if (result.TimedOut)
-        {
-            _beeLosses++;
-            _humanLosses++;
-            _timeouts++;
-        }
-        else if (result.WinningSide == 0)
-        {
-            _draws++;
-        }
-        else if (result.WinningSide == beeSide)
-        {
-            _beeWins++;
-            _humanLosses++;
-        }
-        else if (result.WinningSide == humanSide)
-        {
-            _humanWins++;
-            _beeLosses++;
-        }
-    }
-
-    private void LogRunningSummary()
-    {
-        float averageDuration = _completedEpisodes > 0 ? _totalDurationSeconds / _completedEpisodes : 0f;
-        float beeHitRate = _beeShotsTotal > 0 ? (float)_beeHitsTotal / _beeShotsTotal : 0f;
-        float humanHitRate = _humanShotsTotal > 0 ? (float)_humanHitsTotal / _humanShotsTotal : 0f;
-        float beeTurretHitsPerShot = _beeShotsTotal > 0 ? (float)_beeTurretHitsTotal / _beeShotsTotal : 0f;
-        float humanTurretHitsPerShot = _humanShotsTotal > 0 ? (float)_humanTurretHitsTotal / _humanShotsTotal : 0f;
-        float averageStaticObstacleCount = _staticObstacleEpisodes > 0
-            ? (float)_staticObstacleCountTotal / _staticObstacleEpisodes
-            : 0f;
-        float averageStaticAreaFraction = _staticObstacleEpisodes > 0
-            ? (float)(_staticObstacleAreaFractionTotal / _staticObstacleEpisodes)
-            : 0f;
-        float averageCollisionAsteroidsSpawned = _collisionAsteroidEpisodes > 0
-            ? (float)_collisionAsteroidsSpawnedTotal / _collisionAsteroidEpisodes
-            : 0f;
-        float averageMiningAsteroidsSpawned = _miningAsteroidEpisodes > 0
-            ? (float)_miningAsteroidsSpawnedTotal / _miningAsteroidEpisodes
-            : 0f;
-        float beeStaticDeathsPerThousand = _staticObstacleOpportunityEpisodes > 0
-            ? 1000f * _beeStaticObstacleDeathsTotal / _staticObstacleOpportunityEpisodes
-            : 0f;
-        float humanStaticDeathsPerThousand = _staticObstacleOpportunityEpisodes > 0
-            ? 1000f * _humanStaticObstacleDeathsTotal / _staticObstacleOpportunityEpisodes
-            : 0f;
-        float beeAsteroidDeathsPerThousand = _collisionAsteroidOpportunityEpisodes > 0
-            ? 1000f * _beeCollisionAsteroidDeathsTotal / _collisionAsteroidOpportunityEpisodes
-            : 0f;
-        float humanAsteroidDeathsPerThousand = _collisionAsteroidOpportunityEpisodes > 0
-            ? 1000f * _humanCollisionAsteroidDeathsTotal / _collisionAsteroidOpportunityEpisodes
-            : 0f;
-        float beeMiningSuccessRate = _miningAsteroidOpportunityEpisodes > 0
-            ? (float)_beeMiningSuccessEpisodes / _miningAsteroidOpportunityEpisodes
-            : 0f;
-        float humanMiningSuccessRate = _miningAsteroidOpportunityEpisodes > 0
-            ? (float)_humanMiningSuccessEpisodes / _miningAsteroidOpportunityEpisodes
-            : 0f;
-        float beeAverageResourcesMined = _miningAsteroidOpportunityEpisodes > 0
-            ? (float)_beeResourcesMinedTotal / _miningAsteroidOpportunityEpisodes
-            : 0f;
-        float humanAverageResourcesMined = _miningAsteroidOpportunityEpisodes > 0
-            ? (float)_humanResourcesMinedTotal / _miningAsteroidOpportunityEpisodes
-            : 0f;
-        float beeTurretStaticObstacleImpactRate = _beeShotsTotal > 0
-            ? (float)_beeTurretStaticObstacleImpactsTotal / _beeShotsTotal
-            : 0f;
-        float humanTurretStaticObstacleImpactRate = _humanShotsTotal > 0
-            ? (float)_humanTurretStaticObstacleImpactsTotal / _humanShotsTotal
-            : 0f;
-
-        WriteTrainingDiagnostic(
-            $"RL 1v1 summary episodes={_completedEpisodes} arena={GetArenaIndex()} bee_record={_beeWins}-{_beeLosses} human_record={_humanWins}-{_humanLosses} " +
-            $"draws={_draws} timeouts={_timeouts} avg_duration={averageDuration:F2}s " +
-            $"bee_shots={_beeShotsTotal} bee_hits={_beeHitsTotal} bee_hit_rate={beeHitRate:P2} bee_damage={_beeDamageTotal} " +
-            $"bee_turret_shots={_beeShotsTotal} bee_turret_hits={_beeTurretHitsTotal} bee_turret_hits_per_shot={beeTurretHitsPerShot:F4} bee_turret_damage={_beeTurretDamageTotal} " +
-            $"bee_turret_static_obstacle_impacts={_beeTurretStaticObstacleImpactsTotal} bee_turret_static_obstacle_impacts_per_shot={beeTurretStaticObstacleImpactRate:F4} " +
-            $"bee_special_hits={_beeSpecialHitsTotal} bee_special_damage={_beeSpecialDamageTotal} bee_other_hits={_beeOtherHitsTotal} bee_other_damage={_beeOtherDamageTotal} " +
-            $"human_shots={_humanShotsTotal} human_hits={_humanHitsTotal} human_hit_rate={humanHitRate:P2} human_damage={_humanDamageTotal} " +
-            $"human_turret_shots={_humanShotsTotal} human_turret_hits={_humanTurretHitsTotal} human_turret_hits_per_shot={humanTurretHitsPerShot:F4} human_turret_damage={_humanTurretDamageTotal} " +
-            $"human_turret_static_obstacle_impacts={_humanTurretStaticObstacleImpactsTotal} human_turret_static_obstacle_impacts_per_shot={humanTurretStaticObstacleImpactRate:F4} " +
-            $"human_special_hits={_humanSpecialHitsTotal} human_special_damage={_humanSpecialDamageTotal} human_other_hits={_humanOtherHitsTotal} human_other_damage={_humanOtherDamageTotal} " +
-            $"env_episodes=static:{_staticObstacleEpisodes},collision:{_collisionAsteroidEpisodes},mining:{_miningAsteroidEpisodes} " +
-            $"env_opportunity_episodes=static:{_staticObstacleOpportunityEpisodes},collision:{_collisionAsteroidOpportunityEpisodes},mining:{_miningAsteroidOpportunityEpisodes} " +
-            $"static_layout_empty={_staticLayoutEmptyEpisodes} avg_static_obstacles={averageStaticObstacleCount:F2} avg_static_area_pct={averageStaticAreaFraction:P2} " +
-            $"bee_static_contacts={_beeStaticObstacleContactsTotal} bee_static_deaths={_beeStaticObstacleDeathsTotal} bee_static_deaths_per_1k={beeStaticDeathsPerThousand:F2} " +
-            $"human_static_contacts={_humanStaticObstacleContactsTotal} human_static_deaths={_humanStaticObstacleDeathsTotal} human_static_deaths_per_1k={humanStaticDeathsPerThousand:F2} " +
-            $"bee_border_contacts={_beeMapBorderContactsTotal} bee_border_deaths={_beeMapBorderDeathsTotal} " +
-            $"human_border_contacts={_humanMapBorderContactsTotal} human_border_deaths={_humanMapBorderDeathsTotal} " +
-            $"collision_asteroids_spawned={_collisionAsteroidsSpawnedTotal} avg_collision_asteroids_spawned={averageCollisionAsteroidsSpawned:F2} " +
-            $"bee_asteroid_hits={_beeCollisionAsteroidHitsTotal} bee_asteroid_damage={_beeCollisionAsteroidDamageTotal} bee_asteroid_deaths={_beeCollisionAsteroidDeathsTotal} bee_asteroid_deaths_per_1k={beeAsteroidDeathsPerThousand:F2} " +
-            $"human_asteroid_hits={_humanCollisionAsteroidHitsTotal} human_asteroid_damage={_humanCollisionAsteroidDamageTotal} human_asteroid_deaths={_humanCollisionAsteroidDeathsTotal} human_asteroid_deaths_per_1k={humanAsteroidDeathsPerThousand:F2} " +
-            $"mining_asteroids_spawned={_miningAsteroidsSpawnedTotal} avg_mining_asteroids_spawned={averageMiningAsteroidsSpawned:F2} " +
-            $"bee_mining_success={_beeMiningSuccessEpisodes}/{_miningAsteroidOpportunityEpisodes} bee_mining_success_rate={beeMiningSuccessRate:P2} bee_resources_mined={_beeResourcesMinedTotal} bee_avg_resources_mined={beeAverageResourcesMined:F2} bee_mining_asteroids_mined={_beeMiningAsteroidsMinedTotal} bee_mining_asteroids_depleted={_beeMiningAsteroidsDepletedTotal} " +
-            $"human_mining_success={_humanMiningSuccessEpisodes}/{_miningAsteroidOpportunityEpisodes} human_mining_success_rate={humanMiningSuccessRate:P2} human_resources_mined={_humanResourcesMinedTotal} human_avg_resources_mined={humanAverageResourcesMined:F2} human_mining_asteroids_mined={_humanMiningAsteroidsMinedTotal} human_mining_asteroids_depleted={_humanMiningAsteroidsDepletedTotal} " +
-            $"bee_mined_retained_tsv={_beeRetainedMinedTsvTotal} bee_enemy_mined_destroyed_tsv={_beeEnemyMinedTsvDestroyedTotal} bee_economic_reward={_beeEconomicRewardTotal:F4} " +
-            $"human_mined_retained_tsv={_humanRetainedMinedTsvTotal} human_enemy_mined_destroyed_tsv={_humanEnemyMinedTsvDestroyedTotal} human_economic_reward={_humanEconomicRewardTotal:F4}");
-    }
-
-    private static void WriteTrainingDiagnostic(string message)
-    {
-        string logRoot = Environment.GetEnvironmentVariable("BEES_TRAINING_LOG_DIR");
-        if (string.IsNullOrWhiteSpace(logRoot))
-        {
-            Debug.Log(message);
-            return;
-        }
-
-        try
-        {
-            Directory.CreateDirectory(logRoot);
-            int processId = System.Diagnostics.Process.GetCurrentProcess().Id;
-            string path = Path.Combine(logRoot, $"BeesEpisode-{processId}.log");
-            string line = message + Environment.NewLine;
-            int incomingBytes = TrainingDiagnosticEncoding.GetByteCount(line);
-            lock (TrainingDiagnosticLogLock)
-            {
-                if (File.Exists(path) &&
-                    new FileInfo(path).Length + incomingBytes > TrainingDiagnosticMaxBytes)
-                {
-                    // Move the old generation aside before creating a fresh file. Truncating in place
-                    // can be missed by readers if the new log regrows past their old byte offset.
-                    string rotatedPath = path + ".rotated-" + Guid.NewGuid().ToString("N");
-                    File.Move(path, rotatedPath);
-                    try
-                    {
-                        File.AppendAllText(path, line, TrainingDiagnosticEncoding);
-                    }
-                    catch
-                    {
-                        try
-                        {
-                            if (File.Exists(path))
-                            {
-                                File.Delete(path);
-                            }
-                            if (File.Exists(rotatedPath))
-                            {
-                                File.Move(rotatedPath, path);
-                            }
-                        }
-                        catch
-                        {
-                            // Preserve the original write failure; the rotated log remains on disk.
-                        }
-                        throw;
-                    }
-                    try
-                    {
-                        File.Delete(rotatedPath);
-                    }
-                    catch
-                    {
-                        // The rotated suffix is outside the uploader's *.log scan.
-                    }
-                }
-                else
-                {
-                    File.AppendAllText(path, line, TrainingDiagnosticEncoding);
-                }
-            }
-        }
-        catch (Exception exception)
-        {
-            if (!_trainingDiagnosticWriteWarningEmitted)
-            {
-                _trainingDiagnosticWriteWarningEmitted = true;
-                Debug.LogWarning($"RL training diagnostic sidecar failed; reverting to Unity log output: {exception.Message}");
-            }
-            Debug.Log(message);
-        }
     }
 
     private void FlushCommunicationDiagnostics()
@@ -2119,50 +1751,6 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
     }
 
     private float ElapsedEpisodeSeconds => Mathf.Max(0f, Time.time - _episodeStartedAt);
-
-    private int CountSpawnedShips(int sideIndex)
-    {
-        int count = 0;
-        foreach (long shipId in _seenShipIds[sideIndex])
-        {
-            if (!_initialShipIds[sideIndex].Contains(shipId))
-            {
-                count++;
-            }
-        }
-        return count;
-    }
-
-    private string FormatWeaponActivity(int sideIndex)
-    {
-        HashSet<ConfigData.WeaponTypes> weaponTypes = new HashSet<ConfigData.WeaponTypes>();
-        foreach (ConfigData.WeaponTypes type in _fireRequestsByWeapon[sideIndex].Keys)
-        {
-            weaponTypes.Add(type);
-        }
-        foreach (ConfigData.WeaponTypes type in _shotsByWeapon[sideIndex].Keys)
-        {
-            weaponTypes.Add(type);
-        }
-        if (weaponTypes.Count == 0)
-        {
-            return "none";
-        }
-
-        List<string> values = new List<string>();
-        foreach (ConfigData.WeaponTypes type in weaponTypes)
-        {
-            _fireRequestsByWeapon[sideIndex].TryGetValue(type, out int requests);
-            _shotsByWeapon[sideIndex].TryGetValue(type, out int shots);
-            values.Add($"{type}:{requests}/{shots}");
-        }
-        return string.Join("|", values);
-    }
-
-    private static string FormatTime(float seconds)
-    {
-        return seconds < 0f ? "none" : $"{seconds:F2}s";
-    }
 
     private static int CountActiveShips(List<Ship> ships)
     {

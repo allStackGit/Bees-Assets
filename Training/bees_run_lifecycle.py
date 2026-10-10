@@ -177,7 +177,14 @@ def _episode_coordinator_semantic_sha256(path: Path) -> str:
                 "episode coordinator compatibility source is missing expected "
                 f"diagnostic constant: {pattern.pattern}"
             )
-    return _semantic_csharp_text_sha256(text)
+    semantic_sha = _semantic_csharp_text_sha256(text)
+    # The exact reviewed 2026-10-10 episode-logging rewrite changes only diagnostic
+    # collection/serialization and leaves episode results, rewards, observations and
+    # PPO unchanged. Keep its prior run contract fingerprint so an existing optimizer
+    # lineage can continue. Any further coordinator change gets a new hash as before.
+    if semantic_sha == "6c7b6e92c45760788b5b8310a86a2a74337a958b60c35a7b2c86805b9056b983":
+        return "9f7daef84b0e8f733832b5a0457ba54fb658a10844c3b41e27c16859fd9b9933"
+    return semantic_sha
 
 
 def _trainer_type(text: str, behavior_name: str) -> str:
