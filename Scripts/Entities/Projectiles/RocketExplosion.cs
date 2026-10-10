@@ -122,6 +122,7 @@ namespace Assets.Scripts.Entities.Projectiles
                         ? "explosion"
                         : "death_explosion";
                 }
+                int healthBefore = ship.Health;
                 Ship.LogAttackingDamage(
                     Power,
                     Shooter,
@@ -130,6 +131,10 @@ namespace Assets.Scripts.Entities.Projectiles
                     ship,
                     CommandOutcomeId,
                     rlDamageSource);
+                if (ship.Health < healthBefore)
+                {
+                    global::RlOneVsOneCombatTelemetry.RecordProjectileEnemyHit(this, ship);
+                }
             }
         }
     }

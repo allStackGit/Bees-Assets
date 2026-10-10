@@ -30,6 +30,8 @@ namespace Assets.Scripts.Entities.Projectiles
         public Animator Animator;
         public bool IsDead;
         public long CommandOutcomeId;
+        // Identity of the actual turret-fired shot, shared by explosion/split continuations.
+        public long RlRootProjectileId { get; private set; }
         private ShipDamageStatus _damageReservation;
         private int _reservedDamageAmount;
 
@@ -58,6 +60,7 @@ namespace Assets.Scripts.Entities.Projectiles
             ClearData();
             Level = level;
             Id = Level.State.GetId();
+            RlRootProjectileId = Id;
             Weapon = weapon;
             Shooter = shooter;
             Target = target;
@@ -102,6 +105,7 @@ namespace Assets.Scripts.Entities.Projectiles
             CollidingObstacleQueue.Clear();
             ShipIsDead = false;
             CommandOutcomeId = 0;
+            RlRootProjectileId = 0;
             _damageReservation = null;
             _reservedDamageAmount = 0;
         }
@@ -109,6 +113,7 @@ namespace Assets.Scripts.Entities.Projectiles
         public void InheritCommandAttributionFrom(Projectile source)
         {
             CommandOutcomeId = source != null ? source.CommandOutcomeId : 0;
+            RlRootProjectileId = source != null ? source.RlRootProjectileId : 0;
         }
 
         public virtual void Kill()
@@ -283,8 +288,13 @@ namespace Assets.Scripts.Entities.Projectiles
                 ShipsToIgnore.Contains(ship)))
             {
                 _originalPower = Power;
+                int healthBefore = ship.Health;
                 ContactTarget(ship);
                 Ship.LogAttackingDamage(_originalPower, Shooter, FleetShip, SavedSquad, ship, CommandOutcomeId);
+                if (ship.Health < healthBefore)
+                {
+                    global::RlOneVsOneCombatTelemetry.RecordProjectileEnemyHit(this, ship);
+                }
             }
         }
 

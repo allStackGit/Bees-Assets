@@ -680,6 +680,9 @@ internal static class RlOneVsOneEpisodeDiagnostics
             ["asteroid_contacts"] = state.CollisionAsteroidHits[sideIndex],
             ["asteroid_damage"] = state.CollisionAsteroidDamage[sideIndex],
             ["asteroid_projectile_kills"] = state.CollisionAsteroidProjectileKills[sideIndex],
+            // A hit means a distinct launched turret projectile that actually
+            // damaged at least one enemy; one explosion can hit multiple ships.
+            ["projectiles_hit"] = RlOneVsOneCombatTelemetry.GetProjectileHitCount(state.Level, sideIndex),
             ["resources_mined"] = state.ResourcesMined[sideIndex]
         };
     }
@@ -776,8 +779,13 @@ internal static class RlOneVsOneEpisodeDiagnostics
             Ship ship = ships[i];
             if (ship != null && !ship.IsDead)
             {
-                state.InitialShipIds[sideIndex].Add(ship.Id);
                 TrackShip(state, ship, sideIndex);
+                // The carrier's attached Drone/Striker ships can already exist
+                // before this episode begins. Only fleet roots are "original".
+                if (state.RootShips[sideIndex].ContainsKey(ship.Id))
+                {
+                    state.InitialShipIds[sideIndex].Add(ship.Id);
+                }
             }
         }
     }
