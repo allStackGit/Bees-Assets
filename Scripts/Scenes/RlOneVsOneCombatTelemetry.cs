@@ -137,7 +137,7 @@ internal static class RlOneVsOneCombatTelemetry
     /// </summary>
     internal static void RecordProjectileEnemyHit(Projectile projectile, Ship target)
     {
-        if (projectile == null || target == null || projectile.RlRootProjectileId <= 0 ||
+        if (projectile == null || target == null ||
             !(projectile.Weapon is Turret) ||
             !TryGetSideIndex(projectile.Shooter, out ArenaState state, out int sideIndex) ||
             !TryGetSideIndex(target, out ArenaState targetState, out int targetIndex) ||
