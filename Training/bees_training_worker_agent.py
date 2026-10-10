@@ -382,10 +382,12 @@ class EpisodeLogMetrics:
             self._pending[log_path] = ""
         for line in lines:
             # Read compact JSONL records while accepting legacy text histories.
-            json_start = line.find('{"schema":1,')
+            json_start = line.find("{") if '"schema"' in line else -1
             if json_start >= 0:
                 try:
                     record = json.loads(line[json_start:])
+                    if record.get("schema") != 1:
+                        continue
                     duration = float(record["duration_s"])
                     if not math.isfinite(duration):
                         continue
