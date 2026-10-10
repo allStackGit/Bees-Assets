@@ -409,12 +409,21 @@ class EpisodeLogMetrics:
                         "bee_win": record["outcome"] == "bee",
                         "human_win": record["outcome"] == "human",
                         "bee_shots": int(bee_combat["shots"]),
-                        "bee_hits": sum(int(bee_combat[k]) for k in (
-                            "turret_hits", "special_hits", "other_hits"
+                        # Newly captured episodes count unique turret-fired
+                        # projectiles with enemy health damage, not damage events.
+                        # Preserve legacy behavior when reading older JSONL files.
+                        "bee_hits": int(record["bee"].get(
+                            "projectiles_hit",
+                            sum(int(bee_combat[k]) for k in (
+                                "turret_hits", "special_hits", "other_hits"
+                            )),
                         )),
                         "human_shots": int(human_combat["shots"]),
-                        "human_hits": sum(int(human_combat[k]) for k in (
-                            "turret_hits", "special_hits", "other_hits"
+                        "human_hits": int(record["human"].get(
+                            "projectiles_hit",
+                            sum(int(human_combat[k]) for k in (
+                                "turret_hits", "special_hits", "other_hits"
+                            )),
                         )),
                         "bee_aim_samples": int(bee_aim["samples"]),
                         "bee_aim_error_deg": aim_metric(bee_aim, "error"),
