@@ -34,7 +34,7 @@ function usage() {
         '  node Training/bees_operator.js start [--new-run | --resume-run ID] [--env-arg VALUE ...]',
         '  node Training/bees_operator.js stop [--server]',
         '  node Training/bees_operator.js status [--once] [--refresh-seconds N]',
-        '  node Training/bees_operator.js bundle [--run-id ID] [--log-percent PCT] [--evaluate]',
+        '  node Training/bees_operator.js bundle [--run-id ID] [--log-percent PCT] [--evaluate] [--include-checkpoint]',
         '  node Training/bees_operator.js observe',
         '  node Training/bees_operator.js qualify',
         '',
@@ -107,6 +107,7 @@ function parseArgs(argv = process.argv.slice(2)) {
         explicitLogPercent: false,
         explicitRunId: false,
         evaluate: false,
+        includeCheckpoint: false,
     };
 
     for (let index = 1; index < argv.length; index++) {
@@ -262,6 +263,8 @@ function parseArgs(argv = process.argv.slice(2)) {
             index++;
         } else if (arg === '--evaluate') {
             options.evaluate = true;
+        } else if (arg === '--include-checkpoint') {
+            options.includeCheckpoint = true;
         } else if (arg === '--skip-evaluation' || arg === '--enable-evaluation') {
             if (options.explicitSkipEvaluation) {
                 throw new Error('--skip-evaluation and --enable-evaluation may be specified only once.');
@@ -335,6 +338,9 @@ function parseArgs(argv = process.argv.slice(2)) {
     }
     if (options.evaluate && command !== 'bundle') {
         throw new Error('--evaluate is only valid with the bundle command.');
+    }
+    if (options.includeCheckpoint && command !== 'bundle') {
+        throw new Error('--include-checkpoint is only valid with the bundle command.');
     }
 
     return { command, options };

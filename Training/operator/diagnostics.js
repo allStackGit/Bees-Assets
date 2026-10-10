@@ -521,6 +521,7 @@ async function invokeBundle(options = {}) {
             '--output-root', path.join(paths.beesRoot, 'Diagnostics'),
         ];
         if (targetRun) args.push('--run-id', String(targetRun));
+        if (options.includeCheckpoint) args.push('--include-checkpoint');
         if (exists(statusJson)) args.push('--status-json', statusJson);
         if (exists(statusText)) args.push('--status-text', statusText);
         if (exists(snapshotJson)) args.push('--snapshot-json', snapshotJson);
