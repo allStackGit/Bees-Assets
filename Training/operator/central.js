@@ -85,6 +85,9 @@ function buildCentralLearnerArgv(config, learnerPython, unity, runtimeRoot) {
         '--bees-wan-auth-token-file', paths.wanTokenPath,
         '--bees-wan-max-queued-batches', String(Number(config.wanMaxQueuedBatches)),
     ];
+    if (Boolean(config.skipEvaluation)) {
+        argv.push('--skip-evaluation');
+    }
     if (Boolean(config.threadedTraining)) {
         argv.push(
             '--bees-threaded',

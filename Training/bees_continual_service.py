@@ -77,6 +77,7 @@ class ServiceOptions:
     once: bool
     environment_args: tuple[str, ...] = ()
     entropy_beta: Optional[float] = None
+    skip_evaluation: bool = False
 
 
 Runner = Callable[..., subprocess.CompletedProcess]
@@ -951,6 +952,19 @@ def run_service(
                 save_state(options, state)
                 phase = "release"
 
+            if phase == "release" and options.skip_evaluation:
+                print(
+                    f"[Bees continuous] skipping evaluation/release for {generation_id(index)}; "
+                    "continuing the persistent training checkpoint lineage."
+                )
+                state["generation_index"] = index + 1
+                state["phase"] = "train"
+                state["training_started"] = False
+                save_state(options, state)
+                if options.once:
+                    return 0
+                continue
+
             if phase == "release":
                 write_managed_health(
                     "ready",
@@ -1054,6 +1068,11 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--platform", choices=tuple(PLATFORM_BUILD_TARGETS), default="WindowsPlayer")
     parser.add_argument("--retry-seconds", type=float, default=DEFAULT_RETRY_SECONDS)
     parser.add_argument("--entropy-beta", type=float, default=None)
+    parser.add_argument(
+        "--skip-evaluation",
+        action="store_true",
+        help="Continue checkpoint training between generations without evaluation, release or hot publication.",
+    )
     parser.add_argument("--once", action="store_true")
     return parser
 
@@ -1127,6 +1146,7 @@ def parse_options(argv: Optional[Sequence[str]] = None) -> ServiceOptions:
         once=args.once,
         environment_args=parse_environment_args_json(args.environment_args_json),
         entropy_beta=args.entropy_beta,
+        skip_evaluation=args.skip_evaluation,
     )
 
 

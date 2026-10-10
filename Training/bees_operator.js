@@ -29,7 +29,7 @@ function usage() {
     return [
         'Usage:',
         '  node Training/bees_operator.js build [--full-game] [--force] [--preserve-run | --new-run]',
-        '  node Training/bees_operator.js runtime [--threaded [--policy-lag N]] [--backpressure-queue N] [--local-training] [--entropy BETA] [--ppo-control | PPO optimization flags]',
+        '  node Training/bees_operator.js runtime [--threaded [--policy-lag N]] [--backpressure-queue N] [--local-training] [--entropy BETA] [--skip-evaluation | --enable-evaluation] [--ppo-control | PPO optimization flags]',
         '  node Training/bees_operator.js server',
         '  node Training/bees_operator.js start [--new-run | --resume-run ID] [--env-arg VALUE ...]',
         '  node Training/bees_operator.js stop [--server]',
@@ -96,6 +96,8 @@ function parseArgs(argv = process.argv.slice(2)) {
         explicitLearnerOptimizations: false,
         entropy: null,
         explicitEntropy: false,
+        skipEvaluation: false,
+        explicitSkipEvaluation: false,
         envArgs: [],
         once: false,
         refreshSeconds: 2,
@@ -260,6 +262,12 @@ function parseArgs(argv = process.argv.slice(2)) {
             index++;
         } else if (arg === '--evaluate') {
             options.evaluate = true;
+        } else if (arg === '--skip-evaluation' || arg === '--enable-evaluation') {
+            if (options.explicitSkipEvaluation) {
+                throw new Error('--skip-evaluation and --enable-evaluation may be specified only once.');
+            }
+            options.skipEvaluation = arg === '--skip-evaluation';
+            options.explicitSkipEvaluation = true;
         } else if (arg === '-h' || arg === '--help') {
             options.help = true;
         } else {
@@ -302,6 +310,9 @@ function parseArgs(argv = process.argv.slice(2)) {
     }
     if (options.explicitEntropy && command !== 'runtime') {
         throw new Error('--entropy is only valid with the runtime command.');
+    }
+    if (options.explicitSkipEvaluation && command !== 'runtime') {
+        throw new Error('--skip-evaluation and --enable-evaluation are only valid with the runtime command.');
     }
     if (
         options.ppoControl &&

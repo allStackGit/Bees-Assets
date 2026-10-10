@@ -172,6 +172,9 @@ async function invokeRuntime(options = {}) {
     if (options.explicitEntropy) {
         runtimeOverrides.entropyBeta = Number(options.entropy);
     }
+    if (options.explicitSkipEvaluation) {
+        runtimeOverrides.skipEvaluation = Boolean(options.skipEvaluation);
+    }
     if (options.explicitLearnerOptimizations) {
         runtimeOverrides.learnerOptimizations = options.ppoControl
             ? {
@@ -284,6 +287,7 @@ async function invokeRuntime(options = {}) {
                 ),
                 learnerOptimizations: config.learnerOptimizations,
                 entropyBeta: config.entropyBeta,
+                skipEvaluation: Boolean(config.skipEvaluation),
             });
             console.log(
                 'Latest release is an interrupted incompatible cutover. ' +
@@ -337,6 +341,7 @@ async function invokeRuntime(options = {}) {
         ),
         learnerOptimizations: config.learnerOptimizations,
         entropyBeta: config.entropyBeta,
+        skipEvaluation: Boolean(config.skipEvaluation),
     });
 
     const unity = resolveUnityEditor(config);
@@ -396,7 +401,8 @@ async function invokeRuntime(options = {}) {
         ) +
         ' entropy_beta=' + (
             config.entropyBeta == null ? 'base' : String(config.entropyBeta)
-        ) + '.'
+        ) +
+        ' evaluation=' + (config.skipEvaluation ? 'off' : 'on') + '.'
     );
 }
 
