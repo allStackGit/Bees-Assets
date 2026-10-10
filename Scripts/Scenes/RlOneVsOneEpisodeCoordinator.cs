@@ -144,8 +144,6 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
     private int _humanShotsThisEpisode;
     private int _beeTurretStaticObstacleImpactsThisEpisode;
     private int _humanTurretStaticObstacleImpactsThisEpisode;
-    private int _beeFireRequestsThisEpisode;
-    private int _humanFireRequestsThisEpisode;
     private int _beeHitsThisEpisode;
     private int _humanHitsThisEpisode;
     private int _beeTurretHitsThisEpisode;
@@ -190,21 +188,6 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
     private int _humanContactLossCount;
 
     private readonly StringBuilder _communicationTrace = new StringBuilder();
-    private readonly HashSet<long>[] _initialShipIds = { new HashSet<long>(), new HashSet<long>() };
-    private readonly HashSet<long>[] _seenShipIds = { new HashSet<long>(), new HashSet<long>() };
-    private readonly HashSet<long>[] _policyEligibleShipIds = { new HashSet<long>(), new HashSet<long>() };
-    private readonly HashSet<long>[] _policyControlledShipIds = { new HashSet<long>(), new HashSet<long>() };
-    private readonly Dictionary<ConfigData.WeaponTypes, int>[] _fireRequestsByWeapon =
-    {
-        new Dictionary<ConfigData.WeaponTypes, int>(),
-        new Dictionary<ConfigData.WeaponTypes, int>()
-    };
-    private readonly Dictionary<ConfigData.WeaponTypes, int>[] _shotsByWeapon =
-    {
-        new Dictionary<ConfigData.WeaponTypes, int>(),
-        new Dictionary<ConfigData.WeaponTypes, int>()
-    };
-
     // Discovery denominators are captured before an episode starts rewarding observations. Enemy
     // ships are side-specific; neutral environmental categories have the same denominator for both
     // sides. Collision asteroids are deliberately absent because they can spawn throughout battle.
@@ -367,22 +350,9 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         return -1;
     }
 
+    // Preserve the existing call-site hook without collecting redundant fire requests.
     internal static void RecordFireRequest(Ship ship, Weapon weapon)
     {
-        if (!TryGetTrackedSide(ship, out RlOneVsOneEpisodeCoordinator coordinator, out int sideIndex))
-        {
-            return;
-        }
-
-        if (sideIndex == 0)
-        {
-            coordinator._beeFireRequestsThisEpisode++;
-        }
-        else
-        {
-            coordinator._humanFireRequestsThisEpisode++;
-        }
-        IncrementWeaponCount(coordinator._fireRequestsByWeapon[sideIndex], weapon);
     }
 
     internal static void RecordShotFired(Ship ship, Weapon weapon)
@@ -408,7 +378,6 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
                 coordinator._humanFirstFireSeconds = coordinator.ElapsedEpisodeSeconds;
             }
         }
-        IncrementWeaponCount(coordinator._shotsByWeapon[sideIndex], weapon);
     }
 
     internal static void RecordProjectileStaticObstacleImpact(
@@ -465,16 +434,6 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
             return true;
         }
         return false;
-    }
-
-    private static void IncrementWeaponCount(Dictionary<ConfigData.WeaponTypes, int> counts, Weapon weapon)
-    {
-        if (weapon == null)
-        {
-            return;
-        }
-        counts.TryGetValue(weapon.Type, out int current);
-        counts[weapon.Type] = current + 1;
     }
 
     private static bool HasPersistentFleetValue(Ship ship)
@@ -1118,8 +1077,6 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         _humanShotsThisEpisode = 0;
         _beeTurretStaticObstacleImpactsThisEpisode = 0;
         _humanTurretStaticObstacleImpactsThisEpisode = 0;
-        _beeFireRequestsThisEpisode = 0;
-        _humanFireRequestsThisEpisode = 0;
         _beeHitsThisEpisode = 0;
         _humanHitsThisEpisode = 0;
         _beeTurretHitsThisEpisode = 0;
@@ -1174,39 +1131,11 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         _beeExplorationGrid.Reset();
         _humanExplorationGrid.Reset();
         _communicationTrace.Clear();
-        ResetShipDiagnostics(beeShips, humanShips);
         RlOneVsOneEpisodeDiagnostics.Begin(level);
         CaptureDiscoveryBaselines(level, beeSide, humanSide);
         _discoveryRewardsReady = false;
         _episodeActive = true;
         TrackEpisodeShips(level);
-    }
-
-    private void ResetShipDiagnostics(List<Ship> beeShips, List<Ship> humanShips)
-    {
-        for (int sideIndex = 0; sideIndex < 2; sideIndex++)
-        {
-            _initialShipIds[sideIndex].Clear();
-            _seenShipIds[sideIndex].Clear();
-            _policyEligibleShipIds[sideIndex].Clear();
-            _policyControlledShipIds[sideIndex].Clear();
-            _fireRequestsByWeapon[sideIndex].Clear();
-            _shotsByWeapon[sideIndex].Clear();
-        }
-        AddInitialShipIds(beeShips, _initialShipIds[0]);
-        AddInitialShipIds(humanShips, _initialShipIds[1]);
-    }
-
-    private static void AddInitialShipIds(List<Ship> ships, HashSet<long> destination)
-    {
-        for (int i = 0; i < ships.Count; i++)
-        {
-            Ship ship = ships[i];
-            if (ship != null && !ship.IsDead)
-            {
-                destination.Add(ship.Id);
-            }
-        }
     }
 
     private void TrackEpisodeShips(Level level)
@@ -1219,8 +1148,6 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         int humanSide = ConfigData.Configuration.HumanSide;
         List<Ship> beeShips = level.State.GetShips(beeSide);
         List<Ship> humanShips = level.State.GetShips(humanSide);
-        TrackSideShips(beeShips, 0);
-        TrackSideShips(humanShips, 1);
         float episodeProgress = level.GetNormalizedRlEpisodeProgress();
         _beeExplorationGrid.Update(level, beeShips, episodeProgress);
         _humanExplorationGrid.Update(level, humanShips, episodeProgress);
@@ -1337,28 +1264,6 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
                 if (everHadVisibleEnemy)
                 {
                     _humanLostContactSeconds += stateDuration;
-                }
-            }
-        }
-    }
-
-    private void TrackSideShips(List<Ship> ships, int sideIndex)
-    {
-        for (int i = 0; i < ships.Count; i++)
-        {
-            Ship ship = ships[i];
-            if (ship == null)
-            {
-                continue;
-            }
-            _seenShipIds[sideIndex].Add(ship.Id);
-            if (RlOneVsOneAgent.RequiresPolicyControl(ship) &&
-                !RlPlayerDerivedActionReplay.IsScriptedSide(ship.Level, ship.Side))
-            {
-                _policyEligibleShipIds[sideIndex].Add(ship.Id);
-                if (ship.IsRlPolicyControlled)
-                {
-                    _policyControlledShipIds[sideIndex].Add(ship.Id);
                 }
             }
         }
