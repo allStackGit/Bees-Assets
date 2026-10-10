@@ -182,7 +182,7 @@ def _episode_coordinator_semantic_sha256(path: Path) -> str:
     # collection/serialization and leaves episode results, rewards, observations and
     # PPO unchanged. Keep its prior run contract fingerprint so an existing optimizer
     # lineage can continue. Any further coordinator change gets a new hash as before.
-    if semantic_sha == "23d44441dce0a89869245ef0f4b1a1f120774bb61c3f6471c549cf6a0bff237a":
+    if semantic_sha == "6c7b6e92c45760788b5b8310a86a2a74337a958b60c35a7b2c86805b9056b983":
         return "9f7daef84b0e8f733832b5a0457ba54fb658a10844c3b41e27c16859fd9b9933"
     return semantic_sha
 
