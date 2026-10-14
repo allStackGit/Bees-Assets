@@ -765,6 +765,9 @@ class ActorSession:
         )
         self._throughput_lock = threading.Lock()
         self._accepted_steps_total = 0
+        self._staged_steps_total = 0
+        self._staged_steps_per_sec = None
+        self._last_staged_rate_sample = None
         self._accepted_trajectories_total = 0
         self._accepted_steps_per_sec = None
         self._last_accepted_rate_sample = None
@@ -891,6 +894,20 @@ class ActorSession:
         with self._throughput_lock:
             if not force and now - self._last_throughput_write < 1.0:
                 return
+            staged_previous = self._last_staged_rate_sample
+            if staged_previous is not None:
+                elapsed = now - staged_previous[0]
+                if elapsed >= 0.5:
+                    delta = self._staged_steps_total - staged_previous[1]
+                    if delta < 0:
+                        self._staged_steps_per_sec = None
+                    else:
+                        sampled = delta / elapsed
+                        self._staged_steps_per_sec = (
+                            sampled if self._staged_steps_per_sec is None
+                            else 0.25 * sampled + 0.75 * self._staged_steps_per_sec
+                        )
+            self._last_staged_rate_sample = (now, self._staged_steps_total)
             previous = self._last_accepted_rate_sample
             if previous is not None:
                 elapsed = now - previous[0]
@@ -908,11 +925,14 @@ class ActorSession:
             payload = {
                 "pid": os.getpid(),
                 "env_count": self.env_count,
+                "staged_steps_total": self._staged_steps_total,
                 "accepted_steps_total": self._accepted_steps_total,
                 "accepted_trajectories_total": self._accepted_trajectories_total,
                 "learner_consumed_steps_total": self._learner_consumed_steps_total,
                 "upload_queue_depth": self._upload_queue.qsize(),
             }
+            if self._staged_steps_per_sec is not None:
+                payload["staged_steps_per_sec"] = self._staged_steps_per_sec
             if self._accepted_steps_per_sec is not None:
                 payload["accepted_steps_per_sec"] = self._accepted_steps_per_sec
             if self._learner_consumed_steps_per_sec is not None:
@@ -1431,6 +1451,9 @@ class ActorSession:
         while not self.stop.is_set():
             try:
                 self._upload_queue.put(payload, timeout=0.5)
+                step_count = _trajectory_step_count(payload.get("trajectories", ()))
+                with self._throughput_lock:
+                    self._staged_steps_total += step_count
                 return True
             except queue.Full:
                 # This is intentional broker backpressure, not a dead rollout.
