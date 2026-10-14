@@ -422,7 +422,9 @@ async function getStatusFrameLines(config, adminToken) {
                     )
                     : 'off'
             ) +
-            ' max_remote=' + config.maxRemoteActors +
+            ' max_remote=' + (config.localOnly ? 0 : config.maxRemoteActors) +
+            ' local_only=' + (config.localOnly ? 'on' : 'off') +
+            ' learner_device=' + (config.learnerDevice || 'trainer-config') +
             ' broker_port=' + config.brokerPort +
             ' threaded=' + (config.threadedTraining ? 'on' : 'off') +
             ' policy_lag=' + Number(config.threadedPolicyLag)
