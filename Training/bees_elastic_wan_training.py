@@ -819,6 +819,13 @@ class ElasticWanBroker(base.WanActorBroker):
                 },
                 "trajectory_queue_depth": self._trajectory_batches.qsize(),
                 "trajectory_queue_capacity": self.options.max_queued_batches,
+                "broker_backpressure_total": self.diagnostics._backpressure_total,
+                "accepted_stale_steps_total": self._accepted_stale_steps,
+                "consumed_stale_steps_total": self._consumed_stale_steps,
+                "discarded_stale_steps_total": (
+                    self._discarded_stale_steps +
+                    self._discarded_stale_trajectory_steps
+                ),
             }
 
     def _validate_dynamic_owner_locked(self, actor_id: int, payload: Mapping[str, Any]) -> None:
