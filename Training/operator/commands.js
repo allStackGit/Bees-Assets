@@ -163,6 +163,7 @@ async function invokeRuntime(options = {}) {
         threadedTraining: Boolean(options.threaded),
         localTraining: Boolean(options.localTraining),
         localOnly: Boolean(options.localOnly),
+        cpuGradientProbe: Boolean(options.cpuGradientProbe),
         // Runtime invocations default to zero direct local Unity environments.
         numLocalEnvs: options.explicitLocalEnvs ? Number(options.localEnvs) : 0,
     };
@@ -299,6 +300,7 @@ async function invokeRuntime(options = {}) {
                 learnerOptimizations: config.learnerOptimizations,
                 entropyBeta: config.entropyBeta,
                 skipEvaluation: Boolean(config.skipEvaluation),
+                cpuGradientProbe: Boolean(config.cpuGradientProbe),
             });
             console.log(
                 'Latest release is an interrupted incompatible cutover. ' +
@@ -352,6 +354,7 @@ async function invokeRuntime(options = {}) {
         learnerOptimizations: config.learnerOptimizations,
         entropyBeta: config.entropyBeta,
         skipEvaluation: Boolean(config.skipEvaluation),
+                cpuGradientProbe: Boolean(config.cpuGradientProbe),
     });
 
     const unity = resolveUnityEditor(config);
