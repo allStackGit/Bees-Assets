@@ -163,10 +163,9 @@ async function invokeRuntime(options = {}) {
         threadedTraining: Boolean(options.threaded),
         localTraining: Boolean(options.localTraining),
         localOnly: Boolean(options.localOnly),
+        // Runtime invocations default to zero direct local Unity environments.
+        numLocalEnvs: options.explicitLocalEnvs ? Number(options.localEnvs) : 0,
     };
-    if (options.explicitLocalEnvs) {
-        runtimeOverrides.numLocalEnvs = Number(options.localEnvs);
-    }
     if (options.explicitLearnerDevice) {
         runtimeOverrides.learnerDevice = String(options.learnerDevice);
     }
