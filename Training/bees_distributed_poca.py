@@ -103,10 +103,12 @@ def poll_shadow_gradient_probe() -> None:
     if not isinstance(remote, Mapping) or set(remote) != set(reference):
         print("[Bees CPU gradient probe] incompatible remote parameter names", flush=True)
         return
-    numerator = 0.0
-    remote_norm_sq = 0.0
-    local_norm_sq = 0.0
-    diff_sq = 0.0
+    totals = {
+        "all": [0.0, 0.0, 0.0, 0.0],
+        "actor": [0.0, 0.0, 0.0, 0.0],
+        "critic": [0.0, 0.0, 0.0, 0.0],
+    }
+    per_parameter = []
     for name, local in reference.items():
         foreign = remote[name]
         if foreign is None and local is None:
@@ -123,22 +125,73 @@ def poll_shadow_gradient_probe() -> None:
             return
         foreign = foreign.to(device="cpu", dtype=torch.float64)
         local = local.to(device="cpu", dtype=torch.float64)
-        numerator += float((foreign * local).sum().item())
-        remote_norm_sq += float((foreign * foreign).sum().item())
-        local_norm_sq += float((local * local).sum().item())
-        diff_sq += float(((foreign - local) ** 2).sum().item())
-    cosine = numerator / max(1e-20, math.sqrt(remote_norm_sq * local_norm_sq))
-    relative = math.sqrt(diff_sq) / max(1e-10, math.sqrt(local_norm_sq))
+        values = (
+            float((foreign * local).sum().item()),
+            float((foreign * foreign).sum().item()),
+            float((local * local).sum().item()),
+            float(((foreign - local) ** 2).sum().item()),
+        )
+        family = name.split(".", 1)[0]
+        if family not in totals:
+            print("[Bees CPU gradient probe] unknown gradient family: " + name, flush=True)
+            return
+        for key in ("all", family):
+            for index, value in enumerate(values):
+                totals[key][index] += value
+        per_parameter.append((name, values[3]))
+
+    def metrics(family):
+        product, foreign_sq, local_sq, difference_sq = totals[family]
+        cosine = product / max(1e-20, math.sqrt(foreign_sq * local_sq))
+        relative = math.sqrt(difference_sq) / max(1e-10, math.sqrt(local_sq))
+        return cosine, relative, math.sqrt(local_sq), math.sqrt(foreign_sq)
+
+    cosine, relative, local_norm, remote_norm = metrics("all")
+    actor_cosine, actor_relative, _, _ = metrics("actor")
+    critic_cosine, critic_relative, _, _ = metrics("critic")
+    timing = result.get("_broker_timings", {})
+    if not isinstance(timing, Mapping):
+        timing = {}
     print(
         "[Bees CPU gradient probe] "
         f"batch={result.get('batch_experiences', 0)} "
         f"worker={result.get('worker', '-')} "
         f"remote_compute_s={result.get('compute_seconds', 0):.3f} "
         f"round_trip_s={time.monotonic() - item['submitted']:.3f} "
+        f"queue_s={float(timing.get('queue_seconds', 0)):.2f} "
+        f"in_flight_s={float(timing.get('in_flight_seconds', 0)):.2f} "
+        f"poll_delay_s={float(timing.get('poll_delay_seconds', 0)):.2f} "
         f"cosine={cosine:.6f} relative_difference={relative:.6f} "
+        f"actor_cosine={actor_cosine:.6f} actor_relative={actor_relative:.6f} "
+        f"critic_cosine={critic_cosine:.6f} critic_relative={critic_relative:.6f} "
         "(no remote gradient applied)",
         flush=True,
     )
+    print(
+        "[Bees CPU gradient detail] "
+        f"local_norm={local_norm:.6g} remote_norm={remote_norm:.6g} "
+        "largest_differences=" + ",".join(
+            f"{name}:{math.sqrt(squared) / max(1e-10, local_norm):.5f}"
+            for name, squared in sorted(
+                per_parameter, key=lambda item: item[1], reverse=True
+            )[:5]
+        ),
+        flush=True,
+    )
+    local_stats = item.get("local_stats")
+    remote_stats = result.get("stats")
+    if isinstance(local_stats, Mapping) and isinstance(remote_stats, Mapping):
+        shared = sorted(set(local_stats).intersection(remote_stats))
+        if shared:
+            print(
+                "[Bees CPU gradient losses] " + " ".join(
+                    f"{name.replace(' ', '_')}="
+                    f"{float(local_stats[name]):.6g}/{float(remote_stats[name]):.6g}"
+                    for name in shared
+                ) + " (Exeter/CPU)",
+                flush=True,
+            )
+
 
 
 def begin_shadow_gradient_probe(
@@ -193,7 +246,9 @@ def begin_shadow_gradient_probe(
         return None
 
 
-def capture_shadow_reference(optimizer: Any, job_id: str | None) -> None:
+def capture_shadow_reference(
+    optimizer: Any, job_id: str | None, update_stats: Mapping[str, Any] | None = None
+) -> None:
     global _SHADOW_PROBE
     if not job_id or _SHADOW_PROBE is None:
         return
@@ -204,6 +259,14 @@ def capture_shadow_reference(optimizer: Any, job_id: str | None) -> None:
         param.grad.detach().to(device="cpu", copy=True)
         for name, param in _named_parameters(optimizer).items()
     }
+    if update_stats is not None:
+        _SHADOW_PROBE["local_stats"] = {
+            name: (
+                float(value.detach().cpu().item())
+                if hasattr(value, "detach") else float(value)
+            )
+            for name, value in update_stats.items()
+        }
 
 
 def create_cpu_gradient_optimizer(
