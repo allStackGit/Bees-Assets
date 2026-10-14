@@ -97,7 +97,10 @@ def poll_shadow_gradient_probe() -> None:
 
     reference = item["local_gradients"]
     remote = result.get("gradients", {})
-    if set(remote) != set(reference):
+    if not isinstance(reference, dict):
+        print("[Bees CPU gradient probe] local reference unavailable; no model change", flush=True)
+        return
+    if not isinstance(remote, Mapping) or set(remote) != set(reference):
         print("[Bees CPU gradient probe] incompatible remote parameter names", flush=True)
         return
     numerator = 0.0
