@@ -828,6 +828,23 @@ def read_throughput_metrics(
         "learner_consumed_steps_total": learner_consumed_steps,
         "upload_queue_depth": queue_depth,
     }
+    for field in (
+        "broker_queue_depth",
+        "broker_queue_capacity",
+        "broker_backpressure_total",
+        "broker_accepted_stale_steps_total",
+        "broker_consumed_stale_steps_total",
+        "broker_discarded_stale_steps_total",
+    ):
+        metric = value.get(field)
+        if metric is not None:
+            if (
+                not isinstance(metric, int)
+                or isinstance(metric, bool)
+                or metric < 0
+            ):
+                return {}
+            result[field] = metric
     if learner_step_total is not None:
         result["learner_step_total"] = int(learner_step_total)
     if optimizer_busy_seconds_total is not None:
