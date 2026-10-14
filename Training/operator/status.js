@@ -752,7 +752,7 @@ async function getStatusFrameLines(config, adminToken) {
             '  global learner=' + number(learner.LiveStepsPerSecond, 1) + ' exp/s'
         );
         lines.push(gradientSummary);
-        lines.push('CPU gradient contributions: shadow/probe only; remote gradients are NOT applied to PPO.');
+        lines.push('CPU gradient contributions: shadow/probe only; remote gradients are NOT applied to PPO. Probe=' + (config.cpuGradientProbe ? 'on' : 'off') + '.');
         lines.push(...ppoStatusLines(
             getLatestPpoUpdate(String(desired.run_id || '')),
             { uploadBacklog, broker }
