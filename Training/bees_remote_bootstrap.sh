@@ -27,7 +27,7 @@ Commands:
   stop                   Gracefully stop the background worker.
 
 Options:
-  --envs N               Pin a fixed Unity environment count (1-64); omission auto-tunes.
+  --envs N               Pin a fixed Unity environment count (1-64); omission selects a fixed safe startup count.
   --install-root PATH    Local Linux worker installation directory.
   --torch-device DEVICE  Local inference device, normally cpu or cuda.
   --no-autostart          Do not register this worker to restart after reboot/login.
@@ -691,7 +691,7 @@ echo "[Bees remote] Stage 5/5: starting managed training worker in the backgroun
 if [[ -n "$ENVS" ]]; then
     echo "[Bees remote] starting worker with $ENVS environments."
 else
-    echo "[Bees remote] starting worker with BeesServer environment auto-optimization (CPU-derived start, RAM-capped maximum 64)."
+    echo "[Bees remote] starting worker with a fixed CPU/RAM-derived startup count (no auto-resizing)."
 fi
 rm -f "$SHUTDOWN_REQUEST_FILE"
 nohup "$VENV_PYTHON" -u "${WORKER_ARGS[@]}" >>"$SUPERVISOR_LOG" 2>&1 </dev/null &
