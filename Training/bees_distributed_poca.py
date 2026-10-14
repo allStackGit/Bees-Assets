@@ -208,7 +208,8 @@ def create_cpu_gradient_optimizer(
     from mlagents.trainers.poca.optimizer_torch import TorchPOCAOptimizer
     from mlagents.trainers.settings import TorchSettings
 
-    from bees_mlagents_ppo_compat import install_value_estimate_key
+    from bees_mlagents_structured_policy import install_structured_policy
+    from bees_mlagents_ppo_compat import install_value_estimate_key_fix
     from bees_wan_actor_worker import _build_template_policy
 
     if not 1 <= cpu_threads <= (max(1, int(__import__("os").cpu_count() or 1))):
@@ -217,7 +218,10 @@ def create_cpu_gradient_optimizer(
     torch.set_num_threads(cpu_threads)
     if default_device().type != "cpu":
         raise RuntimeError("Refusing to construct a remote gradient optimizer on GPU")
-    install_value_estimate_key()
+    # Mirror Exeter's patch order: structured actor first, then masked
+    # MA-POCA loss and value/return-key compatibility.
+    install_structured_policy()
+    install_value_estimate_key_fix()
     policy = _build_template_policy(behavior_id, behavior_spec, run_options, 0)
     trainer_settings = run_options.behaviors[
         BehaviorIdentifiers.from_name_behavior_id(behavior_id).brain_name
