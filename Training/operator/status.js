@@ -607,6 +607,9 @@ async function getStatusFrameLines(config, adminToken) {
                 State: record.stale ? 'STALE' : String(record.process_state || '-'),
                 Envs: envDisplay,
                 'LiveExp/s': liveExpRate,
+                'Accept/s': throughput.accepted_steps_per_sec != null
+                    ? number(throughput.accepted_steps_per_sec, 1)
+                    : '-',
                 'OptStep/s': expRate,
                 Accepted: throughput.accepted_steps_total == null ? '-' : String(throughput.accepted_steps_total),
                 Consumed: throughput.learner_consumed_steps_total == null ? '-' : String(throughput.learner_consumed_steps_total),
@@ -643,7 +646,7 @@ async function getStatusFrameLines(config, adminToken) {
 
         if (rows.length) {
             lines.push(...table(rows, [
-                'Trainer', 'Role', 'Platform', 'State', 'Envs', 'LiveExp/s', 'OptStep/s',
+                'Trainer', 'Role', 'Platform', 'State', 'Envs', 'LiveExp/s', 'Accept/s', 'OptStep/s',
                 'Accepted', 'Consumed', 'UploadQ', 'SentGiB', 'RecvGiB', 'MiB/s', 'Opt', 'Build', 'Rev', 'Age',
                 'Timeout', 'BWin', 'HWin', 'Draw', 'Dur', 'BHit/Sh', 'HHit/Sh',
                 'BAim', 'HAim', 'B<5', 'H<5', 'BAligned', 'HAligned', 'Error',
@@ -673,17 +676,24 @@ async function getStatusFrameLines(config, adminToken) {
             .map(record => record.metrics && record.metrics.throughput &&
                 Number(record.metrics.throughput.learner_consumed_steps_per_sec))
             .filter(rate => Number.isFinite(rate) && rate >= 0);
+        const acceptedRateSamples = trainers
+            .filter(record => String(record.trainer_id || '') !== 'central-learner')
+            .map(record => record.metrics && record.metrics.throughput &&
+                Number(record.metrics.throughput.accepted_steps_per_sec))
+            .filter(rate => Number.isFinite(rate) && rate >= 0);
         const uploadBacklog = trainers.reduce((total, record) => {
             const depth = record.metrics && record.metrics.throughput &&
                 Number(record.metrics.throughput.upload_queue_depth);
             return total + (Number.isFinite(depth) && depth >= 0 ? depth : 0);
         }, 0);
         lines.push(
-            'Pipeline: remote learner-consumed=' +
+            'Pipeline: worker accepted=' +
+            (acceptedRateSamples.length ? number(acceptedRateSamples.reduce((a, b) => a + b, 0), 1) : '-') +
+            ' exp/s  worker consumed=' +
             (remoteRateSamples.length ? number(remoteRateSamples.reduce((a, b) => a + b, 0), 1) : '-') +
-            ' exp/s (sum of reporting remote workers)  queued uploads=' + uploadBacklog +
-            ' (worker-side only)  trained=' + number(learner.LiveStepsPerSecond, 1) +
-            ' exp/s (global ML-Agents window)'
+            ' exp/s  queued uploads=' + uploadBacklog +
+            ' (worker-side only)  trainer=' + number(learner.LiveStepsPerSecond, 1) +
+            ' exp/s (older ML-Agents reporting window; rates are not directly comparable)'
         );
         lines.push(...ppoStatusLines(
             getLatestPpoUpdate(String(desired.run_id || '')),
@@ -691,7 +701,7 @@ async function getStatusFrameLines(config, adminToken) {
             uploadBacklog
         ));
         lines.push(
-            'Rates: LiveExp/s is recent per-worker learner-consumed experience; OptStep/s is the environment auto-tuner probe estimate, NOT optimizer gradient steps/s. Learner Step/s counts experiences, not repeated PPO epochs.'
+            'Rates: Accept/s is recent accepted rollout experience, LiveExp/s is learner-consumed experience, and OptStep/s is a historical environment auto-tuner probe, NOT gradient updates/s. Learner Step/s counts unique experiences, not PPO epochs.'
         );
         lines.push(
             'Network: SentGiB/RecvGiB are cumulative per-run WAN payload bytes; MiB/s is the current payload rate when a live actor session is available.'
