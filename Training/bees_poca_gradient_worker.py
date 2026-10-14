@@ -63,8 +63,9 @@ def run_gradient_worker(
             if not isinstance(job, Mapping):
                 raise RuntimeError("Malformed gradient job")
             job_id = str(job.get("job_id", ""))
+            claim_token = str(job.get("claim_token", ""))
             payload = job.get("payload")
-            if not job_id or not isinstance(payload, Mapping):
+            if not job_id or not claim_token or not isinstance(payload, Mapping):
                 raise RuntimeError("Gradient job missing payload/identity")
 
             result: dict[str, Any]
@@ -98,6 +99,7 @@ def run_gradient_worker(
                         "session_id": session_id,
                         "worker": identity,
                         "job_id": job_id,
+                        "claim_token": claim_token,
                         "result": result,
                     },
                 )
