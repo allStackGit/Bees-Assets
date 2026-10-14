@@ -31,7 +31,7 @@ Commands:
 Options:
   --envs N               Pin a fixed Unity environment count (1-64); omission selects a fixed safe startup count.
   --auto-envs            Opt into continuous environment-count tuning (off by default).
-  --learning-cpus N      Use N CPUs for a separate gradient worker (default 0).
+  --learning-cpus N      Experimental CPU gradient executor, shadow-only (default 0).
   --install-root PATH    Local Linux worker installation directory.
   --torch-device DEVICE  Local inference device, normally cpu or cuda.
   --no-autostart          Do not register this worker to restart after reboot/login.
