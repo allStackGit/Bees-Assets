@@ -98,6 +98,7 @@ function parseArgs(argv = process.argv.slice(2)) {
         ppoCriticBaselineOverlap: false,
         ppoCudaGraphs: false,
         ppoProfile: false,
+        cpuGradientProbe: false,
         explicitLearnerOptimizations: false,
         entropy: null,
         explicitEntropy: false,
@@ -227,6 +228,8 @@ function parseArgs(argv = process.argv.slice(2)) {
         } else if (arg === '--ppo-cuda-graphs') {
             options.ppoCudaGraphs = true;
             options.explicitLearnerOptimizations = true;
+        } else if (arg === '--cpu-gradient-probe') {
+            options.cpuGradientProbe = true;
         } else if (arg === '--ppo-profile') {
             options.ppoProfile = true;
             options.explicitLearnerOptimizations = true;
@@ -333,6 +336,9 @@ function parseArgs(argv = process.argv.slice(2)) {
     }
     if (options.explicitLearnerOptimizations && command !== 'runtime') {
         throw new Error('PPO learner optimization flags are only valid with the runtime command.');
+    }
+    if (options.cpuGradientProbe && command !== 'runtime') {
+        throw new Error('--cpu-gradient-probe is only valid with the runtime command.');
     }
     if (options.explicitEntropy && command !== 'runtime') {
         throw new Error('--entropy is only valid with the runtime command.');
