@@ -6844,7 +6844,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                         )
                         if probe_id is not None:
                             try:
-                                capture_shadow_reference(self.optimizer, probe_id)
+                                capture_shadow_reference(self.optimizer, probe_id, update_stats)
                             except Exception as exc:
                                 print(
                                     "[Bees CPU gradient probe] unable to capture local gradients: "
