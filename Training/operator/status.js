@@ -245,8 +245,9 @@ function ppoStatusLines(ppo, consumedRate, workerBacklog) {
         .sort((a, b) => b[1] - a[1])[0];
     const evidence = leading ? leading[0] + ' is the largest measured stage' : 'stage totals unavailable';
     if (workerBacklog > 0) {
-        lines.push('Bottleneck signal: learner/PPO likely limiting; queued worker uploads=' +
-            workerBacklog + ', ' + evidence + '.');
+        lines.push('Bottleneck signal: queued worker uploads=' + workerBacklog +
+            ' (network or learner may be limiting); ' + evidence +
+            '. Check sustained queue growth before diagnosing the limiting stage.');
     } else if (consumedRate != null && Number.isFinite(consumedRate)) {
         lines.push('Bottleneck signal: ' + evidence +
             '; no queued worker uploads reported. Cannot confirm global limit from one snapshot.');
