@@ -32,6 +32,7 @@ class ElasticActorSession(worker.ActorSession):
         self.policy_cycle = -1
         self.learner_step = -1
         self.optimizer_busy_seconds_total = None
+        self._broker_pipeline_metrics: dict[str, int] = {}
         self._last_consumed_sample = None
         target_path = os.environ.get(WORKER_ENVS_TARGET_ENV, "").strip()
         self._env_target_path = (
@@ -67,6 +68,7 @@ class ElasticActorSession(worker.ActorSession):
             and float(optimizer_busy) >= 0.0
         ):
             payload["optimizer_busy_seconds_total"] = float(optimizer_busy)
+        payload.update(self._broker_pipeline_metrics)
         if isinstance(failure, Mapping):
             payload.update(
                 {
@@ -627,6 +629,24 @@ class ElasticActorSession(worker.ActorSession):
                     "Elastic WAN central state has malformed optimizer-busy metadata"
                 )
             self.optimizer_busy_seconds_total = float(optimizer_busy)
+
+        broker_metrics = {}
+        for remote_key, local_key in (
+            ("trajectory_queue_depth", "broker_queue_depth"),
+            ("trajectory_queue_capacity", "broker_queue_capacity"),
+            ("broker_backpressure_total", "broker_backpressure_total"),
+            ("accepted_stale_steps_total", "broker_accepted_stale_steps_total"),
+            ("consumed_stale_steps_total", "broker_consumed_stale_steps_total"),
+            ("discarded_stale_steps_total", "broker_discarded_stale_steps_total"),
+        ):
+            value = state.get(remote_key)
+            if value is not None:
+                if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+                    raise RuntimeError(
+                        f"Elastic WAN central state has invalid {remote_key}"
+                    )
+                broker_metrics[local_key] = value
+        self._broker_pipeline_metrics = broker_metrics
 
         consumed = state.get("consumed_steps_by_actor")
         if not isinstance(consumed, Mapping):
