@@ -616,6 +616,8 @@ class WanActorBroker:
         )
         self._server_thread.start()
         self._server_started_once = True
+        from bees_distributed_poca import set_active_gradient_exchange
+        set_active_gradient_exchange(self.gradient_exchange)
         print(
             f"[Bees WAN] actor broker listening only on 127.0.0.1:{self.options.broker_port}; "
             "remote machines must use the managed authenticated private forward."
@@ -642,6 +644,8 @@ class WanActorBroker:
         self.start()
 
     def close(self) -> None:
+        from bees_distributed_poca import set_active_gradient_exchange
+        set_active_gradient_exchange(None)
         self.gradient_exchange.close()
         with self._condition:
             self._closed = True
