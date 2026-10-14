@@ -11,6 +11,9 @@ param(
     [ValidateRange(0,2147483647)][int]$PolicyLag,
     [ValidateRange(1,2147483647)][int]$BackpressureQueue,
     [switch]$LocalTraining,
+    [ValidateSet('cpu','cuda')][string]$LearnerDevice,
+    [switch]$LocalOnly,
+    [ValidateRange(0,2147483647)][int]$LocalEnvs,
     [switch]$PpoControl,
     [switch]$PpoSyncCleanup,
     [ValidateSet(1,2,4)][int]$PpoStreamShards,
@@ -54,6 +57,9 @@ if($Threaded -and $Command -ne 'runtime'){
 }
 if($LocalTraining -and $Command -ne 'runtime'){
     throw '-LocalTraining is only valid with the runtime command.'
+}
+if(($LocalOnly -or $PSBoundParameters.ContainsKey('LearnerDevice') -or $PSBoundParameters.ContainsKey('LocalEnvs')) -and $Command -ne 'runtime'){
+    throw '-LocalOnly, -LearnerDevice, and -LocalEnvs are only valid with the runtime command.'
 }
 if($PSBoundParameters.ContainsKey('PolicyLag') -and $Command -ne 'runtime'){
     throw '-PolicyLag is only valid with the runtime command.'
@@ -145,6 +151,9 @@ if($PSBoundParameters.ContainsKey('BackpressureQueue')){
     $arguments+=@('--backpressure-queue',[string]$BackpressureQueue)
 }
 if($LocalTraining){$arguments+='--local-training'}
+if($PSBoundParameters.ContainsKey('LearnerDevice')){$arguments+=@('--learner-device',$LearnerDevice.ToLowerInvariant())}
+if($LocalOnly){$arguments+='--local-only'}
+if($PSBoundParameters.ContainsKey('LocalEnvs')){$arguments+=@('--local-envs',[string]$LocalEnvs)}
 if($PpoControl){$arguments+='--ppo-control'}
 if($PpoSyncCleanup){$arguments+='--ppo-sync-cleanup'}
 if($PSBoundParameters.ContainsKey('PpoStreamShards')){
