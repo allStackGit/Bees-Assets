@@ -78,6 +78,7 @@ class ServiceOptions:
     environment_args: tuple[str, ...] = ()
     entropy_beta: Optional[float] = None
     skip_evaluation: bool = False
+    learner_device: Optional[str] = None
 
 
 Runner = Callable[..., subprocess.CompletedProcess]
@@ -356,6 +357,17 @@ def _write_immutable_generation_config(path: Path, body: bytes) -> Path:
 
 def write_generation_config(options: ServiceOptions, index: int) -> Path:
     source = options.trainer_config.read_text(encoding="utf-8")
+    if options.learner_device is not None:
+        existing_device = _torch_device_from_config(source)
+        if existing_device != options.learner_device:
+            source, count = re.subn(
+                r"(?m)^([ \t]*device:\s*)[^\s#]+([ \t]*(?:#.*)?)$",
+                lambda match: match.group(1) + options.learner_device + match.group(2),
+                source,
+                count=1,
+            )
+            if count != 1 or _torch_device_from_config(source) != options.learner_device:
+                raise ValueError("Could not apply learner device override to trainer config")
     if options.entropy_beta is not None:
         source = rewrite_entropy_beta(source, options.entropy_beta)
     target_steps = generation_target_steps(options, index)
@@ -1068,6 +1080,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--platform", choices=tuple(PLATFORM_BUILD_TARGETS), default="WindowsPlayer")
     parser.add_argument("--retry-seconds", type=float, default=DEFAULT_RETRY_SECONDS)
     parser.add_argument("--entropy-beta", type=float, default=None)
+    parser.add_argument("--learner-device", choices=("cpu", "cuda"), default=None)
     parser.add_argument(
         "--skip-evaluation",
         action="store_true",
@@ -1147,6 +1160,7 @@ def parse_options(argv: Optional[Sequence[str]] = None) -> ServiceOptions:
         environment_args=parse_environment_args_json(args.environment_args_json),
         entropy_beta=args.entropy_beta,
         skip_evaluation=args.skip_evaluation,
+        learner_device=args.learner_device,
     )
 
 
