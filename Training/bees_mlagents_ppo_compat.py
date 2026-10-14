@@ -6876,6 +6876,8 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                                     flush=True,
                                 )
                     finally:
+                        _POCA_GRADIENT_PROBE_STATE.enabled = False
+                        _POCA_GRADIENT_PROBE_STATE.trace = None
                         _POCA_UPDATE_CACHE_STATE.indices = None
                         _POCA_UPDATE_CACHE_STATE.minibatch = None
 
