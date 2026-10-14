@@ -157,6 +157,106 @@ function getLocalLearnerStats(runId = '') {
     return parseLearnerLogFiles(selected);
 }
 
+
+function parsePpoFields(line, prefix) {
+    const data = {};
+    const offset = line.indexOf(prefix);
+    if (offset < 0) return data;
+    for (const token of line.slice(offset + prefix.length).trim().split(/\s+/)) {
+        const equal = token.indexOf('=');
+        if (equal > 0) data[token.slice(0, equal)] = token.slice(equal + 1);
+    }
+    return data;
+}
+
+function getLatestPpoUpdate(runId) {
+    // Read only the active learner's bounded log tail; historical runs must not
+    // masquerade as the current learner's hardware or PPO timing.
+    if (!runId || !/^[a-zA-Z0-9_.-]+$/.test(runId)) return null;
+    const file = path.join(
+        paths.centralAgentInstallRoot, 'logs', runId, 'learner-live.log'
+    );
+    if (!exists(file)) return null;
+    const endTag = '[Bees PPO timing] update end ';
+    const hardwareTag = '[Bees PPO variability] hardware ';
+    const variabilityTag = '[Bees PPO variability] timing ';
+    let update = null;
+    let hardware = null;
+    let variability = null;
+    for (const line of readTail(file, 1000, 2 * 1024 * 1024)) {
+        if (line.includes(endTag)) {
+            update = parsePpoFields(line, endTag);
+            hardware = null;
+            variability = null;
+        } else if (update && line.includes(hardwareTag)) {
+            hardware = parsePpoFields(line, hardwareTag);
+        } else if (update && line.includes(variabilityTag)) {
+            variability = parsePpoFields(line, variabilityTag);
+        }
+    }
+    if (!update || !Number.isFinite(Number(update.seconds))) return null;
+    return { update, hardware, variability };
+}
+
+function ppoStatusLines(ppo, consumedRate, workerBacklog) {
+    if (!ppo) return [
+        'PPO diagnostics: no completed update in the active learner log yet.',
+        'Bottleneck: indeterminate (PPO timing not available).',
+    ];
+    const { update, hardware, variability } = ppo;
+    const minibatches = Number(String(update.minibatches || '').split('/')[0]);
+    const batches = Number.isFinite(minibatches) && minibatches > 0 ? minibatches : 0;
+    const stage = [
+        ['minibatch optimizer work', Number(update.optimizer_total) * batches],
+        ['CPU preparation wait', Number(update.cpu_prepare_wait) * batches],
+        ['batch materialization', Number(update.materialize)],
+        ['diagnostic profiling', Number(update.diagnostic_profile)],
+    ].filter(([, duration]) => Number.isFinite(duration) && duration >= 0);
+    const seconds = Number(update.seconds);
+    const formatStage = ([label, duration]) =>
+        label + '=' + number(duration, 1) + 's';
+    const lines = [
+        'PPO latest completed update: ' + number(seconds, 1) + 's  ' +
+        'minibatches=' + (update.minibatches || '-') +
+        '  cache=' + (update.cache_storage || '-') +
+        '  avg_minibatch=' + number(update.avg_minibatch, 3) + 's',
+        'PPO stage estimates: ' + stage.map(formatStage).join('  ') +
+        '  (sampled durations; may overlap)',
+    ];
+    if (hardware) {
+        lines.push(
+            'PPO hardware (sampled during update): CPU process=' +
+            number(hardware.process_cpu_avg, 0) + '%  system=' +
+            number(hardware.system_cpu_avg, 0) + '%  GPU=' +
+            number(hardware.gpu_util_avg, 0) + '%  VRAM=' +
+            number(hardware.vram_used_max_mib, 0) + 'MiB  RAM=' +
+            number(hardware.rss_max_mib, 0) + 'MiB'
+        );
+    }
+    if (variability) {
+        lines.push(
+            'PPO minibatch variation: p50=' + number(variability.minibatch_p50, 3) +
+            's  p90=' + number(variability.minibatch_p90, 3) +
+            's  max=' + number(variability.minibatch_max, 3) + 's'
+        );
+    }
+    const leading = stage
+        .filter(([label]) => label !== 'diagnostic profiling')
+        .sort((a, b) => b[1] - a[1])[0];
+    const evidence = leading ? leading[0] + ' is the largest measured stage' : 'stage totals unavailable';
+    if (workerBacklog > 0) {
+        lines.push('Bottleneck signal: learner/PPO likely limiting; queued worker uploads=' +
+            workerBacklog + ', ' + evidence + '.');
+    } else if (consumedRate != null && Number.isFinite(consumedRate)) {
+        lines.push('Bottleneck signal: ' + evidence +
+            '; no queued worker uploads reported. Cannot confirm global limit from one snapshot.');
+    } else {
+        lines.push('Bottleneck signal: ' + evidence +
+            '; insufficient current queue/rate data to identify a cluster bottleneck.');
+    }
+    return lines;
+}
+
 function number(value, digits = 1, suffix = '') {
     if (value === null || value === undefined || !Number.isFinite(Number(value))) return '-';
     return Number(value).toFixed(digits) + suffix;
@@ -508,6 +608,9 @@ async function getStatusFrameLines(config, adminToken) {
                 Envs: envDisplay,
                 'LiveExp/s': liveExpRate,
                 'OptStep/s': expRate,
+                Accepted: throughput.accepted_steps_total == null ? '-' : String(throughput.accepted_steps_total),
+                Consumed: throughput.learner_consumed_steps_total == null ? '-' : String(throughput.learner_consumed_steps_total),
+                UploadQ: throughput.upload_queue_depth == null ? '-' : String(throughput.upload_queue_depth),
                 SentGiB: throughput.network_sent_bytes_total != null
                     ? number(Number(throughput.network_sent_bytes_total) / (1024 ** 3), 3)
                     : '-',
@@ -541,7 +644,7 @@ async function getStatusFrameLines(config, adminToken) {
         if (rows.length) {
             lines.push(...table(rows, [
                 'Trainer', 'Role', 'Platform', 'State', 'Envs', 'LiveExp/s', 'OptStep/s',
-                'SentGiB', 'RecvGiB', 'MiB/s', 'Opt', 'Build', 'Rev', 'Age',
+                'Accepted', 'Consumed', 'UploadQ', 'SentGiB', 'RecvGiB', 'MiB/s', 'Opt', 'Build', 'Rev', 'Age',
                 'Timeout', 'BWin', 'HWin', 'Draw', 'Dur', 'BHit/Sh', 'HHit/Sh',
                 'BAim', 'HAim', 'B<5', 'H<5', 'BAligned', 'HAligned', 'Error',
             ]));
@@ -565,8 +668,30 @@ async function getStatusFrameLines(config, adminToken) {
             '  LearnerAvgStep/s=' + (learner.AverageStepsPerSecond == null ? '-' : number(learner.AverageStepsPerSecond, 1)) +
             '  LearnerLiveStep/s=' + (learner.LiveStepsPerSecond == null ? '-' : number(learner.LiveStepsPerSecond, 1))
         );
+        const remoteRateSamples = trainers
+            .filter(record => String(record.trainer_id || '') !== 'central-learner')
+            .map(record => record.metrics && record.metrics.throughput &&
+                Number(record.metrics.throughput.learner_consumed_steps_per_sec))
+            .filter(rate => Number.isFinite(rate) && rate >= 0);
+        const uploadBacklog = trainers.reduce((total, record) => {
+            const depth = record.metrics && record.metrics.throughput &&
+                Number(record.metrics.throughput.upload_queue_depth);
+            return total + (Number.isFinite(depth) && depth >= 0 ? depth : 0);
+        }, 0);
         lines.push(
-            'Rates: LiveExp/s is recent per-worker learner-consumed experience; OptStep/s is the optimizer five-minute accepted-rollout wall-clock sample used for env-count probes; learner Step/s is the global ML-Agents training-step rate.'
+            'Pipeline: remote learner-consumed=' +
+            (remoteRateSamples.length ? number(remoteRateSamples.reduce((a, b) => a + b, 0), 1) : '-') +
+            ' exp/s (sum of reporting remote workers)  queued uploads=' + uploadBacklog +
+            ' (worker-side only)  trained=' + number(learner.LiveStepsPerSecond, 1) +
+            ' exp/s (global ML-Agents window)'
+        );
+        lines.push(...ppoStatusLines(
+            getLatestPpoUpdate(String(desired.run_id || '')),
+            learner.LiveStepsPerSecond,
+            uploadBacklog
+        ));
+        lines.push(
+            'Rates: LiveExp/s is recent per-worker learner-consumed experience; OptStep/s is the environment auto-tuner probe estimate, NOT optimizer gradient steps/s. Learner Step/s counts experiences, not repeated PPO epochs.'
         );
         lines.push(
             'Network: SentGiB/RecvGiB are cumulative per-run WAN payload bytes; MiB/s is the current payload rate when a live actor session is available.'
@@ -603,6 +728,7 @@ async function showStatus(config, adminToken, single, refreshSeconds = 2) {
 
 module.exports = {
     getLocalLearnerStats,
+    getLatestPpoUpdate,
     getStatusFrameLines,
     rolloutBlockers,
     showStatus,
