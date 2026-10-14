@@ -184,8 +184,10 @@ function getLatestPpoUpdate(runId) {
     const detailTag = '[Bees CPU gradient detail] ';
     const lossesTag = '[Bees CPU gradient losses] ';
     const clippingTag = '[Bees CPU gradient clipping] ';
+    const numericsTag = '[Bees CPU gradient numerics] ';
     let probe = null;
     let gradientClipping = null;
+    let gradientNumerics = null;
     let gradientDetail = null;
     let gradientLosses = null;
     let update = null;
@@ -197,12 +199,15 @@ function getLatestPpoUpdate(runId) {
             gradientDetail = null;
             gradientLosses = null;
             gradientClipping = null;
+            gradientNumerics = null;
         } else if (line.includes(detailTag)) {
             gradientDetail = line.slice(line.indexOf(detailTag) + detailTag.length).trim().slice(0, 420);
         } else if (line.includes(lossesTag)) {
             gradientLosses = line.slice(line.indexOf(lossesTag) + lossesTag.length).trim().slice(0, 420);
         } else if (line.includes(clippingTag)) {
             gradientClipping = line.slice(line.indexOf(clippingTag) + clippingTag.length).trim().slice(0, 420);
+        } else if (line.includes(numericsTag)) {
+            gradientNumerics = line.slice(line.indexOf(numericsTag) + numericsTag.length).trim().slice(0, 520);
         }
         if (line.includes(endTag)) {
             update = parsePpoFields(line, endTag);
@@ -215,7 +220,7 @@ function getLatestPpoUpdate(runId) {
         }
     }
     if (!update || !Number.isFinite(Number(update.seconds))) return null;
-    return { update, hardware, variability, probe, gradientDetail, gradientLosses, gradientClipping };
+    return { update, hardware, variability, probe, gradientDetail, gradientLosses, gradientClipping, gradientNumerics };
 }
 
 function ppoStatusLines(ppo, signals) {
@@ -223,7 +228,7 @@ function ppoStatusLines(ppo, signals) {
         'PPO diagnostics: no completed update in the active learner log yet.',
         'Bottleneck: indeterminate (PPO timing not available).',
     ];
-    const { update, hardware, variability, probe, gradientDetail, gradientLosses, gradientClipping } = ppo;
+    const { update, hardware, variability, probe, gradientDetail, gradientLosses, gradientClipping, gradientNumerics } = ppo;
     const minibatches = Number(String(update.minibatches || '').split('/')[0]);
     const batches = Number.isFinite(minibatches) && minibatches > 0 ? minibatches : 0;
     const stage = [
@@ -266,6 +271,7 @@ function ppoStatusLines(ppo, signals) {
         if (gradientDetail) lines.push('CPU gradient parameter differences: ' + gradientDetail);
         if (gradientLosses) lines.push('CPU gradient loss comparison: ' + gradientLosses);
         if (gradientClipping) lines.push('CPU gradient clipping comparison: ' + gradientClipping);
+        if (gradientNumerics) lines.push('CPU gradient numerical outliers: ' + gradientNumerics);
     } else {
         lines.push('CPU gradient probe: no result in the active learner log tail.');
     }
