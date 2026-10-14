@@ -660,6 +660,8 @@ def read_throughput_metrics(
     optimizer_busy_seconds_total = value.get("optimizer_busy_seconds_total")
     learner_consumed_rate = value.get("learner_consumed_steps_per_sec")
     accepted_rate = value.get("accepted_steps_per_sec")
+    staged_rate = value.get("staged_steps_per_sec")
+    staged_total = value.get("staged_steps_total")
     queue_depth = value.get("upload_queue_depth")
     network_sent = value.get("network_sent_bytes_total")
     network_received = value.get("network_received_bytes_total")
@@ -722,6 +724,21 @@ def read_throughput_metrics(
                 or isinstance(accepted_rate, bool)
                 or not math.isfinite(float(accepted_rate))
                 or float(accepted_rate) < 0.0
+            )
+        )
+        or (
+            staged_rate is not None and (
+                not isinstance(staged_rate, (int, float))
+                or isinstance(staged_rate, bool)
+                or not math.isfinite(float(staged_rate))
+                or float(staged_rate) < 0
+            )
+        )
+        or (
+            staged_total is not None and (
+                not isinstance(staged_total, int)
+                or isinstance(staged_total, bool)
+                or staged_total < 0
             )
         )
         or not isinstance(queue_depth, int)
@@ -855,6 +872,10 @@ def read_throughput_metrics(
         result["learner_consumed_steps_per_sec"] = float(learner_consumed_rate)
     if accepted_rate is not None:
         result["accepted_steps_per_sec"] = float(accepted_rate)
+    if staged_rate is not None:
+        result["staged_steps_per_sec"] = float(staged_rate)
+    if staged_total is not None:
+        result["staged_steps_total"] = staged_total
     if policy_cycle_present:
         result["policy_cycle"] = int(policy_cycle)
     if runtime_version_present:
