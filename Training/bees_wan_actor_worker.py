@@ -1451,9 +1451,10 @@ class ActorSession:
         while not self.stop.is_set():
             try:
                 self._upload_queue.put(payload, timeout=0.5)
-                step_count = _trajectory_step_count(payload.get("trajectories", ()))
-                with self._throughput_lock:
-                    self._staged_steps_total += step_count
+                if getattr(self, "_throughput_lock", None) is not None:
+                    step_count = _trajectory_step_count(payload.get("trajectories", ()))
+                    with self._throughput_lock:
+                        self._staged_steps_total += step_count
                 return True
             except queue.Full:
                 # This is intentional broker backpressure, not a dead rollout.
