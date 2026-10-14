@@ -591,6 +591,7 @@ async function getStatusFrameLines(config, adminToken) {
         const rows = trainers.map(record => {
             const metrics = record.metrics || {};
             const throughput = metrics.throughput || {};
+            const host = metrics.host || {};
             const capacity = record.worker_capacity || {};
             const optimizer = record.env_optimizer || {};
             const currentEnvs = capacity.current_envs;
@@ -622,6 +623,9 @@ async function getStatusFrameLines(config, adminToken) {
                 Platform: String(record.platform || '-'),
                 State: record.stale ? 'STALE' : String(record.process_state || '-'),
                 Envs: envDisplay,
+                vCPU: host.logical_cpus == null ? '-' : String(host.logical_cpus),
+                'CPU%': number(host.cpu_percent, 0, '%'),
+                'RAM%': number(host.ram_percent, 0, '%'),
                 'LiveExp/s': liveExpRate,
                 'Staged/s': throughput.staged_steps_per_sec != null
                     ? number(throughput.staged_steps_per_sec, 1)
@@ -667,7 +671,7 @@ async function getStatusFrameLines(config, adminToken) {
 
         if (rows.length) {
             lines.push(...table(rows, [
-                'Trainer', 'Role', 'Platform', 'State', 'Envs', 'LiveExp/s', 'Staged/s', 'Accept/s', 'OptStep/s',
+                'Trainer', 'Role', 'Platform', 'State', 'Envs', 'vCPU', 'CPU%', 'RAM%', 'LiveExp/s', 'Staged/s', 'Accept/s', 'OptStep/s',
                 'Accepted', 'Consumed', 'UploadQ', 'BrokerQ', 'SentGiB', 'RecvGiB', 'MiB/s', 'Opt', 'Build', 'Rev', 'Age',
                 'Timeout', 'BWin', 'HWin', 'Draw', 'Dur', 'BHit/Sh', 'HHit/Sh',
                 'BAim', 'HAim', 'B<5', 'H<5', 'BAligned', 'HAligned', 'Error',
