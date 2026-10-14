@@ -474,10 +474,10 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--auto-envs", action="store_true",
         help="Opt in to automatic Unity environment-count tuning; fixed counts are the default.")
-    parser.add_argument(
-        "--learning-cpus", type=int, default=0,
-        help="Start an experimental CPU gradient executor; central dispatch is shadow-only (0 disables it).",
-    )
+    # A running supervisor may auto-cut over with this flag in its saved argv.
+    # The CPU gradient sidecar has been rolled back; keep accepting the flag
+    # without starting any extra process or allocating learning CPUs.
+    parser.add_argument("--learning-cpus", type=int, default=0, help=argparse.SUPPRESS)
     parser.add_argument("--torch-device", default="cpu")
     parser.add_argument("--reconnect-seconds", type=float, default=DEFAULT_RECONNECT_SECONDS)
     return parser
@@ -2089,25 +2089,9 @@ def _worker_command(args: argparse.Namespace, root: Path, actor_key: str) -> lis
     return command
 
 
-def _gradient_worker_command(
-    args: argparse.Namespace, root: Path, actor_key: str
-) -> list[str]:
-    return [
-        sys.executable, "-u", str(root / "bees_poca_gradient_worker.py"),
-        "--broker-host", "127.0.0.1",
-        "--broker-port", str(args.broker_port),
-        "--auth-token-file", str(Path(args.wan_token_file).expanduser().resolve()),
-        "--worker-id", f"gradient-{socket.gethostname().lower()}-{actor_key[:8]}",
-        "--learning-cpus", str(args.learning_cpus),
-    ]
-
-
 def main(argv: Optional[Sequence[str]] = None) -> int:
     raw_argv = list(sys.argv[1:] if argv is None else argv)
     args = _parser().parse_args(raw_argv)
-    if args.learning_cpus < 0 or args.learning_cpus > _available_cpu_threads():
-        print("error: --learning-cpus must be 0..available logical CPUs", file=sys.stderr)
-        return 2
     memory_start_cap = _memory_env_limit()
     memory_hard_cap = _memory_hard_limit()
     cpu_threads = _available_cpu_threads()
@@ -2199,12 +2183,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return 2
 
     root = Path(__file__).resolve().parent
-    runtime_required = ["bees_training_worker_agent.py", "bees_elastic_wan_actor_worker.py"]
-    if args.learning_cpus:
-        runtime_required.extend(
-            ("bees_poca_gradient_worker.py", "bees_distributed_poca.py")
-        )
-    for required in runtime_required:
+    for required in ("bees_training_worker_agent.py", "bees_elastic_wan_actor_worker.py"):
         if not (root / required).is_file():
             print(f"error: remote runtime is missing {required}", file=sys.stderr)
             return 2
@@ -2264,9 +2243,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             tailnet_ready_path: Optional[Path] = None
             worker: Optional[subprocess.Popen] = None
             worker_log_thread: Optional[threading.Thread] = None
-            gradient_worker: Optional[subprocess.Popen] = None
-            gradient_log_thread: Optional[threading.Thread] = None
-            gradient_restart_after = 0.0
             worker_started_monotonic = 0.0
             stale_recycle_grace_started_monotonic = 0.0
             runtime_cutover: Optional[Path] = None
@@ -2325,12 +2301,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         )
                         worker_started_monotonic = time.monotonic()
                         stale_recycle_grace_started_monotonic = worker_started_monotonic
-                        if args.learning_cpus > 0:
-                            gradient_worker, gradient_log_thread = _start_logged_process(
-                                _gradient_worker_command(args, root, actor_key),
-                                environment=_worker_environment(args),
-                            )
-                            gradient_restart_after = time.monotonic() + 30.0
 
                     next_status = 0.0
                     # The inner worker can lose heartbeat POST responses even while this outer
@@ -2422,21 +2392,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                             next_status = 0.0
 
                         now = time.monotonic()
-                        if args.learning_cpus > 0 and (
-                            gradient_worker is None or gradient_worker.poll() is not None
-                        ) and now >= gradient_restart_after:
-                            if gradient_log_thread is not None:
-                                gradient_log_thread.join(timeout=1.0)
-                            print(
-                                "[Bees remote] CPU gradient process exited; restarting independently "
-                                "of Unity rollout.",
-                                file=sys.stderr, flush=True,
-                            )
-                            gradient_worker, gradient_log_thread = _start_logged_process(
-                                _gradient_worker_command(args, root, actor_key),
-                                environment=_worker_environment(args),
-                            )
-                            gradient_restart_after = now + 30.0
                         if now >= next_status:
                             status = _control_status(args)
                             control_healthy = isinstance(status, Mapping)
@@ -2711,12 +2666,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 stop[0] = True
             finally:
                 termination_errors = []
-                try:
-                    _terminate(gradient_worker)
-                except RuntimeError as exc:
-                    termination_errors.append(f"gradient: {exc}")
-                if gradient_log_thread is not None:
-                    gradient_log_thread.join(timeout=1.0)
                 worker_stopped = _request_graceful_worker_stop(
                     worker,
                     _worker_agent_stop_request_path(args),

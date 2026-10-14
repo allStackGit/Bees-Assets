@@ -128,7 +128,6 @@ _BC_MASK_STATE = threading.local()
 _POCA_TIMING_STATE = threading.local()
 _POCA_GROUP_BATCH_STATE = threading.local()
 _POCA_UPDATE_CACHE_STATE = threading.local()
-_POCA_GRADIENT_PROBE_STATE = threading.local()
 _POCA_ASYNC_UPDATE_STATE = threading.local()
 _POCA_UPDATE_BUSY_LOCK = threading.Lock()
 _POCA_PROFILE_LOCK = threading.Lock()
@@ -687,33 +686,6 @@ def _trust_region_policy_loss_with_dimension_mask(
     weights = valid_steps * valid_dimensions
     if sample_weights is not None and sample_weights.shape[0] == weights.shape[0]:
         weights = weights * sample_weights.to(element_loss.dtype).unsqueeze(-1)
-    if getattr(_POCA_GRADIENT_PROBE_STATE, "enabled", False):
-        # An optional, bounded 512-row diagnostic. Snapshot only the active
-        # policy-ratio decisions; gradients and PPO loss stay identical.
-        with torch.no_grad():
-            active = weights > 0
-            saturated = torch.where(
-                advantage > 0, r_theta > 1.0 + epsilon,
-                r_theta < 1.0 - epsilon,
-            )
-            margin = torch.minimum(
-                torch.abs(r_theta - (1.0 - epsilon)),
-                torch.abs(r_theta - (1.0 + epsilon)),
-            )
-            near = active & (margin < 1.0e-4)
-            _POCA_GRADIENT_PROBE_STATE.trace = {
-                "log_probs": log_probs.detach().to(device="cpu", copy=True),
-                "log_ratio": (log_probs - old_log_probs).detach().to(
-                    device="cpu", copy=True
-                ),
-                "ratio": r_theta.detach().to(device="cpu", copy=True),
-                "active": active.to(device="cpu", copy=True),
-                "saturated": saturated.to(device="cpu", copy=True),
-                "near_boundary": near.to(device="cpu", copy=True),
-                "near_1e4": int(near.sum().item()),
-                "near_1e3": int((active & (margin < 1.0e-3)).sum().item()),
-                "active_dimensions": int(active.sum().item()),
-            }
     return (element_loss * weights).sum() / torch.clamp(weights.sum(), min=1.0)
 
 
@@ -6425,13 +6397,6 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         """ML-Agents 1.1.0 on-policy update with cached feed-forward minibatch tensors."""
 
         import numpy as np
-        from bees_distributed_poca import (
-            begin_shadow_gradient_probe,
-            capture_shadow_reference,
-        )
-
-        # Remote gradient comparisons are collected by a dedicated diagnostic
-        # thread after the local minibatch reference has been captured.
         from collections import defaultdict
 
         async_buffer = _poca_async_update_buffer()
@@ -6837,49 +6802,12 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                         # ML-Agents optimizer signature without copying fields.
                         minibatch = update_buffer
 
-                    probe_id = None
-                    if (
-                        _epoch_index == 0
-                        and offset_index == 0
-                        and tensor_cache is not None
-                        and os.environ.get("BEES_CPU_GRADIENT_PROBE") == "1"
-                    ):
-                        try:
-                            probe_batch = _POCA_UPDATE_CACHE_STATE.minibatch
-                            if probe_batch is None:
-                                probe_batch = _select_poca_update_tensor_cache(
-                                    tensor_cache,
-                                    _POCA_UPDATE_CACHE_STATE.indices,
-                                )
-                            probe_id = begin_shadow_gradient_probe(
-                                self.optimizer,
-                                probe_batch,
-                                self.brain_name,
-                                self.policy.behavior_spec,
-                            )
-                        except Exception as exc:
-                            print(
-                                "[Bees CPU gradient probe] unable to prepare: "
-                                f"{type(exc).__name__}: {exc}",
-                                flush=True,
-                            )
                     try:
                         update_stats = self.optimizer.update(
                             minibatch,
                             current_n_sequences,
                         )
-                        if probe_id is not None:
-                            try:
-                                capture_shadow_reference(self.optimizer, probe_id, update_stats)
-                            except Exception as exc:
-                                print(
-                                    "[Bees CPU gradient probe] unable to capture local gradients: "
-                                    f"{type(exc).__name__}: {exc}",
-                                    flush=True,
-                                )
                     finally:
-                        _POCA_GRADIENT_PROBE_STATE.enabled = False
-                        _POCA_GRADIENT_PROBE_STATE.trace = None
                         _POCA_UPDATE_CACHE_STATE.indices = None
                         _POCA_UPDATE_CACHE_STATE.minibatch = None
 

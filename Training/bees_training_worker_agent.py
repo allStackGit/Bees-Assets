@@ -874,15 +874,6 @@ def read_throughput_metrics(
         "broker_accepted_stale_steps_total",
         "broker_consumed_stale_steps_total",
         "broker_discarded_stale_steps_total",
-        "gradient_workers_active",
-        "gradient_snapshots_cached",
-        "gradient_jobs_queued",
-        "gradient_jobs_claimed",
-        "gradient_jobs_completed_pending",
-        "gradient_jobs_completed_total",
-        "gradient_jobs_cancelled",
-        "gradient_jobs_expired",
-        "gradient_results_rejected",
     ):
         metric = value.get(field)
         if metric is not None:

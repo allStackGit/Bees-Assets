@@ -180,35 +180,10 @@ function getLatestPpoUpdate(runId) {
     const endTag = '[Bees PPO timing] update end ';
     const hardwareTag = '[Bees PPO variability] hardware ';
     const variabilityTag = '[Bees PPO variability] timing ';
-    const probeTag = '[Bees CPU gradient probe] ';
-    const detailTag = '[Bees CPU gradient detail] ';
-    const lossesTag = '[Bees CPU gradient losses] ';
-    const clippingTag = '[Bees CPU gradient clipping] ';
-    const numericsTag = '[Bees CPU gradient numerics] ';
-    let probe = null;
-    let gradientClipping = null;
-    let gradientNumerics = null;
-    let gradientDetail = null;
-    let gradientLosses = null;
     let update = null;
     let hardware = null;
     let variability = null;
     for (const line of readTail(file, 1000, 2 * 1024 * 1024)) {
-        if (line.includes(probeTag)) {
-            probe = line.slice(line.indexOf(probeTag) + probeTag.length).trim().slice(0, 550);
-            gradientDetail = null;
-            gradientLosses = null;
-            gradientClipping = null;
-            gradientNumerics = null;
-        } else if (line.includes(detailTag)) {
-            gradientDetail = line.slice(line.indexOf(detailTag) + detailTag.length).trim().slice(0, 420);
-        } else if (line.includes(lossesTag)) {
-            gradientLosses = line.slice(line.indexOf(lossesTag) + lossesTag.length).trim().slice(0, 420);
-        } else if (line.includes(clippingTag)) {
-            gradientClipping = line.slice(line.indexOf(clippingTag) + clippingTag.length).trim().slice(0, 420);
-        } else if (line.includes(numericsTag)) {
-            gradientNumerics = line.slice(line.indexOf(numericsTag) + numericsTag.length).trim().slice(0, 520);
-        }
         if (line.includes(endTag)) {
             update = parsePpoFields(line, endTag);
             hardware = null;
@@ -220,7 +195,7 @@ function getLatestPpoUpdate(runId) {
         }
     }
     if (!update || !Number.isFinite(Number(update.seconds))) return null;
-    return { update, hardware, variability, probe, gradientDetail, gradientLosses, gradientClipping, gradientNumerics };
+    return { update, hardware, variability };
 }
 
 function ppoStatusLines(ppo, signals) {
@@ -228,7 +203,7 @@ function ppoStatusLines(ppo, signals) {
         'PPO diagnostics: no completed update in the active learner log yet.',
         'Bottleneck: indeterminate (PPO timing not available).',
     ];
-    const { update, hardware, variability, probe, gradientDetail, gradientLosses, gradientClipping, gradientNumerics } = ppo;
+    const { update, hardware, variability } = ppo;
     const minibatches = Number(String(update.minibatches || '').split('/')[0]);
     const batches = Number.isFinite(minibatches) && minibatches > 0 ? minibatches : 0;
     const stage = [
@@ -265,15 +240,6 @@ function ppoStatusLines(ppo, signals) {
             's  p90=' + number(variability.minibatch_p90, 3) +
             's  max=' + number(variability.minibatch_max, 3) + 's'
         );
-    }
-    if (probe) {
-        lines.push('CPU gradient probe (latest log event): ' + probe);
-        if (gradientDetail) lines.push('CPU gradient parameter differences: ' + gradientDetail);
-        if (gradientLosses) lines.push('CPU gradient loss comparison: ' + gradientLosses);
-        if (gradientClipping) lines.push('CPU gradient clipping comparison: ' + gradientClipping);
-        if (gradientNumerics) lines.push('CPU gradient numerical outliers: ' + gradientNumerics);
-    } else {
-        lines.push('CPU gradient probe: no result in the active learner log tail.');
     }
     const leading = stage
         .filter(([label]) => label !== 'diagnostic profiling')
@@ -759,16 +725,6 @@ async function getStatusFrameLines(config, adminToken) {
             String(broker.broker_queue_depth) + '/' +
             String(broker.broker_queue_capacity ?? '?')
         ) : '-';
-        const gradientSummary = broker ? (
-            'CPU gradient workers=' + String(broker.gradient_workers_active ?? '-') +
-            ' snapshots=' + String(broker.gradient_snapshots_cached ?? '-') +
-            ' queued=' + String(broker.gradient_jobs_queued ?? '-') +
-            ' claimed=' + String(broker.gradient_jobs_claimed ?? '-') +
-            ' completed=' + String(broker.gradient_jobs_completed_total ?? '-') +
-            ' pending=' + String(broker.gradient_jobs_completed_pending ?? '-') +
-            ' expired=' + String(broker.gradient_jobs_expired ?? '-') +
-            ' rejected=' + String(broker.gradient_results_rejected ?? '-')
-        ) : 'CPU gradient workers: no live broker telemetry';
         lines.push(
             'Pipeline (active remote workers): staged=' + sumReporting('staged_steps_per_sec') +
             ' exp/s  accepted=' + sumReporting('accepted_steps_per_sec') +
@@ -776,8 +732,6 @@ async function getStatusFrameLines(config, adminToken) {
             ' exp/s  uploads=' + uploadBacklog + '  broker=' + brokerLabel +
             '  global learner=' + number(learner.LiveStepsPerSecond, 1) + ' exp/s'
         );
-        lines.push(gradientSummary);
-        lines.push('CPU gradient contributions: shadow/probe only; remote gradients are NOT applied to PPO. Probe=' + (config.cpuGradientProbe ? 'on' : 'off') + '.');
         lines.push(...ppoStatusLines(
             getLatestPpoUpdate(String(desired.run_id || '')),
             { uploadBacklog, broker }

@@ -35,8 +35,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
-from bees_distributed_poca_exchange import GradientWorkExchange
-
 
 EXPECTED_MLAGENTS_VERSION = "1.1.0"
 WAN_ACTORS_FLAG = "--bees-wan-actors"
@@ -370,8 +368,6 @@ class WanActorBroker:
         self._server: Optional[http.server.ThreadingHTTPServer] = None
         self._server_thread: Optional[threading.Thread] = None
         self._server_started_once = False
-        # Inert until the authoritative optimizer explicitly submits work.
-        self.gradient_exchange = GradientWorkExchange()
 
     def session_payload(self) -> Mapping[str, Any]:
         return {
@@ -529,24 +525,6 @@ class WanActorBroker:
                             },
                         )
                         return
-                    if parsed.path == "/gradient/snapshot":
-                        snapshot_id = query.get("id", [""])[0]
-                        blob = broker.gradient_exchange.snapshot(snapshot_id)
-                        if blob is None:
-                            self._error(410, "gradient-snapshot-expired",
-                                        "The requested PPO model snapshot is no longer available.")
-                        else:
-                            self._binary(blob)
-                        return
-                    if parsed.path == "/gradient/claim":
-                        worker = query.get("worker", [""])[0]
-                        wait = float(query.get("wait", ["0"])[0])
-                        claimed = broker.gradient_exchange.claim(worker, wait)
-                        if claimed is None:
-                            self._binary(b"", status=204)
-                        else:
-                            self._binary(encode_payload(claimed))
-                        return
                     if parsed.path == "/control":
                         epoch = int(query.get("epoch", ["-1"])[0])
                         record = broker.control_record()
@@ -587,19 +565,6 @@ class WanActorBroker:
                         accepted = broker.submit_trajectory_batch(payload)
                         self._json({"status": "accepted", "trajectories": accepted})
                         return
-                    if parsed.path == "/gradient/result":
-                        accepted = broker.gradient_exchange.complete(
-                            str(payload.get("worker", "")),
-                            str(payload.get("job_id", "")),
-                            str(payload.get("claim_token", "")),
-                            payload.get("result"),
-                        )
-                        if not accepted:
-                            self._error(409, "gradient-job-stale",
-                                        "Gradient work has expired or was already completed.")
-                        else:
-                            self._json({"status": "completed"})
-                        return
                     if parsed.path == "/reset-ack":
                         broker.acknowledge_reset(payload)
                         self._json({"status": "acknowledged"})
@@ -626,8 +591,6 @@ class WanActorBroker:
         )
         self._server_thread.start()
         self._server_started_once = True
-        from bees_distributed_poca import set_active_gradient_exchange
-        set_active_gradient_exchange(self.gradient_exchange)
         print(
             f"[Bees WAN] actor broker listening only on 127.0.0.1:{self.options.broker_port}; "
             "remote machines must use the managed authenticated private forward."
@@ -654,9 +617,6 @@ class WanActorBroker:
         self.start()
 
     def close(self) -> None:
-        from bees_distributed_poca import set_active_gradient_exchange
-        set_active_gradient_exchange(None)
-        self.gradient_exchange.close()
         with self._condition:
             self._closed = True
             self._condition.notify_all()

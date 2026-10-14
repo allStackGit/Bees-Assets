@@ -826,7 +826,6 @@ class ElasticWanBroker(base.WanActorBroker):
                     self._discarded_stale_steps +
                     self._discarded_stale_trajectory_steps
                 ),
-                **self.gradient_exchange.metrics(),
             }
 
     def _validate_dynamic_owner_locked(self, actor_id: int, payload: Mapping[str, Any]) -> None:

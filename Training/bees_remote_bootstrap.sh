@@ -15,7 +15,6 @@ BOOTSTRAP_TOKEN="__BEES_BOOTSTRAP_TOKEN__"
 COMMAND="start"
 ENVS=""
 AUTO_ENVS=0
-LEARNING_CPUS=0
 INSTALL_ROOT="$DEFAULT_INSTALL_ROOT"
 TORCH_DEVICE="$DEFAULT_TORCH_DEVICE"
 NO_AUTOSTART=0
@@ -31,7 +30,6 @@ Commands:
 Options:
   --envs N               Pin a fixed Unity environment count (1-64); omission selects a fixed safe startup count.
   --auto-envs            Opt into continuous environment-count tuning (off by default).
-  --learning-cpus N      Experimental CPU gradient executor, shadow-only (default 0).
   --install-root PATH    Local Linux worker installation directory.
   --torch-device DEVICE  Local inference device, normally cpu or cuda.
   --no-autostart          Do not register this worker to restart after reboot/login.
@@ -48,9 +46,10 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --envs) ENVS="$2"; shift 2 ;;
         --auto-envs) AUTO_ENVS=1; shift ;;
-        --learning-cpus) LEARNING_CPUS="$2"; shift 2 ;;
         --install-root) INSTALL_ROOT="$2"; shift 2 ;;
         --torch-device) TORCH_DEVICE="$2"; shift 2 ;;
+        # Accept the old autostart monitor's argument while disabling CPU gradients.
+        --learning-cpus) shift 2 ;;
         --no-autostart) NO_AUTOSTART=1; shift ;;
         -h|--help) usage; exit 0 ;;
         *) echo "error: unknown argument: $1" >&2; usage >&2; exit 2 ;;
@@ -71,10 +70,6 @@ if [[ -n "$ENVS" ]] && { ! is_uint "$ENVS" || (( ENVS < 1 || ENVS > 64 )); }; th
 fi
 if (( AUTO_ENVS )) && [[ -n "$ENVS" ]]; then
     echo "error: --auto-envs cannot be combined with --envs" >&2
-    exit 2
-fi
-if ! is_uint "$LEARNING_CPUS"; then
-    echo "error: --learning-cpus must be a non-negative integer" >&2
     exit 2
 fi
 for port in "$TAILNET_BOOTSTRAP_PORT" "$CONTROL_PORT" "$BROKER_PORT" "$GAMEPLAY_PORT"; do
@@ -156,7 +151,6 @@ MONITOR_LOG=$q_log
 CONTROL_PORT=$CONTROL_PORT
 ENVS=$ENVS
 AUTO_ENVS=$AUTO_ENVS
-LEARNING_CPUS=$LEARNING_CPUS
 
 supervisor_alive() {
     local pid_file="\$INSTALL_ROOT/remote-worker.pid"
@@ -229,11 +223,11 @@ control_healthy() {
 
 launch_worker() {
     if [[ "\$AUTO_ENVS" == "1" ]]; then
-        BEES_AUTOSTART_CHILD=1 bash "\$LAUNCHER" start --install-root "\$INSTALL_ROOT" --torch-device "\$TORCH_DEVICE" --learning-cpus "\$LEARNING_CPUS" --auto-envs >>"\$MONITOR_LOG" 2>&1 || true
+        BEES_AUTOSTART_CHILD=1 bash "\$LAUNCHER" start --install-root "\$INSTALL_ROOT" --torch-device "\$TORCH_DEVICE" --auto-envs >>"\$MONITOR_LOG" 2>&1 || true
     elif [[ -n "\$ENVS" ]]; then
-        BEES_AUTOSTART_CHILD=1 bash "\$LAUNCHER" start --install-root "\$INSTALL_ROOT" --torch-device "\$TORCH_DEVICE" --learning-cpus "\$LEARNING_CPUS" --envs "\$ENVS" >>"\$MONITOR_LOG" 2>&1 || true
+        BEES_AUTOSTART_CHILD=1 bash "\$LAUNCHER" start --install-root "\$INSTALL_ROOT" --torch-device "\$TORCH_DEVICE" --envs "\$ENVS" >>"\$MONITOR_LOG" 2>&1 || true
     else
-        BEES_AUTOSTART_CHILD=1 bash "\$LAUNCHER" start --install-root "\$INSTALL_ROOT" --torch-device "\$TORCH_DEVICE" --learning-cpus "\$LEARNING_CPUS" >>"\$MONITOR_LOG" 2>&1 || true
+        BEES_AUTOSTART_CHILD=1 bash "\$LAUNCHER" start --install-root "\$INSTALL_ROOT" --torch-device "\$TORCH_DEVICE" >>"\$MONITOR_LOG" 2>&1 || true
     fi
 }
 
@@ -703,7 +697,6 @@ fi
 if (( AUTO_ENVS )); then
     WORKER_ARGS+=(--auto-envs)
 fi
-WORKER_ARGS+=(--learning-cpus "$LEARNING_CPUS")
 if (( NO_AUTOSTART )); then
     WORKER_ARGS+=(--no-autostart)
 fi

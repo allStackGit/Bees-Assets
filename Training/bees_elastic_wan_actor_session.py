@@ -638,15 +638,6 @@ class ElasticActorSession(worker.ActorSession):
             ("accepted_stale_steps_total", "broker_accepted_stale_steps_total"),
             ("consumed_stale_steps_total", "broker_consumed_stale_steps_total"),
             ("discarded_stale_steps_total", "broker_discarded_stale_steps_total"),
-            ("gradient_workers_active", "gradient_workers_active"),
-            ("gradient_snapshots_cached", "gradient_snapshots_cached"),
-            ("gradient_jobs_queued", "gradient_jobs_queued"),
-            ("gradient_jobs_claimed", "gradient_jobs_claimed"),
-            ("gradient_jobs_completed_pending", "gradient_jobs_completed_pending"),
-            ("gradient_jobs_completed_total", "gradient_jobs_completed_total"),
-            ("gradient_jobs_cancelled", "gradient_jobs_cancelled"),
-            ("gradient_jobs_expired", "gradient_jobs_expired"),
-            ("gradient_results_rejected", "gradient_results_rejected"),
         ):
             value = state.get(remote_key)
             if value is not None:
