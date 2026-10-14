@@ -23,6 +23,7 @@ class GradientWorkExchange:
         self._condition = threading.Condition()
         self._available: collections.deque[str] = collections.deque()
         self._jobs: dict[str, dict[str, Any]] = {}
+        self._worker_seen: dict[str, float] = {}
         self._closed = False
         self.completed = 0
         self.expired = 0
@@ -61,7 +62,9 @@ class GradientWorkExchange:
             raise ValueError("Remote gradient worker identity contains invalid characters")
         deadline = time.monotonic() + min(20.0, max(0.0, wait_seconds))
         with self._condition:
+            self._worker_seen[worker] = time.monotonic()
             while not self._closed:
+                self._worker_seen[worker] = time.monotonic()
                 self._expire()
                 while self._available:
                     job_id = self._available.popleft()
@@ -134,7 +137,11 @@ class GradientWorkExchange:
                 "gradient_jobs_queued": states["queued"],
                 "gradient_jobs_claimed": states["claimed"],
                 "gradient_jobs_completed_pending": states["completed"],
-                "gradient_jobs_applied": self.completed,
+                "gradient_jobs_completed_total": self.completed,
+                "gradient_workers_active": sum(
+                    time.monotonic() - seen <= 45.0
+                    for seen in self._worker_seen.values()
+                ),
                 "gradient_jobs_cancelled": self.cancelled,
                 "gradient_jobs_expired": self.expired,
                 "gradient_results_rejected": self.duplicates,
@@ -144,5 +151,6 @@ class GradientWorkExchange:
         with self._condition:
             self._closed = True
             self._jobs.clear()
+            self._worker_seen.clear()
             self._available.clear()
             self._condition.notify_all()
