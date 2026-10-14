@@ -6397,6 +6397,15 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         """ML-Agents 1.1.0 on-policy update with cached feed-forward minibatch tensors."""
 
         import numpy as np
+        from bees_distributed_poca import (
+            begin_shadow_gradient_probe,
+            capture_shadow_reference,
+            poll_shadow_gradient_probe,
+        )
+
+        # A diagnostic remote worker never mutates the authoritative optimizer.
+        # Check the previous probe only at PPO update boundaries.
+        poll_shadow_gradient_probe()
         from collections import defaultdict
 
         async_buffer = _poca_async_update_buffer()
@@ -6802,11 +6811,46 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                         # ML-Agents optimizer signature without copying fields.
                         minibatch = update_buffer
 
+                    probe_id = None
+                    if (
+                        _epoch_index == 0
+                        and offset_index == 0
+                        and tensor_cache is not None
+                        and os.environ.get("BEES_CPU_GRADIENT_PROBE") == "1"
+                    ):
+                        try:
+                            probe_batch = _POCA_UPDATE_CACHE_STATE.minibatch
+                            if probe_batch is None:
+                                probe_batch = _select_poca_update_tensor_cache(
+                                    tensor_cache,
+                                    _POCA_UPDATE_CACHE_STATE.indices,
+                                )
+                            probe_id = begin_shadow_gradient_probe(
+                                self.optimizer,
+                                probe_batch,
+                                self.behavior_name,
+                                self.policy.behavior_spec,
+                            )
+                        except Exception as exc:
+                            print(
+                                "[Bees CPU gradient probe] unable to prepare: "
+                                f"{type(exc).__name__}: {exc}",
+                                flush=True,
+                            )
                     try:
                         update_stats = self.optimizer.update(
                             minibatch,
                             current_n_sequences,
                         )
+                        if probe_id is not None:
+                            try:
+                                capture_shadow_reference(self.optimizer, probe_id)
+                            except Exception as exc:
+                                print(
+                                    "[Bees CPU gradient probe] unable to capture local gradients: "
+                                    f"{type(exc).__name__}: {exc}",
+                                    flush=True,
+                                )
                     finally:
                         _POCA_UPDATE_CACHE_STATE.indices = None
                         _POCA_UPDATE_CACHE_STATE.minibatch = None
