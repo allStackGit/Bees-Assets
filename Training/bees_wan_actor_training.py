@@ -582,6 +582,7 @@ class WanActorBroker:
                         accepted = broker.gradient_exchange.complete(
                             str(payload.get("worker", "")),
                             str(payload.get("job_id", "")),
+                            str(payload.get("claim_token", "")),
                             payload.get("result"),
                         )
                         if not accepted:
