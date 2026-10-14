@@ -180,10 +180,15 @@ function getLatestPpoUpdate(runId) {
     const endTag = '[Bees PPO timing] update end ';
     const hardwareTag = '[Bees PPO variability] hardware ';
     const variabilityTag = '[Bees PPO variability] timing ';
+    const probeTag = '[Bees CPU gradient probe] ';
+    let probe = null;
     let update = null;
     let hardware = null;
     let variability = null;
     for (const line of readTail(file, 1000, 2 * 1024 * 1024)) {
+        if (line.includes(probeTag)) {
+            probe = line.slice(line.indexOf(probeTag) + probeTag.length).trim().slice(0, 280);
+        }
         if (line.includes(endTag)) {
             update = parsePpoFields(line, endTag);
             hardware = null;
@@ -195,7 +200,7 @@ function getLatestPpoUpdate(runId) {
         }
     }
     if (!update || !Number.isFinite(Number(update.seconds))) return null;
-    return { update, hardware, variability };
+    return { update, hardware, variability, probe };
 }
 
 function ppoStatusLines(ppo, signals) {
@@ -203,7 +208,7 @@ function ppoStatusLines(ppo, signals) {
         'PPO diagnostics: no completed update in the active learner log yet.',
         'Bottleneck: indeterminate (PPO timing not available).',
     ];
-    const { update, hardware, variability } = ppo;
+    const { update, hardware, variability, probe } = ppo;
     const minibatches = Number(String(update.minibatches || '').split('/')[0]);
     const batches = Number.isFinite(minibatches) && minibatches > 0 ? minibatches : 0;
     const stage = [
@@ -240,6 +245,11 @@ function ppoStatusLines(ppo, signals) {
             's  p90=' + number(variability.minibatch_p90, 3) +
             's  max=' + number(variability.minibatch_max, 3) + 's'
         );
+    }
+    if (probe) {
+        lines.push('CPU gradient probe (latest log event): ' + probe);
+    } else {
+        lines.push('CPU gradient probe: no result in the active learner log tail.');
     }
     const leading = stage
         .filter(([label]) => label !== 'diagnostic profiling')
