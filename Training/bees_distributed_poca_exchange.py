@@ -35,6 +35,7 @@ class GradientWorkExchange:
         for job_id, record in list(self._jobs.items()):
             if record["state"] == "claimed" and record["lease_until"] <= now:
                 record["worker"] = None
+                record["claim_token"] = None
                 record["state"] = "queued"
                 self._available.append(job_id)
                 self.expired += 1
@@ -48,6 +49,7 @@ class GradientWorkExchange:
                 "payload": dict(payload),
                 "state": "queued",
                 "worker": None,
+                "claim_token": None,
                 "lease_until": 0.0,
                 "result": None,
             }
@@ -73,8 +75,13 @@ class GradientWorkExchange:
                         continue
                     record["state"] = "claimed"
                     record["worker"] = worker
+                    record["claim_token"] = uuid.uuid4().hex
                     record["lease_until"] = time.monotonic() + self.lease_seconds
-                    return {"job_id": job_id, "payload": record["payload"]}
+                    return {
+                        "job_id": job_id,
+                        "claim_token": record["claim_token"],
+                        "payload": record["payload"],
+                    }
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     return None
@@ -82,7 +89,8 @@ class GradientWorkExchange:
             return None
 
     def complete(
-        self, worker: str, job_id: str, result: Mapping[str, Any]
+        self, worker: str, job_id: str, claim_token: str,
+        result: Mapping[str, Any],
     ) -> bool:
         with self._condition:
             self._expire()
@@ -91,6 +99,7 @@ class GradientWorkExchange:
                 not record
                 or record["state"] != "claimed"
                 or record["worker"] != worker
+                or record["claim_token"] != claim_token
             ):
                 self.duplicates += 1
                 return False
