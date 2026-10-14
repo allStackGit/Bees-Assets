@@ -725,6 +725,15 @@ async function getStatusFrameLines(config, adminToken) {
             String(broker.broker_queue_depth) + '/' +
             String(broker.broker_queue_capacity ?? '?')
         ) : '-';
+        const gradientSummary = broker ? (
+            'CPU gradient workers=' + String(broker.gradient_workers_active ?? '-') +
+            ' queued=' + String(broker.gradient_jobs_queued ?? '-') +
+            ' claimed=' + String(broker.gradient_jobs_claimed ?? '-') +
+            ' completed=' + String(broker.gradient_jobs_completed_total ?? '-') +
+            ' pending=' + String(broker.gradient_jobs_completed_pending ?? '-') +
+            ' expired=' + String(broker.gradient_jobs_expired ?? '-') +
+            ' rejected=' + String(broker.gradient_results_rejected ?? '-')
+        ) : 'CPU gradient workers: no live broker telemetry';
         lines.push(
             'Pipeline (active remote workers): staged=' + sumReporting('staged_steps_per_sec') +
             ' exp/s  accepted=' + sumReporting('accepted_steps_per_sec') +
@@ -732,6 +741,7 @@ async function getStatusFrameLines(config, adminToken) {
             ' exp/s  uploads=' + uploadBacklog + '  broker=' + brokerLabel +
             '  global learner=' + number(learner.LiveStepsPerSecond, 1) + ' exp/s'
         );
+        lines.push(gradientSummary);
         lines.push(...ppoStatusLines(
             getLatestPpoUpdate(String(desired.run_id || '')),
             { uploadBacklog, broker }
