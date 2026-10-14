@@ -472,6 +472,8 @@ def _parser() -> argparse.ArgumentParser:
         default=30.0,
         help=argparse.SUPPRESS,
     )
+    parser.add_argument("--auto-envs", action="store_true",
+        help="Opt in to automatic Unity environment-count tuning; fixed counts are the default.")
     parser.add_argument("--torch-device", default="cpu")
     parser.add_argument("--reconnect-seconds", type=float, default=DEFAULT_RECONNECT_SECONDS)
     return parser
@@ -2093,8 +2095,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         MAX_ENVS_PER_ACTOR,
         REMOTE_CPU_START_ENVS_PER_THREAD * cpu_threads,
     )
+    if args.auto_envs and args.envs is not None:
+        print("error: --auto-envs cannot be combined with a fixed --envs count", file=sys.stderr)
+        return 2
     if args.envs is None:
-        args.auto_envs = True
         configured_max = MAX_ENVS_PER_ACTOR if args.max_envs is None else args.max_envs
         if not 1 <= args.min_envs <= configured_max <= MAX_ENVS_PER_ACTOR:
             print("error: automatic env bounds must satisfy 1 <= min <= max <= 64", file=sys.stderr)
@@ -2112,8 +2116,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             args.min_envs,
             min(cpu_start_cap, memory_start_cap, args.max_envs),
         )
+        if not args.auto_envs:
+            args.min_envs = args.envs
+            args.max_envs = args.envs
         print(
-            f"[Bees remote] --envs omitted; auto optimizer enabled at {args.envs} envs "
+            f"[Bees remote] --envs omitted; "
+            f"{'auto optimizer enabled' if args.auto_envs else 'fixed startup count selected'} "
+            f"at {args.envs} envs "
             f"(range={args.min_envs}-{args.max_envs} cpu_threads={cpu_threads} "
             f"cpu_start_cap={cpu_start_cap} memory_start_cap={memory_start_cap} "
             f"memory_hard_cap={memory_hard_cap} "
