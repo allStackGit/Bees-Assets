@@ -153,14 +153,18 @@ def trainer_config_for_threading(config_path: Path, enabled: bool) -> Path:
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     raw_args = list(sys.argv[1:] if argv is None else argv)
+    local_only = "--bees-local-only" in raw_args
+    if local_only:
+        raw_args.remove("--bees-local-only")
     raw_args, learner_optimization_args = extract_learner_optimization_args(
         raw_args
     )
     raw_args, threaded_mode, max_policy_lag = elastic.extract_threaded_options(raw_args)
     service_args, actor_options = elastic.extract_elastic_wan_options(raw_args)
-    if not actor_options.enabled:
+    if local_only == actor_options.enabled:
         print(
-            f"Continuous-learning elastic WAN service requires {elastic.WAN_ACTORS_FLAG}.",
+            "Local-only mode must omit WAN actor options; distributed mode requires "
+            f"{elastic.WAN_ACTORS_FLAG}.",
             file=sys.stderr,
         )
         return 2
@@ -170,6 +174,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
         load_auth_token(actor_options.auth_token_file or "")
         options = parse_elastic_service_options(service_args)
+        if local_only and options.num_envs <= 0:
+            raise ValueError("local-only mode needs at least one direct local environment")
     except (OSError, ValueError, SystemExit) as exc:
         print(f"Continuous-learning elastic WAN service configuration error: {exc}", file=sys.stderr)
         return 2
@@ -189,13 +195,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             resume=resume,
             force_fresh=force_fresh,
         )
-        command[1] = str(
-            options.runtime_training_root / "bees_continual_elastic_wan_auto_train.py"
-        )
+        if not local_only:
+            command[1] = str(
+                options.runtime_training_root / "bees_continual_elastic_wan_auto_train.py"
+            )
         command[2] = str(
             trainer_config_for_threading(Path(command[2]), threaded_mode)
         )
-        wan_args = [
+        wan_args = [] if local_only else [
             f"{elastic.WAN_ACTORS_FLAG}={actor_options.max_actors}",
             f"{elastic.WAN_MIN_ACTORS_FLAG}={actor_options.min_actors}",
             f"{elastic.WAN_BROKER_PORT_FLAG}={actor_options.broker_port}",
@@ -204,7 +211,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             f"{elastic.WAN_MAX_QUEUED_BATCHES_FLAG}={actor_options.max_queued_batches}",
             f"{elastic.WAN_LEASE_SECONDS_FLAG}={actor_options.actor_lease_seconds:g}",
         ]
-        if threaded_mode:
+        if threaded_mode and not local_only:
             wan_args.extend(
                 [
                     elastic.THREADED_FLAG,
