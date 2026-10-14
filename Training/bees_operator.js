@@ -29,7 +29,7 @@ function usage() {
     return [
         'Usage:',
         '  node Training/bees_operator.js build [--full-game] [--force] [--preserve-run | --new-run]',
-        '  node Training/bees_operator.js runtime [--threaded [--policy-lag N]] [--backpressure-queue N] [--local-training] [--learner-device cpu|cuda] [--local-only] [--local-envs N] [--entropy BETA] [--skip-evaluation | --enable-evaluation] [--ppo-control | PPO optimization flags]',
+        '  node Training/bees_operator.js runtime [--threaded [--policy-lag N]] [--backpressure-queue N] [--local-training] [--learner-device cpu|cuda] [--local-only] [--local-envs N] [--entropy BETA] [--skip-evaluation | --enable-evaluation] [--ppo-control | PPO optimization flags] [--cpu-gradient-probe]',
         '  node Training/bees_operator.js server',
         '  node Training/bees_operator.js start [--new-run | --resume-run ID] [--env-arg VALUE ...]',
         '  node Training/bees_operator.js stop [--server]',
