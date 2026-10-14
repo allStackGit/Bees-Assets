@@ -4665,6 +4665,12 @@ def _poca_prepare_cuda_capturable_adam(optimizer) -> bool:
         # CPU Adam cannot use that mode; keep its moments and step counters intact.
         for group in optimizer.param_groups:
             group["capturable"] = False
+            for parameter in group["params"]:
+                state = optimizer.state.get(parameter)
+                if state and torch.is_tensor(state.get("step")):
+                    step = state["step"]
+                    if step.device != parameter.device:
+                        state["step"] = step.to(device=parameter.device)
         optimizer.defaults["capturable"] = False
         optimizer._bees_capturable_adam_prepared = False
         return False
@@ -5324,6 +5330,18 @@ def _poca_optimizer_step(optimizer, *, graph_eligible: bool = False) -> None:
     """Execute Adam eagerly or replay a captured CUDA optimizer step."""
 
     opts = _POCA_OPTIMIZATIONS
+    from mlagents.torch_utils import torch
+
+    parameters = [
+        parameter
+        for group in optimizer.param_groups
+        for parameter in group["params"]
+    ]
+    if not torch.cuda.is_available() or any(p.device.type != "cuda" for p in parameters):
+        _poca_prepare_cuda_capturable_adam(optimizer)
+        optimizer.step()
+        return
+
     if getattr(optimizer, "_bees_full_cuda_graph_managed", False):
         _poca_prepare_cuda_capturable_adam(optimizer)
         optimizer.step()
