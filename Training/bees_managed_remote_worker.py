@@ -476,7 +476,7 @@ def _parser() -> argparse.ArgumentParser:
         help="Opt in to automatic Unity environment-count tuning; fixed counts are the default.")
     parser.add_argument(
         "--learning-cpus", type=int, default=0,
-        help="Opt-in CPUs for a separate asynchronous PPO gradient process (0 disables it).",
+        help="Start an experimental CPU gradient executor; central dispatch is shadow-only (0 disables it).",
     )
     parser.add_argument("--torch-device", default="cpu")
     parser.add_argument("--reconnect-seconds", type=float, default=DEFAULT_RECONNECT_SECONDS)
