@@ -29,7 +29,7 @@ function usage() {
     return [
         'Usage:',
         '  node Training/bees_operator.js build [--full-game] [--force] [--preserve-run | --new-run]',
-        '  node Training/bees_operator.js runtime [--threaded [--policy-lag N]] [--backpressure-queue N] [--local-training] [--entropy BETA] [--skip-evaluation | --enable-evaluation] [--ppo-control | PPO optimization flags]',
+        '  node Training/bees_operator.js runtime [--threaded [--policy-lag N]] [--backpressure-queue N] [--local-training] [--learner-device cpu|cuda] [--local-only] [--local-envs N] [--entropy BETA] [--skip-evaluation | --enable-evaluation] [--ppo-control | PPO optimization flags]',
         '  node Training/bees_operator.js server',
         '  node Training/bees_operator.js start [--new-run | --resume-run ID] [--env-arg VALUE ...]',
         '  node Training/bees_operator.js stop [--server]',
@@ -86,6 +86,11 @@ function parseArgs(argv = process.argv.slice(2)) {
         backpressureQueue: null,
         explicitBackpressureQueue: false,
         localTraining: false,
+        localOnly: false,
+        localEnvs: null,
+        explicitLocalEnvs: false,
+        learnerDevice: null,
+        explicitLearnerDevice: false,
         ppoControl: false,
         ppoSyncCleanup: false,
         ppoStreamShards: 1,
@@ -167,6 +172,21 @@ function parseArgs(argv = process.argv.slice(2)) {
             options.explicitBackpressureQueue = true;
         } else if (arg === '--local-training') {
             options.localTraining = true;
+        } else if (arg === '--local-only') {
+            options.localOnly = true;
+        } else if (arg === '--learner-device' || arg.startsWith('--learner-device=')) {
+            const value = (arg === '--learner-device'
+                ? String(requireValue(argv, index++, arg))
+                : arg.slice('--learner-device='.length)).toLowerCase();
+            if (value !== 'cpu' && value !== 'cuda') throw new Error('--learner-device must be cpu or cuda.');
+            options.learnerDevice = value;
+            options.explicitLearnerDevice = true;
+        } else if (arg === '--local-envs' || arg.startsWith('--local-envs=')) {
+            const value = arg === '--local-envs'
+                ? requireValue(argv, index++, arg)
+                : arg.slice('--local-envs='.length);
+            options.localEnvs = parseNumber(value, '--local-envs', 0, 2147483647, true);
+            options.explicitLocalEnvs = true;
         } else if (arg === '--ppo-control') {
             options.ppoControl = true;
             options.explicitLearnerOptimizations = true;
@@ -298,6 +318,9 @@ function parseArgs(argv = process.argv.slice(2)) {
     }
     if (options.localTraining && command !== 'runtime') {
         throw new Error('--local-training is only valid with the runtime command.');
+    }
+    if ((options.localOnly || options.explicitLocalEnvs || options.explicitLearnerDevice) && command !== 'runtime') {
+        throw new Error('--local-only, --local-envs and --learner-device are only valid with the runtime command.');
     }
     if (options.explicitPolicyLag && command !== 'runtime') {
         throw new Error('--policy-lag is only valid with the runtime command.');
