@@ -198,7 +198,7 @@ function getLatestPpoUpdate(runId) {
     return { update, hardware, variability };
 }
 
-function ppoStatusLines(ppo, consumedRate, workerBacklog) {
+function ppoStatusLines(ppo, signals) {
     if (!ppo) return [
         'PPO diagnostics: no completed update in the active learner log yet.',
         'Bottleneck: indeterminate (PPO timing not available).',
@@ -244,17 +244,31 @@ function ppoStatusLines(ppo, consumedRate, workerBacklog) {
     const leading = stage
         .filter(([label]) => label !== 'diagnostic profiling')
         .sort((a, b) => b[1] - a[1])[0];
-    const evidence = leading ? leading[0] + ' is the largest measured stage' : 'stage totals unavailable';
-    if (workerBacklog > 0) {
-        lines.push('Bottleneck signal: queued worker uploads=' + workerBacklog +
-            ' (network or learner may be limiting); ' + evidence +
-            '. Check sustained queue growth before diagnosing the limiting stage.');
-    } else if (consumedRate != null && Number.isFinite(consumedRate)) {
-        lines.push('Bottleneck signal: ' + evidence +
-            '; no queued worker uploads reported. Cannot confirm global limit from one snapshot.');
+    const evidence = leading ? leading[0] + ' is the largest sampled PPO stage' :
+        'PPO stage totals unavailable';
+    const broker = signals && signals.broker;
+    const queueDepth = broker && broker.broker_queue_depth;
+    const capacity = broker && broker.broker_queue_capacity;
+    const pressure = broker && broker.broker_backpressure_total;
+    const brokerRatio = capacity > 0 ? queueDepth / capacity : null;
+    if (brokerRatio != null && brokerRatio >= 0.75) {
+        lines.push('Bottleneck signal: CENTRAL QUEUE PRESSURE ' +
+            queueDepth + '/' + capacity + '; ' + evidence +
+            '. Learner consumption or network admission may be limiting.');
+    } else if ((signals && signals.uploadBacklog) > 0) {
+        lines.push('Bottleneck signal: worker upload queue=' + signals.uploadBacklog +
+            ' batches; broker=' + (broker ? queueDepth + '/' + capacity : 'unknown') +
+            '. Inspect network admission and learner throughput; ' + evidence + '.');
     } else {
-        lines.push('Bottleneck signal: ' + evidence +
-            '; insufficient current queue/rate data to identify a cluster bottleneck.');
+        lines.push('Bottleneck signal: no sustained queue-growth evidence available; ' +
+            evidence + '. One snapshot cannot identify the limiting machine.');
+    }
+    if (broker) {
+        lines.push('Broker cumulative: backpressure=' + pressure +
+            '  stale accepted=' + broker.broker_accepted_stale_steps_total +
+            '  stale consumed=' + broker.broker_consumed_stale_steps_total +
+            '  stale discarded=' + broker.broker_discarded_stale_steps_total +
+            ' experiences (since broker start).');
     }
     return lines;
 }
@@ -609,6 +623,9 @@ async function getStatusFrameLines(config, adminToken) {
                 State: record.stale ? 'STALE' : String(record.process_state || '-'),
                 Envs: envDisplay,
                 'LiveExp/s': liveExpRate,
+                'Staged/s': throughput.staged_steps_per_sec != null
+                    ? number(throughput.staged_steps_per_sec, 1)
+                    : '-',
                 'Accept/s': throughput.accepted_steps_per_sec != null
                     ? number(throughput.accepted_steps_per_sec, 1)
                     : '-',
@@ -616,6 +633,8 @@ async function getStatusFrameLines(config, adminToken) {
                 Accepted: throughput.accepted_steps_total == null ? '-' : String(throughput.accepted_steps_total),
                 Consumed: throughput.learner_consumed_steps_total == null ? '-' : String(throughput.learner_consumed_steps_total),
                 UploadQ: throughput.upload_queue_depth == null ? '-' : String(throughput.upload_queue_depth),
+                BrokerQ: throughput.broker_queue_depth == null ? '-' :
+                    String(throughput.broker_queue_depth) + '/' + String(throughput.broker_queue_capacity ?? '?'),
                 SentGiB: throughput.network_sent_bytes_total != null
                     ? number(Number(throughput.network_sent_bytes_total) / (1024 ** 3), 3)
                     : '-',
@@ -648,8 +667,8 @@ async function getStatusFrameLines(config, adminToken) {
 
         if (rows.length) {
             lines.push(...table(rows, [
-                'Trainer', 'Role', 'Platform', 'State', 'Envs', 'LiveExp/s', 'Accept/s', 'OptStep/s',
-                'Accepted', 'Consumed', 'UploadQ', 'SentGiB', 'RecvGiB', 'MiB/s', 'Opt', 'Build', 'Rev', 'Age',
+                'Trainer', 'Role', 'Platform', 'State', 'Envs', 'LiveExp/s', 'Staged/s', 'Accept/s', 'OptStep/s',
+                'Accepted', 'Consumed', 'UploadQ', 'BrokerQ', 'SentGiB', 'RecvGiB', 'MiB/s', 'Opt', 'Build', 'Rev', 'Age',
                 'Timeout', 'BWin', 'HWin', 'Draw', 'Dur', 'BHit/Sh', 'HHit/Sh',
                 'BAim', 'HAim', 'B<5', 'H<5', 'BAligned', 'HAligned', 'Error',
             ]));
@@ -673,38 +692,51 @@ async function getStatusFrameLines(config, adminToken) {
             '  LearnerAvgStep/s=' + (learner.AverageStepsPerSecond == null ? '-' : number(learner.AverageStepsPerSecond, 1)) +
             '  LearnerLiveStep/s=' + (learner.LiveStepsPerSecond == null ? '-' : number(learner.LiveStepsPerSecond, 1))
         );
-        const remoteRateSamples = trainers
-            .filter(record => String(record.trainer_id || '') !== 'central-learner')
-            .map(record => record.metrics && record.metrics.throughput &&
-                Number(record.metrics.throughput.learner_consumed_steps_per_sec))
-            .filter(rate => Number.isFinite(rate) && rate >= 0);
-        const acceptedRateSamples = trainers
-            .filter(record => String(record.trainer_id || '') !== 'central-learner')
-            .map(record => record.metrics && record.metrics.throughput &&
-                Number(record.metrics.throughput.accepted_steps_per_sec))
-            .filter(rate => Number.isFinite(rate) && rate >= 0);
-        const uploadBacklog = trainers.reduce((total, record) => {
-            const depth = record.metrics && record.metrics.throughput &&
-                Number(record.metrics.throughput.upload_queue_depth);
-            return total + (Number.isFinite(depth) && depth >= 0 ? depth : 0);
-        }, 0);
+        const reportingWorkers = trainers.filter(record =>
+            !record.stale &&
+            String(record.process_state || '') === 'running' &&
+            String(record.trainer_id || '') !== 'central-learner'
+        );
+        const currentMetric = (record, field) => {
+            const throughput = record.metrics && record.metrics.throughput;
+            const raw = throughput && throughput[field];
+            if (raw === undefined || raw === null) return null;
+            const value = Number(raw);
+            return Number.isFinite(value) && value >= 0 ? value : null;
+        };
+        const sumReporting = field => {
+            const available = reportingWorkers
+                .map(record => currentMetric(record, field))
+                .filter(value => value !== null);
+            return available.length ? number(available.reduce((a, b) => a + b, 0), 1) : '-';
+        };
+        const uploadBacklog = reportingWorkers.reduce(
+            (total, record) => total + (currentMetric(record, 'upload_queue_depth') || 0), 0
+        );
+        const brokerReporter = reportingWorkers
+            .filter(record => currentMetric(record, 'broker_queue_depth') !== null)
+            .sort((a, b) => Number(a.age_seconds ?? Infinity) - Number(b.age_seconds ?? Infinity))[0];
+        const broker = brokerReporter && brokerReporter.metrics.throughput;
+        const brokerLabel = broker ? (
+            String(broker.broker_queue_depth) + '/' +
+            String(broker.broker_queue_capacity ?? '?')
+        ) : '-';
         lines.push(
-            'Pipeline: worker accepted=' +
-            (acceptedRateSamples.length ? number(acceptedRateSamples.reduce((a, b) => a + b, 0), 1) : '-') +
-            ' exp/s  worker consumed=' +
-            (remoteRateSamples.length ? number(remoteRateSamples.reduce((a, b) => a + b, 0), 1) : '-') +
-            ' exp/s  queued uploads=' + uploadBacklog +
-            ' (worker-side only)  trainer=' + number(learner.LiveStepsPerSecond, 1) +
-            ' exp/s (older ML-Agents reporting window; rates are not directly comparable)'
+            'Pipeline (active remote workers): staged=' + sumReporting('staged_steps_per_sec') +
+            ' exp/s  accepted=' + sumReporting('accepted_steps_per_sec') +
+            ' exp/s  consumed=' + sumReporting('learner_consumed_steps_per_sec') +
+            ' exp/s  uploads=' + uploadBacklog + '  broker=' + brokerLabel +
+            '  global learner=' + number(learner.LiveStepsPerSecond, 1) + ' exp/s'
         );
         lines.push(...ppoStatusLines(
             getLatestPpoUpdate(String(desired.run_id || '')),
-            learner.LiveStepsPerSecond,
-            uploadBacklog
+            { uploadBacklog, broker }
         ));
         lines.push(
-            'Rates: Accept/s is recent accepted rollout experience, LiveExp/s is learner-consumed experience, and OptStep/s is a historical environment auto-tuner probe, NOT gradient updates/s. Learner Step/s counts unique experiences, not PPO epochs.'
-        );
+            'Rates: Staged/s counts queued complete trajectories, Accept/s broker-accepted experience, ' +
+            'LiveExp/s learner-consumed experience. OptStep/s is an environment auto-tuner probe, ' +
+            'NOT gradient steps/s. Rates have different sampling windows.'
+        ));
         lines.push(
             'Network: SentGiB/RecvGiB are cumulative per-run WAN payload bytes; MiB/s is the current payload rate when a live actor session is available.'
         );
