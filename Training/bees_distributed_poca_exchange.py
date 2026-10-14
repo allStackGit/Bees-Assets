@@ -23,6 +23,8 @@ class GradientWorkExchange:
         self._condition = threading.Condition()
         self._available: collections.deque[str] = collections.deque()
         self._jobs: dict[str, dict[str, Any]] = {}
+        self._snapshots: collections.OrderedDict[str, dict[str, Any]] = collections.OrderedDict()
+        self._max_snapshots = 4
         self._worker_seen: dict[str, float] = {}
         self._closed = False
         self.completed = 0
@@ -41,10 +43,55 @@ class GradientWorkExchange:
                 self._available.append(job_id)
                 self.expired += 1
 
+    def publish_snapshot(self, encoded: bytes) -> str | None:
+        """Hold a compressed immutable actor/critic snapshot for multiple jobs."""
+        if not isinstance(encoded, bytes) or not encoded:
+            raise ValueError("Gradient snapshot must be nonempty encoded bytes")
+        with self._condition:
+            if self._closed:
+                return None
+            if len(self._snapshots) >= self._max_snapshots:
+                for token, record in tuple(self._snapshots.items()):
+                    if record["users"] == 0:
+                        self._snapshots.pop(token)
+                        break
+                else:
+                    return None
+            token = uuid.uuid4().hex
+            self._snapshots[token] = {"encoded": encoded, "users": 0}
+            return token
+
+    def snapshot(self, token: str) -> bytes | None:
+        with self._condition:
+            record = self._snapshots.get(token)
+            if record is None or self._closed:
+                return None
+            self._snapshots.move_to_end(token)
+            return record["encoded"]
+
+    def _release_job_snapshot(self, record: Mapping[str, Any]) -> None:
+        token = record["payload"].get("snapshot_id")
+        if token is not None:
+            snapshot = self._snapshots.get(token)
+            if snapshot is not None:
+                snapshot["users"] -= 1
+
+    def forget_snapshot(self, token: str) -> None:
+        with self._condition:
+            record = self._snapshots.get(token)
+            if record is not None and record["users"] == 0:
+                self._snapshots.pop(token)
+
     def submit(self, payload: Mapping[str, Any]) -> str | None:
         with self._condition:
             if self._closed or len(self._jobs) >= self.max_pending:
                 return None
+            token = payload.get("snapshot_id")
+            if token is not None:
+                snapshot = self._snapshots.get(token)
+                if snapshot is None:
+                    raise ValueError("Gradient job references an unknown snapshot")
+                snapshot["users"] += 1
             job_id = uuid.uuid4().hex
             self._jobs[job_id] = {
                 "payload": dict(payload),
@@ -128,6 +175,7 @@ class GradientWorkExchange:
                     return None
                 if record["state"] == "completed":
                     self._jobs.pop(job_id)
+                    self._release_job_snapshot(record)
                     # All timings use the *central* monotonic clock; "in_flight"
                     # covers response transport as well as worker computation.
                     now = time.monotonic()
@@ -151,7 +199,7 @@ class GradientWorkExchange:
         with self._condition:
             if job_id not in self._jobs:
                 return False
-            self._jobs.pop(job_id)
+            self._release_job_snapshot(self._jobs.pop(job_id))
             self.cancelled += 1
             self._condition.notify_all()
             return True
@@ -161,6 +209,7 @@ class GradientWorkExchange:
             self._expire()
             states = collections.Counter(r["state"] for r in self._jobs.values())
             return {
+                "gradient_snapshots_cached": len(self._snapshots),
                 "gradient_jobs_queued": states["queued"],
                 "gradient_jobs_claimed": states["claimed"],
                 "gradient_jobs_completed_pending": states["completed"],
@@ -178,6 +227,7 @@ class GradientWorkExchange:
         with self._condition:
             self._closed = True
             self._jobs.clear()
+            self._snapshots.clear()
             self._worker_seen.clear()
             self._available.clear()
             self._condition.notify_all()
