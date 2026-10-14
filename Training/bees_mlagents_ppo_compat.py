@@ -4650,11 +4650,7 @@ def _poca_prepare_cuda_capturable_adam(optimizer) -> bool:
 
     from mlagents.torch_utils import torch
 
-    if (
-        not torch.cuda.is_available()
-        or not isinstance(optimizer, torch.optim.Adam)
-        or not optimizer.param_groups
-    ):
+    if not isinstance(optimizer, torch.optim.Adam) or not optimizer.param_groups:
         return False
 
     parameters = [
@@ -4662,7 +4658,15 @@ def _poca_prepare_cuda_capturable_adam(optimizer) -> bool:
         for group in optimizer.param_groups
         for parameter in group["params"]
     ]
-    if not parameters or any(parameter.device.type != "cuda" for parameter in parameters):
+    if not parameters:
+        return False
+    if not torch.cuda.is_available() or any(parameter.device.type != "cuda" for parameter in parameters):
+        # A CUDA checkpoint can retain capturable=True in Adam's param groups.
+        # CPU Adam cannot use that mode; keep its moments and step counters intact.
+        for group in optimizer.param_groups:
+            group["capturable"] = False
+        optimizer.defaults["capturable"] = False
+        optimizer._bees_capturable_adam_prepared = False
         return False
 
     # PyTorch 2.1.1's foreach Adam reads each CUDA step tensor back to the host
