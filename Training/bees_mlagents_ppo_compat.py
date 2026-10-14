@@ -128,6 +128,7 @@ _BC_MASK_STATE = threading.local()
 _POCA_TIMING_STATE = threading.local()
 _POCA_GROUP_BATCH_STATE = threading.local()
 _POCA_UPDATE_CACHE_STATE = threading.local()
+_POCA_GRADIENT_PROBE_STATE = threading.local()
 _POCA_ASYNC_UPDATE_STATE = threading.local()
 _POCA_UPDATE_BUSY_LOCK = threading.Lock()
 _POCA_PROFILE_LOCK = threading.Lock()
@@ -686,6 +687,29 @@ def _trust_region_policy_loss_with_dimension_mask(
     weights = valid_steps * valid_dimensions
     if sample_weights is not None and sample_weights.shape[0] == weights.shape[0]:
         weights = weights * sample_weights.to(element_loss.dtype).unsqueeze(-1)
+    if getattr(_POCA_GRADIENT_PROBE_STATE, "enabled", False):
+        # An optional, bounded 512-row diagnostic. Snapshot only the active
+        # policy-ratio decisions; gradients and PPO loss stay identical.
+        with torch.no_grad():
+            active = weights > 0
+            saturated = torch.where(
+                advantage > 0, r_theta > 1.0 + epsilon,
+                r_theta < 1.0 - epsilon,
+            )
+            margin = torch.minimum(
+                torch.abs(r_theta - (1.0 - epsilon)),
+                torch.abs(r_theta - (1.0 + epsilon)),
+            )
+            near = active & (margin < 1.0e-4)
+            _POCA_GRADIENT_PROBE_STATE.trace = {
+                "log_probs": log_probs.detach().to(device="cpu", copy=True),
+                "active": active.to(device="cpu", copy=True),
+                "saturated": saturated.to(device="cpu", copy=True),
+                "near_boundary": near.to(device="cpu", copy=True),
+                "near_1e4": int(near.sum().item()),
+                "near_1e3": int((active & (margin < 1.0e-3)).sum().item()),
+                "active_dimensions": int(active.sum().item()),
+            }
     return (element_loss * weights).sum() / torch.clamp(weights.sum(), min=1.0)
 
 
