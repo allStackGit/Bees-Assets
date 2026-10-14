@@ -6828,7 +6828,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                             probe_id = begin_shadow_gradient_probe(
                                 self.optimizer,
                                 probe_batch,
-                                self.behavior_name,
+                                self.brain_name,
                                 self.policy.behavior_spec,
                             )
                         except Exception as exc:
