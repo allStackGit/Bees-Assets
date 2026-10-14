@@ -15,6 +15,7 @@ import sys
 import threading
 import time
 import urllib.parse
+from collections import OrderedDict
 from collections.abc import Mapping
 from typing import Any, Optional, Sequence
 
@@ -39,6 +40,7 @@ def run_gradient_worker(
     optimizer = None
     optimizer_behavior = None
     previous_session = None
+    snapshot_cache: OrderedDict[str, Mapping[str, Any]] = OrderedDict()
     while not stop.is_set():
         try:
             session = client.session()
@@ -50,6 +52,7 @@ def run_gradient_worker(
             if session_id != previous_session:
                 optimizer = None
                 optimizer_behavior = None
+                snapshot_cache.clear()
                 previous_session = session_id
             status, _headers, body = client._request(
                 "GET", "/gradient/claim",
@@ -79,12 +82,33 @@ def run_gradient_worker(
                         cpu_threads,
                     )
                     optimizer_behavior = behavior_id
+                snapshot_id = str(payload["snapshot_id"])
+                snapshot_cache_hit = snapshot_id in snapshot_cache
+                fetch_started = time.monotonic()
+                if not snapshot_cache_hit:
+                    snapshot_status, _, snapshot_blob = client._request(
+                        "GET", "/gradient/snapshot",
+                        query={"session": session_id, "id": snapshot_id},
+                    )
+                    if snapshot_status != 200:
+                        raise RuntimeError("Unexpected gradient snapshot response")
+                    decoded_snapshot = wan.decode_payload(snapshot_blob)
+                    if not isinstance(decoded_snapshot, Mapping):
+                        raise RuntimeError("Malformed remote gradient snapshot")
+                    snapshot_cache[snapshot_id] = decoded_snapshot
+                    while len(snapshot_cache) > 4:
+                        snapshot_cache.popitem(last=False)
+                snapshot = snapshot_cache[snapshot_id]
+                snapshot_cache.move_to_end(snapshot_id)
+                snapshot_fetch_seconds = time.monotonic() - fetch_started
                 result = compute_minibatch_gradients(
                     optimizer,
                     decode_cpu_minibatch(payload["minibatch_bytes"]),
-                    payload["snapshot"],
+                    snapshot,
                 )
                 result["worker"] = identity
+                result["snapshot_cache_hit"] = snapshot_cache_hit
+                result["snapshot_fetch_seconds"] = snapshot_fetch_seconds
             except Exception as exc:
                 # Central can run the batch itself or cancel the job; a failed
                 # remote compute must never poison Adam or kill the rollout.
@@ -117,6 +141,7 @@ def run_gradient_worker(
         except BrokerSessionChanged:
             optimizer = None
             optimizer_behavior = None
+            snapshot_cache.clear()
             previous_session = None
         except (BrokerUnavailable, TimeoutError, ConnectionError, OSError) as exc:
             print("[Bees CPU gradient] central unavailable: " + str(exc), flush=True)
