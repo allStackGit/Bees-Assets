@@ -639,6 +639,7 @@ class ElasticActorSession(worker.ActorSession):
             ("consumed_stale_steps_total", "broker_consumed_stale_steps_total"),
             ("discarded_stale_steps_total", "broker_discarded_stale_steps_total"),
             ("gradient_workers_active", "gradient_workers_active"),
+            ("gradient_snapshots_cached", "gradient_snapshots_cached"),
             ("gradient_jobs_queued", "gradient_jobs_queued"),
             ("gradient_jobs_claimed", "gradient_jobs_claimed"),
             ("gradient_jobs_completed_pending", "gradient_jobs_completed_pending"),
