@@ -708,7 +708,7 @@ Write-Host '[Bees remote] Stage 5/5: starting managed training worker in the bac
 if($Envs -gt 0){
     Write-Host "Starting Bees remote worker with $Envs environments."
 }else{
-    Write-Host 'Starting Bees remote worker with BeesServer environment auto-optimization (CPU-derived start, RAM-capped maximum 64).'
+    Write-Host 'Starting Bees remote worker with a fixed CPU/RAM-derived startup count (no auto-resizing).'
 }
 Remove-Item -LiteralPath $ShutdownRequestFile -Force -ErrorAction SilentlyContinue
 $argumentString=(@('-u') + $workerArgs | ForEach-Object { Quote-ProcessArgument ([string]$_) }) -join ' '
