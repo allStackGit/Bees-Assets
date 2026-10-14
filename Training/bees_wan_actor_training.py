@@ -529,6 +529,15 @@ class WanActorBroker:
                             },
                         )
                         return
+                    if parsed.path == "/gradient/snapshot":
+                        snapshot_id = query.get("id", [""])[0]
+                        blob = broker.gradient_exchange.snapshot(snapshot_id)
+                        if blob is None:
+                            self._error(410, "gradient-snapshot-expired",
+                                        "The requested PPO model snapshot is no longer available.")
+                        else:
+                            self._binary(blob)
+                        return
                     if parsed.path == "/gradient/claim":
                         worker = query.get("worker", [""])[0]
                         wait = float(query.get("wait", ["0"])[0])
