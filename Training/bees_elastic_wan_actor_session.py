@@ -68,7 +68,7 @@ class ElasticActorSession(worker.ActorSession):
             and float(optimizer_busy) >= 0.0
         ):
             payload["optimizer_busy_seconds_total"] = float(optimizer_busy)
-        payload.update(self._broker_pipeline_metrics)
+        payload.update(getattr(self, "_broker_pipeline_metrics", {}))
         if isinstance(failure, Mapping):
             payload.update(
                 {
