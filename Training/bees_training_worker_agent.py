@@ -659,6 +659,7 @@ def read_throughput_metrics(
     learner_step_total = value.get("learner_step_total")
     optimizer_busy_seconds_total = value.get("optimizer_busy_seconds_total")
     learner_consumed_rate = value.get("learner_consumed_steps_per_sec")
+    accepted_rate = value.get("accepted_steps_per_sec")
     queue_depth = value.get("upload_queue_depth")
     network_sent = value.get("network_sent_bytes_total")
     network_received = value.get("network_received_bytes_total")
@@ -712,6 +713,15 @@ def read_throughput_metrics(
                 or isinstance(learner_consumed_rate, bool)
                 or not math.isfinite(float(learner_consumed_rate))
                 or float(learner_consumed_rate) < 0.0
+            )
+        )
+        or (
+            accepted_rate is not None
+            and (
+                not isinstance(accepted_rate, (int, float))
+                or isinstance(accepted_rate, bool)
+                or not math.isfinite(float(accepted_rate))
+                or float(accepted_rate) < 0.0
             )
         )
         or not isinstance(queue_depth, int)
@@ -826,6 +836,8 @@ def read_throughput_metrics(
         )
     if learner_consumed_rate is not None:
         result["learner_consumed_steps_per_sec"] = float(learner_consumed_rate)
+    if accepted_rate is not None:
+        result["accepted_steps_per_sec"] = float(accepted_rate)
     if policy_cycle_present:
         result["policy_cycle"] = int(policy_cycle)
     if runtime_version_present:
