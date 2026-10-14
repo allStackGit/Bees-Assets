@@ -378,7 +378,7 @@ async function invokeRuntime(options = {}) {
         { canonicalBuildId: canonicalBuild },
     );
 
-    if (exists(paths.tailnetAddressPath)) {
+    if (!config.localOnly && exists(paths.tailnetAddressPath)) {
         prepareRemoteBootstrap(config, python, updatedRelease);
         await startTailnetGatewayIfNeeded(config);
     }
@@ -616,10 +616,12 @@ async function invokeStart(options = {}) {
 
     if (options.resumeRunId) {
         const unity = resolveUnityEditor(config);
-        ensureTailnetIdentity(config);
-        prepareRemoteBootstrap(config, python, release);
+        if (!config.localOnly) {
+            ensureTailnetIdentity(config);
+            prepareRemoteBootstrap(config, python, release);
+        }
         await publishRelease(config, admin, release);
-        await startTailnetGatewayIfNeeded(config);
+        if (!config.localOnly) await startTailnetGatewayIfNeeded(config);
 
         const staged = await stageRelease(
             config,
@@ -842,8 +844,10 @@ async function invokeStart(options = {}) {
             config, bootstrapPython, unity, release
         );
 
-        ensureTailnetIdentity(config);
-        prepareRemoteBootstrap(config, python, release);
+        if (!config.localOnly) {
+            ensureTailnetIdentity(config);
+            prepareRemoteBootstrap(config, python, release);
+        }
 
         // Mirror the post-build incompatible-cutover sequence. The old run remains
         // authoritative until its verified central supervisor has exited cleanly.
@@ -853,7 +857,7 @@ async function invokeStart(options = {}) {
         prepareLocalActorReleaseRuntime(config, release, centralRuntime);
 
         await publishRelease(config, admin, release);
-        await startTailnetGatewayIfNeeded(config);
+        if (!config.localOnly) await startTailnetGatewayIfNeeded(config);
 
         const staged = await stageRelease(
             config,
@@ -924,10 +928,12 @@ async function invokeStart(options = {}) {
         );
     }
 
-    ensureTailnetIdentity(config);
-    prepareRemoteBootstrap(config, python, release);
+    if (!config.localOnly) {
+        ensureTailnetIdentity(config);
+        prepareRemoteBootstrap(config, python, release);
+    }
     await publishRelease(config, admin, release);
-    await startTailnetGatewayIfNeeded(config);
+    if (!config.localOnly) await startTailnetGatewayIfNeeded(config);
 
     if (!performForcedNewRun) {
         await startCentralAgentIfNeeded(
