@@ -23,7 +23,7 @@
     "initialEnvs": 4,
     "minEnvs": 1,
     "maxEnvs": 48,
-    "autoTune": true,
+    "autoTune": false,
     "torchDevice": "cpu"
   },
   "threadedTraining": false,
