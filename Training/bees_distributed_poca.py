@@ -8,6 +8,7 @@ importing this module.
 from __future__ import annotations
 
 import math
+import threading
 import time
 from collections.abc import Mapping
 from typing import Any
@@ -71,8 +72,8 @@ def _gradient_exchange() -> Any:
         return _ACTIVE_GRADIENT_EXCHANGE
 
 
-def poll_shadow_gradient_probe() -> None:
-    """Report observed remote compute and compare identical-snapshot gradients.
+def poll_shadow_gradient_probe(result: Mapping[str, Any]) -> None:
+    """Report an asynchronously collected remote CPU gradient result.
 
     This is diagnostic only. The authoritative Adam and PPO update buffers
     are never mutated by shadow gradients.
@@ -82,15 +83,8 @@ def poll_shadow_gradient_probe() -> None:
     if not item:
         return
     exchange = item["exchange"]
-    result = exchange.wait_result(item["job_id"], 0.0)
-    if result is None:
-        if time.monotonic() - item["submitted"] >= 600.0:
-            exchange.cancel(item["job_id"])
-            exchange.forget_snapshot(item["snapshot_id"])
-            print("[Bees CPU gradient probe] timed out; no model change", flush=True)
-            _SHADOW_PROBE = None
-        return
-    _SHADOW_PROBE = None
+    if _SHADOW_PROBE is item:
+        _SHADOW_PROBE = None
     exchange.forget_snapshot(item["snapshot_id"])
     if "error" in result:
         print("[Bees CPU gradient probe] remote failed: " + str(result["error"]), flush=True)
@@ -237,6 +231,32 @@ def poll_shadow_gradient_probe() -> None:
 
 
 
+def _await_shadow_gradient_probe(item: Mapping[str, Any]) -> None:
+    """Await the submitted work off the PPO thread; never touch live model state."""
+    global _SHADOW_PROBE
+    exchange = item["exchange"]
+    try:
+        result = exchange.wait_result(item["job_id"], 600.0)
+        if result is None:
+            exchange.cancel(item["job_id"])
+            exchange.forget_snapshot(item["snapshot_id"])
+            if _SHADOW_PROBE is item:
+                _SHADOW_PROBE = None
+            print("[Bees CPU gradient probe] timed out; no model change", flush=True)
+            return
+        poll_shadow_gradient_probe(result)
+    except Exception as exc:
+        exchange.cancel(item["job_id"])
+        exchange.forget_snapshot(item["snapshot_id"])
+        if _SHADOW_PROBE is item:
+            _SHADOW_PROBE = None
+        print(
+            "[Bees CPU gradient probe] comparison failed: "
+            f"{type(exc).__name__}: {exc} (no model change)",
+            flush=True,
+        )
+
+
 def begin_shadow_gradient_probe(
     optimizer: Any, minibatch: Mapping[str, Any],
     behavior_id: str, behavior_spec: Any,
@@ -247,7 +267,6 @@ def begin_shadow_gradient_probe(
 
     if os.environ.get("BEES_CPU_GRADIENT_PROBE", "") != "1":
         return None
-    poll_shadow_gradient_probe()
     if _SHADOW_PROBE is not None:
         return None
     exchange = _gradient_exchange()
@@ -329,6 +348,12 @@ def capture_shadow_reference(
             )
             for name, value in update_stats.items()
         }
+    threading.Thread(
+        target=_await_shadow_gradient_probe,
+        args=(_SHADOW_PROBE,),
+        name="bees-cpu-gradient-probe",
+        daemon=True,
+    ).start()
 
 
 def create_cpu_gradient_optimizer(
