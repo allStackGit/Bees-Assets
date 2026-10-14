@@ -170,9 +170,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return 2
 
     try:
-        from bees_wan_actor_training import load_auth_token
+        if not local_only:
+            from bees_wan_actor_training import load_auth_token
 
-        load_auth_token(actor_options.auth_token_file or "")
+            load_auth_token(actor_options.auth_token_file or "")
         options = parse_elastic_service_options(service_args)
         if local_only and options.num_envs <= 0:
             raise ValueError("local-only mode needs at least one direct local environment")
