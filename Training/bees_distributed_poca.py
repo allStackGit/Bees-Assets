@@ -205,7 +205,8 @@ def poll_shadow_gradient_probe(result: Mapping[str, Any]) -> None:
             remote_saturated = cpu_array(remote_trace, "saturated").astype(np.bool_, copy=False)
             if local_saturated.shape != local_active.shape or remote_saturated.shape != local_active.shape:
                 raise ValueError("different policy clipping shapes")
-            active_delta = np.abs(local_prob - remote_prob)[local_active]
+            delta = np.abs(local_prob - remote_prob)
+            active_delta = delta[local_active]
             if active_delta.size == 0:
                 raise ValueError("no active actions to compare")
             clipping_disagreement = int(np.count_nonzero(
