@@ -182,6 +182,45 @@ def poll_shadow_gradient_probe() -> None:
         ),
         flush=True,
     )
+    local_trace = item.get("local_trace")
+    remote_trace = result.get("policy_trace")
+    if isinstance(local_trace, Mapping) and isinstance(remote_trace, Mapping):
+        try:
+            local_active = local_trace["active"]
+            remote_active = remote_trace["active"]
+            if local_active.shape != remote_active.shape:
+                raise ValueError("different policy action shapes")
+            if not bool((local_active == remote_active).all().item()):
+                raise ValueError("different active action dimensions")
+            active = local_active
+            local_prob = local_trace["log_probs"]
+            remote_prob = remote_trace["log_probs"]
+            if local_prob.shape != remote_prob.shape:
+                raise ValueError("different policy log-probability shapes")
+            delta = (local_prob - remote_prob).abs()
+            active_delta = delta[active]
+            if active_delta.numel() == 0:
+                raise ValueError("no active actions to compare")
+            clipping_disagreement = int(
+                ((local_trace["saturated"] != remote_trace["saturated"]) & active).sum().item()
+            )
+            print(
+                "[Bees CPU gradient clipping] "
+                f"active={int(active.sum().item())} "
+                f"cpu_near_1e4={int(remote_trace['near_1e4'])} "
+                f"exeter_near_1e4={int(local_trace['near_1e4'])} "
+                f"cpu_near_1e3={int(remote_trace['near_1e3'])} "
+                f"exeter_near_1e3={int(local_trace['near_1e3'])} "
+                f"clipping_disagreement={clipping_disagreement} "
+                f"logprob_max_abs={float(active_delta.max().item()):.8g} "
+                f"logprob_mean_abs={float(active_delta.mean().item()):.8g}",
+                flush=True,
+            )
+        except (KeyError, ValueError, RuntimeError, TypeError) as exc:
+            print(
+                "[Bees CPU gradient clipping] comparison unavailable: "
+                + str(exc), flush=True,
+            )
     local_stats = item.get("local_stats")
     remote_stats = result.get("stats")
     if isinstance(local_stats, Mapping) and isinstance(remote_stats, Mapping):
@@ -202,7 +241,7 @@ def begin_shadow_gradient_probe(
     optimizer: Any, minibatch: Mapping[str, Any],
     behavior_id: str, behavior_spec: Any,
 ) -> str | None:
-    """Dispatch at most one shadow minibatch per ten PPO updates."""
+    """Dispatch one shadow minibatch per PPO update while the probe is enabled."""
     global _SHADOW_PROBE, _SHADOW_PROBE_CYCLE
     import os
 
@@ -215,8 +254,6 @@ def begin_shadow_gradient_probe(
     if exchange is None or exchange.metrics()["gradient_workers_active"] < 1:
         return None
     _SHADOW_PROBE_CYCLE += 1
-    if _SHADOW_PROBE_CYCLE % 10 != 1:
-        return None
     try:
         snapshot = snapshot_model(optimizer)
         serialized = encode_cpu_minibatch(minibatch)
@@ -251,6 +288,9 @@ def begin_shadow_gradient_probe(
             "submitted": time.monotonic(),
             "local_gradients": None,
         }
+        from bees_mlagents_ppo_compat import _POCA_GRADIENT_PROBE_STATE
+        _POCA_GRADIENT_PROBE_STATE.trace = None
+        _POCA_GRADIENT_PROBE_STATE.enabled = True
         print(
             "[Bees CPU gradient probe] submitted batch=" +
             str(minibatch["loss_masks"].shape[0]) +
@@ -272,6 +312,10 @@ def capture_shadow_reference(
         return
     if _SHADOW_PROBE["job_id"] != job_id:
         return
+    from bees_mlagents_ppo_compat import _POCA_GRADIENT_PROBE_STATE
+    _SHADOW_PROBE["local_trace"] = getattr(_POCA_GRADIENT_PROBE_STATE, "trace", None)
+    _POCA_GRADIENT_PROBE_STATE.enabled = False
+    _POCA_GRADIENT_PROBE_STATE.trace = None
     _SHADOW_PROBE["local_gradients"] = {
         name: None if param.grad is None else
         param.grad.detach().to(device="cpu", copy=True)
@@ -357,7 +401,10 @@ def compute_minibatch_gradients(
     Bees runtime patches as Exeter. The minibatch must be a fully materialized
     CPU minibatch produced by the pinned Bees POCA cache path.
     """
-    from bees_mlagents_ppo_compat import _POCA_UPDATE_CACHE_STATE
+    from bees_mlagents_ppo_compat import (
+        _POCA_UPDATE_CACHE_STATE,
+        _POCA_GRADIENT_PROBE_STATE,
+    )
     from mlagents.torch_utils import torch
 
     if any(p.device.type != "cpu" for p in _named_parameters(optimizer).values()):
@@ -383,6 +430,8 @@ def compute_minibatch_gradients(
     optimizer.optimizer.step = lambda *args, **kwargs: None
     _POCA_UPDATE_CACHE_STATE.minibatch = minibatch
     _POCA_UPDATE_CACHE_STATE.actor_update = True
+    _POCA_GRADIENT_PROBE_STATE.enabled = True
+    _POCA_GRADIENT_PROBE_STATE.trace = None
     started = time.monotonic()
     try:
         stats = optimizer.update(minibatch, batch_size)
@@ -400,6 +449,7 @@ def compute_minibatch_gradients(
             "batch_experiences": batch_size,
             "compute_seconds": time.monotonic() - started,
             "gradients": grads,
+            "policy_trace": getattr(_POCA_GRADIENT_PROBE_STATE, "trace", None),
             "stats": {
                 name: float(value.detach().cpu().item()) if hasattr(value, "detach")
                 else float(value)
@@ -407,6 +457,8 @@ def compute_minibatch_gradients(
             },
         }
     finally:
+        _POCA_GRADIENT_PROBE_STATE.enabled = False
+        _POCA_GRADIENT_PROBE_STATE.trace = None
         _POCA_UPDATE_CACHE_STATE.minibatch = None
         _POCA_UPDATE_CACHE_STATE.actor_update = True
         optimizer.optimizer.step = step
