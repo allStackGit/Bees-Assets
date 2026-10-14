@@ -736,7 +736,7 @@ async function getStatusFrameLines(config, adminToken) {
             'Rates: Staged/s counts queued complete trajectories, Accept/s broker-accepted experience, ' +
             'LiveExp/s learner-consumed experience. OptStep/s is an environment auto-tuner probe, ' +
             'NOT gradient steps/s. Rates have different sampling windows.'
-        ));
+        );
         lines.push(
             'Network: SentGiB/RecvGiB are cumulative per-run WAN payload bytes; MiB/s is the current payload rate when a live actor session is available.'
         );
