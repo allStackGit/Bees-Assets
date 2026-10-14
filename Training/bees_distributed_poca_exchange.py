@@ -15,7 +15,7 @@ from typing import Any, Mapping
 
 
 class GradientWorkExchange:
-    def __init__(self, *, max_pending: int = 8, lease_seconds: float = 180.0):
+    def __init__(self, *, max_pending: int = 8, lease_seconds: float = 600.0):
         if max_pending < 1 or lease_seconds <= 0:
             raise ValueError("Invalid distributed gradient work capacity")
         self.max_pending = int(max_pending)
