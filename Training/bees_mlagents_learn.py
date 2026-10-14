@@ -43,6 +43,7 @@ PPO_PREFETCH_FLAG = "--bees-ppo-prefetch"
 PPO_CRITIC_BASELINE_OVERLAP_FLAG = "--bees-ppo-critic-baseline-overlap"
 PPO_CUDA_GRAPHS_FLAG = "--bees-ppo-cuda-graphs"
 PPO_PROFILE_FLAG = "--bees-ppo-profile"
+CPU_GRADIENT_PROBE_FLAG = "--bees-cpu-gradient-probe"
 RESULTS_DIR_FLAG = "--results-dir"
 DEFAULT_RESULTS_DIR = ".results"
 WORKER_TIMER_SAMPLE_STEPS = 64
@@ -248,6 +249,7 @@ def _extract_bees_options(
         PPO_CRITIC_BASELINE_OVERLAP_FLAG: "critic_baseline_overlap",
         PPO_CUDA_GRAPHS_FLAG: "cuda_graphs",
         PPO_PROFILE_FLAG: "profile_once",
+        CPU_GRADIENT_PROBE_FLAG: "cpu_gradient_probe",
     }
     index = 0
 
@@ -1141,6 +1143,9 @@ def main() -> None:
         cpu_inference,
         optimization_options,
     ) = _extract_bees_options(sys.argv[1:])
+    cpu_gradient_probe = optimization_options.pop("cpu_gradient_probe", None)
+    if cpu_gradient_probe is not None:
+        os.environ["BEES_CPU_GRADIENT_PROBE"] = "1" if cpu_gradient_probe else "0"
     trainer_args = _ensure_results_dir(trainer_args)
 
     if cpu_inference and not batch_inference:
