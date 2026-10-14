@@ -429,8 +429,8 @@ def _parser() -> argparse.ArgumentParser:
         type=int,
         default=None,
         help=(
-            "Fixed Unity environment count (1-64). If omitted, BeesServer auto-tunes "
-            "the count for useful steps/sec."
+            "Fixed Unity environment count (1-64). If omitted, select a fixed "
+            "CPU/RAM-safe startup count. Use --auto-envs to opt into tuning."
         ),
     )
     parser.add_argument(
