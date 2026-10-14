@@ -2,6 +2,7 @@ param(
     [ValidateSet('start','stop')]
     [string]$Command='start',
     [int]$Envs=0,
+    [switch]$AutoEnvs,
     [string]$InstallRoot='',
     [string]$TorchDevice='',
     [switch]$NoAutostart
@@ -47,6 +48,7 @@ $GameplayPort=[int]$GameplayPort
 if(-not $InstallRoot){$InstallRoot=[Environment]::ExpandEnvironmentVariables($DefaultInstallRoot)}
 if(-not $TorchDevice){$TorchDevice=$DefaultTorchDevice}
 if($Envs -lt 0 -or $Envs -gt 64){throw 'Envs must be in 1-64 when specified.'}
+if($AutoEnvs -and $Envs -gt 0){throw 'AutoEnvs cannot be combined with fixed Envs.'}
 foreach($port in @($TailnetBootstrapPort,$ControlPort,$BrokerPort,$GameplayPort)){
     if($port -lt 1 -or $port -gt 65535){throw 'Configured Bees ports must be in 1-65535.'}
 }
@@ -174,6 +176,7 @@ $TorchDevice='__TORCH_DEVICE__'
 $MonitorPidFile='__PID_FILE__'
 $ControlPort=__CONTROL_PORT__
 $Envs=__ENVS__
+$AutoEnvs=__AUTO_ENVS__
 
 $existingPid=0
 if(Test-Path -LiteralPath $MonitorPidFile){
@@ -286,6 +289,7 @@ function Invoke-LauncherRepair {
         $InstallRoot.Replace('"','""') + '" -TorchDevice "' +
         $TorchDevice.Replace('"','""') + '"'
     if($Envs -gt 0){$command+=' -Envs ' + [string]$Envs}
+    if($AutoEnvs){$command+=' -AutoEnvs'}
     try {
         $script:RepairProcess=Start-Process -FilePath $env:COMSPEC -ArgumentList @('/d','/c',$command) -WindowStyle Hidden -RedirectStandardOutput $RepairOutLog -RedirectStandardError $RepairErrLog -PassThru
         $script:RepairStartedUtc=[DateTime]::UtcNow
@@ -326,6 +330,7 @@ try {
     $monitorBody=$monitorBody.Replace('__PID_FILE__',(Escape-PowerShellSingleQuoted $AutostartMonitorPidFile))
     $monitorBody=$monitorBody.Replace('__CONTROL_PORT__',[string]$ControlPort)
     $monitorBody=$monitorBody.Replace('__ENVS__',[string]$Envs)
+    $monitorBody=$monitorBody.Replace('__AUTO_ENVS__',$(if($AutoEnvs){'$true'}else{'$false'}))
     [IO.File]::WriteAllText($AutostartMonitor,$monitorBody,(New-Object Text.UTF8Encoding($false)))
 
     $line='@echo off' + [Environment]::NewLine +
@@ -696,6 +701,7 @@ $workerArgs=@(
     '--torch-device',$TorchDevice
 )
 if($Envs -gt 0){$workerArgs+=@('--envs',[string]$Envs)}
+if($AutoEnvs){$workerArgs+='--auto-envs'}
 if($NoAutostart){$workerArgs+='--no-autostart'}
 
 function Quote-ProcessArgument([string]$Value){
@@ -705,7 +711,9 @@ function Quote-ProcessArgument([string]$Value){
 
 Write-Host ''
 Write-Host '[Bees remote] Stage 5/5: starting managed training worker in the background...'
-if($Envs -gt 0){
+if($AutoEnvs){
+    Write-Host 'Starting Bees remote worker with explicit environment auto-optimization.'
+}elseif($Envs -gt 0){
     Write-Host "Starting Bees remote worker with $Envs environments."
 }else{
     Write-Host 'Starting Bees remote worker with a fixed CPU/RAM-derived startup count (no auto-resizing).'
