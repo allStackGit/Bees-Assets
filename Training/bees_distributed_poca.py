@@ -223,6 +223,43 @@ def poll_shadow_gradient_probe(result: Mapping[str, Any]) -> None:
                 f"logprob_mean_abs={float(active_delta.mean()):.8g}",
                 flush=True,
             )
+            local_ratio = cpu_array(local_trace, "ratio")
+            remote_ratio = cpu_array(remote_trace, "ratio")
+            local_logratio = cpu_array(local_trace, "log_ratio")
+            remote_logratio = cpu_array(remote_trace, "log_ratio")
+            if any(value.shape != local_active.shape for value in (
+                local_ratio, remote_ratio, local_logratio, remote_logratio
+            )):
+                raise ValueError("different policy probability-ratio shapes")
+            # Count PPO terms whose exponentials vanish in float32, and report
+            # outliers separately from terms capable of a material update.
+            local_underflow = int(np.count_nonzero(local_active & (local_ratio == 0)))
+            remote_underflow = int(np.count_nonzero(local_active & (remote_ratio == 0)))
+            large_delta = int(np.count_nonzero(local_active & (delta > 1)))
+            large_delta_underflow = int(np.count_nonzero(
+                local_active & (delta > 1)
+                & (local_ratio == 0) & (remote_ratio == 0)
+            ))
+            candidates = (
+                local_active & ~local_saturated & ~remote_saturated
+                & np.isfinite(local_ratio) & np.isfinite(remote_ratio)
+                & (local_ratio >= 1.0e-6) & (remote_ratio >= 1.0e-6)
+                & (local_ratio <= 1.0e6) & (remote_ratio <= 1.0e6)
+            )
+            candidate_delta = delta[candidates]
+            print(
+                "[Bees CPU gradient numerics] "
+                f"logprob_abs_max={max(float(np.max(np.abs(local_prob[local_active]))), float(np.max(np.abs(remote_prob[local_active])))):.8g} "
+                f"logratio_abs_max={max(float(np.max(np.abs(local_logratio[local_active]))), float(np.max(np.abs(remote_logratio[local_active])))):.8g} "
+                f"exeter_underflow={local_underflow} cpu_underflow={remote_underflow} "
+                f"exeter_clipped={int(np.count_nonzero(local_active & local_saturated))} "
+                f"cpu_clipped={int(np.count_nonzero(local_active & remote_saturated))} "
+                f"large_diff={large_delta} large_diff_both_underflow={large_delta_underflow} "
+                f"candidate_actions={int(np.count_nonzero(candidates))} "
+                f"candidate_max_diff={float(candidate_delta.max()) if candidate_delta.size else 0:.8g} "
+                f"candidate_mean_diff={float(candidate_delta.mean()) if candidate_delta.size else 0:.8g}",
+                flush=True,
+            )
         except (KeyError, ValueError, RuntimeError, TypeError) as exc:
             print(
                 "[Bees CPU gradient clipping] comparison unavailable: "
