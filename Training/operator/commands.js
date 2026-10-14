@@ -162,7 +162,17 @@ async function invokeRuntime(options = {}) {
     const runtimeOverrides = {
         threadedTraining: Boolean(options.threaded),
         localTraining: Boolean(options.localTraining),
+        localOnly: Boolean(options.localOnly),
     };
+    if (options.explicitLocalEnvs) {
+        runtimeOverrides.numLocalEnvs = Number(options.localEnvs);
+    }
+    if (options.explicitLearnerDevice) {
+        runtimeOverrides.learnerDevice = String(options.learnerDevice);
+    }
+    if (options.localOnly && options.localTraining) {
+        throw new Error('-LocalOnly uses direct local environments and cannot be combined with -LocalTraining.');
+    }
     if (options.explicitPolicyLag) {
         runtimeOverrides.threadedPolicyLag = Number(options.policyLag);
     }
@@ -195,6 +205,9 @@ async function invokeRuntime(options = {}) {
             };
     }
     config = applyRuntimeTrainingOptions(config, runtimeOverrides);
+    if (config.localOnly && config.numLocalEnvs === 0) {
+        throw new Error('-LocalOnly requires -LocalEnvs greater than zero; no WAN actors or local WAN actor are started in this mode.');
+    }
     if (!exists(paths.latestReleasePath)) {
         throw new Error(
             "No training release exists. Run '.\\Assets\\bees.ps1 build' first."
@@ -280,11 +293,10 @@ async function invokeRuntime(options = {}) {
                 threadedTraining: Boolean(config.threadedTraining),
                 threadedPolicyLag: Number(config.threadedPolicyLag),
                 wanMaxQueuedBatches: Number(config.wanMaxQueuedBatches),
-                localTraining: Boolean(
-                    config.localActor &&
-                    typeof config.localActor === 'object' &&
-                    config.localActor.enabled
-                ),
+                localTraining: Boolean(config.localActor && config.localActor.enabled),
+                localOnly: Boolean(config.localOnly),
+                numLocalEnvs: Number(config.numLocalEnvs),
+                learnerDevice: config.learnerDevice,
                 learnerOptimizations: config.learnerOptimizations,
                 entropyBeta: config.entropyBeta,
                 skipEvaluation: Boolean(config.skipEvaluation),
@@ -334,11 +346,10 @@ async function invokeRuntime(options = {}) {
         threadedTraining: Boolean(config.threadedTraining),
         threadedPolicyLag: Number(config.threadedPolicyLag),
         wanMaxQueuedBatches: Number(config.wanMaxQueuedBatches),
-        localTraining: Boolean(
-            config.localActor &&
-            typeof config.localActor === 'object' &&
-            config.localActor.enabled
-        ),
+        localTraining: Boolean(config.localActor && config.localActor.enabled),
+        localOnly: Boolean(config.localOnly),
+        numLocalEnvs: Number(config.numLocalEnvs),
+        learnerDevice: config.learnerDevice,
         learnerOptimizations: config.learnerOptimizations,
         entropyBeta: config.entropyBeta,
         skipEvaluation: Boolean(config.skipEvaluation),
@@ -383,6 +394,9 @@ async function invokeRuntime(options = {}) {
         ' local_training=' + (
             config.localActor && config.localActor.enabled ? 'on' : 'off'
         ) +
+        ' local_only=' + (config.localOnly ? 'on' : 'off') +
+        ' local_envs=' + Number(config.numLocalEnvs) +
+        ' learner_device=' + (config.learnerDevice || 'trainer-config') +
         ' ppo_sync_cleanup=' + (
             config.learnerOptimizations.syncCleanup ? 'on' : 'off'
         ) +
