@@ -77,14 +77,21 @@ function buildCentralLearnerArgv(config, learnerPython, unity, runtimeRoot) {
         '--generation-steps', String(config.generationSteps),
         '--num-envs', String(config.numLocalEnvs),
         '--platform', 'WindowsPlayer',
-        '--bees-wan-actors', String(
-            Number(config.maxRemoteActors) + localActorBrokerSlots(config)
-        ),
-        '--bees-wan-min-actors', String(config.minRemoteActors),
-        '--bees-wan-broker-port', String(config.brokerPort),
-        '--bees-wan-auth-token-file', paths.wanTokenPath,
-        '--bees-wan-max-queued-batches', String(Number(config.wanMaxQueuedBatches)),
     ];
+    if (config.learnerDevice) {
+        argv.push('--learner-device', String(config.learnerDevice));
+    }
+    if (config.localOnly) {
+        argv.push('--bees-local-only');
+    } else {
+        argv.push(
+            '--bees-wan-actors', String(Number(config.maxRemoteActors) + localActorBrokerSlots(config)),
+            '--bees-wan-min-actors', String(config.minRemoteActors),
+            '--bees-wan-broker-port', String(config.brokerPort),
+            '--bees-wan-auth-token-file', paths.wanTokenPath,
+            '--bees-wan-max-queued-batches', String(Number(config.wanMaxQueuedBatches)),
+        );
+    }
     if (Boolean(config.skipEvaluation)) {
         argv.push('--skip-evaluation');
     }
