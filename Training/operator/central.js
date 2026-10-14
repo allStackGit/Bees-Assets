@@ -95,6 +95,7 @@ function buildCentralLearnerArgv(config, learnerPython, unity, runtimeRoot) {
     if (Boolean(config.skipEvaluation)) {
         argv.push('--skip-evaluation');
     }
+    argv.push('--bees-cpu-gradient-probe=' + (config.cpuGradientProbe ? 'true' : 'false'));
     if (Boolean(config.threadedTraining)) {
         argv.push(
             '--bees-threaded',
