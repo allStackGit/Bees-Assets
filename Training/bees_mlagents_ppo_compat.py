@@ -703,6 +703,10 @@ def _trust_region_policy_loss_with_dimension_mask(
             near = active & (margin < 1.0e-4)
             _POCA_GRADIENT_PROBE_STATE.trace = {
                 "log_probs": log_probs.detach().to(device="cpu", copy=True),
+                "log_ratio": (log_probs - old_log_probs).detach().to(
+                    device="cpu", copy=True
+                ),
+                "ratio": r_theta.detach().to(device="cpu", copy=True),
                 "active": active.to(device="cpu", copy=True),
                 "saturated": saturated.to(device="cpu", copy=True),
                 "near_boundary": near.to(device="cpu", copy=True),
