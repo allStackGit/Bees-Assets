@@ -6424,12 +6424,10 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         from bees_distributed_poca import (
             begin_shadow_gradient_probe,
             capture_shadow_reference,
-            poll_shadow_gradient_probe,
         )
 
-        # A diagnostic remote worker never mutates the authoritative optimizer.
-        # Check the previous probe only at PPO update boundaries.
-        poll_shadow_gradient_probe()
+        # Remote gradient comparisons are collected by a dedicated diagnostic
+        # thread after the local minibatch reference has been captured.
         from collections import defaultdict
 
         async_buffer = _poca_async_update_buffer()
