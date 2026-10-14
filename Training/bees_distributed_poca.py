@@ -50,6 +50,152 @@ def snapshot_model(optimizer: Any) -> dict[str, Any]:
     }
 
 
+
+# The broker and trainer share a process but use separate threads. A single
+# active exchange is registered by the running WAN broker. No side effect is
+# installed into training merely by importing this module.
+_ACTIVE_GRADIENT_EXCHANGE = None
+_ACTIVE_GRADIENT_EXCHANGE_LOCK = __import__("threading").Lock()
+_SHADOW_PROBE = None
+_SHADOW_PROBE_CYCLE = 0
+
+
+def set_active_gradient_exchange(exchange: Any) -> None:
+    global _ACTIVE_GRADIENT_EXCHANGE
+    with _ACTIVE_GRADIENT_EXCHANGE_LOCK:
+        _ACTIVE_GRADIENT_EXCHANGE = exchange
+
+
+def _gradient_exchange() -> Any:
+    with _ACTIVE_GRADIENT_EXCHANGE_LOCK:
+        return _ACTIVE_GRADIENT_EXCHANGE
+
+
+def poll_shadow_gradient_probe() -> None:
+    """Report observed remote compute and compare identical-snapshot gradients.
+
+    This is diagnostic only. The authoritative Adam and PPO update buffers
+    are never mutated by shadow gradients.
+    """
+    global _SHADOW_PROBE
+    item = _SHADOW_PROBE
+    if not item:
+        return
+    exchange = item["exchange"]
+    result = exchange.wait_result(item["job_id"], 0.0)
+    if result is None:
+        if time.monotonic() - item["submitted"] >= 600.0:
+            exchange.cancel(item["job_id"])
+            print("[Bees CPU gradient probe] timed out; no model change", flush=True)
+            _SHADOW_PROBE = None
+        return
+    _SHADOW_PROBE = None
+    if "error" in result:
+        print("[Bees CPU gradient probe] remote failed: " + str(result["error"]), flush=True)
+        return
+    from mlagents.torch_utils import torch
+
+    reference = item["local_gradients"]
+    remote = result.get("gradients", {})
+    if set(remote) != set(reference):
+        print("[Bees CPU gradient probe] incompatible remote parameter names", flush=True)
+        return
+    numerator = 0.0
+    remote_norm_sq = 0.0
+    local_norm_sq = 0.0
+    diff_sq = 0.0
+    for name, local in reference.items():
+        foreign = remote[name]
+        if foreign is None and local is None:
+            continue
+        if foreign is None or local is None or foreign.shape != local.shape:
+            print("[Bees CPU gradient probe] incompatible gradient: " + name, flush=True)
+            return
+        foreign = foreign.to(device="cpu", dtype=torch.float64)
+        local = local.to(device="cpu", dtype=torch.float64)
+        numerator += float((foreign * local).sum().item())
+        remote_norm_sq += float((foreign * foreign).sum().item())
+        local_norm_sq += float((local * local).sum().item())
+        diff_sq += float(((foreign - local) ** 2).sum().item())
+    cosine = numerator / max(1e-20, math.sqrt(remote_norm_sq * local_norm_sq))
+    relative = math.sqrt(diff_sq) / max(1e-10, math.sqrt(local_norm_sq))
+    print(
+        "[Bees CPU gradient probe] "
+        f"batch={result.get('batch_experiences', 0)} "
+        f"worker={result.get('worker', '-')} "
+        f"remote_compute_s={result.get('compute_seconds', 0):.3f} "
+        f"round_trip_s={time.monotonic() - item['submitted']:.3f} "
+        f"cosine={cosine:.6f} relative_difference={relative:.6f} "
+        "(no remote gradient applied)",
+        flush=True,
+    )
+
+
+def begin_shadow_gradient_probe(
+    optimizer: Any, minibatch: Mapping[str, Any],
+    behavior_id: str, behavior_spec: Any,
+) -> str | None:
+    """Dispatch at most one shadow minibatch per ten PPO updates."""
+    global _SHADOW_PROBE, _SHADOW_PROBE_CYCLE
+    import os
+
+    if os.environ.get("BEES_CPU_GRADIENT_PROBE", "") != "1":
+        return None
+    poll_shadow_gradient_probe()
+    if _SHADOW_PROBE is not None:
+        return None
+    exchange = _gradient_exchange()
+    if exchange is None or exchange.metrics()["gradient_workers_active"] < 1:
+        return None
+    _SHADOW_PROBE_CYCLE += 1
+    if _SHADOW_PROBE_CYCLE % 10 != 1:
+        return None
+    try:
+        snapshot = snapshot_model(optimizer)
+        serialized = encode_cpu_minibatch(minibatch)
+        if len(serialized) > 256 * 1024 * 1024:
+            print("[Bees CPU gradient probe] minibatch too large to send", flush=True)
+            return None
+        job_id = exchange.submit({
+            "behavior_id": str(behavior_id),
+            "behavior_spec": behavior_spec,
+            "snapshot": snapshot,
+            "minibatch_bytes": serialized,
+        })
+        if not job_id:
+            return None
+        _SHADOW_PROBE = {
+            "job_id": job_id,
+            "exchange": exchange,
+            "submitted": time.monotonic(),
+            "local_gradients": None,
+        }
+        print(
+            "[Bees CPU gradient probe] submitted batch=" +
+            str(minibatch["loss_masks"].shape[0]) +
+            " serialized_mib=" + str(round(len(serialized) / (1024 ** 2), 1)),
+            flush=True,
+        )
+        return job_id
+    except Exception as exc:
+        print("[Bees CPU gradient probe] dispatch skipped: " +
+              f"{type(exc).__name__}: {exc}", flush=True)
+        return None
+
+
+def capture_shadow_reference(optimizer: Any, job_id: str | None) -> None:
+    global _SHADOW_PROBE
+    if not job_id or _SHADOW_PROBE is None:
+        return
+    if _SHADOW_PROBE["job_id"] != job_id:
+        return
+    _SHADOW_PROBE["local_gradients"] = {
+        name: None if param.grad is None else
+        param.grad.detach().to(device="cpu", copy=True)
+        for name, param in _named_parameters(optimizer).items()
+    }
+
+
 def create_cpu_gradient_optimizer(
     behavior_id: str, behavior_spec: Any, run_options: Any, cpu_threads: int
 ) -> Any:
