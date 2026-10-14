@@ -50,6 +50,60 @@ def snapshot_model(optimizer: Any) -> dict[str, Any]:
     }
 
 
+def create_cpu_gradient_optimizer(
+    behavior_id: str, behavior_spec: Any, run_options: Any, cpu_threads: int
+) -> Any:
+    """Construct the exact Bees actor and MA-POCA critic on a CPU-only worker."""
+    from mlagents.torch_utils import default_device, set_torch_config, torch
+    from mlagents.trainers.behavior_id_utils import BehaviorIdentifiers
+    from mlagents.trainers.poca.optimizer_torch import TorchPOCAOptimizer
+    from mlagents.trainers.settings import TorchSettings
+
+    from bees_mlagents_ppo_compat import install_value_estimate_key
+    from bees_wan_actor_worker import _build_template_policy
+
+    if not 1 <= cpu_threads <= (max(1, int(__import__("os").cpu_count() or 1))):
+        raise ValueError("CPU gradient worker thread count exceeds available CPUs")
+    set_torch_config(TorchSettings(device="cpu"))
+    torch.set_num_threads(cpu_threads)
+    if default_device().type != "cpu":
+        raise RuntimeError("Refusing to construct a remote gradient optimizer on GPU")
+    install_value_estimate_key()
+    policy = _build_template_policy(behavior_id, behavior_spec, run_options, 0)
+    trainer_settings = run_options.behaviors[
+        BehaviorIdentifiers.from_name_behavior_id(behavior_id).brain_name
+    ]
+    optimizer = TorchPOCAOptimizer(policy, trainer_settings)
+    _named_parameters(optimizer)
+    return optimizer
+
+
+def encode_cpu_minibatch(value: Mapping[str, Any]) -> bytes:
+    """Torch serialization keeps arbitrary cached group structures intact.
+
+    Loads always map tensors to CPU on the remote machine, even if Exeter's
+    fixed input cache is resident on CUDA.
+    """
+    import io
+    from mlagents.torch_utils import torch
+
+    buffer = io.BytesIO()
+    torch.save(dict(value), buffer)
+    return buffer.getvalue()
+
+
+def decode_cpu_minibatch(raw: bytes) -> Mapping[str, Any]:
+    import io
+    from mlagents.torch_utils import torch
+
+    if not isinstance(raw, bytes) or len(raw) > 512 * 1024 * 1024:
+        raise ValueError("POCA minibatch serialization exceeds safe payload size")
+    value = torch.load(io.BytesIO(raw), map_location="cpu", weights_only=False)
+    if not isinstance(value, Mapping):
+        raise ValueError("POCA minibatch did not decode to a mapping")
+    return value
+
+
 def compute_minibatch_gradients(
     optimizer: Any,
     minibatch: Mapping[str, Any],
