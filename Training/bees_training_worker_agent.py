@@ -875,6 +875,7 @@ def read_throughput_metrics(
         "broker_consumed_stale_steps_total",
         "broker_discarded_stale_steps_total",
         "gradient_workers_active",
+        "gradient_snapshots_cached",
         "gradient_jobs_queued",
         "gradient_jobs_claimed",
         "gradient_jobs_completed_pending",
