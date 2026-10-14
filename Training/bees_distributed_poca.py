@@ -86,10 +86,12 @@ def poll_shadow_gradient_probe() -> None:
     if result is None:
         if time.monotonic() - item["submitted"] >= 600.0:
             exchange.cancel(item["job_id"])
+            exchange.forget_snapshot(item["snapshot_id"])
             print("[Bees CPU gradient probe] timed out; no model change", flush=True)
             _SHADOW_PROBE = None
         return
     _SHADOW_PROBE = None
+    exchange.forget_snapshot(item["snapshot_id"])
     if "error" in result:
         print("[Bees CPU gradient probe] remote failed: " + str(result["error"]), flush=True)
         return
@@ -157,6 +159,8 @@ def poll_shadow_gradient_probe() -> None:
         f"batch={result.get('batch_experiences', 0)} "
         f"worker={result.get('worker', '-')} "
         f"remote_compute_s={result.get('compute_seconds', 0):.3f} "
+        f"snapshot_fetch_s={float(result.get('snapshot_fetch_seconds', 0)):.3f} "
+        f"snapshot_cache_hit={int(bool(result.get('snapshot_cache_hit', False)))} "
         f"round_trip_s={time.monotonic() - item['submitted']:.3f} "
         f"queue_s={float(timing.get('queue_seconds', 0)):.2f} "
         f"in_flight_s={float(timing.get('in_flight_seconds', 0)):.2f} "
@@ -219,15 +223,29 @@ def begin_shadow_gradient_probe(
         if len(serialized) > 256 * 1024 * 1024:
             print("[Bees CPU gradient probe] minibatch too large to send", flush=True)
             return None
-        job_id = exchange.submit({
-            "behavior_id": str(behavior_id),
-            "behavior_spec": behavior_spec,
-            "snapshot": snapshot,
-            "minibatch_bytes": serialized,
-        })
+        # The broker retains one encoded immutable snapshot; jobs transmit
+        # only its identity. The CPU worker fetches it once and caches it while
+        # the session is valid. The same token may serve multiple minibatches
+        # computed against one frozen parameter version.
+        from bees_wan_actor_training import encode_payload
+        snapshot_id = exchange.publish_snapshot(encode_payload(snapshot))
+        if not snapshot_id:
+            return None
+        try:
+            job_id = exchange.submit({
+                "behavior_id": str(behavior_id),
+                "behavior_spec": behavior_spec,
+                "snapshot_id": snapshot_id,
+                "minibatch_bytes": serialized,
+            })
+        except Exception:
+            exchange.forget_snapshot(snapshot_id)
+            raise
         if not job_id:
+            exchange.forget_snapshot(snapshot_id)
             return None
         _SHADOW_PROBE = {
+            "snapshot_id": snapshot_id,
             "job_id": job_id,
             "exchange": exchange,
             "submitted": time.monotonic(),
