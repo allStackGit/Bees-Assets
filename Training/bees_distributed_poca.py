@@ -111,8 +111,15 @@ def poll_shadow_gradient_probe() -> None:
         foreign = remote[name]
         if foreign is None and local is None:
             continue
-        if foreign is None or local is None or foreign.shape != local.shape:
-            print("[Bees CPU gradient probe] incompatible gradient: " + name, flush=True)
+        if (
+            foreign is None or local is None
+            or not isinstance(foreign, torch.Tensor)
+            or not isinstance(local, torch.Tensor)
+            or foreign.shape != local.shape
+            or not bool(torch.isfinite(foreign).all().item())
+            or not bool(torch.isfinite(local).all().item())
+        ):
+            print("[Bees CPU gradient probe] incompatible/nonfinite gradient: " + name, flush=True)
             return
         foreign = foreign.to(device="cpu", dtype=torch.float64)
         local = local.to(device="cpu", dtype=torch.float64)
