@@ -637,6 +637,28 @@ class BackgroundEpisodeLogMetrics:
         return cached
 
 
+def read_host_hardware_metrics() -> dict[str, object]:
+    """Read-only host utilization sampled by each managed worker supervisor."""
+    result: dict[str, object] = {
+        "logical_cpus": int(os.cpu_count() or 1),
+    }
+    try:
+        import psutil
+
+        cpu = float(psutil.cpu_percent(interval=None))
+        memory = psutil.virtual_memory()
+        if math.isfinite(cpu) and 0 <= cpu <= 100:
+            result["cpu_percent"] = cpu
+        ram = float(memory.percent)
+        if math.isfinite(ram) and 0 <= ram <= 100:
+            result["ram_percent"] = ram
+        if int(memory.available) >= 0:
+            result["ram_available_mib"] = round(int(memory.available) / (1024 ** 2))
+    except (ImportError, AttributeError, OSError, ValueError):
+        pass
+    return result
+
+
 def read_throughput_metrics(
     path: Optional[Path],
     *,
@@ -2657,6 +2679,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     def current_metrics(run_id: str) -> dict[str, object]:
         snapshot = episode_metrics.snapshot(run_id)
+        snapshot["host"] = read_host_hardware_metrics()
         process = managed.process
         if managed.alive() and process is not None:
             throughput = read_throughput_metrics(
