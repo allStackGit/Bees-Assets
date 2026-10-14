@@ -218,6 +218,7 @@ function ppoStatusLines(ppo, consumedRate, workerBacklog) {
     const lines = [
         'PPO latest completed update: ' + number(seconds, 1) + 's  ' +
         'minibatches=' + (update.minibatches || '-') +
+        '  optimizer_updates/s=' + number(batches > 0 && seconds > 0 ? batches / seconds : null, 2) +
         '  cache=' + (update.cache_storage || '-') +
         '  avg_minibatch=' + number(update.avg_minibatch, 3) + 's',
         'PPO stage estimates: ' + stage.map(formatStage).join('  ') +
