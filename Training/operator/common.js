@@ -370,11 +370,31 @@ function normalizeLearnerOptimizations(value, fallback = null) {
     };
 }
 
+function normalizeLearnerDevice(value, fallback = null) {
+    const candidate = value == null ? fallback : String(value).toLowerCase();
+    if (candidate == null) return null;
+    if (candidate !== 'cpu' && candidate !== 'cuda') {
+        throw new Error('Learner device must be cpu or cuda; got ' + value + '.');
+    }
+    return candidate;
+}
+
+function normalizeLocalEnvs(value, fallback = 0) {
+    const candidate = value == null ? fallback : Number(value);
+    if (!Number.isSafeInteger(candidate) || candidate < 0 || candidate > 2147483647) {
+        throw new Error('Local environment count must be an integer in 0-2147483647; got ' + value + '.');
+    }
+    return candidate;
+}
+
 function applyRuntimeTrainingOptions(config, options = {}) {
     const result = {
         ...config,
         entropyBeta: normalizeEntropyBeta(config && config.entropyBeta, null),
         skipEvaluation: Boolean(config && config.skipEvaluation),
+        learnerDevice: normalizeLearnerDevice(config && config.learnerDevice),
+        localOnly: Boolean(config && config.localOnly),
+        numLocalEnvs: normalizeLocalEnvs(config && config.numLocalEnvs),
         learnerOptimizations: normalizeLearnerOptimizations(
             config && config.learnerOptimizations,
         ),
@@ -412,6 +432,16 @@ function applyRuntimeTrainingOptions(config, options = {}) {
     if (Object.prototype.hasOwnProperty.call(options, 'localTraining')) {
         result.localActor.enabled = Boolean(options.localTraining);
     }
+    if (Object.prototype.hasOwnProperty.call(options, 'localOnly')) {
+        result.localOnly = Boolean(options.localOnly);
+    }
+    if (Object.prototype.hasOwnProperty.call(options, 'numLocalEnvs')) {
+        result.numLocalEnvs = normalizeLocalEnvs(options.numLocalEnvs);
+    }
+    if (Object.prototype.hasOwnProperty.call(options, 'learnerDevice')) {
+        result.learnerDevice = normalizeLearnerDevice(options.learnerDevice);
+    }
+    if (result.localOnly) result.localActor.enabled = false;
     if (Object.prototype.hasOwnProperty.call(options, 'learnerOptimizations')) {
         result.learnerOptimizations = normalizeLearnerOptimizations(
             options.learnerOptimizations,
@@ -467,6 +497,9 @@ function readRuntimeTrainingOptions(
             defaultEntropyBeta,
         ),
         skipEvaluation: Boolean(value.skipEvaluation),
+        localOnly: Boolean(value.localOnly),
+        numLocalEnvs: normalizeLocalEnvs(value.numLocalEnvs),
+        learnerDevice: normalizeLearnerDevice(value.learnerDevice),
     };
 }
 
@@ -491,6 +524,9 @@ function saveRuntimeTrainingOptions(options) {
             null,
         ),
         skipEvaluation: Boolean(options && options.skipEvaluation),
+        localOnly: Boolean(options && options.localOnly),
+        numLocalEnvs: normalizeLocalEnvs(options && options.numLocalEnvs),
+        learnerDevice: normalizeLearnerDevice(options && options.learnerDevice),
         updated_utc: new Date().toISOString(),
     };
     writeJsonAtomic(paths.runtimeTrainingOptionsPath, value);
