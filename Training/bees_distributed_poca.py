@@ -180,34 +180,47 @@ def poll_shadow_gradient_probe(result: Mapping[str, Any]) -> None:
     remote_trace = result.get("policy_trace")
     if isinstance(local_trace, Mapping) and isinstance(remote_trace, Mapping):
         try:
-            local_active = local_trace["active"]
-            remote_active = remote_trace["active"]
+            import numpy as np
+
+            # The central PyTorch default device may be CUDA. NumPy keeps
+            # diagnostic indexing/comparisons entirely on CPU, independent of
+            # the learner's default device and without touching PPO gradients.
+            def cpu_array(trace, field):
+                value = trace[field]
+                if not isinstance(value, torch.Tensor):
+                    raise ValueError(f"{field} is not a tensor")
+                return value.detach().cpu().numpy()
+
+            local_active = cpu_array(local_trace, "active").astype(np.bool_, copy=False)
+            remote_active = cpu_array(remote_trace, "active").astype(np.bool_, copy=False)
             if local_active.shape != remote_active.shape:
                 raise ValueError("different policy action shapes")
-            if not bool((local_active == remote_active).all().item()):
+            if not np.array_equal(local_active, remote_active):
                 raise ValueError("different active action dimensions")
-            active = local_active
-            local_prob = local_trace["log_probs"]
-            remote_prob = remote_trace["log_probs"]
-            if local_prob.shape != remote_prob.shape:
+            local_prob = cpu_array(local_trace, "log_probs")
+            remote_prob = cpu_array(remote_trace, "log_probs")
+            if local_prob.shape != remote_prob.shape or local_prob.shape != local_active.shape:
                 raise ValueError("different policy log-probability shapes")
-            delta = (local_prob - remote_prob).abs()
-            active_delta = delta[active]
-            if active_delta.numel() == 0:
+            local_saturated = cpu_array(local_trace, "saturated").astype(np.bool_, copy=False)
+            remote_saturated = cpu_array(remote_trace, "saturated").astype(np.bool_, copy=False)
+            if local_saturated.shape != local_active.shape or remote_saturated.shape != local_active.shape:
+                raise ValueError("different policy clipping shapes")
+            active_delta = np.abs(local_prob - remote_prob)[local_active]
+            if active_delta.size == 0:
                 raise ValueError("no active actions to compare")
-            clipping_disagreement = int(
-                ((local_trace["saturated"] != remote_trace["saturated"]) & active).sum().item()
-            )
+            clipping_disagreement = int(np.count_nonzero(
+                np.logical_xor(local_saturated, remote_saturated) & local_active
+            ))
             print(
                 "[Bees CPU gradient clipping] "
-                f"active={int(active.sum().item())} "
+                f"active={int(np.count_nonzero(local_active))} "
                 f"cpu_near_1e4={int(remote_trace['near_1e4'])} "
                 f"exeter_near_1e4={int(local_trace['near_1e4'])} "
                 f"cpu_near_1e3={int(remote_trace['near_1e3'])} "
                 f"exeter_near_1e3={int(local_trace['near_1e3'])} "
                 f"clipping_disagreement={clipping_disagreement} "
-                f"logprob_max_abs={float(active_delta.max().item()):.8g} "
-                f"logprob_mean_abs={float(active_delta.mean().item()):.8g}",
+                f"logprob_max_abs={float(active_delta.max()):.8g} "
+                f"logprob_mean_abs={float(active_delta.mean()):.8g}",
                 flush=True,
             )
         except (KeyError, ValueError, RuntimeError, TypeError) as exc:
