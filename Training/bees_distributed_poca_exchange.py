@@ -36,6 +36,7 @@ class GradientWorkExchange:
             if record["state"] == "claimed" and record["lease_until"] <= now:
                 record["worker"] = None
                 record["claim_token"] = None
+                record["claimed_at"] = None
                 record["state"] = "queued"
                 self._available.append(job_id)
                 self.expired += 1
@@ -50,6 +51,9 @@ class GradientWorkExchange:
                 "state": "queued",
                 "worker": None,
                 "claim_token": None,
+                "created_at": time.monotonic(),
+                "claimed_at": None,
+                "completed_at": None,
                 "lease_until": 0.0,
                 "result": None,
             }
@@ -76,7 +80,8 @@ class GradientWorkExchange:
                     record["state"] = "claimed"
                     record["worker"] = worker
                     record["claim_token"] = uuid.uuid4().hex
-                    record["lease_until"] = time.monotonic() + self.lease_seconds
+                    record["claimed_at"] = time.monotonic()
+                    record["lease_until"] = record["claimed_at"] + self.lease_seconds
                     return {
                         "job_id": job_id,
                         "claim_token": record["claim_token"],
@@ -106,6 +111,7 @@ class GradientWorkExchange:
             if not isinstance(result, Mapping):
                 raise ValueError("Remote gradient result must be a mapping")
             record["result"] = dict(result)
+            record["completed_at"] = time.monotonic()
             record["state"] = "completed"
             self.completed += 1
             self._condition.notify_all()
@@ -122,7 +128,19 @@ class GradientWorkExchange:
                     return None
                 if record["state"] == "completed":
                     self._jobs.pop(job_id)
-                    return record["result"]
+                    # All timings use the *central* monotonic clock; "in_flight"
+                    # covers response transport as well as worker computation.
+                    now = time.monotonic()
+                    claimed = record["claimed_at"]
+                    completed = record["completed_at"]
+                    return {
+                        **record["result"],
+                        "_broker_timings": {
+                            "queue_seconds": max(0.0, claimed - record["created_at"]),
+                            "in_flight_seconds": max(0.0, completed - claimed),
+                            "poll_delay_seconds": max(0.0, now - completed),
+                        },
+                    }
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     return None
