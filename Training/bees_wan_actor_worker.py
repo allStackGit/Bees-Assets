@@ -766,6 +766,8 @@ class ActorSession:
         self._throughput_lock = threading.Lock()
         self._accepted_steps_total = 0
         self._accepted_trajectories_total = 0
+        self._accepted_steps_per_sec = None
+        self._last_accepted_rate_sample = None
         self._learner_consumed_steps_total = 0
         self._learner_consumed_steps_per_sec = None
         self._last_throughput_write = 0.0
@@ -889,6 +891,20 @@ class ActorSession:
         with self._throughput_lock:
             if not force and now - self._last_throughput_write < 1.0:
                 return
+            previous = self._last_accepted_rate_sample
+            if previous is not None:
+                elapsed = now - previous[0]
+                if elapsed >= 0.5:
+                    increment = self._accepted_steps_total - previous[1]
+                    if increment < 0:
+                        self._accepted_steps_per_sec = None
+                    else:
+                        rate = increment / elapsed
+                        self._accepted_steps_per_sec = (
+                            rate if self._accepted_steps_per_sec is None
+                            else 0.25 * rate + 0.75 * self._accepted_steps_per_sec
+                        )
+            self._last_accepted_rate_sample = (now, self._accepted_steps_total)
             payload = {
                 "pid": os.getpid(),
                 "env_count": self.env_count,
@@ -897,6 +913,8 @@ class ActorSession:
                 "learner_consumed_steps_total": self._learner_consumed_steps_total,
                 "upload_queue_depth": self._upload_queue.qsize(),
             }
+            if self._accepted_steps_per_sec is not None:
+                payload["accepted_steps_per_sec"] = self._accepted_steps_per_sec
             if self._learner_consumed_steps_per_sec is not None:
                 payload["learner_consumed_steps_per_sec"] = (
                     self._learner_consumed_steps_per_sec
