@@ -6899,8 +6899,15 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                             operator_profiler = None
         finally:
             if active_shadow_trial is not None:
-                from bees_distributed_poca_shadow import finish_shadow_trial
-                finish_shadow_trial(active_shadow_trial)
+                try:
+                    from bees_distributed_poca_shadow import finish_shadow_trial
+                    finish_shadow_trial(active_shadow_trial)
+                except Exception as exc:
+                    print(
+                        "[Bees distributed POCA shadow] cleanup failed: "
+                        f"{type(exc).__name__}: {exc}; remote_gradients_applied=0",
+                        flush=True,
+                    )
             _finish_poca_one_update_profile(operator_profiler)
             hardware_loop_seconds = time.perf_counter() - hardware_started
             hardware_summary = hardware_profiler.stop(
