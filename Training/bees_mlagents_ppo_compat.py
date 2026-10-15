@@ -6654,6 +6654,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                     1,
                 )
                 epoch_order = None
+                shadow_jobs = 0
                 if tensor_cache is None:
                     update_buffer.shuffle(
                         sequence_length=self.policy.sequence_length
@@ -6668,7 +6669,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                     # immutable snapshot and NEVER touch Exeter Adam.
                     if (_epoch_index == 0 and os.environ.get("BEES_POCA_SHADOW_JOBS", "") not in ("", "0")):
                         from bees_distributed_poca_shadow import start_shadow_trial
-                        start_shadow_trial(
+                        shadow_jobs = start_shadow_trial(
                             self.optimizer, self.brain_name,
                             self.policy.behavior_spec, tensor_cache,
                             epoch_order, current_batch_size,
@@ -6817,6 +6818,9 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                             minibatch,
                             current_n_sequences,
                         )
+                        if shadow_jobs and offset_index == 0 and _epoch_index == 0:
+                            from bees_distributed_poca_shadow import capture_first_local_gradient
+                            capture_first_local_gradient(self.optimizer, update_stats)
                     finally:
                         _POCA_UPDATE_CACHE_STATE.indices = None
                         _POCA_UPDATE_CACHE_STATE.minibatch = None

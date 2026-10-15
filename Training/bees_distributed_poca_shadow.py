@@ -15,11 +15,13 @@ from typing import Any
 from bees_distributed_poca import encode_cpu_minibatch, snapshot_model
 from bees_distributed_poca_apply import AuthoritativeGradientApplier
 from bees_distributed_poca_scheduler import GradientJobCoordinator
+from bees_distributed_poca_parity import LocalGradientReference
 from bees_wan_actor_training import encode_payload
 
 _LOCK = threading.Lock()
 _ACTIVE_BROKER: tuple[Any, str] | None = None
 _ACTIVE_PILOT = False
+_PENDING_REFERENCE: LocalGradientReference | None = None
 
 
 def register_gradient_exchange(exchange: Any, session_id: str) -> None:
@@ -45,14 +47,28 @@ def _requested_jobs() -> int:
     return value
 
 
+
+def capture_first_local_gradient(optimizer: Any, stats: dict) -> None:
+    """PPO-thread capture of gradients for the first shadowed minibatch."""
+    global _PENDING_REFERENCE
+    with _LOCK:
+        reference = _PENDING_REFERENCE
+        _PENDING_REFERENCE = None
+    if reference is not None:
+        reference.capture(optimizer, stats)
+
+
 def _collect_async(
     coordinator: GradientJobCoordinator, snapshot_id: str,
     job_ids: list[str], optimizer_revision: int, started_at: float,
     prepared_seconds: float, minibatch_bytes: int, snapshot_bytes: int,
+    reference: LocalGradientReference,
 ) -> None:
     global _ACTIVE_PILOT
     results = []
     try:
+        first_remote = None
+        profiles = []
         # Shadow mode intentionally does not infer or apply the learner's
         # live revision from another thread. This tests transport only;
         # optimizer-staleness decisions belong to the central PPO thread.
@@ -69,7 +85,16 @@ def _collect_async(
             timing = (outcome.result or {}).get("_broker_timings", {})
             inflight = float(timing.get("in_flight_seconds", 0.0))
             results.append((outcome.status, inflight))
+            if outcome.status == "accepted" and outcome.job_id == job_ids[0]:
+                first_remote = outcome.result
+            if outcome.result:
+                profiles.append(outcome.result.get("transport_profile", {}))
         accepted = sum(status == "accepted" for status, _ in results)
+        parity = (reference.compare(first_remote)
+                  if first_remote is not None else "parity=no_matching_result")
+        cache_hits = sum(bool(item.get("snapshot_cached")) for item in profiles)
+        worker_total = sum(float(item.get("worker_before_upload_seconds", 0.0))
+                           for item in profiles)
         print(
             "[Bees distributed POCA shadow] "
             f"jobs={len(job_ids)} completed={accepted} "
@@ -79,7 +104,9 @@ def _collect_async(
             f"snapshot_mib={snapshot_bytes / 1048576:.2f} "
             f"minibatches_mib={minibatch_bytes / 1048576:.2f} "
             f"inflight_sum_s={sum(t for _, t in results):.3f} "
-            "remote_gradients_applied=0",
+            f"snapshot_cache_hits={cache_hits}/{len(profiles)} "
+            f"worker_before_upload_sum_s={worker_total:.3f} "
+            f"{parity} remote_gradients_applied=0",
             flush=True,
         )
     except Exception as exc:
@@ -112,7 +139,7 @@ def start_shadow_trial(
     Called only at a PPO update boundary after the epoch's shuffle but BEFORE
     local Adam starts changing model parameters. Errors cannot stop PPO.
     """
-    global _ACTIVE_PILOT
+    global _ACTIVE_PILOT, _PENDING_REFERENCE
     try:
         n = _requested_jobs()
     except (TypeError, ValueError) as exc:
@@ -161,6 +188,9 @@ def start_shadow_trial(
             jobs.append(job_id)
         if not jobs:
             raise RuntimeError("Could not submit any remote gradient jobs")
+        reference = LocalGradientReference()
+        with _LOCK:
+            _PENDING_REFERENCE = reference
         prepared = time.monotonic() - started_at
         print(
             "[Bees distributed POCA shadow] "
@@ -174,7 +204,7 @@ def start_shadow_trial(
         threading.Thread(
             target=_collect_async,
             args=(coordinator, snapshot_id, jobs, revision, started_at,
-                  prepared, batch_total_bytes, len(snapshot_payload)),
+                  prepared, batch_total_bytes, len(snapshot_payload), reference),
             name="bees-distributed-poca-shadow-collector", daemon=True,
         ).start()
         return len(jobs)
@@ -186,6 +216,7 @@ def start_shadow_trial(
                 coordinator.retire_snapshot(snapshot_id)
         with _LOCK:
             _ACTIVE_PILOT = False
+            _PENDING_REFERENCE = None
         print(
             "[Bees distributed POCA shadow] submission failed: "
             f"{type(exc).__name__}: {exc}; remote_gradients_applied=0",
