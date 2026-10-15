@@ -13,6 +13,50 @@ from typing import Any
 from bees_distributed_poca import _named_parameters
 
 
+def _compare_gaussian_parameters(local: dict, remote: dict, active) -> str:
+    """Locate CPU/CUDA action-distribution divergence before PPO clipping."""
+    from mlagents.torch_utils import torch
+
+    keys = ("continuous_mean", "continuous_std")
+    if any(
+        not isinstance(local.get(key), torch.Tensor)
+        or not isinstance(remote.get(key), torch.Tensor)
+        or local[key].shape != remote[key].shape
+        for key in keys
+    ):
+        return "gaussian_diagnostics=missing_or_incompatible"
+    lmean, rmean, lstd, rstd = (
+        report[key].detach().to(device="cpu", dtype=torch.float64)
+        for key, report in (
+            ("continuous_mean", local),
+            ("continuous_mean", remote),
+            ("continuous_std", local),
+            ("continuous_std", remote),
+        )
+    )
+    if lmean.ndim != 2 or active.ndim != 2 or active.shape[0] != lmean.shape[0]:
+        return "gaussian_diagnostics=incompatible_mask"
+    mask = active[:, :lmean.shape[1]]
+    if mask.shape != lmean.shape or not bool(mask.any()):
+        return "gaussian_diagnostics=no_active_continuous"
+    if not all(bool(torch.isfinite(v).all()) for v in (lmean, rmean, lstd, rstd)):
+        return "gaussian_diagnostics=nonfinite"
+    delta_mean = (lmean - rmean).abs()[mask]
+    delta_std = (lstd - rstd).abs()[mask]
+    scale = torch.minimum(lstd[mask], rstd[mask]).clamp_min(1e-30)
+    return " ".join((
+        "gaussian_diagnostics=compared",
+        f"mean_abs_diff_max={float(delta_mean.max()):.6g}",
+        f"mean_abs_diff_p99={float(torch.quantile(delta_mean, 0.99)):.6g}",
+        f"std_abs_diff_max={float(delta_std.max()):.6g}",
+        f"std_min_local={float(lstd[mask].min()):.6g}",
+        f"std_min_remote={float(rstd[mask].min()):.6g}",
+        f"std_max_local={float(lstd[mask].max()):.6g}",
+        f"mean_diff_over_std_max={float((delta_mean / scale).max()):.6g}",
+        f"mean_diff_over_std_p99={float(torch.quantile(delta_mean / scale, 0.99)):.6g}",
+    ))
+
+
 def _compare_clip_reports(local: dict | None, remote: dict | None) -> str:
     """Identify changes in PPO clipping decisions versus forward log-ratio drift."""
     from mlagents.torch_utils import torch
@@ -73,6 +117,7 @@ def _compare_clip_reports(local: dict | None, remote: dict | None) -> str:
     decision_disagree = decision_local ^ decision_remote
     return " ".join((
         "clip_diagnostics=compared",
+        _compare_gaussian_parameters(local, remote, valid_local),
         f"clip_input_devices={original_devices}",
         f"active_policy_dimensions={int(valid_local.sum())}",
         f"clipped_local={int(decision_local.sum())}",
@@ -231,6 +276,12 @@ class LocalGradientReference:
                 f"disagreement_{index}_abs_l2={absolute:.6g}",
                 f"disagreement_{index}_relative_l2={relative:.6g}",
             ))
+        parts.append(
+            "remote_gradient_device=" + str(remote.get("gradient_execution_device", "-"))
+            + " remote_report_origin_device=" + str(
+                remote.get("gradient_capture_device", "-")
+            )
+        )
         parts.append(_compare_clip_reports(
             self.clip_report, remote.get("policy_clip_report")
         ))
