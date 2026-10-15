@@ -30,7 +30,8 @@ class AuthoritativeGradientApplier:
             raise ValueError("max_optimizer_lag must be a nonnegative integer")
         self.optimizer = optimizer
         self.max_optimizer_lag = max_optimizer_lag
-        self._accepted_job_ids: set[str] = set()
+        # Remember only jobs whose snapshot revisions can still pass lag checks.
+        self._accepted_job_ids: dict[str, int] = {}
         self._session_id: str | None = None
         self.revision = self._infer_adam_revision()
 
@@ -52,9 +53,18 @@ class AuthoritativeGradientApplier:
             self._accepted_job_ids.clear()
             self._session_id = session_id
 
+    def _prune_applied(self) -> None:
+        earliest = self.revision - self.max_optimizer_lag
+        self._accepted_job_ids = {
+            job_id: revision
+            for job_id, revision in self._accepted_job_ids.items()
+            if revision >= earliest
+        }
+
     def observe_local_step(self) -> int:
         """Call immediately after every successful LOCAL PPO Adam update."""
         self.revision += 1
+        self._prune_applied()
         return self.revision
 
     def apply(self, collected: CollectedGradient, *, session_id: str) -> int:
@@ -86,8 +96,6 @@ class AuthoritativeGradientApplier:
         lag_now = self.revision - snapshot_revision
         if lag_now < 0 or lag_now > self.max_optimizer_lag:
             raise ValueError("Gradient exceeded staleness bound before Adam application")
-        if lag_now != collected.lag:
-            raise ValueError("Optimizer advanced between admission and application")
         if result.get("session_id") != session_id:
             raise ValueError("Gradient session mismatch")
 
@@ -118,5 +126,6 @@ class AuthoritativeGradientApplier:
             parameter.grad = prepared[name]
         self.optimizer.optimizer.step()
         self.revision += 1
-        self._accepted_job_ids.add(collected.job_id)
+        self._accepted_job_ids[collected.job_id] = snapshot_revision
+        self._prune_applied()
         return self.revision
