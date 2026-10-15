@@ -142,7 +142,9 @@ class GradientWorkExchange:
 
     def complete(
         self, worker: str, job_id: str, claim_token: str,
-        result: Mapping[str, Any],
+        result: Mapping[str, Any], *,
+        result_wire_bytes: int = 0,
+        result_receive_decode_seconds: float = 0.0,
     ) -> bool:
         with self._condition:
             self._expire()
@@ -158,6 +160,8 @@ class GradientWorkExchange:
             if not isinstance(result, Mapping):
                 raise ValueError("Remote gradient result must be a mapping")
             record["result"] = dict(result)
+            record["result_wire_bytes"] = result_wire_bytes
+            record["result_receive_decode_seconds"] = result_receive_decode_seconds
             record["completed_at"] = time.monotonic()
             record["state"] = "completed"
             self.completed += 1
@@ -187,6 +191,8 @@ class GradientWorkExchange:
                             "queue_seconds": max(0.0, claimed - record["created_at"]),
                             "in_flight_seconds": max(0.0, completed - claimed),
                             "poll_delay_seconds": max(0.0, now - completed),
+                            "result_wire_bytes": record["result_wire_bytes"],
+                            "result_receive_decode_seconds": record["result_receive_decode_seconds"],
                         },
                     }
                 remaining = deadline - time.monotonic()
