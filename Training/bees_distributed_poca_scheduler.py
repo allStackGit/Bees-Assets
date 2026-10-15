@@ -119,29 +119,29 @@ class GradientJobCoordinator:
         self._cleanup_snapshot(snapshot_id)
         if "error" in result:
             self.remote_failures += 1
-            return CollectedGradient("remote_error", job_id=job_id, detail=str(result["error"]))
+            return CollectedGradient("remote_error", job_id=job_id, result=result, detail=str(result["error"]))
         if result.get("session_id") != self.session_id:
             self.rejected_invalid += 1
-            return CollectedGradient("invalid", job_id=job_id, detail="Broker session mismatch")
+            return CollectedGradient("invalid", job_id=job_id, result=result, detail="Broker session mismatch")
         if result.get("snapshot_id") != snapshot_id:
             self.rejected_invalid += 1
-            return CollectedGradient("invalid", job_id=job_id, detail="Gradient snapshot mismatch")
+            return CollectedGradient("invalid", job_id=job_id, result=result, detail="Gradient snapshot mismatch")
         if type(result.get("optimizer_revision")) is not int or result["optimizer_revision"] != revision:
             self.rejected_invalid += 1
-            return CollectedGradient("invalid", job_id=job_id, detail="Optimizer revision mismatch")
+            return CollectedGradient("invalid", job_id=job_id, result=result, detail="Optimizer revision mismatch")
         lag = current_optimizer_revision - revision
         if lag < 0:
             self.rejected_invalid += 1
-            return CollectedGradient("invalid", job_id=job_id, lag=lag, detail="Future optimizer revision")
+            return CollectedGradient("invalid", job_id=job_id, lag=lag, result=result, detail="Future optimizer revision")
         if lag > self.max_optimizer_lag:
             self.rejected_stale += 1
-            return CollectedGradient("stale", job_id=job_id, lag=lag, detail="Maximum optimizer lag exceeded")
+            return CollectedGradient("stale", job_id=job_id, lag=lag, result=result, detail="Maximum optimizer lag exceeded")
         if not isinstance(result.get("gradients"), Mapping):
             self.rejected_invalid += 1
-            return CollectedGradient("invalid", job_id=job_id, lag=lag, detail="Missing gradients")
+            return CollectedGradient("invalid", job_id=job_id, lag=lag, result=result, detail="Missing gradients")
         if type(result.get("batch_experiences")) is not int or result["batch_experiences"] < 1:
             self.rejected_invalid += 1
-            return CollectedGradient("invalid", job_id=job_id, lag=lag, detail="Invalid batch size")
+            return CollectedGradient("invalid", job_id=job_id, lag=lag, result=result, detail="Invalid batch size")
         self.accepted += 1
         return CollectedGradient("accepted", job_id=job_id, lag=lag, result=result)
 
