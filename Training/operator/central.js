@@ -115,6 +115,7 @@ function buildCentralLearnerArgv(config, learnerPython, unity, runtimeRoot) {
             'learnerOptimizations.streamShards must be 1, 2, or 4.'
         );
     }
+    argv.push('--bees-poca-shadow-jobs=' + String(Number(config.pocaShadowJobs || 0)));
     argv.push(
         '--bees-ppo-sync-cleanup=' + (
             learnerOptimizations.syncCleanup ? 'true' : 'false'

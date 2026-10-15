@@ -43,6 +43,7 @@ PPO_PREFETCH_FLAG = "--bees-ppo-prefetch"
 PPO_CRITIC_BASELINE_OVERLAP_FLAG = "--bees-ppo-critic-baseline-overlap"
 PPO_CUDA_GRAPHS_FLAG = "--bees-ppo-cuda-graphs"
 PPO_PROFILE_FLAG = "--bees-ppo-profile"
+POCA_SHADOW_JOBS_FLAG = "--bees-poca-shadow-jobs"
 RESULTS_DIR_FLAG = "--results-dir"
 DEFAULT_RESULTS_DIR = ".results"
 WORKER_TIMER_SAMPLE_STEPS = 64
@@ -241,6 +242,7 @@ def _extract_bees_options(
         "critic_baseline_overlap": False,
         "cuda_graphs": False,
         "profile_once": False,
+        "shadow_jobs": 0,
     }
     boolean_flags = {
         PPO_SYNC_CLEANUP_FLAG: "sync_cleanup",
@@ -325,6 +327,26 @@ def _extract_bees_options(
                     f"{PPO_STREAM_SHARDS_FLAG} requires 1, 2, or 4; got {shards}."
                 )
             optimization_options["stream_shards"] = shards
+            continue
+
+        if argument == POCA_SHADOW_JOBS_FLAG:
+            if index + 1 >= len(argv):
+                raise SystemExit(f'{POCA_SHADOW_JOBS_FLAG} requires 0..8.')
+            raw_shadow = argv[index + 1]
+            index += 2
+        elif argument.startswith(POCA_SHADOW_JOBS_FLAG + '='):
+            raw_shadow = argument.split('=', 1)[1]
+            index += 1
+        else:
+            raw_shadow = None
+        if raw_shadow is not None:
+            try:
+                shadow_jobs = int(raw_shadow)
+            except ValueError as exc:
+                raise SystemExit(f'{POCA_SHADOW_JOBS_FLAG} requires 0..8.') from exc
+            if not 0 <= shadow_jobs <= 8:
+                raise SystemExit(f'{POCA_SHADOW_JOBS_FLAG} requires 0..8.')
+            optimization_options['shadow_jobs'] = shadow_jobs
             continue
 
         trainer_args.append(argument)
@@ -1183,6 +1205,8 @@ def main() -> None:
             "this version guard."
         )
 
+    shadow_jobs = optimization_options.pop('shadow_jobs', 0)
+    os.environ['BEES_POCA_SHADOW_JOBS'] = str(shadow_jobs)
     configured_optimizations = configure_poca_learner_optimizations(
         **optimization_options
     )

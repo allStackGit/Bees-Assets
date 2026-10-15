@@ -29,7 +29,7 @@ function usage() {
     return [
         'Usage:',
         '  node Training/bees_operator.js build [--full-game] [--force] [--preserve-run | --new-run]',
-        '  node Training/bees_operator.js runtime [--threaded [--policy-lag N]] [--backpressure-queue N] [--local-training] [--learner-device cpu|cuda] [--local-only] [--local-envs N] [--entropy BETA] [--skip-evaluation | --enable-evaluation] [--ppo-control | PPO optimization flags]',
+        '  node Training/bees_operator.js runtime [--threaded [--policy-lag N]] [--backpressure-queue N] [--local-training] [--learner-device cpu|cuda] [--local-only] [--local-envs N] [--entropy BETA] [--poca-shadow-jobs 0..8] [--skip-evaluation | --enable-evaluation] [--ppo-control | PPO optimization flags]',
         '  node Training/bees_operator.js server',
         '  node Training/bees_operator.js start [--new-run | --resume-run ID] [--env-arg VALUE ...]',
         '  node Training/bees_operator.js stop [--server]',
@@ -98,6 +98,8 @@ function parseArgs(argv = process.argv.slice(2)) {
         ppoCriticBaselineOverlap: false,
         ppoCudaGraphs: false,
         ppoProfile: false,
+        pocaShadowJobs: 0,
+        explicitPocaShadowJobs: false,
         explicitLearnerOptimizations: false,
         entropy: null,
         explicitEntropy: false,
@@ -230,6 +232,12 @@ function parseArgs(argv = process.argv.slice(2)) {
         } else if (arg === '--ppo-profile') {
             options.ppoProfile = true;
             options.explicitLearnerOptimizations = true;
+        } else if (arg === '--poca-shadow-jobs' || arg.startsWith('--poca-shadow-jobs=')) {
+            const raw = arg === '--poca-shadow-jobs'
+                ? requireValue(argv, index++, arg)
+                : arg.slice('--poca-shadow-jobs='.length);
+            options.pocaShadowJobs = parseNumber(raw, '--poca-shadow-jobs', 0, 8, true);
+            options.explicitPocaShadowJobs = true;
         } else if (arg === '--entropy') {
             options.entropy = parseNumber(
                 requireValue(argv, index, arg),
@@ -333,6 +341,9 @@ function parseArgs(argv = process.argv.slice(2)) {
     }
     if (options.explicitLearnerOptimizations && command !== 'runtime') {
         throw new Error('PPO learner optimization flags are only valid with the runtime command.');
+    }
+    if (options.explicitPocaShadowJobs && command !== 'runtime') {
+        throw new Error('--poca-shadow-jobs is only valid with the runtime command.');
     }
     if (options.explicitEntropy && command !== 'runtime') {
         throw new Error('--entropy is only valid with the runtime command.');

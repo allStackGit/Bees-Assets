@@ -35,7 +35,7 @@ The branch now has an opt-in `--learning-cpus` sidecar in the managed Linux and 
 
 The shadow-only end-to-end pilot is now wired into the existing PPO minibatch loop behind `BEES_POCA_SHADOW_JOBS=N` (1–8, default disabled). On the first PPO epoch, it takes a **single** actor+critic snapshot and submits N distinct minibatches concurrently through the existing authenticated broker. Background collection reports bytes, preparation time, elapsed wall time and successful jobs; it never applies remote gradients. A managed worker with `--learning-cpus N` can service these jobs concurrently with rollout.
 
-This pilot measures **transport and execution**, not useful asynchronous policy updates. Its revision is frozen for comparison and is not used as evidence of acceptable real optimizer staleness. The shadow opt-in must be set in the central Python learner's environment; it is not yet exposed as an operator runtime flag.
+This pilot measures **transport and execution**, not useful asynchronous policy updates. Its revision is frozen for comparison and is not used as evidence of acceptable real optimizer staleness. The shadow pilot can be enabled on this branch with `bees.ps1 runtime ... -PocaShadowJobs N` (N=1..8). Omitting the flag on a subsequent `runtime` invocation resets it to 0. This is **shadow-only**, never an option to apply gradients.
 
 The remaining required code is central **live** scheduling/admission, persistent authoritative optimizer-revision accounting for all local and remote Adam steps, checkpoint/restart ownership, explicit runtime controls, and real end-to-end benchmark qualification. Actual Bees model correctness comparison and WAN hardware validation must be completed before production use.
 

@@ -165,6 +165,8 @@ async function invokeRuntime(options = {}) {
         localOnly: Boolean(options.localOnly),
         // Runtime invocations default to zero direct local Unity environments.
         numLocalEnvs: options.explicitLocalEnvs ? Number(options.localEnvs) : 0,
+        // An omitted flag disables the experimental shadow pilot on every runtime selection.
+        pocaShadowJobs: options.explicitPocaShadowJobs ? Number(options.pocaShadowJobs) : 0,
     };
     if (options.explicitLearnerDevice) {
         runtimeOverrides.learnerDevice = String(options.learnerDevice);
@@ -297,6 +299,7 @@ async function invokeRuntime(options = {}) {
                 numLocalEnvs: Number(config.numLocalEnvs),
                 learnerDevice: config.learnerDevice,
                 learnerOptimizations: config.learnerOptimizations,
+                pocaShadowJobs: config.pocaShadowJobs,
                 entropyBeta: config.entropyBeta,
                 skipEvaluation: Boolean(config.skipEvaluation),
             });
@@ -350,6 +353,7 @@ async function invokeRuntime(options = {}) {
         numLocalEnvs: Number(config.numLocalEnvs),
         learnerDevice: config.learnerDevice,
         learnerOptimizations: config.learnerOptimizations,
+        pocaShadowJobs: config.pocaShadowJobs,
         entropyBeta: config.entropyBeta,
         skipEvaluation: Boolean(config.skipEvaluation),
     });
@@ -412,6 +416,7 @@ async function invokeRuntime(options = {}) {
         ' ppo_profile=' + (
             config.learnerOptimizations.profileOnce ? 'on' : 'off'
         ) +
+        ' poca_shadow_jobs=' + Number(config.pocaShadowJobs || 0) +
         ' entropy_beta=' + (
             config.entropyBeta == null ? 'base' : String(config.entropyBeta)
         ) +

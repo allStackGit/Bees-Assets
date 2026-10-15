@@ -370,6 +370,14 @@ function normalizeLearnerOptimizations(value, fallback = null) {
     };
 }
 
+function normalizePocaShadowJobs(value) {
+    const count = value == null ? 0 : Number(value);
+    if (!Number.isSafeInteger(count) || count < 0 || count > 8) {
+        throw new Error('PPO shadow jobs must be an integer in 0-8; got ' + value + '.');
+    }
+    return count;
+}
+
 function normalizeLearnerDevice(value, fallback = null) {
     const candidate = value == null ? fallback : String(value).toLowerCase();
     if (candidate == null) return null;
@@ -391,6 +399,7 @@ function applyRuntimeTrainingOptions(config, options = {}) {
     const result = {
         ...config,
         entropyBeta: normalizeEntropyBeta(config && config.entropyBeta, null),
+        pocaShadowJobs: normalizePocaShadowJobs(config && config.pocaShadowJobs),
         skipEvaluation: Boolean(config && config.skipEvaluation),
         learnerDevice: normalizeLearnerDevice(config && config.learnerDevice),
         localOnly: Boolean(config && config.localOnly),
@@ -448,6 +457,9 @@ function applyRuntimeTrainingOptions(config, options = {}) {
             result.learnerOptimizations,
         );
     }
+    if (Object.prototype.hasOwnProperty.call(options, 'pocaShadowJobs')) {
+        result.pocaShadowJobs = normalizePocaShadowJobs(options.pocaShadowJobs);
+    }
     if (Object.prototype.hasOwnProperty.call(options, 'entropyBeta')) {
         result.entropyBeta = normalizeEntropyBeta(
             options.entropyBeta,
@@ -496,6 +508,7 @@ function readRuntimeTrainingOptions(
             value.entropyBeta,
             defaultEntropyBeta,
         ),
+        pocaShadowJobs: normalizePocaShadowJobs(value.pocaShadowJobs),
         skipEvaluation: Boolean(value.skipEvaluation),
         localOnly: Boolean(value.localOnly),
         numLocalEnvs: normalizeLocalEnvs(value.numLocalEnvs),
@@ -523,6 +536,7 @@ function saveRuntimeTrainingOptions(options) {
             options && options.entropyBeta,
             null,
         ),
+        pocaShadowJobs: normalizePocaShadowJobs(options && options.pocaShadowJobs),
         skipEvaluation: Boolean(options && options.skipEvaluation),
         localOnly: Boolean(options && options.localOnly),
         numLocalEnvs: normalizeLocalEnvs(options && options.numLocalEnvs),

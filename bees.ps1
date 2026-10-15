@@ -21,6 +21,7 @@ param(
     [switch]$PpoCriticBaselineOverlap,
     [switch]$PpoCudaGraphs,
     [switch]$PpoProfile,
+    [ValidateRange(0,8)][int]$PocaShadowJobs,
     [ValidateRange(0.0,100.0)][double]$Entropy,
     [switch]$SkipEvaluation,
     [switch]$EnableEvaluation,
@@ -81,6 +82,9 @@ $ppoExperimentRequested=(
 )
 if($ppoExperimentRequested -and $Command -ne 'runtime'){
     throw 'PPO learner optimization options are only valid with the runtime command.'
+}
+if($PSBoundParameters.ContainsKey('PocaShadowJobs') -and $Command -ne 'runtime'){
+    throw '-PocaShadowJobs is only valid with the runtime command.'
 }
 if($PSBoundParameters.ContainsKey('Entropy') -and $Command -ne 'runtime'){
     throw '-Entropy is only valid with the runtime command.'
@@ -163,6 +167,7 @@ if($PpoPrefetch){$arguments+='--ppo-prefetch'}
 if($PpoCriticBaselineOverlap){$arguments+='--ppo-critic-baseline-overlap'}
 if($PpoCudaGraphs){$arguments+='--ppo-cuda-graphs'}
 if($PpoProfile){$arguments+='--ppo-profile'}
+if($PSBoundParameters.ContainsKey('PocaShadowJobs')){$arguments+=@('--poca-shadow-jobs',[string]$PocaShadowJobs)}
 if($PSBoundParameters.ContainsKey('Entropy')){
     $arguments+=@('--entropy',$Entropy.ToString('G',[Globalization.CultureInfo]::InvariantCulture))
 }
