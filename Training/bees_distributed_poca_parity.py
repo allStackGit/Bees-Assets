@@ -125,7 +125,7 @@ def _compare_clip_reports(local: dict | None, remote: dict | None) -> str:
     continuous_deltas = (
         (local["log_ratio"] - remote["log_ratio"]).abs()[
             valid_local & (
-                torch.arange(valid_local.shape[1]).unsqueeze(0)
+                torch.arange(valid_local.shape[1], device=valid_local.device).unsqueeze(0)
                 < continuous_width
             )
         ]
@@ -134,7 +134,7 @@ def _compare_clip_reports(local: dict | None, remote: dict | None) -> str:
     discrete_deltas = (
         (local["log_ratio"] - remote["log_ratio"]).abs()[
             valid_local & (
-                torch.arange(valid_local.shape[1]).unsqueeze(0)
+                torch.arange(valid_local.shape[1], device=valid_local.device).unsqueeze(0)
                 >= continuous_width
             )
         ]
