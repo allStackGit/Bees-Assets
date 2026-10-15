@@ -152,6 +152,7 @@ def compute_minibatch_gradients(
     _POCA_UPDATE_CACHE_STATE.actor_update = True
     _POCA_UPDATE_CACHE_STATE.shadow_clip_capture = True
     _POCA_UPDATE_CACHE_STATE.shadow_clip_report = None
+    _POCA_UPDATE_CACHE_STATE.shadow_distribution_report = None
     started = time.monotonic()
     try:
         stats = optimizer.update(minibatch, batch_size)
@@ -164,7 +165,17 @@ def compute_minibatch_gradients(
                 grads[name] = grad.detach().to(device="cpu", copy=True).contiguous()
             else:
                 grads[name] = None
+        clip_report = getattr(_POCA_UPDATE_CACHE_STATE, "shadow_clip_report", None)
+        clip_device = (
+            str(clip_report["log_ratio"].device)
+            if isinstance(clip_report, Mapping) and "log_ratio" in clip_report
+            else "missing"
+        )
         return {
+            "gradient_execution_device": str(
+                next(iter(_named_parameters(optimizer).values())).device
+            ),
+            "gradient_capture_device": clip_device,
             "policy_step": int(snapshot["policy_step"]),
             "optimizer_revision": int(snapshot["optimizer_revision"]),
             "batch_experiences": batch_size,
@@ -184,6 +195,7 @@ def compute_minibatch_gradients(
         _POCA_UPDATE_CACHE_STATE.actor_update = True
         _POCA_UPDATE_CACHE_STATE.shadow_clip_capture = False
         _POCA_UPDATE_CACHE_STATE.shadow_clip_report = None
+        _POCA_UPDATE_CACHE_STATE.shadow_distribution_report = None
         optimizer.optimizer.step = step
 
 
