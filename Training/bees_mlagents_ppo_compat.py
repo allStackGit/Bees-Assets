@@ -6667,7 +6667,11 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                     np.random.shuffle(epoch_order)
                     # Opt-in shadow pilot: parallel remote gradients use one
                     # immutable snapshot and NEVER touch Exeter Adam.
-                    if (_epoch_index == 0 and os.environ.get("BEES_POCA_SHADOW_JOBS", "") not in ("", "0")):
+                    if (
+                        _epoch_index == 0
+                        and _POCA_UPDATE_CACHE_STATE.actor_update
+                        and os.environ.get("BEES_POCA_SHADOW_JOBS", "") not in ("", "0")
+                    ):
                         from bees_distributed_poca_shadow import start_shadow_trial
                         shadow_jobs = start_shadow_trial(
                             self.optimizer, self.brain_name,
