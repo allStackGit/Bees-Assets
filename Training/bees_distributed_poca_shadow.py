@@ -72,6 +72,8 @@ def _collect_async(
     try:
         first_remote = None
         profiles = []
+        inflight_by_job = {}
+        worker_compute_seconds = 0.0
         # Shadow mode intentionally does not infer or apply the learner's
         # live revision from another thread. This tests transport only;
         # optimizer-staleness decisions belong to the central PPO thread.
@@ -103,6 +105,11 @@ def _collect_async(
                 result_wire_bytes += int(timing.get("result_wire_bytes", 0))
                 receive_decode_seconds += float(timing.get("result_receive_decode_seconds", 0.0))
                 results.append((outcome.status, inflight))
+                inflight_by_job[job_id] = inflight
+                if outcome.status == "accepted" and outcome.result:
+                    worker_compute_seconds += float(
+                        outcome.result.get("compute_seconds", 0.0)
+                    )
                 if outcome.status != "accepted":
                     failure_details.append(
                         f"{job_id[:8]}:{outcome.status}:"
@@ -130,6 +137,19 @@ def _collect_async(
                   else "parity=no_matching_result")
         )
         cache_hits = sum(bool(item.get("snapshot_cached")) for item in profiles)
+        first_inflight = inflight_by_job.get(job_ids[0], 0.0)
+        later_inflight = [
+            inflight_by_job[job] for job in job_ids[1:]
+            if job in inflight_by_job
+        ]
+        snapshot_fetch_total = sum(
+            float(item.get("snapshot_fetch_seconds", 0.0))
+            for item in profiles
+        )
+        minibatch_decode_total = sum(
+            float(item.get("minibatch_decode_seconds", 0.0))
+            for item in profiles
+        )
         worker_total = sum(float(item.get("worker_before_upload_seconds", 0.0))
                            for item in profiles)
         claim_bytes = sum(int(item.get("claim_encoded_bytes", 0)) for item in profiles)
@@ -150,6 +170,11 @@ def _collect_async(
             f"results_uploaded_mib={result_wire_bytes / 1048576:.2f} "
             f"central_receive_decode_sum_s={receive_decode_seconds:.3f} "
             f"inflight_sum_s={sum(t for _, t in results):.3f} "
+            f"first_inflight_s={first_inflight:.3f} "
+            f"later_inflight_avg_s={sum(later_inflight) / max(len(later_inflight), 1):.3f} "
+            f"worker_compute_sum_s={worker_compute_seconds:.3f} "
+            f"snapshot_fetch_sum_s={snapshot_fetch_total:.3f} "
+            f"minibatch_decode_sum_s={minibatch_decode_total:.3f} "
             f"queue_sum_s={queue_sum:.3f} queue_max_s={queue_max:.3f} "
             f"distinct_workers={len(worker_names)} "
             f"first_input_hash_match={input_hash_match} "
