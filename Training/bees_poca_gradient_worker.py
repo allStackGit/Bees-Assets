@@ -133,6 +133,8 @@ def run_gradient_worker(
                     "worker": identity,
                     "error": f"{type(exc).__name__}: {exc}",
                 }
+            # Bind every response to its immutable snapshot, including errors.
+            result["snapshot_id"] = payload.get("snapshot_id")
             result["session_id"] = session_id
             result["transport_profile"] = {
                 "claim_encoded_bytes": claim_bytes,
