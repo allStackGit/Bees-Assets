@@ -64,7 +64,7 @@ def _collect_async(
     prepared_seconds: float, minibatch_bytes: int, snapshot_bytes: int,
     reference: LocalGradientReference,
 ) -> None:
-    global _ACTIVE_PILOT
+    global _ACTIVE_PILOT, _PENDING_REFERENCE
     results = []
     try:
         first_remote = None
@@ -126,6 +126,8 @@ def _collect_async(
         except Exception:
             pass
         with _LOCK:
+            if _PENDING_REFERENCE is reference:
+                _PENDING_REFERENCE = None
             _ACTIVE_PILOT = False
 
 
