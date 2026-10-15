@@ -2576,6 +2576,16 @@ class BeesStructuredActionModel(_OriginalActionModel):
             ),
         )
 
+        # Shadow-only: compare actual policy distribution parameters rather
+        # than attributing a gradient disagreement to floating-point precision.
+        from bees_mlagents_ppo_compat import _POCA_UPDATE_CACHE_STATE
+        if getattr(_POCA_UPDATE_CACHE_STATE, "shadow_clip_capture", False):
+            with torch.no_grad():
+                _POCA_UPDATE_CACHE_STATE.shadow_distribution_report = {
+                    "continuous_mean": continuous.mean.detach().cpu().clone(),
+                    "continuous_std": continuous.std.detach().cpu().clone(),
+                }
+
         bee_special = self.bee_special(global_encoding)
         human_special = self.human_special(global_encoding)
         special_logits = self._mix(
