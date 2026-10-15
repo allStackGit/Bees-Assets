@@ -31,6 +31,8 @@ The old probe allowed just one outstanding request, so it was not an end-to-end 
 
 ## Safety / current status
 
-This development branch does not enable remote CPU jobs, change runtime flags or modify the active production learner. It is incomplete until the broker endpoints, remote worker, central scheduling, optimizer application and live validation are connected behind an opt-in switch.
+The branch now has an opt-in `--learning-cpus` sidecar in the managed Linux and Windows launchers; the *default remains zero*, and no central PPO dispatch is enabled. Authenticated broker endpoints, cached worker snapshots, bounded job scheduling and a standalone Exeter-only Adam gradient applier exist. **The applier has not yet been wired into the PPO update loop.** No live remote gradient can be applied with this branch in its current state.
+
+The remaining required code is the central asynchronous dispatcher/collector, authoritative optimizer-revision accounting for each local and remote Adam step, checkpoint/restart ownership, explicit runtime controls, and a real end-to-end benchmark. Actual Bees model comparison and WAN hardware validation must be completed before production use.
 
 Do not replace this architecture with a synchronous per-minibatch remote round trip. Do not claim a throughput improvement on the basis of CPU compute timing alone.

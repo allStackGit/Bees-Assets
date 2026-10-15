@@ -16,6 +16,7 @@ from bees_distributed_poca_exchange import GradientWorkExchange
 @dataclass(frozen=True)
 class CollectedGradient:
     status: str
+    job_id: str | None = None
     lag: int | None = None
     result: Mapping[str, Any] | None = None
     detail: str = ""
@@ -118,25 +119,28 @@ class GradientJobCoordinator:
         self._cleanup_snapshot(snapshot_id)
         if "error" in result:
             self.remote_failures += 1
-            return CollectedGradient("remote_error", detail=str(result["error"]))
+            return CollectedGradient("remote_error", job_id=job_id, detail=str(result["error"]))
         if result.get("session_id") != self.session_id:
             self.rejected_invalid += 1
-            return CollectedGradient("invalid", detail="Broker session mismatch")
+            return CollectedGradient("invalid", job_id=job_id, detail="Broker session mismatch")
         if type(result.get("optimizer_revision")) is not int or result["optimizer_revision"] != revision:
             self.rejected_invalid += 1
-            return CollectedGradient("invalid", detail="Optimizer revision mismatch")
+            return CollectedGradient("invalid", job_id=job_id, detail="Optimizer revision mismatch")
         lag = current_optimizer_revision - revision
         if lag < 0:
             self.rejected_invalid += 1
-            return CollectedGradient("invalid", lag=lag, detail="Future optimizer revision")
+            return CollectedGradient("invalid", job_id=job_id, lag=lag, detail="Future optimizer revision")
         if lag > self.max_optimizer_lag:
             self.rejected_stale += 1
-            return CollectedGradient("stale", lag=lag, detail="Maximum optimizer lag exceeded")
+            return CollectedGradient("stale", job_id=job_id, lag=lag, detail="Maximum optimizer lag exceeded")
         if not isinstance(result.get("gradients"), Mapping):
             self.rejected_invalid += 1
-            return CollectedGradient("invalid", lag=lag, detail="Missing gradients")
+            return CollectedGradient("invalid", job_id=job_id, lag=lag, detail="Missing gradients")
+        if type(result.get("batch_experiences")) is not int or result["batch_experiences"] < 1:
+            self.rejected_invalid += 1
+            return CollectedGradient("invalid", job_id=job_id, lag=lag, detail="Invalid batch size")
         self.accepted += 1
-        return CollectedGradient("accepted", lag=lag, result=result)
+        return CollectedGradient("accepted", job_id=job_id, lag=lag, result=result)
 
     def metrics(self) -> dict[str, int]:
         return {
