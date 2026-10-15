@@ -32,7 +32,10 @@ def extract_learner_optimization_args(
         learner_launcher.PPO_CUDA_GRAPHS_FLAG,
         learner_launcher.PPO_PROFILE_FLAG,
     }
-    value_flags = {learner_launcher.PPO_STREAM_SHARDS_FLAG}
+    value_flags = {
+        learner_launcher.PPO_STREAM_SHARDS_FLAG,
+        learner_launcher.POCA_SHADOW_JOBS_FLAG,
+    }
     cleaned: List[str] = []
     selected: List[str] = []
     index = 0
