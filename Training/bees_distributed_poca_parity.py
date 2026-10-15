@@ -43,11 +43,23 @@ def _compare_gaussian_parameters(local: dict, remote: dict, active) -> str:
         return "gaussian_diagnostics=nonfinite"
     delta_mean = (lmean - rmean).abs()[mask]
     delta_std = (lstd - rstd).abs()[mask]
+    local_abs = lmean[mask].abs()
+    remote_abs = rmean[mask].abs()
     scale = torch.minimum(lstd[mask], rstd[mask]).clamp_min(1e-30)
+    largest = torch.maximum(local_abs, remote_abs)
+    relative_mean_diff = delta_mean / largest.clamp_min(1.0)
     return " ".join((
         "gaussian_diagnostics=compared",
+        f"mean_abs_local_max={float(local_abs.max()):.6g}",
+        f"mean_abs_remote_max={float(remote_abs.max()):.6g}",
+        f"mean_abs_local_p99={float(torch.quantile(local_abs, 0.99)):.6g}",
+        f"mean_abs_remote_p99={float(torch.quantile(remote_abs, 0.99)):.6g}",
+        f"mean_abs_over_10={int((largest > 10).sum())}/{int(largest.numel())}",
+        f"mean_abs_over_1000={int((largest > 1000).sum())}/{int(largest.numel())}",
         f"mean_abs_diff_max={float(delta_mean.max()):.6g}",
         f"mean_abs_diff_p99={float(torch.quantile(delta_mean, 0.99)):.6g}",
+        f"mean_relative_diff_max={float(relative_mean_diff.max()):.6g}",
+        f"mean_relative_diff_p99={float(torch.quantile(relative_mean_diff, 0.99)):.6g}",
         f"std_abs_diff_max={float(delta_std.max()):.6g}",
         f"std_min_local={float(lstd[mask].min()):.6g}",
         f"std_min_remote={float(rstd[mask].min()):.6g}",
