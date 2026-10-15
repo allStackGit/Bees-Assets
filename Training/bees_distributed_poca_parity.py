@@ -27,6 +27,22 @@ def _compare_clip_reports(local: dict | None, remote: dict | None) -> str:
         for key in names
     ):
         return "clip_diagnostics=incompatible"
+    # WAN payloads and CUDA learner references can originate on different
+    # devices. The comparator owns a CPU-only view of both reports; compare
+    # values here rather than relying on the producing device.
+    original_devices = ",".join(
+        f"{side}_{key}={report[key].device}"
+        for side, report in (("local", local), ("remote", remote))
+        for key in names
+    )
+    local = {
+        **local,
+        **{key: local[key].detach().to(device="cpu") for key in names},
+    }
+    remote = {
+        **remote,
+        **{key: remote[key].detach().to(device="cpu") for key in names},
+    }
     valid_local = local["active"].bool()
     valid_remote = remote["active"].bool()
     if not torch.equal(valid_local, valid_remote):
@@ -57,6 +73,7 @@ def _compare_clip_reports(local: dict | None, remote: dict | None) -> str:
     decision_disagree = decision_local ^ decision_remote
     return " ".join((
         "clip_diagnostics=compared",
+        f"clip_input_devices={original_devices}",
         f"active_policy_dimensions={int(valid_local.sum())}",
         f"clipped_local={int(decision_local.sum())}",
         f"clipped_remote={int(decision_remote.sum())}",
