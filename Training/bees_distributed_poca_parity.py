@@ -50,6 +50,7 @@ class LocalGradientReference:
         families = {"actor": [0.0, 0.0, 0.0, 0.0],
                     "critic": [0.0, 0.0, 0.0, 0.0]}
         worst = (0.0, "-")
+        disagreements = []
         for name, left in a.items():
             right = b[name]
             if left is None and right is None:
@@ -74,13 +75,26 @@ class LocalGradientReference:
                 families[family][i] += value
             if values[3] > worst[0]:
                 worst = (values[3], name)
+            if values[3] > 0.0:
+                disagreements.append((values[3], name, values[1]))
         parts = []
         for family, (inner, local_sq, remote_sq, diff_sq) in families.items():
             cosine = inner / max(1e-20, math.sqrt(local_sq * remote_sq))
             relative = math.sqrt(diff_sq) / max(1e-10, math.sqrt(local_sq))
             parts.extend((f"{family}_cosine={cosine:.6f}",
-                          f"{family}_relative={relative:.6f}"))
+                          f"{family}_relative={relative:.6f}",
+                          f"{family}_local_grad_norm={math.sqrt(local_sq):.6g}"))
         parts.append("worst_param=" + worst[1])
+        for index, (difference_sq, name, local_sq) in enumerate(
+            sorted(disagreements, reverse=True)[:3], start=1
+        ):
+            absolute = math.sqrt(difference_sq)
+            relative = absolute / max(1e-10, math.sqrt(local_sq))
+            parts.extend((
+                f"disagreement_{index}_param={name}",
+                f"disagreement_{index}_abs_l2={absolute:.6g}",
+                f"disagreement_{index}_relative_l2={relative:.6g}",
+            ))
         old_stats, new_stats = self.stats or {}, remote.get("stats") or {}
         for name in ("Losses/Policy Loss", "Losses/Value Loss",
                      "Losses/Baseline Loss"):
