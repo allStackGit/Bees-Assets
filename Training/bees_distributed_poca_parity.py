@@ -117,6 +117,29 @@ def _compare_clip_reports(local: dict | None, remote: dict | None) -> str:
     decision_local = local["clipped"].bool()[valid_local]
     decision_remote = remote["clipped"].bool()[valid_local]
     delta = (ratio_local - ratio_remote).abs()
+    continuous_width = (
+        int(local["continuous_mean"].shape[1])
+        if isinstance(local.get("continuous_mean"), torch.Tensor)
+        else 0
+    )
+    continuous_deltas = (
+        (local["log_ratio"] - remote["log_ratio"]).abs()[
+            valid_local & (
+                torch.arange(valid_local.shape[1]).unsqueeze(0)
+                < continuous_width
+            )
+        ]
+        if continuous_width else torch.empty(0, dtype=torch.float64)
+    )
+    discrete_deltas = (
+        (local["log_ratio"] - remote["log_ratio"]).abs()[
+            valid_local & (
+                torch.arange(valid_local.shape[1]).unsqueeze(0)
+                >= continuous_width
+            )
+        ]
+        if continuous_width else torch.empty(0, dtype=torch.float64)
+    )
     epsilon = float(local["epsilon"])
     if not 0.0 < epsilon < 1.0 or abs(epsilon - float(remote["epsilon"])) > 1e-9:
         return "clip_diagnostics=epsilon_mismatch"
@@ -139,6 +162,10 @@ def _compare_clip_reports(local: dict | None, remote: dict | None) -> str:
         f"near_clip_boundary_1e-4={int((distance < 1e-4).sum())}",
         f"near_clip_boundary_1e-3={int((distance < 1e-3).sum())}",
         f"log_ratio_abs_delta_max={float(delta.max()):.6g}",
+        f"continuous_log_ratio_delta_max={float(continuous_deltas.max()):.6g}"
+        if continuous_deltas.numel() else "continuous_log_ratio_delta_max=not_recorded",
+        f"discrete_log_ratio_delta_max={float(discrete_deltas.max()):.6g}"
+        if discrete_deltas.numel() else "discrete_log_ratio_delta_max=not_recorded",
         f"log_ratio_abs_delta_mean={float(delta.mean()):.6g}",
         f"log_ratio_abs_delta_p99={float(torch.quantile(delta, 0.99)):.6g}",
     ))
