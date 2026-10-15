@@ -225,15 +225,25 @@ def finish_shadow_trial(trial: ShadowTrial) -> None:
             name="bees-distributed-poca-shadow-collector",
             daemon=True,
         ).start()
-    except Exception:
+    except Exception as exc:
         for job_id in trial.job_ids:
-            trial.coordinator.cancel(job_id)
-        trial.coordinator.retire_snapshot(trial.snapshot_id)
+            try:
+                trial.coordinator.cancel(job_id)
+            except Exception:
+                pass
+        try:
+            trial.coordinator.retire_snapshot(trial.snapshot_id)
+        except Exception:
+            pass
         with _LOCK:
             if _PENDING_REFERENCE is trial.reference:
                 _PENDING_REFERENCE = None
             _ACTIVE_PILOT = False
-        raise
+        print(
+            "[Bees distributed POCA shadow] collector launch failed: "
+            f"{type(exc).__name__}: {exc}; remote_gradients_applied=0",
+            flush=True,
+        )
 
 
 def submit_shadow_minibatch(trial: ShadowTrial, minibatch: dict) -> None:
@@ -288,7 +298,16 @@ def start_shadow_trial(
         if _ACTIVE_PILOT or _ACTIVE_BROKER is None:
             return None
         exchange, session_id = _ACTIVE_BROKER
-        if exchange.metrics()["gradient_workers_active"] == 0:
+        try:
+            workers_active = exchange.metrics()["gradient_workers_active"]
+        except Exception as exc:
+            print(
+                "[Bees distributed POCA shadow] broker unavailable: "
+                f"{type(exc).__name__}: {exc}; remote_gradients_applied=0",
+                flush=True,
+            )
+            return None
+        if not workers_active:
             return None
         _ACTIVE_PILOT = True
     coordinator = None
