@@ -7,6 +7,7 @@ unchanged. A daemon records completion/latency and NEVER applies gradients.
 
 from __future__ import annotations
 
+import hashlib
 import os
 import threading
 import time
@@ -62,7 +63,7 @@ def _collect_async(
     coordinator: GradientJobCoordinator, snapshot_id: str,
     job_ids: list[str], optimizer_revision: int, started_at: float,
     prepared_seconds: float, minibatch_bytes: int, snapshot_bytes: int,
-    reference: LocalGradientReference,
+    reference: LocalGradientReference, expected_first_minibatch_sha256: str,
 ) -> None:
     global _ACTIVE_PILOT, _PENDING_REFERENCE
     results = []
@@ -116,8 +117,16 @@ def _collect_async(
             coordinator.cancel(job_id)
             results.append(("timeout", 0.0))
         accepted = sum(status == "accepted" for status, _ in results)
-        parity = (reference.compare(first_remote)
-                  if first_remote is not None else "parity=no_matching_result")
+        input_hash_match = (
+            first_remote is not None
+            and first_remote.get("minibatch_sha256") == expected_first_minibatch_sha256
+        )
+        parity = (
+            reference.compare(first_remote)
+            if input_hash_match
+            else ("parity=input_hash_mismatch" if first_remote is not None
+                  else "parity=no_matching_result")
+        )
         cache_hits = sum(bool(item.get("snapshot_cached")) for item in profiles)
         worker_total = sum(float(item.get("worker_before_upload_seconds", 0.0))
                            for item in profiles)
@@ -141,6 +150,7 @@ def _collect_async(
             f"inflight_sum_s={sum(t for _, t in results):.3f} "
             f"queue_sum_s={queue_sum:.3f} queue_max_s={queue_max:.3f} "
             f"distinct_workers={len(worker_names)} "
+            f"first_input_hash_match={input_hash_match} "
             f"snapshot_cache_hits={cache_hits}/{len(profiles)} "
             f"worker_before_upload_sum_s={worker_total:.3f} "
             f"{parity} remote_gradients_applied=0",
@@ -186,6 +196,7 @@ class ShadowTrial:
         self.reference = reference
         self.prepare_seconds = prepare_seconds
         self.minibatch_bytes = 0
+        self.first_minibatch_sha256 = ""
         self.job_ids: list[str] = []
         self.finished = False
 
@@ -223,6 +234,7 @@ def finish_shadow_trial(trial: ShadowTrial) -> None:
                 trial.coordinator, trial.snapshot_id, list(trial.job_ids),
                 trial.optimizer_revision, trial.started_at, trial.prepare_seconds,
                 trial.minibatch_bytes, trial.snapshot_bytes, trial.reference,
+                trial.first_minibatch_sha256,
             ),
             name="bees-distributed-poca-shadow-collector",
             daemon=True,
@@ -263,6 +275,8 @@ def submit_shadow_minibatch(trial: ShadowTrial, minibatch: dict) -> None:
         )
         if job_id is None:
             raise RuntimeError("Gradient exchange rejected minibatch submission")
+        if not trial.job_ids:
+            trial.first_minibatch_sha256 = hashlib.sha256(encoded).hexdigest()
         trial.job_ids.append(job_id)
         trial.minibatch_bytes += len(encoded)
         trial.prepare_seconds += time.monotonic() - started
