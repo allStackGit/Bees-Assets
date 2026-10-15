@@ -199,6 +199,8 @@ def finish_shadow_trial(trial: ShadowTrial) -> None:
     if not trial.job_ids:
         try:
             trial.coordinator.retire_snapshot(trial.snapshot_id)
+        except Exception:
+            pass
         finally:
             with _LOCK:
                 if _PENDING_REFERENCE is trial.reference:
@@ -339,7 +341,10 @@ def start_shadow_trial(
         return trial
     except Exception as exc:
         if coordinator is not None and snapshot_id is not None:
-            coordinator.retire_snapshot(snapshot_id)
+            try:
+                coordinator.retire_snapshot(snapshot_id)
+            except Exception:
+                pass
         with _LOCK:
             _ACTIVE_PILOT = False
             _PENDING_REFERENCE = None
