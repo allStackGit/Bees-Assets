@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import contextvars
 import math
+import sys
 from typing import Mapping, Optional
 
 from mlagents.torch_utils import torch, nn
@@ -2578,10 +2579,11 @@ class BeesStructuredActionModel(_OriginalActionModel):
 
         # Shadow-only: compare actual policy distribution parameters rather
         # than attributing a gradient disagreement to floating-point precision.
-        from bees_mlagents_ppo_compat import _POCA_UPDATE_CACHE_STATE
-        if getattr(_POCA_UPDATE_CACHE_STATE, "shadow_clip_capture", False):
+        compat = sys.modules.get("bees_mlagents_ppo_compat")
+        shadow_state = getattr(compat, "_POCA_UPDATE_CACHE_STATE", None)
+        if getattr(shadow_state, "shadow_clip_capture", False):
             with torch.no_grad():
-                _POCA_UPDATE_CACHE_STATE.shadow_distribution_report = {
+                shadow_state.shadow_distribution_report = {
                     "continuous_mean": continuous.mean.detach().cpu().clone(),
                     "continuous_std": continuous.std.detach().cpu().clone(),
                 }
