@@ -567,7 +567,9 @@ class WanActorBroker:
                     return
                 parsed = urllib.parse.urlparse(self.path)
                 try:
+                    result_receive_started = time.monotonic()
                     payload = self._read_payload()
+                    result_receive_decode_seconds = time.monotonic() - result_receive_started
                     if not isinstance(payload, Mapping):
                         raise ValueError("WAN actor request payload must be a mapping")
                     if payload.get("session_id") != broker.session_id:
@@ -595,6 +597,8 @@ class WanActorBroker:
                             str(payload.get("job_id", "")),
                             str(payload.get("claim_token", "")),
                             payload.get("result"),
+                            result_wire_bytes=int(self.headers["Content-Length"]),
+                            result_receive_decode_seconds=result_receive_decode_seconds,
                         )
                         if accepted:
                             self._json({"status": "completed"})
