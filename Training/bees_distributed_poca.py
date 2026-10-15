@@ -124,7 +124,6 @@ def compute_minibatch_gradients(
     """
     from bees_mlagents_ppo_compat import (
         _POCA_UPDATE_CACHE_STATE,
-        _POCA_GRADIENT_PROBE_STATE,
     )
     from mlagents.torch_utils import torch
 
@@ -151,8 +150,6 @@ def compute_minibatch_gradients(
     optimizer.optimizer.step = lambda *args, **kwargs: None
     _POCA_UPDATE_CACHE_STATE.minibatch = minibatch
     _POCA_UPDATE_CACHE_STATE.actor_update = True
-    _POCA_GRADIENT_PROBE_STATE.enabled = True
-    _POCA_GRADIENT_PROBE_STATE.trace = None
     started = time.monotonic()
     try:
         stats = optimizer.update(minibatch, batch_size)
@@ -171,7 +168,6 @@ def compute_minibatch_gradients(
             "batch_experiences": batch_size,
             "compute_seconds": time.monotonic() - started,
             "gradients": grads,
-            "policy_trace": getattr(_POCA_GRADIENT_PROBE_STATE, "trace", None),
             "stats": {
                 name: float(value.detach().cpu().item()) if hasattr(value, "detach")
                 else float(value)
@@ -179,8 +175,6 @@ def compute_minibatch_gradients(
             },
         }
     finally:
-        _POCA_GRADIENT_PROBE_STATE.enabled = False
-        _POCA_GRADIENT_PROBE_STATE.trace = None
         _POCA_UPDATE_CACHE_STATE.minibatch = None
         _POCA_UPDATE_CACHE_STATE.actor_update = True
         optimizer.optimizer.step = step
