@@ -123,6 +123,9 @@ class GradientJobCoordinator:
         if result.get("session_id") != self.session_id:
             self.rejected_invalid += 1
             return CollectedGradient("invalid", job_id=job_id, detail="Broker session mismatch")
+        if result.get("snapshot_id") != snapshot_id:
+            self.rejected_invalid += 1
+            return CollectedGradient("invalid", job_id=job_id, detail="Gradient snapshot mismatch")
         if type(result.get("optimizer_revision")) is not int or result["optimizer_revision"] != revision:
             self.rejected_invalid += 1
             return CollectedGradient("invalid", job_id=job_id, detail="Optimizer revision mismatch")
