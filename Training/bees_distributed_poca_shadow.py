@@ -81,6 +81,7 @@ def _collect_async(
         result_wire_bytes = 0
         receive_decode_seconds = 0.0
         worker_names = set()
+        failure_details = []
         while pending and time.monotonic() < deadline:
             for job_id in list(pending):
                 outcome = coordinator.collect(
@@ -99,6 +100,11 @@ def _collect_async(
                 result_wire_bytes += int(timing.get("result_wire_bytes", 0))
                 receive_decode_seconds += float(timing.get("result_receive_decode_seconds", 0.0))
                 results.append((outcome.status, inflight))
+                if outcome.status != "accepted":
+                    failure_details.append(
+                        f"{job_id[:8]}:{outcome.status}:"
+                        + outcome.detail.replace("\n", " ")[:120]
+                    )
                 if outcome.status == "accepted" and outcome.job_id == job_ids[0]:
                     first_remote = outcome.result
                 if outcome.result:
@@ -122,6 +128,7 @@ def _collect_async(
             "[Bees distributed POCA shadow] "
             f"jobs={len(job_ids)} completed={accepted} "
             f"status={','.join(status for status, _ in results)} "
+            f"failure_details={';'.join(failure_details[:3]) or '-'} "
             f"elapsed_s={elapsed:.3f} "
             f"completed_jobs_per_s={accepted / max(elapsed, 1e-6):.3f} "
             f"prepare_s={prepared_seconds:.3f} "
