@@ -72,23 +72,39 @@ def _collect_async(
         # Shadow mode intentionally does not infer or apply the learner's
         # live revision from another thread. This tests transport only;
         # optimizer-staleness decisions belong to the central PPO thread.
-        for job_id in job_ids:
-            outcome = coordinator.collect(
-                job_id,
-                current_optimizer_revision=optimizer_revision,
-                timeout_seconds=600.0,
-            )
-            if outcome is None:
-                coordinator.cancel(job_id)
-                results.append(("timeout", 0.0))
-                continue
-            timing = (outcome.result or {}).get("_broker_timings", {})
-            inflight = float(timing.get("in_flight_seconds", 0.0))
-            results.append((outcome.status, inflight))
-            if outcome.status == "accepted" and outcome.job_id == job_ids[0]:
-                first_remote = outcome.result
-            if outcome.result:
-                profiles.append(outcome.result.get("transport_profile", {}))
+        # Poll every outstanding request rather than block behind a slow first
+        # job. Deadline applies to the entire pilot, not each individual job.
+        pending = set(job_ids)
+        deadline = started_at + 600.0
+        queue_sum = 0.0
+        queue_max = 0.0
+        worker_names = set()
+        while pending and time.monotonic() < deadline:
+            for job_id in list(pending):
+                outcome = coordinator.collect(
+                    job_id,
+                    current_optimizer_revision=optimizer_revision,
+                    timeout_seconds=0.0,
+                )
+                if outcome is None:
+                    continue
+                pending.remove(job_id)
+                timing = (outcome.result or {}).get("_broker_timings", {})
+                queue_s = float(timing.get("queue_seconds", 0.0))
+                inflight = float(timing.get("in_flight_seconds", 0.0))
+                queue_sum += queue_s
+                queue_max = max(queue_max, queue_s)
+                results.append((outcome.status, inflight))
+                if outcome.status == "accepted" and outcome.job_id == job_ids[0]:
+                    first_remote = outcome.result
+                if outcome.result:
+                    profiles.append(outcome.result.get("transport_profile", {}))
+                    worker_names.add(str(outcome.result.get("worker", "-")))
+            if pending:
+                time.sleep(0.1)
+        for job_id in pending:
+            coordinator.cancel(job_id)
+            results.append(("timeout", 0.0))
         accepted = sum(status == "accepted" for status, _ in results)
         parity = (reference.compare(first_remote)
                   if first_remote is not None else "parity=no_matching_result")
@@ -104,6 +120,8 @@ def _collect_async(
             f"snapshot_mib={snapshot_bytes / 1048576:.2f} "
             f"minibatches_mib={minibatch_bytes / 1048576:.2f} "
             f"inflight_sum_s={sum(t for _, t in results):.3f} "
+            f"queue_sum_s={queue_sum:.3f} queue_max_s={queue_max:.3f} "
+            f"distinct_workers={len(worker_names)} "
             f"snapshot_cache_hits={cache_hits}/{len(profiles)} "
             f"worker_before_upload_sum_s={worker_total:.3f} "
             f"{parity} remote_gradients_applied=0",
