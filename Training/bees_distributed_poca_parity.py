@@ -13,14 +13,75 @@ from typing import Any
 from bees_distributed_poca import _named_parameters
 
 
+def _compare_clip_reports(local: dict | None, remote: dict | None) -> str:
+    """Identify changes in PPO clipping decisions versus forward log-ratio drift."""
+    from mlagents.torch_utils import torch
+
+    if not isinstance(local, dict) or not isinstance(remote, dict):
+        return "clip_diagnostics=missing"
+    names = ("active", "clipped", "log_ratio")
+    if any(
+        not isinstance(local.get(key), torch.Tensor)
+        or not isinstance(remote.get(key), torch.Tensor)
+        or local[key].shape != remote[key].shape
+        for key in names
+    ):
+        return "clip_diagnostics=incompatible"
+    valid_local = local["active"].bool()
+    valid_remote = remote["active"].bool()
+    if not torch.equal(valid_local, valid_remote):
+        return (
+            "clip_diagnostics=active_mask_mismatch "
+            f"active_mask_disagreements={int((valid_local ^ valid_remote).sum())}"
+        )
+    if not int(valid_local.sum()):
+        return "clip_diagnostics=no_active_dimensions"
+    ratio_local = local["log_ratio"].to(torch.float64)[valid_local]
+    ratio_remote = remote["log_ratio"].to(torch.float64)[valid_local]
+    if not bool(torch.isfinite(ratio_local).all()) or not bool(
+        torch.isfinite(ratio_remote).all()
+    ):
+        return "clip_diagnostics=nonfinite_log_ratio"
+    decision_local = local["clipped"].bool()[valid_local]
+    decision_remote = remote["clipped"].bool()[valid_local]
+    delta = (ratio_local - ratio_remote).abs()
+    epsilon = float(local["epsilon"])
+    if not 0.0 < epsilon < 1.0 or abs(epsilon - float(remote["epsilon"])) > 1e-9:
+        return "clip_diagnostics=epsilon_mismatch"
+    high = math.log1p(epsilon)
+    low = math.log1p(-epsilon)
+    distance = torch.minimum(
+        torch.minimum((ratio_local - high).abs(), (ratio_local - low).abs()),
+        torch.minimum((ratio_remote - high).abs(), (ratio_remote - low).abs()),
+    )
+    decision_disagree = decision_local ^ decision_remote
+    return " ".join((
+        "clip_diagnostics=compared",
+        f"active_policy_dimensions={int(valid_local.sum())}",
+        f"clipped_local={int(decision_local.sum())}",
+        f"clipped_remote={int(decision_remote.sum())}",
+        f"clip_decision_disagreements={int(decision_disagree.sum())}",
+        f"clip_flips_within_1e-4={int((decision_disagree & (distance < 1e-4)).sum())}",
+        f"near_clip_boundary_1e-4={int((distance < 1e-4).sum())}",
+        f"near_clip_boundary_1e-3={int((distance < 1e-3).sum())}",
+        f"log_ratio_abs_delta_max={float(delta.max()):.6g}",
+        f"log_ratio_abs_delta_mean={float(delta.mean()):.6g}",
+        f"log_ratio_abs_delta_p99={float(torch.quantile(delta, 0.99)):.6g}",
+    ))
+
+
 class LocalGradientReference:
     def __init__(self) -> None:
         self.ready = threading.Event()
         self.gradients: dict | None = None
         self.stats: dict | None = None
+        self.clip_report: dict | None = None
         self.error: str | None = None
 
-    def capture(self, optimizer: Any, stats: dict) -> None:
+    def capture(
+        self, optimizer: Any, stats: dict,
+        clip_report: dict | None = None,
+    ) -> None:
         try:
             self.gradients = {
                 name: None if parameter.grad is None
@@ -32,6 +93,7 @@ class LocalGradientReference:
                 else float(v)
                 for name, v in stats.items()
             }
+            self.clip_report = clip_report
         except Exception as exc:
             self.error = f"{type(exc).__name__}: {exc}"
         finally:
@@ -152,6 +214,9 @@ class LocalGradientReference:
                 f"disagreement_{index}_abs_l2={absolute:.6g}",
                 f"disagreement_{index}_relative_l2={relative:.6g}",
             ))
+        parts.append(_compare_clip_reports(
+            self.clip_report, remote.get("policy_clip_report")
+        ))
         old_stats, new_stats = self.stats or {}, remote.get("stats") or {}
         for name in ("Losses/Policy Loss", "Losses/Value Loss",
                      "Losses/Baseline Loss"):
