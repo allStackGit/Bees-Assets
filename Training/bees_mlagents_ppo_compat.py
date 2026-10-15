@@ -700,6 +700,9 @@ def _trust_region_policy_loss_with_dimension_mask(
                     log_probs - old_log_probs
                 ).detach().to(device="cpu", copy=True),
                 "epsilon": float(epsilon),
+                **(getattr(
+                    _POCA_UPDATE_CACHE_STATE, "shadow_distribution_report", None
+                ) or {}),
             }
     return (element_loss * weights).sum() / torch.clamp(weights.sum(), min=1.0)
 
@@ -6867,6 +6870,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                         and _epoch_index == 0
                     )
                     _POCA_UPDATE_CACHE_STATE.shadow_clip_report = None
+                    _POCA_UPDATE_CACHE_STATE.shadow_distribution_report = None
                     try:
                         update_stats = self.optimizer.update(
                             minibatch,
@@ -6885,6 +6889,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                     finally:
                         _POCA_UPDATE_CACHE_STATE.shadow_clip_capture = False
                         _POCA_UPDATE_CACHE_STATE.shadow_clip_report = None
+                        _POCA_UPDATE_CACHE_STATE.shadow_distribution_report = None
                         _POCA_UPDATE_CACHE_STATE.indices = None
                         _POCA_UPDATE_CACHE_STATE.minibatch = None
 
