@@ -150,6 +150,8 @@ def compute_minibatch_gradients(
     optimizer.optimizer.step = lambda *args, **kwargs: None
     _POCA_UPDATE_CACHE_STATE.minibatch = minibatch
     _POCA_UPDATE_CACHE_STATE.actor_update = True
+    _POCA_UPDATE_CACHE_STATE.shadow_clip_capture = True
+    _POCA_UPDATE_CACHE_STATE.shadow_clip_report = None
     started = time.monotonic()
     try:
         stats = optimizer.update(minibatch, batch_size)
@@ -168,6 +170,9 @@ def compute_minibatch_gradients(
             "batch_experiences": batch_size,
             "compute_seconds": time.monotonic() - started,
             "gradients": grads,
+            "policy_clip_report": getattr(
+                _POCA_UPDATE_CACHE_STATE, "shadow_clip_report", None
+            ),
             "stats": {
                 name: float(value.detach().cpu().item()) if hasattr(value, "detach")
                 else float(value)
@@ -177,6 +182,8 @@ def compute_minibatch_gradients(
     finally:
         _POCA_UPDATE_CACHE_STATE.minibatch = None
         _POCA_UPDATE_CACHE_STATE.actor_update = True
+        _POCA_UPDATE_CACHE_STATE.shadow_clip_capture = False
+        _POCA_UPDATE_CACHE_STATE.shadow_clip_report = None
         optimizer.optimizer.step = step
 
 
