@@ -372,6 +372,8 @@ class WanActorBroker:
         self._server_started_once = False
         # Inert until a central coordinator explicitly submits CPU gradient jobs.
         self.gradient_exchange = GradientWorkExchange()
+        from bees_distributed_poca_shadow import register_gradient_exchange
+        register_gradient_exchange(self.gradient_exchange, self.session_id)
 
     def session_payload(self) -> Mapping[str, Any]:
         return {
@@ -652,6 +654,8 @@ class WanActorBroker:
         self.start()
 
     def close(self) -> None:
+        from bees_distributed_poca_shadow import unregister_gradient_exchange
+        unregister_gradient_exchange(self.gradient_exchange)
         self.gradient_exchange.close()
         with self._condition:
             self._closed = True
