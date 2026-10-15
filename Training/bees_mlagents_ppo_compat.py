@@ -6636,6 +6636,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         operator_profiler = _start_poca_one_update_profile()
         hardware_started = time.perf_counter()
         hardware_summary = {}
+        active_shadow_trial = None
         try:
             for _epoch_index in range(num_epoch):
                 _POCA_UPDATE_CACHE_STATE.actor_update = bool(
@@ -6654,7 +6655,6 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                     1,
                 )
                 epoch_order = None
-                shadow_jobs = 0
                 if tensor_cache is None:
                     update_buffer.shuffle(
                         sequence_length=self.policy.sequence_length
@@ -6665,20 +6665,6 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                         dtype=np.int64,
                     )
                     np.random.shuffle(epoch_order)
-                    # Opt-in shadow pilot: parallel remote gradients use one
-                    # immutable snapshot and NEVER touch Exeter Adam.
-                    if (
-                        _epoch_index == 0
-                        and _POCA_UPDATE_CACHE_STATE.actor_update
-                        and os.environ.get("BEES_POCA_SHADOW_JOBS", "") not in ("", "0")
-                    ):
-                        from bees_distributed_poca_shadow import start_shadow_trial
-                        shadow_jobs = start_shadow_trial(
-                            self.optimizer, self.brain_name,
-                            self.policy.behavior_spec, tensor_cache,
-                            epoch_order, current_batch_size,
-                            _select_poca_update_tensor_cache,
-                        )
 
                 epoch_num_batches = (
                     buffer_length // current_batch_size
@@ -6817,12 +6803,59 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                         # ML-Agents optimizer signature without copying fields.
                         minibatch = update_buffer
 
+                    # Shadow jobs must receive the exact minibatch this GPU
+                    # update will use, including the CPU-preparer's packed
+                    # entity and observation-deduplication plans. Capture the
+                    # initial snapshot before the first local Adam step, then
+                    # submit subsequent real minibatches against that snapshot.
+                    if (
+                        _epoch_index == 0
+                        and _POCA_UPDATE_CACHE_STATE.actor_update
+                        and os.environ.get("BEES_POCA_SHADOW_JOBS", "") not in ("", "0")
+                        and (
+                            offset_index == 0
+                            or (
+                                active_shadow_trial is not None
+                                and not active_shadow_trial.finished
+                            )
+                        )
+                    ):
+                        from bees_distributed_poca_shadow import (
+                            start_shadow_trial, submit_shadow_minibatch,
+                        )
+                        shadow_minibatch = _POCA_UPDATE_CACHE_STATE.minibatch
+                        if (
+                            shadow_minibatch is None
+                            and _POCA_UPDATE_CACHE_STATE.indices is not None
+                        ):
+                            shadow_minibatch = _select_poca_update_tensor_cache(
+                                tensor_cache,
+                                _POCA_UPDATE_CACHE_STATE.indices,
+                            )
+                            _POCA_UPDATE_CACHE_STATE.minibatch = shadow_minibatch
+                            _POCA_UPDATE_CACHE_STATE.indices = None
+                        if shadow_minibatch is not None:
+                            if offset_index == 0:
+                                active_shadow_trial = start_shadow_trial(
+                                    self.optimizer, self.brain_name,
+                                    self.policy.behavior_spec,
+                                    shadow_minibatch, epoch_num_batches,
+                                )
+                            elif active_shadow_trial is not None:
+                                submit_shadow_minibatch(
+                                    active_shadow_trial, shadow_minibatch,
+                                )
+
                     try:
                         update_stats = self.optimizer.update(
                             minibatch,
                             current_n_sequences,
                         )
-                        if shadow_jobs and offset_index == 0 and _epoch_index == 0:
+                        if (
+                            active_shadow_trial is not None
+                            and offset_index == 0
+                            and _epoch_index == 0
+                        ):
                             from bees_distributed_poca_shadow import capture_first_local_gradient
                             capture_first_local_gradient(self.optimizer, update_stats)
                     finally:
@@ -6865,6 +6898,9 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                             )
                             operator_profiler = None
         finally:
+            if active_shadow_trial is not None:
+                from bees_distributed_poca_shadow import finish_shadow_trial
+                finish_shadow_trial(active_shadow_trial)
             _finish_poca_one_update_profile(operator_profiler)
             hardware_loop_seconds = time.perf_counter() - hardware_started
             hardware_summary = hardware_profiler.stop(
