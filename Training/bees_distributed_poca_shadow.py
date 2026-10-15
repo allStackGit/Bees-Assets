@@ -49,14 +49,16 @@ def _requested_jobs() -> int:
 
 
 
-def capture_first_local_gradient(optimizer: Any, stats: dict) -> None:
-    """PPO-thread capture of gradients for the first shadowed minibatch."""
+def capture_first_local_gradient(
+    optimizer: Any, stats: dict, clip_report: dict | None = None,
+) -> None:
+    """PPO-thread capture of gradients and clip decisions for the first minibatch."""
     global _PENDING_REFERENCE
     with _LOCK:
         reference = _PENDING_REFERENCE
         _PENDING_REFERENCE = None
     if reference is not None:
-        reference.capture(optimizer, stats)
+        reference.capture(optimizer, stats, clip_report)
 
 
 def _collect_async(
