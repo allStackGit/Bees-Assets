@@ -8,6 +8,7 @@ worker does not change existing training behavior.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import signal
@@ -120,9 +121,11 @@ def run_gradient_worker(
                 if snapshot.get("optimizer_revision") != payload["optimizer_revision"]:
                     raise ValueError("Snapshot does not match job optimizer revision")
                 minibatch_started = time.monotonic()
+                minibatch_hash = hashlib.sha256(payload["minibatch_bytes"]).hexdigest()
                 minibatch = decode_cpu_minibatch(payload["minibatch_bytes"])
                 minibatch_decode_seconds = time.monotonic() - minibatch_started
                 result = compute_minibatch_gradients(optimizer, minibatch, snapshot)
+                result["minibatch_sha256"] = minibatch_hash
                 result["worker"] = identity
                 result["snapshot_cache_hit"] = snapshot_cache_hit
                 result["snapshot_fetch_seconds"] = snapshot_fetch_seconds
