@@ -168,34 +168,131 @@ def _collect_async(
             _ACTIVE_PILOT = False
 
 
+class ShadowTrial:
+    def __init__(
+        self, coordinator: GradientJobCoordinator, snapshot_id: str,
+        behavior_id: str, behavior_spec: Any, optimizer_revision: int,
+        started_at: float, snapshot_bytes: int, target_jobs: int,
+        reference: LocalGradientReference, prepare_seconds: float,
+    ) -> None:
+        self.coordinator = coordinator
+        self.snapshot_id = snapshot_id
+        self.behavior_id = behavior_id
+        self.behavior_spec = behavior_spec
+        self.optimizer_revision = optimizer_revision
+        self.started_at = started_at
+        self.snapshot_bytes = snapshot_bytes
+        self.target_jobs = target_jobs
+        self.reference = reference
+        self.prepare_seconds = prepare_seconds
+        self.minibatch_bytes = 0
+        self.job_ids: list[str] = []
+        self.finished = False
+
+
+def finish_shadow_trial(trial: ShadowTrial) -> None:
+    """Finish submissions and collect results without blocking GPU PPO."""
+    global _ACTIVE_PILOT, _PENDING_REFERENCE
+    if trial.finished:
+        return
+    trial.finished = True
+    if not trial.job_ids:
+        try:
+            trial.coordinator.retire_snapshot(trial.snapshot_id)
+        finally:
+            with _LOCK:
+                if _PENDING_REFERENCE is trial.reference:
+                    _PENDING_REFERENCE = None
+                _ACTIVE_PILOT = False
+        return
+    print(
+        "[Bees distributed POCA shadow] "
+        f"submitted={len(trial.job_ids)} revision={trial.optimizer_revision} "
+        f"prepare_s={trial.prepare_seconds:.3f} "
+        f"snapshot_mib={trial.snapshot_bytes / 1048576:.2f} "
+        f"minibatches_mib={trial.minibatch_bytes / 1048576:.2f} "
+        "inputs=exact_local_minibatches remote_gradients_applied=0",
+        flush=True,
+    )
+    try:
+        threading.Thread(
+            target=_collect_async,
+            args=(
+                trial.coordinator, trial.snapshot_id, list(trial.job_ids),
+                trial.optimizer_revision, trial.started_at, trial.prepare_seconds,
+                trial.minibatch_bytes, trial.snapshot_bytes, trial.reference,
+            ),
+            name="bees-distributed-poca-shadow-collector",
+            daemon=True,
+        ).start()
+    except Exception:
+        for job_id in trial.job_ids:
+            trial.coordinator.cancel(job_id)
+        trial.coordinator.retire_snapshot(trial.snapshot_id)
+        with _LOCK:
+            if _PENDING_REFERENCE is trial.reference:
+                _PENDING_REFERENCE = None
+            _ACTIVE_PILOT = False
+        raise
+
+
+def submit_shadow_minibatch(trial: ShadowTrial, minibatch: dict) -> None:
+    """Submit exactly the minibatch the local optimizer is about to consume."""
+    if trial.finished or len(trial.job_ids) >= trial.target_jobs:
+        return
+    try:
+        started = time.monotonic()
+        encoded = encode_cpu_minibatch(minibatch)
+        job_id = trial.coordinator.submit(
+            trial.snapshot_id,
+            behavior_id=trial.behavior_id,
+            behavior_spec=trial.behavior_spec,
+            minibatch_bytes=encoded,
+        )
+        if job_id is None:
+            raise RuntimeError("Gradient exchange rejected minibatch submission")
+        trial.job_ids.append(job_id)
+        trial.minibatch_bytes += len(encoded)
+        trial.prepare_seconds += time.monotonic() - started
+    except Exception as exc:
+        print(
+            "[Bees distributed POCA shadow] minibatch submission failed: "
+            f"{type(exc).__name__}: {exc}; remote_gradients_applied=0",
+            flush=True,
+        )
+        finish_shadow_trial(trial)
+        return
+    if len(trial.job_ids) >= trial.target_jobs:
+        finish_shadow_trial(trial)
+
+
 def start_shadow_trial(
     optimizer: Any, behavior_id: str, behavior_spec: Any,
-    tensor_cache: dict, shuffled_indices: Any, batch_size: int,
-    select_minibatch: Any,
-) -> int:
-    """Snapshot and submit a small group of jobs once per active pilot.
+    first_minibatch: dict, available_minibatches: int,
+) -> ShadowTrial | None:
+    """Snapshot the optimizer immediately before its first real local minibatch.
 
-    Called only at a PPO update boundary after the epoch's shuffle but BEFORE
-    local Adam starts changing model parameters. Errors cannot stop PPO.
+    The first remote job and Exeter's parity reference share the exact same
+    prepared minibatch. Later jobs are submitted as Exeter consumes their
+    actual CPU-prepared minibatches, all against this immutable snapshot.
     """
     global _ACTIVE_PILOT, _PENDING_REFERENCE
     try:
-        n = _requested_jobs()
+        n = min(_requested_jobs(), available_minibatches)
     except (TypeError, ValueError) as exc:
         print(f"[Bees distributed POCA shadow] disabled: {exc}", flush=True)
-        return 0
+        return None
     if not n:
-        return 0
+        return None
     with _LOCK:
         if _ACTIVE_PILOT or _ACTIVE_BROKER is None:
-            return 0
+            return None
         exchange, session_id = _ACTIVE_BROKER
         if exchange.metrics()["gradient_workers_active"] == 0:
-            return 0
+            return None
         _ACTIVE_PILOT = True
     coordinator = None
     snapshot_id = None
-    jobs = []
     try:
         started_at = time.monotonic()
         revision = AuthoritativeGradientApplier(
@@ -208,51 +305,22 @@ def start_shadow_trial(
             snapshot_model(optimizer, optimizer_revision=revision)
         )
         snapshot_id = coordinator.publish_snapshot(
-            snapshot_payload, optimizer_revision=revision
+            snapshot_payload, optimizer_revision=revision,
         )
         if not snapshot_id:
             raise RuntimeError("Gradient snapshot registry has no free slot")
-        batch_total_bytes = 0
-        for index in range(min(n, len(shuffled_indices) // batch_size)):
-            indices = shuffled_indices[index * batch_size:(index + 1) * batch_size]
-            minibatch = select_minibatch(tensor_cache, indices)
-            encoded = encode_cpu_minibatch(minibatch)
-            batch_total_bytes += len(encoded)
-            job_id = coordinator.submit(
-                snapshot_id, behavior_id=behavior_id,
-                behavior_spec=behavior_spec, minibatch_bytes=encoded,
-            )
-            if job_id is None:
-                break
-            jobs.append(job_id)
-        if not jobs:
-            raise RuntimeError("Could not submit any remote gradient jobs")
-        reference = LocalGradientReference()
-        with _LOCK:
-            _PENDING_REFERENCE = reference
-        prepared = time.monotonic() - started_at
-        print(
-            "[Bees distributed POCA shadow] "
-            f"submitted={len(jobs)} revision={revision} "
-            f"prepare_s={prepared:.3f} "
-            f"snapshot_mib={len(snapshot_payload) / 1048576:.2f} "
-            f"minibatches_mib={batch_total_bytes / 1048576:.2f} "
-            "remote_gradients_applied=0",
-            flush=True,
+        trial = ShadowTrial(
+            coordinator, snapshot_id, behavior_id, behavior_spec,
+            revision, started_at, len(snapshot_payload), n,
+            LocalGradientReference(), time.monotonic() - started_at,
         )
-        threading.Thread(
-            target=_collect_async,
-            args=(coordinator, snapshot_id, jobs, revision, started_at,
-                  prepared, batch_total_bytes, len(snapshot_payload), reference),
-            name="bees-distributed-poca-shadow-collector", daemon=True,
-        ).start()
-        return len(jobs)
+        with _LOCK:
+            _PENDING_REFERENCE = trial.reference
+        submit_shadow_minibatch(trial, first_minibatch)
+        return trial
     except Exception as exc:
-        if coordinator is not None:
-            for job_id in jobs:
-                coordinator.cancel(job_id)
-            if snapshot_id is not None:
-                coordinator.retire_snapshot(snapshot_id)
+        if coordinator is not None and snapshot_id is not None:
+            coordinator.retire_snapshot(snapshot_id)
         with _LOCK:
             _ACTIVE_PILOT = False
             _PENDING_REFERENCE = None
@@ -261,4 +329,4 @@ def start_shadow_trial(
             f"{type(exc).__name__}: {exc}; remote_gradients_applied=0",
             flush=True,
         )
-        return 0
+        return None
