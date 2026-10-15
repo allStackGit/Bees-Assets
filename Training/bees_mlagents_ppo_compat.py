@@ -686,6 +686,21 @@ def _trust_region_policy_loss_with_dimension_mask(
     weights = valid_steps * valid_dimensions
     if sample_weights is not None and sample_weights.shape[0] == weights.shape[0]:
         weights = weights * sample_weights.to(element_loss.dtype).unsqueeze(-1)
+    if getattr(_POCA_UPDATE_CACHE_STATE, "shadow_clip_capture", False):
+        # First shadow minibatch only: compare CPU/CUDA PPO clip decisions
+        # and forward log-ratios without changing any gradient computation.
+        with torch.no_grad():
+            active = weights > 0
+            _POCA_UPDATE_CACHE_STATE.shadow_clip_report = {
+                "active": active.detach().to(device="cpu", copy=True),
+                "clipped": (
+                    (p_opt_b < p_opt_a) & active
+                ).detach().to(device="cpu", copy=True),
+                "log_ratio": (
+                    log_probs - old_log_probs
+                ).detach().to(device="cpu", copy=True),
+                "epsilon": float(epsilon),
+            }
     return (element_loss * weights).sum() / torch.clamp(weights.sum(), min=1.0)
 
 
@@ -6846,19 +6861,30 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                                     active_shadow_trial, shadow_minibatch,
                                 )
 
+                    _POCA_UPDATE_CACHE_STATE.shadow_clip_capture = bool(
+                        active_shadow_trial is not None
+                        and offset_index == 0
+                        and _epoch_index == 0
+                    )
+                    _POCA_UPDATE_CACHE_STATE.shadow_clip_report = None
                     try:
                         update_stats = self.optimizer.update(
                             minibatch,
                             current_n_sequences,
                         )
-                        if (
-                            active_shadow_trial is not None
-                            and offset_index == 0
-                            and _epoch_index == 0
-                        ):
+                        if _POCA_UPDATE_CACHE_STATE.shadow_clip_capture:
                             from bees_distributed_poca_shadow import capture_first_local_gradient
-                            capture_first_local_gradient(self.optimizer, update_stats)
+                            capture_first_local_gradient(
+                                self.optimizer,
+                                update_stats,
+                                getattr(
+                                    _POCA_UPDATE_CACHE_STATE,
+                                    "shadow_clip_report", None,
+                                ),
+                            )
                     finally:
+                        _POCA_UPDATE_CACHE_STATE.shadow_clip_capture = False
+                        _POCA_UPDATE_CACHE_STATE.shadow_clip_report = None
                         _POCA_UPDATE_CACHE_STATE.indices = None
                         _POCA_UPDATE_CACHE_STATE.minibatch = None
 
