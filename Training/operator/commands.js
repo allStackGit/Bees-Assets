@@ -1061,7 +1061,9 @@ async function invokeStart(options = {}) {
 async function invokeRepairV24() {
     const config = loadConfig();
     const admin = ensureTokenFile(paths.adminTokenPath);
-    const python = resolvePython(config);
+    // The bootstrap Python intentionally has no torch. Inspect the existing
+    // optimizer checkpoint with the same managed, PyTorch-enabled learner Python.
+    const python = ensureLearnerPython(config);
     if (!exists(paths.latestReleasePath) || !exists(paths.runStatePath)) {
         throw new Error('No existing training run and release metadata to repair.');
     }
