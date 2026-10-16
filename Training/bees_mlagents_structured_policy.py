@@ -10,7 +10,7 @@ BeesRL1v1 model. Inside that model, Bees replaces ML-Agents' flat vector MLP wit
   explicit faction observation channel; and
 * the existing MA-POCA critic, without changing its configuration.
 
-The patch is deliberately limited to the exact Bees v24 observation/action shapes.
+The patch is deliberately limited to the exact Bees v25 observation/action shapes.
 All other ML-Agents behaviors retain the upstream implementation.
 """
 
@@ -107,7 +107,7 @@ ACTION_ENCODING_SIZE = (
     FACTION_TRUNK_SIZE + BEES_WEAPON_SLOTS * WEAPON_SLOT_EMBED + 1
 )
 
-_STRUCTURED_ENCODER_MARKER = "bees_structured_v24"
+_STRUCTURED_ENCODER_MARKER = "bees_structured_v25"
 _INSTALLED_STATE = None
 _TRAINING_SLOT_LIMITS = contextvars.ContextVar(
     "bees_structured_training_slot_limits",
@@ -1828,7 +1828,7 @@ class BeesStructuredNetworkBody(nn.Module):
             )
         if network_settings.memory is not None:
             raise UnityTrainerException(
-                "Bees structured actor is feed-forward; recurrent memory is not part of policy ABI v24."
+                "Bees structured actor is feed-forward; recurrent memory is not part of policy ABI v25."
             )
         if int(network_settings.hidden_units) != FACTION_TRUNK_SIZE:
             raise UnityTrainerException(
@@ -1854,6 +1854,15 @@ class BeesStructuredNetworkBody(nn.Module):
             network_settings.num_layers,
             self.h_size,
         )
+        # Preserve ML-Agents' existing linear initialization and SiLU activations.
+        # LayerNorm before each SiLU prevents negative pre-activation saturation
+        # from cutting off gradients to the structured observation encoders.
+        normalized_layers = []
+        for layer in self.trunk.seq_layers:
+            normalized_layers.append(layer)
+            if isinstance(layer, nn.Linear):
+                normalized_layers.append(nn.LayerNorm(self.h_size))
+        self.trunk.seq_layers = nn.Sequential(*normalized_layers)
 
     @property
     def memory_size(self) -> int:
