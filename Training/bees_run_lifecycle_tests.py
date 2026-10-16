@@ -53,7 +53,11 @@ class RunLifecycleTests(unittest.TestCase):
             encoding="utf-8",
         )
         (scenes / "RlOneVsOneReward.cs").write_text("reward-v1\n", encoding="utf-8")
-        (scenes / "RlPolicySchema.cs").write_text("policy-v18\n", encoding="utf-8")
+        (scenes / "RlPolicySchema.cs").write_text(
+            'internal const int Version = 18;\n'
+            'internal const string Signature = "signature-v18";\n',
+            encoding="utf-8",
+        )
         (scenes / "RlCombatPerception.cs").write_text("perception-v1\n", encoding="utf-8")
         (scenes / "RlOneVsOneAgent.cs").write_text("actions-v1\n", encoding="utf-8")
         (scenes / "RlOneVsOneEpisodeCoordinator.cs").write_text(
