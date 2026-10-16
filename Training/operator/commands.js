@@ -11,6 +11,7 @@ const {
     getGitShortSha,
     exists,
     getProcessIdentity,
+    invokePythonJson,
     getStateReferencedLivePid,
     loadConfig,
     paths,
@@ -1057,6 +1058,76 @@ async function invokeStart(options = {}) {
     await showStatus(config, admin, true, options.refreshSeconds || 2);
 }
 
+async function invokeRepairV24() {
+    const config = loadConfig();
+    const admin = ensureTokenFile(paths.adminTokenPath);
+    const python = resolvePython(config);
+    if (!exists(paths.latestReleasePath) || !exists(paths.runStatePath)) {
+        throw new Error('No existing training run and release metadata to repair.');
+    }
+
+    const command = path.join(paths.assetsRoot, 'Training', 'bees_policy_metadata_repair.py');
+    const args = [
+        '--assets-root', paths.assetsRoot,
+        '--bees-root', paths.beesRoot,
+    ];
+    // Validate the exact v24 checkpoint and v23 metadata before changing any state.
+    const evidence = invokePythonJson(python, [command, 'check', ...args]);
+    const status = await getStatus(config, admin);
+    const desired = status.desired || {};
+    if (desired.training_enabled) {
+        throw new Error('Stop training and wait for all dedicated trainers to exit before repairing the run metadata.');
+    }
+    const active = (status.trainers || []).filter(record =>
+        !record.stale &&
+        String(record.role || '') === 'dedicated' &&
+        String(record.process_state || '') !== 'stopped'
+    );
+    if (active.length) {
+        throw new Error('Cannot repair while dedicated trainers are still active: ' +
+            active.map(record => record.trainer_id + ':' + record.process_state).join(', '));
+    }
+
+    const activeRun = String(desired.run_id || '');
+    const activeBuild = String(desired.canonical_build_id || '');
+    const activeKey = String(desired.compatibility_key || '').toLowerCase();
+    if (activeRun !== evidence.run_id || activeBuild !== evidence.build_id ||
+        ![evidence.old_key, evidence.new_key].includes(activeKey)) {
+        throw new Error('Server identity does not match the v24 checkpoint/release being repaired. ' +
+            'server=' + activeRun + '/' + activeBuild + '/' + activeKey);
+    }
+    const pending = desired.pending_release;
+    if (pending && (
+        String(pending.run_id || '') !== evidence.run_id ||
+        String(pending.build_id || '') !== evidence.build_id ||
+        String(pending.compatibility_key || '').toLowerCase() !== evidence.new_key
+    )) {
+        throw new Error('Another release is pending; finish it before repairing metadata.');
+    }
+    console.log('Verified shared v24 checkpoint at step ' + evidence.checkpoint_steps +
+        '; preserving run ' + evidence.run_id + '.');
+    const repaired = invokePythonJson(python, [command, 'apply', ...args]);
+    const release = getLatestRelease();
+    if (release.run_id !== repaired.run_id ||
+        release.compatibility_key !== repaired.new_key ||
+        !release.preserve_run_override || !release.incompatible) {
+        throw new Error('Repaired local release did not retain the expected same-run cutover identity.');
+    }
+
+    if (activeKey !== repaired.new_key && !pending) {
+        // All training must be stopped. This uses the control plane's ordinary
+        // persisted release transition, never edits server state files directly.
+        await stageRelease(config, admin, release);
+    }
+    await waitReleaseRollout(
+        config, admin, repaired.build_id, repaired.run_id, repaired.new_key, 60
+    );
+    console.log('v24 run identity repaired; optimizer checkpoint and run ID preserved.');
+    console.log('Backups: ' + repaired.state_path + '.pre-v24-policy-repair.json');
+    console.log('         ' + repaired.release_path + '.pre-v24-policy-repair.json');
+    console.log('Next: run bees.ps1 runtime with your training options, then bees.ps1 start.');
+}
+
 async function invokeStop(options = {}) {
     const config = loadConfig();
     const admin = ensureTokenFile(paths.adminTokenPath);
@@ -1206,6 +1277,7 @@ module.exports = {
     isInterruptedIncompatibleCutover,
     invokeBuild,
     invokeQualify,
+    invokeRepairV24,
     invokeRuntime,
     invokeServer,
     invokeStart,
