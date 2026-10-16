@@ -1,4 +1,4 @@
-"""Structured dual-faction policy architecture for Bees RL.
+"""Structured shared-faction policy architecture for Bees RL.
 
 The Unity policy ABI remains one fixed vector/action contract and one deployable
 BeesRL1v1 model. Inside that model, Bees replaces ML-Agents' flat vector MLP with:
@@ -6,12 +6,11 @@ BeesRL1v1 model. Inside that model, Bees replaces ML-Agents' flat vector MLP wit
 * shared entity encoders and masked attention pooling;
 * a shared semantic weapon encoder reused by observed and self weapons;
 * per-slot weapon embeddings retained for shared weapon action heads;
-* independent Bee and Human actor encoders, trunks, and action heads selected by an
+* one shared Bee/Human actor encoder, trunk, and action heads conditioned on an
   explicit faction observation channel; and
-* a training-only Bees factorized MA-POCA critic that reuses the same structured
-  focal observation contract while keeping the exported actor ABI unchanged.
+* the existing MA-POCA critic, without changing its configuration.
 
-The patch is deliberately limited to the exact Bees v22 observation/action shapes.
+The patch is deliberately limited to the exact Bees v24 observation/action shapes.
 All other ML-Agents behaviors retain the upstream implementation.
 """
 
@@ -108,7 +107,7 @@ ACTION_ENCODING_SIZE = (
     FACTION_TRUNK_SIZE + BEES_WEAPON_SLOTS * WEAPON_SLOT_EMBED + 1
 )
 
-_STRUCTURED_ENCODER_MARKER = "bees_structured_v23"
+_STRUCTURED_ENCODER_MARKER = "bees_structured_v24"
 _INSTALLED_STATE = None
 _TRAINING_SLOT_LIMITS = contextvars.ContextVar(
     "bees_structured_training_slot_limits",
@@ -224,7 +223,7 @@ def _use_dense_structured_path() -> bool:
     discover dynamic indices. No-grad trajectory/value inference is different: it is dominated by
     padded entities and often contains only one faction, so evaluating only occupied slots and the
     matching faction is substantially cheaper. Training slot limits therefore shorten no-grad
-    trajectory inputs without forcing them back onto the dense dual-faction path.
+    trajectory inputs without forcing them back onto the dense path.
     """
 
     return bool(
@@ -1799,7 +1798,7 @@ class BeesStructuredObservationEncoder(nn.Module):
 
 
 class BeesStructuredNetworkBody(nn.Module):
-    """Independent Bee/Human actor encoders and trunks with within-faction slot sharing."""
+    """A single structured actor encoder and trunk shared by Bee and Human ships."""
 
     def __init__(
         self,
@@ -1829,11 +1828,11 @@ class BeesStructuredNetworkBody(nn.Module):
             )
         if network_settings.memory is not None:
             raise UnityTrainerException(
-                "Bees structured actor is feed-forward; recurrent memory is not part of policy ABI v22."
+                "Bees structured actor is feed-forward; recurrent memory is not part of policy ABI v24."
             )
         if int(network_settings.hidden_units) != FACTION_TRUNK_SIZE:
             raise UnityTrainerException(
-                "Bees policy ABI v22 requires hidden_units=128."
+                "Bees policy ABI v24 requires hidden_units=128."
             )
 
         self._fallback = None
@@ -1841,31 +1840,17 @@ class BeesStructuredNetworkBody(nn.Module):
         self.use_lstm = False
         self.h_size = int(network_settings.hidden_units)
         self.m_size = 0
-
-        # Actor perception is faction-specific too. This prevents gradients from
-        # Human tactical representations from rewriting Bee representations (and
-        # vice versa) while still sharing encoders across entities/weapon slots
-        # inside each faction.
-        self.bee_observation_encoder = BeesStructuredObservationEncoder(
+        self.observation_encoder = BeesStructuredObservationEncoder(
             observation_specs,
             self.h_size,
             network_settings.vis_encode_type,
             self.normalize,
         )
-        self.human_observation_encoder = BeesStructuredObservationEncoder(
-            observation_specs,
-            self.h_size,
-            network_settings.vis_encode_type,
-            self.normalize,
-        )
-        self.processors = self.bee_observation_encoder.processors
-        self.bee_trunk = LinearEncoder(
-            CONTEXT_SIZE,
-            network_settings.num_layers,
-            self.h_size,
-        )
-        self.human_trunk = LinearEncoder(
-            CONTEXT_SIZE,
+        self.processors = self.observation_encoder.processors
+        # The faction bit must reach the shared policy rather than merely
+        # selecting which of two independent branches receives an observation.
+        self.trunk = LinearEncoder(
+            CONTEXT_SIZE + 1,
             network_settings.num_layers,
             self.h_size,
         )
@@ -1885,26 +1870,14 @@ class BeesStructuredNetworkBody(nn.Module):
         raw = obs[0].to_ndarray()
         if raw.shape[0] == 0:
             return
-        bee_rows = raw[:, FACTION_INDEX] > 0.0
-        human_rows = ~bee_rows
-        if bee_rows.any():
-            bee_vector_input = self.bee_observation_encoder.vector_input
-            bee_values = torch.as_tensor(raw[bee_rows])
-            if bee_vector_input.normalizer is not None:
-                bee_values = bee_values.to(
-                    device=bee_vector_input.normalizer.running_mean.device,
-                    dtype=bee_vector_input.normalizer.running_mean.dtype,
-                )
-            bee_vector_input.update_normalization(bee_values)
-        if human_rows.any():
-            human_vector_input = self.human_observation_encoder.vector_input
-            human_values = torch.as_tensor(raw[human_rows])
-            if human_vector_input.normalizer is not None:
-                human_values = human_values.to(
-                    device=human_vector_input.normalizer.running_mean.device,
-                    dtype=human_vector_input.normalizer.running_mean.dtype,
-                )
-            human_vector_input.update_normalization(human_values)
+        vector_input = self.observation_encoder.vector_input
+        values = torch.as_tensor(raw)
+        if vector_input.normalizer is not None:
+            values = values.to(
+                device=vector_input.normalizer.running_mean.device,
+                dtype=vector_input.normalizer.running_mean.dtype,
+            )
+        vector_input.update_normalization(values)
 
     def copy_normalization(self, other_network) -> None:
         if self._fallback is not None:
@@ -1919,11 +1892,8 @@ class BeesStructuredNetworkBody(nn.Module):
             isinstance(other_network, BeesStructuredNetworkBody)
             and other_network._fallback is None
         ):
-            self.bee_observation_encoder.copy_normalization(
-                other_network.bee_observation_encoder
-            )
-            self.human_observation_encoder.copy_normalization(
-                other_network.human_observation_encoder
+            self.observation_encoder.copy_normalization(
+                other_network.observation_encoder
             )
 
     def forward(
@@ -1941,401 +1911,87 @@ class BeesStructuredNetworkBody(nn.Module):
                 sequence_length=sequence_length,
             )
 
-        raw_faction = inputs[0][:, FACTION_INDEX : FACTION_INDEX + 1]
-        bee_weight = torch.clamp((raw_faction + 1.0) * 0.5, 0.0, 1.0)
+        def encode(subset_inputs, scope):
+            token = set_training_packed_entity_scope(scope)
+            try:
+                structured = self.observation_encoder(subset_inputs)
+            finally:
+                reset_training_packed_entity_scope(token)
+            context = structured[:, :CONTEXT_SIZE]
+            weapon_end = CONTEXT_SIZE + BEES_WEAPON_SLOTS * WEAPON_SLOT_EMBED
+            weapons = structured[:, CONTEXT_SIZE:weapon_end]
+            faction = structured[:, weapon_end : weapon_end + 1]
+            encoded = self.trunk(torch.cat([context, faction], dim=1))
+            return torch.cat([encoded, weapons, faction], dim=1)
 
-        faction_graph_plan = _TRAINING_FACTION_GRAPH_PLAN.get()
+        # Preserve per-faction packed indices computed by the existing PPO
+        # preparation path, even though both partitions now use the SAME weights.
+        graph_plan = _TRAINING_FACTION_GRAPH_PLAN.get()
         if (
             torch.is_grad_enabled()
             and not torch.onnx.is_in_onnx_export()
-            and faction_graph_plan is not None
+            and graph_plan is not None
         ):
-            batch_size = int(raw_faction.shape[0])
-            weapon_start = CONTEXT_SIZE
-            weapon_end = (
-                weapon_start
-                + BEES_WEAPON_SLOTS * WEAPON_SLOT_EMBED
-            )
+            batch_size = int(inputs[0].shape[0])
             padded_inputs = [
-                torch.cat(
-                    [
-                        value,
-                        value.new_zeros((1, *value.shape[1:])),
-                    ],
-                    dim=0,
-                )
-                for value in inputs
+                torch.cat([x, x.new_zeros((1, *x.shape[1:]))], dim=0)
+                for x in inputs
             ]
-            padded_faction = torch.cat(
-                [
-                    raw_faction,
-                    raw_faction.new_zeros((1, 1)),
-                ],
-                dim=0,
-            )
             output = inputs[0].new_zeros(
                 (batch_size + 1, ACTION_ENCODING_SIZE)
             )
-
-            def graph_rows(name, observation_encoder, trunk):
-                nonlocal output
-                entry = faction_graph_plan.get(name)
+            for name in ("bee", "human", "mixed"):
+                entry = graph_plan.get(name)
                 if entry is None:
-                    return
+                    continue
                 indices = entry["indices"]
                 mask = entry["mask"]
-                subset_inputs = [
-                    value.index_select(0, indices)
-                    for value in padded_inputs
-                ]
-                scope_token = set_training_packed_entity_scope(
-                    name
-                )
-                try:
-                    structured = observation_encoder(
-                        subset_inputs
-                    )
-                finally:
-                    reset_training_packed_entity_scope(
-                        scope_token
-                    )
-                context = structured[:, :CONTEXT_SIZE]
-                weapons = structured[:, weapon_start:weapon_end]
-                faction_encoding = trunk(context)
-                faction = padded_faction.index_select(0, indices)
-                encoded = torch.cat(
-                    [faction_encoding, weapons, faction],
-                    dim=1,
-                )
+                subset = [x.index_select(0, indices) for x in padded_inputs]
                 output = output.index_add(
                     0,
                     indices,
-                    encoded * mask,
+                    encode(subset, name) * mask,
                 )
-
-            graph_rows(
-                "bee",
-                self.bee_observation_encoder,
-                self.bee_trunk,
-            )
-            graph_rows(
-                "human",
-                self.human_observation_encoder,
-                self.human_trunk,
-            )
-
-            mixed_entry = faction_graph_plan.get("mixed")
-            if mixed_entry is not None:
-                indices = mixed_entry["indices"]
-                mask = mixed_entry["mask"]
-                subset_inputs = [
-                    value.index_select(0, indices)
-                    for value in padded_inputs
-                ]
-                weights = torch.clamp(
-                    (
-                        padded_faction.index_select(0, indices)
-                        + 1.0
-                    )
-                    * 0.5,
-                    0.0,
-                    1.0,
-                )
-                scope_token = set_training_packed_entity_scope(
-                    "mixed"
-                )
-                try:
-                    bee_structured = self.bee_observation_encoder(
-                        subset_inputs
-                    )
-                    human_structured = self.human_observation_encoder(
-                        subset_inputs
-                    )
-                finally:
-                    reset_training_packed_entity_scope(
-                        scope_token
-                    )
-                structured = (
-                    bee_structured * weights
-                    + human_structured * (1.0 - weights)
-                )
-                context = structured[:, :CONTEXT_SIZE]
-                weapons = structured[:, weapon_start:weapon_end]
-                faction_encoding = (
-                    self.bee_trunk(context) * weights
-                    + self.human_trunk(context) * (1.0 - weights)
-                )
-                encoded = torch.cat(
-                    [
-                        faction_encoding,
-                        weapons,
-                        padded_faction.index_select(0, indices),
-                    ],
-                    dim=1,
-                )
-                output = output.index_add(
-                    0,
-                    indices,
-                    encoded * mask,
-                )
-
             return output[:batch_size], memories
 
-        faction_rows = _TRAINING_FACTION_ROWS.get()
+        rows = _TRAINING_FACTION_ROWS.get()
         if (
             torch.is_grad_enabled()
             and not torch.onnx.is_in_onnx_export()
-            and faction_rows is not None
+            and rows is not None
         ):
-            batch_size = int(raw_faction.shape[0])
-            all_rows = (
-                faction_rows["bee"]
-                + faction_rows["human"]
-                + faction_rows["mixed"]
-            )
-            valid_rows = (
+            batch_size = int(inputs[0].shape[0])
+            all_rows = rows["bee"] + rows["human"] + rows["mixed"]
+            valid = (
                 len(all_rows) == batch_size
                 and len(set(all_rows)) == batch_size
                 and (
                     batch_size == 0
-                    or (
-                        min(all_rows) >= 0
-                        and max(all_rows) < batch_size
-                    )
+                    or (min(all_rows) >= 0 and max(all_rows) < batch_size)
                 )
             )
-            if valid_rows:
+            if valid:
                 output = inputs[0].new_zeros(
                     (batch_size, ACTION_ENCODING_SIZE)
                 )
-                weapon_start = CONTEXT_SIZE
-                weapon_end = (
-                    weapon_start
-                    + BEES_WEAPON_SLOTS * WEAPON_SLOT_EMBED
-                )
-
-                def row_indices(name):
-                    return torch.as_tensor(
-                        faction_rows[name],
-                        dtype=torch.long,
+                for name in ("bee", "human", "mixed"):
+                    if not rows[name]:
+                        continue
+                    indices = torch.as_tensor(
+                        rows[name],
                         device=inputs[0].device,
+                        dtype=torch.long,
                     )
-
-                def encode_single_faction(
-                    name,
-                    indices,
-                    observation_encoder,
-                    trunk,
-                ):
-                    subset_inputs = [
-                        value.index_select(0, indices)
-                        for value in inputs
-                    ]
-                    scope_token = set_training_packed_entity_scope(
-                        name
-                    )
-                    try:
-                        structured = observation_encoder(
-                            subset_inputs
-                        )
-                    finally:
-                        reset_training_packed_entity_scope(
-                            scope_token
-                        )
-                    context = structured[:, :CONTEXT_SIZE]
-                    weapons = structured[:, weapon_start:weapon_end]
-                    faction_encoding = trunk(context)
-                    faction = raw_faction.index_select(0, indices)
-                    return torch.cat(
-                        [faction_encoding, weapons, faction],
-                        dim=1,
-                    )
-
-                if faction_rows["bee"]:
-                    indices = row_indices("bee")
+                    subset = [x.index_select(0, indices) for x in inputs]
                     output = output.index_copy(
                         0,
                         indices,
-                        encode_single_faction(
-                            "bee",
-                            indices,
-                            self.bee_observation_encoder,
-                            self.bee_trunk,
-                        ),
-                    )
-                if faction_rows["human"]:
-                    indices = row_indices("human")
-                    output = output.index_copy(
-                        0,
-                        indices,
-                        encode_single_faction(
-                            "human",
-                            indices,
-                            self.human_observation_encoder,
-                            self.human_trunk,
-                        ),
-                    )
-                if faction_rows["mixed"]:
-                    indices = row_indices("mixed")
-                    subset_inputs = [
-                        value.index_select(0, indices)
-                        for value in inputs
-                    ]
-                    weights = bee_weight.index_select(0, indices)
-                    scope_token = set_training_packed_entity_scope(
-                        "mixed"
-                    )
-                    try:
-                        bee_structured = (
-                            self.bee_observation_encoder(
-                                subset_inputs
-                            )
-                        )
-                        human_structured = (
-                            self.human_observation_encoder(
-                                subset_inputs
-                            )
-                        )
-                    finally:
-                        reset_training_packed_entity_scope(
-                            scope_token
-                        )
-                    structured = (
-                        bee_structured * weights
-                        + human_structured * (1.0 - weights)
-                    )
-                    context = structured[:, :CONTEXT_SIZE]
-                    weapons = structured[:, weapon_start:weapon_end]
-                    faction_encoding = (
-                        self.bee_trunk(context) * weights
-                        + self.human_trunk(context) * (1.0 - weights)
-                    )
-                    faction = raw_faction.index_select(0, indices)
-                    output = output.index_copy(
-                        0,
-                        indices,
-                        torch.cat(
-                            [faction_encoding, weapons, faction],
-                            dim=1,
-                        ),
+                        encode(subset, name),
                     )
                 return output, memories
 
-        if _use_dense_structured_path():
-            bee_structured = self.bee_observation_encoder(inputs)
-            human_structured = self.human_observation_encoder(inputs)
-            structured = (
-                bee_structured * bee_weight
-                + human_structured * (1.0 - bee_weight)
-            )
-            context = structured[:, :CONTEXT_SIZE]
-            weapon_start = CONTEXT_SIZE
-            weapon_end = (
-                weapon_start + BEES_WEAPON_SLOTS * WEAPON_SLOT_EMBED
-            )
-            weapon_embeddings = structured[:, weapon_start:weapon_end]
-            bee_encoding = self.bee_trunk(context)
-            human_encoding = self.human_trunk(context)
-            faction_encoding = (
-                bee_encoding * bee_weight
-                + human_encoding * (1.0 - bee_weight)
-            )
-            return (
-                torch.cat(
-                    [
-                        faction_encoding,
-                        weapon_embeddings,
-                        raw_faction,
-                    ],
-                    dim=1,
-                ),
-                memories,
-            )
-
-        batch_size = raw_faction.shape[0]
-        output = inputs[0].new_zeros((batch_size, ACTION_ENCODING_SIZE))
-        weapon_start = CONTEXT_SIZE
-        weapon_end = weapon_start + BEES_WEAPON_SLOTS * WEAPON_SLOT_EMBED
-
-        def encode_rows(indices, observation_encoder, trunk):
-            subset_inputs = [
-                value.index_select(0, indices)
-                for value in inputs
-            ]
-            structured = observation_encoder(subset_inputs)
-            context = structured[:, :CONTEXT_SIZE]
-            weapons = structured[:, weapon_start:weapon_end]
-            faction_encoding = trunk(context)
-            faction = raw_faction.index_select(0, indices)
-            return torch.cat(
-                [faction_encoding, weapons, faction],
-                dim=1,
-            )
-
-        pure_bee = torch.nonzero(
-            bee_weight[:, 0] >= 1.0,
-            as_tuple=False,
-        ).squeeze(1)
-        pure_human = torch.nonzero(
-            bee_weight[:, 0] <= 0.0,
-            as_tuple=False,
-        ).squeeze(1)
-        mixed = torch.nonzero(
-            (bee_weight[:, 0] > 0.0) & (bee_weight[:, 0] < 1.0),
-            as_tuple=False,
-        ).squeeze(1)
-
-        if pure_bee.numel() > 0:
-            output = output.index_copy(
-                0,
-                pure_bee,
-                encode_rows(
-                    pure_bee,
-                    self.bee_observation_encoder,
-                    self.bee_trunk,
-                ),
-            )
-        if pure_human.numel() > 0:
-            output = output.index_copy(
-                0,
-                pure_human,
-                encode_rows(
-                    pure_human,
-                    self.human_observation_encoder,
-                    self.human_trunk,
-                ),
-            )
-        if mixed.numel() > 0:
-            subset_inputs = [
-                value.index_select(0, mixed)
-                for value in inputs
-            ]
-            weights = bee_weight.index_select(0, mixed)
-            bee_structured = self.bee_observation_encoder(subset_inputs)
-            human_structured = self.human_observation_encoder(subset_inputs)
-            structured = (
-                bee_structured * weights
-                + human_structured * (1.0 - weights)
-            )
-            context = structured[:, :CONTEXT_SIZE]
-            weapons = structured[:, weapon_start:weapon_end]
-            bee_encoding = self.bee_trunk(context)
-            human_encoding = self.human_trunk(context)
-            faction_encoding = (
-                bee_encoding * weights
-                + human_encoding * (1.0 - weights)
-            )
-            faction = raw_faction.index_select(0, mixed)
-            output = output.index_copy(
-                0,
-                mixed,
-                torch.cat(
-                    [faction_encoding, weapons, faction],
-                    dim=1,
-                ),
-            )
-
-        return output, memories
+        # Mixed-faction inference and ONNX export use one encoder invocation.
+        return encode(inputs, "full"), memories
 
 
 class BeesStructuredActionModel(_OriginalActionModel):
