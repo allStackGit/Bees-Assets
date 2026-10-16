@@ -74,7 +74,13 @@ def _validate_checkpoint(path: Path) -> int:
         raise ValueError("checkpoint has no trained actor optimizer state")
     if not isinstance(steps, dict):
         raise ValueError("checkpoint is missing trainer global-step state")
-    step = max((int(v) for v in steps.values() if isinstance(v, (int, float))), default=0)
+    step_values = []
+    for value in steps.values():
+        if isinstance(value, (int, float)):
+            step_values.append(int(value))
+        elif isinstance(value, torch.Tensor) and value.numel() == 1:
+            step_values.append(int(value.item()))
+    step = max(step_values, default=0)
     if step <= 0:
         raise ValueError("checkpoint has no positive training step count")
     for key, shape in SHARED_SHAPES.items():
@@ -197,6 +203,7 @@ def apply(assets_root: Path, bees_root: Path) -> dict[str, Any]:
         state["v24_metadata_repair"] = marker
         _atomic_json(state_path, state)
     if release.get("compatibility_key") != info["new_key"]:
+        original_previous_key = release.get("previous_compatibility_key")
         release["compatibility_key"] = info["new_key"]
         release["contract"] = corrected_contract
         release["previous_compatibility_key"] = info["old_key"]
@@ -204,7 +211,7 @@ def apply(assets_root: Path, bees_root: Path) -> dict[str, Any]:
         release["v24_metadata_repair"] = {
             **marker,
             "original_previous_run_id": release.get("previous_run_id"),
-            "original_previous_compatibility_key": release.get("previous_compatibility_key"),
+            "original_previous_compatibility_key": original_previous_key,
         }
         release["previous_run_id"] = info["run_id"]
         release["incompatible"] = True
