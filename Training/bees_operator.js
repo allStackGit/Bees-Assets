@@ -98,6 +98,7 @@ function parseArgs(argv = process.argv.slice(2)) {
         ppoCriticBaselineOverlap: false,
         ppoCudaGraphs: false,
         ppoProfile: false,
+        ppoDiagnostics: false,
         explicitLearnerOptimizations: false,
         entropy: null,
         explicitEntropy: false,
@@ -230,6 +231,9 @@ function parseArgs(argv = process.argv.slice(2)) {
         } else if (arg === '--ppo-profile') {
             options.ppoProfile = true;
             options.explicitLearnerOptimizations = true;
+        } else if (arg === '--ppo-diagnostics') {
+            options.ppoDiagnostics = true;
+            options.explicitLearnerOptimizations = true;
         } else if (arg === '--entropy') {
             options.entropy = parseNumber(
                 requireValue(argv, index, arg),
@@ -348,7 +352,8 @@ function parseArgs(argv = process.argv.slice(2)) {
             options.ppoPrefetch ||
             options.ppoCriticBaselineOverlap ||
             options.ppoCudaGraphs ||
-            options.ppoProfile
+            options.ppoProfile ||
+            options.ppoDiagnostics
         )
     ) {
         throw new Error('--ppo-control cannot be combined with PPO optimization flags.');
