@@ -52,6 +52,7 @@ PLATFORM_BUILD_TARGETS = {
     "LinuxPlayer": "StandaloneLinux64",
 }
 _DEPLOYMENT_ID = re.compile(r"^deploy-[0-9a-f]{24}$")
+_RESUMABLE_STEP_SETTINGS = ("summary_freq", "save_steps", "team_change", "swap_steps")
 
 
 @dataclass(frozen=True)
@@ -268,12 +269,25 @@ def _checkpoint_interval_from_config(text: str) -> Optional[int]:
     return int(matches[0]) if matches else None
 
 
+def _resumable_step_setting_from_config(text: str, key: str) -> Optional[int]:
+    if key not in _RESUMABLE_STEP_SETTINGS:
+        raise ValueError(f"Unsupported resume-safe step setting: {key}")
+    matches = re.findall(
+        rf"(?m)^\s*{key}:\s*(\d+)\s*(?:#.*)?$",
+        text,
+    )
+    if len(matches) > 1:
+        raise ValueError(f"Trainer config has multiple {key} entries.")
+    return int(matches[0]) if matches else None
+
+
 def _normalize_resume_safe_generation_settings(text: str) -> str:
     """Normalize trainer settings that may change while resuming one generation.
 
     Generation YAML files remain immutable audit records. Device placement, PPO
-    minibatch size, entropy beta, and checkpoint interval can change without
-    invalidating the ML-Agents checkpoint shape, so a resumed generation may
+    minibatch size, entropy beta, checkpoint interval, self-play scheduling,
+    and summary frequency can change without invalidating the ML-Agents checkpoint
+    shape, so a resumed generation may
     select a new immutable revision. Other trainer changes remain fail-closed.
     """
 
@@ -284,6 +298,7 @@ def _normalize_resume_safe_generation_settings(text: str) -> str:
     batch_size_count = 0
     beta_count = 0
     checkpoint_count = 0
+    resumable_step_counts = {key: 0 for key in _RESUMABLE_STEP_SETTINGS}
     for line in lines:
         stripped = line.strip()
         indent = len(line) - len(line.lstrip())
@@ -318,6 +333,15 @@ def _normalize_resume_safe_generation_settings(text: str) -> str:
             checkpoint_count += 1
             normalized.append(" " * indent + "checkpoint_interval: <runtime-checkpoint-interval>")
             continue
+        step_match = re.fullmatch(
+            r"(summary_freq|save_steps|team_change|swap_steps):\s*\d+\s*(?:#.*)?",
+            stripped,
+        )
+        if step_match:
+            key = step_match.group(1)
+            resumable_step_counts[key] += 1
+            normalized.append(" " * indent + f"{key}: <runtime-{key}>")
+            continue
         normalized.append(line)
 
     if batch_size_count > 1:
@@ -335,6 +359,9 @@ def _normalize_resume_safe_generation_settings(text: str) -> str:
             "Trainer config has multiple checkpoint_interval entries; "
             "cannot determine a single resumable checkpoint cadence."
         )
+    for key, count in resumable_step_counts.items():
+        if count > 1:
+            raise ValueError(f"Trainer config has multiple {key} entries.")
     return "\n".join(normalized)
 
 
@@ -421,6 +448,12 @@ def write_generation_config(options: ServiceOptions, index: int) -> Path:
         candidate_checkpoint = _checkpoint_interval_from_config(candidate_text)
         if candidate_checkpoint != existing_checkpoint:
             suffix_parts.append(f"checkpoint-{candidate_checkpoint}")
+
+        for key in _RESUMABLE_STEP_SETTINGS:
+            previous = _resumable_step_setting_from_config(existing_text, key)
+            requested = _resumable_step_setting_from_config(candidate_text, key)
+            if requested != previous:
+                suffix_parts.append(f"{key.replace('_', '-')}-{requested}")
 
         if suffix_parts:
             suffix = "-" + "-".join(suffix_parts)
