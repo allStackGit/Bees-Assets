@@ -134,19 +134,14 @@ class StructuredPolicyArchitectureTests(unittest.TestCase):
             {name: 0 for name in calls},
         )
 
-    def test_pure_faction_batch_executes_only_matching_encoder_and_trunk(self):
+    def test_pure_faction_batch_uses_shared_encoder_and_trunk(self):
         from mlagents.torch_utils import torch
 
         body = BeesStructuredNetworkBody(
             self._observation_specs(),
             self._network_settings(),
         )
-        calls = {
-            "bee_encoder": 0,
-            "human_encoder": 0,
-            "bee_trunk": 0,
-            "human_trunk": 0,
-        }
+        calls = {"encoder": 0, "trunk": 0}
 
         def count(name):
             def hook(_module, _inputs, _output):
@@ -154,14 +149,8 @@ class StructuredPolicyArchitectureTests(unittest.TestCase):
             return hook
 
         handles = [
-            body.bee_observation_encoder.register_forward_hook(
-                count("bee_encoder")
-            ),
-            body.human_observation_encoder.register_forward_hook(
-                count("human_encoder")
-            ),
-            body.bee_trunk.register_forward_hook(count("bee_trunk")),
-            body.human_trunk.register_forward_hook(count("human_trunk")),
+            body.observation_encoder.register_forward_hook(count("encoder")),
+            body.trunk.register_forward_hook(count("trunk")),
         ]
         try:
             observations = torch.zeros((3, BEES_OBSERVATION_SIZE))
@@ -173,33 +162,22 @@ class StructuredPolicyArchitectureTests(unittest.TestCase):
                 handle.remove()
 
         self.assertEqual(output.shape, (3, ACTION_ENCODING_SIZE))
-        self.assertEqual(calls["bee_encoder"], 1)
-        self.assertEqual(calls["bee_trunk"], 1)
-        self.assertEqual(calls["human_encoder"], 0)
-        self.assertEqual(calls["human_trunk"], 0)
+        self.assertEqual(calls["encoder"], 1)
+        self.assertEqual(calls["trunk"], 1)
 
-    def test_slot_limited_no_grad_batch_still_skips_unused_faction(self):
+    def test_slot_limited_no_grad_batch_uses_shared_actor(self):
         from mlagents.torch_utils import torch
 
         body = BeesStructuredNetworkBody(
             self._observation_specs(),
             self._network_settings(),
         )
-        calls = {"bee_encoder": 0, "human_encoder": 0}
+        calls = {"encoder": 0}
 
-        def count(name):
-            def hook(_module, _inputs, _output):
-                calls[name] += 1
-            return hook
+        def hook(_module, _inputs, _output):
+            calls["encoder"] += 1
 
-        handles = [
-            body.bee_observation_encoder.register_forward_hook(
-                count("bee_encoder")
-            ),
-            body.human_observation_encoder.register_forward_hook(
-                count("human_encoder")
-            ),
-        ]
+        handle = body.observation_encoder.register_forward_hook(hook)
         observations = torch.zeros((3, BEES_OBSERVATION_SIZE))
         observations[:, FACTION_INDEX] = 1.0
         observations[:, ALLY_START] = 1.0
@@ -216,12 +194,10 @@ class StructuredPolicyArchitectureTests(unittest.TestCase):
                 output, _ = body([observations])
         finally:
             reset_training_slot_limits(token)
-            for handle in handles:
-                handle.remove()
+            handle.remove()
 
         self.assertEqual(output.shape, (3, ACTION_ENCODING_SIZE))
-        self.assertEqual(calls["bee_encoder"], 1)
-        self.assertEqual(calls["human_encoder"], 0)
+        self.assertEqual(calls["encoder"], 1)
 
     def test_sparse_runtime_path_matches_dense_export_semantics(self):
         from mlagents.torch_utils import torch
