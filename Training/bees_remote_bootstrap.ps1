@@ -136,8 +136,13 @@ function Remove-RemoteAutostart {
     Remove-Item -LiteralPath $AutostartMarker -Force -ErrorAction SilentlyContinue
     $monitor=Get-LiveAutostartMonitor
     if($null -ne $monitor){
-        Stop-Process -Id $monitor.Id -Force -ErrorAction SilentlyContinue
+        # Stop the monitor AND any in-flight cmd/PowerShell repair descendant.
+        # Killing the monitor alone leaves a repair able to resurrect this worker.
+        & taskkill.exe /PID $monitor.Id /T /F *> $null
         try {$monitor.WaitForExit(5000)} catch {}
+        if($null -ne (Get-Process -Id $monitor.Id -ErrorAction SilentlyContinue)){
+            throw "Could not stop remote autostart monitor PID $($monitor.Id)."
+        }
     }
     Remove-Item -LiteralPath $AutostartMonitorPidFile -Force -ErrorAction SilentlyContinue
     if($AutostartFile){
@@ -213,46 +218,6 @@ function Test-SupervisorAlive {
     }
 }
 
-function Test-TrainerFresh {
-    $tokenPath=Join-Path $InstallRoot 'Secrets\training-worker.token'
-    $actorKeyPath=Join-Path $InstallRoot 'actor-key.txt'
-    if(-not(Test-Path -LiteralPath $tokenPath) -or -not(Test-Path -LiteralPath $actorKeyPath)){return $false}
-    $token=(Get-Content -LiteralPath $tokenPath -Raw -ErrorAction SilentlyContinue).Trim()
-    $actorKey=(Get-Content -LiteralPath $actorKeyPath -Raw -ErrorAction SilentlyContinue).Trim().ToLowerInvariant()
-    if([string]::IsNullOrWhiteSpace($token) -or $actorKey -notmatch '^[0-9a-f]{32}$'){return $false}
-    $trainerId='remote-' + $env:COMPUTERNAME.ToLowerInvariant() + '-' + $actorKey.Substring(0,8)
-
-    $response=$null
-    $reader=$null
-    try {
-        $request=[System.Net.HttpWebRequest]::Create("http://127.0.0.1:$ControlPort/v1/status")
-        $request.Method='GET'
-        $request.Timeout=3000
-        $request.ReadWriteTimeout=3000
-        $request.Headers['Authorization']='Bearer ' + $token
-        $response=$request.GetResponse()
-        if([int]$response.StatusCode -ne 200){return $false}
-        $reader=New-Object IO.StreamReader($response.GetResponseStream())
-        $status=($reader.ReadToEnd() | ConvertFrom-Json)
-        $record=@($status.trainers | Where-Object { [string]$_.trainer_id -eq $trainerId }) | Select-Object -First 1
-        if($null -eq $record -or [bool]$record.stale){return $false}
-        if(
-            [bool]$status.desired.training_enabled -and
-            $null -eq $status.desired.pending_release -and
-            [string]$record.process_state -eq 'stopped' -and
-            ([string]$record.last_error).StartsWith('ControlUnavailable:')
-        ){
-            return $false
-        }
-        return $true
-    } catch {
-        return $false
-    } finally {
-        if($null -ne $reader){try {$reader.Dispose()} catch {}}
-        if($null -ne $response){try {$response.Close()} catch {}}
-    }
-}
-
 $RepairProcess=$null
 $RepairStartedUtc=[DateTime]::MinValue
 $RepairTimeoutSeconds=180
@@ -302,7 +267,9 @@ $unhealthyCycles=0
 try {
     while(Test-Path -LiteralPath $Marker){
         Update-LauncherRepair
-        $healthy=(Test-SupervisorAlive) -and (Test-TrainerFresh)
+        # Connectivity to Exeter is not a process-health signal. The embedded
+        # Tailnet and WAN worker already recover transport failures in place.
+        $healthy=Test-SupervisorAlive
         if($healthy){
             $unhealthyCycles=0
         }else{
@@ -343,7 +310,8 @@ try {
     # newly written launcher/configuration instead of holding old values until next logon.
     $oldMonitor=Get-LiveAutostartMonitor
     if($null -ne $oldMonitor){
-        Stop-Process -Id $oldMonitor.Id -Force -ErrorAction SilentlyContinue
+        # Launcher migrations must not strand the old monitor's repair child.
+        & taskkill.exe /PID $oldMonitor.Id /T /F *> $null
         try {$oldMonitor.WaitForExit(5000)} catch {}
         Remove-Item -LiteralPath $AutostartMonitorPidFile -Force -ErrorAction SilentlyContinue
     }
@@ -395,83 +363,6 @@ function Get-LocalTrainerId {
     'remote-' + $env:COMPUTERNAME.ToLowerInvariant() + '-' + $actorKey.Substring(0,8)
 }
 
-function Test-SupervisorControlHealthy {
-    $tokenPath=Join-Path $SecretsRoot 'training-worker.token'
-    if(-not(Test-Path -LiteralPath $tokenPath)){return $false}
-    $token=(Get-Content -LiteralPath $tokenPath -Raw -ErrorAction SilentlyContinue).Trim()
-    if([string]::IsNullOrWhiteSpace($token)){return $false}
-    $trainerId=Get-LocalTrainerId
-    if([string]::IsNullOrWhiteSpace($trainerId)){return $false}
-
-    $uri="http://127.0.0.1:$ControlPort/v1/status"
-    for($attempt=1;$attempt -le 3;$attempt++){
-        $response=$null
-        $reader=$null
-        try {
-            $request=[System.Net.HttpWebRequest]::Create($uri)
-            $request.Method='GET'
-            $request.Timeout=3000
-            $request.ReadWriteTimeout=3000
-            $request.Headers['Authorization']='Bearer ' + $token
-            $response=$request.GetResponse()
-            if([int]$response.StatusCode -ne 200){throw "status $([int]$response.StatusCode)"}
-            $reader=New-Object IO.StreamReader($response.GetResponseStream())
-            $status=($reader.ReadToEnd() | ConvertFrom-Json)
-            $record=@($status.trainers | Where-Object { [string]$_.trainer_id -eq $trainerId }) | Select-Object -First 1
-            if($null -eq $record){return $false}
-            if([bool]$record.stale){return $false}
-
-            $trainingEnabled=[bool]$status.desired.training_enabled
-            $pendingRelease=$null -ne $status.desired.pending_release
-            $stopped=[string]$record.process_state -eq 'stopped'
-            $controlUnavailable=([string]$record.last_error).StartsWith('ControlUnavailable:')
-            if($trainingEnabled -and -not $pendingRelease -and $stopped -and $controlUnavailable){
-                return $false
-            }
-            return $true
-        } catch {
-            # Retry briefly so a single cutover/control hiccup does not recycle a healthy remote.
-        } finally {
-            if($null -ne $reader){try {$reader.Dispose()} catch {}}
-            if($null -ne $response){try {$response.Close()} catch {}}
-        }
-        if($attempt -lt 3){Start-Sleep -Milliseconds 500}
-    }
-    return $false
-}
-function Restart-UnhealthySupervisor {
-    param([System.Diagnostics.Process]$Process)
-
-    Write-Warning (
-        "[Bees remote] supervisor PID $($Process.Id) is alive but authenticated learner control " +
-        "is not healthy; recycling it before bootstrap."
-    )
-    'stop' | Set-Content -LiteralPath $ShutdownRequestFile -NoNewline -Encoding ASCII
-    $deadline=[DateTime]::UtcNow.AddSeconds(20)
-    while([DateTime]::UtcNow -lt $deadline){
-        if($null -eq (Get-Process -Id $Process.Id -ErrorAction SilentlyContinue)){
-            Remove-Item -LiteralPath $SupervisorPidFile,$ShutdownRequestFile -Force -ErrorAction SilentlyContinue
-            Write-Host '[Bees remote] unhealthy supervisor stopped cleanly; continuing bootstrap.'
-            return
-        }
-        Start-Sleep -Milliseconds 250
-    }
-
-    # Dedicated remotes do not own the learner checkpoint. A supervisor that cannot honor its
-    # bounded local stop request must not permanently block repair; killing it closes the
-    # kill-on-close child job and the fresh supervisor will rebuild transport/process state.
-    Write-Warning (
-        "[Bees remote] unhealthy supervisor did not stop cleanly within 20 seconds; " +
-        "forcing the stale remote supervisor to terminate."
-    )
-    Stop-Process -Id $Process.Id -Force -ErrorAction SilentlyContinue
-    try {$Process.WaitForExit(10000)} catch {}
-    if($null -ne (Get-Process -Id $Process.Id -ErrorAction SilentlyContinue)){
-        throw "Could not terminate unhealthy remote supervisor PID $($Process.Id)."
-    }
-    Remove-Item -LiteralPath $SupervisorPidFile,$ShutdownRequestFile -Force -ErrorAction SilentlyContinue
-}
-
 if($Command -eq 'stop'){
     Remove-RemoteAutostart
     $process=Get-LiveSupervisorProcess
@@ -497,16 +388,12 @@ if($Command -eq 'stop'){
 
 $existingProcess=Get-LiveSupervisorProcess
 if($null -ne $existingProcess){
-    if(Test-SupervisorControlHealthy){
-        Install-RemoteAutostart
-        Write-Host (
-            "[Bees remote] worker is already running and authenticated learner control is healthy " +
-            "(PID $($existingProcess.Id))."
-        )
-        Write-Host '[Bees remote] use bees-remote-worker.cmd stop to stop it.'
-        exit 0
-    }
-    Restart-UnhealthySupervisor -Process $existingProcess
+    # A stale or temporarily unreachable learner must never trigger a destructive
+    # supervisor restart. Operators can explicitly stop/restart if desired.
+    Install-RemoteAutostart
+    Write-Host "[Bees remote] worker is already running (PID $($existingProcess.Id))."
+    Write-Host '[Bees remote] use bees-remote-worker.cmd stop to stop it.'
+    exit 0
 }
 Remove-Item -LiteralPath $SupervisorPidFile,$ShutdownRequestFile -Force -ErrorAction SilentlyContinue
 
