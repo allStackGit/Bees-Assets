@@ -221,7 +221,7 @@ function ppoStatusLines(ppo, signals) {
         'minibatches=' + (update.minibatches || '-') +
         '  optimizer_updates/s=' + number(batches > 0 && seconds > 0 ? batches / seconds : null, 2) +
         '  cache=' + (update.cache_storage || '-') +
-        '  avg_minibatch=' + number(update.avg_minibatch, 3) + 's',
+        '  avg_minibatch=' + (detailed ? number(update.avg_minibatch, 3) + 's' : 'disabled'),
         detailed
             ? 'PPO stage estimates: ' + stage.map(formatStage).join('  ') +
               '  (sampled durations; may overlap)'
