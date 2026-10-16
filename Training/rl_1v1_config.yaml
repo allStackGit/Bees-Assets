@@ -6,7 +6,7 @@ behaviors:
     hyperparameters:
       batch_size: 512
       buffer_size: 16384
-      learning_rate: 0.0003
+      learning_rate: 0.001
       # Fixed entropy pressure. Adaptive beta is disabled; change this value
       # manually between runs/checkpoint resumes if entropy needs correction.
       # Continuous sigma remains hard-capped separately.
