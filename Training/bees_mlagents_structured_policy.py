@@ -1995,7 +1995,7 @@ class BeesStructuredNetworkBody(nn.Module):
 
 
 class BeesStructuredActionModel(_OriginalActionModel):
-    """Faction-specific action heads with one weapon head reused for every slot."""
+    """One faction-conditioned set of action heads, shared across Bee and Human."""
 
     def __init__(
         self,
@@ -2023,81 +2023,42 @@ class BeesStructuredActionModel(_OriginalActionModel):
         self.clip_action = not tanh_squash
         self._deterministic = deterministic
 
-        weapon_action_input = FACTION_TRUNK_SIZE + WEAPON_SLOT_EMBED
-
-        self.bee_movement = GaussianDistribution(
-            FACTION_TRUNK_SIZE,
+        # The faction bit conditions all shared action heads, including each
+        # weapon slot, rather than selecting faction-specific weights.
+        global_input_size = FACTION_TRUNK_SIZE + 1
+        weapon_input_size = global_input_size + WEAPON_SLOT_EMBED
+        self.movement = GaussianDistribution(
+            global_input_size,
             2,
             conditional_sigma=conditional_sigma,
             tanh_squash=tanh_squash,
         )
-        self.human_movement = GaussianDistribution(
-            FACTION_TRUNK_SIZE,
-            2,
-            conditional_sigma=conditional_sigma,
-            tanh_squash=tanh_squash,
-        )
-        self.bee_communication = GaussianDistribution(
-            FACTION_TRUNK_SIZE,
+        self.communication = GaussianDistribution(
+            global_input_size,
             4,
             conditional_sigma=conditional_sigma,
             tanh_squash=tanh_squash,
         )
-        self.human_communication = GaussianDistribution(
-            FACTION_TRUNK_SIZE,
-            4,
-            conditional_sigma=conditional_sigma,
-            tanh_squash=tanh_squash,
-        )
-        self.bee_weapon_aim = GaussianDistribution(
-            weapon_action_input,
+        self.weapon_aim = GaussianDistribution(
+            weapon_input_size,
             2,
             conditional_sigma=conditional_sigma,
             tanh_squash=tanh_squash,
         )
-        self.human_weapon_aim = GaussianDistribution(
-            weapon_action_input,
-            2,
-            conditional_sigma=conditional_sigma,
-            tanh_squash=tanh_squash,
-        )
-
-        self.bee_weapon_fire = linear_layer(
-            weapon_action_input,
+        self.weapon_fire = linear_layer(
+            weapon_input_size,
             2,
             kernel_init=Initialization.KaimingHeNormal,
             kernel_gain=0.1,
             bias_init=Initialization.Zero,
         )
-        self.human_weapon_fire = linear_layer(
-            weapon_action_input,
-            2,
-            kernel_init=Initialization.KaimingHeNormal,
-            kernel_gain=0.1,
-            bias_init=Initialization.Zero,
-        )
-        self.bee_special = linear_layer(
-            FACTION_TRUNK_SIZE,
+        self.special = linear_layer(
+            global_input_size,
             5,
             kernel_init=Initialization.KaimingHeNormal,
             kernel_gain=0.1,
             bias_init=Initialization.Zero,
         )
-        self.human_special = linear_layer(
-            FACTION_TRUNK_SIZE,
-            5,
-            kernel_init=Initialization.KaimingHeNormal,
-            kernel_gain=0.1,
-            bias_init=Initialization.Zero,
-        )
-
-    @staticmethod
-    def _mix(
-        bee: torch.Tensor,
-        human: torch.Tensor,
-        bee_mask: torch.Tensor,
-    ) -> torch.Tensor:
-        return bee * bee_mask + human * (1.0 - bee_mask)
 
     @staticmethod
     def _masked_logits(
@@ -2120,37 +2081,23 @@ class BeesStructuredActionModel(_OriginalActionModel):
             WEAPON_SLOT_EMBED,
         )
         faction = inputs[:, weapon_end : weapon_end + 1]
-        bee_mask = torch.clamp((faction + 1.0) * 0.5, 0.0, 1.0)
+        shared_input = torch.cat([global_encoding, faction], dim=1)
 
         if masks is None:
             masks = torch.ones(
-                (
-                    inputs.shape[0],
-                    sum(BEES_DISCRETE_BRANCHES),
-                ),
+                (inputs.shape[0], sum(BEES_DISCRETE_BRANCHES)),
                 dtype=inputs.dtype,
                 device=inputs.device,
             )
 
-        bee_movement = self.bee_movement(global_encoding)
-        human_movement = self.human_movement(global_encoding)
-        movement_mean = self._mix(
-            bee_movement.mean,
-            human_movement.mean,
-            bee_mask,
-        )
-        movement_std = self._mix(
-            bee_movement.std,
-            human_movement.std,
-            bee_mask,
-        )
+        movement = self.movement(shared_input)
+        communication = self.communication(shared_input)
 
-        # All weapon slots share the same aim/fire modules. Evaluate the five slots
-        # as one larger matrix multiply instead of launching the same small CUDA
-        # kernels five times per faction.
+        # Exactly one weapon aim/fire head is shared across all five slots
+        # and both factions; capability masks are preserved unchanged.
         weapon_input = torch.cat(
             [
-                global_encoding.unsqueeze(1).expand(
+                shared_input.unsqueeze(1).expand(
                     -1,
                     BEES_WEAPON_SLOTS,
                     -1,
@@ -2160,34 +2107,13 @@ class BeesStructuredActionModel(_OriginalActionModel):
             dim=2,
         ).reshape(
             -1,
-            FACTION_TRUNK_SIZE + WEAPON_SLOT_EMBED,
+            FACTION_TRUNK_SIZE + 1 + WEAPON_SLOT_EMBED,
         )
-        weapon_bee_mask = bee_mask.unsqueeze(1).expand(
-            -1,
-            BEES_WEAPON_SLOTS,
-            -1,
-        ).reshape(-1, 1)
+        aim = self.weapon_aim(weapon_input)
+        weapon_means = aim.mean.reshape(inputs.shape[0], -1)
+        weapon_stds = aim.std.reshape(inputs.shape[0], -1)
 
-        bee_aim = self.bee_weapon_aim(weapon_input)
-        human_aim = self.human_weapon_aim(weapon_input)
-        weapon_means = self._mix(
-            bee_aim.mean,
-            human_aim.mean,
-            weapon_bee_mask,
-        ).reshape(inputs.shape[0], -1)
-        weapon_stds = self._mix(
-            bee_aim.std,
-            human_aim.std,
-            weapon_bee_mask,
-        ).reshape(inputs.shape[0], -1)
-
-        bee_fire = self.bee_weapon_fire(weapon_input)
-        human_fire = self.human_weapon_fire(weapon_input)
-        fire_logits = self._mix(
-            bee_fire,
-            human_fire,
-            weapon_bee_mask,
-        ).reshape(
+        fire_logits = self.weapon_fire(weapon_input).reshape(
             inputs.shape[0],
             BEES_WEAPON_SLOTS,
             BEES_DISCRETE_BRANCHES[0],
@@ -2198,55 +2124,33 @@ class BeesStructuredActionModel(_OriginalActionModel):
             BEES_WEAPON_SLOTS,
             BEES_DISCRETE_BRANCHES[0],
         )
-        masked_fire_logits = self._masked_logits(
-            fire_logits,
-            fire_masks,
-        )
+        masked_fire_logits = self._masked_logits(fire_logits, fire_masks)
         discrete = [
             CategoricalDistInstance(masked_fire_logits[:, slot, :])
             for slot in range(BEES_WEAPON_SLOTS)
         ]
-        mask_offset = fire_mask_width
-
-        bee_communication = self.bee_communication(global_encoding)
-        human_communication = self.human_communication(global_encoding)
-        communication_mean = self._mix(
-            bee_communication.mean,
-            human_communication.mean,
-            bee_mask,
-        )
-        communication_std = self._mix(
-            bee_communication.std,
-            human_communication.std,
-            bee_mask,
-        )
-
         continuous = GaussianDistInstance(
             torch.cat(
-                [movement_mean, weapon_means, communication_mean],
+                [movement.mean, weapon_means, communication.mean],
                 dim=1,
             ),
             torch.cat(
-                [movement_std, weapon_stds, communication_std],
+                [movement.std, weapon_stds, communication.std],
                 dim=1,
             ),
         )
 
-        bee_special = self.bee_special(global_encoding)
-        human_special = self.human_special(global_encoding)
-        special_logits = self._mix(
-            bee_special,
-            human_special,
-            bee_mask,
-        )
         special_size = BEES_DISCRETE_BRANCHES[-1]
         special_allow = masks[
             :,
-            mask_offset : mask_offset + special_size,
+            fire_mask_width : fire_mask_width + special_size,
         ]
         discrete.append(
             CategoricalDistInstance(
-                self._masked_logits(special_logits, special_allow)
+                self._masked_logits(
+                    self.special(shared_input),
+                    special_allow,
+                )
             )
         )
         return DistInstances(continuous, discrete)
