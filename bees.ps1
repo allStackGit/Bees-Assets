@@ -21,6 +21,7 @@ param(
     [switch]$PpoCriticBaselineOverlap,
     [switch]$PpoCudaGraphs,
     [switch]$PpoProfile,
+    [switch]$PpoDiagnostics,
     [ValidateRange(0.0,100.0)][double]$Entropy,
     [switch]$SkipEvaluation,
     [switch]$EnableEvaluation,
@@ -77,7 +78,8 @@ $ppoExperimentRequested=(
     $PpoPrefetch -or
     $PpoCriticBaselineOverlap -or
     $PpoCudaGraphs -or
-    $PpoProfile
+    $PpoProfile -or
+    $PpoDiagnostics
 )
 if($ppoExperimentRequested -and $Command -ne 'runtime'){
     throw 'PPO learner optimization options are only valid with the runtime command.'
@@ -97,7 +99,8 @@ if($PpoControl -and (
     $PpoPrefetch -or
     $PpoCriticBaselineOverlap -or
     $PpoCudaGraphs -or
-    $PpoProfile
+    $PpoProfile -or
+    $PpoDiagnostics
 )){
     throw '-PpoControl cannot be combined with PPO optimization options.'
 }
@@ -163,6 +166,7 @@ if($PpoPrefetch){$arguments+='--ppo-prefetch'}
 if($PpoCriticBaselineOverlap){$arguments+='--ppo-critic-baseline-overlap'}
 if($PpoCudaGraphs){$arguments+='--ppo-cuda-graphs'}
 if($PpoProfile){$arguments+='--ppo-profile'}
+if($PpoDiagnostics){$arguments+='--ppo-diagnostics'}
 if($PSBoundParameters.ContainsKey('Entropy')){
     $arguments+=@('--entropy',$Entropy.ToString('G',[Globalization.CultureInfo]::InvariantCulture))
 }
