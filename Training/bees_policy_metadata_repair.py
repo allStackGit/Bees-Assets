@@ -148,18 +148,15 @@ def inspect(assets_root: Path, bees_root: Path) -> dict[str, Any]:
         key = item.get("compatibility_key")
         if item.get("run_id") != run_id or key not in (old_key, new_key):
             raise ValueError(f"{name} identity changed since the original run")
-        expected = old_contract if key == old_key else source
-        if name == "lifecycle":
-            actual = item.get("contract")
-        else:
-            actual = item.get("contract")
+        actual = item.get("contract")
         if key == old_key and actual != old_contract:
             raise ValueError(f"{name} old contract unexpectedly changed")
         if key == new_key and compatibility_key(actual or {}) != new_key:
             raise ValueError(f"{name} repaired contract is inconsistent")
         if key == new_key:
             marker = item.get("v24_metadata_repair")
-            if not isinstance(marker, dict) or marker.get("from_key") != old_key:
+            if (not isinstance(marker, dict) or marker.get("from_key") != old_key or
+                    marker.get("to_key") != new_key or marker.get("original_build") != build_id):
                 raise ValueError(f"{name} has no expected metadata-repair provenance")
     if release.get("build_id") != build_id:
         raise ValueError("release build changed during metadata repair")
