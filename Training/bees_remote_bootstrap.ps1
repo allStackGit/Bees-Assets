@@ -82,35 +82,6 @@ $AutostartMonitor=Join-Path $InstallRoot 'Launcher\bees-remote-monitor.ps1'
 $AutostartMonitorPidFile=Join-Path $InstallRoot 'remote-monitor.pid'
 $AutostartChild=([string]$env:BEES_AUTOSTART_CHILD -eq '1')
 
-# Manual commands and the OS watchdog can invoke the launcher concurrently. Serialize the
-# inner bootstrap so they cannot both stop/start the supervisor or mutate the same tailnet/runtime
-# files at once. The FileStream lock is released automatically if this PowerShell process exits.
-$BootstrapLockPath=Join-Path $InstallRoot 'remote-bootstrap.lock'
-$BootstrapLockStream=$null
-$BootstrapLockDeadline=[DateTime]::UtcNow.AddSeconds(60)
-while($null -eq $BootstrapLockStream){
-    try {
-        $BootstrapLockStream=[IO.File]::Open(
-            $BootstrapLockPath,
-            [IO.FileMode]::OpenOrCreate,
-            [IO.FileAccess]::ReadWrite,
-            [IO.FileShare]::None
-        )
-    } catch [IO.IOException] {
-        if([DateTime]::UtcNow -ge $BootstrapLockDeadline){
-            throw 'Another Bees remote bootstrap/repair is still active after 60 seconds.'
-        }
-        Start-Sleep -Milliseconds 250
-    }
-}
-
-# A watchdog repair that lost the race to an explicit stop must not resurrect the worker after
-# the operator disabled autostart while this invocation was waiting for the bootstrap lock.
-if($AutostartChild -and -not(Test-Path -LiteralPath $AutostartMarker)){
-    Write-Host '[Bees remote] watchdog repair cancelled because autostart was disabled.'
-    exit 0
-}
-
 function Get-LiveAutostartMonitor {
     if(-not(Test-Path -LiteralPath $AutostartMonitorPidFile)){return $null}
     $value=(Get-Content -LiteralPath $AutostartMonitorPidFile -Raw -ErrorAction SilentlyContinue).Trim()
@@ -361,6 +332,41 @@ function Get-LocalTrainerId {
     $actorKey=(Get-Content -LiteralPath $actorKeyPath -Raw -ErrorAction SilentlyContinue).Trim().ToLowerInvariant()
     if($actorKey.Length -ne 32 -or $actorKey -notmatch '^[0-9a-f]{32}$'){return ''}
     'remote-' + $env:COMPUTERNAME.ToLowerInvariant() + '-' + $actorKey.Substring(0,8)
+}
+
+# A stop request must cancel the autostart monitor (and any in-flight repair
+# subprocess) BEFORE waiting for the bootstrap lock that repair may hold.
+if($Command -eq 'stop'){
+    Remove-RemoteAutostart
+}
+
+# Manual commands and the OS watchdog can invoke the launcher concurrently. Serialize the
+# inner bootstrap so they cannot both stop/start the supervisor or mutate the same tailnet/runtime
+# files at once. The FileStream lock is released automatically if this PowerShell process exits.
+$BootstrapLockPath=Join-Path $InstallRoot 'remote-bootstrap.lock'
+$BootstrapLockStream=$null
+$BootstrapLockDeadline=[DateTime]::UtcNow.AddSeconds(60)
+while($null -eq $BootstrapLockStream){
+    try {
+        $BootstrapLockStream=[IO.File]::Open(
+            $BootstrapLockPath,
+            [IO.FileMode]::OpenOrCreate,
+            [IO.FileAccess]::ReadWrite,
+            [IO.FileShare]::None
+        )
+    } catch [IO.IOException] {
+        if([DateTime]::UtcNow -ge $BootstrapLockDeadline){
+            throw 'Another Bees remote bootstrap/repair is still active after 60 seconds.'
+        }
+        Start-Sleep -Milliseconds 250
+    }
+}
+
+# A watchdog repair that lost the race to an explicit stop must not resurrect the worker after
+# the operator disabled autostart while this invocation was waiting for the bootstrap lock.
+if($AutostartChild -and -not(Test-Path -LiteralPath $AutostartMarker)){
+    Write-Host '[Bees remote] watchdog repair cancelled because autostart was disabled.'
+    exit 0
 }
 
 if($Command -eq 'stop'){
