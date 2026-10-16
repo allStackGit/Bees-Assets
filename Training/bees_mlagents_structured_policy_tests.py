@@ -1,4 +1,4 @@
-"""Focused tests for the Bees v22 structured MA-POCA actor architecture."""
+"""Focused tests for the Bees v25 structured MA-POCA actor architecture."""
 
 from __future__ import annotations
 
@@ -317,14 +317,14 @@ class StructuredPolicyArchitectureTests(unittest.TestCase):
 
         self.assertEqual(output.shape, (4, ACTION_ENCODING_SIZE))
 
-    def test_precomputed_faction_rows_skip_unused_gradient_encoder(self):
+    def test_precomputed_faction_rows_use_shared_gradient_encoder(self):
         from mlagents.torch_utils import torch
 
         body = BeesStructuredNetworkBody(
             self._observation_specs(),
             self._network_settings(),
         )
-        calls = {"bee_encoder": 0, "human_encoder": 0}
+        calls = {"encoder": 0, "trunk": 0}
 
         def count(name):
             def hook(_module, _inputs, _output):
@@ -332,12 +332,8 @@ class StructuredPolicyArchitectureTests(unittest.TestCase):
             return hook
 
         handles = [
-            body.bee_observation_encoder.register_forward_hook(
-                count("bee_encoder")
-            ),
-            body.human_observation_encoder.register_forward_hook(
-                count("human_encoder")
-            ),
+            body.observation_encoder.register_forward_hook(count("encoder")),
+            body.trunk.register_forward_hook(count("trunk")),
         ]
         observations = torch.zeros((4, BEES_OBSERVATION_SIZE))
         observations[:, FACTION_INDEX] = 1.0
@@ -362,34 +358,31 @@ class StructuredPolicyArchitectureTests(unittest.TestCase):
                 handle.remove()
 
         self.assertEqual(output.shape, (4, ACTION_ENCODING_SIZE))
-        self.assertEqual(calls["bee_encoder"], 1)
-        self.assertEqual(calls["human_encoder"], 0)
+        self.assertEqual(calls["encoder"], 1)
+        self.assertEqual(calls["trunk"], 1)
 
-    def test_bee_and_human_actor_encoders_and_trunks_are_independent(self):
+    def test_shared_actor_trunk_receives_gradients_for_both_factions(self):
         from mlagents.torch_utils import torch
 
         body = BeesStructuredNetworkBody(
             self._observation_specs(),
             self._network_settings(),
         )
-        self.assertIsNot(
-            body.bee_observation_encoder,
-            body.human_observation_encoder,
-        )
-        self.assertIsNot(body.bee_trunk, body.human_trunk)
-
-        observations = torch.zeros((1, BEES_OBSERVATION_SIZE))
-        observations[:, FACTION_INDEX] = 1.0
+        observations = torch.zeros((2, BEES_OBSERVATION_SIZE))
+        observations[:, FACTION_INDEX] = torch.tensor([1.0, -1.0])
         output, _ = body([observations])
-        self.assertEqual(output.shape, (1, ACTION_ENCODING_SIZE))
+        self.assertEqual(output.shape, (2, ACTION_ENCODING_SIZE))
+        self.assertEqual(
+            sum(isinstance(layer, torch.nn.LayerNorm)
+                for layer in body.trunk.seq_layers),
+            3,
+        )
 
-        output.sum().backward()
-        self.assertTrue(self._has_nonzero_gradient(body.bee_observation_encoder))
-        self.assertTrue(self._has_nonzero_gradient(body.bee_trunk))
-        self.assertFalse(self._has_nonzero_gradient(body.human_observation_encoder))
-        self.assertFalse(self._has_nonzero_gradient(body.human_trunk))
+        output[:, :128].square().sum().backward()
+        self.assertTrue(self._has_nonzero_gradient(body.observation_encoder))
+        self.assertTrue(self._has_nonzero_gradient(body.trunk))
 
-    def test_weapon_action_head_is_shared_across_slots_but_not_factions(self):
+    def test_weapon_action_head_is_shared_across_slots_and_factions(self):
         from mlagents.torch_utils import torch
 
         model = BeesStructuredActionModel(
@@ -397,15 +390,12 @@ class StructuredPolicyArchitectureTests(unittest.TestCase):
             self._action_spec(),
             deterministic=True,
         )
-        self.assertIsNot(model.bee_weapon_aim, model.human_weapon_aim)
-        self.assertIsNot(model.bee_weapon_fire, model.human_weapon_fire)
-
-        encoded = torch.zeros((1, ACTION_ENCODING_SIZE))
-        encoded[:, -1] = 1.0
-        masks = torch.ones((1, sum(BEES_DISCRETE_BRANCHES)))
+        encoded = torch.zeros((2, ACTION_ENCODING_SIZE))
+        encoded[:, -1] = torch.tensor([1.0, -1.0])
+        masks = torch.ones((2, sum(BEES_DISCRETE_BRANCHES)))
         dists = model._get_dists(encoded, masks)
 
-        self.assertEqual(dists.continuous.mean.shape, (1, 16))
+        self.assertEqual(dists.continuous.mean.shape, (2, 16))
         self.assertEqual(len(dists.discrete), 6)
 
         objective = dists.continuous.mean.sum()
@@ -413,22 +403,15 @@ class StructuredPolicyArchitectureTests(unittest.TestCase):
             objective = objective + distribution.logits.sum()
         objective.backward()
 
-        bee_modules = (
-            model.bee_movement,
-            model.bee_communication,
-            model.bee_weapon_aim,
-            model.bee_weapon_fire,
-            model.bee_special,
-        )
-        human_modules = (
-            model.human_movement,
-            model.human_communication,
-            model.human_weapon_aim,
-            model.human_weapon_fire,
-            model.human_special,
-        )
-        self.assertTrue(any(self._has_nonzero_gradient(module) for module in bee_modules))
-        self.assertFalse(any(self._has_nonzero_gradient(module) for module in human_modules))
+        for module in (
+            model.movement,
+            model.communication,
+            model.weapon_aim,
+            model.weapon_fire,
+            model.special,
+        ):
+            self.assertTrue(self._has_nonzero_gradient(module))
+
 
 
 if __name__ == "__main__":
