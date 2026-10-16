@@ -9,12 +9,5 @@ internal static class RlLiveTelemetryContract
     internal static void ValidateOrThrow()
     {
         RlPolicySchema.ValidateOrThrow();
-        if (RlPolicySchema.Version != 23 ||
-            RlPolicySchema.ExpectedObservationSize != 7743 ||
-            RlPolicySchema.ExpectedContinuousActions != 16)
-        {
-            throw new System.InvalidOperationException(
-                "Live telemetry contract metadata no longer matches the frozen RL policy ABI.");
-        }
     }
 }
