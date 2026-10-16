@@ -193,18 +193,29 @@ $env:BEES_AUTOSTART_CHILD='1'
 
 function Test-SupervisorAlive {
     $pidFile=Join-Path $InstallRoot 'remote-worker.pid'
-    if(-not(Test-Path -LiteralPath $pidFile)){return $false}
-    $raw=(Get-Content -LiteralPath $pidFile -Raw -ErrorAction SilentlyContinue).Trim()
     $workerPid=0
-    if(-not [int]::TryParse($raw,[ref]$workerPid) -or $workerPid -le 0){return $false}
+    if(Test-Path -LiteralPath $pidFile){
+        $raw=(Get-Content -LiteralPath $pidFile -Raw -ErrorAction SilentlyContinue).Trim()
+        [void][int]::TryParse($raw,[ref]$workerPid)
+    }
     try {
-        $record=Get-CimInstance Win32_Process -Filter "ProcessId = $workerPid" -ErrorAction Stop
-        $commandLine=[string]$record.CommandLine
-        return (
-            -not [string]::IsNullOrWhiteSpace($commandLine) -and
-            $commandLine.IndexOf('bees_managed_remote_worker.py',[StringComparison]::OrdinalIgnoreCase) -ge 0 -and
-            $commandLine.IndexOf($InstallRoot,[StringComparison]::OrdinalIgnoreCase) -ge 0
-        )
+        if($workerPid -gt 0){
+            $record=Get-CimInstance Win32_Process -Filter "ProcessId = $workerPid" -ErrorAction Stop
+            $commandLine=[string]$record.CommandLine
+            if(
+                $commandLine.IndexOf('bees_managed_remote_worker.py',[StringComparison]::OrdinalIgnoreCase) -ge 0 -and
+                $commandLine.IndexOf($InstallRoot,[StringComparison]::OrdinalIgnoreCase) -ge 0
+            ){return $true}
+        }
+        # The supervisor PID file may be stale or missing while a process is
+        # still alive. Do not launch overlapping repairs based on that file.
+        $candidates=@(Get-CimInstance Win32_Process -ErrorAction Stop | Where-Object {
+            $cmd=[string]$_.CommandLine
+            $cmd.IndexOf('bees_managed_remote_worker.py',[StringComparison]::OrdinalIgnoreCase) -ge 0 -and
+            $cmd.IndexOf($InstallRoot,[StringComparison]::OrdinalIgnoreCase) -ge 0 -and
+            ([string]$_.Name -ieq 'python.exe' -or [string]$_.Name -ieq 'pythonw.exe')
+        })
+        return $candidates.Count -gt 0
     } catch {
         return $false
     }
