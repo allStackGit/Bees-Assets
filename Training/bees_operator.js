@@ -4,6 +4,7 @@
 const {
     invokeBuild,
     invokeQualify,
+    invokeRepairV24,
     invokeRuntime,
     invokeServer,
     invokeStart,
@@ -23,6 +24,7 @@ const COMMANDS = new Set([
     'bundle',
     'observe',
     'qualify',
+    'repair-v24',
 ]);
 
 function usage() {
@@ -37,6 +39,7 @@ function usage() {
         '  node Training/bees_operator.js bundle [--run-id ID] [--log-percent PCT] [--evaluate] [--include-checkpoint]',
         '  node Training/bees_operator.js observe',
         '  node Training/bees_operator.js qualify',
+        '  node Training/bees_operator.js repair-v24 (stopped training only)',
         '',
         'The public PowerShell shim Assets\\bees.ps1 preserves the existing operator syntax.',
     ].join('\n');
@@ -389,6 +392,7 @@ async function dispatch(parsed) {
     else if (command === 'bundle') await invokeBundle(options);
     else if (command === 'observe') await invokeObserve(options);
     else if (command === 'qualify') await invokeQualify(options);
+    else if (command === 'repair-v24') await invokeRepairV24();
     return 0;
 }
 
