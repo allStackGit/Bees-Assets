@@ -83,24 +83,22 @@ $AutostartMonitorPidFile=Join-Path $InstallRoot 'remote-monitor.pid'
 $AutostartChild=([string]$env:BEES_AUTOSTART_CHILD -eq '1')
 
 function Get-LiveAutostartMonitor {
-    if(-not(Test-Path -LiteralPath $AutostartMonitorPidFile)){return $null}
-    $value=(Get-Content -LiteralPath $AutostartMonitorPidFile -Raw -ErrorAction SilentlyContinue).Trim()
-    $monitorPid=0
-    if(-not [int]::TryParse($value,[ref]$monitorPid) -or $monitorPid -le 0){return $null}
-    try {
-        $record=Get-CimInstance Win32_Process -Filter "ProcessId = $monitorPid" -ErrorAction Stop
-        $commandLine=[string]$record.CommandLine
-        if(
-            [string]::IsNullOrWhiteSpace($commandLine) -or
-            $commandLine.IndexOf('bees-remote-monitor.ps1',[StringComparison]::OrdinalIgnoreCase) -lt 0 -or
-            $commandLine.IndexOf($InstallRoot,[StringComparison]::OrdinalIgnoreCase) -lt 0
-        ){
-            return $null
-        }
-        Get-Process -Id $monitorPid -ErrorAction SilentlyContinue
-    } catch {
-        return $null
+    # The PID file can be stale even while a previous monitor is still running.
+    $recordedPid=0
+    if(Test-Path -LiteralPath $AutostartMonitorPidFile){
+        $value=(Get-Content -LiteralPath $AutostartMonitorPidFile -Raw -ErrorAction SilentlyContinue).Trim()
+        [void][int]::TryParse($value,[ref]$recordedPid)
     }
+    $monitors=@(Get-CimInstance Win32_Process -ErrorAction Stop | Where-Object {
+        $cmd=[string]$_.CommandLine
+        $cmd.IndexOf('bees-remote-monitor.ps1',[StringComparison]::OrdinalIgnoreCase) -ge 0 -and
+        $cmd.IndexOf($InstallRoot,[StringComparison]::OrdinalIgnoreCase) -ge 0 -and
+        ([string]$_.Name -ieq 'powershell.exe' -or [string]$_.Name -ieq 'pwsh.exe')
+    })
+    $monitor=$monitors | Where-Object { [int]$_.ProcessId -eq $recordedPid } | Select-Object -First 1
+    if($null -eq $monitor){$monitor=$monitors | Select-Object -First 1}
+    if($null -eq $monitor){return $null}
+    Get-Process -Id $monitor.ProcessId -ErrorAction SilentlyContinue
 }
 
 function Remove-RemoteAutostart {
@@ -382,14 +380,6 @@ function Stop-ScopedWorkerProcesses {
     }
 }
 
-function Get-LocalTrainerId {
-    $actorKeyPath=Join-Path $InstallRoot 'actor-key.txt'
-    if(-not(Test-Path -LiteralPath $actorKeyPath)){return ''}
-    $actorKey=(Get-Content -LiteralPath $actorKeyPath -Raw -ErrorAction SilentlyContinue).Trim().ToLowerInvariant()
-    if($actorKey.Length -ne 32 -or $actorKey -notmatch '^[0-9a-f]{32}$'){return ''}
-    'remote-' + $env:COMPUTERNAME.ToLowerInvariant() + '-' + $actorKey.Substring(0,8)
-}
-
 # A stop request must cancel the autostart monitor (and any in-flight repair
 # subprocess) BEFORE waiting for the bootstrap lock that repair may hold.
 if($Command -eq 'stop'){
@@ -446,6 +436,9 @@ if($Command -eq 'stop'){
             Write-Warning "[Bees remote] graceful stop exceeded 70s; terminating the owned supervisor tree."
             & taskkill.exe /PID ([string]$process.Id) /T /F *> $null
             Start-Sleep -Milliseconds 500
+            if($null -ne (Get-Process -Id $process.Id -ErrorAction SilentlyContinue)){
+                throw "Could not terminate managed supervisor PID $($process.Id)."
+            }
         }
     }
 
