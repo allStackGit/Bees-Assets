@@ -305,25 +305,81 @@ function Get-RecordedSupervisorPid {
     $pidValue
 }
 
-function Get-LiveSupervisorProcess {
-    $pidValue=Get-RecordedSupervisorPid
-    if($pidValue -le 0){return $null}
-    $process=Get-Process -Id $pidValue -ErrorAction SilentlyContinue
-    if($null -eq $process){return $null}
-    try {
-        $record=Get-CimInstance Win32_Process -Filter "ProcessId = $pidValue" -ErrorAction Stop
+function Get-ScopedWorkerProcesses {
+    # The PID file can be missing after a crash or an interrupted bootstrap.
+    # Identify ONLY children belonging to this install root; never kill other Python,
+    # Tailscale, or Unity processes on the host.
+    $prefix=$InstallRoot.TrimEnd('\') + '\'
+    $buildsPrefix=(Join-Path $InstallRoot 'ManagedBuilds').TrimEnd('\') + '\'
+    foreach($record in @(Get-CimInstance Win32_Process -ErrorAction Stop)){
+        if([int]$record.ProcessId -eq $PID){continue}
         $commandLine=[string]$record.CommandLine
-        if(
-            [string]::IsNullOrWhiteSpace($commandLine) -or
-            $commandLine.IndexOf('bees_managed_remote_worker.py',[StringComparison]::OrdinalIgnoreCase) -lt 0 -or
-            $commandLine.IndexOf($InstallRoot,[StringComparison]::OrdinalIgnoreCase) -lt 0
-        ){
-            return $null
+        $executable=[string]$record.ExecutablePath
+        $name=[string]$record.Name
+        $ownedExecutable=$executable.StartsWith($prefix,[StringComparison]::OrdinalIgnoreCase)
+        $ownedCommand=$commandLine.IndexOf($prefix,[StringComparison]::OrdinalIgnoreCase) -ge 0
+        if(-not($ownedExecutable -or $ownedCommand)){continue}
+
+        $ownedPython=(
+            ($name -ieq 'python.exe' -or $name -ieq 'pythonw.exe') -and
+            (
+                $ownedExecutable -or
+                $commandLine -match 'bees_(managed_remote_worker|training_worker_agent|elastic_wan_actor_worker|wan_actor_worker)\.py'
+            )
+        )
+        $ownedUnity=(
+            $name -ieq 'Bees RL Training.exe' -and
+            (
+                $executable.StartsWith($buildsPrefix,[StringComparison]::OrdinalIgnoreCase) -or
+                $commandLine.IndexOf($buildsPrefix,[StringComparison]::OrdinalIgnoreCase) -ge 0
+            )
+        )
+        $ownedTailnet=$name -like 'bees-tailnet-bridge*.exe'
+        $ownedMonitor=(
+            ($name -ieq 'powershell.exe' -or $name -ieq 'pwsh.exe') -and
+            $commandLine -match 'bees-remote-monitor\.ps1'
+        )
+        $ownedRepair=(
+            ($name -ieq 'cmd.exe' -or $name -ieq 'powershell.exe') -and
+            $commandLine -match 'bees-remote-worker\.cmd' -and
+            $commandLine -match '(?:^|\s)start(?:\s|$)'
+        )
+        if($ownedPython -or $ownedUnity -or $ownedTailnet -or $ownedMonitor -or $ownedRepair){
+            $record
         }
-    } catch {
-        return $null
     }
-    $process
+}
+
+function Get-LiveSupervisorProcess {
+    # Recover from stale/missing supervisor.pid instead of claiming "not running"
+    # while a real managed worker remains alive.
+    $recorded=Get-RecordedSupervisorPid
+    $candidates=@(Get-ScopedWorkerProcesses | Where-Object {
+        ([string]$_.CommandLine) -match 'bees_managed_remote_worker\.py'
+    })
+    $candidate=$candidates | Where-Object { [int]$_.ProcessId -eq $recorded } | Select-Object -First 1
+    if($null -eq $candidate){$candidate=$candidates | Select-Object -First 1}
+    if($null -eq $candidate){return $null}
+    Get-Process -Id $candidate.ProcessId -ErrorAction SilentlyContinue
+}
+
+function Stop-ScopedWorkerProcesses {
+    # Orphaned Unity players or Python ML-Agents environment workers can survive
+    # when the supervisor PID file is stale. Tear down only this install's processes.
+    for($pass=1;$pass -le 3;$pass++){
+        $remaining=@(Get-ScopedWorkerProcesses)
+        if($remaining.Count -eq 0){return}
+        foreach($record in $remaining){
+            Write-Host "[Bees remote] stopping residual $($record.Name) PID $($record.ProcessId)..."
+            & taskkill.exe /PID ([string]$record.ProcessId) /T /F *> $null
+        }
+        Start-Sleep -Milliseconds 500
+    }
+    $remaining=@(Get-ScopedWorkerProcesses)
+    if($remaining.Count -gt 0){
+        $details=($remaining | ForEach-Object { "$($_.Name) PID $($_.ProcessId)" }) -join ', '
+        throw "Bees worker shutdown incomplete; owned processes remain: $details"
+    }
 }
 
 function Get-LocalTrainerId {
@@ -370,26 +426,35 @@ if($AutostartChild -and -not(Test-Path -LiteralPath $AutostartMarker)){
 }
 
 if($Command -eq 'stop'){
+    # Repeat after acquiring the lock in case a launch raced the initial
+    # pre-lock watchdog cancellation.
     Remove-RemoteAutostart
     $process=Get-LiveSupervisorProcess
-    if($null -eq $process){
-        Remove-Item -LiteralPath $SupervisorPidFile,$ShutdownRequestFile -Force -ErrorAction SilentlyContinue
-        Write-Host '[Bees remote] worker is not running.'
-        exit 0
+    if($null -ne $process){
+        'stop' | Set-Content -LiteralPath $ShutdownRequestFile -NoNewline -Encoding ASCII
+        Write-Host "[Bees remote] stop requested for worker PID $($process.Id); waiting for managed cleanup..."
+        $deadline=[DateTime]::UtcNow.AddSeconds(70)
+        while([DateTime]::UtcNow -lt $deadline){
+            if($null -eq (Get-Process -Id $process.Id -ErrorAction SilentlyContinue)){
+                break
+            }
+            Start-Sleep -Milliseconds 250
+        }
+        if($null -ne (Get-Process -Id $process.Id -ErrorAction SilentlyContinue)){
+            # The Windows kill-on-close Job Object is owned by this supervisor.
+            # Force-terminating it retires all job-owned Unity/WAN descendants.
+            Write-Warning "[Bees remote] graceful stop exceeded 70s; terminating the owned supervisor tree."
+            & taskkill.exe /PID ([string]$process.Id) /T /F *> $null
+            Start-Sleep -Milliseconds 500
+        }
     }
 
-    'stop' | Set-Content -LiteralPath $ShutdownRequestFile -NoNewline -Encoding ASCII
-    Write-Host "[Bees remote] stop requested for worker PID $($process.Id); waiting for managed cleanup..."
-    $deadline=[DateTime]::UtcNow.AddSeconds(45)
-    while([DateTime]::UtcNow -lt $deadline){
-        if($null -eq (Get-Process -Id $process.Id -ErrorAction SilentlyContinue)){
-            Remove-Item -LiteralPath $SupervisorPidFile,$ShutdownRequestFile -Force -ErrorAction SilentlyContinue
-            Write-Host '[Bees remote] worker stopped.'
-            exit 0
-        }
-        Start-Sleep -Milliseconds 250
-    }
-    throw "Remote worker PID $($process.Id) did not stop within 45 seconds. It was not force-killed."
+    # Do not trust the supervisor PID alone. Check for detached/orphaned children
+    # from any previous supervisor and fail if an owned process will not stop.
+    Stop-ScopedWorkerProcesses
+    Remove-Item -LiteralPath $SupervisorPidFile,$ShutdownRequestFile -Force -ErrorAction SilentlyContinue
+    Write-Host '[Bees remote] worker and its owned processes stopped.'
+    exit 0
 }
 
 $existingProcess=Get-LiveSupervisorProcess
