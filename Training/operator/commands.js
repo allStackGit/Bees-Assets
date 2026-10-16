@@ -193,6 +193,7 @@ async function invokeRuntime(options = {}) {
                 criticBaselineOverlap: false,
                 cudaGraphs: false,
                 profileOnce: false,
+                detailedDiagnostics: false,
             }
             : {
                 syncCleanup: Boolean(options.ppoSyncCleanup),
@@ -201,6 +202,7 @@ async function invokeRuntime(options = {}) {
                 criticBaselineOverlap: Boolean(options.ppoCriticBaselineOverlap),
                 cudaGraphs: Boolean(options.ppoCudaGraphs),
                 profileOnce: Boolean(options.ppoProfile),
+                detailedDiagnostics: Boolean(options.ppoDiagnostics),
             };
     }
     config = applyRuntimeTrainingOptions(config, runtimeOverrides);
@@ -411,6 +413,9 @@ async function invokeRuntime(options = {}) {
         ) +
         ' ppo_profile=' + (
             config.learnerOptimizations.profileOnce ? 'on' : 'off'
+        ) +
+        ' ppo_diagnostics=' + (
+            config.learnerOptimizations.detailedDiagnostics ? 'on' : 'off'
         ) +
         ' entropy_beta=' + (
             config.entropyBeta == null ? 'base' : String(config.entropyBeta)
