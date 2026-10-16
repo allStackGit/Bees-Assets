@@ -178,8 +178,8 @@ namespace Bees.Tests.EditMode
                 "Scenes",
                 "RlPolicySchema.cs"));
 
-            StringAssert.Contains("internal const int Version = 22;", source);
-            StringAssert.Contains("bees-rl-v22", source);
+            StringAssert.Contains("internal const int Version = 24;", source);
+            StringAssert.Contains("bees-rl-v24", source);
             StringAssert.Contains("weapon-ready=rl-latched-until-fire", source);
         }
     }
