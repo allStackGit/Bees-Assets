@@ -215,14 +215,17 @@ function ppoStatusLines(ppo, signals) {
     const seconds = Number(update.seconds);
     const formatStage = ([label, duration]) =>
         label + '=' + number(duration, 1) + 's';
+    const detailed = update.diagnostics !== 'off';
     const lines = [
         'PPO latest completed update: ' + number(seconds, 1) + 's  ' +
         'minibatches=' + (update.minibatches || '-') +
         '  optimizer_updates/s=' + number(batches > 0 && seconds > 0 ? batches / seconds : null, 2) +
         '  cache=' + (update.cache_storage || '-') +
         '  avg_minibatch=' + number(update.avg_minibatch, 3) + 's',
-        'PPO stage estimates: ' + stage.map(formatStage).join('  ') +
-        '  (sampled durations; may overlap)',
+        detailed
+            ? 'PPO stage estimates: ' + stage.map(formatStage).join('  ') +
+              '  (sampled durations; may overlap)'
+            : 'PPO stage estimates: disabled (-PpoDiagnostics to enable)',
     ];
     if (hardware) {
         lines.push(
