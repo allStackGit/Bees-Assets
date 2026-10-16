@@ -1678,6 +1678,8 @@ def _record_poca_trajectory_batch_timing(
     complete_seconds: float,
     total_seconds: float,
 ) -> None:
+    if not _POCA_OPTIMIZATIONS.diagnostics_enabled:
+        return
     now = time.monotonic()
     report = None
     with _POCA_TRAJECTORY_TIMING_LOCK:
