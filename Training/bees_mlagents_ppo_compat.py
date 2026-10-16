@@ -6884,6 +6884,14 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             _POCA_UPDATE_CACHE_STATE.actor_update = True
 
         _poca_flush_cuda_timings()
+        if not diagnostics_enabled:
+            # Preserve the pre-existing update-completion barrier when CUDA timing
+            # events are disabled. The async PPO future publishes policy weights
+            # to the main trainer thread only after this update returns.
+            from mlagents.torch_utils import default_device, torch
+
+            if getattr(default_device(), "type", None) == "cuda":
+                torch.cuda.synchronize()
         _poca_release_full_cuda_graph(
             getattr(self.optimizer, "optimizer", None)
         )
