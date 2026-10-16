@@ -62,6 +62,11 @@ class PocaLearnerOptimizationOptions:
     critic_baseline_overlap: bool = False
     cuda_graphs: bool = False
     profile_once: bool = False
+    detailed_diagnostics: bool = False
+
+    @property
+    def diagnostics_enabled(self) -> bool:
+        return self.detailed_diagnostics or self.profile_once
 
     @property
     def effective_sync_cleanup(self) -> bool:
@@ -84,6 +89,7 @@ def configure_poca_learner_optimizations(
     critic_baseline_overlap: bool = False,
     cuda_graphs: bool = False,
     profile_once: bool = False,
+    detailed_diagnostics: bool = False,
 ) -> PocaLearnerOptimizationOptions:
     """Configure experimental execution optimizations before trainer construction."""
 
@@ -98,6 +104,7 @@ def configure_poca_learner_optimizations(
         critic_baseline_overlap=bool(critic_baseline_overlap),
         cuda_graphs=bool(cuda_graphs),
         profile_once=bool(profile_once),
+        detailed_diagnostics=bool(detailed_diagnostics),
     )
     return _POCA_OPTIMIZATIONS
 
@@ -6429,10 +6436,11 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         )
         batch_size = max(batch_size, self.policy.sequence_length)
         update_started = time.perf_counter()
-        _POCA_TIMING_STATE.timing_totals = {}
-        _POCA_TIMING_STATE.timing_counts = {}
-        _POCA_TIMING_STATE.timing_samples = {}
-        _POCA_TIMING_STATE.cuda_events = []
+        diagnostics_enabled = _POCA_OPTIMIZATIONS.diagnostics_enabled
+        _POCA_TIMING_STATE.timing_totals = {} if diagnostics_enabled else None
+        _POCA_TIMING_STATE.timing_counts = {} if diagnostics_enabled else None
+        _POCA_TIMING_STATE.timing_samples = {} if diagnostics_enabled else None
+        _POCA_TIMING_STATE.cuda_events = [] if diagnostics_enabled else None
         _POCA_TIMING_STATE.graph_warmups = 0
         _POCA_TIMING_STATE.graph_captures = 0
         _POCA_TIMING_STATE.graph_replays = 0
@@ -6461,36 +6469,40 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         materialize_seconds = time.perf_counter() - materialize_started
         _poca_record_timing("materialize", materialize_seconds)
 
-        diagnostic_profile_started = time.perf_counter()
-        workload_profile = _poca_update_workload_profile(
-            tensor_cache,
-            {},
-        )
-        diagnostic_profile_seconds = (
-            time.perf_counter() - diagnostic_profile_started
-        )
-        _poca_record_timing(
-            "diagnostic_profile",
-            diagnostic_profile_seconds,
-        )
+        workload_profile = {}
+        diagnostic_profile_seconds = 0.0
+        if diagnostics_enabled:
+            diagnostic_profile_started = time.perf_counter()
+            workload_profile = _poca_update_workload_profile(
+                tensor_cache,
+                {},
+            )
+            diagnostic_profile_seconds = (
+                time.perf_counter() - diagnostic_profile_started
+            )
+            _poca_record_timing(
+                "diagnostic_profile",
+                diagnostic_profile_seconds,
+            )
 
         tensor_cache, device_cache = _promote_poca_update_tensor_cache(
             tensor_cache
         )
-        workload_profile.update(
-            {
-                "cache_storage": str(device_cache.get("storage", "off")),
-                "cache_mib": float(device_cache.get("bytes", 0))
-                / (1024.0 * 1024.0),
-                "group_cache_storage": str(
-                    device_cache.get("group_storage", "off")
-                ),
-                "group_cache_mib": float(
-                    device_cache.get("group_bytes", 0)
-                )
-                / (1024.0 * 1024.0),
-            }
-        )
+        if diagnostics_enabled:
+            workload_profile.update(
+                {
+                    "cache_storage": str(device_cache.get("storage", "off")),
+                    "cache_mib": float(device_cache.get("bytes", 0))
+                    / (1024.0 * 1024.0),
+                    "group_cache_storage": str(
+                        device_cache.get("group_storage", "off")
+                    ),
+                    "group_cache_mib": float(
+                        device_cache.get("group_bytes", 0)
+                    )
+                    / (1024.0 * 1024.0),
+                }
+            )
         _poca_record_timing(
             "device_cache_copy",
             float(device_cache["copy_seconds"]),
@@ -6551,90 +6563,94 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             )
             else None
         )
-        print(
-            "[Bees PPO timing] update begin "
-            f"buffer={buffer_length} actor_batch={batch_size} "
-            f"critic_batch={critic_batch_size} epochs={num_epoch} "
-            f"actor_epochs={1 if actor_single_epoch and actor_training_enabled else (0 if actor_single_epoch else num_epoch)} "
-            f"minibatches={total_minibatches} "
-            f"factorized={'on' if factorized_poca else 'off'} "
-            f"group_width={group_observation_width} "
-            f"sync_cleanup={'on' if _POCA_OPTIMIZATIONS.effective_sync_cleanup else 'off'} "
-            f"stream_shards={_POCA_OPTIMIZATIONS.stream_shards} "
-            f"prefetch={'on' if _POCA_OPTIMIZATIONS.minibatch_prefetch else 'off'} "
-            f"cpu_prepare={'on' if cpu_preparer is not None and cpu_preparer.enabled else 'off'} "
-            f"cpu_prepare_workers={cpu_preparer.workers if cpu_preparer is not None and cpu_preparer.enabled else 0} "
-            f"cpu_prepare_mode={('full' if cpu_preparer.full_minibatch else 'group-only') if cpu_preparer is not None and cpu_preparer.enabled else 'off'} "
-            f"critic_baseline_overlap={'on' if _POCA_OPTIMIZATIONS.critic_baseline_overlap else 'off'} "
-            f"cuda_graphs={'on' if _POCA_OPTIMIZATIONS.cuda_graphs else 'off'} "
-            f"tensor_cache={'on' if tensor_cache is not None else 'off'} "
-            f"cache_storage={device_cache['storage']} "
-            f"cache_mib={device_cache['bytes'] / (1024 * 1024):.1f} "
-            f"cache_free_mib={device_cache['free_before'] / (1024 * 1024):.1f} "
-            f"cache_driver_free_mib={device_cache.get('driver_free_before', 0) / (1024 * 1024):.1f} "
-            f"cache_allocator_reusable_mib={device_cache.get('allocator_reusable_before', 0) / (1024 * 1024):.1f} "
-            f"cache_reserve_mib={device_cache['reserve'] / (1024 * 1024):.1f} "
-            f"cache_cleanup={device_cache.get('empty_cache_seconds', 0.0):.6f} "
-            f"fixed_cache_reason={device_cache.get('fixed_cache_reason', 'admitted')} "
-            f"group_cache_policy={device_cache.get('group_promotion_reason', 'cpu-resident')} "
-            f"group_cache_driver_free_mib={device_cache.get('group_driver_free_before', 0) / (1024 * 1024):.1f} "
-            f"group_cache_allocator_reusable_mib={device_cache.get('group_allocator_reusable_before', 0) / (1024 * 1024):.1f} "
-            f"group_cache_cleanup={device_cache.get('group_empty_cache_seconds', 0.0):.6f} "
-            f"cache_copy={device_cache['copy_seconds']:.6f} "
-            f"group_obs={'packed' if tensor_cache is not None and isinstance(tensor_cache.get('groupmate_obs'), _PocaPackedGroupObs) else 'ragged-minibatch'} "
-            f"group_cache_storage={device_cache.get('group_storage', 'off')} "
-            f"group_cache_mib={device_cache.get('group_bytes', 0) / (1024 * 1024):.1f} "
-            f"group_cache_copy={device_cache.get('group_copy_seconds', 0.0):.6f} "
-            f"materialize={materialize_seconds:.6f} "
-            f"diagnostic_profile={diagnostic_profile_seconds:.6f}",
-            flush=True,
-        )
-        print(
-            "[Bees PPO variability] workload "
-            f"experiences={int(workload_profile.get('experiences', 0))} "
-            f"group_rows={int(workload_profile.get('groupmate_rows', 0))} "
-            f"group_mean={workload_profile.get('groupmates_mean', 0.0):.2f} "
-            f"group_p50={workload_profile.get('groupmates_p50', 0.0):.1f} "
-            f"group_p90={workload_profile.get('groupmates_p90', 0.0):.1f} "
-            f"group_p99={workload_profile.get('groupmates_p99', 0.0):.1f} "
-            f"group_max={int(workload_profile.get('groupmates_max', 0))} "
-            f"factions=bee:{int(workload_profile.get('bee_rows', 0))},"
-            f"human:{int(workload_profile.get('human_rows', 0))},"
-            f"mixed:{int(workload_profile.get('mixed_rows', 0))} "
-            f"slot_rows={int(workload_profile.get('slot_profile_rows', 0))} "
-            f"allies=p50:{workload_profile.get('allies_p50', 0.0):.1f},"
-            f"p90:{workload_profile.get('allies_p90', 0.0):.1f},"
-            f"p99:{workload_profile.get('allies_p99', 0.0):.1f},"
-            f"max:{int(workload_profile.get('allies_max', 0))} "
-            f"enemies=p50:{workload_profile.get('enemies_p50', 0.0):.1f},"
-            f"p90:{workload_profile.get('enemies_p90', 0.0):.1f},"
-            f"p99:{workload_profile.get('enemies_p99', 0.0):.1f},"
-            f"max:{int(workload_profile.get('enemies_max', 0))} "
-            f"collisions=p90:{workload_profile.get('collisions_p90', 0.0):.1f},"
-            f"p99:{workload_profile.get('collisions_p99', 0.0):.1f},"
-            f"max:{int(workload_profile.get('collisions_max', 0))} "
-            f"mining_p90={workload_profile.get('mining_p90', 0.0):.1f} "
-            f"map_p90={workload_profile.get('map_objects_p90', 0.0):.1f} "
-            f"limits=allies:{int(workload_profile.get('limit_allies', 0))},"
-            f"enemies:{int(workload_profile.get('limit_enemies', 0))},"
-            f"weapons:{int(workload_profile.get('limit_entity_weapons', 0))},"
-            f"mining:{int(workload_profile.get('limit_mining', 0))},"
-            f"map:{int(workload_profile.get('limit_map_objects', 0))},"
-            f"collisions:{int(workload_profile.get('limit_collisions', 0))} "
-            f"cache={workload_profile.get('cache_storage', 'off')}:"
-            f"{workload_profile.get('cache_mib', 0.0):.1f}MiB "
-            f"group_cache={workload_profile.get('group_cache_storage', 'off')}:"
-            f"{workload_profile.get('group_cache_mib', 0.0):.1f}MiB "
-            f"group_cache_rows={int(workload_profile.get('group_cache_input_rows', 0))}->"
-            f"{int(workload_profile.get('group_cache_unique_rows', 0))}",
-            flush=True,
-        )
+        if diagnostics_enabled:
+            print(
+                "[Bees PPO timing] update begin "
+                f"buffer={buffer_length} actor_batch={batch_size} "
+                f"critic_batch={critic_batch_size} epochs={num_epoch} "
+                f"actor_epochs={1 if actor_single_epoch and actor_training_enabled else (0 if actor_single_epoch else num_epoch)} "
+                f"minibatches={total_minibatches} "
+                f"factorized={'on' if factorized_poca else 'off'} "
+                f"group_width={group_observation_width} "
+                f"sync_cleanup={'on' if _POCA_OPTIMIZATIONS.effective_sync_cleanup else 'off'} "
+                f"stream_shards={_POCA_OPTIMIZATIONS.stream_shards} "
+                f"prefetch={'on' if _POCA_OPTIMIZATIONS.minibatch_prefetch else 'off'} "
+                f"cpu_prepare={'on' if cpu_preparer is not None and cpu_preparer.enabled else 'off'} "
+                f"cpu_prepare_workers={cpu_preparer.workers if cpu_preparer is not None and cpu_preparer.enabled else 0} "
+                f"cpu_prepare_mode={('full' if cpu_preparer.full_minibatch else 'group-only') if cpu_preparer is not None and cpu_preparer.enabled else 'off'} "
+                f"critic_baseline_overlap={'on' if _POCA_OPTIMIZATIONS.critic_baseline_overlap else 'off'} "
+                f"cuda_graphs={'on' if _POCA_OPTIMIZATIONS.cuda_graphs else 'off'} "
+                f"tensor_cache={'on' if tensor_cache is not None else 'off'} "
+                f"cache_storage={device_cache['storage']} "
+                f"cache_mib={device_cache['bytes'] / (1024 * 1024):.1f} "
+                f"cache_free_mib={device_cache['free_before'] / (1024 * 1024):.1f} "
+                f"cache_driver_free_mib={device_cache.get('driver_free_before', 0) / (1024 * 1024):.1f} "
+                f"cache_allocator_reusable_mib={device_cache.get('allocator_reusable_before', 0) / (1024 * 1024):.1f} "
+                f"cache_reserve_mib={device_cache['reserve'] / (1024 * 1024):.1f} "
+                f"cache_cleanup={device_cache.get('empty_cache_seconds', 0.0):.6f} "
+                f"fixed_cache_reason={device_cache.get('fixed_cache_reason', 'admitted')} "
+                f"group_cache_policy={device_cache.get('group_promotion_reason', 'cpu-resident')} "
+                f"group_cache_driver_free_mib={device_cache.get('group_driver_free_before', 0) / (1024 * 1024):.1f} "
+                f"group_cache_allocator_reusable_mib={device_cache.get('group_allocator_reusable_before', 0) / (1024 * 1024):.1f} "
+                f"group_cache_cleanup={device_cache.get('group_empty_cache_seconds', 0.0):.6f} "
+                f"cache_copy={device_cache['copy_seconds']:.6f} "
+                f"group_obs={'packed' if tensor_cache is not None and isinstance(tensor_cache.get('groupmate_obs'), _PocaPackedGroupObs) else 'ragged-minibatch'} "
+                f"group_cache_storage={device_cache.get('group_storage', 'off')} "
+                f"group_cache_mib={device_cache.get('group_bytes', 0) / (1024 * 1024):.1f} "
+                f"group_cache_copy={device_cache.get('group_copy_seconds', 0.0):.6f} "
+                f"materialize={materialize_seconds:.6f} "
+                f"diagnostic_profile={diagnostic_profile_seconds:.6f}",
+                flush=True,
+            )
+            print(
+                "[Bees PPO variability] workload "
+                f"experiences={int(workload_profile.get('experiences', 0))} "
+                f"group_rows={int(workload_profile.get('groupmate_rows', 0))} "
+                f"group_mean={workload_profile.get('groupmates_mean', 0.0):.2f} "
+                f"group_p50={workload_profile.get('groupmates_p50', 0.0):.1f} "
+                f"group_p90={workload_profile.get('groupmates_p90', 0.0):.1f} "
+                f"group_p99={workload_profile.get('groupmates_p99', 0.0):.1f} "
+                f"group_max={int(workload_profile.get('groupmates_max', 0))} "
+                f"factions=bee:{int(workload_profile.get('bee_rows', 0))},"
+                f"human:{int(workload_profile.get('human_rows', 0))},"
+                f"mixed:{int(workload_profile.get('mixed_rows', 0))} "
+                f"slot_rows={int(workload_profile.get('slot_profile_rows', 0))} "
+                f"allies=p50:{workload_profile.get('allies_p50', 0.0):.1f},"
+                f"p90:{workload_profile.get('allies_p90', 0.0):.1f},"
+                f"p99:{workload_profile.get('allies_p99', 0.0):.1f},"
+                f"max:{int(workload_profile.get('allies_max', 0))} "
+                f"enemies=p50:{workload_profile.get('enemies_p50', 0.0):.1f},"
+                f"p90:{workload_profile.get('enemies_p90', 0.0):.1f},"
+                f"p99:{workload_profile.get('enemies_p99', 0.0):.1f},"
+                f"max:{int(workload_profile.get('enemies_max', 0))} "
+                f"collisions=p90:{workload_profile.get('collisions_p90', 0.0):.1f},"
+                f"p99:{workload_profile.get('collisions_p99', 0.0):.1f},"
+                f"max:{int(workload_profile.get('collisions_max', 0))} "
+                f"mining_p90={workload_profile.get('mining_p90', 0.0):.1f} "
+                f"map_p90={workload_profile.get('map_objects_p90', 0.0):.1f} "
+                f"limits=allies:{int(workload_profile.get('limit_allies', 0))},"
+                f"enemies:{int(workload_profile.get('limit_enemies', 0))},"
+                f"weapons:{int(workload_profile.get('limit_entity_weapons', 0))},"
+                f"mining:{int(workload_profile.get('limit_mining', 0))},"
+                f"map:{int(workload_profile.get('limit_map_objects', 0))},"
+                f"collisions:{int(workload_profile.get('limit_collisions', 0))} "
+                f"cache={workload_profile.get('cache_storage', 'off')}:"
+                f"{workload_profile.get('cache_mib', 0.0):.1f}MiB "
+                f"group_cache={workload_profile.get('group_cache_storage', 'off')}:"
+                f"{workload_profile.get('group_cache_mib', 0.0):.1f}MiB "
+                f"group_cache_rows={int(workload_profile.get('group_cache_input_rows', 0))}->"
+                f"{int(workload_profile.get('group_cache_unique_rows', 0))}",
+                flush=True,
+            )
 
         completed_minibatches = 0
         _POCA_UPDATE_CACHE_STATE.cache = tensor_cache
-        hardware_profiler = _PocaUpdateHardwareProfiler().start()
+        hardware_profiler = (
+            _PocaUpdateHardwareProfiler().start()
+            if diagnostics_enabled else None
+        )
         operator_profiler = _start_poca_one_update_profile()
-        hardware_started = time.perf_counter()
+        hardware_started = time.perf_counter() if diagnostics_enabled else 0.0
         hardware_summary = {}
         try:
             for _epoch_index in range(num_epoch):
@@ -6848,10 +6864,14 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                             operator_profiler = None
         finally:
             _finish_poca_one_update_profile(operator_profiler)
-            hardware_loop_seconds = time.perf_counter() - hardware_started
-            hardware_summary = hardware_profiler.stop(
-                hardware_loop_seconds
+            hardware_loop_seconds = (
+                time.perf_counter() - hardware_started
+                if diagnostics_enabled else 0.0
             )
+            if hardware_profiler is not None:
+                hardware_summary = hardware_profiler.stop(
+                    hardware_loop_seconds
+                )
             if cpu_preparer is not None:
                 cpu_preparer.close()
             if prefetcher is not None:
@@ -6867,130 +6887,140 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         )
         update_seconds = time.perf_counter() - update_started
         _record_poca_update_busy_seconds(update_seconds)
-        print(
-            "[Bees PPO timing] update end "
-            f"minibatches={completed_minibatches}/{total_minibatches} "
-            f"seconds={update_seconds:.6f} "
-            f"normalize={_poca_average_timing('advantage_normalization'):.6f} "
-            f"materialize={_poca_average_timing('materialize'):.6f} "
-            f"diagnostic_profile={_poca_average_timing('diagnostic_profile'):.6f} "
-            f"cache_copy={_poca_average_timing('device_cache_copy'):.6f} "
-            f"group_cache_copy={_poca_average_timing('group_cache_copy'):.6f} "
-            f"cache_storage={device_cache['storage']} "
-            f"transfer={_poca_average_timing('cache_transfer'):.6f} "
-            f"avg_minibatch={_poca_average_timing('minibatch_total'):.6f} "
-            f"prepare={_poca_average_timing('prepare'):.6f} "
-            f"decay={_poca_average_timing('decay'):.6f} "
-            f"reward_tensors={_poca_average_timing('reward_tensors'):.6f} "
-            f"current_obs={_poca_average_timing('current_obs'):.6f} "
-            f"group_pad={_poca_average_timing('group_obs_padding'):.6f} "
-            f"group_tensors={_poca_average_timing('group_obs_tensors'):.6f} "
-            f"action_masks={_poca_average_timing('action_masks'):.6f} "
-            f"current_actions={_poca_average_timing('current_actions'):.6f} "
-            f"group_actions={_poca_average_timing('group_actions'):.6f} "
-            f"memories={_poca_average_timing('memories'):.6f} "
-            f"actor={_poca_average_timing('actor_get_stats'):.6f} "
-            f"critic={_poca_average_timing('critic_pass'):.6f} "
-            f"baseline={_poca_average_timing('baseline'):.6f} "
-            f"sparse_attention={_poca_average_timing('critic_sparse_attention'):.6f} "
-            f"cuda_actor={_poca_average_timing('cuda_actor_get_stats'):.6f} "
-            f"cuda_critic={_poca_average_timing('cuda_critic_pass'):.6f} "
-            f"cuda_baseline={_poca_average_timing('cuda_baseline'):.6f} "
-            f"old_probs_masks={_poca_average_timing('old_probs_masks'):.6f} "
-            f"losses={_poca_average_timing('losses'):.6f} "
-            f"learning_rate={_poca_average_timing('learning_rate'):.6f} "
-            f"zero_grad={_poca_average_timing('zero_grad'):.6f} "
-            f"backward={_poca_average_timing('backward'):.6f} "
-            f"optimizer_step={_poca_average_timing('optimizer_step'):.6f} "
-            f"cuda_backward={_poca_average_timing('cuda_backward'):.6f} "
-            f"cuda_optimizer_step={_poca_average_timing('cuda_optimizer_step'):.6f} "
-            f"parallel_submit={_poca_average_timing('parallel_forward_submit'):.6f} "
-            f"parallel_join={_poca_average_timing('parallel_forward_join'):.6f} "
-            f"cuda_parallel={_poca_average_timing('cuda_parallel_forward'):.6f} "
-            f"backward_join={_poca_average_timing('backward_stream_join'):.6f} "
-            f"prefetch_wait={_poca_average_timing('prefetch_cpu_wait'):.6f} "
-            f"cuda_prefetch={_poca_average_timing('cuda_prefetch'):.6f} "
-            f"cpu_prepare_wait={_poca_average_timing('cpu_prepare_wait'):.6f} "
-            f"cpu_prepare_work={_poca_average_timing('cpu_prepare_work'):.6f} "
-            f"cpu_prepare_transfer={_poca_average_timing('cpu_prepare_transfer_submit'):.6f} "
-            f"cuda_cpu_prepare_transfer={_poca_average_timing('cuda_cpu_prepare_transfer'):.6f} "
-            f"dedup_rows={int(getattr(_POCA_TIMING_STATE, 'dedup_input_rows', 0))} "
-            f"dedup_unique={int(getattr(_POCA_TIMING_STATE, 'dedup_unique_rows', 0))} "
-            f"dedup_saved={max(0, int(getattr(_POCA_TIMING_STATE, 'dedup_input_rows', 0)) - int(getattr(_POCA_TIMING_STATE, 'dedup_unique_rows', 0)))} "
-            f"graph_warmups={int(getattr(_POCA_TIMING_STATE, 'graph_warmups', 0))} "
-            f"graph_captures={int(getattr(_POCA_TIMING_STATE, 'graph_captures', 0))} "
-            f"graph_replays={int(getattr(_POCA_TIMING_STATE, 'graph_replays', 0))} "
-            f"graph_skips={int(getattr(_POCA_TIMING_STATE, 'graph_skips', 0))} "
-            f"graph_capture={_poca_average_timing('cuda_graph_capture'):.6f} "
-            f"graph_input_copy={_poca_average_timing('cuda_graph_input_copy'):.6f} "
-            f"graph_replay_submit={_poca_average_timing('cuda_graph_replay_submit'):.6f} "
-            f"stats={_poca_average_timing('stats'):.6f} "
-            f"optimizer_total={_poca_average_timing('optimizer_total'):.6f} "
-            f"cuda_optimizer_total={_poca_average_timing('cuda_optimizer_total'):.6f} "
-            f"reward={_poca_average_timing('reward_signals'):.6f}",
-            flush=True,
-        )
+        if diagnostics_enabled:
+            print(
+                "[Bees PPO timing] update end "
+                f"minibatches={completed_minibatches}/{total_minibatches} "
+                f"seconds={update_seconds:.6f} "
+                f"normalize={_poca_average_timing('advantage_normalization'):.6f} "
+                f"materialize={_poca_average_timing('materialize'):.6f} "
+                f"diagnostic_profile={_poca_average_timing('diagnostic_profile'):.6f} "
+                f"cache_copy={_poca_average_timing('device_cache_copy'):.6f} "
+                f"group_cache_copy={_poca_average_timing('group_cache_copy'):.6f} "
+                f"cache_storage={device_cache['storage']} "
+                f"transfer={_poca_average_timing('cache_transfer'):.6f} "
+                f"avg_minibatch={_poca_average_timing('minibatch_total'):.6f} "
+                f"prepare={_poca_average_timing('prepare'):.6f} "
+                f"decay={_poca_average_timing('decay'):.6f} "
+                f"reward_tensors={_poca_average_timing('reward_tensors'):.6f} "
+                f"current_obs={_poca_average_timing('current_obs'):.6f} "
+                f"group_pad={_poca_average_timing('group_obs_padding'):.6f} "
+                f"group_tensors={_poca_average_timing('group_obs_tensors'):.6f} "
+                f"action_masks={_poca_average_timing('action_masks'):.6f} "
+                f"current_actions={_poca_average_timing('current_actions'):.6f} "
+                f"group_actions={_poca_average_timing('group_actions'):.6f} "
+                f"memories={_poca_average_timing('memories'):.6f} "
+                f"actor={_poca_average_timing('actor_get_stats'):.6f} "
+                f"critic={_poca_average_timing('critic_pass'):.6f} "
+                f"baseline={_poca_average_timing('baseline'):.6f} "
+                f"sparse_attention={_poca_average_timing('critic_sparse_attention'):.6f} "
+                f"cuda_actor={_poca_average_timing('cuda_actor_get_stats'):.6f} "
+                f"cuda_critic={_poca_average_timing('cuda_critic_pass'):.6f} "
+                f"cuda_baseline={_poca_average_timing('cuda_baseline'):.6f} "
+                f"old_probs_masks={_poca_average_timing('old_probs_masks'):.6f} "
+                f"losses={_poca_average_timing('losses'):.6f} "
+                f"learning_rate={_poca_average_timing('learning_rate'):.6f} "
+                f"zero_grad={_poca_average_timing('zero_grad'):.6f} "
+                f"backward={_poca_average_timing('backward'):.6f} "
+                f"optimizer_step={_poca_average_timing('optimizer_step'):.6f} "
+                f"cuda_backward={_poca_average_timing('cuda_backward'):.6f} "
+                f"cuda_optimizer_step={_poca_average_timing('cuda_optimizer_step'):.6f} "
+                f"parallel_submit={_poca_average_timing('parallel_forward_submit'):.6f} "
+                f"parallel_join={_poca_average_timing('parallel_forward_join'):.6f} "
+                f"cuda_parallel={_poca_average_timing('cuda_parallel_forward'):.6f} "
+                f"backward_join={_poca_average_timing('backward_stream_join'):.6f} "
+                f"prefetch_wait={_poca_average_timing('prefetch_cpu_wait'):.6f} "
+                f"cuda_prefetch={_poca_average_timing('cuda_prefetch'):.6f} "
+                f"cpu_prepare_wait={_poca_average_timing('cpu_prepare_wait'):.6f} "
+                f"cpu_prepare_work={_poca_average_timing('cpu_prepare_work'):.6f} "
+                f"cpu_prepare_transfer={_poca_average_timing('cpu_prepare_transfer_submit'):.6f} "
+                f"cuda_cpu_prepare_transfer={_poca_average_timing('cuda_cpu_prepare_transfer'):.6f} "
+                f"dedup_rows={int(getattr(_POCA_TIMING_STATE, 'dedup_input_rows', 0))} "
+                f"dedup_unique={int(getattr(_POCA_TIMING_STATE, 'dedup_unique_rows', 0))} "
+                f"dedup_saved={max(0, int(getattr(_POCA_TIMING_STATE, 'dedup_input_rows', 0)) - int(getattr(_POCA_TIMING_STATE, 'dedup_unique_rows', 0)))} "
+                f"graph_warmups={int(getattr(_POCA_TIMING_STATE, 'graph_warmups', 0))} "
+                f"graph_captures={int(getattr(_POCA_TIMING_STATE, 'graph_captures', 0))} "
+                f"graph_replays={int(getattr(_POCA_TIMING_STATE, 'graph_replays', 0))} "
+                f"graph_skips={int(getattr(_POCA_TIMING_STATE, 'graph_skips', 0))} "
+                f"graph_capture={_poca_average_timing('cuda_graph_capture'):.6f} "
+                f"graph_input_copy={_poca_average_timing('cuda_graph_input_copy'):.6f} "
+                f"graph_replay_submit={_poca_average_timing('cuda_graph_replay_submit'):.6f} "
+                f"stats={_poca_average_timing('stats'):.6f} "
+                f"optimizer_total={_poca_average_timing('optimizer_total'):.6f} "
+                f"cuda_optimizer_total={_poca_average_timing('cuda_optimizer_total'):.6f} "
+                f"reward={_poca_average_timing('reward_signals'):.6f}",
+                flush=True,
+            )
 
-        minibatch_distribution = _poca_timing_distribution(
-            "minibatch_total"
-        )
-        cuda_span_distribution = _poca_timing_distribution(
-            "cuda_optimizer_total"
-        )
-        cuda_unattributed = _poca_cuda_unattributed_distribution()
-        print(
-            "[Bees PPO variability] hardware "
-            f"optimizer_wall={hardware_loop_seconds:.3f} "
-            f"cpu_samples={int(hardware_summary.get('cpu_samples', 0))} "
-            f"gpu_samples={int(hardware_summary.get('gpu_samples', 0))} "
-            f"process_cpu_avg={hardware_summary.get('process_cpu_avg', 0.0):.1f} "
-            f"process_cpu_max={hardware_summary.get('process_cpu_max', 0.0):.1f} "
-            f"process_cpu_equiv={hardware_summary.get('process_cpu_equivalent_percent', 0.0):.1f} "
-            f"system_cpu_avg={hardware_summary.get('system_cpu_avg', 0.0):.1f} "
-            f"hottest_core_avg={hardware_summary.get('hottest_core_avg', 0.0):.1f} "
-            f"hottest_core_max={hardware_summary.get('hottest_core_max', 0.0):.1f} "
-            f"rss_max_mib={hardware_summary.get('rss_mib_max', 0.0):.1f} "
-            f"ram_percent_max={hardware_summary.get('system_ram_percent_max', 0.0):.1f} "
-            f"ram_available_min_mib={hardware_summary.get('system_ram_available_mib_min', 0.0):.1f} "
-            f"swap_max={hardware_summary.get('swap_percent_max', 0.0):.1f} "
-            f"ctx_voluntary={hardware_summary.get('ctx_voluntary_delta', 0.0):.0f} "
-            f"ctx_involuntary={hardware_summary.get('ctx_involuntary_delta', 0.0):.0f} "
-            f"gpu_util_avg={hardware_summary.get('gpu_util_avg', 0.0):.1f} "
-            f"gpu_util_min={hardware_summary.get('gpu_util_min', 0.0):.1f} "
-            f"gpu_util_max={hardware_summary.get('gpu_util_max', 0.0):.1f} "
-            f"gpu_mem_util_avg={hardware_summary.get('memory_util_avg', 0.0):.1f} "
-            f"gpu_clock_avg={hardware_summary.get('graphics_clock_mhz_avg', 0.0):.0f} "
-            f"gpu_clock_min={hardware_summary.get('graphics_clock_mhz_min', 0.0):.0f} "
-            f"gpu_clock_max={hardware_summary.get('graphics_clock_mhz_max', 0.0):.0f} "
-            f"gpu_mem_clock_avg={hardware_summary.get('memory_clock_mhz_avg', 0.0):.0f} "
-            f"temp_max_c={hardware_summary.get('temperature_c_max', 0.0):.1f} "
-            f"power_avg_w={hardware_summary.get('power_w_avg', 0.0):.1f} "
-            f"power_max_w={hardware_summary.get('power_w_max', 0.0):.1f} "
-            f"pstate={hardware_summary.get('pstate', '-')} "
-            f"vram_used_max_mib={hardware_summary.get('memory_used_mib_max', 0.0):.1f} "
-            f"cuda_peak_alloc_mib={hardware_summary.get('cuda_peak_allocated_mib', 0.0):.1f} "
-            f"cuda_peak_reserved_mib={hardware_summary.get('cuda_peak_reserved_mib', 0.0):.1f} "
-            f"cuda_free_end_mib={hardware_summary.get('cuda_free_end_mib', 0.0):.1f}",
-            flush=True,
-        )
-        print(
-            "[Bees PPO variability] timing "
-            f"minibatch_p50={minibatch_distribution['p50']:.6f} "
-            f"minibatch_p90={minibatch_distribution['p90']:.6f} "
-            f"minibatch_max={minibatch_distribution['max']:.6f} "
-            f"cuda_span_p50={cuda_span_distribution['p50']:.6f} "
-            f"cuda_span_p90={cuda_span_distribution['p90']:.6f} "
-            f"cuda_span_max={cuda_span_distribution['max']:.6f} "
-            f"cuda_unattributed_p50={cuda_unattributed['p50']:.6f} "
-            f"cuda_unattributed_p90={cuda_unattributed['p90']:.6f} "
-            f"cuda_unattributed_max={cuda_unattributed['max']:.6f}",
-            flush=True,
-        )
-        _poca_record_variability_history(
-            update_seconds,
-            workload_profile,
-            hardware_summary,
-        )
+            minibatch_distribution = _poca_timing_distribution(
+                "minibatch_total"
+            )
+            cuda_span_distribution = _poca_timing_distribution(
+                "cuda_optimizer_total"
+            )
+            cuda_unattributed = _poca_cuda_unattributed_distribution()
+            print(
+                "[Bees PPO variability] hardware "
+                f"optimizer_wall={hardware_loop_seconds:.3f} "
+                f"cpu_samples={int(hardware_summary.get('cpu_samples', 0))} "
+                f"gpu_samples={int(hardware_summary.get('gpu_samples', 0))} "
+                f"process_cpu_avg={hardware_summary.get('process_cpu_avg', 0.0):.1f} "
+                f"process_cpu_max={hardware_summary.get('process_cpu_max', 0.0):.1f} "
+                f"process_cpu_equiv={hardware_summary.get('process_cpu_equivalent_percent', 0.0):.1f} "
+                f"system_cpu_avg={hardware_summary.get('system_cpu_avg', 0.0):.1f} "
+                f"hottest_core_avg={hardware_summary.get('hottest_core_avg', 0.0):.1f} "
+                f"hottest_core_max={hardware_summary.get('hottest_core_max', 0.0):.1f} "
+                f"rss_max_mib={hardware_summary.get('rss_mib_max', 0.0):.1f} "
+                f"ram_percent_max={hardware_summary.get('system_ram_percent_max', 0.0):.1f} "
+                f"ram_available_min_mib={hardware_summary.get('system_ram_available_mib_min', 0.0):.1f} "
+                f"swap_max={hardware_summary.get('swap_percent_max', 0.0):.1f} "
+                f"ctx_voluntary={hardware_summary.get('ctx_voluntary_delta', 0.0):.0f} "
+                f"ctx_involuntary={hardware_summary.get('ctx_involuntary_delta', 0.0):.0f} "
+                f"gpu_util_avg={hardware_summary.get('gpu_util_avg', 0.0):.1f} "
+                f"gpu_util_min={hardware_summary.get('gpu_util_min', 0.0):.1f} "
+                f"gpu_util_max={hardware_summary.get('gpu_util_max', 0.0):.1f} "
+                f"gpu_mem_util_avg={hardware_summary.get('memory_util_avg', 0.0):.1f} "
+                f"gpu_clock_avg={hardware_summary.get('graphics_clock_mhz_avg', 0.0):.0f} "
+                f"gpu_clock_min={hardware_summary.get('graphics_clock_mhz_min', 0.0):.0f} "
+                f"gpu_clock_max={hardware_summary.get('graphics_clock_mhz_max', 0.0):.0f} "
+                f"gpu_mem_clock_avg={hardware_summary.get('memory_clock_mhz_avg', 0.0):.0f} "
+                f"temp_max_c={hardware_summary.get('temperature_c_max', 0.0):.1f} "
+                f"power_avg_w={hardware_summary.get('power_w_avg', 0.0):.1f} "
+                f"power_max_w={hardware_summary.get('power_w_max', 0.0):.1f} "
+                f"pstate={hardware_summary.get('pstate', '-')} "
+                f"vram_used_max_mib={hardware_summary.get('memory_used_mib_max', 0.0):.1f} "
+                f"cuda_peak_alloc_mib={hardware_summary.get('cuda_peak_allocated_mib', 0.0):.1f} "
+                f"cuda_peak_reserved_mib={hardware_summary.get('cuda_peak_reserved_mib', 0.0):.1f} "
+                f"cuda_free_end_mib={hardware_summary.get('cuda_free_end_mib', 0.0):.1f}",
+                flush=True,
+            )
+            print(
+                "[Bees PPO variability] timing "
+                f"minibatch_p50={minibatch_distribution['p50']:.6f} "
+                f"minibatch_p90={minibatch_distribution['p90']:.6f} "
+                f"minibatch_max={minibatch_distribution['max']:.6f} "
+                f"cuda_span_p50={cuda_span_distribution['p50']:.6f} "
+                f"cuda_span_p90={cuda_span_distribution['p90']:.6f} "
+                f"cuda_span_max={cuda_span_distribution['max']:.6f} "
+                f"cuda_unattributed_p50={cuda_unattributed['p50']:.6f} "
+                f"cuda_unattributed_p90={cuda_unattributed['p90']:.6f} "
+                f"cuda_unattributed_max={cuda_unattributed['max']:.6f}",
+                flush=True,
+            )
+            _poca_record_variability_history(
+                update_seconds,
+                workload_profile,
+                hardware_summary,
+            )
+        else:
+            print(
+                "[Bees PPO timing] update end "
+                f"minibatches={completed_minibatches}/{total_minibatches} "
+                f"seconds={update_seconds:.6f} "
+                f"cache_storage={device_cache['storage']} "
+                "diagnostics=off",
+                flush=True,
+            )
 
         _POCA_TIMING_STATE.timing_totals = None
         _POCA_TIMING_STATE.timing_counts = None
