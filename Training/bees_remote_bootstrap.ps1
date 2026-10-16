@@ -104,18 +104,23 @@ function Get-LiveAutostartMonitor {
 function Stop-RemoteLauncherRepairs {
     # A repair can outlive a crashed monitor and retain the bootstrap lock.
     # Limit termination to generated launcher START commands for this install.
-    $repairs=@(Get-CimInstance Win32_Process -ErrorAction Stop | Where-Object {
-        $commandLine=[string]$_.CommandLine
-        $name=[string]$_.Name
-        [int]$_.ProcessId -ne $PID -and
-        ($name -ieq 'cmd.exe' -or $name -ieq 'powershell.exe' -or $name -ieq 'pwsh.exe') -and
-        $commandLine.IndexOf($InstallRoot,[StringComparison]::OrdinalIgnoreCase) -ge 0 -and
-        $commandLine -match 'bees-remote-worker\.(cmd|ps1)' -and
-        $commandLine -match '(?:^|\s)start(?:\s|$)'
-    })
-    foreach($repair in $repairs){
-        & taskkill.exe /PID ([string]$repair.ProcessId) /T /F *> $null
+    for($pass=1;$pass -le 3;$pass++){
+        $repairs=@(Get-CimInstance Win32_Process -ErrorAction Stop | Where-Object {
+            $commandLine=[string]$_.CommandLine
+            $name=[string]$_.Name
+            [int]$_.ProcessId -ne $PID -and
+            ($name -ieq 'cmd.exe' -or $name -ieq 'powershell.exe' -or $name -ieq 'pwsh.exe') -and
+            $commandLine.IndexOf($InstallRoot,[StringComparison]::OrdinalIgnoreCase) -ge 0 -and
+            $commandLine -match 'bees-remote-worker\.(cmd|ps1)' -and
+            $commandLine -match '(?:^|\s)start(?:\s|$)'
+        })
+        if($repairs.Count -eq 0){return}
+        foreach($repair in $repairs){
+            & taskkill.exe /PID ([string]$repair.ProcessId) /T /F *> $null
+        }
+        Start-Sleep -Milliseconds 250
     }
+    throw 'Could not stop in-flight remote launcher repair subprocesses.'
 }
 
 function Remove-RemoteAutostart {
