@@ -335,6 +335,7 @@ function normalizeLearnerOptimizations(value, fallback = null) {
             criticBaselineOverlap: false,
             cudaGraphs: false,
             profileOnce: false,
+            detailedDiagnostics: false,
         };
     const source = value && typeof value === 'object' ? value : base;
     const streamShards = Number(
@@ -366,6 +367,11 @@ function normalizeLearnerOptimizations(value, fallback = null) {
         ),
         profileOnce: Boolean(
             source.profileOnce == null ? base.profileOnce : source.profileOnce
+        ),
+        detailedDiagnostics: Boolean(
+            source.detailedDiagnostics == null
+                ? base.detailedDiagnostics
+                : source.detailedDiagnostics
         ),
     };
 }
