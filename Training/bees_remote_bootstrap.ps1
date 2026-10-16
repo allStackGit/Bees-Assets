@@ -136,7 +136,9 @@ function Remove-RemoteAutostart {
         }
     }
     Remove-Item -LiteralPath $AutostartMonitorPidFile -Force -ErrorAction SilentlyContinue
-    Stop-RemoteLauncherRepairs
+    # A manual "start -NoAutostart" can be running under the generated launcher
+    # itself. Only stop competing launcher-start processes for an explicit STOP.
+    if($Command -eq 'stop'){Stop-RemoteLauncherRepairs}
     if($AutostartFile){
         Remove-Item -LiteralPath $AutostartFile -Force -ErrorAction SilentlyContinue
     }
