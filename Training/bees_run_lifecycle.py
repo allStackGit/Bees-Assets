@@ -251,6 +251,31 @@ def _network_settings_block(text: str) -> str:
     return "\n".join(captured) + "\n"
 
 
+def _validate_unity_policy_identity(config: Mapping[str, Any], policy_path: Path) -> None:
+    """Fail before training if Python's policy identity disagrees with Unity's frozen ABI."""
+    source = policy_path.read_text(encoding="utf-8")
+    version = re.search(r"\binternal\s+const\s+int\s+Version\s*=\s*(\d+)\s*;", source)
+    signature = re.search(
+        r"\binternal\s+const\s+string\s+Signature\s*=\s*(.*?);",
+        source,
+        re.DOTALL,
+    )
+    if version is None or signature is None:
+        raise ValueError("Unity policy ABI version/signature declaration could not be read")
+    expression = signature.group(1).strip()
+    if re.fullmatch(r'"[^"\\]*"(?:\s*\+\s*"[^"\\]*")*', expression) is None:
+        raise ValueError("Unity policy ABI signature must be concatenated string literals")
+    unity_version = int(version.group(1))
+    unity_signature = "".join(re.findall(r'"([^"\\]*)"', expression))
+    if (config["policy_abi_version"] != unity_version or
+            config["policy_signature"] != unity_signature):
+        raise ValueError(
+            "Continual-learning policy ABI/signature does not match Unity's frozen contract "
+            f"(config v{config['policy_abi_version']}, Unity v{unity_version}); "
+            "synchronize the policy metadata before starting training"
+        )
+
+
 def contract_payload(assets_root: Path) -> dict[str, Any]:
     assets_root = assets_root.resolve()
     continual_path = assets_root / "Training" / "continual_learning_config.json"
@@ -292,6 +317,7 @@ def contract_payload(assets_root: Path) -> dict[str, Any]:
         if field not in continual:
             raise ValueError(f"continual learning config is missing {field}")
         payload[field] = continual[field]
+    _validate_unity_policy_identity(payload, policy_path)
 
     trainer_text = trainer_path.read_text(encoding="utf-8")
     payload["trainer_type"] = _trainer_type(
