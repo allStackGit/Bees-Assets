@@ -918,16 +918,15 @@ def read_throughput_metrics(
             "trajectory_processing", "trajectory_collection",
             "upload_queue_wait", "upload_encode", "upload_http",
         )
-        for field in ("window_seconds",):
-            value_field = profile.get(field)
-            if (
-                not isinstance(value_field, (int, float))
-                or isinstance(value_field, bool)
-                or not math.isfinite(float(value_field))
-                or float(value_field) <= 0
-            ):
-                return {}
-            sanitized[field] = float(value_field)
+        window_seconds = profile.get("window_seconds")
+        if (
+            not isinstance(window_seconds, (int, float))
+            or isinstance(window_seconds, bool)
+            or not math.isfinite(float(window_seconds))
+            or float(window_seconds) <= 0
+        ):
+            return {}
+        sanitized["window_seconds"] = float(window_seconds)
         for name in names:
             for suffix in ("_seconds", "_count", "_max_ms"):
                 key = name + suffix
