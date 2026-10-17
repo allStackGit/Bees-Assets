@@ -638,6 +638,16 @@ class ElasticActorSession(worker.ActorSession):
             ("accepted_stale_steps_total", "broker_accepted_stale_steps_total"),
             ("consumed_stale_steps_total", "broker_consumed_stale_steps_total"),
             ("discarded_stale_steps_total", "broker_discarded_stale_steps_total"),
+            ("accepted_team_0_steps_total", "broker_accepted_team_0_steps_total"),
+            ("accepted_team_1_steps_total", "broker_accepted_team_1_steps_total"),
+            ("accepted_other_steps_total", "broker_accepted_other_steps_total"),
+            ("ppo_delivered_steps_total", "broker_ppo_delivered_steps_total"),
+            ("ghost_discarded_steps_total", "broker_ghost_discarded_steps_total"),
+            ("ghost_input_queue_depth", "broker_ghost_input_queue_depth"),
+            ("learning_queue_depth", "broker_learning_queue_depth"),
+            ("poca_staged_experiences", "broker_poca_staged_experiences"),
+            ("poca_update_buffer_experiences", "broker_poca_update_buffer_experiences"),
+            ("ppo_updates_in_flight", "broker_ppo_updates_in_flight"),
         ):
             value = state.get(remote_key)
             if value is not None:
