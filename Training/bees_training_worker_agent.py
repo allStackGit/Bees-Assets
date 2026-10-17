@@ -874,6 +874,16 @@ def read_throughput_metrics(
         "broker_accepted_stale_steps_total",
         "broker_consumed_stale_steps_total",
         "broker_discarded_stale_steps_total",
+        "broker_accepted_team_0_steps_total",
+        "broker_accepted_team_1_steps_total",
+        "broker_accepted_other_steps_total",
+        "broker_ppo_delivered_steps_total",
+        "broker_ghost_discarded_steps_total",
+        "broker_ghost_input_queue_depth",
+        "broker_learning_queue_depth",
+        "broker_poca_staged_experiences",
+        "broker_poca_update_buffer_experiences",
+        "broker_ppo_updates_in_flight",
     ):
         metric = value.get(field)
         if metric is not None:
