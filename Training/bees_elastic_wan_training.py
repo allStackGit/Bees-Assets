@@ -523,6 +523,9 @@ class ElasticWanBroker(base.WanActorBroker):
         self._reference_signatures: Optional[Dict[str, Any]] = None
         self._claims: Dict[str, Dict[str, Any]] = {}
         self._consumed_steps_by_actor: Dict[int, int] = collections.defaultdict(int)
+        self._accepted_steps_by_team: Dict[str, int] = collections.defaultdict(int)
+        self._ppo_delivered_steps_total = 0
+        self._pipeline_snapshot: Dict[str, int] = {}
         self._trainer_step = 0
         self._optimizer_busy_seconds_total = 0.0
         self._fair_drain_cursor = 0
@@ -817,6 +820,11 @@ class ElasticWanBroker(base.WanActorBroker):
                     str(actor_id): int(self._consumed_steps_by_actor.get(actor_id, 0))
                     for actor_id in active
                 },
+                "accepted_team_0_steps_total": self._accepted_steps_by_team.get("0", 0),
+                "accepted_team_1_steps_total": self._accepted_steps_by_team.get("1", 0),
+                "accepted_other_steps_total": self._accepted_steps_by_team.get("other", 0),
+                "ppo_delivered_steps_total": self._ppo_delivered_steps_total,
+                **self._pipeline_snapshot,
                 "trajectory_queue_depth": self._trajectory_batches.qsize(),
                 "trajectory_queue_capacity": self.options.max_queued_batches,
                 "broker_backpressure_total": self.diagnostics._backpressure_total,
@@ -943,6 +951,7 @@ class ElasticWanBroker(base.WanActorBroker):
         )
         allowed_behaviors = set(self.merged_behavior_specs())
         step_count = 0
+        team_steps: Dict[str, int] = collections.defaultdict(int)
         for trajectory in trajectories:
             behavior_id = getattr(trajectory, "behavior_id", None)
             agent_id = getattr(trajectory, "agent_id", None)
@@ -959,6 +968,8 @@ class ElasticWanBroker(base.WanActorBroker):
             if not isinstance(steps, list) or not steps:
                 raise ValueError("trajectory must contain at least one experience step")
             step_count += len(steps)
+            team_id = behavior_id.partition("?team=")[2]
+            team_steps[team_id if team_id in ("0", "1") else "other"] += len(steps)
 
         item = {
             "actor_id": actor_id,
@@ -973,6 +984,8 @@ class ElasticWanBroker(base.WanActorBroker):
             # requeueing of unselected batches lossless while producers continue concurrently.
             with self._condition:
                 self._trajectory_batches.put_nowait(item)
+                for team_id, accepted_steps in team_steps.items():
+                    self._accepted_steps_by_team[team_id] += accepted_steps
                 if policy_lag > 0:
                     self._accepted_stale_batches += 1
                     self._accepted_stale_steps += step_count
@@ -1038,6 +1051,18 @@ class ElasticWanBroker(base.WanActorBroker):
             if lag > 0:
                 self._consumed_stale_trajectories += 1
                 self._consumed_stale_steps += int(step_count)
+
+    def record_ppo_trajectory_delivered(self, step_count: int) -> None:
+        """Count remote experiences dequeued by the learning team's PPO trainer."""
+        if step_count < 0:
+            raise ValueError("PPO delivered trajectory step count may not be negative")
+        with self._condition:
+            self._ppo_delivered_steps_total += int(step_count)
+
+    def observe_pipeline(self, snapshot: Mapping[str, int]) -> None:
+        """Publish learner-owned queue depths and self-play disposal totals."""
+        with self._condition:
+            self._pipeline_snapshot = {key: int(value) for key, value in snapshot.items()}
 
     def record_versioned_trajectory_discarded(self, step_count: int) -> None:
         if step_count < 0:
