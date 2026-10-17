@@ -65,6 +65,7 @@ class _RolloutStageProfiler:
         "unity_get_steps", "unity_wait_first", "policy_inference",
         "trajectory_processing", "trajectory_collection",
         "upload_queue_wait", "upload_encode", "upload_http",
+        "upload_connection_created",
     )
 
     def __init__(self) -> None:
@@ -453,6 +454,9 @@ class BrokerClient:
                 self._host, self._port, timeout=self.timeout
             )
             self._upload_connection = connection
+            profiler = getattr(self, "_rollout_profiler", None)
+            if profiler is not None:
+                profiler.observe("upload_connection_created", 0.0)
         connection.request(method, path, body=body, headers=dict(headers))
         response = connection.getresponse()
         raw = response.read()
