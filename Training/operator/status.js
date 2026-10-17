@@ -754,6 +754,14 @@ async function getStatusFrameLines(config, adminToken) {
             .filter(record => currentMetric(record, 'broker_queue_depth') !== null)
             .sort((a, b) => Number(a.age_seconds ?? Infinity) - Number(b.age_seconds ?? Infinity))[0];
         const broker = brokerReporter && brokerReporter.metrics.throughput;
+        if (broker && broker.broker_pending_remote_experience_limit != null) {
+            lines.push(
+                'WAN experience memory budget (broker + ML-Agents queues): ' +
+                String(broker.broker_pending_remote_experiences ?? '-') + '/' +
+                String(broker.broker_pending_remote_experience_limit) +
+                ' pending remote experiences; excess uploads receive retriable backpressure.'
+            );
+        }
         const brokerLabel = broker ? (
             String(broker.broker_queue_depth) + '/' +
             String(broker.broker_queue_capacity ?? '?')
