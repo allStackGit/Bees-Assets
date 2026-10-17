@@ -823,7 +823,10 @@ class ElasticWanBroker(base.WanActorBroker):
                 "accepted_team_0_steps_total": self._accepted_steps_by_team.get("0", 0),
                 "accepted_team_1_steps_total": self._accepted_steps_by_team.get("1", 0),
                 "accepted_other_steps_total": self._accepted_steps_by_team.get("other", 0),
-                "ppo_delivered_steps_total": self._ppo_delivered_steps_total,
+                "ppo_delivered_steps_total": (
+                    self._ppo_delivered_steps_total
+                    if self.threaded_mode and self.max_policy_lag > 0 else None
+                ),
                 **self._pipeline_snapshot,
                 "trajectory_queue_depth": self._trajectory_batches.qsize(),
                 "trajectory_queue_capacity": self.options.max_queued_batches,
