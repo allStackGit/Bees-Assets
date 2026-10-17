@@ -739,7 +739,7 @@ async function getStatusFrameLines(config, adminToken) {
             ' exp/s  uploads=' + uploadBacklog + '  broker=' + brokerLabel +
             '  global learner=' + number(learner.LiveStepsPerSecond, 1) + ' exp/s'
         );
-        if (broker && broker.broker_ppo_delivered_steps_total != null) {
+        if (broker && broker.broker_accepted_team_0_steps_total != null) {
             const count = field => broker[field] == null ? '-' : String(broker[field]);
             lines.push(
                 'Self-play experience totals (since learner start): ' +
@@ -748,7 +748,8 @@ async function getStatusFrameLines(config, adminToken) {
                 '  other=' + count('broker_accepted_other_steps_total') +
                 '  remote delivered to PPO=' + count('broker_ppo_delivered_steps_total') +
                 '  ghost discarded (local + remote)=' + count('broker_ghost_discarded_steps_total') +
-                '. Team IDs change learning/ghost roles during self-play.'
+                '. Team IDs change learning/ghost roles during self-play; ' +
+                'PPO delivery requires threaded version-tagged trajectories.'
             );
             lines.push(
                 'Self-play flow (sampled): useful PPO remote=' +
