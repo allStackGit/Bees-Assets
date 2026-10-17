@@ -16,6 +16,7 @@ import argparse
 import copy
 import hashlib
 import http.client
+import io
 import json
 import math
 import os
@@ -340,6 +341,11 @@ class BrokerBackpressure(RuntimeError):
 class BrokerClient:
     def __init__(self, host: str, port: int, token: str, timeout: float = 30.0):
         self.base = f"http://{host}:{port}"
+        self._host = host
+        self._port = port
+        # Only the single uploader thread touches this connection. Long-poll
+        # state/control requests stay on their independent urllib connections.
+        self._upload_connection: Optional[http.client.HTTPConnection] = None
         self.token = token
         self.timeout = timeout
         self._traffic_lock = threading.Lock()
@@ -418,6 +424,50 @@ class BrokerClient:
                 "network_mib_per_s": self._traffic_mib_per_s,
             }
 
+    def _close_upload_connection(self) -> None:
+        connection = self._upload_connection
+        self._upload_connection = None
+        if connection is not None:
+            connection.close()
+
+    def close(self) -> None:
+        self._close_upload_connection()
+
+    def _persistent_upload_request(
+        self,
+        method: str,
+        path: str,
+        body: Optional[bytes],
+        headers: Mapping[str, str],
+    ) -> Tuple[int, Mapping[str, str], bytes]:
+        """Reuse the one authenticated broker TCP stream for sequential uploads.
+
+        The tailnet forwarder is a byte-stream proxy: keeping this local TCP
+        connection open also keeps its corresponding tailnet leg open. There
+        is no automatic POST replay here; the existing uploader handles
+        transport failure and retry, including uncertain acknowledgements.
+        """
+        connection = self._upload_connection
+        if connection is None:
+            connection = http.client.HTTPConnection(
+                self._host, self._port, timeout=self.timeout
+            )
+            self._upload_connection = connection
+        connection.request(method, path, body=body, headers=dict(headers))
+        response = connection.getresponse()
+        raw = response.read()
+        status = int(response.status)
+        response_headers = dict(response.getheaders())
+        reason = response.reason
+        will_close = response.will_close
+        if will_close:
+            self._close_upload_connection()
+        if status >= 400:
+            raise urllib.error.HTTPError(
+                self.base + path, status, reason, response.headers, io.BytesIO(raw)
+            )
+        return status, response_headers, raw
+
     def _request(
         self,
         method: str,
@@ -436,18 +486,27 @@ class BrokerClient:
         finally:
             if profiler is not None:
                 profiler.observe("upload_encode", time.perf_counter() - encode_started)
-        request = urllib.request.Request(
-            self.base + path,
-            data=body,
-            method=method,
-            headers={
-                "Authorization": "Bearer " + self.token,
-                "Content-Type": "application/octet-stream",
-            },
-        )
+        headers = {
+            "Authorization": "Bearer " + self.token,
+            "Content-Type": "application/octet-stream",
+        }
         self._record_traffic(sent=len(body) if body is not None else 0)
         request_started = time.perf_counter() if profiler is not None else 0.0
         try:
+            if path == "/trajectories":
+                # The upload loop sends one batch at a time. Reuse its TCP/Tailnet
+                # stream, without serializing the concurrent state long-poll.
+                status, response_headers, raw = self._persistent_upload_request(
+                    method, path, body, headers
+                )
+                self._record_traffic(received=len(raw))
+                return status, response_headers, raw
+            request = urllib.request.Request(
+                self.base + path,
+                data=body,
+                method=method,
+                headers=headers,
+            )
             with urllib.request.urlopen(request, timeout=self.timeout) as response:
                 raw = response.read()
                 self._record_traffic(received=len(raw))
@@ -474,6 +533,8 @@ class BrokerClient:
                 raise BrokerBackpressure(message) from exc
             raise RuntimeError(f"WAN broker rejected {method} {path}: {exc.code} {code}: {message}") from exc
         except (urllib.error.URLError, TimeoutError, ConnectionError, http.client.HTTPException, OSError) as exc:
+            if path == "/trajectories":
+                self._close_upload_connection()
             raise BrokerUnavailable(str(exc)) from exc
         finally:
             if profiler is not None:
@@ -1060,6 +1121,10 @@ class ActorSession:
             self._watcher.join(timeout=2.0)
         if self._uploader is not None:
             self._uploader.join(timeout=2.0)
+        # A still-busy uploader owns the connection until it exits; closing a
+        # socket from another thread during shutdown may interrupt a request.
+        if self._uploader is None or not self._uploader.is_alive():
+            self.client.close()
         if self._step_diagnostic_thread is not None:
             self._step_diagnostic_thread.join(timeout=2.0)
         self._rollout_profiler.maybe_report(force=True)
