@@ -32,7 +32,9 @@ class ElasticActorSession(worker.ActorSession):
         self.policy_cycle = -1
         self.learner_step = -1
         self.optimizer_busy_seconds_total = None
-        self._broker_pipeline_metrics: dict[str, int] = {}
+        self._broker_pipeline_metrics: dict[str, object] = {}
+        self._pipeline_counter_samples: dict[str, tuple[float, int]] = {}
+        self._pipeline_rates: dict[str, float] = {}
         self._last_consumed_sample = None
         target_path = os.environ.get(WORKER_ENVS_TARGET_ENV, "").strip()
         self._env_target_path = (
@@ -656,6 +658,26 @@ class ElasticActorSession(worker.ActorSession):
                         f"Elastic WAN central state has invalid {remote_key}"
                     )
                 broker_metrics[local_key] = value
+        now = time.monotonic()
+        for total_key, rate_key in (
+            ("broker_ppo_delivered_steps_total", "broker_ppo_delivered_steps_per_sec"),
+            ("broker_ghost_discarded_steps_total", "broker_ghost_discarded_steps_per_sec"),
+        ):
+            value = broker_metrics.get(total_key)
+            if value is None:
+                continue
+            previous = self._pipeline_counter_samples.get(total_key)
+            if previous is None or now - previous[0] >= 0.5:
+                if previous is not None:
+                    if value < previous[1]:
+                        self._pipeline_rates.pop(rate_key, None)
+                    else:
+                        self._pipeline_rates[rate_key] = (
+                            value - previous[1]
+                        ) / (now - previous[0])
+                self._pipeline_counter_samples[total_key] = (now, value)
+            if rate_key in self._pipeline_rates:
+                broker_metrics[rate_key] = self._pipeline_rates[rate_key]
         self._broker_pipeline_metrics = broker_metrics
 
         consumed = state.get("consumed_steps_by_actor")
