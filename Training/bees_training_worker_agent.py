@@ -894,6 +894,20 @@ def read_throughput_metrics(
             ):
                 return {}
             result[field] = metric
+    for field in (
+        "broker_ppo_delivered_steps_per_sec",
+        "broker_ghost_discarded_steps_per_sec",
+    ):
+        metric = value.get(field)
+        if metric is not None:
+            if (
+                not isinstance(metric, (int, float))
+                or isinstance(metric, bool)
+                or not math.isfinite(float(metric))
+                or metric < 0.0
+            ):
+                return {}
+            result[field] = float(metric)
     if learner_step_total is not None:
         result["learner_step_total"] = int(learner_step_total)
     if optimizer_busy_seconds_total is not None:
