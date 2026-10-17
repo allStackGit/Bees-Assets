@@ -884,6 +884,8 @@ def read_throughput_metrics(
         "broker_poca_staged_experiences",
         "broker_poca_update_buffer_experiences",
         "broker_ppo_updates_in_flight",
+        "broker_pending_remote_experiences",
+        "broker_pending_remote_experience_limit",
     ):
         metric = value.get(field)
         if metric is not None:
