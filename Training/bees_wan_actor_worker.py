@@ -430,7 +430,13 @@ class BrokerClient:
         if query:
             encoded_query = urllib.parse.urlencode({key: str(value) for key, value in query.items()})
             path = path + ("&" if "?" in path else "?") + encoded_query
-        body = wan.encode_payload(payload) if payload is not None else None
+        profiler = getattr(self, "_rollout_profiler", None) if path == "/trajectories" else None
+        encode_started = time.perf_counter() if profiler is not None else 0.0
+        try:
+            body = wan.encode_payload(payload) if payload is not None else None
+        finally:
+            if profiler is not None:
+                profiler.observe("upload_encode", time.perf_counter() - encode_started)
         request = urllib.request.Request(
             self.base + path,
             data=body,
@@ -441,6 +447,7 @@ class BrokerClient:
             },
         )
         self._record_traffic(sent=len(body) if body is not None else 0)
+        request_started = time.perf_counter() if profiler is not None else 0.0
         try:
             with urllib.request.urlopen(request, timeout=self.timeout) as response:
                 raw = response.read()
@@ -469,6 +476,9 @@ class BrokerClient:
             raise RuntimeError(f"WAN broker rejected {method} {path}: {exc.code} {code}: {message}") from exc
         except (urllib.error.URLError, TimeoutError, ConnectionError, http.client.HTTPException, OSError) as exc:
             raise BrokerUnavailable(str(exc)) from exc
+        finally:
+            if profiler is not None:
+                profiler.observe("upload_http", time.perf_counter() - request_started)
 
     def session(self) -> Mapping[str, Any]:
         status, _headers, body = self._request("GET", "/session")
@@ -824,6 +834,8 @@ class ActorSession:
             Path(throughput_path).expanduser().resolve() if throughput_path else None
         )
         self._throughput_lock = threading.Lock()
+        self._rollout_profiler = _RolloutStageProfiler()
+        self.client._rollout_profiler = self._rollout_profiler
         self._accepted_steps_total = 0
         self._staged_steps_total = 0
         self._staged_steps_per_sec = None
@@ -1004,6 +1016,9 @@ class ActorSession:
                 payload.update(failure_snapshot())
             payload.update(self.client.traffic_snapshot())
             payload.update(self._throughput_extra_metrics())
+            profile = self._rollout_profiler.snapshot()
+            if profile:
+                payload["rollout_profile"] = profile
             try:
                 atomic_write_text(
                     path,
@@ -1048,6 +1063,7 @@ class ActorSession:
             self._uploader.join(timeout=2.0)
         if self._step_diagnostic_thread is not None:
             self._step_diagnostic_thread.join(timeout=2.0)
+        self._rollout_profiler.maybe_report(force=True)
         self._write_throughput_metrics(force=True)
         self._onnx_temp.cleanup()
 
@@ -1509,6 +1525,7 @@ class ActorSession:
 
     def _enqueue_upload(self, payload: Mapping[str, Any]) -> bool:
         while not self.stop.is_set():
+            put_started = time.perf_counter()
             try:
                 self._upload_queue.put(payload, timeout=0.5)
                 if getattr(self, "_throughput_lock", None) is not None:
@@ -1529,6 +1546,11 @@ class ActorSession:
                     or self._stale.is_set()
                 ):
                     return False
+            finally:
+                self._rollout_profiler.observe(
+                    "upload_queue_wait", time.perf_counter() - put_started
+                )
+                self._rollout_profiler.maybe_report()
         return False
 
     def _collect_trajectories(self) -> List[Any]:
@@ -1561,14 +1583,30 @@ class ActorSession:
                 self.stop.wait(0.05)
                 continue
             step_wait_sequence = self._begin_step_wait()
+            step_started = time.perf_counter()
             try:
                 local_steps = self.manager.get_steps()
             finally:
                 self._end_step_wait(step_wait_sequence)
-            mapped_steps = _remap_completed_steps(self.manager, local_steps, self.worker_offset)
-            self.manager.process_steps(mapped_steps)
+                self._rollout_profiler.observe(
+                    "unity_get_steps", time.perf_counter() - step_started
+                )
+            process_started = time.perf_counter()
+            try:
+                mapped_steps = _remap_completed_steps(self.manager, local_steps, self.worker_offset)
+                self.manager.process_steps(mapped_steps)
+            finally:
+                self._rollout_profiler.observe(
+                    "trajectory_processing", time.perf_counter() - process_started
+                )
             self._report_runtime_progress()
-            trajectories = self._collect_trajectories()
+            collect_started = time.perf_counter()
+            try:
+                trajectories = self._collect_trajectories()
+            finally:
+                self._rollout_profiler.observe(
+                    "trajectory_collection", time.perf_counter() - collect_started
+                )
             if trajectories:
                 # One actor generally emits one compact cohort batch. The 256-trajectory ceiling can
                 # represent 32 environments with up to eight policy agents each (e.g. 4v4) while the
@@ -1583,6 +1621,7 @@ class ActorSession:
                     }
                     if not self._enqueue_upload(payload):
                         break
+            self._rollout_profiler.maybe_report()
             self._reconcile_env_count()
 
 
