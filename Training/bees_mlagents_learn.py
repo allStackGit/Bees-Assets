@@ -499,7 +499,7 @@ def _install_sampled_worker_timers():
     return original_worker
 
 
-def _install_batched_inference(cpu_inference: bool = False):
+def _install_batched_inference(cpu_inference: bool = False, stage_profiler=None):
     """Batch exact-behavior policy inference across all currently idle workers."""
 
     import numpy as np
@@ -527,6 +527,9 @@ def _install_batched_inference(cpu_inference: bool = False):
             raise RuntimeError(
                 "Bees batched inference is already installed with a different device mode."
             )
+        # Actors reconnect within the same process. Keep the existing patch but
+        # point its observations at the new session's profiler.
+        original_queue_steps._bees_stage_profiler = stage_profiler
         return None
     cpu_actor_cache = _CpuInferenceActorCache() if cpu_inference else None
     cpu_device = torch.device("cpu")
@@ -654,6 +657,7 @@ def _install_batched_inference(cpu_inference: bool = False):
         )
 
     def batched_queue_steps(self) -> None:
+        profiler = batched_queue_steps._bees_stage_profiler
         idle_workers = [worker for worker in self.env_workers if not worker.waiting]
         if not idle_workers:
             return
@@ -700,16 +704,23 @@ def _install_batched_inference(cpu_inference: bool = False):
                     )
                     start = end
 
-            if cpu_actor_cache is None:
-                run_out = policy.evaluate(batched_steps, global_agent_ids)
-            else:
-                cpu_actor = cpu_actor_cache.get(behavior_name, policy)
-                run_out = evaluate_on_cpu(
-                    policy,
-                    cpu_actor,
-                    batched_steps,
-                    global_agent_ids,
-                )
+            inference_started = time.perf_counter() if profiler is not None else 0.0
+            try:
+                if cpu_actor_cache is None:
+                    run_out = policy.evaluate(batched_steps, global_agent_ids)
+                else:
+                    cpu_actor = cpu_actor_cache.get(behavior_name, policy)
+                    run_out = evaluate_on_cpu(
+                        policy,
+                        cpu_actor,
+                        batched_steps,
+                        global_agent_ids,
+                    )
+            finally:
+                if profiler is not None:
+                    profiler.observe(
+                        "policy_inference", time.perf_counter() - inference_started
+                    )
 
             policy.save_memories(global_agent_ids, run_out.get("memory_out"))
             policy.check_nan_action(run_out.get("action"))
@@ -752,11 +763,12 @@ def _install_batched_inference(cpu_inference: bool = False):
 
     batched_queue_steps._bees_batched_inference = True
     batched_queue_steps._bees_cpu_inference = bool(cpu_inference)
+    batched_queue_steps._bees_stage_profiler = stage_profiler
     SubprocessEnvManager._queue_steps = batched_queue_steps
     return original_queue_steps
 
 
-def _install_fast_env_manager():
+def _install_fast_env_manager(stage_profiler=None):
     """Block for the first result, then drain every worker already ready."""
 
     from queue import Empty as EmptyQueueException
@@ -780,10 +792,12 @@ def _install_fast_env_manager():
     )
     if step_installed or process_installed:
         if step_installed and process_installed:
+            original_step._bees_stage_profiler = stage_profiler
             return None, None
         raise RuntimeError("Bees fast environment-manager patch is only partially installed.")
 
     def fast_step(self):
+        profiler = fast_step._bees_stage_profiler
         self._queue_steps()
         worker_steps = []
         step_workers = set()
@@ -803,8 +817,15 @@ def _install_fast_env_manager():
             return False
 
         while not worker_steps:
-            with hierarchical_timer("BeesEnv.wait_first_worker"):
-                first_step = self.step_queue.get()
+            wait_started = time.perf_counter() if profiler is not None else 0.0
+            try:
+                with hierarchical_timer("BeesEnv.wait_first_worker"):
+                    first_step = self.step_queue.get()
+            finally:
+                if profiler is not None:
+                    profiler.observe(
+                        "unity_wait_first", time.perf_counter() - wait_started
+                    )
             if accept_response(first_step):
                 continue
 
@@ -829,6 +850,7 @@ def _install_fast_env_manager():
             return original_process_step_infos(self, step_infos)
 
     fast_step._bees_fast_env_manager = True
+    fast_step._bees_stage_profiler = stage_profiler
     timed_process_step_infos._bees_fast_env_manager = True
     SubprocessEnvManager._step = fast_step
     EnvManager._process_step_infos = timed_process_step_infos
