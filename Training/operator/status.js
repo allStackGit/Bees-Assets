@@ -262,6 +262,10 @@ function ppoStatusLines(ppo, signals) {
         lines.push('Bottleneck signal: worker upload queue=' + signals.uploadBacklog +
             ' batches; broker=' + (broker ? queueDepth + '/' + capacity : 'unknown') +
             '. Inspect network admission and learner throughput; ' + evidence + '.');
+    } else if (broker && Number(broker.broker_learning_queue_depth) > 0) {
+        lines.push('Bottleneck signal: downstream PPO input queue contains ' +
+            broker.broker_learning_queue_depth +
+            ' trajectories. Watch whether this grows over multiple samples; ' + evidence + '.');
     } else {
         lines.push('Bottleneck signal: no sustained queue-growth evidence available; ' +
             evidence + '. One snapshot cannot identify the limiting machine.');
@@ -735,14 +739,35 @@ async function getStatusFrameLines(config, adminToken) {
             ' exp/s  uploads=' + uploadBacklog + '  broker=' + brokerLabel +
             '  global learner=' + number(learner.LiveStepsPerSecond, 1) + ' exp/s'
         );
+        if (broker && broker.broker_ppo_delivered_steps_total != null) {
+            const count = field => broker[field] == null ? '-' : String(broker[field]);
+            lines.push(
+                'Self-play experience totals (since learner start): ' +
+                'broker accepted team0=' + count('broker_accepted_team_0_steps_total') +
+                '  team1=' + count('broker_accepted_team_1_steps_total') +
+                '  other=' + count('broker_accepted_other_steps_total') +
+                '  remote delivered to PPO=' + count('broker_ppo_delivered_steps_total') +
+                '  ghost discarded (local + remote)=' + count('broker_ghost_discarded_steps_total') +
+                '. Team IDs change learning/ghost roles during self-play.'
+            );
+            lines.push(
+                'Learner queues (trajectory counts): ghost input=' +
+                count('broker_ghost_input_queue_depth') +
+                '  PPO input=' + count('broker_learning_queue_depth') +
+                '  PPO staged experiences=' + count('broker_poca_staged_experiences') +
+                '  PPO update buffer experiences=' + count('broker_poca_update_buffer_experiences') +
+                '  updates in flight=' + count('broker_ppo_updates_in_flight') + '.'
+            );
+        }
         lines.push(...ppoStatusLines(
             getLatestPpoUpdate(String(desired.run_id || '')),
             { uploadBacklog, broker }
         ));
         lines.push(
             'Rates: Staged/s counts queued complete trajectories, Accept/s broker-accepted experience, ' +
-            'LiveExp/s learner-consumed experience. OptStep/s is an environment auto-tuner probe, ' +
-            'NOT gradient steps/s. Rates have different sampling windows.'
+            'LiveExp/s counts dequeued experience from BOTH self-play teams before ghost filtering. ' +
+            'OptStep/s is an environment auto-tuner probe, NOT gradient steps/s. ' +
+            'Rates use different sampling windows; queues are snapshots, not trends.'
         );
         lines.push(
             'Network: SentGiB/RecvGiB are cumulative per-run WAN payload bytes; MiB/s is the current payload rate when a live actor session is available.'
