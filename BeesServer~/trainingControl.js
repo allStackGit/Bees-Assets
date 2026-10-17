@@ -1826,7 +1826,8 @@ class TrainingControlStore {
         // A status read clears only old, transient remote records. The central
         // learner remains visible, and durable release-barrier membership is
         // deliberately left to the existing lease-based rollout machinery.
-        const retiredAfter = 30 * 60 * 1000;
+        // Retire only after the worker has spent a full 30 minutes past its lease.
+        const retiredAfter = (this.leaseSeconds + 30 * 60) * 1000;
         for (const [trainerId, record] of this.trainers) {
             if (trainerId !== 'central-learner' &&
                 now - record.last_seen_ms > retiredAfter) {
