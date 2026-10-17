@@ -751,6 +751,12 @@ async function getStatusFrameLines(config, adminToken) {
                 '. Team IDs change learning/ghost roles during self-play.'
             );
             lines.push(
+                'Self-play flow (sampled): useful PPO remote=' +
+                number(broker.broker_ppo_delivered_steps_per_sec, 1) +
+                ' exp/s  ghost disposed (local + remote)=' +
+                number(broker.broker_ghost_discarded_steps_per_sec, 1) + ' exp/s.'
+            );
+            lines.push(
                 'Learner queues (trajectory counts): ghost input=' +
                 count('broker_ghost_input_queue_depth') +
                 '  PPO input=' + count('broker_learning_queue_depth') +
