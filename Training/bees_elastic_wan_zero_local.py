@@ -35,6 +35,7 @@ class _VersionedTrajectory:
         "control_epoch",
         "step_count",
         "_consumed_accounted",
+        "_ppo_delivered_accounted",
         "_discarded_accounted",
     )
 
@@ -53,6 +54,7 @@ class _VersionedTrajectory:
         self.control_epoch = int(control_epoch)
         self.step_count = len(trajectory.steps)
         self._consumed_accounted = False
+        self._ppo_delivered_accounted = False
         self._discarded_accounted = False
 
     def __getattr__(self, name: str) -> Any:
@@ -73,6 +75,12 @@ class _VersionedTrajectory:
             lag,
         )
         self._consumed_accounted = True
+
+    def mark_ppo_delivered(self) -> None:
+        if self._ppo_delivered_accounted:
+            return
+        self.broker.record_ppo_trajectory_delivered(self.step_count)
+        self._ppo_delivered_accounted = True
 
     def mark_discarded(self) -> None:
         if self._discarded_accounted:
@@ -376,6 +384,10 @@ def install_elastic_wan_env_manager(
                     item.mark_discarded()
                     continue
                 item.mark_consumed(lag)
+                # The outer self-play queue contains both teams. Only a second dequeue
+                # from the inner, unsuffixed PPO queue represents useful learning data.
+                if queue_self.behavior_id != item.trajectory.behavior_id:
+                    item.mark_ppo_delivered()
                 return item
 
         AgentManagerQueue.get_nowait = version_checked_get_nowait
@@ -404,16 +416,47 @@ def install_elastic_wan_env_manager(
         if broker is not None:
             broker.complete_policy_cycle(starting_policy_epoch)
             steps = []
+            ghost_discarded = 0
+            ghost_queue = 0
+            learning_queue = 0
+            poca_staged = 0
+            poca_buffer = 0
+            updates_in_flight = 0
             for trainer in controller.trainers.values():
                 try:
                     steps.append(int(trainer.get_step))
                 except Exception:
                     continue
+                # GhostTrainer counts deliberately discarded non-learning steps.
+                # Its outer queues contain both teams; its wrapped PPO trainer
+                # owns the inner queue and the subsequent update buffers.
+                ghost_discarded += int(getattr(trainer, "ghost_step", 0))
+                ghost_queue += sum(
+                    pending.qsize() for pending in getattr(trainer, "trajectory_queues", ())
+                )
+                wrapped = getattr(trainer, "trainer", trainer)
+                learning_queue += sum(
+                    pending.qsize() for pending in getattr(wrapped, "trajectory_queues", ())
+                )
+                poca_staged += int(getattr(wrapped, "_bees_poca_staged_experiences", 0))
+                buffer = getattr(wrapped, "update_buffer", None)
+                poca_buffer += int(getattr(buffer, "num_experiences", 0))
+                updates_in_flight += int(
+                    getattr(wrapped, "_bees_poca_update_future", None) is not None
+                )
             if steps:
                 broker.observe_trainer_step(max(steps))
             broker.observe_optimizer_busy_seconds(
                 poca_update_busy_seconds_total()
             )
+            broker.observe_pipeline({
+                "ghost_discarded_steps_total": ghost_discarded,
+                "ghost_input_queue_depth": ghost_queue,
+                "learning_queue_depth": learning_queue,
+                "poca_staged_experiences": poca_staged,
+                "poca_update_buffer_experiences": poca_buffer,
+                "ppo_updates_in_flight": updates_in_flight,
+            })
         return result
 
     learn.SubprocessEnvManager = ZeroLocalElasticWanEnvManager
