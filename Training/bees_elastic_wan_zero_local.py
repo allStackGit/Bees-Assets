@@ -36,6 +36,7 @@ class _VersionedTrajectory:
         "step_count",
         "_consumed_accounted",
         "_ppo_delivered_accounted",
+        "_pending_released",
         "_discarded_accounted",
     )
 
@@ -55,6 +56,7 @@ class _VersionedTrajectory:
         self.step_count = len(trajectory.steps)
         self._consumed_accounted = False
         self._ppo_delivered_accounted = False
+        self._pending_released = False
         self._discarded_accounted = False
 
     def __getattr__(self, name: str) -> Any:
@@ -81,14 +83,22 @@ class _VersionedTrajectory:
             return
         self.broker.record_ppo_trajectory_delivered(self.step_count)
         self._ppo_delivered_accounted = True
+        self._pending_released = True
+
+    def mark_ghost_discarded(self) -> None:
+        if self._pending_released:
+            return
+        self.broker.release_trajectory_reservation(self.step_count)
+        self._pending_released = True
 
     def mark_discarded(self) -> None:
         if self._discarded_accounted:
             return
         self.broker.record_versioned_trajectory_discarded(
-            self.step_count, already_consumed=self._consumed_accounted
+            self.step_count, already_released=self._pending_released
         )
         self._discarded_accounted = True
+        self._pending_released = True
 
 
 class ZeroLocalElasticWanEnvManagerMixin(elastic.ElasticWanEnvManagerMixin):
@@ -397,6 +407,8 @@ def install_elastic_wan_env_manager(
                 # from the inner, unsuffixed PPO queue represents useful learning data.
                 if queue_self.behavior_id != item.trajectory.behavior_id:
                     item.mark_ppo_delivered()
+                elif item.broker.is_ghost_trajectory(item.trajectory.behavior_id):
+                    item.mark_ghost_discarded()
                 return item
 
         AgentManagerQueue.get_nowait = version_checked_get_nowait
@@ -421,6 +433,11 @@ def install_elastic_wan_env_manager(
         starting_policy_epoch = (
             broker.policy_publication_epoch() if broker is not None else 0
         )
+        if broker is not None and threaded_mode:
+            for trainer in controller.trainers.values():
+                if hasattr(trainer, "_learning_team"):
+                    broker.observe_learning_team(trainer._learning_team)
+                    break
         result = original_advance(controller, env_manager)
         if broker is not None:
             broker.complete_policy_cycle(starting_policy_epoch)
