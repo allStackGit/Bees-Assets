@@ -525,6 +525,17 @@ class ElasticWanBroker(base.WanActorBroker):
         self._consumed_steps_by_actor: Dict[int, int] = collections.defaultdict(int)
         self._accepted_steps_by_team: Dict[str, int] = collections.defaultdict(int)
         self._ppo_delivered_steps_total = 0
+        # Include all admitted, not-yet-dequeued remote experiences, including
+        # batches already transferred to ML-Agents' unbounded trajectory queues.
+        # Limiting only the HTTP broker queue left gigabytes queued downstream.
+        behaviors = getattr(run_options, "behaviors", {})
+        buffer_sizes = [
+            int(settings.hyperparameters.buffer_size)
+            for settings in behaviors.values()
+            if getattr(getattr(settings, "hyperparameters", None), "buffer_size", 0) > 0
+        ]
+        self._pending_experience_limit = 2 * max(buffer_sizes, default=16384)
+        self._pending_experiences = 0
         self._pipeline_snapshot: Dict[str, int] = {}
         self._last_pipeline_report = 0.0
         self._trainer_step = 0
@@ -829,6 +840,8 @@ class ElasticWanBroker(base.WanActorBroker):
                     if self.threaded_mode and self.max_policy_lag > 0 else None
                 ),
                 **self._pipeline_snapshot,
+                "pending_remote_experiences": self._pending_experiences,
+                "pending_remote_experience_limit": self._pending_experience_limit,
                 "trajectory_queue_depth": self._trajectory_batches.qsize(),
                 "trajectory_queue_capacity": self.options.max_queued_batches,
                 "broker_backpressure_total": self.diagnostics._backpressure_total,
@@ -924,11 +937,47 @@ class ElasticWanBroker(base.WanActorBroker):
                 self._policy_lag_locked(batch.get("policy_versions"))
             except base.StaleActorStateError:
                 self._discarded_stale_batches += 1
-                self._discarded_stale_steps += int(batch.get("step_count", 0) or 0)
+                discarded_steps = int(batch.get("step_count", 0) or 0)
+                self._discarded_stale_steps += discarded_steps
+                self._release_pending_experiences_locked(discarded_steps)
             else:
                 retained.append(batch)
         for batch in retained:
             self._trajectory_batches.put_nowait(batch)
+
+    def _release_pending_experiences_locked(self, step_count: int) -> None:
+        if not (self.threaded_mode and self.max_policy_lag > 0):
+            return
+        if step_count < 0 or step_count > self._pending_experiences:
+            raise RuntimeError(
+                f"WAN inflight accounting mismatch: releasing {step_count} "
+                f"from {self._pending_experiences}"
+            )
+        self._pending_experiences -= step_count
+
+    def _discard_queued_batches_locked(self) -> None:
+        # Control resets remove batches before injection; they must also release
+        # their memory-budget reservation, while outstanding ML-Agents queues
+        # remain reserved until dequeued or rejected as stale.
+        self._cohort_blocked_actors.clear()
+        while True:
+            try:
+                batch = self._trajectory_batches.get_nowait()
+            except queue.Empty:
+                break
+            self._release_pending_experiences_locked(
+                int(batch.get("step_count", 0) or 0)
+            )
+
+    def has_pending_remote_experiences(self) -> bool:
+        with self._condition:
+            return self._pending_experiences > 0
+
+    def release_queued_batch(self, batch: Mapping[str, Any]) -> None:
+        with self._condition:
+            self._release_pending_experiences_locked(
+                int(batch.get("step_count", 0) or 0)
+            )
 
     def submit_trajectory_batch(self, payload: Mapping[str, Any]) -> int:
         actor_id = self._validate_actor_id(payload.get("actor_id"))
@@ -987,7 +1036,15 @@ class ElasticWanBroker(base.WanActorBroker):
             # Coordinate queue admission with the learner's fair snapshot drain. This keeps
             # requeueing of unselected batches lossless while producers continue concurrently.
             with self._condition:
+                if self.threaded_mode and self.max_policy_lag > 0:
+                    # Permit one oversized cohort only when no experiences are
+                    # outstanding; otherwise never allow an unbounded backlog.
+                    if (self._pending_experiences > 0 and
+                        self._pending_experiences + step_count > self._pending_experience_limit):
+                        raise queue.Full
                 self._trajectory_batches.put_nowait(item)
+                if self.threaded_mode and self.max_policy_lag > 0:
+                    self._pending_experiences += step_count
                 for team_id, accepted_steps in team_steps.items():
                     self._accepted_steps_by_team[team_id] += accepted_steps
                 if policy_lag > 0:
@@ -1051,6 +1108,7 @@ class ElasticWanBroker(base.WanActorBroker):
         if step_count < 0:
             raise ValueError("versioned trajectory step count may not be negative")
         with self._condition:
+            self._release_pending_experiences_locked(step_count)
             self._consumed_steps_by_actor[actor_id] += int(step_count)
             if lag > 0:
                 self._consumed_stale_trajectories += 1
@@ -1068,10 +1126,14 @@ class ElasticWanBroker(base.WanActorBroker):
         with self._condition:
             self._pipeline_snapshot = {key: int(value) for key, value in snapshot.items()}
 
-    def record_versioned_trajectory_discarded(self, step_count: int) -> None:
+    def record_versioned_trajectory_discarded(
+        self, step_count: int, *, already_consumed: bool = False
+    ) -> None:
         if step_count < 0:
             raise ValueError("versioned trajectory step count may not be negative")
         with self._condition:
+            if not already_consumed:
+                self._release_pending_experiences_locked(step_count)
             self._discarded_stale_trajectories += 1
             self._discarded_stale_trajectory_steps += int(step_count)
 
@@ -1100,6 +1162,10 @@ class ElasticWanBroker(base.WanActorBroker):
                     break
                 if self._batch_is_current(batch):
                     candidates.append((ordinal, batch))
+                else:
+                    self._release_pending_experiences_locked(
+                        int(batch.get("step_count", 0) or 0)
+                    )
 
             if not candidates:
                 return ()
@@ -1139,11 +1205,15 @@ class ElasticWanBroker(base.WanActorBroker):
                 self._fair_drain_cursor = (actor_ids.index(last_actor_id) + 1) % len(actor_ids)
 
             selected = [batch for _ordinal, batch in chosen]
-            selected = [
-                batch for batch in selected
-                if self.record_consumed_batch(batch)
-            ]
-            return tuple(selected)
+            retained = []
+            for batch in selected:
+                if self.record_consumed_batch(batch):
+                    retained.append(batch)
+                else:
+                    self._release_pending_experiences_locked(
+                        int(batch.get("step_count", 0) or 0)
+                    )
+            return tuple(retained)
 
     def publish_policy(self, behavior_name: str, policy: Any) -> int:
         if self.max_policy_lag <= 0:
@@ -1241,6 +1311,7 @@ class ElasticWanBroker(base.WanActorBroker):
                 f"accepted_team1={accepted.get('1', 0)} "
                 f"accepted_other={accepted.get('other', 0)} "
                 f"ppo_delivered={ppo_delivered} "
+                f"pending_experiences={self._pending_experiences}/{self._pending_experience_limit} "
                 f"ghost_discarded={pipeline.get('ghost_discarded_steps_total', 0)} "
                 f"ghost_input_queue={pipeline.get('ghost_input_queue_depth', 0)} "
                 f"learning_queue={pipeline.get('learning_queue_depth', 0)} "
