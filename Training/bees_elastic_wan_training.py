@@ -536,6 +536,7 @@ class ElasticWanBroker(base.WanActorBroker):
         ]
         self._pending_experience_limit = 2 * max(buffer_sizes, default=16384)
         self._pending_experiences = 0
+        self._learning_team_id: Optional[int] = None
         self._pipeline_snapshot: Dict[str, int] = {}
         self._last_pipeline_report = 0.0
         self._trainer_step = 0
@@ -969,6 +970,23 @@ class ElasticWanBroker(base.WanActorBroker):
                 int(batch.get("step_count", 0) or 0)
             )
 
+    def observe_learning_team(self, team_id: int) -> None:
+        with self._condition:
+            self._learning_team_id = int(team_id)
+
+    def is_ghost_trajectory(self, behavior_id: str) -> bool:
+        team = str(behavior_id).partition("?team=")[2]
+        with self._condition:
+            return (
+                self._learning_team_id is not None
+                and team in ("0", "1")
+                and int(team) != self._learning_team_id
+            )
+
+    def release_trajectory_reservation(self, step_count: int) -> None:
+        with self._condition:
+            self._release_pending_experiences_locked(step_count)
+
     def has_pending_remote_experiences(self) -> bool:
         with self._condition:
             return self._pending_experiences > 0
@@ -1108,7 +1126,9 @@ class ElasticWanBroker(base.WanActorBroker):
         if step_count < 0:
             raise ValueError("versioned trajectory step count may not be negative")
         with self._condition:
-            self._release_pending_experiences_locked(step_count)
+            # Outer GhostTrainer dequeue isn't the end of learning-team retention:
+            # that same trajectory is put into an inner PPO queue. Its reservation
+            # remains until that inner queue actually consumes it.
             self._consumed_steps_by_actor[actor_id] += int(step_count)
             if lag > 0:
                 self._consumed_stale_trajectories += 1
@@ -1119,6 +1139,7 @@ class ElasticWanBroker(base.WanActorBroker):
         if step_count < 0:
             raise ValueError("PPO delivered trajectory step count may not be negative")
         with self._condition:
+            self._release_pending_experiences_locked(step_count)
             self._ppo_delivered_steps_total += int(step_count)
 
     def observe_pipeline(self, snapshot: Mapping[str, int]) -> None:
@@ -1127,12 +1148,12 @@ class ElasticWanBroker(base.WanActorBroker):
             self._pipeline_snapshot = {key: int(value) for key, value in snapshot.items()}
 
     def record_versioned_trajectory_discarded(
-        self, step_count: int, *, already_consumed: bool = False
+        self, step_count: int, *, already_released: bool = False
     ) -> None:
         if step_count < 0:
             raise ValueError("versioned trajectory step count may not be negative")
         with self._condition:
-            if not already_consumed:
+            if not already_released:
                 self._release_pending_experiences_locked(step_count)
             self._discarded_stale_trajectories += 1
             self._discarded_stale_trajectory_steps += int(step_count)
