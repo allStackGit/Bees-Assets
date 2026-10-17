@@ -908,6 +908,44 @@ def read_throughput_metrics(
             ):
                 return {}
             result[field] = float(metric)
+    profile = value.get("rollout_profile")
+    if profile is not None:
+        if not isinstance(profile, Mapping):
+            return {}
+        sanitized: dict[str, float | int] = {}
+        names = (
+            "unity_get_steps", "unity_wait_first", "policy_inference",
+            "trajectory_processing", "trajectory_collection",
+            "upload_queue_wait", "upload_encode", "upload_http",
+        )
+        for field in ("window_seconds",):
+            value_field = profile.get(field)
+            if (
+                not isinstance(value_field, (int, float))
+                or isinstance(value_field, bool)
+                or not math.isfinite(float(value_field))
+                or float(value_field) <= 0
+            ):
+                return {}
+            sanitized[field] = float(value_field)
+        for name in names:
+            for suffix in ("_seconds", "_count", "_max_ms"):
+                key = name + suffix
+                value_field = profile.get(key)
+                if suffix == "_count":
+                    if not isinstance(value_field, int) or isinstance(value_field, bool) or value_field < 0:
+                        return {}
+                    sanitized[key] = value_field
+                else:
+                    if (
+                        not isinstance(value_field, (float, int))
+                        or isinstance(value_field, bool)
+                        or not math.isfinite(float(value_field))
+                        or float(value_field) < 0
+                    ):
+                        return {}
+                    sanitized[key] = float(value_field)
+        result["rollout_profile"] = sanitized
     if learner_step_total is not None:
         result["learner_step_total"] = int(learner_step_total)
     if optimizer_busy_seconds_total is not None:
