@@ -85,7 +85,9 @@ class _VersionedTrajectory:
     def mark_discarded(self) -> None:
         if self._discarded_accounted:
             return
-        self.broker.record_versioned_trajectory_discarded(self.step_count)
+        self.broker.record_versioned_trajectory_discarded(
+            self.step_count, already_consumed=self._consumed_accounted
+        )
         self._discarded_accounted = True
 
 
@@ -276,6 +278,11 @@ class ZeroLocalElasticWanEnvManagerMixin(elastic.ElasticWanEnvManagerMixin):
             try:
                 batch = self._bees_wan_broker._trajectory_batches.get(timeout=1.0)
             except queue.Empty:
+                # When the HTTP admission budget is exhausted by already-injected
+                # data, do not wait indefinitely for another upload: let the
+                # TrainerController advance and drain those ML-Agents queues.
+                if self._bees_wan_broker.has_pending_remote_experiences():
+                    return None
                 now = time.monotonic()
                 if now - last_report >= 30.0:
                     self._bees_wan_broker.report_capacity()
@@ -294,6 +301,7 @@ class ZeroLocalElasticWanEnvManagerMixin(elastic.ElasticWanEnvManagerMixin):
                 and self._bees_wan_broker.record_consumed_batch(batch)
             ):
                 return batch
+            self._bees_wan_broker.release_queued_batch(batch)
 
     def _inject_remote_batches(self) -> None:
         active = self._bees_wan_broker.active_actor_snapshot()
@@ -311,7 +319,8 @@ class ZeroLocalElasticWanEnvManagerMixin(elastic.ElasticWanEnvManagerMixin):
         # policy-current remote trajectory arrives. Waiting here applies natural backpressure and
         # prevents a busy loop or fake training progress when all actors are offline.
         first = self._wait_for_current_remote_batch()
-        self._inject_batches((first,))
+        if first is not None:
+            self._inject_batches((first,))
         self._inject_remote_batches()
         self._bees_wan_broker.report_capacity()
 
