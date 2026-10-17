@@ -919,6 +919,7 @@ def read_throughput_metrics(
             "unity_get_steps", "unity_wait_first", "policy_inference",
             "trajectory_processing", "trajectory_collection",
             "upload_queue_wait", "upload_encode", "upload_http",
+            "upload_connection_created",
         )
         window_seconds = profile.get("window_seconds")
         if (
