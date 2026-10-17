@@ -425,6 +425,9 @@ class WanActorBroker:
 
         class Handler(http.server.BaseHTTPRequestHandler):
             server_version = "BeesWanActor/1"
+            # Every response is framed with Content-Length, so the dedicated
+            # actor upload connection can remain open across trajectory batches.
+            protocol_version = "HTTP/1.1"
 
             def log_message(self, _format: str, *_args: Any) -> None:
                 return

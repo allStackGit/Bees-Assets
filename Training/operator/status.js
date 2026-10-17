@@ -709,7 +709,8 @@ async function getStatusFrameLines(config, adminToken) {
                 'queue put/wait=' + seconds('upload_queue_wait') +
                 '  serialize+compress=' + seconds('upload_encode') +
                 '  HTTP+ack=' + seconds('upload_http') +
-                '  HTTP requests=' + String(p.upload_http_count ?? '-')
+                '  HTTP requests=' + String(p.upload_http_count ?? '-') +
+                '  HTTP connections created=' + String(p.upload_connection_created_count ?? '-')
             );
         }
 
