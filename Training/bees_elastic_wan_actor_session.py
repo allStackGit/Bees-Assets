@@ -650,6 +650,8 @@ class ElasticActorSession(worker.ActorSession):
             ("poca_staged_experiences", "broker_poca_staged_experiences"),
             ("poca_update_buffer_experiences", "broker_poca_update_buffer_experiences"),
             ("ppo_updates_in_flight", "broker_ppo_updates_in_flight"),
+            ("pending_remote_experiences", "broker_pending_remote_experiences"),
+            ("pending_remote_experience_limit", "broker_pending_remote_experience_limit"),
         ):
             value = state.get(remote_key)
             if value is not None:
