@@ -52,6 +52,66 @@ MAX_LOCAL_UNITY_ENVS = 64
 DETACHED_UNITY_SHUTDOWN_SECONDS = 2.0
 
 
+
+class _RolloutStageProfiler:
+    """Wall-time samples across actor and uploader threads, in independent windows.
+
+    Unity get_steps includes the separately measured inference and Unity wait time.
+    These stage totals therefore must not be added together as CPU utilization.
+    """
+
+    REPORT_INTERVAL_SECONDS = 30.0
+    STAGES = (
+        "unity_get_steps", "unity_wait_first", "policy_inference",
+        "trajectory_processing", "trajectory_collection",
+        "upload_queue_wait", "upload_encode", "upload_http",
+    )
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._window_start = time.monotonic()
+        self._window = {key: [0.0, 0, 0.0] for key in self.STAGES}
+        self._latest: Dict[str, object] = {}
+
+    def observe(self, stage: str, elapsed: float) -> None:
+        if stage not in self._window:
+            return
+        with self._lock:
+            record = self._window[stage]
+            duration = max(0.0, float(elapsed))
+            record[0] += duration
+            record[1] += 1
+            record[2] = max(record[2], duration)
+
+    def snapshot(self) -> Dict[str, object]:
+        with self._lock:
+            return dict(self._latest)
+
+    def maybe_report(self, *, force: bool = False) -> None:
+        now = time.monotonic()
+        with self._lock:
+            elapsed = now - self._window_start
+            if not force and elapsed < self.REPORT_INTERVAL_SECONDS:
+                return
+            if elapsed <= 0:
+                return
+            window = self._window
+            self._window = {key: [0.0, 0, 0.0] for key in self.STAGES}
+            self._window_start = now
+            details: Dict[str, object] = {"window_seconds": round(elapsed, 2)}
+            parts = [f"window={elapsed:.1f}s"]
+            for stage, (seconds, count, maximum) in window.items():
+                details[stage + "_seconds"] = round(seconds, 4)
+                details[stage + "_count"] = count
+                details[stage + "_max_ms"] = round(1000.0 * maximum, 2)
+                parts.append(
+                    f"{stage}={seconds:.3f}s/{count} "
+                    f"max={maximum * 1000.0:.1f}ms"
+                )
+            self._latest = details
+        print("[Bees WAN profile] " + " ".join(parts), flush=True)
+
+
 def _actor_builds_root(env_path: Path) -> Optional[Path]:
     """Return the managed build store that owns this Unity executable."""
     try:
