@@ -687,6 +687,32 @@ async function getStatusFrameLines(config, adminToken) {
             lines.push('No managed trainers/gameplay builds have checked in.');
         }
 
+        const profiled = trainers.filter(record =>
+            !record.stale &&
+            record.metrics && record.metrics.throughput &&
+            record.metrics.throughput.rollout_profile
+        );
+        for (const record of profiled) {
+            const p = record.metrics.throughput.rollout_profile;
+            const seconds = name => number(p[name + '_seconds'], 2, 's');
+            lines.push(
+                'Rollout profile ' + String(record.trainer_id) +
+                ' (' + number(p.window_seconds, 1, 's') + ' window, wall time; inclusive stages overlap): ' +
+                'Unity get_steps=' + seconds('unity_get_steps') +
+                '  Unity first-result wait=' + seconds('unity_wait_first') +
+                '  policy inference=' + seconds('policy_inference') +
+                '  trajectory processing=' + seconds('trajectory_processing') +
+                '  collect=' + seconds('trajectory_collection')
+            );
+            lines.push(
+                'Rollout upload ' + String(record.trainer_id) + ': ' +
+                'queue put/wait=' + seconds('upload_queue_wait') +
+                '  serialize+compress=' + seconds('upload_encode') +
+                '  HTTP+ack=' + seconds('upload_http') +
+                '  HTTP requests=' + String(p.upload_http_count ?? '-')
+            );
+        }
+
         const expected = Array.isArray(config.expectedTrainers) ? config.expectedTrainers.map(String) : [];
         if (expected.length) {
             const present = new Set(trainers.map(record => String(record.trainer_id || '')));
