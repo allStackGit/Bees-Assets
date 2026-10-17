@@ -1166,8 +1166,8 @@ class ActorSession:
                 f"installed={mlagents.trainers.__version__}."
             )
         _install_sampled_worker_timers()
-        _install_batched_inference(cpu_inference=False)
-        _install_fast_env_manager()
+        _install_batched_inference(cpu_inference=False, stage_profiler=self._rollout_profiler)
+        _install_fast_env_manager(stage_profiler=self._rollout_profiler)
         self._report_startup_phase("preparing-session")
         # A previous ML-Agents session can leave Unity alive because Unity is deliberately
         # launched in its own POSIX session. Reclaim this worker's reserved ports before
