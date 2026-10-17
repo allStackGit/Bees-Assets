@@ -52,7 +52,6 @@ MAX_LOCAL_UNITY_ENVS = 64
 DETACHED_UNITY_SHUTDOWN_SECONDS = 2.0
 
 
-
 class _RolloutStageProfiler:
     """Wall-time samples across actor and uploader threads, in independent windows.
 
