@@ -526,6 +526,7 @@ class ElasticWanBroker(base.WanActorBroker):
         self._accepted_steps_by_team: Dict[str, int] = collections.defaultdict(int)
         self._ppo_delivered_steps_total = 0
         self._pipeline_snapshot: Dict[str, int] = {}
+        self._last_pipeline_report = 0.0
         self._trainer_step = 0
         self._optimizer_busy_seconds_total = 0.0
         self._fair_drain_cursor = 0
@@ -1224,6 +1225,30 @@ class ElasticWanBroker(base.WanActorBroker):
             self._trajectory_batches.qsize(),
             self.options.max_queued_batches,
         )
+        now = time.monotonic()
+        if now - self._last_pipeline_report >= DIAGNOSTIC_INTERVAL_SECONDS:
+            self._last_pipeline_report = now
+            with self._condition:
+                accepted = dict(self._accepted_steps_by_team)
+                ppo_delivered = (
+                    str(self._ppo_delivered_steps_total)
+                    if self.threaded_mode and self.max_policy_lag > 0 else "-"
+                )
+                pipeline = dict(self._pipeline_snapshot)
+            print(
+                "[Bees WAN pipeline] "
+                f"accepted_team0={accepted.get('0', 0)} "
+                f"accepted_team1={accepted.get('1', 0)} "
+                f"accepted_other={accepted.get('other', 0)} "
+                f"ppo_delivered={ppo_delivered} "
+                f"ghost_discarded={pipeline.get('ghost_discarded_steps_total', 0)} "
+                f"ghost_input_queue={pipeline.get('ghost_input_queue_depth', 0)} "
+                f"learning_queue={pipeline.get('learning_queue_depth', 0)} "
+                f"poca_staged={pipeline.get('poca_staged_experiences', 0)} "
+                f"poca_buffer={pipeline.get('poca_update_buffer_experiences', 0)} "
+                f"updates_in_flight={pipeline.get('ppo_updates_in_flight', 0)}.",
+                flush=True,
+            )
         if self.max_policy_lag > 0:
             now = time.monotonic()
             if now - self._last_lag_report >= DIAGNOSTIC_INTERVAL_SECONDS:
