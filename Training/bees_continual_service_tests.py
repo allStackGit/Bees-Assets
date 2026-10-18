@@ -334,11 +334,12 @@ class ContinualServiceTests(unittest.TestCase):
                 entropy_revised,
             )
 
-    def test_active_generation_rejects_non_resume_safe_hyperparameter_revision(self):
+    def test_active_generation_allows_learning_rate_revision_without_mutating_original(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             options = self._options(root, generation_steps=100)
-            service.write_generation_config(options, 0)
+            original = service.write_generation_config(options, 0)
+            original_bytes = original.read_bytes()
 
             options.trainer_config.write_text(
                 options.trainer_config.read_text(encoding="utf-8").replace(
@@ -347,7 +348,20 @@ class ContinualServiceTests(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
+            revised = service.write_generation_config(options, 0)
 
+            self.assertEqual(revised.name, "generation-00000000-lr-0.001.yaml")
+            self.assertEqual(original.read_bytes(), original_bytes)
+            self.assertIn("learning_rate: 0.001", revised.read_text(encoding="utf-8"))
+            self.assertEqual(service.write_generation_config(options, 0), revised)
+
+            options.trainer_config.write_text(
+                options.trainer_config.read_text(encoding="utf-8").replace(
+                    "trainer_type: ppo",
+                    "trainer_type: poca",
+                ),
+                encoding="utf-8",
+            )
             with self.assertRaisesRegex(
                 ValueError,
                 "Immutable generation trainer config conflict",
