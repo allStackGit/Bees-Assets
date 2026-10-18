@@ -197,7 +197,7 @@ internal sealed class RlCombatPerception
         AddHeading(sensor, ship.Rotation, frameQuarterTurns);
         sensor.AddObservation(GetHealthFraction(ship));
         sensor.AddObservation(NormalizePositive(ship.Speed, 20f));
-        sensor.AddObservation(NormalizePositive(ship.CurrentSpeed, 20f));
+        sensor.AddObservation(NormalizePositive(GetObservedCurrentSpeed(ship), 20f));
         sensor.AddObservation(NormalizePositive(ship.RotationSpeed, 240f));
         sensor.AddObservation(NormalizePositive(ship.LongestSide, 10f));
         sensor.AddObservation(NormalizePositive(HiveMindVision.GetEffectiveRange(ship), 80f));
@@ -299,6 +299,9 @@ internal sealed class RlCombatPerception
 
     private void CollectVisibleEnemies(Ship ship, int side, Vector2 origin)
     {
+        // "Visible" means ever discovered by any ally: the faction-wide VisionCache keeps
+        // live enemies (and their updated state) available to every allied policy until death.
+        // Do not replace it with a transient in-range/line-of-sight list.
         _enemyCandidates.Clear();
         foreach (Ship candidate in ship.Level.State.GetShipsVisibleToHiveMind(side))
         {
@@ -390,7 +393,7 @@ internal sealed class RlCombatPerception
         AddHeading(sensor, observed.Rotation, frameQuarterTurns);
         sensor.AddObservation(GetHealthFraction(observed));
         sensor.AddObservation(NormalizePositive(observed.Speed, 20f));
-        sensor.AddObservation(NormalizePositive(observed.CurrentSpeed, 20f));
+        sensor.AddObservation(NormalizePositive(GetObservedCurrentSpeed(observed), 20f));
         sensor.AddObservation(NormalizePositive(observed.LongestSide, 10f));
         sensor.AddObservation(NormalizePositive(observed.MaxRange, 80f));
         sensor.AddObservation(NormalizePositive(observed.Firepower, 200f));
@@ -983,6 +986,17 @@ internal sealed class RlCombatPerception
             return scout.IsBeaconReady ? 0f : 0.75f;
         }
         return 0f;
+    }
+
+    // CurrentSpeed controls gameplay movement even while stopped. Only mask the RL
+    // observation; the normal Speed stat remains available in its separate channel.
+    private static float GetObservedCurrentSpeed(Ship ship)
+    {
+        if (ship == null || ship.Body == null || ship.Body.linearVelocity.sqrMagnitude <= 0.0001f)
+        {
+            return 0f;
+        }
+        return ship.CurrentSpeed;
     }
 
     private static float GetHealthFraction(Ship ship)

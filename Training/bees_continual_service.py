@@ -270,6 +270,18 @@ def _batch_size_from_config(text: str) -> Optional[int]:
     return int(matches[0][1]) if matches else None
 
 
+def _buffer_size_from_config(text: str) -> Optional[int]:
+    matches = re.findall(
+        r"(?m)^\s*buffer_size:\s*(\d+)\s*(?:#.*)?$",
+        text,
+    )
+    if len(matches) > 1:
+        raise ValueError(
+            f"Expected at most one integer buffer_size entry in trainer config; found {len(matches)}."
+        )
+    return int(matches[0]) if matches else None
+
+
 def _checkpoint_interval_from_config(text: str) -> Optional[int]:
     matches = re.findall(
         r"(?m)^\s*checkpoint_interval:\s*(\d+)\s*(?:#.*)?$",
@@ -299,7 +311,7 @@ def _normalize_resume_safe_generation_settings(text: str) -> str:
     """Normalize trainer settings that may change while resuming one generation.
 
     Generation YAML files remain immutable audit records. Device placement, PPO
-    minibatch size, learning rate, entropy beta, checkpoint interval, self-play scheduling,
+    minibatch and rollout buffer sizes, learning rate, entropy beta, checkpoint interval, self-play scheduling,
     and summary frequency can change without invalidating the ML-Agents checkpoint
     shape, so a resumed generation may
     select a new immutable revision. Other trainer changes remain fail-closed.
@@ -310,6 +322,7 @@ def _normalize_resume_safe_generation_settings(text: str) -> str:
     torch_indent = -1
     normalized = []
     batch_size_count = 0
+    buffer_size_count = 0
     learning_rate_count = 0
     beta_count = 0
     checkpoint_count = 0
@@ -336,6 +349,10 @@ def _normalize_resume_safe_generation_settings(text: str) -> str:
         if re.fullmatch(r"batch_size:\s*(\d+)\s*(?:#.*)?", stripped):
             batch_size_count += 1
             normalized.append(" " * indent + "batch_size: <runtime-batch-size>")
+            continue
+        if re.fullmatch(r"buffer_size:\s*(\d+)\s*(?:#.*)?", stripped):
+            buffer_size_count += 1
+            normalized.append(" " * indent + "buffer_size: <runtime-buffer-size>")
             continue
         if re.fullmatch(
             r"learning_rate:\s*[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?\s*(?:#.*)?",
@@ -369,6 +386,11 @@ def _normalize_resume_safe_generation_settings(text: str) -> str:
     if batch_size_count > 1:
         raise ValueError(
             "Trainer config has multiple batch_size entries; cannot determine a "
+            "single resumable generation setting."
+        )
+    if buffer_size_count > 1:
+        raise ValueError(
+            "Trainer config has multiple buffer_size entries; cannot determine a "
             "single resumable generation setting."
         )
     if learning_rate_count > 1:
@@ -465,6 +487,11 @@ def write_generation_config(options: ServiceOptions, index: int) -> Path:
         candidate_batch_size = _batch_size_from_config(candidate_text)
         if candidate_batch_size != existing_batch_size:
             suffix_parts.append(f"batch-{candidate_batch_size}")
+
+        existing_buffer_size = _buffer_size_from_config(existing_text)
+        candidate_buffer_size = _buffer_size_from_config(candidate_text)
+        if candidate_buffer_size != existing_buffer_size:
+            suffix_parts.append(f"buffer-{candidate_buffer_size}")
 
         existing_learning_rate = _learning_rate_from_config(existing_text)
         candidate_learning_rate = _learning_rate_from_config(candidate_text)

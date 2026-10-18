@@ -45,6 +45,9 @@ namespace Assets.Scripts.Levels
         public int[] OriginalSquadCounts = { 0, 0 };
         public Level Level;
         public Stage Stage;
+        // Permanent faction-wide knowledge: once any allied HiveMind observer spots an enemy,
+        // every ally knows that live ship's current state until the ship dies or leaves the level.
+        // Leaving sight range must never remove it from this cache.
         public HashSet<Ship>[] VisionCache =
         {
             new HashSet<Ship>(ReferenceIdentityComparer<Ship>.Instance),
