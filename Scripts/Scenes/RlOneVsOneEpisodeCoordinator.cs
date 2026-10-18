@@ -1163,7 +1163,26 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
 
     private void TrackSideEnemyVisibility(Level level, int observerSide, int sideIndex)
     {
-        bool hasVisibleEnemy = level.State.HasLiveEnemyVisibleToHiveMind(observerSide);
+        int enemySide = observerSide == ConfigData.Configuration.BeeSide
+            ? ConfigData.Configuration.HumanSide
+            : ConfigData.Configuration.BeeSide;
+        // An elimination ends the encounter; the defeated enemy dying is not a contact loss.
+        if (level.State.IsSideKilled(enemySide))
+        {
+            return;
+        }
+
+        // Match the policy's permanent HiveMind knowledge, not transient geometric sight.
+        // Once any ally discovers a live enemy, all allies retain its current state until death.
+        bool hasVisibleEnemy = false;
+        foreach (Ship enemy in level.State.GetShipsVisibleToHiveMind(observerSide))
+        {
+            if (enemy != null && !enemy.IsDead && enemy.Side == enemySide)
+            {
+                hasVisibleEnemy = true;
+                break;
+            }
+        }
 
         float elapsed = ElapsedEpisodeSeconds;
         bool previousVisible = sideIndex == 0 ? _beeHasVisibleEnemy : _humanHasVisibleEnemy;
