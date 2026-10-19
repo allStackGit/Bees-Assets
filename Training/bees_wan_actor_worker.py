@@ -1682,6 +1682,10 @@ class ActorSession:
                         self._upload_pending -= len(batches)
                         if self._upload_pending == 0:
                             self._upload_idle.set()
+        except BaseException as exc:
+            # An unexpected coalescing/queue failure must not silently kill an
+            # uploader and leave rollout blocked on a permanently full queue.
+            self._thread_error.put(exc)
         finally:
             # The thread owns its TCP connection; another thread must not close it.
             self.client._close_upload_connection()
