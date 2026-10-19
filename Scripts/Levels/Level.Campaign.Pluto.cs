@@ -248,72 +248,72 @@ namespace Assets.Scripts.Levels
                                                 firstGunship.Squad.SetChase(true);
 
                                                 Tooltip controlGunshipTooltip = Instantiate(Stage.Menus.TooltipPrefab, Stage.Menus.UIOverlay.transform).GetComponent<Tooltip>();
-                                                controlGunshipTooltip.Show(
-                                                    "You can select the ship by left clicking on it or by left clicking and dragging a selection box around it.",
-                                                    true);
-                                                controlGunshipTooltip.Place(Vector2.zero, new Vector2(150, 150));
-
-                                                NextTriggers.Add(new Trigger(
-                                                    () => firstGunship.Squad.IsSelected,
-                                                    () =>
+                                                controlGunshipTooltip.Place(Vector2.zero, new Vector2(150, 300));
+                                                System.Action showGunshipControls = () =>
+                                                {
+                                                    // Keep both control pages in one popup, with explicit navigation instead
+                                                    // of a close-and-reopen handoff on a later mission trigger tick.
+                                                    controlGunshipTooltip.ShowSequence(new[]
                                                     {
-                                                        controlGunshipTooltip.Show(
-                                                            "You'll want to familiarize yourself with the controls to your bottom left. They aren't usually required, but they are helpful.",
-                                                            true);
-                                                        controlGunshipTooltip.Place(Vector2.zero, new Vector2(150, 150));
-                                                        NextTriggers.Add(new Trigger(
-                                                            () => !ConfigData.UserProgressData.ShowToolTips || !controlGunshipTooltip.TooltipObject.activeInHierarchy,
-                                                            () =>
+                                                        "You'll want to familiarize yourself with the controls to your bottom left. They aren't usually required, but they are helpful.",
+                                                        "When you're ready to engage the Honeybee, click \"Attack on Sight\" (the exclamation point) to disable the Cease Fire.\nChase is already enabled, so the Gunship will automatically follow the Honeybee.\nOnce the Gunship is within range it will automatically fire upon the Honeybee.",
+                                                    }, true);
+
+                                                    GameObject attackOnSightHighlight = null;
+                                                    if (ConfigData.UserProgressData.ShowToolTips)
+                                                    {
+                                                        attackOnSightHighlight = Instantiate(
+                                                            Stage.Menus.UIHighlightTooltipPrefab,
+                                                            Stage.Menus.ActionBox.AttackOnSightButton.transform);
+                                                        RectTransform highlightRect = attackOnSightHighlight.GetComponent<RectTransform>();
+                                                        highlightRect.anchorMin = Vector2.zero;
+                                                        highlightRect.anchorMax = Vector2.one;
+                                                        highlightRect.offsetMin = new Vector2(-4, -4);
+                                                        highlightRect.offsetMax = new Vector2(4, 4);
+                                                        highlightRect.localScale = Vector3.one;
+                                                        highlightRect.SetAsLastSibling();
+
+                                                        Image highlightImage = attackOnSightHighlight.GetComponent<Image>();
+                                                        if (highlightImage != null)
+                                                        {
+                                                            highlightImage.color = Color.red;
+                                                            highlightImage.raycastTarget = false;
+                                                        }
+                                                        attackOnSightHighlight.SetActive(true);
+                                                    }
+
+                                                    NextTriggers.Add(new Trigger(
+                                                        () => !ConfigData.UserProgressData.ShowToolTips ||
+                                                              firstGunship.Squad.AttackOnSight ||
+                                                              !controlGunshipTooltip.TooltipObject.activeInHierarchy,
+                                                        () =>
+                                                        {
+                                                            if (controlGunshipTooltip != null && controlGunshipTooltip.TooltipObject.activeInHierarchy)
                                                             {
-                                                                Tooltip attackOnSightTooltip = Instantiate(Stage.Menus.TooltipPrefab, Stage.Menus.UIOverlay.transform).GetComponent<Tooltip>();
-                                                                attackOnSightTooltip.Show(
-                                                                    "When you're ready to engage the Honeybee, click \"Attack on Sight\" (the exclamation point) to disable the Cease Fire.\nChase is already enabled, so the Gunship will automatically follow the Honeybee.\nOnce the Gunship is within range it will automatically fire upon the Honeybee.",
-                                                                    true);
-                                                                attackOnSightTooltip.Place(Vector2.zero, new Vector2(150, 300));
+                                                                controlGunshipTooltip.Hide();
+                                                            }
+                                                            if (attackOnSightHighlight != null)
+                                                            {
+                                                                Destroy(attackOnSightHighlight);
+                                                            }
+                                                        },
+                                                        "Level 0 Closing Attack on Sight prompt"));
+                                                };
 
-                                                                GameObject attackOnSightHighlight = null;
-                                                                if (ConfigData.UserProgressData.ShowToolTips)
-                                                                {
-                                                                    attackOnSightHighlight = Instantiate(
-                                                                        Stage.Menus.UIHighlightTooltipPrefab,
-                                                                        Stage.Menus.ActionBox.AttackOnSightButton.transform);
-                                                                    RectTransform highlightRect = attackOnSightHighlight.GetComponent<RectTransform>();
-                                                                    highlightRect.anchorMin = Vector2.zero;
-                                                                    highlightRect.anchorMax = Vector2.one;
-                                                                    highlightRect.offsetMin = new Vector2(-4, -4);
-                                                                    highlightRect.offsetMax = new Vector2(4, 4);
-                                                                    highlightRect.localScale = Vector3.one;
-                                                                    highlightRect.SetAsLastSibling();
-
-                                                                    Image highlightImage = attackOnSightHighlight.GetComponent<Image>();
-                                                                    if (highlightImage != null)
-                                                                    {
-                                                                        highlightImage.color = Color.red;
-                                                                        highlightImage.raycastTarget = false;
-                                                                    }
-                                                                    attackOnSightHighlight.SetActive(true);
-                                                                }
-
-                                                                NextTriggers.Add(new Trigger(
-                                                                    () => !ConfigData.UserProgressData.ShowToolTips ||
-                                                                          firstGunship.Squad.AttackOnSight ||
-                                                                          !attackOnSightTooltip.TooltipObject.activeInHierarchy,
-                                                                    () =>
-                                                                    {
-                                                                        if (attackOnSightTooltip != null && attackOnSightTooltip.TooltipObject.activeInHierarchy)
-                                                                        {
-                                                                            attackOnSightTooltip.Hide();
-                                                                        }
-                                                                        if (attackOnSightHighlight != null)
-                                                                        {
-                                                                            Destroy(attackOnSightHighlight);
-                                                                        }
-                                                                    },
-                                                                    "Level 0 Closing Attack on Sight prompt"));
-                                                            },
-                                                            "Level 0 Showing Attack on Sight tooltip prompt"));
-                                                    },
-                                                    "Level 0 Showing squad controls tooltip when squad is selected"));
+                                                if (firstGunship.Squad.IsSelected)
+                                                {
+                                                    showGunshipControls();
+                                                }
+                                                else
+                                                {
+                                                    controlGunshipTooltip.Show(
+                                                        "You can select the ship by left clicking on it or by left clicking and dragging a selection box around it.",
+                                                        true);
+                                                    NextTriggers.Add(new Trigger(
+                                                        () => firstGunship.Squad.IsSelected,
+                                                        showGunshipControls,
+                                                        "Level 0 Showing squad controls tooltip when squad is selected"));
+                                                }
 
                                                 AddReinforcementSquads(new List<SavedSquad>()
                                                 {
