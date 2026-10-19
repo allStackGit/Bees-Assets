@@ -657,6 +657,22 @@ def read_host_hardware_metrics() -> dict[str, object]:
         memory = psutil.virtual_memory()
         if math.isfinite(cpu) and 0 <= cpu <= 100:
             result["cpu_percent"] = cpu
+        # Overall CPU percent can hide a saturated inference core. Report the
+        # busiest logical core and, on Linux VMs, host steal / I/O wait.
+        per_core = psutil.cpu_percent(interval=None, percpu=True)
+        if per_core:
+            result["hottest_core_percent"] = round(max(per_core), 1)
+            result["cores_over_90_percent"] = sum(
+                1 for core in per_core if core >= 90.0
+            )
+        cpu_times = psutil.cpu_times_percent(interval=None)
+        for name, key in (
+            ("steal", "cpu_steal_percent"),
+            ("iowait", "cpu_iowait_percent"),
+        ):
+            value = getattr(cpu_times, name, None)
+            if value is not None and math.isfinite(float(value)):
+                result[key] = float(value)
         ram = float(memory.percent)
         if math.isfinite(ram) and 0 <= ram <= 100:
             result["ram_percent"] = ram
