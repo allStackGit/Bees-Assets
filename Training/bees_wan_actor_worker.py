@@ -57,28 +57,40 @@ DETACHED_UNITY_SHUTDOWN_SECONDS = 2.0
 
 
 class _RolloutStageProfiler:
-    """Wall-time samples across actor and uploader threads, in independent windows.
-
-    Unity get_steps includes the separately measured inference and Unity wait time.
-    These stage totals therefore must not be added together as CPU utilization.
-    """
+    """Optional, bounded per-stage diagnostics for WAN rollout actors."""
 
     REPORT_INTERVAL_SECONDS = 30.0
     STAGES = (
         "unity_get_steps", "unity_wait_first", "policy_inference",
+        "policy_inference_prepare", "policy_forward",
         "trajectory_processing", "trajectory_collection",
         "upload_queue_wait", "upload_encode", "upload_http",
         "upload_connection_created",
     )
 
-    def __init__(self) -> None:
+    def __init__(self, enabled: bool = True) -> None:
+        self.enabled = bool(enabled)
         self._lock = threading.Lock()
         self._window_start = time.monotonic()
         self._window = {key: [0.0, 0, 0.0] for key in self.STAGES}
         self._latest: Dict[str, object] = {}
+        self._batch_count = self._batch_agents = self._batch_max = 0
+        self._process = None
+        self._psutil = None
+        if self.enabled:
+            try:
+                import psutil
+
+                self._psutil = psutil
+                self._process = psutil.Process(os.getpid())
+                self._process.cpu_percent(interval=None)
+                psutil.cpu_percent(interval=None)
+                psutil.cpu_times_percent(interval=None)
+            except (ImportError, OSError):
+                pass
 
     def observe(self, stage: str, elapsed: float) -> None:
-        if stage not in self._window:
+        if not self.enabled or stage not in self._window:
             return
         with self._lock:
             record = self._window[stage]
@@ -87,11 +99,23 @@ class _RolloutStageProfiler:
             record[1] += 1
             record[2] = max(record[2], duration)
 
+    def observe_inference_batch(self, agents: int) -> None:
+        if not self.enabled:
+            return
+        with self._lock:
+            self._batch_count += 1
+            self._batch_agents += agents
+            self._batch_max = max(self._batch_max, agents)
+
     def snapshot(self) -> Dict[str, object]:
+        if not self.enabled:
+            return {}
         with self._lock:
             return dict(self._latest)
 
     def maybe_report(self, *, force: bool = False) -> None:
+        if not self.enabled:
+            return
         now = time.monotonic()
         with self._lock:
             elapsed = now - self._window_start
@@ -102,16 +126,53 @@ class _RolloutStageProfiler:
             window = self._window
             self._window = {key: [0.0, 0, 0.0] for key in self.STAGES}
             self._window_start = now
-            details: Dict[str, object] = {"window_seconds": round(elapsed, 2)}
-            parts = [f"window={elapsed:.1f}s"]
-            for stage, (seconds, count, maximum) in window.items():
+            count, agents, maximum = self._batch_count, self._batch_agents, self._batch_max
+            self._batch_count = self._batch_agents = self._batch_max = 0
+            details: Dict[str, object] = {
+                "window_seconds": round(elapsed, 2),
+                "inference_batches_count": count,
+                "inference_agents_total": agents,
+                "inference_batch_max_agents": maximum,
+                "inference_batch_mean_agents": round(agents / count, 2) if count else 0.0,
+            }
+            parts = [
+                f"window={elapsed:.1f}s",
+                f"inference_agents={agents}/{count} mean={agents / count if count else 0:.2f} max={maximum}",
+            ]
+            for stage, (seconds, stage_count, stage_maximum) in window.items():
                 details[stage + "_seconds"] = round(seconds, 4)
-                details[stage + "_count"] = count
-                details[stage + "_max_ms"] = round(1000.0 * maximum, 2)
+                details[stage + "_count"] = stage_count
+                details[stage + "_max_ms"] = round(1000.0 * stage_maximum, 2)
                 parts.append(
-                    f"{stage}={seconds:.3f}s/{count} "
-                    f"max={maximum * 1000.0:.1f}ms"
+                    f"{stage}={seconds:.3f}s/{stage_count} "
+                    f"max={stage_maximum * 1000.0:.1f}ms"
                 )
+        # These values are emitted by the actor as well as in its metrics file.
+        # A supervisor still executing an older release cannot forward new keys.
+        if self._psutil is not None and self._process is not None:
+            try:
+                memory = self._process.memory_info()
+                details["actor_rss_mib"] = round(memory.rss / MIB_BYTES, 1)
+                details["actor_threads"] = self._process.num_threads()
+                details["actor_cpu_percent"] = round(self._process.cpu_percent(interval=None), 1)
+                details["host_cpu_percent"] = round(self._psutil.cpu_percent(interval=None), 1)
+                times = self._psutil.cpu_times_percent(interval=None)
+                details["host_cpu_steal_percent"] = round(float(getattr(times, "steal", 0.0)), 2)
+                details["host_cpu_iowait_percent"] = round(float(getattr(times, "iowait", 0.0)), 2)
+                parts.extend(f"{key}={details[key]}" for key in (
+                    "actor_rss_mib", "actor_threads", "actor_cpu_percent",
+                    "host_cpu_percent", "host_cpu_steal_percent",
+                    "host_cpu_iowait_percent",
+                ))
+            except (OSError, ValueError, AttributeError):
+                pass
+        if hasattr(os, "getloadavg"):
+            try:
+                details["host_load_1m"] = round(os.getloadavg()[0], 2)
+                parts.append(f"host_load_1m={details['host_load_1m']}")
+            except OSError:
+                pass
+        with self._lock:
             self._latest = details
         print("[Bees WAN profile] " + " ".join(parts), flush=True)
 
@@ -908,8 +969,12 @@ class ActorSession:
             Path(throughput_path).expanduser().resolve() if throughput_path else None
         )
         self._throughput_lock = threading.Lock()
-        self._rollout_profiler = _RolloutStageProfiler()
-        self.client._rollout_profiler = self._rollout_profiler
+        self._rollout_profiler = _RolloutStageProfiler(
+            enabled=os.environ.get("BEES_WAN_DIAGNOSTICS", "1") != "0"
+        )
+        self.client._rollout_profiler = (
+            self._rollout_profiler if self._rollout_profiler.enabled else None
+        )
         self._accepted_steps_total = 0
         self._staged_steps_total = 0
         self._staged_steps_per_sec = None
@@ -1266,8 +1331,13 @@ class ActorSession:
                 f"installed={mlagents.trainers.__version__}."
             )
         _install_sampled_worker_timers()
-        _install_batched_inference(cpu_inference=False, stage_profiler=self._rollout_profiler)
-        _install_fast_env_manager(stage_profiler=self._rollout_profiler)
+        _install_batched_inference(
+            cpu_inference=False,
+            stage_profiler=self._rollout_profiler if self._rollout_profiler.enabled else None,
+        )
+        _install_fast_env_manager(
+            stage_profiler=self._rollout_profiler if self._rollout_profiler.enabled else None
+        )
         self._report_startup_phase("preparing-session")
         # A previous ML-Agents session can leave Unity alive because Unity is deliberately
         # launched in its own POSIX session. Reclaim this worker's reserved ports before
@@ -1352,6 +1422,20 @@ class ActorSession:
                 options,
                 seed=(int(options.env_settings.seed) + parsed.team_id) & MAX_UNITY_SEED,
             )
+            if self._rollout_profiler.enabled:
+                # A thin delegate measures PyTorch forward without modifying actions.
+                original_forward = template.actor.get_action_and_stats
+
+                def profiled_forward(*args, _forward=original_forward, **kwargs):
+                    started = time.perf_counter()
+                    try:
+                        return _forward(*args, **kwargs)
+                    finally:
+                        self._rollout_profiler.observe(
+                            "policy_forward", time.perf_counter() - started
+                        )
+
+                template.actor.get_action_and_stats = profiled_forward
             horizon = rollout_horizon(trainer_settings, self.total_envs)
             manager = AgentManager(
                 template,

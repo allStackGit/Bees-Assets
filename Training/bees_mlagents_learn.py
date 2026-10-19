@@ -688,6 +688,7 @@ def _install_batched_inference(cpu_inference: bool = False, stage_profiler=None)
                     )
                 continue
 
+            prepare_started = time.perf_counter() if profiler is not None else 0.0
             with hierarchical_timer("BeesBatch.prepare"):
                 batched_steps = concatenate_decision_steps(
                     entries, policy.behavior_spec.action_spec
@@ -704,6 +705,11 @@ def _install_batched_inference(cpu_inference: bool = False, stage_profiler=None)
                     )
                     start = end
 
+            if profiler is not None:
+                profiler.observe(
+                    "policy_inference_prepare", time.perf_counter() - prepare_started
+                )
+                profiler.observe_inference_batch(len(batched_steps))
             inference_started = time.perf_counter() if profiler is not None else 0.0
             try:
                 if cpu_actor_cache is None:

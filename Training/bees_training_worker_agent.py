@@ -642,6 +642,8 @@ def read_host_hardware_metrics() -> dict[str, object]:
     result: dict[str, object] = {
         "logical_cpus": int(os.cpu_count() or 1),
     }
+    if os.environ.get("BEES_WAN_DIAGNOSTICS", "1") == "0":
+        return result
     if hasattr(os, "getloadavg"):
         try:
             load_1m, load_5m, load_15m = os.getloadavg()
@@ -948,6 +950,7 @@ def read_throughput_metrics(
         sanitized: dict[str, float | int] = {}
         names = (
             "unity_get_steps", "unity_wait_first", "policy_inference",
+            "policy_inference_prepare", "policy_forward",
             "trajectory_processing", "trajectory_collection",
             "upload_queue_wait", "upload_encode", "upload_http",
             "upload_connection_created",
@@ -978,6 +981,26 @@ def read_throughput_metrics(
                     ):
                         return {}
                     sanitized[key] = float(value_field)
+        for field in (
+            "inference_batches_count", "inference_agents_total",
+            "inference_batch_max_agents", "actor_threads",
+        ):
+            metric = profile.get(field)
+            if metric is not None:
+                if not isinstance(metric, int) or isinstance(metric, bool) or metric < 0:
+                    return {}
+                sanitized[field] = metric
+        for field in (
+            "inference_batch_mean_agents", "actor_rss_mib", "actor_cpu_percent",
+            "host_cpu_percent", "host_cpu_steal_percent",
+            "host_cpu_iowait_percent", "host_load_1m",
+        ):
+            metric = profile.get(field)
+            if metric is not None:
+                if (not isinstance(metric, (int, float)) or isinstance(metric, bool)
+                        or not math.isfinite(float(metric)) or float(metric) < 0):
+                    return {}
+                sanitized[field] = float(metric)
         result["rollout_profile"] = sanitized
     if learner_step_total is not None:
         result["learner_step_total"] = int(learner_step_total)
