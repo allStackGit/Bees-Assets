@@ -65,7 +65,53 @@ namespace Assets.Scripts.UIComponents
             _referenceDragCanvasScale = CalculateCanvasScaleAtResolution(_dragCanvasScaler, ReferenceResolution);
             _workspace = EnsureWorkspaceRect(_host);
             ConfigureWorkspaceBackdrop(_host, _workspace);
+            ConfigureLandingOutline();
             RefreshVisualFit();
+        }
+
+        private void ConfigureLandingOutline()
+        {
+            RectTransform outline = _scene != null && _scene.DropBox != null
+                ? _scene.DropBox.transform as RectTransform : null;
+            if (outline == null || _workspace == null)
+            {
+                return;
+            }
+            outline.SetParent(_workspace, false);
+            outline.anchorMin = Vector2.zero;
+            outline.anchorMax = Vector2.one;
+            outline.pivot = new Vector2(0.5f, 0.5f);
+            outline.offsetMin = Vector2.zero;
+            outline.offsetMax = Vector2.zero;
+            outline.localScale = Vector3.one;
+            foreach (RectTransform edge in outline)
+            {
+                switch (edge.name)
+                {
+                    case "Box Top Border":
+                        SetBorder(edge, new Vector2(0f, 1f), Vector2.one, new Vector2(0.5f, 1f), new Vector2(0f, 4f));
+                        break;
+                    case "Box Bottom Border":
+                        SetBorder(edge, Vector2.zero, new Vector2(1f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 4f));
+                        break;
+                    case "Box Left Border":
+                        SetBorder(edge, Vector2.zero, new Vector2(0f, 1f), new Vector2(0f, 0.5f), new Vector2(4f, 0f));
+                        break;
+                    case "Box Right Border":
+                        SetBorder(edge, new Vector2(1f, 0f), Vector2.one, new Vector2(1f, 0.5f), new Vector2(4f, 0f));
+                        break;
+                }
+            }
+        }
+
+        private static void SetBorder(RectTransform edge, Vector2 minimum, Vector2 maximum, Vector2 pivot, Vector2 size)
+        {
+            edge.anchorMin = minimum;
+            edge.anchorMax = maximum;
+            edge.pivot = pivot;
+            edge.anchoredPosition = Vector2.zero;
+            edge.sizeDelta = size;
+            edge.localScale = Vector3.one;
         }
 
         internal void RefreshVisualFit()

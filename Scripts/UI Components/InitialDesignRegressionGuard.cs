@@ -32,8 +32,6 @@ namespace Assets.Scripts.UIComponents
         private const float PlutoHudGap = 10f;
         private const string TutorialCloseHitAreaName = "Tutorial Close Hit Area";
         private const string SummaryContinueButtonName = "Continue Button";
-        private const string SavedSquadsColumnName = "Saved Squads Column";
-        private const string ChosenSquadsColumnName = "Chosen Squads Column";
 
         private static readonly FieldInfo SequencePagesField = typeof(Tooltip).GetField(
             "_sequencePages",
@@ -428,12 +426,14 @@ namespace Assets.Scripts.UIComponents
 
         private void StabilizePlutoFourHud()
         {
-            if (!IsCampaignMission(PlutoFourMissionId))
+            GameMenus menus = FindObjectOfType<GameMenus>();
+            if (ConfigData.CurrentGameMode != ConfigData.GameModes.Campaign || menus == null ||
+                menus.Stage == null || menus.Stage.PrimaryLevel == null ||
+                menus.Stage.PrimaryLevel.CurrentLevelOptions == null ||
+                menus.Stage.PrimaryLevel.CurrentLevelOptions.Id != PlutoFourMissionId)
             {
                 return;
             }
-
-            GameMenus menus = FindObjectOfType<GameMenus>();
             if (menus == null || menus.GameSpeedButton == null || menus.PlutoShield == null ||
                 !menus.GameSpeedButton.activeInHierarchy || !menus.PlutoShield.activeInHierarchy)
             {
@@ -478,7 +478,6 @@ namespace Assets.Scripts.UIComponents
                 return;
             }
 
-            EqualizeSquadListColumns();
             NormalizeSquadRowLabels();
 
             if (ConfigData.CurrentGameMode != ConfigData.GameModes.FreePlay)
@@ -506,40 +505,6 @@ namespace Assets.Scripts.UIComponents
                     pair.Key.position = pair.Value;
                 }
             }
-        }
-
-        private void EqualizeSquadListColumns()
-        {
-            RectTransform savedColumn = FindAncestorByName(
-                _squadMaker.SavedSquadList != null ? _squadMaker.SavedSquadList.transform : null,
-                SavedSquadsColumnName);
-            RectTransform chosenColumn = FindAncestorByName(
-                _squadMaker.ChosenSquadList != null ? _squadMaker.ChosenSquadList.transform : null,
-                ChosenSquadsColumnName);
-            if (savedColumn == null || chosenColumn == null || savedColumn.parent != chosenColumn.parent)
-            {
-                return;
-            }
-
-            ConfigureEqualWidth(savedColumn);
-            ConfigureEqualWidth(chosenColumn);
-            RectTransform owner = savedColumn.parent as RectTransform;
-            if (owner != null)
-            {
-                LayoutRebuilder.ForceRebuildLayoutImmediate(owner);
-            }
-        }
-
-        private static void ConfigureEqualWidth(RectTransform column)
-        {
-            LayoutElement element = column.GetComponent<LayoutElement>();
-            if (element == null)
-            {
-                element = column.gameObject.AddComponent<LayoutElement>();
-            }
-            element.minWidth = 0f;
-            element.preferredWidth = 0f;
-            element.flexibleWidth = 1f;
         }
 
         private void NormalizeSquadRowLabels()

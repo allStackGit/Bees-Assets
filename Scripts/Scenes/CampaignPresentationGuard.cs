@@ -1,6 +1,7 @@
 using Assets.Scripts.Entities.Ships;
 using Assets.Scripts.Levels;
 using UnityEngine;
+using UnityEngine.UI;
 
 namespace Assets.Scripts.Scenes
 {
@@ -55,6 +56,7 @@ namespace Assets.Scripts.Scenes
                 return;
             }
 
+            KeepGameSpeedPointerControlled(stage);
             PreservePlutoOneGameSpeed(stage, missionId);
 
             CampaignMissionCatalog.MissionDefinition mission = CampaignMissionCatalog.Get(missionId);
@@ -64,6 +66,29 @@ namespace Assets.Scripts.Scenes
             stage.GeneratedSquadCountMinimum = 0;
             stage.UseFullyRandomSquads = false;
             stage.UseFullyRandomEnemySquads = false;
+        }
+
+        private static void KeepGameSpeedPointerControlled(global::Stage stage)
+        {
+            GameObject speedControl = stage.Menus != null ? stage.Menus.GameSpeedButton : null;
+            Button button = speedControl != null ? speedControl.GetComponent<Button>() : null;
+            if (button == null)
+            {
+                return;
+            }
+
+            // Space advances dialogue and is also the legacy UI Submit binding. A mouse click
+            // must not leave this button selected for subsequent dialogue key presses.
+            Navigation navigation = button.navigation;
+            if (navigation.mode != Navigation.Mode.None)
+            {
+                navigation.mode = Navigation.Mode.None;
+                button.navigation = navigation;
+            }
+            if (stage.EventSystem != null && stage.EventSystem.currentSelectedGameObject == speedControl)
+            {
+                stage.EventSystem.SetSelectedGameObject(null);
+            }
         }
 
         private void PreservePlutoOneGameSpeed(global::Stage stage, int missionId)

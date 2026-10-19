@@ -139,8 +139,6 @@ namespace Assets.Scripts.UIComponents
             }
 
             EnsureHoverOverlay();
-            PositionHoverDescription(_squadMaker.StartButton, _squadMaker.StartText);
-            PositionHoverDescription(_squadMaker.TestButton, _squadMaker.TestText);
             ResolvePendingUnchooseAfterLoad();
 
             if (Time.unscaledTime >= _nextScanTime)
@@ -579,28 +577,6 @@ namespace Assets.Scripts.UIComponents
             rect.sizeDelta = authoredSize;
             rect.localScale = Vector3.one;
             rect.SetAsLastSibling();
-        }
-
-        private void PositionHoverDescription(GameObject buttonObject, GameObject descriptionObject)
-        {
-            RectTransform button = buttonObject != null ? buttonObject.transform as RectTransform : null;
-            RectTransform description = descriptionObject != null
-                ? descriptionObject.transform as RectTransform
-                : null;
-            if (button == null || description == null || _hoverOverlay == null ||
-                description.parent != _hoverOverlay)
-            {
-                return;
-            }
-
-            Rect buttonRect = GetRectInLocalSpace(button, _hoverOverlay);
-            Vector2 descriptionSize = description.rect.size;
-            description.anchoredPosition = CalculateHoverDescriptionPosition(
-                buttonRect,
-                descriptionSize,
-                _hoverOverlay.rect,
-                HoverGap,
-                HoverMargin);
         }
 
         internal static Vector2 CalculateHoverDescriptionPosition(

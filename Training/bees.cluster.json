@@ -20,7 +20,7 @@
   "tailnetBootstrapPort": 7151,
   "localActor": {
     "enabled": false,
-    "initialEnvs": 4,
+    "initialEnvs": 12,
     "minEnvs": 1,
     "maxEnvs": 48,
     "autoTune": false,

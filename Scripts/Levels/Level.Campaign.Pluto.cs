@@ -107,27 +107,26 @@ namespace Assets.Scripts.Levels
                         Utilities.Shake(this, alarm, 1.5f, () =>
                         {
                             Destroy(alarm);
-                            firstScout.Squad.HasCommandQueue = true;
-                            firstScout.Squad.CommandQueueEmptyAction = () =>
-                            {
-                                Stage.IsFollowingShip = false;
-                                Stage.SetupCamera();
-                                Stage.Menus.ToggleMiniMapDisplay();
-                                Stage.Menus.MiniMapOpenButton.SetActive(false);
-                                Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.PlutoLines_Anomaly.GetRange(0, 11));
-                                firstScout.EndKill();
-                            };
-
                             firstScout.CanOverrideBounds = true;
-                            MoveToPoint moveToPoint = (MoveToPoint)Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.MoveToPoint);
-                            moveToPoint.Setup(
-                                firstScout.Squad,
-                                false,
-                                null,
-                                null,
-                                StartingPositions[ConfigData.Configuration.UserSide - 1] - new Vector2(0, 150));
-                            firstScout.Squad.CommandQueue.Enqueue(moveToPoint);
-                            firstScout.Squad.RunCommandQueue();
+                            // Squad formation movement clamps destinations to the playable map.
+                            // This single scripted ship must leave the backdrop while the camera
+                            // remains clamped independently by CampaignCameraFollowGuard.
+                            float exitPadding = Mathf.Max(firstScout.GetWidth(), firstScout.GetHeight()) * 2f;
+                            firstScout.MoveToPoint(new Vector2(
+                                firstScout.GetPosition().x,
+                                Map.SpriteRenderer.localBounds.min.y - exitPadding));
+                            NextTriggers.Add(new Trigger(
+                                () => firstScout.HasReachedDestination,
+                                () =>
+                                {
+                                    Stage.IsFollowingShip = false;
+                                    Stage.SetupCamera();
+                                    Stage.Menus.ToggleMiniMapDisplay();
+                                    Stage.Menus.MiniMapOpenButton.SetActive(false);
+                                    Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.PlutoLines_Anomaly.GetRange(0, 11));
+                                    firstScout.EndKill();
+                                },
+                                "Level 0 Scout has left the map"));
                         });
                     },
                     "Level 0 Looking for Honeybee Trigger"),
@@ -248,72 +247,72 @@ namespace Assets.Scripts.Levels
                                                 firstGunship.Squad.SetChase(true);
 
                                                 Tooltip controlGunshipTooltip = Instantiate(Stage.Menus.TooltipPrefab, Stage.Menus.UIOverlay.transform).GetComponent<Tooltip>();
-                                                controlGunshipTooltip.Show(
-                                                    "You can select the ship by left clicking on it or by left clicking and dragging a selection box around it.",
-                                                    true);
-                                                controlGunshipTooltip.Place(Vector2.zero, new Vector2(150, 150));
-
-                                                NextTriggers.Add(new Trigger(
-                                                    () => firstGunship.Squad.IsSelected,
-                                                    () =>
+                                                controlGunshipTooltip.Place(Vector2.zero, new Vector2(150, 300));
+                                                System.Action showGunshipControls = () =>
+                                                {
+                                                    // Keep both control pages in one popup, with explicit navigation instead
+                                                    // of a close-and-reopen handoff on a later mission trigger tick.
+                                                    controlGunshipTooltip.ShowSequence(new[]
                                                     {
-                                                        controlGunshipTooltip.Show(
-                                                            "You'll want to familiarize yourself with the controls to your bottom left. They aren't usually required, but they are helpful.",
-                                                            true);
-                                                        controlGunshipTooltip.Place(Vector2.zero, new Vector2(150, 150));
-                                                        NextTriggers.Add(new Trigger(
-                                                            () => !ConfigData.UserProgressData.ShowToolTips || !controlGunshipTooltip.TooltipObject.activeInHierarchy,
-                                                            () =>
+                                                        "You'll want to familiarize yourself with the controls to your bottom left. They aren't usually required, but they are helpful.",
+                                                        "When you're ready to engage the Honeybee, click \"Attack on Sight\" (the exclamation point) to disable the Cease Fire.\nChase is already enabled, so the Gunship will automatically follow the Honeybee.\nOnce the Gunship is within range it will automatically fire upon the Honeybee.",
+                                                    }, true);
+
+                                                    GameObject attackOnSightHighlight = null;
+                                                    if (ConfigData.UserProgressData.ShowToolTips)
+                                                    {
+                                                        attackOnSightHighlight = Instantiate(
+                                                            Stage.Menus.UIHighlightTooltipPrefab,
+                                                            Stage.Menus.ActionBox.AttackOnSightButton.transform);
+                                                        RectTransform highlightRect = attackOnSightHighlight.GetComponent<RectTransform>();
+                                                        highlightRect.anchorMin = Vector2.zero;
+                                                        highlightRect.anchorMax = Vector2.one;
+                                                        highlightRect.offsetMin = new Vector2(-4, -4);
+                                                        highlightRect.offsetMax = new Vector2(4, 4);
+                                                        highlightRect.localScale = Vector3.one;
+                                                        highlightRect.SetAsLastSibling();
+
+                                                        Image highlightImage = attackOnSightHighlight.GetComponent<Image>();
+                                                        if (highlightImage != null)
+                                                        {
+                                                            highlightImage.color = Color.red;
+                                                            highlightImage.raycastTarget = false;
+                                                        }
+                                                        attackOnSightHighlight.SetActive(true);
+                                                    }
+
+                                                    NextTriggers.Add(new Trigger(
+                                                        () => !ConfigData.UserProgressData.ShowToolTips ||
+                                                              firstGunship.Squad.AttackOnSight ||
+                                                              !controlGunshipTooltip.TooltipObject.activeInHierarchy,
+                                                        () =>
+                                                        {
+                                                            if (controlGunshipTooltip != null && controlGunshipTooltip.TooltipObject.activeInHierarchy)
                                                             {
-                                                                Tooltip attackOnSightTooltip = Instantiate(Stage.Menus.TooltipPrefab, Stage.Menus.UIOverlay.transform).GetComponent<Tooltip>();
-                                                                attackOnSightTooltip.Show(
-                                                                    "When you're ready to engage the Honeybee, click \"Attack on Sight\" (the exclamation point) to disable the Cease Fire.\nChase is already enabled, so the Gunship will automatically follow the Honeybee.\nOnce the Gunship is within range it will automatically fire upon the Honeybee.",
-                                                                    true);
-                                                                attackOnSightTooltip.Place(Vector2.zero, new Vector2(150, 300));
+                                                                controlGunshipTooltip.Hide();
+                                                            }
+                                                            if (attackOnSightHighlight != null)
+                                                            {
+                                                                Destroy(attackOnSightHighlight);
+                                                            }
+                                                        },
+                                                        "Level 0 Closing Attack on Sight prompt"));
+                                                };
 
-                                                                GameObject attackOnSightHighlight = null;
-                                                                if (ConfigData.UserProgressData.ShowToolTips)
-                                                                {
-                                                                    attackOnSightHighlight = Instantiate(
-                                                                        Stage.Menus.UIHighlightTooltipPrefab,
-                                                                        Stage.Menus.ActionBox.AttackOnSightButton.transform);
-                                                                    RectTransform highlightRect = attackOnSightHighlight.GetComponent<RectTransform>();
-                                                                    highlightRect.anchorMin = Vector2.zero;
-                                                                    highlightRect.anchorMax = Vector2.one;
-                                                                    highlightRect.offsetMin = new Vector2(-4, -4);
-                                                                    highlightRect.offsetMax = new Vector2(4, 4);
-                                                                    highlightRect.localScale = Vector3.one;
-                                                                    highlightRect.SetAsLastSibling();
-
-                                                                    Image highlightImage = attackOnSightHighlight.GetComponent<Image>();
-                                                                    if (highlightImage != null)
-                                                                    {
-                                                                        highlightImage.color = Color.red;
-                                                                        highlightImage.raycastTarget = false;
-                                                                    }
-                                                                    attackOnSightHighlight.SetActive(true);
-                                                                }
-
-                                                                NextTriggers.Add(new Trigger(
-                                                                    () => !ConfigData.UserProgressData.ShowToolTips ||
-                                                                          firstGunship.Squad.AttackOnSight ||
-                                                                          !attackOnSightTooltip.TooltipObject.activeInHierarchy,
-                                                                    () =>
-                                                                    {
-                                                                        if (attackOnSightTooltip != null && attackOnSightTooltip.TooltipObject.activeInHierarchy)
-                                                                        {
-                                                                            attackOnSightTooltip.Hide();
-                                                                        }
-                                                                        if (attackOnSightHighlight != null)
-                                                                        {
-                                                                            Destroy(attackOnSightHighlight);
-                                                                        }
-                                                                    },
-                                                                    "Level 0 Closing Attack on Sight prompt"));
-                                                            },
-                                                            "Level 0 Showing Attack on Sight tooltip prompt"));
-                                                    },
-                                                    "Level 0 Showing squad controls tooltip when squad is selected"));
+                                                if (firstGunship.Squad.IsSelected)
+                                                {
+                                                    showGunshipControls();
+                                                }
+                                                else
+                                                {
+                                                    controlGunshipTooltip.Show(
+                                                        "You can select the ship by left clicking on it or by left clicking and dragging a selection box around it.",
+                                                        true);
+                                                    NextTriggers.Add(new Trigger(
+                                                        () => firstGunship.Squad.IsSelected,
+                                                        showGunshipControls,
+                                                        "Level 0 Showing squad controls tooltip when squad is selected"));
+                                                }
 
                                                 AddReinforcementSquads(new List<SavedSquad>()
                                                 {
@@ -391,6 +390,7 @@ namespace Assets.Scripts.Levels
 
         public void Pluto2Reinforcements()
         {
+            Stage.CutsceneManager.SetDialoguePresentationSuppressed(false);
             Stage.Menus.MissionStatus.SetActive(false);
             Stage.Menus.SurrenderButton.SetActive(false);
             FishTankTrigger();
@@ -444,6 +444,9 @@ namespace Assets.Scripts.Levels
 
                     if (ConfigData.UserProgressData.ShowToolTips)
                     {
+                        // The mission owns the whole tutorial, including gaps between boxes.
+                        // Resume Samuel only from the final sequence's completion callback.
+                        Stage.CutsceneManager.SetDialoguePresentationSuppressed(true);
                         basicTooltip = Instantiate(Stage.Menus.TooltipPrefab, Stage.Menus.UIOverlay.transform).GetComponent<Tooltip>();
                         basicTooltip.Place(new Vector2(0, -160), new Vector2(150, 100));
                         basicTooltip.Show("Select the Scout squad with the left mouse button.", true);
@@ -463,6 +466,7 @@ namespace Assets.Scripts.Levels
                             if (ConfigData.UserProgressData.ShowToolTips)
                             {
                                 highlightTooltipObject.SetActive(false);
+                                basicTooltip.Hide();
                                 basicTooltip.Place(new Vector2(-175, -150), new Vector2(150, 225));
                                 basicTooltip.Show("Here are different settings for your ship. You can determine your squad’s flight pattern and shooting strategies here. Take some time to familiarize yourself with these options.", true);
 
@@ -502,15 +506,11 @@ namespace Assets.Scripts.Levels
                                         squadNumberHighlightRect.SetAsFirstSibling();
 
                                         basicTooltip.Place(new Vector2(-300, 175), new Vector2(260, 170));
-                                        // The opening dialogue section has already reached its break here. Keep
-                                        // tutorial presentation exclusive so a stale/re-activated dialogue box
-                                        // cannot overlap the tooltip sequence.
-                                        Stage.CutsceneManager.SetDialoguePresentationSuppressed(true);
                                         basicTooltip.ShowSequence(new List<string>
                                         {
                                             "You can also select squads with the number hotkeys on your keyboard. These are displayed at the top of the screen.",
                                             "If you need to select multiple squads, click and drag the mouse over the squads.",
-                                            "Your ships with weapons will automatically shoot at any enemies in range. You can view your selected ships’ range at any time by holding R.",
+                                            "Your ships with weapons will automatically shoot at any enemies in range. You can view your selected ships’ ranges at any time by holding R.",
                                             "You can manually fire towards your cursor with any selected ships by pressing F."
                                         }, true, () =>
                                         {
@@ -527,6 +527,7 @@ namespace Assets.Scripts.Levels
                                     }
                                     else
                                     {
+                                        Stage.CutsceneManager.SetDialoguePresentationSuppressed(false);
                                         tacticalTutorialComplete = true;
                                         Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.PlutoLines_Reinforcements.GetRange(3, 2));
                                         Stage.Menus.TogglePausePanel();
@@ -585,7 +586,24 @@ namespace Assets.Scripts.Levels
             Stage.Menus.TogglePausePanel();
 
             _dialogueTimer.Reuse(1.5f, () =>
-                Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.PlutoLines_Pushback.GetRange(1, 12)));
+            {
+                HashSet<ConfigData.ShipTypes> shipTypesInPlay = new HashSet<ConfigData.ShipTypes>(
+                    State.GetShips(ConfigData.Configuration.UserSide)
+                        .Where(ship => !ship.IsDead)
+                        .Select(ship => ship.ShipType));
+                List<DialogueLine> introductions = Stage.CutsceneManager.PlutoLines_Pushback
+                    .GetRange(1, 12)
+                    .Where(line => line.SpeakerName switch
+                    {
+                        "Oviya" => shipTypesInPlay.Contains(ConfigData.ShipTypes.Scout),
+                        "Joey" => shipTypesInPlay.Contains(ConfigData.ShipTypes.Frigate),
+                        "Marco" => shipTypesInPlay.Contains(ConfigData.ShipTypes.Gunship),
+                        "Yoshiko" => shipTypesInPlay.Contains(ConfigData.ShipTypes.Dreadnought),
+                        _ => true
+                    })
+                    .ToList();
+                Stage.CutsceneManager.PlayDialogueSection(introductions);
+            });
             AddTimer(_dialogueTimer);
 
             NextTriggers.Add(new Trigger(

@@ -29,10 +29,6 @@ namespace Assets.Scripts.UIComponents
 
         private Stage _stage;
         private GameObject _squadNumberArrow;
-        private DialogueManager _gatedDialogueManager;
-        private bool _plutoTwoTutorialSeen;
-        private bool _plutoTwoTutorialComplete;
-        private bool _plutoTwoDialogueGated;
         private bool _plutoThreeTimerAdjusted;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
@@ -88,7 +84,6 @@ namespace Assets.Scripts.UIComponents
                     UpdatePlutoFour();
                     break;
                 default:
-                    RestorePlutoTwoDialogue();
                     DestroySquadNumberArrow();
                     break;
             }
@@ -101,25 +96,12 @@ namespace Assets.Scripts.UIComponents
                 ? activeTooltip.TooltipText.text ?? string.Empty
                 : string.Empty;
 
-            bool selectingPage = Contains(text, "select an entire squad");
             bool settingsPage = Contains(text, "flight pattern") && Contains(text, "shooting strateg");
             bool squadNumberPage = Contains(text, "Squads are assigned number hotkeys");
-            bool tacticalSequencePage = squadNumberPage ||
-                                        Contains(text, "selected ships’ range") ||
-                                        Contains(text, "selected ships' range") ||
-                                        Contains(text, "quickly find a selected squad") ||
-                                        Contains(text, "shooting strategy and flight pattern");
-
-            if (selectingPage || settingsPage || tacticalSequencePage)
-            {
-                _plutoTwoTutorialSeen = true;
-            }
 
             if (activeTooltip != null && activeTooltip.TooltipText != null)
             {
                 string correctedText = activeTooltip.TooltipText.text;
-                correctedText = correctedText.Replace("ships’ range", "ships’ ranges");
-                correctedText = correctedText.Replace("ships' range", "ships' ranges");
 
                 if (settingsPage)
                 {
@@ -143,24 +125,10 @@ namespace Assets.Scripts.UIComponents
             {
                 DestroySquadNumberArrow();
             }
-
-            if (_plutoTwoTutorialSeen && !_plutoTwoTutorialComplete)
-            {
-                if (activeTooltip != null)
-                {
-                    GatePlutoTwoDialogue();
-                }
-                else
-                {
-                    _plutoTwoTutorialComplete = true;
-                    RestorePlutoTwoDialogue();
-                }
-            }
         }
 
         private void UpdatePlutoThree()
         {
-            RestorePlutoTwoDialogue();
             DestroySquadNumberArrow();
 
             if (_plutoThreeTimerAdjusted || DialogueTimerField == null)
@@ -183,7 +151,6 @@ namespace Assets.Scripts.UIComponents
 
         private void UpdatePlutoFour()
         {
-            RestorePlutoTwoDialogue();
             DestroySquadNumberArrow();
 
             if (_stage.Menus.MissionStatusText != null &&
@@ -312,43 +279,6 @@ namespace Assets.Scripts.UIComponents
             return text;
         }
 
-        private void GatePlutoTwoDialogue()
-        {
-            DialogueManager manager = _stage.CutsceneManager != null
-                ? _stage.CutsceneManager.DialogueManager
-                : null;
-            if (manager == null)
-            {
-                return;
-            }
-
-            _gatedDialogueManager = manager;
-            _plutoTwoDialogueGated = true;
-            manager.enabled = false;
-            if (manager.DialogueBox != null && manager.DialogueBox.activeSelf)
-            {
-                manager.DialogueBox.SetActive(false);
-            }
-        }
-
-        private void RestorePlutoTwoDialogue()
-        {
-            if (!_plutoTwoDialogueGated || _gatedDialogueManager == null)
-            {
-                _plutoTwoDialogueGated = false;
-                _gatedDialogueManager = null;
-                return;
-            }
-
-            _gatedDialogueManager.enabled = true;
-            if (_gatedDialogueManager.DialogueBox != null)
-            {
-                _gatedDialogueManager.DialogueBox.SetActive(true);
-            }
-            _plutoTwoDialogueGated = false;
-            _gatedDialogueManager = null;
-        }
-
         private void RemoveSquadNumberHighlight()
         {
             if (_stage.Menus.UIOverlay == null || _stage.Menus.UIHighlightTooltipPrefab == null)
@@ -403,11 +333,8 @@ namespace Assets.Scripts.UIComponents
 
         private void ResetStageState()
         {
-            RestorePlutoTwoDialogue();
             DestroySquadNumberArrow();
             _stage = null;
-            _plutoTwoTutorialSeen = false;
-            _plutoTwoTutorialComplete = false;
             _plutoThreeTimerAdjusted = false;
         }
     }

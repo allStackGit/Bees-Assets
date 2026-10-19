@@ -640,7 +640,8 @@ namespace Assets.Scripts.UI_Components
         private void KeepNormalSpeedButtonWithinCanvas()
         {
             if (_menus.GameSpeedButton == null || !_menus.GameSpeedButton.activeInHierarchy ||
-                _speedRect == null || (_menus.Clock != null && _menus.Clock.activeInHierarchy))
+                _speedRect == null || (_menus.Clock != null && _menus.Clock.activeInHierarchy) ||
+                (GetCampaignMissionId() == 3 && _menus.PlutoShield != null && _menus.PlutoShield.activeInHierarchy))
             {
                 return;
             }
@@ -675,12 +676,14 @@ namespace Assets.Scripts.UI_Components
             }
 
             bool clockVisible = _menus.Clock.activeInHierarchy;
-            if (clockVisible)
+            int campaignMissionId = GetCampaignMissionId();
+            bool plutoHudVisible = campaignMissionId == 3 && _menus.PlutoShield != null &&
+                                   _menus.PlutoShield.activeInHierarchy;
+            if (clockVisible || plutoHudVisible)
             {
                 float x = _clockRect.anchoredPosition.x -
                           ((_clockRect.rect.width + _speedRect.rect.width) * 0.5f) - ControlGap;
                 float y = _clockRect.anchoredPosition.y;
-                int campaignMissionId = GetCampaignMissionId();
 
                 if (campaignMissionId == 8)
                 {
@@ -919,8 +922,14 @@ namespace Assets.Scripts.UI_Components
             layoutRoot.position += correction;
         }
 
-        private static int GetCampaignMissionId()
+        private int GetCampaignMissionId()
         {
+            if (ConfigData.CurrentGameMode == ConfigData.GameModes.Campaign &&
+                _menus != null && _menus.Stage != null && _menus.Stage.PrimaryLevel != null &&
+                _menus.Stage.PrimaryLevel.CurrentLevelOptions != null)
+            {
+                return _menus.Stage.PrimaryLevel.CurrentLevelOptions.Id;
+            }
             if (ConfigData.CurrentGameMode != ConfigData.GameModes.Campaign ||
                 ConfigData.UserProgressData == null || ConfigData.Configuration == null)
             {

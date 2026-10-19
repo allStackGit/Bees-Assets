@@ -128,7 +128,7 @@ namespace Assets.Scripts.Levels
                     Stage.DialoguePrefab,
                     "New Game Mode!",
                     "You've unlocked the Training Room!",
-                    new List<string>() { "Ok" },
+                    new List<string>() { "OK" },
                     new List<UnityAction>()
                     {
                         () =>

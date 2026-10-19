@@ -191,14 +191,25 @@ namespace Assets.Scripts.UI_Components
             if (NextPageButton != null)
             {
                 Image buttonImage = NextPageButton.GetComponent<Image>();
-                if (buttonImage != null)
+                Button referenceButton = _squadMaker != null && _squadMaker.StartButton != null
+                    ? _squadMaker.StartButton.GetComponent<Button>()
+                    : null;
+                if (buttonImage != null && referenceButton != null && referenceButton.targetGraphic is Image referenceImage)
                 {
-                    buttonImage.color = new Color(0.28f, 0.33f, 0.38f, 0.98f);
+                    buttonImage.sprite = referenceImage.sprite;
+                    buttonImage.type = referenceImage.type;
+                    buttonImage.color = referenceImage.color;
+                    NextPageButton.targetGraphic = buttonImage;
+                    NextPageButton.colors = referenceButton.colors;
+                    NextPageButton.transition = referenceButton.transition;
                 }
                 TMP_Text buttonLabel = NextPageButton.GetComponentInChildren<TMP_Text>(true);
-                if (buttonLabel != null)
+                TMP_Text referenceLabel = referenceButton != null
+                    ? referenceButton.GetComponentInChildren<TMP_Text>(true)
+                    : null;
+                if (buttonLabel != null && referenceLabel != null)
                 {
-                    buttonLabel.color = Color.white;
+                    buttonLabel.color = referenceLabel.color;
                 }
             }
         }
@@ -238,15 +249,35 @@ namespace Assets.Scripts.UI_Components
                 "Info Tab",
                 typeof(RectTransform),
                 typeof(CanvasRenderer),
-                typeof(Image));
+                typeof(LayoutElement),
+                typeof(TutorialInfoTabGraphic));
             tab.transform.SetParent(_brochurePanel, false);
+            tab.GetComponent<LayoutElement>().ignoreLayout = true;
             RectTransform tabRect = tab.GetComponent<RectTransform>();
             tabRect.anchorMin = new Vector2(0f, 1f);
             tabRect.anchorMax = new Vector2(0f, 1f);
             tabRect.pivot = new Vector2(0f, 0f);
-            tabRect.anchoredPosition = new Vector2(0f, 2f);
-            tabRect.sizeDelta = new Vector2(92f, 28f);
-            tab.GetComponent<Image>().color = new Color(0.34f, 0.39f, 0.44f, 1f);
+            Outline panelBorder = _brochurePanel.GetComponent<Outline>();
+            float borderWidth = panelBorder != null ? Mathf.Abs(panelBorder.effectDistance.x) : 2f;
+            tabRect.anchoredPosition = new Vector2(-borderWidth, 0f);
+            tabRect.sizeDelta = new Vector2(93f, 30f);
+            TutorialInfoTabGraphic border = tab.GetComponent<TutorialInfoTabGraphic>();
+            border.color = panelBorder != null ? panelBorder.effectColor : new Color(0.52f, 0.60f, 0.66f, 1f);
+            border.Slant = 12f;
+            border.raycastTarget = false;
+
+            GameObject fillObject = new GameObject("Fill", typeof(RectTransform),
+                typeof(CanvasRenderer), typeof(TutorialInfoTabGraphic));
+            fillObject.transform.SetParent(tab.transform, false);
+            RectTransform fillRect = fillObject.GetComponent<RectTransform>();
+            fillRect.anchorMin = Vector2.zero;
+            fillRect.anchorMax = Vector2.one;
+            fillRect.offsetMin = new Vector2(1.5f, 1.5f);
+            fillRect.offsetMax = new Vector2(-1.5f, -1.5f);
+            TutorialInfoTabGraphic fill = fillObject.GetComponent<TutorialInfoTabGraphic>();
+            fill.color = new Color(0.34f, 0.39f, 0.44f, 0.96f);
+            fill.Slant = 10.5f;
+            fill.raycastTarget = false;
 
             GameObject labelObject = new GameObject(
                 "Label",
@@ -257,8 +288,8 @@ namespace Assets.Scripts.UI_Components
             RectTransform labelRect = labelObject.GetComponent<RectTransform>();
             labelRect.anchorMin = Vector2.zero;
             labelRect.anchorMax = Vector2.one;
-            labelRect.offsetMin = Vector2.zero;
-            labelRect.offsetMax = Vector2.zero;
+            labelRect.offsetMin = new Vector2(6f, 2f);
+            labelRect.offsetMax = new Vector2(-16f, -2f);
 
             TextMeshProUGUI label = labelObject.GetComponent<TextMeshProUGUI>();
             label.text = "INFO";

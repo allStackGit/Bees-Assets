@@ -8,7 +8,6 @@ namespace Assets.Scripts.Scenes
     internal sealed class CampaignCameraFollowGuard : MonoBehaviour
     {
         private Stage _stage;
-        private Ship _lastFollowedShip;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
         private static void Install()
@@ -22,14 +21,12 @@ namespace Assets.Scripts.Scenes
         {
             if (ConfigData.CurrentGameMode != ConfigData.GameModes.Campaign)
             {
-                _lastFollowedShip = null;
                 return;
             }
 
             if (_stage == null)
             {
                 _stage = FindObjectOfType<Stage>();
-                _lastFollowedShip = null;
             }
 
             if (_stage == null || _stage.Camera == null || _stage.PrimaryLevel == null ||
@@ -39,21 +36,11 @@ namespace Assets.Scripts.Scenes
             }
 
             Ship cameraShip = _stage.CameraShip;
-            if (_stage.IsFollowingShip && cameraShip != null && !cameraShip.IsDead)
-            {
-                _lastFollowedShip = cameraShip;
-            }
-            else if (!_stage.IsFollowingShip && ShouldContinueScriptedFollow(cameraShip))
+            if (!_stage.IsFollowingShip && ShouldContinueScriptedFollow(cameraShip))
             {
                 // Pluto I temporarily suspends following while the reveal owns the camera. Once the
                 // scripted Scout starts leaving, resume following it through the intended handoff.
                 _stage.IsFollowingShip = true;
-                _lastFollowedShip = cameraShip;
-            }
-
-            if (_lastFollowedShip != null && _lastFollowedShip.IsDead)
-            {
-                _lastFollowedShip = null;
             }
 
             if (_stage.IsFollowingShip && cameraShip != null && !cameraShip.IsDead)
@@ -61,27 +48,20 @@ namespace Assets.Scripts.Scenes
                 Vector2 shipPosition = cameraShip.GetPosition();
                 Vector3 currentPosition = _stage.Camera.transform.position;
                 _stage.Camera.transform.position = new Vector3(shipPosition.x, shipPosition.y, currentPosition.z);
+            }
 
-                // A CanOverrideBounds Scout is deliberately scripted to leave Pluto I's playable
-                // area. Clamping the camera here pins it to the map edge and makes the follow appear
-                // to stop, so only normal campaign follows are constrained to the authored map.
-                if (!ShouldAllowFollowOutsideMap(cameraShip))
-                {
-                    ClampCameraToMap(_stage.Camera);
-                }
-            }
-            else if (_stage.IsCameraMovingToTarget)
-            {
-                ClampCameraToMap(_stage.Camera);
-            }
+            // The Scout can leave the playable map, but the campaign viewport must stop at its
+            // edge. Apply this after follow/reveal positioning so no campaign camera owner can
+            // expose the space outside the authored backdrop.
+            ClampCameraToMap(_stage.Camera);
         }
 
         private bool ShouldContinueScriptedFollow(Ship cameraShip)
         {
-            return _stage.IsPlayerControlling && ShouldAllowFollowOutsideMap(cameraShip);
+            return _stage.IsPlayerControlling && IsScriptedScoutDeparture(cameraShip);
         }
 
-        private static bool ShouldAllowFollowOutsideMap(Ship cameraShip)
+        private static bool IsScriptedScoutDeparture(Ship cameraShip)
         {
             return cameraShip != null &&
                 !cameraShip.IsDead &&

@@ -1,4 +1,5 @@
 using Assets.Scripts.Scenes;
+using Assets.Scripts.UIComponents;
 using TMPro;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -8,14 +9,10 @@ namespace Assets.Scripts.UI_Components
     /// <summary>
     /// Restores the semantic horizontal placement of the Squad Maker START/TEST hover descriptions.
     ///
-    /// The serialized scene authors both help descriptions as centered content in the Chosen Squads
-    /// column. SquadMakerInteractionGuard moves them into a root-canvas overlay for clipping safety and
-    /// temporarily centers their outer rectangles on the hovered buttons. This final horizontal pass
-    /// restores the authored presentation intent by centering the actually rendered TMP glyph bounds in
-    /// the live Chosen Squads column, then clamps only those visible bounds to the root-canvas margin.
-    /// Vertical placement remains owned by InteractionGuard and SupplyCapacityPresentationGuard.
+    /// Positions START/TEST help once, after overlay setup, content sizing, and supply-row layout.
+    /// Centering and supply clearance must not compete with other position writers.
     /// </summary>
-    [DefaultExecutionOrder(-625)]
+    [DefaultExecutionOrder(-550)]
     public sealed class SquadMakerHoverPlacementGuard : MonoBehaviour
     {
         private const string SquadMakerSceneName = "Squad Maker";
@@ -87,40 +84,44 @@ namespace Assets.Scripts.UI_Components
                 _chosenColumn = ResolveChosenColumn(_squadMaker);
             }
 
-            ApplyPlacement(_squadMaker.StartText);
-            ApplyPlacement(_squadMaker.TestText);
+            ApplyPlacement(_squadMaker.StartButton, _squadMaker.StartText);
+            ApplyPlacement(_squadMaker.TestButton, _squadMaker.TestText);
         }
 
-        private void ApplyPlacement(GameObject descriptionObject)
+        private void ApplyPlacement(GameObject buttonObject, GameObject descriptionObject)
         {
+            RectTransform button = buttonObject != null ? buttonObject.transform as RectTransform : null;
             RectTransform description = descriptionObject != null
                 ? descriptionObject.transform as RectTransform
                 : null;
             RectTransform overlay = description != null ? description.parent as RectTransform : null;
-            if (description == null || overlay == null || _chosenColumn == null ||
+            if (button == null || description == null || overlay == null || _chosenColumn == null ||
                 overlay.name != HoverOverlayName)
             {
                 return;
             }
 
             Rect columnRect = GetRectInLocalSpace(_chosenColumn, overlay);
-            Rect visibleLocalBounds;
-            if (!TryGetRenderedTextBounds(descriptionObject, description, out visibleLocalBounds))
-            {
-                visibleLocalBounds = description.rect;
-            }
-
+            // Placement must not feed regenerated glyph bounds back into the next frame's
+            // position. The content-size owner has already established this padded rectangle.
             float targetX = CalculateColumnCenteredHoverX(
                 columnRect,
-                visibleLocalBounds,
+                description.rect,
                 overlay.rect,
                 OverlayMargin);
 
-            Vector2 position = description.anchoredPosition;
-            if (Mathf.Abs(position.x - targetX) > BoundsTolerance)
+            Vector2 position = SquadMakerInteractionGuard.CalculateHoverDescriptionPosition(
+                GetRectInLocalSpace(button, overlay), description.rect.size, overlay.rect);
+            position.x = targetX;
+            if ((description.anchoredPosition - position).sqrMagnitude > BoundsTolerance * BoundsTolerance)
             {
-                position.x = targetX;
                 description.anchoredPosition = position;
+            }
+            SquadMakerSupplyCapacityPresentationGuard supply =
+                _squadMaker.GetComponent<SquadMakerSupplyCapacityPresentationGuard>();
+            if (supply != null)
+            {
+                supply.KeepHoverDescriptionClear(descriptionObject);
             }
         }
 

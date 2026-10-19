@@ -724,12 +724,10 @@ namespace Assets.Scripts.UI_Components
             squadsLayout.childForceExpandWidth = false;
             squadsLayout.childForceExpandHeight = true;
 
-            ConfigureProportionalWidthFlexibleHeight(
-                reference.SavedSquadsColumn,
-                reference.SavedSquadsColumnSize.x);
-            ConfigureProportionalWidthFlexibleHeight(
-                reference.ChosenSquadsColumn,
-                reference.ChosenSquadsColumnSize.x);
+            // Own equal list widths here, before hover placement. A later equalization pass
+            // would otherwise fight this periodic layout and move the hover text's column.
+            ConfigureEqualWidthFlexibleHeight(reference.SavedSquadsColumn);
+            ConfigureEqualWidthFlexibleHeight(reference.ChosenSquadsColumn);
 
             // Each vertical column owns the live cross-axis width of its rows, lists, and labels.
             ConfigureVerticalColumnCrossAxis(reference.ShipSelectorColumn);
@@ -872,15 +870,13 @@ namespace Assets.Scripts.UI_Components
                 1f);
         }
 
-        private static void ConfigureProportionalWidthFlexibleHeight(
-            RectTransform rect,
-            float authoredWidth)
+        private static void ConfigureEqualWidthFlexibleHeight(RectTransform rect)
         {
             ConfigureLayoutElement(
                 rect,
-                authoredWidth,
-                authoredWidth,
-                authoredWidth,
+                0f,
+                0f,
+                1f,
                 -1f,
                 -1f,
                 1f);

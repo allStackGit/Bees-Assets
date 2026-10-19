@@ -148,8 +148,6 @@ namespace Assets.Scripts.UI_Components
         {
             CenterPresentation(_row, _label, _text);
             RepairSupplyRowFooterClearance();
-            KeepHoverDescriptionClear(_squadMaker != null ? _squadMaker.StartText : null);
-            KeepHoverDescriptionClear(_squadMaker != null ? _squadMaker.TestText : null);
         }
 
         private void RepairSupplyRowFooterClearance()
@@ -197,7 +195,7 @@ namespace Assets.Scripts.UI_Components
             }
         }
 
-        private void KeepHoverDescriptionClear(GameObject descriptionObject)
+        internal void KeepHoverDescriptionClear(GameObject descriptionObject)
         {
             RectTransform description = descriptionObject != null
                 ? descriptionObject.transform as RectTransform
@@ -209,9 +207,7 @@ namespace Assets.Scripts.UI_Components
                 return;
             }
 
-            // SquadMakerInteractionGuard reparents START/TEST descriptions to a full-canvas overlay
-            // and positions them before this component runs. Only intervene when that final overlay
-            // rectangle actually covers the Supply Capacity row.
+            // Called by the hover-position owner after sizing, centering, and row layout are final.
             Rect descriptionRect = GetRectInLocalSpace(description, owner);
             Rect protectedRect = GetRectInLocalSpace(_row, owner);
             float upwardShift = CalculateHoverUpwardShift(
