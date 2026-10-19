@@ -41,6 +41,9 @@ import bees_wan_actor_training as wan
 
 DEFAULT_RECONNECT_SECONDS = 5.0
 DEFAULT_LOCAL_UPLOAD_QUEUE = 8
+DEFAULT_UPLOAD_WORKERS = 1 if os.name == "nt" else 2
+MAX_COALESCED_UPLOAD_BATCHES = 8
+MAX_COALESCED_UPLOAD_STEPS = 2048
 DEFAULT_STATE_WAIT_SECONDS = 20.0
 MAX_TRAJECTORIES_PER_UPLOAD = 256
 MAX_UNITY_SEED = (1 << 31) - 1
@@ -344,9 +347,9 @@ class BrokerClient:
         self.base = f"http://{host}:{port}"
         self._host = host
         self._port = port
-        # Only the single uploader thread touches this connection. Long-poll
-        # state/control requests stay on their independent urllib connections.
-        self._upload_connection: Optional[http.client.HTTPConnection] = None
+        # Every uploader thread owns its own persistent connection. State/control
+        # long polls use their independent urllib connections.
+        self._upload_connections = threading.local()
         self.token = token
         self.timeout = timeout
         self._traffic_lock = threading.Lock()
@@ -426,8 +429,8 @@ class BrokerClient:
             }
 
     def _close_upload_connection(self) -> None:
-        connection = self._upload_connection
-        self._upload_connection = None
+        connection = getattr(self._upload_connections, "connection", None)
+        self._upload_connections.connection = None
         if connection is not None:
             connection.close()
 
@@ -441,19 +444,17 @@ class BrokerClient:
         body: Optional[bytes],
         headers: Mapping[str, str],
     ) -> Tuple[int, Mapping[str, str], bytes]:
-        """Reuse the one authenticated broker TCP stream for sequential uploads.
+        """Reuse one authenticated TCP stream per uploader thread.
 
-        The tailnet forwarder is a byte-stream proxy: keeping this local TCP
-        connection open also keeps its corresponding tailnet leg open. There
-        is no automatic POST replay here; the existing uploader handles
-        transport failure and retry, including uncertain acknowledgements.
+        The tailnet forwarder is a byte-stream proxy, so persistent connections
+        amortize tunnel setup. Each uploader retries only its own request.
         """
-        connection = self._upload_connection
+        connection = getattr(self._upload_connections, "connection", None)
         if connection is None:
             connection = http.client.HTTPConnection(
                 self._host, self._port, timeout=self.timeout
             )
-            self._upload_connection = connection
+            self._upload_connections.connection = connection
             profiler = getattr(self, "_rollout_profiler", None)
             if profiler is not None:
                 profiler.observe("upload_connection_created", 0.0)
@@ -498,8 +499,8 @@ class BrokerClient:
         request_started = time.perf_counter() if profiler is not None else 0.0
         try:
             if path == "/trajectories":
-                # The upload loop sends one batch at a time. Reuse its TCP/Tailnet
-                # stream, without serializing the concurrent state long-poll.
+                # Each uploader reuses its own TCP/Tailnet stream; concurrent
+                # uploads do not share HTTPConnection state.
                 status, response_headers, raw = self._persistent_upload_request(
                     method, path, body, headers
                 )
@@ -858,6 +859,7 @@ class ActorSession:
         graphics: bool,
         stop: threading.Event,
         upload_queue_size: int,
+        upload_workers: int = DEFAULT_UPLOAD_WORKERS,
         startup_health: Optional[Callable[[str], None]] = None,
         runtime_progress: Optional[Callable[[], None]] = None,
         env_count_changed: Optional[Callable[[int], None]] = None,
@@ -884,12 +886,20 @@ class ActorSession:
         self._session_changed = threading.Event()
         self._stale = threading.Event()
         self._thread_error: queue.Queue = queue.Queue()
+        if not 1 <= upload_workers <= 4:
+            raise ValueError("upload_workers must be between 1 and 4")
+        self.upload_workers = upload_workers
         self._upload_queue: queue.Queue = queue.Queue(maxsize=upload_queue_size)
         self._upload_stop = threading.Event()
+        # Count queued AND in-flight requests. An empty queue alone does not
+        # permit downscale registration while an old worker's upload is in flight.
+        self._upload_pending_lock = threading.Lock()
+        self._upload_pending = 0
+        self._upload_inflight = 0
         self._upload_idle = threading.Event()
         self._upload_idle.set()
         self._watcher: Optional[threading.Thread] = None
-        self._uploader: Optional[threading.Thread] = None
+        self._uploaders: List[threading.Thread] = []
         self._onnx_temp = tempfile.TemporaryDirectory(prefix=f"bees-wan-actor-{actor_id}-")
         self._current_env_config = None
         self._rollout_horizons: Dict[str, int] = {}
@@ -905,6 +915,8 @@ class ActorSession:
         self._staged_steps_per_sec = None
         self._last_staged_rate_sample = None
         self._accepted_trajectories_total = 0
+        self._accepted_upload_requests_total = 0
+        self._coalesced_upload_batches_total = 0
         self._accepted_steps_per_sec = None
         self._last_accepted_rate_sample = None
         self._learner_consumed_steps_total = 0
@@ -1027,6 +1039,13 @@ class ActorSession:
         if path is None:
             return
         now = time.monotonic()
+        upload_lock = getattr(self, "_upload_pending_lock", None)
+        if upload_lock is not None:
+            with upload_lock:
+                upload_pending = self._upload_pending
+                upload_inflight = self._upload_inflight
+        else:
+            upload_pending = upload_inflight = 0
         with self._throughput_lock:
             if not force and now - self._last_throughput_write < 1.0:
                 return
@@ -1066,6 +1085,11 @@ class ActorSession:
                 "accepted_trajectories_total": self._accepted_trajectories_total,
                 "learner_consumed_steps_total": self._learner_consumed_steps_total,
                 "upload_queue_depth": self._upload_queue.qsize(),
+                "upload_pending_batches": upload_pending,
+                "upload_inflight_requests": upload_inflight,
+                "upload_workers": getattr(self, "upload_workers", 1),
+                "accepted_upload_requests_total": getattr(self, "_accepted_upload_requests_total", 0),
+                "coalesced_upload_batches_total": getattr(self, "_coalesced_upload_batches_total", 0),
             }
             if self._staged_steps_per_sec is not None:
                 payload["staged_steps_per_sec"] = self._staged_steps_per_sec
@@ -1094,11 +1118,19 @@ class ActorSession:
                 # Metrics are advisory. Never stop training because status publication failed.
                 return
 
-    def _record_accepted_trajectories(self, trajectories: Sequence[Any]) -> None:
+    def _record_accepted_trajectories(
+        self, trajectories: Sequence[Any], *, original_batches: int = 1
+    ) -> None:
         step_count = _trajectory_step_count(trajectories)
         with self._throughput_lock:
             self._accepted_steps_total += step_count
             self._accepted_trajectories_total += len(trajectories)
+            self._accepted_upload_requests_total = getattr(
+                self, "_accepted_upload_requests_total", 0
+            ) + 1
+            self._coalesced_upload_batches_total = getattr(
+                self, "_coalesced_upload_batches_total", 0
+            ) + original_batches - 1
         self._write_throughput_metrics()
 
     def close(self) -> None:
@@ -1123,11 +1155,11 @@ class ActorSession:
                 )
         if self._watcher is not None:
             self._watcher.join(timeout=2.0)
-        if self._uploader is not None:
-            self._uploader.join(timeout=2.0)
-        # A still-busy uploader owns the connection until it exits; closing a
-        # socket from another thread during shutdown may interrupt a request.
-        if self._uploader is None or not self._uploader.is_alive():
+        for uploader in self._uploaders:
+            uploader.join(timeout=2.0)
+        # Uploaders close their thread-local connections before exit. Never
+        # interrupt an in-flight request from this shutdown thread.
+        if all(not uploader.is_alive() for uploader in self._uploaders):
             self.client.close()
         if self._step_diagnostic_thread is not None:
             self._step_diagnostic_thread.join(timeout=2.0)
@@ -1343,14 +1375,22 @@ class ActorSession:
             label="initial policy synchronization",
         )
 
-        self._uploader = threading.Thread(target=self._upload_loop, name="bees-wan-upload", daemon=True)
+        self._uploaders = [
+            threading.Thread(
+                target=self._upload_loop,
+                name=f"bees-wan-upload-{index}",
+                daemon=True,
+            )
+            for index in range(self.upload_workers)
+        ]
         self._watcher = threading.Thread(target=self._watch_loop, name="bees-wan-watch", daemon=True)
         self._step_diagnostic_thread = threading.Thread(
             target=self._step_diagnostic_loop,
             name="bees-wan-step-diagnostic",
             daemon=True,
         )
-        self._uploader.start()
+        for uploader in self._uploaders:
+            uploader.start()
         self._watcher.start()
         self._step_diagnostic_thread.start()
         print(
@@ -1470,7 +1510,7 @@ class ActorSession:
             max(1.0, float(self.central_run_options.env_settings.timeout_wait)),
         )
         _clear_partial_trajectories(self.manager)
-        _drain_queue(self._upload_queue)
+        self._discard_queued_uploads()
 
         if control_changed:
             record = self.client.control(self.session_id, self.control_epoch)
@@ -1553,36 +1593,98 @@ class ActorSession:
                 self._thread_error.put(exc)
                 return
 
-    def _upload_loop(self) -> None:
-        while not self._upload_stop.is_set() and not self.stop.is_set():
-            try:
-                payload = self._upload_queue.get(timeout=0.5)
-            except queue.Empty:
-                continue
-            self._upload_idle.clear()
-            try:
-                while not self._upload_stop.is_set() and not self.stop.is_set():
-                    try:
-                        self.client.trajectories(payload)
-                        trajectories = payload.get("trajectories", ())
-                        if isinstance(trajectories, Sequence):
-                            self._record_accepted_trajectories(trajectories)
-                        break
-                    except BrokerBackpressure:
-                        time.sleep(0.25)
-                    except BrokerStaleActor:
-                        self._stale.set()
-                        break
-                    except BrokerSessionChanged:
-                        self._session_changed.set()
-                        return
-                    except BrokerUnavailable:
-                        time.sleep(1.0)
-                    except BaseException as exc:
-                        self._thread_error.put(exc)
-                        return
-            finally:
+    def _discard_queued_uploads(self) -> None:
+        upload_lock = getattr(self, "_upload_pending_lock", None)
+        if upload_lock is None:
+            _drain_queue(self._upload_queue)
+            return
+        with upload_lock:
+            while True:
+                try:
+                    self._upload_queue.get_nowait()
+                except queue.Empty:
+                    break
+                self._upload_pending -= 1
+            if self._upload_pending == 0:
                 self._upload_idle.set()
+
+    @staticmethod
+    def _same_upload_cohort(first: Mapping[str, Any], second: Mapping[str, Any]) -> bool:
+        return all(
+            first.get(key) == second.get(key)
+            for key in ("session_id", "actor_id", "control_epoch", "policy_versions")
+        )
+
+    def _upload_loop(self) -> None:
+        carried: Optional[Mapping[str, Any]] = None
+        try:
+            while not self._upload_stop.is_set() and not self.stop.is_set():
+                if carried is not None:
+                    first, carried = carried, None
+                else:
+                    try:
+                        first = self._upload_queue.get(timeout=0.5)
+                    except queue.Empty:
+                        continue
+
+                batches = [first]
+                trajectories = list(first["trajectories"])
+                steps = _trajectory_step_count(trajectories)
+                # Coalesce only queued cohorts of the exact same policy/control state.
+                # The broker caps requests at 256 trajectories; cap experiences too,
+                # keeping compression memory bounded and avoiding giant uploads.
+                while len(batches) < MAX_COALESCED_UPLOAD_BATCHES:
+                    try:
+                        candidate = self._upload_queue.get_nowait()
+                    except queue.Empty:
+                        break
+                    additional = candidate["trajectories"]
+                    additional_steps = _trajectory_step_count(additional)
+                    if (
+                        not self._same_upload_cohort(first, candidate)
+                        or len(trajectories) + len(additional) > MAX_TRAJECTORIES_PER_UPLOAD
+                        or steps + additional_steps > MAX_COALESCED_UPLOAD_STEPS
+                    ):
+                        carried = candidate
+                        break
+                    batches.append(candidate)
+                    trajectories.extend(additional)
+                    steps += additional_steps
+
+                payload = dict(first)
+                payload["trajectories"] = trajectories
+                with self._upload_pending_lock:
+                    self._upload_inflight += 1
+                try:
+                    while not self._upload_stop.is_set() and not self.stop.is_set():
+                        try:
+                            self.client.trajectories(payload)
+                            self._record_accepted_trajectories(
+                                trajectories, original_batches=len(batches)
+                            )
+                            break
+                        except BrokerBackpressure:
+                            time.sleep(0.25)
+                        except BrokerStaleActor:
+                            self._stale.set()
+                            break
+                        except BrokerSessionChanged:
+                            self._session_changed.set()
+                            return
+                        except BrokerUnavailable:
+                            time.sleep(1.0)
+                        except BaseException as exc:
+                            self._thread_error.put(exc)
+                            return
+                finally:
+                    with self._upload_pending_lock:
+                        self._upload_inflight -= 1
+                        self._upload_pending -= len(batches)
+                        if self._upload_pending == 0:
+                            self._upload_idle.set()
+        finally:
+            # The thread owns its TCP connection; another thread must not close it.
+            self.client._close_upload_connection()
 
     def _raise_thread_error(self) -> None:
         try:
@@ -1592,34 +1694,51 @@ class ActorSession:
         raise RuntimeError(f"WAN actor background task failed: {type(error).__name__}: {error}") from error
 
     def _enqueue_upload(self, payload: Mapping[str, Any]) -> bool:
-        while not self.stop.is_set():
-            put_started = time.perf_counter()
-            try:
-                self._upload_queue.put(payload, timeout=0.5)
-                if getattr(self, "_throughput_lock", None) is not None:
-                    step_count = _trajectory_step_count(payload.get("trajectories", ()))
-                    with self._throughput_lock:
-                        self._staged_steps_total += step_count
-                return True
-            except queue.Full:
-                # This is intentional broker backpressure, not a dead rollout.
-                # Preserve every trajectory, but keep the supervisor health lease
-                # fresh while the uploader waits for central capacity/connectivity.
-                self._report_runtime_progress()
-                self._write_throughput_metrics()
-                self._raise_thread_error()
-                if (
-                    self._session_changed.is_set()
-                    or self._state_changed.is_set()
-                    or self._stale.is_set()
-                ):
-                    return False
-            finally:
-                self._rollout_profiler.observe(
-                    "upload_queue_wait", time.perf_counter() - put_started
-                )
-                self._rollout_profiler.maybe_report()
-        return False
+        # Register the outstanding upload BEFORE publishing to the queue, so
+        # concurrent consumers cannot falsely signal that all uploads drained.
+        upload_lock = getattr(self, "_upload_pending_lock", None)
+        if upload_lock is not None:
+            with upload_lock:
+                self._upload_pending += 1
+                self._upload_idle.clear()
+        accepted = False
+        try:
+            while not self.stop.is_set():
+                put_started = time.perf_counter()
+                try:
+                    self._upload_queue.put(payload, timeout=0.5)
+                    accepted = True
+                    if getattr(self, "_throughput_lock", None) is not None:
+                        step_count = _trajectory_step_count(payload.get("trajectories", ()))
+                        with self._throughput_lock:
+                            self._staged_steps_total += step_count
+                    return True
+                except queue.Full:
+                    # Local queue is full: preserve every trajectory and report
+                    # progress while waiting for uploader capacity.
+                    self._report_runtime_progress()
+                    self._write_throughput_metrics()
+                    self._raise_thread_error()
+                    if (
+                        self._session_changed.is_set()
+                        or self._state_changed.is_set()
+                        or self._stale.is_set()
+                    ):
+                        return False
+                finally:
+                    profiler = getattr(self, "_rollout_profiler", None)
+                    if profiler is not None:
+                        profiler.observe(
+                            "upload_queue_wait", time.perf_counter() - put_started
+                        )
+                        profiler.maybe_report()
+            return False
+        finally:
+            if not accepted and upload_lock is not None:
+                with upload_lock:
+                    self._upload_pending -= 1
+                    if self._upload_pending == 0:
+                        self._upload_idle.set()
 
     def _collect_trajectories(self) -> List[Any]:
         trajectories = []
@@ -1710,6 +1829,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--graphics", action="store_true")
     parser.add_argument("--reconnect-seconds", type=float, default=DEFAULT_RECONNECT_SECONDS)
     parser.add_argument("--upload-queue", type=int, default=DEFAULT_LOCAL_UPLOAD_QUEUE)
+    parser.add_argument("--upload-workers", type=int, default=DEFAULT_UPLOAD_WORKERS)
     parser.add_argument("--tunnel-startup-seconds", type=float, default=1.0)
     return parser
 
@@ -1725,7 +1845,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if not 1 <= args.local_base_port <= 65535:
         print("error: --local-base-port must be in 1-65535", file=sys.stderr)
         return 2
-    if args.reconnect_seconds <= 0 or args.upload_queue <= 0 or args.tunnel_startup_seconds < 0:
+    if (args.reconnect_seconds <= 0 or args.upload_queue <= 0
+            or not 1 <= args.upload_workers <= 4 or args.tunnel_startup_seconds < 0):
         print("error: reconnect/upload/tunnel values are outside valid bounds", file=sys.stderr)
         return 2
 
@@ -1782,6 +1903,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     graphics=args.graphics,
                     stop=stop,
                     upload_queue_size=args.upload_queue,
+                    upload_workers=args.upload_workers,
                 )
                 try:
                     actor_session.start()

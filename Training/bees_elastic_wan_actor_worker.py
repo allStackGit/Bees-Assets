@@ -524,6 +524,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--graphics", action="store_true")
     parser.add_argument("--reconnect-seconds", type=float, default=worker.DEFAULT_RECONNECT_SECONDS)
     parser.add_argument("--upload-queue", type=int, default=worker.DEFAULT_LOCAL_UPLOAD_QUEUE)
+    parser.add_argument("--upload-workers", type=int, default=worker.DEFAULT_UPLOAD_WORKERS)
     return parser
 
 
@@ -623,7 +624,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if args.local_base_port + args.envs - 1 > 65535:
         print("error: local ML-Agents worker ports would exceed 65535", file=sys.stderr)
         return 2
-    if args.reconnect_seconds <= 0 or args.upload_queue <= 0:
+    if (args.reconnect_seconds <= 0 or args.upload_queue <= 0
+            or not 1 <= args.upload_workers <= 4):
         print("error: reconnect/upload values are outside valid bounds", file=sys.stderr)
         return 2
 
@@ -722,6 +724,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     graphics=args.graphics,
                     stop=stop,
                     upload_queue_size=args.upload_queue,
+                    upload_workers=args.upload_workers,
                     startup_health=startup_health.set_phase,
                     runtime_progress=startup_health.mark_progress,
                     env_count_changed=startup_health.set_env_count,
