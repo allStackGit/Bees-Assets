@@ -31,6 +31,7 @@ namespace Assets.Scripts.Levels
 
             Gunship firstGunship = null;
             bool hasBeenUserControlled = false;
+            bool scoutExplorationComplete = false;
             bool gunshipHasReachedCenterPosition = false;
             HasContinuousTriggers = true;
             ScaledTimer endLevelTimer = new ScaledTimer();
@@ -91,6 +92,13 @@ namespace Assets.Scripts.Levels
                     () => firstScout.ProximityCollider.NearbyEnemyShips.Contains(firstHoneybee),
                     () =>
                     {
+                        scoutExplorationComplete = true;
+                        if (moveScoutTooltip != null)
+                        {
+                            Destroy(moveScoutTooltip.gameObject);
+                            moveScoutTooltip = null;
+                        }
+                        Stage.Menus.WASDTooltip.SetActive(false);
                         Stage.Menus.MissionStatus.SetActive(false);
                         State.SelectSquads(new List<Squad>());
                         firstScout.Squad.StopMoving();
@@ -135,12 +143,16 @@ namespace Assets.Scripts.Levels
                 new Trigger(
                     () =>
                     {
+                        if (scoutExplorationComplete)
+                        {
+                            return true;
+                        }
                         hasBeenUserControlled = firstScout.DistanceToPoint(StartingPositions[firstScout.Side - 1]) > 3;
                         return hasBeenUserControlled || Time.realtimeSinceStartup - startTime > 10;
                     },
                     () =>
                     {
-                        if (!hasBeenUserControlled)
+                        if (!scoutExplorationComplete && !hasBeenUserControlled)
                         {
                             // Do not shadow this variable; a later trigger owns its cleanup.
                             moveScoutTooltip = Instantiate(Stage.Menus.TooltipPrefab, Stage.Menus.UIOverlay.transform).GetComponent<Tooltip>();
@@ -155,13 +167,17 @@ namespace Assets.Scripts.Levels
                 new Trigger(
                     () =>
                     {
+                        if (scoutExplorationComplete)
+                        {
+                            return true;
+                        }
                         hasBeenUserControlled = firstScout.DistanceToPoint(StartingPositions[firstScout.Side - 1]) > 3 ||
                             !ConfigData.UserProgressData.ShowToolTips;
                         return hasBeenUserControlled;
                     },
                     () =>
                     {
-                        if (hasBeenUserControlled && ConfigData.UserProgressData.ShowToolTips)
+                        if (!scoutExplorationComplete && hasBeenUserControlled && ConfigData.UserProgressData.ShowToolTips)
                         {
                             if (moveScoutTooltip != null)
                             {
@@ -170,7 +186,8 @@ namespace Assets.Scripts.Levels
                             Stage.Menus.WASDTooltip.SetActive(true);
                             Vector2 initialCameraPosition = Stage.Camera.transform.position;
                             NextTriggers.Add(new Trigger(
-                                () => Vector2.Distance(Stage.Camera.transform.position, initialCameraPosition) > 10,
+                                () => scoutExplorationComplete ||
+                                      Vector2.Distance(Stage.Camera.transform.position, initialCameraPosition) > 10,
                                 () => Stage.Menus.WASDTooltip.SetActive(false),
                                 "Level 0 Waiting for user to control camera Trigger"));
                         }
