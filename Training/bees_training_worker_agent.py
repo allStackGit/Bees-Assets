@@ -950,7 +950,6 @@ def read_throughput_metrics(
         sanitized: dict[str, float | int] = {}
         names = (
             "unity_get_steps", "unity_wait_first", "policy_inference",
-            "policy_inference_prepare", "policy_forward",
             "trajectory_processing", "trajectory_collection",
             "upload_queue_wait", "upload_encode", "upload_http",
             "upload_connection_created",
@@ -979,6 +978,23 @@ def read_throughput_metrics(
                         or not math.isfinite(float(value_field))
                         or float(value_field) < 0
                     ):
+                        return {}
+                    sanitized[key] = float(value_field)
+        # Older actors still emit the original stage set; accept their profiles
+        # during compatible rollout instead of dropping ALL throughput metrics.
+        for stage in ("policy_inference_prepare", "policy_forward"):
+            for suffix in ("_seconds", "_count", "_max_ms"):
+                key = stage + suffix
+                value_field = profile.get(key)
+                if value_field is None:
+                    continue
+                if suffix == "_count":
+                    if not isinstance(value_field, int) or isinstance(value_field, bool) or value_field < 0:
+                        return {}
+                    sanitized[key] = value_field
+                else:
+                    if (not isinstance(value_field, (int, float)) or isinstance(value_field, bool)
+                            or not math.isfinite(float(value_field)) or float(value_field) < 0):
                         return {}
                     sanitized[key] = float(value_field)
         for field in (

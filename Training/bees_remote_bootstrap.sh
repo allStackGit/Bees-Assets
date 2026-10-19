@@ -15,6 +15,7 @@ BOOTSTRAP_TOKEN="__BEES_BOOTSTRAP_TOKEN__"
 COMMAND="start"
 ENVS=""
 AUTO_ENVS=0
+NO_DIAGNOSTICS=0
 INSTALL_ROOT="$DEFAULT_INSTALL_ROOT"
 TORCH_DEVICE="$DEFAULT_TORCH_DEVICE"
 NO_AUTOSTART=0
@@ -30,6 +31,7 @@ Commands:
 Options:
   --envs N               Pin a fixed Unity environment count (1-64); omission selects a fixed safe startup count.
   --auto-envs            Opt into continuous environment-count tuning (off by default).
+  --no-diagnostics       Disable WAN stage profiling and optional host CPU sampling.
   --install-root PATH    Local Linux worker installation directory.
   --torch-device DEVICE  Local inference device, normally cpu or cuda.
   --no-autostart          Do not register this worker to restart after reboot/login.
@@ -46,6 +48,7 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --envs) ENVS="$2"; shift 2 ;;
         --auto-envs) AUTO_ENVS=1; shift ;;
+        --no-diagnostics) NO_DIAGNOSTICS=1; shift ;;
         --install-root) INSTALL_ROOT="$2"; shift 2 ;;
         --torch-device) TORCH_DEVICE="$2"; shift 2 ;;
         # Accept the old autostart monitor's argument while disabling CPU gradients.
@@ -151,6 +154,7 @@ MONITOR_LOG=$q_log
 CONTROL_PORT=$CONTROL_PORT
 ENVS=$ENVS
 AUTO_ENVS=$AUTO_ENVS
+NO_DIAGNOSTICS=$NO_DIAGNOSTICS
 
 supervisor_alive() {
     local pid_file="\$INSTALL_ROOT/remote-worker.pid"
@@ -222,12 +226,16 @@ control_healthy() {
 }
 
 launch_worker() {
+    local diagnostic_args=()
+    if [[ "\$NO_DIAGNOSTICS" == "1" ]]; then
+        diagnostic_args+=(--no-diagnostics)
+    fi
     if [[ "\$AUTO_ENVS" == "1" ]]; then
-        BEES_AUTOSTART_CHILD=1 bash "\$LAUNCHER" start --install-root "\$INSTALL_ROOT" --torch-device "\$TORCH_DEVICE" --auto-envs >>"\$MONITOR_LOG" 2>&1 || true
+        BEES_AUTOSTART_CHILD=1 bash "\$LAUNCHER" start --install-root "\$INSTALL_ROOT" --torch-device "\$TORCH_DEVICE" --auto-envs "\${diagnostic_args[@]}" >>"\$MONITOR_LOG" 2>&1 || true
     elif [[ -n "\$ENVS" ]]; then
-        BEES_AUTOSTART_CHILD=1 bash "\$LAUNCHER" start --install-root "\$INSTALL_ROOT" --torch-device "\$TORCH_DEVICE" --envs "\$ENVS" >>"\$MONITOR_LOG" 2>&1 || true
+        BEES_AUTOSTART_CHILD=1 bash "\$LAUNCHER" start --install-root "\$INSTALL_ROOT" --torch-device "\$TORCH_DEVICE" --envs "\$ENVS" "\${diagnostic_args[@]}" >>"\$MONITOR_LOG" 2>&1 || true
     else
-        BEES_AUTOSTART_CHILD=1 bash "\$LAUNCHER" start --install-root "\$INSTALL_ROOT" --torch-device "\$TORCH_DEVICE" >>"\$MONITOR_LOG" 2>&1 || true
+        BEES_AUTOSTART_CHILD=1 bash "\$LAUNCHER" start --install-root "\$INSTALL_ROOT" --torch-device "\$TORCH_DEVICE" "\${diagnostic_args[@]}" >>"\$MONITOR_LOG" 2>&1 || true
     fi
 }
 
@@ -699,6 +707,9 @@ if (( AUTO_ENVS )); then
 fi
 if (( NO_AUTOSTART )); then
     WORKER_ARGS+=(--no-autostart)
+fi
+if (( NO_DIAGNOSTICS )); then
+    export BEES_WAN_DIAGNOSTICS=0
 fi
 
 echo
