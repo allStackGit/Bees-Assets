@@ -1327,6 +1327,22 @@ class ActorSession:
         if not behavior_specs:
             raise RuntimeError("WAN actor Unity environments expose no trainable behaviors")
         self._behavior_specs = dict(behavior_specs)
+
+        class _DiscardingActorStatsReporter(StatsReporter):
+            """Do not retain ML-Agents stats in a rollout-only process.
+
+            StatsReporter.add_stat appends to process-global lists that only
+            StatsReporter.write_stats clears. WAN actors have no trainer stats
+            writer: Exeter receives trajectories and owns training summaries.
+            Entropy and episode statistics would otherwise accumulate forever.
+            """
+
+            def add_stat(self, key: str, value: float, aggregation=None) -> None:
+                pass
+
+            def set_stat(self, key: str, value: float) -> None:
+                pass
+
         for behavior_id, spec in behavior_specs.items():
             parsed = BehaviorIdentifiers.from_name_behavior_id(behavior_id)
             trainer_settings = options.behaviors[parsed.brain_name]
@@ -1340,7 +1356,7 @@ class ActorSession:
             manager = AgentManager(
                 template,
                 behavior_id,
-                StatsReporter(f"WANActor{self.actor_id}/{behavior_id}"),
+                _DiscardingActorStatsReporter(f"WANActor{self.actor_id}/{behavior_id}"),
                 horizon,
                 threaded=False,
             )
