@@ -642,6 +642,14 @@ def read_host_hardware_metrics() -> dict[str, object]:
     result: dict[str, object] = {
         "logical_cpus": int(os.cpu_count() or 1),
     }
+    if hasattr(os, "getloadavg"):
+        try:
+            load_1m, load_5m, load_15m = os.getloadavg()
+            result["load_1m"] = round(float(load_1m), 2)
+            result["load_5m"] = round(float(load_5m), 2)
+            result["load_15m"] = round(float(load_15m), 2)
+        except OSError:
+            pass
     try:
         import psutil
 
@@ -868,6 +876,13 @@ def read_throughput_metrics(
         "upload_queue_depth": queue_depth,
     }
     for field in (
+        # Actor-produced upload diagnostics must survive the managed worker's
+        # telemetry validation so they reach the central diagnostic bundle.
+        "upload_workers",
+        "upload_pending_batches",
+        "upload_inflight_requests",
+        "accepted_upload_requests_total",
+        "coalesced_upload_batches_total",
         "broker_queue_depth",
         "broker_queue_capacity",
         "broker_backpressure_total",
