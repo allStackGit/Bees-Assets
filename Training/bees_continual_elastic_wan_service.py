@@ -212,6 +212,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             f"{Path(actor_options.auth_token_file or '').expanduser().resolve()}",
             f"{elastic.WAN_MAX_QUEUED_BATCHES_FLAG}={actor_options.max_queued_batches}",
             f"{elastic.WAN_LEASE_SECONDS_FLAG}={actor_options.actor_lease_seconds:g}",
+            f"{elastic.WAN_DIAGNOSTICS_FLAG}={'true' if actor_options.worker_diagnostics else 'false'}",
         ]
         if threaded_mode and not local_only:
             wan_args.extend(

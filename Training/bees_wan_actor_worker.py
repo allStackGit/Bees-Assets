@@ -969,8 +969,11 @@ class ActorSession:
             Path(throughput_path).expanduser().resolve() if throughput_path else None
         )
         self._throughput_lock = threading.Lock()
+        diagnostic_setting = session.get("worker_diagnostics", True)
+        if not isinstance(diagnostic_setting, bool):
+            raise RuntimeError("WAN session has invalid worker_diagnostics setting")
         self._rollout_profiler = _RolloutStageProfiler(
-            enabled=os.environ.get("BEES_WAN_DIAGNOSTICS", "1") != "0"
+            enabled=diagnostic_setting and os.environ.get("BEES_WAN_DIAGNOSTICS", "1") != "0"
         )
         self.client._rollout_profiler = (
             self._rollout_profiler if self._rollout_profiler.enabled else None
@@ -1153,6 +1156,7 @@ class ActorSession:
                 "upload_pending_batches": upload_pending,
                 "upload_inflight_requests": upload_inflight,
                 "upload_workers": getattr(self, "upload_workers", 1),
+                "worker_diagnostics_enabled": self._rollout_profiler.enabled,
                 "accepted_upload_requests_total": getattr(self, "_accepted_upload_requests_total", 0),
                 "coalesced_upload_batches_total": getattr(self, "_coalesced_upload_batches_total", 0),
             }

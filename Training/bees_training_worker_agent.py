@@ -637,12 +637,12 @@ class BackgroundEpisodeLogMetrics:
         return cached
 
 
-def read_host_hardware_metrics() -> dict[str, object]:
+def read_host_hardware_metrics(*, detailed: bool = True) -> dict[str, object]:
     """Read-only host utilization sampled by each managed worker supervisor."""
     result: dict[str, object] = {
         "logical_cpus": int(os.cpu_count() or 1),
     }
-    if os.environ.get("BEES_WAN_DIAGNOSTICS", "1") == "0":
+    if not detailed or os.environ.get("BEES_WAN_DIAGNOSTICS", "1") == "0":
         return result
     if hasattr(os, "getloadavg"):
         try:
@@ -893,6 +893,11 @@ def read_throughput_metrics(
         "learner_consumed_steps_total": learner_consumed_steps,
         "upload_queue_depth": queue_depth,
     }
+    diagnostic_enabled = value.get("worker_diagnostics_enabled")
+    if diagnostic_enabled is not None:
+        if not isinstance(diagnostic_enabled, bool):
+            return {}
+        result["worker_diagnostics_enabled"] = diagnostic_enabled
     for field in (
         # Actor-produced upload diagnostics must survive the managed worker's
         # telemetry validation so they reach the central diagnostic bundle.
@@ -2813,7 +2818,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     def current_metrics(run_id: str) -> dict[str, object]:
         snapshot = episode_metrics.snapshot(run_id)
-        snapshot["host"] = read_host_hardware_metrics()
+        # Read actor settings first: a runtime-wide diagnostics toggle must also
+        # suppress the supervisor's optional host CPU sampling.
         process = managed.process
         if managed.alive() and process is not None:
             throughput = read_throughput_metrics(
@@ -2825,6 +2831,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             )
             if throughput:
                 snapshot["throughput"] = throughput
+        active_throughput = snapshot.get("throughput")
+        detailed = not (isinstance(active_throughput, Mapping) and
+                        active_throughput.get("worker_diagnostics_enabled") is False)
+        snapshot["host"] = read_host_hardware_metrics(detailed=detailed)
 
         # Optimizer state must see a runtime cutover before it can issue a stale env-count
         # decision to the newly launched worker. Actor throughput telemetry appears only after

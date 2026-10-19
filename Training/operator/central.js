@@ -90,6 +90,7 @@ function buildCentralLearnerArgv(config, learnerPython, unity, runtimeRoot) {
             '--bees-wan-broker-port', String(config.brokerPort),
             '--bees-wan-auth-token-file', paths.wanTokenPath,
             '--bees-wan-max-queued-batches', String(Number(config.wanMaxQueuedBatches)),
+            '--bees-wan-worker-diagnostics', config.workerDiagnostics === false ? 'false' : 'true',
         );
     }
     if (Boolean(config.skipEvaluation)) {

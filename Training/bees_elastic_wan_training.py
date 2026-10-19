@@ -44,6 +44,7 @@ WAN_BROKER_PORT_FLAG = base.WAN_BROKER_PORT_FLAG
 WAN_AUTH_TOKEN_FILE_FLAG = base.WAN_AUTH_TOKEN_FILE_FLAG
 WAN_MAX_QUEUED_BATCHES_FLAG = base.WAN_MAX_QUEUED_BATCHES_FLAG
 WAN_LEASE_SECONDS_FLAG = "--bees-wan-actor-lease-seconds"
+WAN_DIAGNOSTICS_FLAG = "--bees-wan-worker-diagnostics"
 THREADED_FLAG = "--bees-threaded"
 POLICY_LAG_FLAG = "--bees-max-policy-lag"
 DEFAULT_THREADED_MAX_POLICY_LAG = 1
@@ -62,6 +63,7 @@ class ElasticWanOptions:
     auth_token_file: Optional[str] = None
     max_queued_batches: int = base.DEFAULT_MAX_QUEUED_BATCHES
     actor_lease_seconds: float = DEFAULT_ACTOR_LEASE_SECONDS
+    worker_diagnostics: bool = True
 
     @property
     def enabled(self) -> bool:
@@ -197,6 +199,7 @@ def extract_elastic_wan_options(argv: Sequence[str]) -> Tuple[List[str], Elastic
         "auth_token_file": None,
         "max_queued_batches": base.DEFAULT_MAX_QUEUED_BATCHES,
         "actor_lease_seconds": DEFAULT_ACTOR_LEASE_SECONDS,
+        "worker_diagnostics": True,
     }
     seen = set()
     specs = (
@@ -226,6 +229,7 @@ def extract_elastic_wan_options(argv: Sequence[str]) -> Tuple[List[str], Elastic
             lambda value: _whole_number(value, WAN_MAX_QUEUED_BATCHES_FLAG, minimum=1),
         ),
         (WAN_LEASE_SECONDS_FLAG, "actor_lease_seconds", lambda value: _positive_float(value, WAN_LEASE_SECONDS_FLAG)),
+        (WAN_DIAGNOSTICS_FLAG, "worker_diagnostics", lambda value: value.lower() == "true" if value.lower() in ("true", "false") else (_ for _ in ()).throw(SystemExit(f"{WAN_DIAGNOSTICS_FLAG} requires true or false."))),
     )
 
     index = 0
@@ -564,6 +568,7 @@ class ElasticWanBroker(base.WanActorBroker):
             "run_options": self.run_options,
             "threaded_training": self.threaded_mode,
             "max_policy_lag": self.max_policy_lag,
+            "worker_diagnostics": self.options.worker_diagnostics,
         }
 
     def _validate_release_identity(self, payload: Mapping[str, Any]) -> None:

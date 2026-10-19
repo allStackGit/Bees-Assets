@@ -164,6 +164,7 @@ async function invokeRuntime(options = {}) {
         threadedTraining: Boolean(options.threaded),
         localTraining: Boolean(options.localTraining),
         localOnly: Boolean(options.localOnly),
+        workerDiagnostics: !Boolean(options.noWorkerDiagnostics),
         // Runtime invocations default to zero direct local Unity environments.
         numLocalEnvs: options.explicitLocalEnvs ? Number(options.localEnvs) : 0,
     };
@@ -295,6 +296,7 @@ async function invokeRuntime(options = {}) {
                 threadedTraining: Boolean(config.threadedTraining),
                 threadedPolicyLag: Number(config.threadedPolicyLag),
                 wanMaxQueuedBatches: Number(config.wanMaxQueuedBatches),
+                workerDiagnostics: Boolean(config.workerDiagnostics),
                 localTraining: Boolean(config.localActor && config.localActor.enabled),
                 localOnly: Boolean(config.localOnly),
                 numLocalEnvs: Number(config.numLocalEnvs),
@@ -348,6 +350,7 @@ async function invokeRuntime(options = {}) {
         threadedTraining: Boolean(config.threadedTraining),
         threadedPolicyLag: Number(config.threadedPolicyLag),
         wanMaxQueuedBatches: Number(config.wanMaxQueuedBatches),
+        workerDiagnostics: Boolean(config.workerDiagnostics),
         localTraining: Boolean(config.localActor && config.localActor.enabled),
         localOnly: Boolean(config.localOnly),
         numLocalEnvs: Number(config.numLocalEnvs),
@@ -393,6 +396,7 @@ async function invokeRuntime(options = {}) {
         ' threaded=' + (config.threadedTraining ? 'on' : 'off') +
         ' policy_lag=' + Number(config.threadedPolicyLag) +
         ' backpressure_queue=' + Number(config.wanMaxQueuedBatches) +
+        ' worker_diagnostics=' + (config.workerDiagnostics ? 'on' : 'off') +
         ' local_training=' + (
             config.localActor && config.localActor.enabled ? 'on' : 'off'
         ) +

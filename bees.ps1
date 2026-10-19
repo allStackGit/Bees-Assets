@@ -22,6 +22,7 @@ param(
     [switch]$PpoCudaGraphs,
     [switch]$PpoProfile,
     [switch]$PpoDiagnostics,
+    [switch]$NoWorkerDiagnostics,
     [ValidateRange(0.0,100.0)][double]$Entropy,
     [switch]$SkipEvaluation,
     [switch]$EnableEvaluation,
@@ -83,6 +84,9 @@ $ppoExperimentRequested=(
 )
 if($ppoExperimentRequested -and $Command -ne 'runtime'){
     throw 'PPO learner optimization options are only valid with the runtime command.'
+}
+if($NoWorkerDiagnostics -and $Command -ne 'runtime'){
+    throw '-NoWorkerDiagnostics is only valid with the runtime command.'
 }
 if($PSBoundParameters.ContainsKey('Entropy') -and $Command -ne 'runtime'){
     throw '-Entropy is only valid with the runtime command.'
@@ -167,6 +171,7 @@ if($PpoCriticBaselineOverlap){$arguments+='--ppo-critic-baseline-overlap'}
 if($PpoCudaGraphs){$arguments+='--ppo-cuda-graphs'}
 if($PpoProfile){$arguments+='--ppo-profile'}
 if($PpoDiagnostics){$arguments+='--ppo-diagnostics'}
+if($NoWorkerDiagnostics){$arguments+='--no-worker-diagnostics'}
 if($PSBoundParameters.ContainsKey('Entropy')){
     $arguments+=@('--entropy',$Entropy.ToString('G',[Globalization.CultureInfo]::InvariantCulture))
 }

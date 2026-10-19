@@ -398,6 +398,7 @@ function applyRuntimeTrainingOptions(config, options = {}) {
         ...config,
         entropyBeta: normalizeEntropyBeta(config && config.entropyBeta, null),
         skipEvaluation: Boolean(config && config.skipEvaluation),
+        workerDiagnostics: config && config.workerDiagnostics !== false,
         learnerDevice: normalizeLearnerDevice(config && config.learnerDevice),
         localOnly: Boolean(config && config.localOnly),
         numLocalEnvs: normalizeLocalEnvs(config && config.numLocalEnvs),
@@ -463,6 +464,9 @@ function applyRuntimeTrainingOptions(config, options = {}) {
     if (Object.prototype.hasOwnProperty.call(options, 'skipEvaluation')) {
         result.skipEvaluation = Boolean(options.skipEvaluation);
     }
+    if (Object.prototype.hasOwnProperty.call(options, 'workerDiagnostics')) {
+        result.workerDiagnostics = Boolean(options.workerDiagnostics);
+    }
     return result;
 }
 
@@ -503,6 +507,7 @@ function readRuntimeTrainingOptions(
             defaultEntropyBeta,
         ),
         skipEvaluation: Boolean(value.skipEvaluation),
+        workerDiagnostics: value.workerDiagnostics !== false,
         localOnly: Boolean(value.localOnly),
         numLocalEnvs: normalizeLocalEnvs(value.numLocalEnvs),
         learnerDevice: normalizeLearnerDevice(value.learnerDevice),
@@ -530,6 +535,7 @@ function saveRuntimeTrainingOptions(options) {
             null,
         ),
         skipEvaluation: Boolean(options && options.skipEvaluation),
+        workerDiagnostics: !options || options.workerDiagnostics !== false,
         localOnly: Boolean(options && options.localOnly),
         numLocalEnvs: normalizeLocalEnvs(options && options.numLocalEnvs),
         learnerDevice: normalizeLearnerDevice(options && options.learnerDevice),

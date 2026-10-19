@@ -31,7 +31,7 @@ function usage() {
     return [
         'Usage:',
         '  node Training/bees_operator.js build [--full-game] [--force] [--preserve-run | --new-run]',
-        '  node Training/bees_operator.js runtime [--threaded [--policy-lag N]] [--backpressure-queue N] [--local-training] [--learner-device cpu|cuda] [--local-only] [--local-envs N] [--entropy BETA] [--skip-evaluation | --enable-evaluation] [--ppo-control | PPO optimization flags]',
+        '  node Training/bees_operator.js runtime [--threaded [--policy-lag N]] [--backpressure-queue N] [--local-training] [--learner-device cpu|cuda] [--local-only] [--local-envs N] [--entropy BETA] [--skip-evaluation | --enable-evaluation] [--no-worker-diagnostics] [--ppo-control | PPO optimization flags]',
         '  node Training/bees_operator.js server',
         '  node Training/bees_operator.js start [--new-run | --resume-run ID] [--env-arg VALUE ...]',
         '  node Training/bees_operator.js stop [--server]',
@@ -102,6 +102,7 @@ function parseArgs(argv = process.argv.slice(2)) {
         ppoCudaGraphs: false,
         ppoProfile: false,
         ppoDiagnostics: false,
+        noWorkerDiagnostics: false,
         explicitLearnerOptimizations: false,
         entropy: null,
         explicitEntropy: false,
@@ -237,6 +238,8 @@ function parseArgs(argv = process.argv.slice(2)) {
         } else if (arg === '--ppo-diagnostics') {
             options.ppoDiagnostics = true;
             options.explicitLearnerOptimizations = true;
+        } else if (arg === '--no-worker-diagnostics') {
+            options.noWorkerDiagnostics = true;
         } else if (arg === '--entropy') {
             options.entropy = parseNumber(
                 requireValue(argv, index, arg),
@@ -337,6 +340,9 @@ function parseArgs(argv = process.argv.slice(2)) {
     }
     if (options.explicitBackpressureQueue && command !== 'runtime') {
         throw new Error('--backpressure-queue is only valid with the runtime command.');
+    }
+    if (options.noWorkerDiagnostics && command !== 'runtime') {
+        throw new Error('--no-worker-diagnostics is only valid with the runtime command.');
     }
     if (options.explicitLearnerOptimizations && command !== 'runtime') {
         throw new Error('PPO learner optimization flags are only valid with the runtime command.');
