@@ -109,6 +109,13 @@ def _whole_number(value: str, flag: str, *, minimum: int, maximum: Optional[int]
     return parsed
 
 
+def _boolean(value: str, flag: str) -> bool:
+    lowered = value.lower()
+    if lowered not in ("true", "false"):
+        raise SystemExit(f"{flag} requires true or false.")
+    return lowered == "true"
+
+
 def _positive_float(value: str, flag: str) -> float:
     try:
         parsed = float(value)
@@ -229,7 +236,7 @@ def extract_elastic_wan_options(argv: Sequence[str]) -> Tuple[List[str], Elastic
             lambda value: _whole_number(value, WAN_MAX_QUEUED_BATCHES_FLAG, minimum=1),
         ),
         (WAN_LEASE_SECONDS_FLAG, "actor_lease_seconds", lambda value: _positive_float(value, WAN_LEASE_SECONDS_FLAG)),
-        (WAN_DIAGNOSTICS_FLAG, "worker_diagnostics", lambda value: value.lower() == "true" if value.lower() in ("true", "false") else (_ for _ in ()).throw(SystemExit(f"{WAN_DIAGNOSTICS_FLAG} requires true or false."))),
+        (WAN_DIAGNOSTICS_FLAG, "worker_diagnostics", lambda value: _boolean(value, WAN_DIAGNOSTICS_FLAG)),
     )
 
     index = 0
