@@ -2071,10 +2071,15 @@ def _worker_command(args: argparse.Namespace, root: Path, actor_key: str) -> lis
         "--worker-envs-min",
         str(args.min_envs),
         "--worker-envs-max",
-        str(args.max_envs),
+        str(args.max_envs if args.auto_envs else _memory_hard_limit()),
     ]
     if args.auto_envs:
         command.append("--auto-worker-envs")
+    elif os.name != "nt":
+        command.extend([
+            "--manual-worker-envs-file",
+            str(Path(args.install_root).expanduser().resolve() / "remote-worker-envs.request"),
+        ])
     command.extend([
         "--",
         sys.executable,
