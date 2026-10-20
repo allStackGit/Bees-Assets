@@ -549,7 +549,7 @@ $existingProcess=Get-LiveSupervisorProcess
 if($null -ne $existingProcess){
     if($PSBoundParameters.ContainsKey('Actors') -and -not $AutostartChild){
         $record=Get-CimInstance Win32_Process -Filter "ProcessId = $($existingProcess.Id)" -ErrorAction Stop
-        $match=[regex]::Match([string]$record.CommandLine,'(?:^|s)--actorss+(d+)(?:s|$)')
+        $match=[regex]::Match([string]$record.CommandLine,'(?:^|\s)--actors\s+(\d+)(?:\s|$)')
         $activeActors=if($match.Success){[int]$match.Groups[1].Value}else{1}
         if($Actors -ne $activeActors){
             throw "Changing Actors from $activeActors to $Actors requires stopping and restarting this worker."
