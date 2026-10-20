@@ -236,13 +236,23 @@ control_healthy() {
 
 launch_worker() {
     local diagnostic_args=()
+    local requested_envs="\$ENVS"
+    # The monitor may remain alive while the operator changes fixed capacity.
+    # Read the persisted target at each repair, rather than reusing its original count.
+    if [[ "\$AUTO_ENVS" == "0" && -r "\$INSTALL_ROOT/remote-worker-envs.request" ]]; then
+        local saved_envs=""
+        IFS= read -r saved_envs < "\$INSTALL_ROOT/remote-worker-envs.request" || true
+        if [[ "\$saved_envs" =~ ^[0-9]+\$ ]] && (( saved_envs >= 1 && saved_envs <= 64 )); then
+            requested_envs="\$saved_envs"
+        fi
+    fi
     if [[ "\$NO_DIAGNOSTICS" == "1" ]]; then
         diagnostic_args+=(--no-diagnostics)
     fi
     if [[ "\$AUTO_ENVS" == "1" ]]; then
         BEES_AUTOSTART_CHILD=1 bash "\$LAUNCHER" start --install-root "\$INSTALL_ROOT" --torch-device "\$TORCH_DEVICE" --upload-workers "\$UPLOAD_WORKERS" --auto-envs "\${diagnostic_args[@]}" >>"\$MONITOR_LOG" 2>&1 || true
-    elif [[ -n "\$ENVS" ]]; then
-        BEES_AUTOSTART_CHILD=1 bash "\$LAUNCHER" start --install-root "\$INSTALL_ROOT" --torch-device "\$TORCH_DEVICE" --upload-workers "\$UPLOAD_WORKERS" --envs "\$ENVS" "\${diagnostic_args[@]}" >>"\$MONITOR_LOG" 2>&1 || true
+    elif [[ -n "\$requested_envs" ]]; then
+        BEES_AUTOSTART_CHILD=1 bash "\$LAUNCHER" start --install-root "\$INSTALL_ROOT" --torch-device "\$TORCH_DEVICE" --upload-workers "\$UPLOAD_WORKERS" --envs "\$requested_envs" "\${diagnostic_args[@]}" >>"\$MONITOR_LOG" 2>&1 || true
     else
         BEES_AUTOSTART_CHILD=1 bash "\$LAUNCHER" start --install-root "\$INSTALL_ROOT" --torch-device "\$TORCH_DEVICE" --upload-workers "\$UPLOAD_WORKERS" "\${diagnostic_args[@]}" >>"\$MONITOR_LOG" 2>&1 || true
     fi
