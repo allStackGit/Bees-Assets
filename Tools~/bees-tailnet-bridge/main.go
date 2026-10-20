@@ -168,6 +168,7 @@ func localDial(target string) func(context.Context) (net.Conn, error) {
 func tailnetDial(s *tsnet.Server, target string) func(context.Context) (net.Conn, error) {
 	return func(ctx context.Context) (net.Conn, error) {
 		var lastErr error
+		var firstErr error
 		attempt := 0
 		for {
 			attempt++
@@ -176,11 +177,14 @@ func tailnetDial(s *tsnet.Server, target string) func(context.Context) (net.Conn
 			cancel()
 			if err == nil {
 				if attempt > 1 {
-					log.Printf("[Bees tailnet] %s recovered after %d dial attempts", target, attempt)
+					log.Printf("[Bees tailnet] %s recovered after %d dial attempts; first error: %v", target, attempt, firstErr)
 				}
 				return conn, nil
 			}
 			lastErr = err
+			if firstErr == nil {
+				firstErr = err
+			}
 			select {
 			case <-ctx.Done():
 				return nil, fmt.Errorf("dial %s failed after %d attempts: %w", target, attempt, lastErr)
@@ -241,23 +245,16 @@ func tailnetPeerSnapshot(ctx context.Context, s *tsnet.Server, targets []string)
 		case peer.Relay != "":
 			path = "derp:" + peer.Relay
 		}
-		handshake := "never"
-		if !peer.LastHandshake.IsZero() {
-			handshake = time.Since(peer.LastHandshake).Round(time.Second).String()
-		}
 		ips := make([]string, 0, len(peer.TailscaleIPs))
 		for _, ip := range peer.TailscaleIPs {
 			ips = append(ips, ip.String())
 		}
 		peers = append(peers, fmt.Sprintf(
-			"%s[%s] path=%s online=%t handshake=%s rx=%d tx=%d",
+			"%s[%s] path=%s online=%t",
 			peer.HostName,
 			strings.Join(ips, ","),
 			path,
 			peer.Online,
-			handshake,
-			peer.RxBytes,
-			peer.TxBytes,
 		))
 	}
 	sort.Strings(peers)
