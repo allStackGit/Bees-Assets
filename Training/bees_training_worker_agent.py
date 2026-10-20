@@ -2540,6 +2540,10 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--worker-envs-max", type=int, default=64)
     parser.add_argument("--auto-worker-envs", action="store_true")
     parser.add_argument(
+        "--manual-worker-envs-file", default="",
+        help="Local operator-requested fixed worker count; no automatic tuning.",
+    )
+    parser.add_argument(
         "launch_command",
         nargs=argparse.REMAINDER,
         help=(
@@ -2796,11 +2800,31 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     def metrics_run_id() -> str:
         return effective_metrics_run_id(desired, managed.run_id)
 
+    manual_env_request_file = (
+        Path(args.manual_worker_envs_file).expanduser().resolve()
+        if args.manual_worker_envs_file else None
+    )
+    last_manual_env_target = args.worker_envs
+
+    def manual_worker_env_target() -> Optional[int]:
+        if manual_env_request_file is None or args.worker_envs is None:
+            return None
+        try:
+            raw = manual_env_request_file.read_text(encoding="ascii").strip()
+        except FileNotFoundError:
+            return None
+        if not raw.isdecimal() or not 1 <= int(raw) <= args.worker_envs_max:
+            raise ValueError(
+                f"manual environment count in {manual_env_request_file} must be in "
+                f"1-{args.worker_envs_max}"
+            )
+        return int(raw)
+
     def worker_capacity() -> dict[str, object]:
         if args.worker_envs is None:
             return {}
         current = managed.worker_env_count if managed.worker_env_count is not None else args.worker_envs
-        if args.auto_worker_envs and managed.alive():
+        if (args.auto_worker_envs or manual_env_request_file is not None) and managed.alive():
             throughput = read_throughput_metrics(
                 managed.throughput_metrics_file,
                 expected_pid=managed.throughput_expected_pid(),
@@ -2832,7 +2856,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 managed.throughput_metrics_file,
                 expected_pid=managed.throughput_expected_pid(),
                 expected_env_count=(
-                    None if args.auto_worker_envs else managed.worker_env_count
+                    None if (args.auto_worker_envs or manual_env_request_file is not None)
+                    else managed.worker_env_count
                 ),
             )
             if throughput:
@@ -3046,6 +3071,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 compatibility_key = str(desired.get("compatibility_key", "")).strip().lower()
                 environment_args = tuple(str(value) for value in desired["environment_args"])
                 worker_env_count = args.worker_envs
+                manual_target = manual_worker_env_target()
+                if manual_target is not None:
+                    worker_env_count = manual_target
+                    if manual_target != last_manual_env_target:
+                        print(
+                            f"[Bees control] operator requested live Unity environments "
+                            f"{last_manual_env_target}->{manual_target}; retaining active rollout.",
+                            flush=True,
+                        )
+                        last_manual_env_target = manual_target
                 if args.auto_worker_envs:
                     requested_worker_envs = desired.get("worker_env_count")
                     if requested_worker_envs is not None:
@@ -3069,7 +3104,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         compatibility_key=compatibility_key,
                         environment_args=environment_args,
                         worker_env_count=worker_env_count,
-                        allow_live_worker_env_resize=bool(args.auto_worker_envs),
+                        allow_live_worker_env_resize=bool(
+                            args.auto_worker_envs or manual_env_request_file is not None
+                        ),
                     )
 
                 if mode == "stopped":
@@ -3193,7 +3230,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         )
                         launch_worker_env_count = worker_env_count
                         if (
-                            args.auto_worker_envs
+                            (args.auto_worker_envs or manual_env_request_file is not None)
                             and managed.alive()
                             and managed.worker_env_count is not None
                         ):
@@ -3215,7 +3252,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                             run_id,
                             launch_worker_env_count,
                         )
-                        if args.auto_worker_envs and managed.alive() and not rollout_stalled:
+                        if (args.auto_worker_envs or manual_env_request_file is not None) and managed.alive() and not rollout_stalled:
                             managed.set_worker_env_target(worker_env_count)
                         needs_restart = (
                             not managed.alive()
@@ -3290,7 +3327,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                                 compatibility_key=compatibility_key,
                                 environment_args=environment_args,
                                 worker_env_count=worker_env_count,
-                                allow_live_worker_env_resize=bool(args.auto_worker_envs),
+                                allow_live_worker_env_resize=bool(
+                            args.auto_worker_envs or manual_env_request_file is not None
+                        ),
                             )
                         _write_runtime_state(
                             args.runtime_state_file,
