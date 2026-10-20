@@ -544,7 +544,7 @@ update_autostart_env_count() {
 PID="$(recorded_pid || true)"
 if [[ -n "$PID" ]] && pid_is_supervisor "$PID"; then
     if supervisor_control_healthy; then
-        if [[ -n "$ENVS" && "$AUTOSTART_CHILD" != "1" ]]; then
+        if [[ -n "$ENVS" && "$AUTOSTART_CHILD" != "1" && "${BEES_MANAGED_LAUNCHER_ADOPTION:-0}" != "1" ]]; then
             if (( AUTO_ENVS )); then
                 echo "error: manual live resizing cannot be combined with --auto-envs." >&2
                 exit 2
