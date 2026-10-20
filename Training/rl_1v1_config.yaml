@@ -4,8 +4,8 @@ behaviors:
   BeesRL1v1:
     trainer_type: poca
     hyperparameters:
-      batch_size: 4096
-      buffer_size: 131072
+      batch_size: 2048
+      buffer_size: 65536
       learning_rate: 0.0005
       # Fixed entropy pressure. Adaptive beta is disabled; change this value
       # manually between runs/checkpoint resumes if entropy needs correction.
