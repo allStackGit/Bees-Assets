@@ -16,6 +16,7 @@ COMMAND="start"
 ENVS=""
 AUTO_ENVS=0
 UPLOAD_WORKERS=2
+UPLOAD_WORKERS_SUPPLIED=0
 NO_DIAGNOSTICS=0
 INSTALL_ROOT="$DEFAULT_INSTALL_ROOT"
 TORCH_DEVICE="$DEFAULT_TORCH_DEVICE"
@@ -30,7 +31,7 @@ Commands:
   stop                   Gracefully stop the background worker.
 
 Options:
-  --envs N               Pin a fixed Unity environment count (1-64); omission selects a fixed safe startup count.
+  --envs N               Set the Unity environment target (1-64); live-resize if already running.
   --auto-envs            Opt into continuous environment-count tuning (off by default).
   --upload-workers N     Concurrent WAN upload threads (1-4; default 2).
   --no-diagnostics       Disable WAN stage profiling and optional host CPU sampling.
@@ -50,7 +51,7 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --envs) ENVS="$2"; shift 2 ;;
         --auto-envs) AUTO_ENVS=1; shift ;;
-        --upload-workers) UPLOAD_WORKERS="$2"; shift 2 ;;
+        --upload-workers) UPLOAD_WORKERS="$2"; UPLOAD_WORKERS_SUPPLIED=1; shift 2 ;;
         --no-diagnostics) NO_DIAGNOSTICS=1; shift ;;
         --install-root) INSTALL_ROOT="$2"; shift 2 ;;
         --torch-device) TORCH_DEVICE="$2"; shift 2 ;;
@@ -368,6 +369,7 @@ acquire_bootstrap_lock
 trap release_bootstrap_lock EXIT
 
 SUPERVISOR_PID_FILE="$INSTALL_ROOT/remote-worker.pid"
+MANUAL_ENVS_REQUEST_FILE="$INSTALL_ROOT/remote-worker-envs.request"
 SHUTDOWN_REQUEST_FILE="$INSTALL_ROOT/remote-worker.stop"
 LOGS_ROOT="$INSTALL_ROOT/Logs"
 SUPERVISOR_LOG="$LOGS_ROOT/remote-supervisor.log"
@@ -510,17 +512,63 @@ if [[ "$COMMAND" == "stop" ]]; then
     exit 0
 fi
 
+# This file is consumed by the existing managed supervisor; the actor's separate
+# worker-envs.target file is owned by the supervisor and must not be written here.
+request_live_env_count() {
+    local previous="" temporary
+    if [[ -f "$MANUAL_ENVS_REQUEST_FILE" ]]; then
+        IFS= read -r previous < "$MANUAL_ENVS_REQUEST_FILE" || true
+    fi
+    if [[ "$previous" == "$ENVS" ]]; then
+        echo "[Bees remote] Unity environment target is already $ENVS; no change requested."
+        return
+    fi
+    temporary="$MANUAL_ENVS_REQUEST_FILE.tmp.$"
+    printf '%s\n' "$ENVS" > "$temporary"
+    mv -f "$temporary" "$MANUAL_ENVS_REQUEST_FILE"
+    echo "[Bees remote] requested live Unity environment target $ENVS for supervisor PID $PID (no training restart)." | tee -a "$SUPERVISOR_LOG"
+}
+
+# Preserve reboot settings (including torch device, upload threads and diagnostics)
+# when a live resize is requested without re-registering or restarting systemd.
+update_autostart_env_count() {
+    if [[ "$AUTOSTART_CHILD" == "1" || ! -f "$AUTOSTART_MONITOR" ]]; then
+        return
+    fi
+    local temporary="$AUTOSTART_MONITOR.tmp.$"
+    sed "s/^ENVS=.*/ENVS=$ENVS/" "$AUTOSTART_MONITOR" > "$temporary"
+    chmod 700 "$temporary"
+    mv -f "$temporary" "$AUTOSTART_MONITOR"
+}
+
 PID="$(recorded_pid || true)"
 if [[ -n "$PID" ]] && pid_is_supervisor "$PID"; then
     if supervisor_control_healthy; then
-        install_remote_autostart
-        echo "[Bees remote] worker is already running and authenticated learner control is healthy (PID $PID)."
-        echo "[Bees remote] use 'bash bees-remote-worker.sh stop' to stop it."
+        if [[ -n "$ENVS" && "$AUTOSTART_CHILD" != "1" ]]; then
+            if (( AUTO_ENVS )); then
+                echo "error: manual live resizing cannot be combined with --auto-envs." >&2
+                exit 2
+            fi
+            request_live_env_count
+            update_autostart_env_count
+        else
+            echo "[Bees remote] worker already running (PID $PID); no environment count supplied, leaving training unchanged."
+        fi
+        if (( UPLOAD_WORKERS_SUPPLIED )) && [[ "$AUTOSTART_CHILD" != "1" ]]; then
+            echo "[Bees remote] note: upload thread count only changes on the next worker launch; active upload threads are unchanged." >&2
+        fi
         exit 0
     fi
     restart_unhealthy_supervisor "$PID"
 fi
 rm -f "$SUPERVISOR_PID_FILE" "$SHUTDOWN_REQUEST_FILE"
+# A new supervisor uses the explicit startup count, or an implicit safe default.
+# An old live-resize request must not override a fresh start with omitted --envs.
+if [[ -n "$ENVS" ]]; then
+    printf '%s\n' "$ENVS" > "$MANUAL_ENVS_REQUEST_FILE"
+else
+    rm -f "$MANUAL_ENVS_REQUEST_FILE"
+fi
 
 sudo_cmd() {
     if [[ "$(id -u)" -eq 0 ]]; then
