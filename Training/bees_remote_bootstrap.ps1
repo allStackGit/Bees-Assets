@@ -259,7 +259,18 @@ function Invoke-LauncherRepair {
     $command='call "' + $Launcher.Replace('"','""') + '" start -InstallRoot "' +
         $InstallRoot.Replace('"','""') + '" -TorchDevice "' +
         $TorchDevice.Replace('"','""') + '"'
-    if($Envs -gt 0){$command+=' -Envs ' + [string]$Envs}
+    $targetEnvs=$Envs
+    if(-not $AutoEnvs){
+        $targetFile=Join-Path $InstallRoot 'remote-worker-envs.request'
+        if(Test-Path -LiteralPath $targetFile){
+            $candidate=0
+            $saved=(Get-Content -LiteralPath $targetFile -Raw -ErrorAction SilentlyContinue).Trim()
+            if([int]::TryParse($saved,[ref]$candidate) -and $candidate -ge 1 -and $candidate -le 64){
+                $targetEnvs=$candidate
+            }
+        }
+    }
+    if($targetEnvs -gt 0){$command+=' -Envs ' + [string]$targetEnvs}
     if($AutoEnvs){$command+=' -AutoEnvs'}
     try {
         $script:RepairProcess=Start-Process -FilePath $env:COMSPEC -ArgumentList @('/d','/c',$command) -WindowStyle Hidden -RedirectStandardOutput $RepairOutLog -RedirectStandardError $RepairErrLog -PassThru
