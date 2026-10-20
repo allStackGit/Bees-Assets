@@ -409,6 +409,15 @@ pid_is_supervisor() {
     [[ "$command_line" == *"bees_managed_remote_worker.py"* && "$command_line" == *"$INSTALL_ROOT"* ]]
 }
 
+supervisor_is_auto_tuned() {
+    local pid="$1" token
+    [[ -r "/proc/$pid/cmdline" ]] || return 1
+    while IFS= read -r -d '' token; do
+        [[ "$token" == "--auto-envs" ]] && return 0
+    done < "/proc/$pid/cmdline"
+    return 1
+}
+
 supervisor_control_probe_once() {
     local python="$INSTALL_ROOT/.venv/bin/python"
     local token_file="$INSTALL_ROOT/Secrets/training-worker.token"
@@ -562,6 +571,10 @@ if [[ -n "$PID" ]] && pid_is_supervisor "$PID"; then
         restart_unhealthy_supervisor "$PID"
     else
         if [[ -n "$ENVS" && "${BEES_MANAGED_LAUNCHER_ADOPTION:-0}" != "1" ]]; then
+            if supervisor_is_auto_tuned "$PID"; then
+                echo "error: worker is running in --auto-envs mode; manual fixed-count resizing requires starting it in fixed mode." >&2
+                exit 2
+            fi
             request_live_env_count
             update_autostart_env_count
         else
