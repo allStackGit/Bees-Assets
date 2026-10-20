@@ -3328,8 +3328,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                                 environment_args=environment_args,
                                 worker_env_count=worker_env_count,
                                 allow_live_worker_env_resize=bool(
-                            args.auto_worker_envs or manual_env_request_file is not None
-                        ),
+                                    args.auto_worker_envs or manual_env_request_file is not None
+                                ),
                             )
                         _write_runtime_state(
                             args.runtime_state_file,
