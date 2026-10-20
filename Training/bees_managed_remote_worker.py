@@ -2069,7 +2069,7 @@ def _worker_command(args: argparse.Namespace, root: Path, actor_key: str) -> lis
         "--worker-envs",
         str(args.envs),
         "--worker-envs-min",
-        str(args.min_envs),
+        str(args.min_envs if args.auto_envs else 1),
         "--worker-envs-max",
         str(args.max_envs if args.auto_envs else _memory_hard_limit()),
     ]
