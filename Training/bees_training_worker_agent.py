@@ -987,7 +987,11 @@ def read_throughput_metrics(
                     sanitized[key] = float(value_field)
         # Older actors still emit the original stage set; accept their profiles
         # during compatible rollout instead of dropping ALL throughput metrics.
-        for stage in ("policy_inference_prepare", "policy_forward"):
+        for stage in (
+            "policy_inference_prepare", "policy_forward",
+            "upload_broker_body_read", "upload_broker_decode",
+            "upload_broker_submit", "upload_broker_queue", "upload_http_remainder",
+        ):
             for suffix in ("_seconds", "_count", "_max_ms"):
                 key = stage + suffix
                 value_field = profile.get(key)
@@ -1005,6 +1009,8 @@ def read_throughput_metrics(
         for field in (
             "inference_batches_count", "inference_agents_total",
             "inference_batch_max_agents", "actor_threads",
+            "upload_payloads_count", "upload_compressed_bytes_total",
+            "upload_compressed_bytes_max",
         ):
             metric = profile.get(field)
             if metric is not None:

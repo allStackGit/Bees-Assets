@@ -65,6 +65,8 @@ class _RolloutStageProfiler:
         "policy_inference_prepare", "policy_forward",
         "trajectory_processing", "trajectory_collection",
         "upload_queue_wait", "upload_encode", "upload_http",
+        "upload_broker_body_read", "upload_broker_decode",
+        "upload_broker_submit", "upload_broker_queue", "upload_http_remainder",
         "upload_connection_created",
     )
 
@@ -75,6 +77,7 @@ class _RolloutStageProfiler:
         self._window = {key: [0.0, 0, 0.0] for key in self.STAGES}
         self._latest: Dict[str, object] = {}
         self._batch_count = self._batch_agents = self._batch_max = 0
+        self._upload_payloads = self._upload_bytes = self._upload_max_bytes = 0
         self._process = None
         self._psutil = None
         if self.enabled:
@@ -107,6 +110,14 @@ class _RolloutStageProfiler:
             self._batch_agents += agents
             self._batch_max = max(self._batch_max, agents)
 
+    def observe_upload_payload(self, compressed_bytes: int) -> None:
+        if not self.enabled:
+            return
+        with self._lock:
+            self._upload_payloads += 1
+            self._upload_bytes += compressed_bytes
+            self._upload_max_bytes = max(self._upload_max_bytes, compressed_bytes)
+
     def snapshot(self) -> Dict[str, object]:
         if not self.enabled:
             return {}
@@ -128,16 +139,24 @@ class _RolloutStageProfiler:
             self._window_start = now
             count, agents, maximum = self._batch_count, self._batch_agents, self._batch_max
             self._batch_count = self._batch_agents = self._batch_max = 0
+            payload_count, payload_bytes, payload_max = (
+                self._upload_payloads, self._upload_bytes, self._upload_max_bytes
+            )
+            self._upload_payloads = self._upload_bytes = self._upload_max_bytes = 0
             details: Dict[str, object] = {
                 "window_seconds": round(elapsed, 2),
                 "inference_batches_count": count,
                 "inference_agents_total": agents,
                 "inference_batch_max_agents": maximum,
                 "inference_batch_mean_agents": round(agents / count, 2) if count else 0.0,
+                "upload_payloads_count": payload_count,
+                "upload_compressed_bytes_total": payload_bytes,
+                "upload_compressed_bytes_max": payload_max,
             }
             parts = [
                 f"window={elapsed:.1f}s",
                 f"inference_agents={agents}/{count} mean={agents / count if count else 0:.2f} max={maximum}",
+                f"upload_compressed_bytes={payload_bytes}/{payload_count} max={payload_max}",
             ]
             for stage, (seconds, stage_count, stage_maximum) in window.items():
                 details[stage + "_seconds"] = round(seconds, 4)
@@ -556,6 +575,9 @@ class BrokerClient:
             "Authorization": "Bearer " + self.token,
             "Content-Type": "application/octet-stream",
         }
+        if profiler is not None:
+            headers["X-Bees-Upload-Diagnostics"] = "1"
+            profiler.observe_upload_payload(len(body) if body is not None else 0)
         self._record_traffic(sent=len(body) if body is not None else 0)
         request_started = time.perf_counter() if profiler is not None else 0.0
         try:
@@ -566,6 +588,41 @@ class BrokerClient:
                     method, path, body, headers
                 )
                 self._record_traffic(received=len(raw))
+                if profiler is not None:
+                    # Durations from the remote broker do not require clock sync.
+                    stage_headers = (
+                        ("X-Bees-Upload-Body-Read-Ms", "upload_broker_body_read"),
+                        ("X-Bees-Upload-Decode-Ms", "upload_broker_decode"),
+                        ("X-Bees-Upload-Submit-Ms", "upload_broker_submit"),
+                        ("X-Bees-Upload-Queue-Ms", "upload_broker_queue"),
+                    )
+                    values = {}
+                    for header, stage in stage_headers:
+                        raw_value = response_headers.get(header)
+                        if raw_value is None:
+                            break
+                        try:
+                            milliseconds = float(raw_value)
+                        except (TypeError, ValueError):
+                            break
+                        if not math.isfinite(milliseconds) or milliseconds < 0:
+                            break
+                        values[stage] = milliseconds / 1000.0
+                    if len(values) == len(stage_headers):
+                        for stage, seconds in values.items():
+                            profiler.observe(stage, seconds)
+                        # Queue time is included in submit time; the remainder
+                        # includes transport and HTTP response handling, not just
+                        # raw network transfer.
+                        broker_seconds = (
+                            values["upload_broker_body_read"]
+                            + values["upload_broker_decode"]
+                            + values["upload_broker_submit"]
+                        )
+                        profiler.observe(
+                            "upload_http_remainder",
+                            max(0.0, time.perf_counter() - request_started - broker_seconds),
+                        )
                 return status, response_headers, raw
             request = urllib.request.Request(
                 self.base + path,

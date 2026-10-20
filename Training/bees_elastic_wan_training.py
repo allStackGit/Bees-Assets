@@ -1009,7 +1009,10 @@ class ElasticWanBroker(base.WanActorBroker):
                 int(batch.get("step_count", 0) or 0)
             )
 
-    def submit_trajectory_batch(self, payload: Mapping[str, Any]) -> int:
+    def submit_trajectory_batch(
+        self, payload: Mapping[str, Any], *,
+        timings: Optional[Dict[str, float]] = None,
+    ) -> int:
         actor_id = self._validate_actor_id(payload.get("actor_id"))
         with self._condition:
             active = self._active_snapshot_locked()
@@ -1062,6 +1065,7 @@ class ElasticWanBroker(base.WanActorBroker):
             "step_count": step_count,
             "policy_lag_at_submit": int(policy_lag),
         }
+        queue_started = time.perf_counter() if timings is not None else 0.0
         try:
             # Coordinate queue admission with the learner's fair snapshot drain. This keeps
             # requeueing of unselected batches lossless while producers continue concurrently.
@@ -1083,6 +1087,8 @@ class ElasticWanBroker(base.WanActorBroker):
         except queue.Full:
             self.diagnostics.observe_backpressure()
             raise
+        if timings is not None:
+            timings["queue"] = time.perf_counter() - queue_started
         self.diagnostics.observe_remote_batch(step_count)
         return len(trajectories)
 

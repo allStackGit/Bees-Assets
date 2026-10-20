@@ -461,13 +461,17 @@ class WanActorBroker:
                     headers=headers,
                 )
 
-            def _json(self, value: Mapping[str, Any], *, status: int = 200) -> None:
+            def _json(
+                self, value: Mapping[str, Any], *, status: int = 200,
+                headers: Optional[Mapping[str, str]] = None,
+            ) -> None:
                 body = json.dumps(value, sort_keys=True).encode("utf-8")
                 _send_http_response(
                     self,
                     status=status,
                     content_type="application/json",
                     body=body,
+                    headers=headers,
                 )
 
             def _session_guard(self, query: Mapping[str, List[str]]) -> bool:
@@ -477,19 +481,26 @@ class WanActorBroker:
                     return False
                 return True
 
-            def _read_payload(self) -> Any:
+            def _read_payload(self, timings: Optional[Dict[str, float]] = None) -> Any:
                 try:
                     length = int(self.headers.get("Content-Length", "0"))
                 except ValueError as exc:
                     raise ValueError("invalid Content-Length") from exc
                 if length <= 0 or length > MAX_COMPRESSED_PAYLOAD_BYTES:
                     raise ValueError("payload length is outside WAN actor bounds")
+                read_started = time.perf_counter() if timings is not None else 0.0
                 data = self.rfile.read(length)
+                if timings is not None:
+                    timings["body_read"] = time.perf_counter() - read_started
                 if len(data) != length:
                     raise ValueError("request body ended before Content-Length")
                 # Pickle is intentionally behind both loopback/SSH and a bearer credential. Possession
                 # of this trainer-only token is trusted-code access, not a public-client capability.
-                return decode_payload(data)
+                decode_started = time.perf_counter() if timings is not None else 0.0
+                payload = decode_payload(data)
+                if timings is not None:
+                    timings["decode"] = time.perf_counter() - decode_started
+                return payload
 
             def do_GET(self) -> None:
                 if not self._authorized():
@@ -545,8 +556,13 @@ class WanActorBroker:
                     self._error(401, "unauthorized", "WAN actor authentication failed.")
                     return
                 parsed = urllib.parse.urlparse(self.path)
+                timings = (
+                    {} if parsed.path == "/trajectories"
+                    and self.headers.get("X-Bees-Upload-Diagnostics") == "1"
+                    else None
+                )
                 try:
-                    payload = self._read_payload()
+                    payload = self._read_payload(timings)
                     if not isinstance(payload, Mapping):
                         raise ValueError("WAN actor request payload must be a mapping")
                     if payload.get("session_id") != broker.session_id:
@@ -565,8 +581,21 @@ class WanActorBroker:
                         self._json({"status": "registered"})
                         return
                     if parsed.path == "/trajectories":
-                        accepted = broker.submit_trajectory_batch(payload)
-                        self._json({"status": "accepted", "trajectories": accepted})
+                        submit_started = time.perf_counter() if timings is not None else 0.0
+                        accepted = broker.submit_trajectory_batch(payload, timings=timings)
+                        if timings is None:
+                            self._json({"status": "accepted", "trajectories": accepted})
+                        else:
+                            timings["submit"] = time.perf_counter() - submit_started
+                            self._json(
+                                {"status": "accepted", "trajectories": accepted},
+                                headers={
+                                    "X-Bees-Upload-Body-Read-Ms": f"{timings['body_read'] * 1000:.3f}",
+                                    "X-Bees-Upload-Decode-Ms": f"{timings['decode'] * 1000:.3f}",
+                                    "X-Bees-Upload-Submit-Ms": f"{timings['submit'] * 1000:.3f}",
+                                    "X-Bees-Upload-Queue-Ms": f"{timings['queue'] * 1000:.3f}",
+                                },
+                            )
                         return
                     if parsed.path == "/reset-ack":
                         broker.acknowledge_reset(payload)
@@ -798,7 +827,10 @@ class WanActorBroker:
                 f"trajectory policy versions {normalized} != current versions {expected}"
             )
 
-    def submit_trajectory_batch(self, payload: Mapping[str, Any]) -> int:
+    def submit_trajectory_batch(
+        self, payload: Mapping[str, Any], *,
+        timings: Optional[Dict[str, float]] = None,
+    ) -> int:
         actor_id = self._validate_actor_id(payload.get("actor_id"))
         if actor_id not in self.registered_actor_ids():
             raise ValueError("actor must register behavior specs before uploading trajectories")
@@ -840,7 +872,10 @@ class WanActorBroker:
         with self._condition:
             if actor_id in self._cohort_blocked_actors:
                 raise queue.Full
+        queue_started = time.perf_counter() if timings is not None else 0.0
         self._trajectory_batches.put(item, timeout=10.0)
+        if timings is not None:
+            timings["queue"] = time.perf_counter() - queue_started
         return len(trajectories)
 
     def _batch_is_current(self, batch: Mapping[str, Any]) -> bool:
