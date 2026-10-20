@@ -543,23 +543,25 @@ update_autostart_env_count() {
 
 PID="$(recorded_pid || true)"
 if [[ -n "$PID" ]] && pid_is_supervisor "$PID"; then
-    if supervisor_control_healthy; then
-        if [[ -n "$ENVS" && "$AUTOSTART_CHILD" != "1" && "${BEES_MANAGED_LAUNCHER_ADOPTION:-0}" != "1" ]]; then
-            if (( AUTO_ENVS )); then
-                echo "error: manual live resizing cannot be combined with --auto-envs." >&2
-                exit 2
-            fi
+    if [[ "$AUTOSTART_CHILD" == "1" ]]; then
+        # Watchdog-invoked starts retain the existing unhealthy-supervisor repair.
+        # Operator-invoked starts must never recycle a running training session.
+        if supervisor_control_healthy; then
+            exit 0
+        fi
+        restart_unhealthy_supervisor "$PID"
+    else
+        if [[ -n "$ENVS" && "${BEES_MANAGED_LAUNCHER_ADOPTION:-0}" != "1" ]]; then
             request_live_env_count
             update_autostart_env_count
         else
-            echo "[Bees remote] worker already running (PID $PID); no environment count supplied, leaving training unchanged."
+            echo "[Bees remote] worker already running (PID $PID); leaving training unchanged."
         fi
-        if (( UPLOAD_WORKERS_SUPPLIED )) && [[ "$AUTOSTART_CHILD" != "1" ]]; then
+        if (( UPLOAD_WORKERS_SUPPLIED )); then
             echo "[Bees remote] note: upload thread count only changes on the next worker launch; active upload threads are unchanged." >&2
         fi
         exit 0
     fi
-    restart_unhealthy_supervisor "$PID"
 fi
 rm -f "$SUPERVISOR_PID_FILE" "$SHUTDOWN_REQUEST_FILE"
 # A new supervisor uses the explicit startup count, or an implicit safe default.
