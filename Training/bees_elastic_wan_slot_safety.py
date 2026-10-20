@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from typing import Any, Mapping, Type
+from typing import Any, Dict, Mapping, Optional, Type
 
 import bees_elastic_wan_training as elastic
 import bees_wan_actor_training as wan
@@ -85,9 +85,12 @@ class SlotSafeElasticWanBroker(elastic.ElasticWanBroker):
             super().register_actor(payload)
             self._registrations[actor_id]["actor_instance_id"] = instance_id
 
-    def submit_trajectory_batch(self, payload: Mapping[str, Any]) -> int:
+    def submit_trajectory_batch(
+        self, payload: Mapping[str, Any], *,
+        timings: Optional[Dict[str, float]] = None,
+    ) -> int:
         self._require_live_instance(payload)
-        return super().submit_trajectory_batch(payload)
+        return super().submit_trajectory_batch(payload, timings=timings)
 
     def acknowledge_reset(self, payload: Mapping[str, Any]) -> None:
         """Treat the authenticated control acknowledgement as actor liveness too."""
