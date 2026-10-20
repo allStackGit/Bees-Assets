@@ -479,6 +479,10 @@ def _parser() -> argparse.ArgumentParser:
     # without starting any extra process or allocating learning CPUs.
     parser.add_argument("--learning-cpus", type=int, default=0, help=argparse.SUPPRESS)
     parser.add_argument("--torch-device", default="cpu")
+    parser.add_argument(
+        "--upload-workers", type=int, default=1 if os.name == "nt" else 2,
+        help="Concurrent WAN upload threads (1-4; default 2 Linux, 1 Windows).",
+    )
     parser.add_argument("--reconnect-seconds", type=float, default=DEFAULT_RECONNECT_SECONDS)
     return parser
 
@@ -1117,6 +1121,8 @@ class RuntimeUpdater:
                 str(self.install_root),
                 "--torch-device",
                 str(self.args.torch_device),
+                "--upload-workers",
+                str(self.args.upload_workers),
             ]
             if not bool(getattr(self.args, "auto_envs", False)):
                 command.extend(["--envs", str(self.args.envs)])
@@ -2087,6 +2093,8 @@ def _worker_command(args: argparse.Namespace, root: Path, actor_key: str) -> lis
         str(Path(args.wan_token_file).expanduser().resolve()),
         "--torch-device",
         args.torch_device,
+        "--upload-workers",
+        str(args.upload_workers),
     ])
     return command
 
@@ -2094,6 +2102,9 @@ def _worker_command(args: argparse.Namespace, root: Path, actor_key: str) -> lis
 def main(argv: Optional[Sequence[str]] = None) -> int:
     raw_argv = list(sys.argv[1:] if argv is None else argv)
     args = _parser().parse_args(raw_argv)
+    if not 1 <= args.upload_workers <= 4:
+        print("error: --upload-workers must be in 1-4", file=sys.stderr)
+        return 2
     memory_start_cap = _memory_env_limit()
     memory_hard_cap = _memory_hard_limit()
     cpu_threads = _available_cpu_threads()
