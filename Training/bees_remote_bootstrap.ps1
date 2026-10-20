@@ -68,6 +68,7 @@ $TailnetRoot=Join-Path $InstallRoot 'Tailnet'
 $TailnetState=Join-Path $TailnetRoot 'State'
 $LogsRoot=Join-Path $InstallRoot 'Logs'
 $SupervisorPidFile=Join-Path $InstallRoot 'remote-worker.pid'
+$ManualEnvsRequestFile=Join-Path $InstallRoot 'remote-worker-envs.request'
 $ShutdownRequestFile=Join-Path $InstallRoot 'remote-worker.stop'
 $SupervisorOutLog=Join-Path $LogsRoot 'remote-supervisor.out.log'
 $SupervisorErrLog=Join-Path $LogsRoot 'remote-supervisor.err.log'
@@ -486,16 +487,65 @@ if($Command -eq 'stop'){
     exit 0
 }
 
+function Write-ManualEnvRequest([int]$Target){
+    $previous=''
+    if(Test-Path -LiteralPath $ManualEnvsRequestFile){
+        $previous=(Get-Content -LiteralPath $ManualEnvsRequestFile -Raw).Trim()
+    }
+    if($previous -eq [string]$Target){
+        Write-Host "[Bees remote] Unity environment target is already $Target; no change requested."
+        return
+    }
+    $temporary="$ManualEnvsRequestFile.tmp.$PID"
+    [IO.File]::WriteAllText($temporary,([string]$Target + "`n"),[Text.Encoding]::ASCII)
+    if(Test-Path -LiteralPath $ManualEnvsRequestFile){
+        [IO.File]::Replace($temporary,$ManualEnvsRequestFile,$null)
+    }else{
+        [IO.File]::Move($temporary,$ManualEnvsRequestFile)
+    }
+    $message="[Bees remote] requested live Unity environment target $Target without restarting training."
+    Write-Host $message
+    [IO.File]::AppendAllText(
+        (Join-Path $LogsRoot 'remote-live-env-resize.log'),
+        ([DateTime]::UtcNow.ToString('o') + ' ' + $message + [Environment]::NewLine),
+        [Text.Encoding]::UTF8
+    )
+}
+
+function Update-AutostartEnvironmentTarget([int]$Target){
+    if($AutostartChild -or -not(Test-Path -LiteralPath $AutostartMonitor)){return}
+    $body=[IO.File]::ReadAllText($AutostartMonitor)
+    $matches=[regex]::Matches($body,'(?m)^\$Envs=\d+')
+    if($matches.Count -ne 1){
+        Write-Warning '[Bees remote] autostart monitor could not persist live environment count.'
+        return
+    }
+    $updated=$body.Substring(0,$matches[0].Index) +
+        ('$Envs=' + [string]$Target) +
+        $body.Substring($matches[0].Index + $matches[0].Length)
+    $temporary="$AutostartMonitor.tmp.$PID"
+    [IO.File]::WriteAllText($temporary,$updated,(New-Object Text.UTF8Encoding($false)))
+    [IO.File]::Replace($temporary,$AutostartMonitor,$null)
+}
+
 $existingProcess=Get-LiveSupervisorProcess
 if($null -ne $existingProcess){
-    # A stale or temporarily unreachable learner must never trigger a destructive
-    # supervisor restart. Operators can explicitly stop/restart if desired.
-    Install-RemoteAutostart
-    Write-Host "[Bees remote] worker is already running (PID $($existingProcess.Id))."
-    Write-Host '[Bees remote] use bees-remote-worker.cmd stop to stop it.'
+    # Never restart the supervisor to change its managed Unity environment count.
+    if($Envs -gt 0 -and -not $AutostartChild -and
+       [string]$env:BEES_MANAGED_LAUNCHER_ADOPTION -ne '1'){
+        Write-ManualEnvRequest $Envs
+        Update-AutostartEnvironmentTarget $Envs
+    }else{
+        Write-Host "[Bees remote] worker already running (PID $($existingProcess.Id)); leaving training unchanged."
+    }
     exit 0
 }
 Remove-Item -LiteralPath $SupervisorPidFile,$ShutdownRequestFile -Force -ErrorAction SilentlyContinue
+if($Envs -gt 0){
+    Write-ManualEnvRequest $Envs
+}else{
+    Remove-Item -LiteralPath $ManualEnvsRequestFile -Force -ErrorAction SilentlyContinue
+}
 
 Write-Host '[Bees remote] Stage 1/5: preparing local worker files...'
 
