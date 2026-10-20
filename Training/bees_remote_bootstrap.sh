@@ -15,6 +15,7 @@ BOOTSTRAP_TOKEN="__BEES_BOOTSTRAP_TOKEN__"
 COMMAND="start"
 ENVS=""
 AUTO_ENVS=0
+UPLOAD_WORKERS=2
 NO_DIAGNOSTICS=0
 INSTALL_ROOT="$DEFAULT_INSTALL_ROOT"
 TORCH_DEVICE="$DEFAULT_TORCH_DEVICE"
@@ -31,6 +32,7 @@ Commands:
 Options:
   --envs N               Pin a fixed Unity environment count (1-64); omission selects a fixed safe startup count.
   --auto-envs            Opt into continuous environment-count tuning (off by default).
+  --upload-workers N     Concurrent WAN upload threads (1-4; default 2).
   --no-diagnostics       Disable WAN stage profiling and optional host CPU sampling.
   --install-root PATH    Local Linux worker installation directory.
   --torch-device DEVICE  Local inference device, normally cpu or cuda.
@@ -48,6 +50,7 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --envs) ENVS="$2"; shift 2 ;;
         --auto-envs) AUTO_ENVS=1; shift ;;
+        --upload-workers) UPLOAD_WORKERS="$2"; shift 2 ;;
         --no-diagnostics) NO_DIAGNOSTICS=1; shift ;;
         --install-root) INSTALL_ROOT="$2"; shift 2 ;;
         --torch-device) TORCH_DEVICE="$2"; shift 2 ;;
@@ -69,6 +72,10 @@ done
 is_uint() { [[ "$1" =~ ^[0-9]+$ ]]; }
 if [[ -n "$ENVS" ]] && { ! is_uint "$ENVS" || (( ENVS < 1 || ENVS > 64 )); }; then
     echo "error: --envs must be in 1-64 when specified" >&2
+    exit 2
+fi
+if ! is_uint "$UPLOAD_WORKERS" || (( UPLOAD_WORKERS < 1 || UPLOAD_WORKERS > 4 )); then
+    echo "error: --upload-workers must be in 1-4" >&2
     exit 2
 fi
 if (( AUTO_ENVS )) && [[ -n "$ENVS" ]]; then
@@ -154,6 +161,7 @@ MONITOR_LOG=$q_log
 CONTROL_PORT=$CONTROL_PORT
 ENVS=$ENVS
 AUTO_ENVS=$AUTO_ENVS
+UPLOAD_WORKERS=$UPLOAD_WORKERS
 NO_DIAGNOSTICS=$NO_DIAGNOSTICS
 
 supervisor_alive() {
@@ -231,11 +239,11 @@ launch_worker() {
         diagnostic_args+=(--no-diagnostics)
     fi
     if [[ "\$AUTO_ENVS" == "1" ]]; then
-        BEES_AUTOSTART_CHILD=1 bash "\$LAUNCHER" start --install-root "\$INSTALL_ROOT" --torch-device "\$TORCH_DEVICE" --auto-envs "\${diagnostic_args[@]}" >>"\$MONITOR_LOG" 2>&1 || true
+        BEES_AUTOSTART_CHILD=1 bash "\$LAUNCHER" start --install-root "\$INSTALL_ROOT" --torch-device "\$TORCH_DEVICE" --upload-workers "\$UPLOAD_WORKERS" --auto-envs "\${diagnostic_args[@]}" >>"\$MONITOR_LOG" 2>&1 || true
     elif [[ -n "\$ENVS" ]]; then
-        BEES_AUTOSTART_CHILD=1 bash "\$LAUNCHER" start --install-root "\$INSTALL_ROOT" --torch-device "\$TORCH_DEVICE" --envs "\$ENVS" "\${diagnostic_args[@]}" >>"\$MONITOR_LOG" 2>&1 || true
+        BEES_AUTOSTART_CHILD=1 bash "\$LAUNCHER" start --install-root "\$INSTALL_ROOT" --torch-device "\$TORCH_DEVICE" --upload-workers "\$UPLOAD_WORKERS" --envs "\$ENVS" "\${diagnostic_args[@]}" >>"\$MONITOR_LOG" 2>&1 || true
     else
-        BEES_AUTOSTART_CHILD=1 bash "\$LAUNCHER" start --install-root "\$INSTALL_ROOT" --torch-device "\$TORCH_DEVICE" "\${diagnostic_args[@]}" >>"\$MONITOR_LOG" 2>&1 || true
+        BEES_AUTOSTART_CHILD=1 bash "\$LAUNCHER" start --install-root "\$INSTALL_ROOT" --torch-device "\$TORCH_DEVICE" --upload-workers "\$UPLOAD_WORKERS" "\${diagnostic_args[@]}" >>"\$MONITOR_LOG" 2>&1 || true
     fi
 }
 
@@ -698,6 +706,7 @@ WORKER_ARGS=(
     --worker-token-file "$WORKER_TOKEN"
     --wan-token-file "$WAN_TOKEN"
     --torch-device "$TORCH_DEVICE"
+    --upload-workers "$UPLOAD_WORKERS"
 )
 if [[ -n "$ENVS" ]]; then
     WORKER_ARGS+=(--envs "$ENVS")
