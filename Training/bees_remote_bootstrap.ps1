@@ -2,6 +2,7 @@ param(
     [ValidateSet('start','stop')]
     [string]$Command='start',
     [int]$Envs=0,
+    [int]$Actors=1,
     [switch]$AutoEnvs,
     [string]$InstallRoot='',
     [string]$TorchDevice='',
@@ -48,6 +49,8 @@ $GameplayPort=[int]$GameplayPort
 if(-not $InstallRoot){$InstallRoot=[Environment]::ExpandEnvironmentVariables($DefaultInstallRoot)}
 if(-not $TorchDevice){$TorchDevice=$DefaultTorchDevice}
 if($Envs -lt 0 -or $Envs -gt 64){throw 'Envs must be in 1-64 when specified.'}
+if($Actors -lt 1 -or $Actors -gt 8){throw 'Actors must be in 1-8.'}
+if($Envs -gt 0 -and $Envs -lt $Actors){throw 'Envs must be at least Actors.'}
 if($AutoEnvs -and $Envs -gt 0){throw 'AutoEnvs cannot be combined with fixed Envs.'}
 foreach($port in @($TailnetBootstrapPort,$ControlPort,$BrokerPort,$GameplayPort)){
     if($port -lt 1 -or $port -gt 65535){throw 'Configured Bees ports must be in 1-65535.'}
@@ -177,6 +180,7 @@ $MonitorPidFile='__PID_FILE__'
 $ControlPort=__CONTROL_PORT__
 $Envs=__ENVS__
 $AutoEnvs=__AUTO_ENVS__
+$Actors=__ACTORS__
 
 $existingPid=0
 if(Test-Path -LiteralPath $MonitorPidFile){
@@ -272,6 +276,7 @@ function Invoke-LauncherRepair {
     }
     if($targetEnvs -gt 0){$command+=' -Envs ' + [string]$targetEnvs}
     if($AutoEnvs){$command+=' -AutoEnvs'}
+    $command+=' -Actors ' + [string]$Actors
     try {
         $script:RepairProcess=Start-Process -FilePath $env:COMSPEC -ArgumentList @('/d','/c',$command) -WindowStyle Hidden -RedirectStandardOutput $RepairOutLog -RedirectStandardError $RepairErrLog -PassThru
         $script:RepairStartedUtc=[DateTime]::UtcNow
@@ -315,6 +320,7 @@ try {
     $monitorBody=$monitorBody.Replace('__CONTROL_PORT__',[string]$ControlPort)
     $monitorBody=$monitorBody.Replace('__ENVS__',[string]$Envs)
     $monitorBody=$monitorBody.Replace('__AUTO_ENVS__',$(if($AutoEnvs){'$true'}else{'$false'}))
+    $monitorBody=$monitorBody.Replace('__ACTORS__',[string]$Actors)
     [IO.File]::WriteAllText($AutostartMonitor,$monitorBody,(New-Object Text.UTF8Encoding($false)))
 
     $line='@echo off' + [Environment]::NewLine +
@@ -541,9 +547,21 @@ function Update-AutostartEnvironmentTarget([int]$Target){
 
 $existingProcess=Get-LiveSupervisorProcess
 if($null -ne $existingProcess){
+    if($PSBoundParameters.ContainsKey('Actors') -and -not $AutostartChild){
+        $record=Get-CimInstance Win32_Process -Filter "ProcessId = $($existingProcess.Id)" -ErrorAction Stop
+        $match=[regex]::Match([string]$record.CommandLine,'(?:^|s)--actorss+(d+)(?:s|$)')
+        $activeActors=if($match.Success){[int]$match.Groups[1].Value}else{1}
+        if($Actors -ne $activeActors){
+            throw "Changing Actors from $activeActors to $Actors requires stopping and restarting this worker."
+        }
+    }
     # Never restart the supervisor to change its managed Unity environment count.
     if($Envs -gt 0 -and -not $AutostartChild -and
        [string]$env:BEES_MANAGED_LAUNCHER_ADOPTION -ne '1'){
+        $record=Get-CimInstance Win32_Process -Filter "ProcessId = $($existingProcess.Id)" -ErrorAction Stop
+        $match=[regex]::Match([string]$record.CommandLine,'(?:^|\s)--actors\s+(\d+)(?:\s|$)')
+        $activeActors=if($match.Success){[int]$match.Groups[1].Value}else{1}
+        if($Envs -lt $activeActors){throw "Envs must be at least the active $activeActors actors."}
         $supervisorRecord=Get-CimInstance Win32_Process -Filter "ProcessId = $($existingProcess.Id)" -ErrorAction Stop
         if(([string]$supervisorRecord.CommandLine) -match '(?:^|\s)--auto-envs(?:\s|$)'){
             throw 'Worker is running in AutoEnvs mode; manual fixed-count resizing requires starting it in fixed mode.'
@@ -752,7 +770,8 @@ $workerArgs=@(
     '--bootstrap-token-file',$bootstrapTokenPath,
     '--worker-token-file',$workerToken,
     '--wan-token-file',$wanToken,
-    '--torch-device',$TorchDevice
+    '--torch-device',$TorchDevice,
+    '--actors',[string]$Actors
 )
 if($Envs -gt 0){$workerArgs+=@('--envs',[string]$Envs)}
 if($AutoEnvs){$workerArgs+='--auto-envs'}

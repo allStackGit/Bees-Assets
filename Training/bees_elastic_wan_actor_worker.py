@@ -525,6 +525,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--reconnect-seconds", type=float, default=worker.DEFAULT_RECONNECT_SECONDS)
     parser.add_argument("--upload-queue", type=int, default=worker.DEFAULT_LOCAL_UPLOAD_QUEUE)
     parser.add_argument("--upload-workers", type=int, default=worker.DEFAULT_UPLOAD_WORKERS)
+    parser.add_argument("--actors", type=int, default=1, help="Independent actor processes (1-8; default 1). --envs is the machine total.")
     return parser
 
 
@@ -609,8 +610,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if args.actor_id is None and not args.actor_key:
         print("error: --actor-key is required when --actor-id is omitted", file=sys.stderr)
         return 2
-    if not 1 <= args.envs <= elastic.MAX_ENVS_PER_ACTOR:
-        print(f"error: --envs must be in 1-{elastic.MAX_ENVS_PER_ACTOR}", file=sys.stderr)
+    if not 1 <= args.actors <= 8:
+        print("error: --actors must be in 1-8", file=sys.stderr)
+        return 2
+    if not args.actors <= args.envs <= elastic.MAX_ENVS_PER_ACTOR:
+        print(f"error: --envs must be in {args.actors}-{elastic.MAX_ENVS_PER_ACTOR} for {args.actors} actors", file=sys.stderr)
         return 2
     if not 1 <= args.broker_port <= 65535:
         print("error: --broker-port must be in 1-65535", file=sys.stderr)
@@ -633,6 +637,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if not env_path.is_file():
         print(f"error: Unity training executable does not exist: {env_path}", file=sys.stderr)
         return 2
+    if args.actors > 1:
+        from bees_multi_actor_worker import run_group
+        return run_group(args)
+
     try:
         token = wan.load_auth_token(args.auth_token_file)
         release_identity = _managed_release_identity()

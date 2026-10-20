@@ -17,6 +17,8 @@ ENVS=""
 AUTO_ENVS=0
 UPLOAD_WORKERS=2
 UPLOAD_WORKERS_SUPPLIED=0
+ACTORS=1
+ACTORS_SUPPLIED=0
 NO_DIAGNOSTICS=0
 INSTALL_ROOT="$DEFAULT_INSTALL_ROOT"
 TORCH_DEVICE="$DEFAULT_TORCH_DEVICE"
@@ -33,7 +35,8 @@ Commands:
 Options:
   --envs N               Set the Unity environment target (1-64); live-resize if already running.
   --auto-envs            Opt into continuous environment-count tuning (off by default).
-  --upload-workers N     Concurrent WAN upload threads (1-4; default 2).
+  --upload-workers N     Concurrent WAN upload threads per actor (1-4; default 2).
+  --actors N             Independent WAN actor processes (1-8; default 1); requires stop/start to change.
   --no-diagnostics       Disable WAN stage profiling and optional host CPU sampling.
   --install-root PATH    Local Linux worker installation directory.
   --torch-device DEVICE  Local inference device, normally cpu or cuda.
@@ -52,6 +55,7 @@ while [[ $# -gt 0 ]]; do
         --envs) ENVS="$2"; shift 2 ;;
         --auto-envs) AUTO_ENVS=1; shift ;;
         --upload-workers) UPLOAD_WORKERS="$2"; UPLOAD_WORKERS_SUPPLIED=1; shift 2 ;;
+        --actors) ACTORS="$2"; ACTORS_SUPPLIED=1; shift 2 ;;
         --no-diagnostics) NO_DIAGNOSTICS=1; shift ;;
         --install-root) INSTALL_ROOT="$2"; shift 2 ;;
         --torch-device) TORCH_DEVICE="$2"; shift 2 ;;
@@ -77,6 +81,14 @@ if [[ -n "$ENVS" ]] && { ! is_uint "$ENVS" || (( ENVS < 1 || ENVS > 64 )); }; th
 fi
 if ! is_uint "$UPLOAD_WORKERS" || (( UPLOAD_WORKERS < 1 || UPLOAD_WORKERS > 4 )); then
     echo "error: --upload-workers must be in 1-4" >&2
+    exit 2
+fi
+if ! is_uint "$ACTORS" || (( ACTORS < 1 || ACTORS > 8 )); then
+    echo "error: --actors must be in 1-8" >&2
+    exit 2
+fi
+if [[ -n "$ENVS" ]] && (( ENVS < ACTORS )); then
+    echo "error: --envs must be at least --actors" >&2
     exit 2
 fi
 if (( AUTO_ENVS )) && [[ -n "$ENVS" ]]; then
@@ -163,6 +175,7 @@ CONTROL_PORT=$CONTROL_PORT
 ENVS=$ENVS
 AUTO_ENVS=$AUTO_ENVS
 UPLOAD_WORKERS=$UPLOAD_WORKERS
+ACTORS=$ACTORS
 NO_DIAGNOSTICS=$NO_DIAGNOSTICS
 
 supervisor_alive() {
@@ -250,11 +263,11 @@ launch_worker() {
         diagnostic_args+=(--no-diagnostics)
     fi
     if [[ "\$AUTO_ENVS" == "1" ]]; then
-        BEES_AUTOSTART_CHILD=1 bash "\$LAUNCHER" start --install-root "\$INSTALL_ROOT" --torch-device "\$TORCH_DEVICE" --upload-workers "\$UPLOAD_WORKERS" --auto-envs "\${diagnostic_args[@]}" >>"\$MONITOR_LOG" 2>&1 || true
+        BEES_AUTOSTART_CHILD=1 bash "\$LAUNCHER" start --install-root "\$INSTALL_ROOT" --torch-device "\$TORCH_DEVICE" --upload-workers "\$UPLOAD_WORKERS" --actors "\$ACTORS" --auto-envs "\${diagnostic_args[@]}" >>"\$MONITOR_LOG" 2>&1 || true
     elif [[ -n "\$requested_envs" ]]; then
-        BEES_AUTOSTART_CHILD=1 bash "\$LAUNCHER" start --install-root "\$INSTALL_ROOT" --torch-device "\$TORCH_DEVICE" --upload-workers "\$UPLOAD_WORKERS" --envs "\$requested_envs" "\${diagnostic_args[@]}" >>"\$MONITOR_LOG" 2>&1 || true
+        BEES_AUTOSTART_CHILD=1 bash "\$LAUNCHER" start --install-root "\$INSTALL_ROOT" --torch-device "\$TORCH_DEVICE" --upload-workers "\$UPLOAD_WORKERS" --actors "\$ACTORS" --envs "\$requested_envs" "\${diagnostic_args[@]}" >>"\$MONITOR_LOG" 2>&1 || true
     else
-        BEES_AUTOSTART_CHILD=1 bash "\$LAUNCHER" start --install-root "\$INSTALL_ROOT" --torch-device "\$TORCH_DEVICE" --upload-workers "\$UPLOAD_WORKERS" "\${diagnostic_args[@]}" >>"\$MONITOR_LOG" 2>&1 || true
+        BEES_AUTOSTART_CHILD=1 bash "\$LAUNCHER" start --install-root "\$INSTALL_ROOT" --torch-device "\$TORCH_DEVICE" --upload-workers "\$UPLOAD_WORKERS" --actors "\$ACTORS" "\${diagnostic_args[@]}" >>"\$MONITOR_LOG" 2>&1 || true
     fi
 }
 
@@ -407,6 +420,19 @@ pid_is_supervisor() {
         command_line+="$part "
     done < "/proc/$pid/cmdline"
     [[ "$command_line" == *"bees_managed_remote_worker.py"* && "$command_line" == *"$INSTALL_ROOT"* ]]
+}
+
+supervisor_actor_count() {
+    local pid="$1" token previous=""
+    [[ -r "/proc/$pid/cmdline" ]] || return 1
+    while IFS= read -r -d '' token; do
+        if [[ "$previous" == "--actors" ]]; then
+            printf '%s' "$token"
+            return 0
+        fi
+        previous="$token"
+    done < "/proc/$pid/cmdline"
+    printf '1'
 }
 
 supervisor_is_auto_tuned() {
@@ -570,6 +596,15 @@ if [[ -n "$PID" ]] && pid_is_supervisor "$PID"; then
         fi
         restart_unhealthy_supervisor "$PID"
     else
+        active_actors="$(supervisor_actor_count "$PID")"
+        if (( ACTORS_SUPPLIED )) && [[ "$ACTORS" != "$active_actors" ]]; then
+            echo "error: changing --actors from $active_actors to $ACTORS requires stopping and restarting this worker." >&2
+            exit 2
+        fi
+        if [[ -n "$ENVS" ]] && (( ENVS < active_actors )); then
+            echo "error: --envs=$ENVS is too small for the active $active_actors actors." >&2
+            exit 2
+        fi
         if [[ -n "$ENVS" && "${BEES_MANAGED_LAUNCHER_ADOPTION:-0}" != "1" ]]; then
             if supervisor_is_auto_tuned "$PID"; then
                 echo "error: worker is running in --auto-envs mode; manual fixed-count resizing requires starting it in fixed mode." >&2
@@ -780,6 +815,7 @@ WORKER_ARGS=(
     --wan-token-file "$WAN_TOKEN"
     --torch-device "$TORCH_DEVICE"
     --upload-workers "$UPLOAD_WORKERS"
+    --actors "$ACTORS"
 )
 if [[ -n "$ENVS" ]]; then
     WORKER_ARGS+=(--envs "$ENVS")

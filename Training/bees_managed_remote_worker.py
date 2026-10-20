@@ -480,6 +480,10 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--learning-cpus", type=int, default=0, help=argparse.SUPPRESS)
     parser.add_argument("--torch-device", default="cpu")
     parser.add_argument(
+        "--actors", type=int, default=1,
+        help="Independent WAN actor processes per machine (1-8; default 1). --envs remains the total.",
+    )
+    parser.add_argument(
         "--upload-workers", type=int, default=1 if os.name == "nt" else 2,
         help="Concurrent WAN upload threads (1-4; default 2 Linux, 1 Windows).",
     )
@@ -1109,6 +1113,8 @@ class RuntimeUpdater:
                 str(self.install_root),
                 "-TorchDevice",
                 str(self.args.torch_device),
+                "-Actors",
+                str(self.args.actors),
             ]
             if not bool(getattr(self.args, "auto_envs", False)):
                 command.extend(["-Envs", str(self.args.envs)])
@@ -1123,6 +1129,8 @@ class RuntimeUpdater:
                 str(self.args.torch_device),
                 "--upload-workers",
                 str(self.args.upload_workers),
+                "--actors",
+                str(self.args.actors),
             ]
             if not bool(getattr(self.args, "auto_envs", False)):
                 command.extend(["--envs", str(self.args.envs)])
@@ -2099,6 +2107,8 @@ def _worker_command(args: argparse.Namespace, root: Path, actor_key: str) -> lis
         str(Path(args.wan_token_file).expanduser().resolve()),
         "--torch-device",
         args.torch_device,
+        "--actors",
+        str(args.actors),
         "--upload-workers",
         str(args.upload_workers),
     ])
@@ -2111,6 +2121,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if not 1 <= args.upload_workers <= 4:
         print("error: --upload-workers must be in 1-4", file=sys.stderr)
         return 2
+    if not 1 <= args.actors <= 8:
+        print("error: --actors must be in 1-8", file=sys.stderr)
+        return 2
+    args.min_envs = max(args.min_envs, args.actors)
     memory_start_cap = _memory_env_limit()
     memory_hard_cap = _memory_hard_limit()
     cpu_threads = _available_cpu_threads()
@@ -2166,6 +2180,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             return 2
         args.min_envs = args.envs
         args.max_envs = args.envs
+    if args.envs < args.actors:
+        print(f"error: {args.actors} actors require at least {args.actors} environments", file=sys.stderr)
+        return 2
     if (
         not 1 <= args.control_port <= 65535
         or not 1 <= args.bootstrap_port <= 65535

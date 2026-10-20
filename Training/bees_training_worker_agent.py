@@ -701,6 +701,7 @@ def read_throughput_metrics(
         return {}
     pid = value.get("pid")
     env_count = value.get("env_count")
+    actor_count = value.get("actor_count")
     accepted_steps = value.get("accepted_steps_total")
     accepted_trajectories = value.get("accepted_trajectories_total")
     learner_consumed_steps = value.get("learner_consumed_steps_total")
@@ -730,6 +731,10 @@ def read_throughput_metrics(
         or not isinstance(env_count, int)
         or isinstance(env_count, bool)
         or not 1 <= env_count <= 64
+        or (actor_count is not None and (
+            not isinstance(actor_count, int) or isinstance(actor_count, bool)
+            or not 1 <= actor_count <= 8
+        ))
         or not isinstance(accepted_steps, int)
         or isinstance(accepted_steps, bool)
         or accepted_steps < 0
@@ -893,6 +898,8 @@ def read_throughput_metrics(
         "learner_consumed_steps_total": learner_consumed_steps,
         "upload_queue_depth": queue_depth,
     }
+    if actor_count is not None:
+        result["actor_count"] = actor_count
     diagnostic_enabled = value.get("worker_diagnostics_enabled")
     if diagnostic_enabled is not None:
         if not isinstance(diagnostic_enabled, bool):
