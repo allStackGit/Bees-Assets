@@ -544,6 +544,10 @@ if($null -ne $existingProcess){
     # Never restart the supervisor to change its managed Unity environment count.
     if($Envs -gt 0 -and -not $AutostartChild -and
        [string]$env:BEES_MANAGED_LAUNCHER_ADOPTION -ne '1'){
+        $supervisorRecord=Get-CimInstance Win32_Process -Filter "ProcessId = $($existingProcess.Id)" -ErrorAction Stop
+        if(([string]$supervisorRecord.CommandLine) -match '(?:^|\s)--auto-envs(?:\s|$)'){
+            throw 'Worker is running in AutoEnvs mode; manual fixed-count resizing requires starting it in fixed mode.'
+        }
         Write-ManualEnvRequest $Envs
         Update-AutostartEnvironmentTarget $Envs
     }else{
@@ -553,7 +557,9 @@ if($null -ne $existingProcess){
 }
 Remove-Item -LiteralPath $SupervisorPidFile,$ShutdownRequestFile -Force -ErrorAction SilentlyContinue
 if($Envs -gt 0){
-    Write-ManualEnvRequest $Envs
+    [IO.File]::WriteAllText(
+        $ManualEnvsRequestFile, ([string]$Envs + "`n"), [Text.Encoding]::ASCII
+    )
 }else{
     Remove-Item -LiteralPath $ManualEnvsRequestFile -Force -ErrorAction SilentlyContinue
 }
