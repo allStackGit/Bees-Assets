@@ -523,7 +523,7 @@ request_live_env_count() {
         echo "[Bees remote] Unity environment target is already $ENVS; no change requested."
         return
     fi
-    temporary="$MANUAL_ENVS_REQUEST_FILE.tmp.$"
+    temporary="${MANUAL_ENVS_REQUEST_FILE}.tmp.${BASHPID}"
     printf '%s\n' "$ENVS" > "$temporary"
     mv -f "$temporary" "$MANUAL_ENVS_REQUEST_FILE"
     echo "[Bees remote] requested live Unity environment target $ENVS for supervisor PID $PID (no training restart)." | tee -a "$SUPERVISOR_LOG"
@@ -535,7 +535,7 @@ update_autostart_env_count() {
     if [[ "$AUTOSTART_CHILD" == "1" || ! -f "$AUTOSTART_MONITOR" ]]; then
         return
     fi
-    local temporary="$AUTOSTART_MONITOR.tmp.$"
+    local temporary="${AUTOSTART_MONITOR}.tmp.${BASHPID}"
     sed "s/^ENVS=.*/ENVS=$ENVS/" "$AUTOSTART_MONITOR" > "$temporary"
     chmod 700 "$temporary"
     mv -f "$temporary" "$AUTOSTART_MONITOR"
