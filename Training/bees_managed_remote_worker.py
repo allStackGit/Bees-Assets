@@ -1131,6 +1131,7 @@ class RuntimeUpdater:
         # child does not recursively re-register itself. Managed-launcher adoption is a
         # deliberate persistence migration and must not inherit that suppression.
         environment.pop("BEES_AUTOSTART_CHILD", None)
+        environment["BEES_MANAGED_LAUNCHER_ADOPTION"] = "1"
         if os.name != "nt" and environment.get("BEES_WAN_DIAGNOSTICS") == "0":
             command.append("--no-diagnostics")
         completed = subprocess.run(
@@ -2075,7 +2076,7 @@ def _worker_command(args: argparse.Namespace, root: Path, actor_key: str) -> lis
     ]
     if args.auto_envs:
         command.append("--auto-worker-envs")
-    elif os.name != "nt":
+    else:
         command.extend([
             "--manual-worker-envs-file",
             str(Path(args.install_root).expanduser().resolve() / "remote-worker-envs.request"),
