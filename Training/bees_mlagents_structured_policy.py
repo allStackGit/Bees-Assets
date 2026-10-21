@@ -423,24 +423,15 @@ class _MaskedAttentionPool(nn.Module):
         exponentials = torch.exp(
             masked_scores - maxima.index_select(0, rows)
         ) * mask
-        denominator = exponentials.new_zeros(
-            (batch_size,)
-        ).index_add(
-            0,
-            rows,
-            exponentials,
-        )
+        denominator = exponentials.new_zeros((batch_size,))
+        denominator.index_add_(0, rows, exponentials)
         weights = exponentials / torch.clamp(
             denominator.index_select(0, rows),
             min=1.0e-6,
         )
-        return entities.new_zeros(
-            (batch_size, entities.shape[1])
-        ).index_add(
-            0,
-            rows,
-            entities * weights.unsqueeze(1),
-        )
+        pooled = entities.new_zeros((batch_size, entities.shape[1]))
+        pooled.index_add_(0, rows, entities * weights.unsqueeze(1))
+        return pooled
 
 
 class _MaskedScalarPool(nn.Module):
