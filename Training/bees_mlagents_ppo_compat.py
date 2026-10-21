@@ -5312,6 +5312,9 @@ def _poca_full_cuda_graph_update(
         _POCA_TIMING_STATE.graph_replays = int(
             getattr(_POCA_TIMING_STATE, "graph_replays", 0)
         ) + 1
+        _POCA_TIMING_STATE.graph_full_replays = int(
+            getattr(_POCA_TIMING_STATE, "graph_full_replays", 0)
+        ) + 1
         _poca_record_timing(
             "cuda_graph_replay_submit",
             time.perf_counter() - replay_started,
@@ -5516,6 +5519,9 @@ def _poca_full_cuda_graph_update(
     _POCA_TIMING_STATE.graph_captures = int(
         getattr(_POCA_TIMING_STATE, "graph_captures", 0)
     ) + 1
+    _POCA_TIMING_STATE.graph_full_captures = int(
+        getattr(_POCA_TIMING_STATE, "graph_full_captures", 0)
+    ) + 1
     _poca_record_timing(
         "cuda_graph_capture",
         time.perf_counter() - capture_started,
@@ -5660,6 +5666,9 @@ def _poca_optimizer_step(optimizer, *, graph_eligible: bool = False) -> None:
         _POCA_TIMING_STATE.graph_replays = int(
             getattr(_POCA_TIMING_STATE, "graph_replays", 0)
         ) + 1
+        _POCA_TIMING_STATE.graph_adam_replays = int(
+            getattr(_POCA_TIMING_STATE, "graph_adam_replays", 0)
+        ) + 1
         _poca_record_timing(
             "cuda_graph_replay_submit",
             time.perf_counter() - replay_started,
@@ -5679,6 +5688,9 @@ def _poca_optimizer_step(optimizer, *, graph_eligible: bool = False) -> None:
     state["captures"] += 1
     _POCA_TIMING_STATE.graph_captures = int(
         getattr(_POCA_TIMING_STATE, "graph_captures", 0)
+    ) + 1
+    _POCA_TIMING_STATE.graph_adam_captures = int(
+        getattr(_POCA_TIMING_STATE, "graph_adam_captures", 0)
     ) + 1
     _poca_record_timing(
         "cuda_graph_capture",
@@ -6710,6 +6722,10 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         _POCA_TIMING_STATE.graph_skips = 0
         _POCA_TIMING_STATE.graph_memory_skips = 0
         _POCA_TIMING_STATE.graph_layout_skips = 0
+        _POCA_TIMING_STATE.graph_full_captures = 0
+        _POCA_TIMING_STATE.graph_full_replays = 0
+        _POCA_TIMING_STATE.graph_adam_captures = 0
+        _POCA_TIMING_STATE.graph_adam_replays = 0
         self.optimizer.optimizer._bees_full_cuda_graph_disabled = False
         self.optimizer.optimizer._bees_graph_cache_trimmed = False
         _POCA_TIMING_STATE.parallel_streams = ()
@@ -7216,6 +7232,10 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                 f"graph_skips={int(getattr(_POCA_TIMING_STATE, 'graph_skips', 0))} "
                 f"graph_memory_skips={int(getattr(_POCA_TIMING_STATE, 'graph_memory_skips', 0))} "
                 f"graph_layout_skips={int(getattr(_POCA_TIMING_STATE, 'graph_layout_skips', 0))} "
+                f"graph_full_captures={int(getattr(_POCA_TIMING_STATE, 'graph_full_captures', 0))} "
+                f"graph_full_replays={int(getattr(_POCA_TIMING_STATE, 'graph_full_replays', 0))} "
+                f"graph_adam_captures={int(getattr(_POCA_TIMING_STATE, 'graph_adam_captures', 0))} "
+                f"graph_adam_replays={int(getattr(_POCA_TIMING_STATE, 'graph_adam_replays', 0))} "
                 f"graph_capture={_poca_average_timing('cuda_graph_capture'):.6f} "
                 f"graph_input_copy={_poca_average_timing('cuda_graph_input_copy'):.6f} "
                 f"graph_replay_submit={_poca_average_timing('cuda_graph_replay_submit'):.6f} "
