@@ -284,10 +284,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         os.environ["NSYS_NVTX_PROFILER_REGISTER_ONLY"] = "0"
         print(
             f"[Bees Nsight] capturing one warmed-up PPO minibatch; "
-            f"report={output}.nsys-rep", flush=True
+            f"report_prefix={output}", flush=True
         )
-        # --capture-range-end=stop (not stop-shutdown) keeps the child learner
-        # alive, allowing the managed trainer to continue its checkpoint lineage.
+        # One asynchronous report is written when the NVTX range closes,
+        # without shutting down Nsight or terminating the learner.
+        # The managed service must keep owning the launched process until
+        # training actually ends, so avoid stop-shutdown here.
         return [
             str(executable), "profile",
             # Nsight Systems on Windows does not offer osrt tracing.
@@ -296,10 +298,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 "cuda,nvtx" if os.name == "nt" else "cuda,nvtx,osrt"
             ),
             "--sample=none",
+            # CPU context-switch collection on Windows requires elevation.
+            # It is not needed for the CUDA/NVTX kernel-launch timeline.
+            "--cpuctxsw=none",
             "--capture-range=nvtx",
             "--nvtx-capture=BeesPpoSample@*",
-            "--capture-range-end=stop",
-            "--kill=none",
+            "--capture-range-end=repeat:1:async",
+            # Nsight Systems Windows CLI accepts booleans rather than the
+            # Linux signals/none options. Never kill the training process.
+            "--kill=" + ("false" if os.name == "nt" else "none"),
             "--output=" + str(output),
             *command,
         ]
