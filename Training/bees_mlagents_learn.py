@@ -23,6 +23,7 @@ import copy
 import json
 import logging
 import os
+import re
 from pathlib import Path
 import signal
 import sys
@@ -126,13 +127,36 @@ class _LiveLogSink:
     def __init__(self, path: Path) -> None:
         self.path = path
         self._lock = threading.Lock()
+        self.restart_path = path.with_name("learner-restart.json")
+        self.restart = {
+            "schema_version": 1,
+            "pid": os.getpid(),
+            "run_id": os.environ.get("BEES_TRAINING_RUN_ID", "").strip(),
+            "started_unix_seconds": time.time(),
+            # Initial runs begin at zero. An actual checkpoint resume is
+            # recorded from ML-Agents' authoritative resume log message.
+            "resumed_step": 0,
+        }
+        try:
+            _atomic_json(self.restart_path, self.restart)
+        except OSError:
+            pass
 
     def write(self, value: str) -> None:
         text = str(value)
         if not text:
             return
         encoded = text.encode("utf-8", errors="replace")
+        resume_match = re.search(r"Resuming training from step\s+([\d,]+)", text)
         with self._lock:
+            if resume_match is not None:
+                step = int(resume_match.group(1).replace(",", ""))
+                if step != self.restart["resumed_step"]:
+                    self.restart["resumed_step"] = step
+                    try:
+                        _atomic_json(self.restart_path, self.restart)
+                    except OSError:
+                        pass
             try:
                 self.path.parent.mkdir(parents=True, exist_ok=True)
                 current = self.path.stat().st_size if self.path.is_file() else 0
