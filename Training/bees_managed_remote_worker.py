@@ -1136,7 +1136,7 @@ class RuntimeUpdater:
             ]
             if not bool(getattr(self.args, "auto_envs", False)):
                 command.extend(["--envs", str(self.args.envs)])
-        if self.args.torch_threads is not None:
+        if getattr(self.args, "torch_threads", None) is not None:
             command.extend(["-TorchThreads" if os.name == "nt" else "--torch-threads",
                             str(self.args.torch_threads)])
         environment = os.environ.copy()
@@ -2117,7 +2117,7 @@ def _worker_command(args: argparse.Namespace, root: Path, actor_key: str) -> lis
         "--upload-workers",
         str(args.upload_workers),
     ])
-    if args.torch_threads is not None:
+    if getattr(args, "torch_threads", None) is not None:
         command.extend(["--torch-threads", str(args.torch_threads)])
     return command
 
