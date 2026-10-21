@@ -1257,7 +1257,9 @@ def main() -> None:
         restore_structured_policy(structured_policy_state)
         raise
     print("[Bees RL] Structured shared-faction entity/weapon policy: enabled")
-    print("[Bees RL] Existing MA-POCA critic/checkpoint architecture: preserved")
+    print("[Bees RL] Critic: standard ML-Agents MA-POCA (NOT factorized)")
+    print("[Bees RL] PPO: actor and critic update every minibatch of every epoch; "
+          "effective minibatch count is logged at PPO update begin")
     print("[Bees RL] MA-POCA inverse-group-size gradient balancing: enabled")
     print("[Bees RL] Inactive weapon-action masking: enabled")
     print("[Bees RL] Continuous sigma guard: enabled")

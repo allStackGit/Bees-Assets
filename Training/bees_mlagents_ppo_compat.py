@@ -6462,6 +6462,61 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             self._bees_poca_update_executor = None
         return original_poca_save_model(self)
 
+    def configure_fused_cuda_adam(optimizer):
+        """Enable PyTorch 2.1 CUDA fused Adam on the existing optimizer state.
+
+        Optimizer moments and step counts remain unchanged. ML-Agents normally
+        initializes its Adam before restoring its checkpoint; an ordinary Adam
+        checkpoint can contain CPU step counters which fused CUDA Adam requires
+        on the same device as the parameters.
+        """
+        from mlagents.torch_utils import torch
+
+        adam = getattr(optimizer, "optimizer", None)
+        if not isinstance(adam, torch.optim.Adam):
+            return "not-adam"
+        if _POCA_OPTIMIZATIONS.cuda_graphs:
+            return "cuda-graphs-enabled"
+        groups = adam.param_groups
+        parameters = [param for group in groups for param in group["params"]]
+        if not parameters or any(
+            param.device.type != "cuda" or param.dtype != torch.float32
+            for param in parameters
+        ):
+            return "unsupported-device-or-dtype"
+        if any(
+            group.get("differentiable", False)
+            for group in groups
+        ):
+            return "differentiable-adam"
+        if all(group.get("fused") is True for group in groups):
+            return "already-enabled"
+
+        # The loaded step value is deliberately not incremented or reset.
+        # GPU transfer is only necessary for counters loaded/created by the
+        # non-fused Adam implementation.
+        for param in parameters:
+            state = adam.state.get(param)
+            if state and "step" in state:
+                step = state["step"]
+                if not torch.is_tensor(step):
+                    step = torch.tensor(float(step), dtype=torch.float32)
+                state["step"] = step.to(
+                    device=param.device, dtype=torch.float32
+                )
+        for group in groups:
+            group["foreach"] = False
+            group["fused"] = True
+        adam.defaults["foreach"] = False
+        adam.defaults["fused"] = True
+        adam._step_supports_amp_scaling = True
+        print(
+            "[Bees PPO kernel] fused CUDA Adam enabled "
+            f"parameters={len(parameters)} state=preserved",
+            flush=True,
+        )
+        return "enabled"
+
     def weighted_poca_update_policy(self):
         """ML-Agents 1.1.0 on-policy update with cached feed-forward minibatch tensors."""
 
@@ -6474,23 +6529,20 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         if async_buffer is None:
             self.cumulative_returns_since_policy_update.clear()
 
-        factorized_poca = bool(
-            getattr(
-                self.optimizer,
-                "_bees_factorized_poca",
-                False,
-            )
-        )
-        if factorized_poca:
-            from bees_mlagents_factorized_poca import (
-                GROUP_COMPACT_WIDTH,
+        fused_adam = configure_fused_cuda_adam(self.optimizer)
+        if fused_adam not in ("enabled", "already-enabled"):
+            print(
+                "[Bees PPO kernel] fused CUDA Adam inactive "
+                f"reason={fused_adam}",
+                flush=True,
             )
 
-            group_observation_width = int(
-                GROUP_COMPACT_WIDTH
-            )
-        else:
-            group_observation_width = BEES_OBSERVATION_SIZE
+        # The Bees learner installs the stock MA-POCA critic. The retired
+        # factorized-critic experiment must never silently change PPO semantics.
+        if getattr(self.optimizer, "_bees_factorized_poca", False):
+            raise RuntimeError("Retired factorized MA-POCA critic is not supported")
+        factorized_poca = False
+        group_observation_width = BEES_OBSERVATION_SIZE
 
         batch_size = (
             self.hyperparameters.batch_size
@@ -6580,42 +6632,10 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
 
         num_epoch = self.hyperparameters.num_epoch
         batch_update_stats = defaultdict(list)
-        actor_single_epoch = bool(
-            getattr(self.optimizer, "_bees_factorized_poca", False)
-        )
-        factorized_critic = (
-            getattr(self.optimizer, "critic", None)
-            if actor_single_epoch
-            else None
-        )
-        actor_training_enabled = bool(
-            factorized_critic is None
-            or not hasattr(
-                factorized_critic,
-                "actor_training_enabled",
-            )
-            or factorized_critic.actor_training_enabled()
-        )
-        critic_batch_size = (
-            min(buffer_length, batch_size * 2)
-            if actor_single_epoch
-            else batch_size
-        )
-
-        def epoch_batch_size(epoch_index: int) -> int:
-            actor_epoch = bool(
-                actor_training_enabled
-                and (
-                    not actor_single_epoch
-                    or epoch_index == 0
-                )
-            )
-            return batch_size if actor_epoch else critic_batch_size
-
-        total_minibatches = sum(
-            buffer_length // epoch_batch_size(epoch_index)
-            for epoch_index in range(num_epoch)
-        )
+        # One optimizer update per minibatch per epoch: actor and critic both
+        # train in all configured epochs. Do not count minibatches based on
+        # retired factorized-critic logic.
+        total_minibatches = num_epoch * (buffer_length // batch_size)
         cpu_preparer = (
             _PocaCpuMinibatchPreparer(tensor_cache)
             if tensor_cache is not None
@@ -6633,8 +6653,8 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             print(
                 "[Bees PPO timing] update begin "
                 f"buffer={buffer_length} actor_batch={batch_size} "
-                f"critic_batch={critic_batch_size} epochs={num_epoch} "
-                f"actor_epochs={1 if actor_single_epoch and actor_training_enabled else (0 if actor_single_epoch else num_epoch)} "
+                f"critic_batch={batch_size} epochs={num_epoch} "
+                f"actor_epochs={num_epoch} critic_epochs={num_epoch} "
                 f"minibatches={total_minibatches} "
                 f"factorized={'on' if factorized_poca else 'off'} "
                 f"group_width={group_observation_width} "
@@ -6720,14 +6740,8 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         hardware_summary = {}
         try:
             for _epoch_index in range(num_epoch):
-                _POCA_UPDATE_CACHE_STATE.actor_update = bool(
-                    actor_training_enabled
-                    and (
-                        not actor_single_epoch
-                        or _epoch_index == 0
-                    )
-                )
-                current_batch_size = epoch_batch_size(_epoch_index)
+                _POCA_UPDATE_CACHE_STATE.actor_update = True
+                current_batch_size = batch_size
                 current_n_sequences = max(
                     int(
                         current_batch_size
