@@ -5337,7 +5337,12 @@ def _poca_full_cuda_graph_update(
     if device_index is None:
         device_index = torch.cuda.current_device()
     device_index = int(device_index)
-    torch.cuda.empty_cache()
+    # A repeated empty_cache() on each of 48 minibatches can force WDDM
+    # allocator churn precisely when graph capture is already memory-limited.
+    # Probe a fresh driver-free budget once per PPO update, then reuse it.
+    if not getattr(optimizer, "_bees_graph_cache_trimmed", False):
+        torch.cuda.empty_cache()
+        optimizer._bees_graph_cache_trimmed = True
     free_bytes, _total_bytes = torch.cuda.mem_get_info(device_index)
     if int(free_bytes) < 768 * 1024 * 1024:
         _POCA_TIMING_STATE.graph_skips = int(
@@ -6706,6 +6711,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         _POCA_TIMING_STATE.graph_memory_skips = 0
         _POCA_TIMING_STATE.graph_layout_skips = 0
         self.optimizer.optimizer._bees_full_cuda_graph_disabled = False
+        self.optimizer.optimizer._bees_graph_cache_trimmed = False
         _POCA_TIMING_STATE.parallel_streams = ()
         _POCA_TIMING_STATE.dedup_input_rows = 0
         _POCA_TIMING_STATE.dedup_unique_rows = 0
