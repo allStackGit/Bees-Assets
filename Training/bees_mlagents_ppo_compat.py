@@ -4826,9 +4826,18 @@ def _poca_prepare_cuda_capturable_adam(optimizer) -> bool:
         for group in optimizer.param_groups
         for parameter in group["params"]
     ]
-    if not parameters:
+    # Frozen ML-Agents export metadata can live on CPU in the same group as
+    # the model weights. Adam ignores parameters without gradients, so only
+    # parameters that could be stepped constrain CUDA graph eligibility.
+    graph_parameters = [
+        parameter for parameter in parameters
+        if parameter.requires_grad or parameter.grad is not None
+    ]
+    if not graph_parameters:
         return False
-    if not torch.cuda.is_available() or any(parameter.device.type != "cuda" for parameter in parameters):
+    if not torch.cuda.is_available() or any(
+        parameter.device.type != "cuda" for parameter in graph_parameters
+    ):
         # A CUDA checkpoint can retain capturable=True in Adam's param groups.
         # CPU Adam cannot use that mode; keep its moments and step counters intact.
         for group in optimizer.param_groups:
@@ -4854,23 +4863,22 @@ def _poca_prepare_cuda_capturable_adam(optimizer) -> bool:
     if getattr(optimizer, "_bees_capturable_adam_prepared", False):
         return True
 
-    for group in optimizer.param_groups:
-        for parameter in group["params"]:
-            parameter_state = optimizer.state.get(parameter)
-            if not parameter_state:
-                continue
-            step = parameter_state.get("step")
-            if step is None:
-                continue
-            if torch.is_tensor(step):
-                if step.device != parameter.device:
-                    parameter_state["step"] = step.to(device=parameter.device)
-            else:
-                parameter_state["step"] = torch.tensor(
-                    float(step),
-                    dtype=torch.float,
-                    device=parameter.device,
-                )
+    for parameter in graph_parameters:
+        parameter_state = optimizer.state.get(parameter)
+        if not parameter_state:
+            continue
+        step = parameter_state.get("step")
+        if step is None:
+            continue
+        if torch.is_tensor(step):
+            if step.device != parameter.device:
+                parameter_state["step"] = step.to(device=parameter.device)
+        else:
+            parameter_state["step"] = torch.tensor(
+                float(step),
+                dtype=torch.float,
+                device=parameter.device,
+            )
 
     optimizer._bees_capturable_adam_prepared = True
     return True
@@ -5547,7 +5555,16 @@ def _poca_optimizer_step(optimizer, *, graph_eligible: bool = False) -> None:
         for group in optimizer.param_groups
         for parameter in group["params"]
     ]
-    if not torch.cuda.is_available() or any(p.device.type != "cuda" for p in parameters):
+    trainable = [parameter for parameter in parameters if parameter.requires_grad]
+    if (
+        not trainable
+        or not torch.cuda.is_available()
+        or any(parameter.device.type != "cuda" for parameter in trainable)
+        or any(
+            not parameter.requires_grad and parameter.grad is not None
+            for parameter in parameters
+        )
+    ):
         _poca_prepare_cuda_capturable_adam(optimizer)
         optimizer.step()
         return
