@@ -372,6 +372,15 @@ def _normalize_resume_safe_generation_settings(text: str) -> Any:
             checkpoint_count += 1
             normalized.append(" " * indent + "checkpoint_interval: <runtime-checkpoint-interval>")
             continue
+        # These settings affect rollout scheduling, SGD cadence or checkpoint
+        # retention, not the shape of stored neural-network/optimizer tensors.
+        if re.fullmatch(r"threaded:\s*(?:true|false)\s*(?:#.*)?", stripped, re.IGNORECASE):
+            normalized.append(" " * indent + "threaded: <runtime-threaded>")
+            continue
+        if re.fullmatch(r"(num_epoch|time_horizon|keep_checkpoints):\s*\d+\s*(?:#.*)?", stripped):
+            key = stripped.split(":", 1)[0]
+            normalized.append(" " * indent + f"{key}: <runtime-{key}>")
+            continue
         step_match = re.fullmatch(
             r"(summary_freq|save_steps|team_change|swap_steps):\s*\d+\s*(?:#.*)?",
             stripped,
@@ -418,6 +427,33 @@ def _normalize_resume_safe_generation_settings(text: str) -> Any:
     return yaml.safe_load("\n".join(normalized))
 
 
+def _generation_config_differences(existing: str, requested: str) -> str:
+    """Summarize actual YAML setting changes, excluding comments and formatting."""
+    import yaml
+
+    previous = yaml.safe_load(existing)
+    current = yaml.safe_load(requested)
+    differences = []
+
+    def walk(before, after, path):
+        if isinstance(before, dict) and isinstance(after, dict):
+            for key in sorted(set(before) | set(after), key=str):
+                walk(
+                    before.get(key, "<absent>"),
+                    after.get(key, "<absent>"),
+                    f"{path}.{key}" if path else str(key),
+                )
+        elif before != after:
+            differences.append(f"{path}: {before!r} -> {after!r}")
+
+    walk(previous, current, "")
+    if not differences:
+        return "no YAML value changes (runtime revision may be stale)"
+    return "; ".join(differences[:12]) + (
+        f"; and {len(differences) - 12} more" if len(differences) > 12 else ""
+    )
+
+
 def _same_generation_config_semantics(existing: bytes, requested: bytes) -> bool:
     """Only reuse an immutable YAML config when its actual settings match."""
     import yaml
@@ -428,7 +464,11 @@ def _same_generation_config_semantics(existing: bytes, requested: bytes) -> bool
 def _write_immutable_generation_config(path: Path, body: bytes) -> Path:
     if path.exists():
         if not _same_generation_config_semantics(path.read_bytes(), body):
-            raise ValueError(f"Immutable generation trainer config conflict: {path}")
+            raise ValueError(
+                f"Immutable generation trainer config conflict: {path}; "
+                f"YAML differences: {_generation_config_differences(path.read_text(encoding='utf-8'), body.decode('utf-8'))}; "
+                f"service_source={Path(__file__).resolve()}"
+            )
         return path
     path.parent.mkdir(parents=True, exist_ok=True)
     try:
@@ -438,7 +478,11 @@ def _write_immutable_generation_config(path: Path, body: bytes) -> Path:
             os.fsync(handle.fileno())
     except FileExistsError:
         if not _same_generation_config_semantics(path.read_bytes(), body):
-            raise ValueError(f"Immutable generation trainer config conflict: {path}")
+            raise ValueError(
+                f"Immutable generation trainer config conflict: {path}; "
+                f"YAML differences: {_generation_config_differences(path.read_text(encoding='utf-8'), body.decode('utf-8'))}; "
+                f"service_source={Path(__file__).resolve()}"
+            )
     return path
 
 
@@ -461,6 +505,13 @@ def write_generation_config(options: ServiceOptions, index: int) -> Path:
     body = rewrite_max_steps(source, target_steps).encode("utf-8")
     config_root = _service_root(options) / "trainer-configs"
     destination = config_root / f"{generation_id(index)}.yaml"
+    if destination.exists():
+        print(
+            "[Bees continuous] reconciling saved generation trainer configuration "
+            f"service_source={Path(__file__).resolve()} "
+            f"saved={destination}",
+            flush=True,
+        )
     if (not destination.exists() or _same_generation_config_semantics(destination.read_bytes(), body)):
         return _write_immutable_generation_config(destination, body)
 
@@ -525,15 +576,48 @@ def write_generation_config(options: ServiceOptions, index: int) -> Path:
             if requested != previous:
                 suffix_parts.append(f"{key.replace('_', '-')}-{requested}")
 
+        # Previously immutable generations may have been written with different
+        # execution-only settings. Keep those revisions distinguishable without
+        # modifying their original audited YAML.
+        import yaml
+
+        saved = yaml.safe_load(existing_text)["behaviors"]
+        requested = yaml.safe_load(candidate_text)["behaviors"]
+        if set(saved) != set(requested):
+            raise ValueError(
+                f"Immutable generation trainer config conflict: {destination}; "
+                "behavior IDs changed"
+            )
+        for behavior_id in sorted(saved):
+            before = saved[behavior_id]
+            after = requested[behavior_id]
+            for key in ("threaded", "time_horizon", "keep_checkpoints"):
+                if before.get(key) != after.get(key):
+                    suffix_parts.append(f"{key.replace('_', '-')}-{str(after.get(key)).lower()}")
+            if before.get("hyperparameters", {}).get("num_epoch") != after.get("hyperparameters", {}).get("num_epoch"):
+                suffix_parts.append(
+                    f"epochs-{after.get('hyperparameters', {}).get('num_epoch')}"
+                )
+
         if suffix_parts:
             suffix = "-" + "-".join(suffix_parts)
             revised = config_root / f"{generation_id(index)}{suffix}.yaml"
             return _write_immutable_generation_config(revised, body)
 
+    details = _generation_config_differences(existing_text, candidate_text)
+    runtime_file = Path(__file__).resolve()
     if target_steps <= existing_target:
-        raise ValueError(f"Immutable generation trainer config conflict: {destination}")
-    if rewrite_max_steps(existing_text, target_steps).encode("utf-8") != body:
-        raise ValueError(f"Immutable generation trainer config conflict: {destination}")
+        raise ValueError(
+            f"Immutable generation trainer config conflict: {destination}; "
+            f"YAML differences: {details}; service_source={runtime_file}"
+        )
+    if _normalize_resume_safe_generation_settings(
+        rewrite_max_steps(existing_text, target_steps)
+    ) != _normalize_resume_safe_generation_settings(candidate_text):
+        raise ValueError(
+            f"Immutable generation trainer config conflict: {destination}; "
+            f"YAML differences: {details}; service_source={runtime_file}"
+        )
 
     revised = config_root / f"{generation_id(index)}-target-{target_steps}.yaml"
     return _write_immutable_generation_config(revised, body)
