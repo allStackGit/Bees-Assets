@@ -31,6 +31,7 @@ def extract_learner_optimization_args(
         learner_launcher.PPO_CRITIC_BASELINE_OVERLAP_FLAG,
         learner_launcher.PPO_CUDA_GRAPHS_FLAG,
         learner_launcher.PPO_PROFILE_FLAG,
+        "--bees-ppo-nsight",
         learner_launcher.PPO_DIAGNOSTICS_FLAG,
     }
     value_flags = {learner_launcher.PPO_STREAM_SHARDS_FLAG}
@@ -160,6 +161,24 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     raw_args, learner_optimization_args = extract_learner_optimization_args(
         raw_args
     )
+    # The profiling switch belongs to the service, not ML-Agents or Unity.
+    nsight_flag = "--bees-ppo-nsight"
+    nsight_values = [
+        arg for arg in learner_optimization_args
+        if arg == nsight_flag or arg.startswith(nsight_flag + "=")
+    ]
+    if len(nsight_values) > 1:
+        raise ValueError("Expected at most one --bees-ppo-nsight=true/false argument")
+    nsight_value = (
+        nsight_values[0].split("=", 1)[1].lower()
+        if "=" in nsight_values[0] else "true"
+    ) if nsight_values else "false"
+    if nsight_value not in ("true", "false"):
+        raise ValueError("--bees-ppo-nsight must be true or false")
+    nsight_mode = nsight_value == "true"
+    learner_optimization_args = [
+        arg for arg in learner_optimization_args if arg not in nsight_values
+    ]
     raw_args, threaded_mode, max_policy_lag = elastic.extract_threaded_options(raw_args)
     service_args, actor_options = elastic.extract_elastic_wan_options(raw_args)
     if local_only == actor_options.enabled:
@@ -224,7 +243,62 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         wan_args.extend(learner_optimization_args)
         # ML-Agents --env-args consumes the remainder of the command. Keep elastic WAN
         # trainer flags before it so only the server-owned Unity arguments reach the player.
-        return insert_wan_args_before_environment_args(command, wan_args)
+        command = insert_wan_args_before_environment_args(command, wan_args)
+        if not nsight_mode:
+            return command
+
+        import datetime
+        import os
+        import shutil
+
+        configured = os.environ.get("BEES_NSYS_EXE", "").strip()
+        candidates = [Path(configured)] if configured else []
+        discovered = shutil.which("nsys.exe" if os.name == "nt" else "nsys")
+        if discovered:
+            candidates.append(Path(discovered))
+        if os.name == "nt":
+            program_files = Path(os.environ.get("ProgramFiles", r"C:\Program Files"))
+            candidates.extend(sorted(
+                program_files.glob(
+                    "NVIDIA Corporation/Nsight Systems */target-windows-x64/nsys.exe"
+                ),
+                reverse=True,
+            ))
+        executable = next((p for p in candidates if p.is_file()), None)
+        if executable is None:
+            raise ValueError(
+                "Nsight Systems CLI not found; install it or set BEES_NSYS_EXE "
+                "to the nsys.exe path, or omit -PpoNsight."
+            )
+        output_dir = options.root / "diagnostics" / "nsight"
+        output_dir.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.datetime.now(datetime.timezone.utc).strftime(
+            "%Y%m%dT%H%M%S%fZ"
+        )
+        output = output_dir / (
+            f"{options.run_id}-{service.generation_id(index)}-{stamp}"
+        )
+        os.environ["BEES_POCA_NSIGHT_SAMPLE"] = "1"
+        # PyTorch emits ordinary NVTX string ranges, not NVTX registered
+        # strings. Enable those strings as capture triggers in Nsight.
+        os.environ["NSYS_NVTX_PROFILER_REGISTER_ONLY"] = "0"
+        print(
+            f"[Bees Nsight] capturing one warmed-up PPO minibatch; "
+            f"report={output}.nsys-rep", flush=True
+        )
+        # --capture-range-end=stop (not stop-shutdown) keeps the child learner
+        # alive, allowing the managed trainer to continue its checkpoint lineage.
+        return [
+            str(executable), "profile",
+            "--trace=cuda,nvtx,osrt",
+            "--sample=none",
+            "--capture-range=nvtx",
+            "--nvtx-capture=BeesPpoSample@*",
+            "--capture-range-end=stop",
+            "--kill=none",
+            "--output=" + str(output),
+            *command,
+        ]
 
     service.training_command = elastic_training_command
     if threaded_mode:

@@ -21,6 +21,7 @@ param(
     [switch]$PpoCriticBaselineOverlap,
     [switch]$PpoCudaGraphs,
     [switch]$PpoProfile,
+    [switch]$PpoNsight,
     [switch]$PpoDiagnostics,
     [switch]$NoWorkerDiagnostics,
     [ValidateRange(0.0,100.0)][double]$Entropy,
@@ -80,6 +81,7 @@ $ppoExperimentRequested=(
     $PpoCriticBaselineOverlap -or
     $PpoCudaGraphs -or
     $PpoProfile -or
+    $PpoNsight -or
     $PpoDiagnostics
 )
 if($ppoExperimentRequested -and $Command -ne 'runtime'){
@@ -104,6 +106,7 @@ if($PpoControl -and (
     $PpoCriticBaselineOverlap -or
     $PpoCudaGraphs -or
     $PpoProfile -or
+    $PpoNsight -or
     $PpoDiagnostics
 )){
     throw '-PpoControl cannot be combined with PPO optimization options.'
@@ -170,6 +173,7 @@ if($PpoPrefetch){$arguments+='--ppo-prefetch'}
 if($PpoCriticBaselineOverlap){$arguments+='--ppo-critic-baseline-overlap'}
 if($PpoCudaGraphs){$arguments+='--ppo-cuda-graphs'}
 if($PpoProfile){$arguments+='--ppo-profile'}
+if($PpoNsight){$arguments+='--ppo-nsight'}
 if($PpoDiagnostics){$arguments+='--ppo-diagnostics'}
 if($NoWorkerDiagnostics){$arguments+='--no-worker-diagnostics'}
 if($PSBoundParameters.ContainsKey('Entropy')){

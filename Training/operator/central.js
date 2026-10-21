@@ -133,6 +133,9 @@ function buildCentralLearnerArgv(config, learnerPython, unity, runtimeRoot) {
         '--bees-ppo-profile=' + (
             learnerOptimizations.profileOnce ? 'true' : 'false'
         ),
+        '--bees-ppo-nsight=' + (
+            learnerOptimizations.nsightOnce ? 'true' : 'false'
+        ),
         '--bees-ppo-diagnostics=' + (
             learnerOptimizations.detailedDiagnostics ? 'true' : 'false'
         ),

@@ -335,6 +335,7 @@ function normalizeLearnerOptimizations(value, fallback = null) {
             criticBaselineOverlap: false,
             cudaGraphs: false,
             profileOnce: false,
+            nsightOnce: false,
             detailedDiagnostics: false,
         };
     const source = value && typeof value === 'object' ? value : base;
@@ -367,6 +368,9 @@ function normalizeLearnerOptimizations(value, fallback = null) {
         ),
         profileOnce: Boolean(
             source.profileOnce == null ? base.profileOnce : source.profileOnce
+        ),
+        nsightOnce: Boolean(
+            source.nsightOnce == null ? base.nsightOnce : source.nsightOnce
         ),
         detailedDiagnostics: Boolean(
             source.detailedDiagnostics == null

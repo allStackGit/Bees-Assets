@@ -140,6 +140,9 @@ _POCA_ASYNC_UPDATE_STATE = threading.local()
 _POCA_UPDATE_BUSY_LOCK = threading.Lock()
 _POCA_PROFILE_LOCK = threading.Lock()
 _POCA_PROFILE_CLAIMED = False
+_POCA_NSIGHT_CAPTURE_CLAIMED = False
+_POCA_NSIGHT_CAPTURE_LOCK = threading.Lock()
+_POCA_NSIGHT_STATE = threading.local()
 _POCA_UPDATE_BUSY_SECONDS_TOTAL = 0.0
 _POCA_TRAJECTORY_TIMING_LOCK = threading.Lock()
 _POCA_TRAJECTORY_TIMING = {
@@ -167,6 +170,39 @@ def _record_poca_update_busy_seconds(seconds: float) -> None:
     value = max(0.0, float(seconds))
     with _POCA_UPDATE_BUSY_LOCK:
         _POCA_UPDATE_BUSY_SECONDS_TOTAL += value
+
+
+def _poca_nsight_claim_minibatch() -> bool:
+    """Select the first warmed-up minibatch of this learner process."""
+    global _POCA_NSIGHT_CAPTURE_CLAIMED
+    if os.environ.get("BEES_POCA_NSIGHT_SAMPLE") != "1":
+        return False
+    from mlagents.torch_utils import torch
+
+    if not torch.cuda.is_available():
+        return False
+    with _POCA_NSIGHT_CAPTURE_LOCK:
+        if _POCA_NSIGHT_CAPTURE_CLAIMED:
+            return False
+        _POCA_NSIGHT_CAPTURE_CLAIMED = True
+        return True
+
+
+def _poca_nsight_begin(name: str) -> bool:
+    """Annotate CUDA work only during the explicitly requested sample."""
+    if not getattr(_POCA_NSIGHT_STATE, "active", False):
+        return False
+    from mlagents.torch_utils import torch
+
+    torch.cuda.nvtx.range_push(name)
+    return True
+
+
+def _poca_nsight_end(active: bool) -> None:
+    if active:
+        from mlagents.torch_utils import torch
+
+        torch.cuda.nvtx.range_pop()
 
 
 def _poca_profile_pending() -> bool:
@@ -6975,6 +7011,22 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                         # ML-Agents optimizer signature without copying fields.
                         minibatch = update_buffer
 
+                    # Capture one representative minibatch after two
+                    # warmups. Only this opt-in sample performs a final CUDA
+                    # synchronize so Nsight includes all queued kernels.
+                    nsight_sample = (
+                        completed_minibatches == 3
+                        and _poca_nsight_claim_minibatch()
+                    )
+                    if nsight_sample:
+                        from mlagents.torch_utils import torch
+
+                        torch.cuda.nvtx.range_push("BeesPpoSample")
+                        _POCA_NSIGHT_STATE.active = True
+                        print(
+                            "[Bees Nsight] capture started PPO minibatch=3",
+                            flush=True,
+                        )
                     try:
                         update_stats = self.optimizer.update(
                             minibatch,
@@ -6983,6 +7035,17 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                     finally:
                         _POCA_UPDATE_CACHE_STATE.indices = None
                         _POCA_UPDATE_CACHE_STATE.minibatch = None
+                        if nsight_sample:
+                            try:
+                                torch.cuda.synchronize()
+                            finally:
+                                _POCA_NSIGHT_STATE.active = False
+                                torch.cuda.nvtx.range_pop()
+                            print(
+                                "[Bees Nsight] capture range closed; "
+                                "training continues normally",
+                                flush=True,
+                            )
 
                     reward_started = time.perf_counter()
                     if tensor_cache is None:
@@ -7780,13 +7843,17 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             if actor_update:
                 started = time.perf_counter()
                 cuda_timing = _poca_cuda_timing_begin("actor_get_stats")
-                run_out = self.policy.actor.get_stats(
-                    current_obs,
-                    actions,
-                    masks=act_masks,
-                    memories=memories,
-                    sequence_length=self.policy.sequence_length,
-                )
+                nvtx = _poca_nsight_begin("Bees:actor_forward")
+                try:
+                    run_out = self.policy.actor.get_stats(
+                        current_obs,
+                        actions,
+                        masks=act_masks,
+                        memories=memories,
+                        sequence_length=self.policy.sequence_length,
+                    )
+                finally:
+                    _poca_nsight_end(nvtx)
                 _poca_cuda_timing_end(cuda_timing)
                 log_probs = run_out["log_probs"]
                 entropy = run_out["entropy"]
@@ -7798,22 +7865,30 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             started = time.perf_counter()
             cuda_timing = _poca_cuda_timing_begin("critic_pass")
             all_obs = [current_obs] + groupmate_obs
-            values, _ = self.critic.critic_pass(
-                all_obs,
-                memories=value_memories,
-                sequence_length=self.policy.sequence_length,
-            )
+            nvtx = _poca_nsight_begin("Bees:critic_forward")
+            try:
+                values, _ = self.critic.critic_pass(
+                    all_obs,
+                    memories=value_memories,
+                    sequence_length=self.policy.sequence_length,
+                )
+            finally:
+                _poca_nsight_end(nvtx)
             _poca_cuda_timing_end(cuda_timing)
             _poca_record_timing("critic_pass", time.perf_counter() - started)
 
             started = time.perf_counter()
             cuda_timing = _poca_cuda_timing_begin("baseline")
-            baselines, _ = self.critic.baseline(
-                current_obs,
-                (groupmate_obs, groupmate_actions),
-                memories=baseline_memories,
-                sequence_length=self.policy.sequence_length,
-            )
+            nvtx = _poca_nsight_begin("Bees:critic_baseline")
+            try:
+                baselines, _ = self.critic.baseline(
+                    current_obs,
+                    (groupmate_obs, groupmate_actions),
+                    memories=baseline_memories,
+                    sequence_length=self.policy.sequence_length,
+                )
+            finally:
+                _poca_nsight_end(nvtx)
             _poca_cuda_timing_end(cuda_timing)
             _poca_record_timing("baseline", time.perf_counter() - started)
         else:
@@ -7899,7 +7974,11 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
 
         started = time.perf_counter()
         cuda_timing = _poca_cuda_timing_begin("backward")
-        loss.backward()
+        nvtx = _poca_nsight_begin("Bees:backward")
+        try:
+            loss.backward()
+        finally:
+            _poca_nsight_end(nvtx)
         _poca_cuda_timing_end(cuda_timing)
         parallel_streams = getattr(_POCA_TIMING_STATE, "parallel_streams", ())
         if parallel_streams:
@@ -7915,10 +7994,14 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
 
         started = time.perf_counter()
         cuda_timing = _poca_cuda_timing_begin("optimizer_step")
-        _poca_optimizer_step(
-            self.optimizer,
-            graph_eligible=graph_eligible,
-        )
+        nvtx = _poca_nsight_begin("Bees:optimizer_step")
+        try:
+            _poca_optimizer_step(
+                self.optimizer,
+                graph_eligible=graph_eligible,
+            )
+        finally:
+            _poca_nsight_end(nvtx)
         _poca_cuda_timing_end(cuda_timing)
         _poca_record_timing("optimizer_step", time.perf_counter() - started)
         _POCA_TIMING_STATE.parallel_streams = ()

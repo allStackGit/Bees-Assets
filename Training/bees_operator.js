@@ -101,6 +101,7 @@ function parseArgs(argv = process.argv.slice(2)) {
         ppoCriticBaselineOverlap: false,
         ppoCudaGraphs: false,
         ppoProfile: false,
+        ppoNsight: false,
         ppoDiagnostics: false,
         noWorkerDiagnostics: false,
         explicitLearnerOptimizations: false,
@@ -235,6 +236,9 @@ function parseArgs(argv = process.argv.slice(2)) {
         } else if (arg === '--ppo-profile') {
             options.ppoProfile = true;
             options.explicitLearnerOptimizations = true;
+        } else if (arg === '--ppo-nsight') {
+            options.ppoNsight = true;
+            options.explicitLearnerOptimizations = true;
         } else if (arg === '--ppo-diagnostics') {
             options.ppoDiagnostics = true;
             options.explicitLearnerOptimizations = true;
@@ -362,6 +366,7 @@ function parseArgs(argv = process.argv.slice(2)) {
             options.ppoCriticBaselineOverlap ||
             options.ppoCudaGraphs ||
             options.ppoProfile ||
+            options.ppoNsight ||
             options.ppoDiagnostics
         )
     ) {
