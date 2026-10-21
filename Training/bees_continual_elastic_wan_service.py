@@ -290,7 +290,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         # alive, allowing the managed trainer to continue its checkpoint lineage.
         return [
             str(executable), "profile",
-            "--trace=cuda,nvtx,osrt",
+            # Nsight Systems on Windows does not offer osrt tracing.
+            # Keep CUDA API/kernel events and the NVTX PPO stage annotations.
+            "--trace=" + (
+                "cuda,nvtx" if os.name == "nt" else "cuda,nvtx,osrt"
+            ),
             "--sample=none",
             "--capture-range=nvtx",
             "--nvtx-capture=BeesPpoSample@*",
