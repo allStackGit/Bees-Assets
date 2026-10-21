@@ -5271,7 +5271,16 @@ def _poca_full_cuda_graph_update(
         for parameter in group["params"]
         if parameter.requires_grad
     ]
-    if any(not optimizer.state.get(parameter) for parameter in trainable):
+    # Adam has no optimizer state for unused POCA modules (for example,
+    # groupmate-only paths when every episode is 1v1). Require state only
+    # for parameters that actually participated in the preceding backward.
+    active = [
+        parameter for parameter in trainable
+        if parameter.grad is not None
+    ]
+    if not active or any(
+        not optimizer.state.get(parameter) for parameter in active
+    ):
         _POCA_TIMING_STATE.graph_warmups = int(
             getattr(_POCA_TIMING_STATE, "graph_warmups", 0)
         ) + 1
@@ -5379,10 +5388,9 @@ def _poca_full_cuda_graph_update(
         return None
     state["candidate_hits"] += 1
 
+    # Do not synthesize zero gradients for inactive parameters. Doing so
+    # would change Adam's momentum, step counters, and checkpoint lineage.
     _poca_prepare_cuda_capturable_adam(optimizer)
-    for parameter in trainable:
-        if parameter.grad is None:
-            parameter.grad = torch.zeros_like(parameter)
 
     static = live
     previous_group_plan = getattr(
@@ -5594,29 +5602,15 @@ def _poca_optimizer_step(optimizer, *, graph_eligible: bool = False) -> None:
             "captures": 0,
             "replays": 0,
             "warmups": 0,
-            "stable_grads": False,
+            "grad_buffers": None,
         }
         optimizer._bees_cuda_graph_state = state
-
-    def all_parameters():
-        return [
-            parameter
-            for group in optimizer.param_groups
-            for parameter in group["params"]
-        ]
-
-    def trainable_parameters():
-        return [
-            parameter
-            for parameter in all_parameters()
-            if parameter.requires_grad
-        ]
 
     def active_parameters():
         return [
             parameter
-            for parameter in trainable_parameters()
-            if parameter.grad is not None
+            for parameter in parameters
+            if parameter.requires_grad and parameter.grad is not None
         ]
 
     def eager_step_and_invalidate() -> None:
@@ -5625,15 +5619,13 @@ def _poca_optimizer_step(optimizer, *, graph_eligible: bool = False) -> None:
         state["graph"] = None
         state["signature"] = None
         state["learning_rates"] = None
-        state["stable_grads"] = False
+        state["grad_buffers"] = None
 
     def migrate_step_state() -> None:
         _poca_prepare_cuda_capturable_adam(optimizer)
 
-    trainable = trainable_parameters()
     parameters = active_parameters()
-    complete_parameter_set = len(parameters) == len(trainable)
-    if not graph_eligible or not complete_parameter_set:
+    if not graph_eligible or not parameters:
         eager_step_and_invalidate()
         _POCA_TIMING_STATE.graph_skips = int(
             getattr(_POCA_TIMING_STATE, "graph_skips", 0)
@@ -5642,13 +5634,11 @@ def _poca_optimizer_step(optimizer, *, graph_eligible: bool = False) -> None:
 
     needs_state = any(not optimizer.state.get(parameter) for parameter in parameters)
     if not state["prepared"] or needs_state:
-        # Run this minibatch's real step eagerly so Adam can lazily allocate its
-        # moment tensors. The next fully active minibatch can retain these gradient
-        # buffers for graph replay without changing None-vs-zero gradient semantics.
+        # Let eager Adam initialize moments only for parameters that were
+        # active in this minibatch; leave unused parameters without state.
         eager_step_and_invalidate()
         migrate_step_state()
         state["prepared"] = True
-        state["stable_grads"] = True
         state["warmups"] += 1
         _POCA_TIMING_STATE.graph_warmups = int(
             getattr(_POCA_TIMING_STATE, "graph_warmups", 0)
@@ -5656,12 +5646,10 @@ def _poca_optimizer_step(optimizer, *, graph_eligible: bool = False) -> None:
         return
 
     migrate_step_state()
-    state["stable_grads"] = True
     signature = tuple(
         (
             id(parameter),
             int(parameter.data_ptr()),
-            int(parameter.grad.data_ptr()),
             tuple(parameter.shape),
             str(parameter.dtype),
         )
@@ -5678,6 +5666,12 @@ def _poca_optimizer_step(optimizer, *, graph_eligible: bool = False) -> None:
         and state["learning_rates"] == learning_rates
     ):
         replay_started = time.perf_counter()
+        # New autograd gradients are copied to graph-owned buffers only for
+        # the active subset; every other parameter retains grad=None.
+        with torch.no_grad():
+            for parameter, buffer in zip(parameters, state["grad_buffers"]):
+                buffer.copy_(parameter.grad)
+                parameter.grad = buffer
         state["graph"].replay()
         state["replays"] += 1
         _POCA_TIMING_STATE.graph_replays = int(
@@ -5692,9 +5686,15 @@ def _poca_optimizer_step(optimizer, *, graph_eligible: bool = False) -> None:
         )
         return
 
-    # Capturing executes this minibatch's real optimizer step exactly once.
-    # If capture fails, propagate the failure rather than risk double-stepping.
+    # Capture one real step with stable gradient inputs. Eager backward
+    # uses fresh gradients each minibatch, preserving missing-gradient semantics.
+    # If capture fails, propagate the error rather than double-stepping.
     capture_started = time.perf_counter()
+    grad_buffers = [torch.empty_like(parameter.grad) for parameter in parameters]
+    with torch.no_grad():
+        for parameter, buffer in zip(parameters, grad_buffers):
+            buffer.copy_(parameter.grad)
+            parameter.grad = buffer
     torch.cuda.synchronize()
     graph = torch.cuda.CUDAGraph()
     with torch.cuda.graph(graph):
@@ -5702,6 +5702,7 @@ def _poca_optimizer_step(optimizer, *, graph_eligible: bool = False) -> None:
     state["graph"] = graph
     state["signature"] = signature
     state["learning_rates"] = learning_rates
+    state["grad_buffers"] = grad_buffers
     state["captures"] += 1
     _POCA_TIMING_STATE.graph_captures = int(
         getattr(_POCA_TIMING_STATE, "graph_captures", 0)
@@ -8014,41 +8015,11 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             and not getattr(self, "_bees_factorized_poca", False)
             and _poca_cuda_graph_minibatch_eligible(cached)
         )
-        graph_state = getattr(
-            self.optimizer,
-            "_bees_cuda_graph_state",
-            None,
-        )
-        full_graph_state = getattr(
-            self.optimizer,
-            "_bees_full_cuda_graph_state",
-            None,
-        )
-        retain_graph_grads = bool(
-            (
-                getattr(
-                    self.optimizer,
-                    "_bees_full_cuda_graph_managed",
-                    False,
-                )
-                and full_graph_state is not None
-                and full_graph_state.get("graph") is not None
-            )
-            or (
-                graph_eligible
-                and not getattr(
-                    self.optimizer,
-                    "_bees_full_cuda_graph_managed",
-                    False,
-                )
-                and graph_state is not None
-                and graph_state.get("stable_grads", False)
-            )
-        )
+        # Recompute participation for every eager minibatch. Reusing live
+        # grad buffers here would turn formerly inactive parameters into
+        # zero-gradient Adam updates when the computation graph changes.
         started = time.perf_counter()
-        self.optimizer.zero_grad(
-            set_to_none=not retain_graph_grads
-        )
+        self.optimizer.zero_grad(set_to_none=True)
         _poca_record_timing("zero_grad", time.perf_counter() - started)
 
         started = time.perf_counter()
