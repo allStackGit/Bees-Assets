@@ -73,6 +73,7 @@ function parseLearnerLogFiles(files) {
     let averageStepsPerSecond = null;
     let liveStepsPerSecond = null;
     let restartAverageStepsPerSecond = null;
+    let lastSummaryElapsedSeconds = null;
 
     for (const file of files) {
         let firstStep = null;
@@ -98,6 +99,7 @@ function parseLearnerLogFiles(files) {
             if (!Number.isFinite(lineStep) || !Number.isFinite(lineElapsed)) continue;
             step = lineStep;
             lastSummary = { step: lineStep, elapsed: lineElapsed };
+            lastSummaryElapsedSeconds = lineElapsed;
 
             let match;
             if ((match = line.match(/Mean Reward\s*[:=]\s*(-?\d+(?:\.\d+)?)/i))) {
@@ -150,6 +152,7 @@ function parseLearnerLogFiles(files) {
         AverageStepsPerSecond: averageStepsPerSecond,
         LiveStepsPerSecond: liveStepsPerSecond,
         RestartAverageStepsPerSecond: restartAverageStepsPerSecond,
+        LastSummaryElapsedSeconds: lastSummaryElapsedSeconds,
     };
 }
 
@@ -201,6 +204,37 @@ function getLocalLearnerStats(runId = '') {
     return parseLearnerLogFiles(selected);
 }
 
+
+function restartWallClockRate(learner, runId, running) {
+    if (!runId || !/^[a-zA-Z0-9_.-]+$/.test(runId)) {
+        return learner.RestartAverageStepsPerSecond;
+    }
+    const state = readJson(path.join(
+        paths.centralAgentInstallRoot, 'logs', runId, 'learner-restart.json'
+    ));
+    if (!state || state.run_id !== runId ||
+        !Number.isSafeInteger(state.resumed_step) || state.resumed_step < 0 ||
+        !Number.isFinite(state.started_unix_seconds) ||
+        !Number.isFinite(learner.Step) || learner.Step < state.resumed_step) {
+        return learner.RestartAverageStepsPerSecond;
+    }
+
+    const logElapsed = learner.LastSummaryElapsedSeconds;
+    const liveElapsed = (Date.now() / 1000) - state.started_unix_seconds;
+    if (running) {
+        // Old summaries may still be present briefly after a new learner starts.
+        // Do not attribute those historical steps to the new launch.
+        if (!Number.isFinite(liveElapsed) || liveElapsed <= 0 ||
+            (Number.isFinite(logElapsed) && logElapsed > liveElapsed + 30)) {
+            return null;
+        }
+        return (learner.Step - state.resumed_step) / liveElapsed;
+    }
+    // When stopped, elapsed time must not continue to accumulate.
+    return Number.isFinite(logElapsed) && logElapsed > 0 ?
+        (learner.Step - state.resumed_step) / logElapsed :
+        learner.RestartAverageStepsPerSecond;
+}
 
 function parsePpoFields(line, prefix) {
     const data = {};
@@ -765,13 +799,19 @@ async function getStatusFrameLines(config, adminToken) {
             if (missing.length) lines.push('WARNING: Expected trainers not connected: ' + missing.join(', '));
         }
 
-        const learner = getLocalLearnerStats(String(desired.run_id || ''));
+        const runId = String(desired.run_id || '');
+        const learner = getLocalLearnerStats(runId);
+        const centralRunning = trainers.some(record =>
+            String(record.trainer_id || '') === 'central-learner' &&
+            String(record.process_state || '') === 'running' && !record.stale
+        );
+        const restartRate = restartWallClockRate(learner, runId, centralRunning);
         lines.push('');
         lines.push(
             'Learner logs: Step=' + (learner.Step == null ? '-' : learner.Step) +
             '  ELO=' + (learner.ELO == null ? '-' : number(learner.ELO, 1)) +
             '  MeanReward=' + (learner.MeanReward == null ? '-' : number(learner.MeanReward, 3)) +
-            '  LearnerRestartAvgStep/s=' + (learner.RestartAverageStepsPerSecond == null ? '-' : number(learner.RestartAverageStepsPerSecond, 1)) +
+            '  LearnerRestartAvgStep/s=' + (restartRate == null ? '-' : number(restartRate, 1)) +
             '  LearnerTailAvgStep/s=' + (learner.AverageStepsPerSecond == null ? '-' : number(learner.AverageStepsPerSecond, 1)) +
             '  LearnerLastIntervalStep/s=' + (learner.LiveStepsPerSecond == null ? '-' : number(learner.LiveStepsPerSecond, 1))
         );
@@ -817,7 +857,8 @@ async function getStatusFrameLines(config, adminToken) {
             ' exp/s  accepted=' + sumReporting('accepted_steps_per_sec') +
             ' exp/s  consumed=' + sumReporting('learner_consumed_steps_per_sec') +
             ' exp/s  uploads=' + uploadBacklog + '  broker=' + brokerLabel +
-            '  global learner=' + number(learner.LiveStepsPerSecond, 1) + ' exp/s'
+            '  global learner(last interval)=' + number(learner.LiveStepsPerSecond, 1) +
+            ' exp/s  learner since restart=' + (restartRate == null ? '-' : number(restartRate, 1)) + ' exp/s'
         );
         if (broker && broker.broker_accepted_team_0_steps_total != null) {
             const count = field => broker[field] == null ? '-' : String(broker[field]);
