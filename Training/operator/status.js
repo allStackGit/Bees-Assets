@@ -211,7 +211,7 @@ function restartWallClockRate(learner, runId, running) {
     }
     const state = readJson(path.join(
         paths.centralAgentInstallRoot, 'logs', runId, 'learner-restart.json'
-    ));
+    ), null);
     if (!state || state.run_id !== runId ||
         !Number.isSafeInteger(state.resumed_step) || state.resumed_step < 0 ||
         !Number.isFinite(state.started_unix_seconds) ||
