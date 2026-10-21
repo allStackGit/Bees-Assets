@@ -6,6 +6,7 @@ param(
     [switch]$AutoEnvs,
     [string]$InstallRoot='',
     [string]$TorchDevice='',
+    [ValidateRange(0,64)][int]$TorchThreads=0,
     [switch]$NoAutostart
 )
 
@@ -176,6 +177,7 @@ $Marker='__MARKER__'
 $Launcher='__LAUNCHER__'
 $InstallRoot='__INSTALL_ROOT__'
 $TorchDevice='__TORCH_DEVICE__'
+$TorchThreads=__TORCH_THREADS__
 $MonitorPidFile='__PID_FILE__'
 $ControlPort=__CONTROL_PORT__
 $Envs=__ENVS__
@@ -263,6 +265,7 @@ function Invoke-LauncherRepair {
     $command='call "' + $Launcher.Replace('"','""') + '" start -InstallRoot "' +
         $InstallRoot.Replace('"','""') + '" -TorchDevice "' +
         $TorchDevice.Replace('"','""') + '"'
+    if($TorchThreads -gt 0){$command+=' -TorchThreads ' + [string]$TorchThreads}
     $targetEnvs=$Envs
     if(-not $AutoEnvs){
         $targetFile=Join-Path $InstallRoot 'remote-worker-envs.request'
@@ -316,6 +319,7 @@ try {
     $monitorBody=$monitorBody.Replace('__LAUNCHER__',(Escape-PowerShellSingleQuoted $launcherPath))
     $monitorBody=$monitorBody.Replace('__INSTALL_ROOT__',(Escape-PowerShellSingleQuoted $InstallRoot))
     $monitorBody=$monitorBody.Replace('__TORCH_DEVICE__',(Escape-PowerShellSingleQuoted $TorchDevice))
+    $monitorBody=$monitorBody.Replace('__TORCH_THREADS__',[string]$TorchThreads)
     $monitorBody=$monitorBody.Replace('__PID_FILE__',(Escape-PowerShellSingleQuoted $AutostartMonitorPidFile))
     $monitorBody=$monitorBody.Replace('__CONTROL_PORT__',[string]$ControlPort)
     $monitorBody=$monitorBody.Replace('__ENVS__',[string]$Envs)
@@ -547,6 +551,9 @@ function Update-AutostartEnvironmentTarget([int]$Target){
 
 $existingProcess=Get-LiveSupervisorProcess
 if($null -ne $existingProcess){
+    if($PSBoundParameters.ContainsKey('TorchThreads') -and -not $AutostartChild){
+        Write-Warning '[Bees remote] TorchThreads only applies on the next worker launch; active threads unchanged.'
+    }
     if($PSBoundParameters.ContainsKey('Actors') -and -not $AutostartChild){
         $record=Get-CimInstance Win32_Process -Filter "ProcessId = $($existingProcess.Id)" -ErrorAction Stop
         $match=[regex]::Match([string]$record.CommandLine,'(?:^|\s)--actors\s+(\d+)(?:\s|$)')
@@ -773,6 +780,7 @@ $workerArgs=@(
     '--torch-device',$TorchDevice,
     '--actors',[string]$Actors
 )
+if($TorchThreads -gt 0){$workerArgs+=@('--torch-threads',[string]$TorchThreads)}
 if($Envs -gt 0){$workerArgs+=@('--envs',[string]$Envs)}
 if($AutoEnvs){$workerArgs+='--auto-envs'}
 if($NoAutostart){$workerArgs+='--no-autostart'}

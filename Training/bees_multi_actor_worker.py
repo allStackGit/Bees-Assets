@@ -149,8 +149,12 @@ def run_group(args: Any) -> int:
                 ).hexdigest()[:32])
                 child_env = os.environ.copy()
                 if args.torch_device.lower() == "cpu":
-                    child_env.setdefault("OMP_NUM_THREADS", str(torch_threads_per_actor))
-                    child_env.setdefault("MKL_NUM_THREADS", str(torch_threads_per_actor))
+                    if args.torch_threads is not None:
+                        child_env["OMP_NUM_THREADS"] = str(args.torch_threads)
+                        child_env["MKL_NUM_THREADS"] = str(args.torch_threads)
+                    else:
+                        child_env.setdefault("OMP_NUM_THREADS", str(torch_threads_per_actor))
+                        child_env.setdefault("MKL_NUM_THREADS", str(torch_threads_per_actor))
                 health_file = state_root / f"health-{index}.json"
                 health_token = configure_child_health(child_env, health_file)
                 metrics_file = state_root / f"throughput-{index}.json"
@@ -174,6 +178,8 @@ def run_group(args: Any) -> int:
                     "--upload-workers", str(args.upload_workers),
                     "--reconnect-seconds", str(args.reconnect_seconds),
                 ]
+                if args.torch_threads is not None:
+                    command.extend(["--torch-threads", str(args.torch_threads)])
                 if args.graphics:
                     command.append("--graphics")
                 process = popen_owned(

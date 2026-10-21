@@ -559,6 +559,9 @@ def _install_batched_inference(cpu_inference: bool = False, stage_profiler=None)
     cpu_device = torch.device("cpu")
 
     def concatenate_decision_steps(entries, action_spec):
+        # Single-worker batches do not need to copy all observation and ID arrays.
+        if len(entries) == 1:
+            return entries[0][1]
         first_steps = entries[0][1]
         obs = [
             np.concatenate([steps.obs[index] for _, steps in entries], axis=0)
@@ -737,7 +740,9 @@ def _install_batched_inference(cpu_inference: bool = False, stage_profiler=None)
             inference_started = time.perf_counter() if profiler is not None else 0.0
             try:
                 if cpu_actor_cache is None:
-                    run_out = policy.evaluate(batched_steps, global_agent_ids)
+                    # Action selection does not need autograd bookkeeping.
+                    with torch.inference_mode():
+                        run_out = policy.evaluate(batched_steps, global_agent_ids)
                 else:
                     cpu_actor = cpu_actor_cache.get(behavior_name, policy)
                     run_out = evaluate_on_cpu(

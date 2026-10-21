@@ -479,6 +479,8 @@ def _parser() -> argparse.ArgumentParser:
     # without starting any extra process or allocating learning CPUs.
     parser.add_argument("--learning-cpus", type=int, default=0, help=argparse.SUPPRESS)
     parser.add_argument("--torch-device", default="cpu")
+    parser.add_argument("--torch-threads", type=int, default=None,
+                        help="PyTorch intra-op CPU threads per actor (1-64).")
     parser.add_argument(
         "--actors", type=int, default=1,
         help="Independent WAN actor processes per machine (1-8; default 1). --envs remains the total.",
@@ -1134,6 +1136,9 @@ class RuntimeUpdater:
             ]
             if not bool(getattr(self.args, "auto_envs", False)):
                 command.extend(["--envs", str(self.args.envs)])
+        if self.args.torch_threads is not None:
+            command.extend(["-TorchThreads" if os.name == "nt" else "--torch-threads",
+                            str(self.args.torch_threads)])
         environment = os.environ.copy()
         # A supervisor relaunched by the OS watchdog inherits this marker so the watchdog
         # child does not recursively re-register itself. Managed-launcher adoption is a
@@ -2112,6 +2117,8 @@ def _worker_command(args: argparse.Namespace, root: Path, actor_key: str) -> lis
         "--upload-workers",
         str(args.upload_workers),
     ])
+    if args.torch_threads is not None:
+        command.extend(["--torch-threads", str(args.torch_threads)])
     return command
 
 
@@ -2123,6 +2130,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return 2
     if not 1 <= args.actors <= 8:
         print("error: --actors must be in 1-8", file=sys.stderr)
+        return 2
+    if args.torch_threads is not None and not 1 <= args.torch_threads <= 64:
+        print("error: --torch-threads must be in 1-64", file=sys.stderr)
         return 2
     args.min_envs = max(args.min_envs, args.actors)
     memory_start_cap = _memory_env_limit()

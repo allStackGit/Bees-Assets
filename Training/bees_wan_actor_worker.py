@@ -978,6 +978,7 @@ class ActorSession:
         stop: threading.Event,
         upload_queue_size: int,
         upload_workers: int = DEFAULT_UPLOAD_WORKERS,
+        torch_threads: Optional[int] = None,
         startup_health: Optional[Callable[[str], None]] = None,
         runtime_progress: Optional[Callable[[], None]] = None,
         env_count_changed: Optional[Callable[[int], None]] = None,
@@ -988,6 +989,7 @@ class ActorSession:
         self.env_path = env_path
         self.local_base_port = local_base_port
         self.torch_device = torch_device
+        self.torch_threads = torch_threads
         self.graphics = graphics
         self.stop = stop
         self.session_id, self.env_count, self.central_run_options = _validate_session(session, actor_id)
@@ -1410,7 +1412,15 @@ class ActorSession:
         )
         options = self._remote_run_options()
         run_logs_dir = self._run_logs_dir(options)
+        # Configure CPU intra-op parallelism before constructing the actor.
+        if self.torch_threads is not None:
+            torch.set_num_threads(self.torch_threads)
         set_torch_config(options.torch_settings)
+        print(
+            f"[Bees WAN actor] PyTorch intra-op threads={torch.get_num_threads()}"
+            f" ({'explicit' if self.torch_threads is not None else 'default'}).",
+            flush=True,
+        )
         # ML-Agents 1.1.0 switches PyTorch's global default device to CUDA during
         # module initialization when CUDA is available, but its CPU reconfiguration
         # path does not switch that global default back. Actors may intentionally
@@ -1991,6 +2001,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--ssh-executable", default="ssh")
     parser.add_argument("--ssh-option", action="append", default=[])
     parser.add_argument("--torch-device", default="cpu")
+    parser.add_argument("--torch-threads", type=int, default=None,
+                        help="PyTorch intra-op CPU threads per actor (1-64).")
     parser.add_argument("--graphics", action="store_true")
     parser.add_argument("--reconnect-seconds", type=float, default=DEFAULT_RECONNECT_SECONDS)
     parser.add_argument("--upload-queue", type=int, default=DEFAULT_LOCAL_UPLOAD_QUEUE)
@@ -2003,6 +2015,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     args = _parser().parse_args(argv)
     if args.actor_id < 0:
         print("error: --actor-id must be non-negative", file=sys.stderr)
+        return 2
+    if args.torch_threads is not None and not 1 <= args.torch_threads <= 64:
+        print("error: --torch-threads must be in 1-64", file=sys.stderr)
         return 2
     if not 1 <= args.broker_port <= 65535 or not 1 <= args.local_port <= 65535:
         print("error: broker/local ports must be in 1-65535", file=sys.stderr)
@@ -2065,6 +2080,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     env_path=env_path,
                     local_base_port=args.local_base_port,
                     torch_device=args.torch_device,
+                    torch_threads=args.torch_threads,
                     graphics=args.graphics,
                     stop=stop,
                     upload_queue_size=args.upload_queue,

@@ -521,6 +521,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--auth-token-file", required=True)
     parser.add_argument("--local-base-port", type=int, default=5005)
     parser.add_argument("--torch-device", default="cpu")
+    parser.add_argument("--torch-threads", type=int, default=None,
+                        help="PyTorch intra-op CPU threads per actor (1-64).")
     parser.add_argument("--graphics", action="store_true")
     parser.add_argument("--reconnect-seconds", type=float, default=worker.DEFAULT_RECONNECT_SECONDS)
     parser.add_argument("--upload-queue", type=int, default=worker.DEFAULT_LOCAL_UPLOAD_QUEUE)
@@ -612,6 +614,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return 2
     if not 1 <= args.actors <= 8:
         print("error: --actors must be in 1-8", file=sys.stderr)
+        return 2
+    if args.torch_threads is not None and not 1 <= args.torch_threads <= 64:
+        print("error: --torch-threads must be in 1-64", file=sys.stderr)
         return 2
     if not args.actors <= args.envs <= elastic.MAX_ENVS_PER_ACTOR:
         print(f"error: --envs must be in {args.actors}-{elastic.MAX_ENVS_PER_ACTOR} for {args.actors} actors", file=sys.stderr)
@@ -729,6 +734,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     env_path=env_path,
                     local_base_port=args.local_base_port,
                     torch_device=args.torch_device,
+                    torch_threads=args.torch_threads,
                     graphics=args.graphics,
                     stop=stop,
                     upload_queue_size=args.upload_queue,

@@ -22,6 +22,8 @@ ACTORS_SUPPLIED=0
 NO_DIAGNOSTICS=0
 INSTALL_ROOT="$DEFAULT_INSTALL_ROOT"
 TORCH_DEVICE="$DEFAULT_TORCH_DEVICE"
+TORCH_THREADS=""
+TORCH_THREADS_SUPPLIED=0
 NO_AUTOSTART=0
 
 usage() {
@@ -40,6 +42,7 @@ Options:
   --no-diagnostics       Disable WAN stage profiling and optional host CPU sampling.
   --install-root PATH    Local Linux worker installation directory.
   --torch-device DEVICE  Local inference device, normally cpu or cuda.
+  --torch-threads N      PyTorch CPU intra-op threads per actor (1-64; restart required).
   --no-autostart          Do not register this worker to restart after reboot/login.
   -h, --help             Show this help.
 EOF
@@ -59,6 +62,7 @@ while [[ $# -gt 0 ]]; do
         --no-diagnostics) NO_DIAGNOSTICS=1; shift ;;
         --install-root) INSTALL_ROOT="$2"; shift 2 ;;
         --torch-device) TORCH_DEVICE="$2"; shift 2 ;;
+        --torch-threads) TORCH_THREADS="$2"; TORCH_THREADS_SUPPLIED=1; shift 2 ;;
         # Accept the old autostart monitor's argument while disabling CPU gradients.
         --learning-cpus) shift 2 ;;
         --no-autostart) NO_AUTOSTART=1; shift ;;
@@ -81,6 +85,10 @@ if [[ -n "$ENVS" ]] && { ! is_uint "$ENVS" || (( ENVS < 1 || ENVS > 64 )); }; th
 fi
 if ! is_uint "$UPLOAD_WORKERS" || (( UPLOAD_WORKERS < 1 || UPLOAD_WORKERS > 4 )); then
     echo "error: --upload-workers must be in 1-4" >&2
+    exit 2
+fi
+if [[ -n "$TORCH_THREADS" ]] && { ! is_uint "$TORCH_THREADS" || (( TORCH_THREADS < 1 || TORCH_THREADS > 64 )); }; then
+    echo "error: --torch-threads must be in 1-64" >&2
     exit 2
 fi
 if ! is_uint "$ACTORS" || (( ACTORS < 1 || ACTORS > 8 )); then
@@ -157,11 +165,12 @@ install_remote_autostart() {
     mkdir -p "$(dirname "$AUTOSTART_UNIT")" "$(dirname "$AUTOSTART_MONITOR")" "$(dirname "$AUTOSTART_MONITOR_LOG")"
     printf 'enabled\n' > "$AUTOSTART_MARKER"
 
-    local q_marker q_launcher q_install q_torch q_log
+    local q_marker q_launcher q_install q_torch q_threads q_log
     printf -v q_marker '%q' "$AUTOSTART_MARKER"
     printf -v q_launcher '%q' "$launcher"
     printf -v q_install '%q' "$INSTALL_ROOT"
     printf -v q_torch '%q' "$TORCH_DEVICE"
+    printf -v q_threads '%q' "$TORCH_THREADS"
     printf -v q_log '%q' "$AUTOSTART_MONITOR_LOG"
     cat > "$AUTOSTART_MONITOR" <<EOF
 #!/usr/bin/env bash
@@ -170,6 +179,7 @@ MARKER=$q_marker
 LAUNCHER=$q_launcher
 INSTALL_ROOT=$q_install
 TORCH_DEVICE=$q_torch
+TORCH_THREADS=$q_threads
 MONITOR_LOG=$q_log
 CONTROL_PORT=$CONTROL_PORT
 ENVS=$ENVS
@@ -248,7 +258,10 @@ control_healthy() {
 }
 
 launch_worker() {
-    local diagnostic_args=()
+    local diagnostic_args=() thread_args=()
+    if [[ -n "\$TORCH_THREADS" ]]; then
+        thread_args+=(--torch-threads "\$TORCH_THREADS")
+    fi
     local requested_envs="\$ENVS"
     # The monitor may remain alive while the operator changes fixed capacity.
     # Read the persisted target at each repair, rather than reusing its original count.
@@ -263,11 +276,11 @@ launch_worker() {
         diagnostic_args+=(--no-diagnostics)
     fi
     if [[ "\$AUTO_ENVS" == "1" ]]; then
-        BEES_AUTOSTART_CHILD=1 bash "\$LAUNCHER" start --install-root "\$INSTALL_ROOT" --torch-device "\$TORCH_DEVICE" --upload-workers "\$UPLOAD_WORKERS" --actors "\$ACTORS" --auto-envs "\${diagnostic_args[@]}" >>"\$MONITOR_LOG" 2>&1 || true
+        BEES_AUTOSTART_CHILD=1 bash "\$LAUNCHER" start --install-root "\$INSTALL_ROOT" --torch-device "\$TORCH_DEVICE" --upload-workers "\$UPLOAD_WORKERS" --actors "\$ACTORS" --auto-envs "\${thread_args[@]}" "\${diagnostic_args[@]}" >>"\$MONITOR_LOG" 2>&1 || true
     elif [[ -n "\$requested_envs" ]]; then
-        BEES_AUTOSTART_CHILD=1 bash "\$LAUNCHER" start --install-root "\$INSTALL_ROOT" --torch-device "\$TORCH_DEVICE" --upload-workers "\$UPLOAD_WORKERS" --actors "\$ACTORS" --envs "\$requested_envs" "\${diagnostic_args[@]}" >>"\$MONITOR_LOG" 2>&1 || true
+        BEES_AUTOSTART_CHILD=1 bash "\$LAUNCHER" start --install-root "\$INSTALL_ROOT" --torch-device "\$TORCH_DEVICE" --upload-workers "\$UPLOAD_WORKERS" --actors "\$ACTORS" --envs "\$requested_envs" "\${thread_args[@]}" "\${diagnostic_args[@]}" >>"\$MONITOR_LOG" 2>&1 || true
     else
-        BEES_AUTOSTART_CHILD=1 bash "\$LAUNCHER" start --install-root "\$INSTALL_ROOT" --torch-device "\$TORCH_DEVICE" --upload-workers "\$UPLOAD_WORKERS" --actors "\$ACTORS" "\${diagnostic_args[@]}" >>"\$MONITOR_LOG" 2>&1 || true
+        BEES_AUTOSTART_CHILD=1 bash "\$LAUNCHER" start --install-root "\$INSTALL_ROOT" --torch-device "\$TORCH_DEVICE" --upload-workers "\$UPLOAD_WORKERS" --actors "\$ACTORS" "\${thread_args[@]}" "\${diagnostic_args[@]}" >>"\$MONITOR_LOG" 2>&1 || true
     fi
 }
 
@@ -615,6 +628,9 @@ if [[ -n "$PID" ]] && pid_is_supervisor "$PID"; then
         else
             echo "[Bees remote] worker already running (PID $PID); leaving training unchanged."
         fi
+        if (( TORCH_THREADS_SUPPLIED )); then
+            echo "[Bees remote] note: --torch-threads only applies on the next worker launch; active threads unchanged." >&2
+        fi
         if (( UPLOAD_WORKERS_SUPPLIED )); then
             echo "[Bees remote] note: upload thread count only changes on the next worker launch; active upload threads are unchanged." >&2
         fi
@@ -817,6 +833,9 @@ WORKER_ARGS=(
     --upload-workers "$UPLOAD_WORKERS"
     --actors "$ACTORS"
 )
+if [[ -n "$TORCH_THREADS" ]]; then
+    WORKER_ARGS+=(--torch-threads "$TORCH_THREADS")
+fi
 if [[ -n "$ENVS" ]]; then
     WORKER_ARGS+=(--envs "$ENVS")
 fi
