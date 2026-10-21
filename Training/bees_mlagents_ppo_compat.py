@@ -703,6 +703,7 @@ def _structured_training_slot_limits(
     extra_observations=(),
     *,
     include_group_observations: bool = True,
+    current_observations_cpu=None,
 ):
     """Find occupied structured-slot prefixes needed by the active structured encoders."""
 
@@ -735,8 +736,13 @@ def _structured_training_slot_limits(
     if len(policy.behavior_spec.observation_specs) != 1:
         return None
 
-    current_obs = ObsUtil.from_buffer(batch, 1)
-    current = np.asarray(current_obs[0].to_ndarray(), dtype=np.float32)
+    if current_observations_cpu is None:
+        current_obs = ObsUtil.from_buffer(batch, 1)
+        current = np.asarray(current_obs[0].to_ndarray(), dtype=np.float32)
+    else:
+        if current_observations_cpu.device.type != "cpu":
+            raise ValueError("Structured slot-limit source must be a CPU tensor.")
+        current = current_observations_cpu.numpy()
     if (
         current.ndim != 2
         or current.shape[0] <= 0
@@ -1844,7 +1850,9 @@ def _poca_group_obs_tensors_from_buffer(
     ]
 
 
-def _evaluate_poca_trajectory_batch(trainer, merged, trajectories):
+def _evaluate_poca_trajectory_batch(
+    trainer, merged, trajectories, current_observations_cpu
+):
     """Evaluate feed-forward POCA value, baseline and bootstrap targets in batches."""
 
     from mlagents.torch_utils import torch
@@ -1873,14 +1881,19 @@ def _evaluate_poca_trajectory_batch(trainer, merged, trajectories):
             for trajectory in trajectories
         ],
         include_group_observations=not factorized_poca,
+        current_observations_cpu=current_observations_cpu,
     )
     slot_token = set_training_slot_limits(slot_limits)
     try:
         with torch.no_grad():
             with learner_stage("trajectory.current_observations"):
+                from mlagents.torch_utils import default_device
+
                 current_obs = [
-                    ModelUtils.list_to_tensor(obs)
-                    for obs in ObsUtil.from_buffer(merged, n_obs)
+                    current_observations_cpu.to(
+                        device=default_device(),
+                        non_blocking=False,
+                    )
                 ]
             current_counts = _poca_groupmate_counts(
                 trainer.policy,
@@ -2077,14 +2090,42 @@ def _process_prepared_poca_trajectory_batch(trainer, trajectories, buffers):
 
     import numpy as np
     from mlagents.trainers.trainer.rl_trainer import RLTrainer
+    from mlagents.trainers.trajectory import ObsUtil
 
     batch_started = time.perf_counter()
     prepare_started = batch_started
     with learner_stage("trajectory.merge_and_normalize"):
         merged = _merge_agent_buffers(buffers)
+        with learner_stage("trajectory.observations.copy"):
+            # Both structured actor and stock POCA critic normalize the same
+            # observations. Reuse one bounded CPU copy instead of repeatedly
+            # materializing this ~2,048 x 7,743 field with to_ndarray().
+            current_observations_cpu = _poca_bounded_observation_tensor(
+                ObsUtil.from_buffer(merged, 1)[0],
+                (BEES_OBSERVATION_SIZE,),
+            )
         if trainer.is_training:
-            trainer.policy.actor.update_normalization(merged)
-            trainer.optimizer.critic.update_normalization(merged)
+            actor_vector = (
+                trainer.policy.actor.network_body
+                .observation_encoder.vector_input
+            )
+            critic_vector = (
+                trainer.optimizer.critic.network_body
+                .observation_encoder.vector_input
+            )
+            for vector, stage in (
+                (actor_vector, "trajectory.normalization.actor"),
+                (critic_vector, "trajectory.normalization.critic"),
+            ):
+                with learner_stage(stage):
+                    normalizer = vector.normalizer
+                    values = current_observations_cpu
+                    if normalizer is not None:
+                        values = values.to(
+                            device=normalizer.running_mean.device,
+                            dtype=normalizer.running_mean.dtype,
+                        )
+                    vector.update_normalization(values)
     prepare_seconds = time.perf_counter() - prepare_started
 
     evaluate_started = time.perf_counter()
@@ -2093,6 +2134,7 @@ def _process_prepared_poca_trajectory_batch(trainer, trajectories, buffers):
             trainer,
             merged,
             trajectories,
+            current_observations_cpu,
         )
     evaluate_seconds = time.perf_counter() - evaluate_started
 
