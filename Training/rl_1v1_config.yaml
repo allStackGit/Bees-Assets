@@ -4,6 +4,11 @@ behaviors:
   BeesRL1v1:
     trainer_type: poca
     hyperparameters:
+      # Active standard MA-POCA: actor and critic both train in all num_epoch
+      # passes. A full 65,536-step buffer at 4,096/batch yields 16 minibatches
+      # per epoch, 48 actor updates and 48 critic updates per PPO update.
+      # Oversized buffers may produce additional minibatches; the learner logs
+      # the exact count at each PPO update.
       batch_size: 4096
       buffer_size: 65536
       learning_rate: 0.0005
