@@ -7082,25 +7082,6 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             for stat, val in update_stats.items():
                 self._stats_reporter.add_stat(stat, val)
 
-        factorized_critic = getattr(self.optimizer, "critic", None)
-        if (
-            getattr(self.optimizer, "_bees_factorized_poca", False)
-            and factorized_critic is not None
-            and hasattr(
-                factorized_critic,
-                "complete_training_buffer",
-            )
-        ):
-            bootstrap_remaining = (
-                factorized_critic.complete_training_buffer()
-            )
-            if bootstrap_remaining > 0 or not actor_training_enabled:
-                print(
-                    "[Bees POCA factorized] critic bootstrap "
-                    f"buffers_remaining={bootstrap_remaining}",
-                    flush=True,
-                )
-
         update_buffer.reset_agent()
         return True
 
