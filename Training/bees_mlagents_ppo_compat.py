@@ -3844,6 +3844,12 @@ def _poca_build_observation_dedup_plan(cached):
     counts = np.asarray(cached.get("groupmate_counts", ()), dtype=np.int32)
     if counts.shape[0] != int(current.shape[0]):
         return None
+    # With no groupmates there is no cross-agent encoding to reuse. The
+    # previous path still compared every 7,743-value focal observation and
+    # built a dedup map that almost always failed its minimum-savings check.
+    # The ordinary actor/critic path works on the original rows unchanged.
+    if not np.any(counts):
+        return None
 
     current_rows = np.asarray(current.detach().numpy(), dtype=np.float32)
     unique_rows = []
@@ -4516,9 +4522,13 @@ class _PocaCpuMinibatchPreparer:
             self.group_source,
             indices,
         )
+        selection_seconds = time.perf_counter() - started
+        dedup_started = time.perf_counter()
         dedup_plan = _poca_build_observation_dedup_plan(
             observation_source
         )
+        dedup_seconds = time.perf_counter() - dedup_started
+        packing_started = time.perf_counter()
         selected_slot_limits = (
             _poca_current_obs_slot_limits(
                 observation_source["current_obs"]
@@ -4569,19 +4579,30 @@ class _PocaCpuMinibatchPreparer:
                 "packed_entity_plan": packed_entity_plan,
                 "slot_limits": selected_slot_limits,
             }
+        packing_seconds = time.perf_counter() - packing_started
+        pin_started = time.perf_counter()
         selected = _poca_pin_selected_minibatch(selected)
-        return selected, time.perf_counter() - started
+        pin_seconds = time.perf_counter() - pin_started
+        return (
+            selected,
+            time.perf_counter() - started,
+            (selection_seconds, dedup_seconds, packing_seconds, pin_seconds),
+        )
 
     def consume(self, future):
         if future is None:
             return None
         wait_started = time.perf_counter()
-        selected, prepare_seconds = future.result()
+        selected, prepare_seconds, stage_seconds = future.result()
         _poca_record_timing(
             "cpu_prepare_wait",
             time.perf_counter() - wait_started,
         )
         _poca_record_timing("cpu_prepare_work", prepare_seconds)
+        for name, seconds in zip(
+            ("select", "dedup", "packing", "pin"), stage_seconds
+        ):
+            _poca_record_timing(f"cpu_prepare_{name}", seconds)
 
         plan = selected.get("observation_dedup")
         if plan is not None:
@@ -6479,23 +6500,34 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             return "cuda-graphs-enabled"
         groups = adam.param_groups
         parameters = [param for group in groups for param in group["params"]]
-        if not parameters or any(
+        trainable = [param for param in parameters if param.requires_grad]
+        # Stock ML-Agents puts frozen integer export metadata and the POCA
+        # agent-count normalization scalar in the same Adam parameter group.
+        # Adam.step() ignores parameters with no gradients; PyTorch's fused
+        # kernel also receives only that filtered set. Do not reject fused
+        # execution because of non-trainable metadata, and do not alter
+        # parameter groups (checkpoint compatibility depends on their shape).
+        if not trainable or any(
             param.device.type != "cuda" or param.dtype != torch.float32
+            for param in trainable
+        ):
+            return "unsupported-trainable-device-or-dtype"
+        if any(
+            not param.requires_grad and param.grad is not None
             for param in parameters
         ):
-            return "unsupported-device-or-dtype"
+            return "frozen-parameter-has-gradient"
         if any(
             group.get("differentiable", False)
             for group in groups
         ):
             return "differentiable-adam"
-        if all(group.get("fused") is True for group in groups):
-            return "already-enabled"
+        already_enabled = all(group.get("fused") is True for group in groups)
 
-        # The loaded step value is deliberately not incremented or reset.
-        # GPU transfer is only necessary for counters loaded/created by the
-        # non-fused Adam implementation.
-        for param in parameters:
+        # Preserve the entire optimizer checkpoint parameter group, but move
+        # trainable step counters to CUDA, including after loading a checkpoint
+        # whose groups already carry fused=True.
+        for param in trainable:
             state = adam.state.get(param)
             if state and "step" in state:
                 step = state["step"]
@@ -6510,9 +6542,12 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         adam.defaults["foreach"] = False
         adam.defaults["fused"] = True
         adam._step_supports_amp_scaling = True
+        if already_enabled:
+            return "already-enabled"
         print(
             "[Bees PPO kernel] fused CUDA Adam enabled "
-            f"parameters={len(parameters)} state=preserved",
+            f"trainable={len(trainable)} frozen={len(parameters) - len(trainable)} "
+            "checkpoint_groups=unchanged state=preserved",
             flush=True,
         )
         return "enabled"
@@ -7021,6 +7056,10 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                 f"cuda_prefetch={_poca_average_timing('cuda_prefetch'):.6f} "
                 f"cpu_prepare_wait={_poca_average_timing('cpu_prepare_wait'):.6f} "
                 f"cpu_prepare_work={_poca_average_timing('cpu_prepare_work'):.6f} "
+                f"cpu_prepare_select={_poca_average_timing('cpu_prepare_select'):.6f} "
+                f"cpu_prepare_dedup={_poca_average_timing('cpu_prepare_dedup'):.6f} "
+                f"cpu_prepare_packing={_poca_average_timing('cpu_prepare_packing'):.6f} "
+                f"cpu_prepare_pin={_poca_average_timing('cpu_prepare_pin'):.6f} "
                 f"cpu_prepare_transfer={_poca_average_timing('cpu_prepare_transfer_submit'):.6f} "
                 f"cuda_cpu_prepare_transfer={_poca_average_timing('cuda_cpu_prepare_transfer'):.6f} "
                 f"dedup_rows={int(getattr(_POCA_TIMING_STATE, 'dedup_input_rows', 0))} "
