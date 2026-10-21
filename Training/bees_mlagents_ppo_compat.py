@@ -48,7 +48,7 @@ POCA_VARIABILITY_HISTORY_LIMIT = 64
 POCA_PROFILE_WAIT_MINIBATCHES = 2
 POCA_PROFILE_WARMUP_MINIBATCHES = 1
 POCA_PROFILE_ACTIVE_MINIBATCHES = 6
-POCA_CUDA_GRAPH_FACTION_BUCKET_ROWS = 32
+POCA_CUDA_GRAPH_FACTION_BUCKET_ROWS = 256
 POCA_CUDA_GRAPH_GROUP_BUCKET_ROWS = 32
 _POCA_VARIABILITY_HISTORY = []
 
@@ -5135,12 +5135,15 @@ def _poca_full_cuda_graph_update(
     optimizer = poca_optimizer.optimizer
     if not opts.cuda_graphs:
         return None
-    optimizer._bees_full_cuda_graph_managed = True
     existing_state = getattr(
         optimizer,
         "_bees_full_cuda_graph_state",
         None,
     )
+    if getattr(optimizer, "_bees_full_cuda_graph_disabled", False):
+        optimizer._bees_full_cuda_graph_managed = False
+        return None
+    optimizer._bees_full_cuda_graph_managed = False
 
     from mlagents.torch_utils import torch
     from mlagents.trainers.torch_entities.utils import ModelUtils
@@ -5249,6 +5252,8 @@ def _poca_full_cuda_graph_update(
             "grads": None,
             "capture_stream": torch.cuda.Stream(),
             "capture_warmed": False,
+            "candidate_signature": None,
+            "candidate_hits": 0,
         }
         optimizer._bees_full_cuda_graph_state = state
 
@@ -5284,10 +5289,18 @@ def _poca_full_cuda_graph_update(
 
     if state["graph"] is not None:
         if state["signature"] != signature:
+            # An obsolete graph pins VRAM even when nothing can replay it.
+            # Stop trying full-graph capture for this PPO update.
+            _poca_release_full_cuda_graph(optimizer)
+            optimizer._bees_full_cuda_graph_disabled = True
             _POCA_TIMING_STATE.graph_skips = int(
                 getattr(_POCA_TIMING_STATE, "graph_skips", 0)
             ) + 1
+            _POCA_TIMING_STATE.graph_layout_skips = int(
+                getattr(_POCA_TIMING_STATE, "graph_layout_skips", 0)
+            ) + 1
             return None
+        optimizer._bees_full_cuda_graph_managed = True
         copy_started = time.perf_counter()
         _poca_copy_full_cuda_graph_inputs(state["static"], live)
         _poca_record_timing(
@@ -5330,7 +5343,25 @@ def _poca_full_cuda_graph_update(
         _POCA_TIMING_STATE.graph_skips = int(
             getattr(_POCA_TIMING_STATE, "graph_skips", 0)
         ) + 1
+        _POCA_TIMING_STATE.graph_memory_skips = int(
+            getattr(_POCA_TIMING_STATE, "graph_memory_skips", 0)
+        ) + 1
         return None
+
+    # Once a full graph has sufficient physical headroom, keep all its warmup
+    # and capture steps on the same optimizer ownership path. Do not create
+    # a separate Adam-only graph whose private pool would compete for VRAM.
+    optimizer._bees_full_cuda_graph_managed = True
+
+    # A full graph has to remain useful long enough to repay its capture
+    # cost and pinned private pool. Observe the same bucketed layout twice
+    # before warming it; eager steps continue meanwhile.
+    if state["candidate_signature"] != signature:
+        state["candidate_signature"] = signature
+        state["candidate_hits"] = 1
+        state["capture_warmed"] = False
+        return None
+    state["candidate_hits"] += 1
 
     _poca_prepare_cuda_capturable_adam(optimizer)
     for parameter in trainable:
@@ -6672,6 +6703,9 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         _POCA_TIMING_STATE.graph_captures = 0
         _POCA_TIMING_STATE.graph_replays = 0
         _POCA_TIMING_STATE.graph_skips = 0
+        _POCA_TIMING_STATE.graph_memory_skips = 0
+        _POCA_TIMING_STATE.graph_layout_skips = 0
+        self.optimizer.optimizer._bees_full_cuda_graph_disabled = False
         _POCA_TIMING_STATE.parallel_streams = ()
         _POCA_TIMING_STATE.dedup_input_rows = 0
         _POCA_TIMING_STATE.dedup_unique_rows = 0
@@ -7174,6 +7208,8 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                 f"graph_captures={int(getattr(_POCA_TIMING_STATE, 'graph_captures', 0))} "
                 f"graph_replays={int(getattr(_POCA_TIMING_STATE, 'graph_replays', 0))} "
                 f"graph_skips={int(getattr(_POCA_TIMING_STATE, 'graph_skips', 0))} "
+                f"graph_memory_skips={int(getattr(_POCA_TIMING_STATE, 'graph_memory_skips', 0))} "
+                f"graph_layout_skips={int(getattr(_POCA_TIMING_STATE, 'graph_layout_skips', 0))} "
                 f"graph_capture={_poca_average_timing('cuda_graph_capture'):.6f} "
                 f"graph_input_copy={_poca_average_timing('cuda_graph_input_copy'):.6f} "
                 f"graph_replay_submit={_poca_average_timing('cuda_graph_replay_submit'):.6f} "
