@@ -2191,6 +2191,51 @@ def _poca_cpu_tensor(values, dtype):
         )
 
 
+# Each ML-Agents observation field contains many individual NumPy arrays. Converting
+# the whole field with to_ndarray() / np.array(field) can require constructing a
+# ~2 GiB intermediate and has occasionally stalled PPO for 20+ minutes on
+# Windows. Materialize directly into the final float32 storage in small blocks.
+POCA_OBSERVATION_COPY_CHUNK_ROWS = 256
+
+
+def _poca_bounded_observation_tensor(field, observation_shape):
+    """Copy a fixed-shape ML-Agents observation field without a full-size temporary."""
+
+    import numpy as np
+    from mlagents.torch_utils import torch
+
+    shape = tuple(int(dimension) for dimension in observation_shape)
+    rows = len(field)
+    with learner_stage("ppo.observations.allocate"):
+        observations = np.empty((rows, *shape), dtype=np.float32)
+
+    with learner_stage("ppo.observations.copy"):
+        for start in range(0, rows, POCA_OBSERVATION_COPY_CHUNK_ROWS):
+            stop = min(rows, start + POCA_OBSERVATION_COPY_CHUNK_ROWS)
+            started = time.perf_counter()
+            # This bounds the transient NumPy array to at most 256 rows
+            # (~8 MiB for Bees' 7,743-element observation).
+            chunk = np.asarray(field[start:stop], dtype=np.float32)
+            expected_shape = (stop - start, *shape)
+            if chunk.shape != expected_shape:
+                raise ValueError(
+                    f"invalid PPO observation shape at rows {start}:{stop}: "
+                    f"expected {expected_shape}, got {chunk.shape}"
+                )
+            observations[start:stop] = chunk
+            seconds = time.perf_counter() - started
+            if seconds >= 1.0:
+                print(
+                    "[Bees PPO observation copy] "
+                    f"rows={start}:{stop}/{rows} seconds={seconds:.3f}",
+                    flush=True,
+                )
+
+    # The contiguous NumPy allocation is retained by the CPU tensor. No
+    # additional full-buffer conversion/copy is needed here.
+    return _poca_cpu_tensor(observations, torch.float32)
+
+
 class _PocaRaggedGroupObs:
     """Borrow the update buffer's ragged group observations without duplicating them."""
 
@@ -2757,14 +2802,11 @@ def _build_poca_update_tensor_cache(optimizer, buffer):
         return None
 
     with learner_stage("ppo.cache.observations"):
+        observation_specs = policy.behavior_spec.observation_specs
         current_obs = [
-            _poca_cpu_tensor(
-                np.asarray(field.to_ndarray(), dtype=np.float32),
-                torch.float32,
-            )
-            for field in ObsUtil.from_buffer(
-                buffer,
-                len(policy.behavior_spec.observation_specs),
+            _poca_bounded_observation_tensor(field, observation_specs[index].shape)
+            for index, field in enumerate(
+                ObsUtil.from_buffer(buffer, len(observation_specs))
             )
         ]
 
