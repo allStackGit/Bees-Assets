@@ -516,7 +516,7 @@ function Write-ManualEnvRequest([int]$Target){
     $temporary="$ManualEnvsRequestFile.tmp.$PID"
     [IO.File]::WriteAllText($temporary,([string]$Target + "`n"),[Text.Encoding]::ASCII)
     if(Test-Path -LiteralPath $ManualEnvsRequestFile){
-        [IO.File]::Replace($temporary,$ManualEnvsRequestFile,$null)
+        [IO.File]::Replace($temporary,$ManualEnvsRequestFile,[NullString]::Value)
     }else{
         [IO.File]::Move($temporary,$ManualEnvsRequestFile)
     }
@@ -542,7 +542,7 @@ function Update-AutostartEnvironmentTarget([int]$Target){
         $body.Substring($matches[0].Index + $matches[0].Length)
     $temporary="$AutostartMonitor.tmp.$PID"
     [IO.File]::WriteAllText($temporary,$updated,(New-Object Text.UTF8Encoding($false)))
-    [IO.File]::Replace($temporary,$AutostartMonitor,$null)
+    [IO.File]::Replace($temporary,$AutostartMonitor,[NullString]::Value)
 }
 
 $existingProcess=Get-LiveSupervisorProcess
