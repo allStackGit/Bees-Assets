@@ -36,12 +36,43 @@ function listLogFiles(root, recursive, limit = Number.POSITIVE_INFINITY) {
     return found;
 }
 
+// Search backwards for the latest checkpoint-resume marker, including when it has
+// scrolled beyond readTail's bounded window. No historical training logs are opened.
+function lastLearnerResumeStep(filename) {
+    let fd;
+    try {
+        fd = fs.openSync(filename, 'r');
+        const end = fs.fstatSync(fd).size;
+        const chunkBytes = 65536;
+        let nextPrefix = '';
+        for (let pos = end; pos > 0;) {
+            const count = Math.min(chunkBytes, pos);
+            pos -= count;
+            const chunk = Buffer.allocUnsafe(count);
+            const bytes = fs.readSync(fd, chunk, 0, count, pos);
+            const text = chunk.toString('utf8', 0, bytes) + nextPrefix;
+            const matches = [...text.matchAll(/Resuming training from step\s+([\d,]+)/gi)];
+            if (matches.length) {
+                const step = Number(matches[matches.length - 1][1].replace(/,/g, ''));
+                return Number.isSafeInteger(step) ? step : null;
+            }
+            nextPrefix = text.slice(0, 128);
+        }
+    } catch (_) {
+        return null;
+    } finally {
+        if (fd !== undefined) fs.closeSync(fd);
+    }
+    return null;
+}
+
 function parseLearnerLogFiles(files) {
     let elo = null;
     let step = null;
     let reward = null;
     let averageStepsPerSecond = null;
     let liveStepsPerSecond = null;
+    let restartAverageStepsPerSecond = null;
 
     for (const file of files) {
         let firstStep = null;
@@ -50,6 +81,7 @@ function parseLearnerLogFiles(files) {
         let previousElapsed = null;
         let fileAverage = null;
         let fileLive = null;
+        let lastSummary = null;
 
         for (const line of readTail(file.full, 1000, 2 * 1024 * 1024)) {
             // Only ML-Agents summary lines are authoritative learner progress. Other Bees logs
@@ -65,6 +97,7 @@ function parseLearnerLogFiles(files) {
             const lineElapsed = Number(elapsedMatch[1]);
             if (!Number.isFinite(lineStep) || !Number.isFinite(lineElapsed)) continue;
             step = lineStep;
+            lastSummary = { step: lineStep, elapsed: lineElapsed };
 
             let match;
             if ((match = line.match(/Mean Reward\s*[:=]\s*(-?\d+(?:\.\d+)?)/i))) {
@@ -98,6 +131,16 @@ function parseLearnerLogFiles(files) {
 
         if (fileAverage !== null) averageStepsPerSecond = fileAverage;
         if (fileLive !== null) liveStepsPerSecond = fileLive;
+        if (lastSummary && lastSummary.elapsed > 0) {
+            const resumedStep = lastLearnerResumeStep(file.full);
+            // A nonzero resumed checkpoint is the only authoritative baseline
+            // when reading a tail of a long-running, repeatedly restarted log.
+            // Do not invent an average when that marker is missing.
+            if (resumedStep !== null && lastSummary.step >= resumedStep) {
+                restartAverageStepsPerSecond =
+                    (lastSummary.step - resumedStep) / lastSummary.elapsed;
+            }
+        }
     }
 
     return {
@@ -106,6 +149,7 @@ function parseLearnerLogFiles(files) {
         MeanReward: reward,
         AverageStepsPerSecond: averageStepsPerSecond,
         LiveStepsPerSecond: liveStepsPerSecond,
+        RestartAverageStepsPerSecond: restartAverageStepsPerSecond,
     };
 }
 
@@ -727,8 +771,9 @@ async function getStatusFrameLines(config, adminToken) {
             'Learner logs: Step=' + (learner.Step == null ? '-' : learner.Step) +
             '  ELO=' + (learner.ELO == null ? '-' : number(learner.ELO, 1)) +
             '  MeanReward=' + (learner.MeanReward == null ? '-' : number(learner.MeanReward, 3)) +
-            '  LearnerAvgStep/s=' + (learner.AverageStepsPerSecond == null ? '-' : number(learner.AverageStepsPerSecond, 1)) +
-            '  LearnerLiveStep/s=' + (learner.LiveStepsPerSecond == null ? '-' : number(learner.LiveStepsPerSecond, 1))
+            '  LearnerRestartAvgStep/s=' + (learner.RestartAverageStepsPerSecond == null ? '-' : number(learner.RestartAverageStepsPerSecond, 1)) +
+            '  LearnerTailAvgStep/s=' + (learner.AverageStepsPerSecond == null ? '-' : number(learner.AverageStepsPerSecond, 1)) +
+            '  LearnerLastIntervalStep/s=' + (learner.LiveStepsPerSecond == null ? '-' : number(learner.LiveStepsPerSecond, 1))
         );
         const reportingWorkers = trainers.filter(record =>
             !record.stale &&
