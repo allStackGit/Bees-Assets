@@ -605,30 +605,34 @@ class BeesStructuredObservationEncoder(nn.Module):
             "The Bees combat policy does not define goal-signal observations."
         )
 
-    def _normalized_slice(
-        self,
-        raw: torch.Tensor,
-        start: int,
-        size: int,
-        normalization_divisor=None,
-    ) -> torch.Tensor:
-        values = raw[:, start : start + size]
+    def _normalized_fixed_features(self, raw: torch.Tensor):
+        """Normalize the seven fixed feature ranges in one grouped operation.
+
+        Variable entity slots intentionally remain unnormalized. Packing the
+        fixed slices first preserves the existing subtraction, division and
+        clamp order while avoiding seven separate groups of pointwise kernels.
+        """
+        ranges = _NORMALIZED_FIXED_RANGES
         normalizer = self.vector_input.normalizer
         if normalizer is None:
-            return values
-        mean = normalizer.running_mean[start : start + size]
-        if normalization_divisor is None:
-            variance = normalizer.running_variance[start : start + size]
-            divisor = torch.sqrt(
-                variance / normalizer.normalization_steps
-            )
-        else:
-            divisor = normalization_divisor[start : start + size]
-        return torch.clamp(
-            (values - mean) / divisor,
-            -5,
-            5,
+            return tuple(raw[:, start : start + size] for start, size in ranges)
+
+        packed = torch.cat(
+            [raw[:, start : start + size] for start, size in ranges],
+            dim=1,
         )
+        means = torch.cat(
+            [normalizer.running_mean[start : start + size] for start, size in ranges]
+        )
+        variances = torch.cat(
+            [
+                normalizer.running_variance[start : start + size]
+                for start, size in ranges
+            ]
+        )
+        divisor = torch.sqrt(variances / normalizer.normalization_steps)
+        normalized = torch.clamp((packed - means) / divisor, -5, 5)
+        return torch.split(normalized, [size for _, size in ranges], dim=1)
 
     def _entity_weapon_embeddings(
         self,
@@ -1237,38 +1241,18 @@ class BeesStructuredObservationEncoder(nn.Module):
                 "Bees structured policy received an unexpected observation size."
             )
 
-        # All fixed-feature slices use the same statistics during this call.
-        # Share their divisor calculation without retaining it across calls or
-        # replacing division with a differently rounded multiply.
-        normalizer = self.vector_input.normalizer
-        normalization_divisor = (
-            None
-            if normalizer is None
-            else torch.sqrt(
-                normalizer.running_variance / normalizer.normalization_steps
-            )
-        )
+        fixed_features = self._normalized_fixed_features(raw)
 
         # Variable slots are already emitted as bounded semantic features by Unity.
         # Feed those raw values to the shared encoders so an identical entity or weapon
         # has identical encoder inputs regardless of which absolute slot it occupies.
         # Running normalization is applied only to the fixed-position global state
         # channels that the structured encoder actually consumes normalized.
-        self_obs = self._normalized_slice(
-            raw,
-            SELF_START,
-            SELF_SIZE,
-            normalization_divisor=normalization_divisor,
-        )
+        self_obs = fixed_features[0]
         self_embedding = self.self_encoder(self_obs)
 
         capability = self.capability_encoder(
-            self._normalized_slice(
-                raw,
-                CAPABILITY_START,
-                CAPABILITY_SIZE,
-                normalization_divisor=normalization_divisor,
-            )
+            fixed_features[1]
         )
 
         parent_norm = raw[:, PARENT_START : PARENT_START + PARENT_SIZE].reshape(
@@ -1710,44 +1694,19 @@ class BeesStructuredObservationEncoder(nn.Module):
             )
 
         objective = self.objective_encoder(
-            self._normalized_slice(
-                raw,
-                OBJECTIVE_START,
-                OBJECTIVE_SIZE,
-                normalization_divisor=normalization_divisor,
-            )
+            fixed_features[2]
         )
         navigation = self.navigation_encoder(
-            self._normalized_slice(
-                raw,
-                NAVIGATION_START,
-                NAVIGATION_SIZE,
-                normalization_divisor=normalization_divisor,
-            )
+            fixed_features[3]
         )
         exploration = self.exploration_encoder(
-            self._normalized_slice(
-                raw,
-                EXPLORATION_START,
-                EXPLORATION_SIZE,
-                normalization_divisor=normalization_divisor,
-            )
+            fixed_features[4]
         )
         tail = self.tail_encoder(
             torch.cat(
                 [
-                    self._normalized_slice(
-                        raw,
-                        EPISODE_PROGRESS_INDEX,
-                        1,
-                        normalization_divisor=normalization_divisor,
-                    ),
-                    self._normalized_slice(
-                        raw,
-                        RESERVED_START,
-                        RESERVED_SIZE,
-                        normalization_divisor=normalization_divisor,
-                    ),
+                    fixed_features[5],
+                    fixed_features[6],
                 ],
                 dim=1,
             )

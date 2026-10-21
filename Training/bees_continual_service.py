@@ -307,7 +307,7 @@ def _resumable_step_setting_from_config(text: str, key: str) -> Optional[int]:
     return int(matches[0]) if matches else None
 
 
-def _normalize_resume_safe_generation_settings(text: str) -> str:
+def _normalize_resume_safe_generation_settings(text: str) -> Any:
     """Normalize trainer settings that may change while resuming one generation.
 
     Generation YAML files remain immutable audit records. Device placement, PPO
@@ -411,12 +411,23 @@ def _normalize_resume_safe_generation_settings(text: str) -> str:
     for key, count in resumable_step_counts.items():
         if count > 1:
             raise ValueError(f"Trainer config has multiple {key} entries.")
-    return "\n".join(normalized)
+    # Compare parsed YAML rather than source formatting/comments. Adding
+    # trainer documentation cannot invalidate a compatible generation.
+    import yaml
+
+    return yaml.safe_load("\n".join(normalized))
+
+
+def _same_generation_config_semantics(existing: bytes, requested: bytes) -> bool:
+    """Only reuse an immutable YAML config when its actual settings match."""
+    import yaml
+
+    return yaml.safe_load(existing) == yaml.safe_load(requested)
 
 
 def _write_immutable_generation_config(path: Path, body: bytes) -> Path:
     if path.exists():
-        if path.read_bytes() != body:
+        if not _same_generation_config_semantics(path.read_bytes(), body):
             raise ValueError(f"Immutable generation trainer config conflict: {path}")
         return path
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -426,7 +437,7 @@ def _write_immutable_generation_config(path: Path, body: bytes) -> Path:
             handle.flush()
             os.fsync(handle.fileno())
     except FileExistsError:
-        if path.read_bytes() != body:
+        if not _same_generation_config_semantics(path.read_bytes(), body):
             raise ValueError(f"Immutable generation trainer config conflict: {path}")
     return path
 
@@ -450,7 +461,7 @@ def write_generation_config(options: ServiceOptions, index: int) -> Path:
     body = rewrite_max_steps(source, target_steps).encode("utf-8")
     config_root = _service_root(options) / "trainer-configs"
     destination = config_root / f"{generation_id(index)}.yaml"
-    if not destination.exists() or destination.read_bytes() == body:
+    if (not destination.exists() or _same_generation_config_semantics(destination.read_bytes(), body)):
         return _write_immutable_generation_config(destination, body)
 
     # Generation configs are immutable audit records. Generation cadence and the explicitly

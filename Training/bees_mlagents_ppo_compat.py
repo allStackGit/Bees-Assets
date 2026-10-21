@@ -6462,6 +6462,61 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             self._bees_poca_update_executor = None
         return original_poca_save_model(self)
 
+    def configure_fused_cuda_adam(optimizer):
+        """Enable PyTorch 2.1 CUDA fused Adam on the existing optimizer state.
+
+        Optimizer moments and step counts remain unchanged. ML-Agents normally
+        initializes its Adam before restoring its checkpoint; an ordinary Adam
+        checkpoint can contain CPU step counters which fused CUDA Adam requires
+        on the same device as the parameters.
+        """
+        from mlagents.torch_utils import torch
+
+        adam = getattr(optimizer, "optimizer", None)
+        if not isinstance(adam, torch.optim.Adam):
+            return "not-adam"
+        if _POCA_OPTIMIZATIONS.cuda_graphs:
+            return "cuda-graphs-enabled"
+        groups = adam.param_groups
+        parameters = [param for group in groups for param in group["params"]]
+        if not parameters or any(
+            param.device.type != "cuda" or param.dtype != torch.float32
+            for param in parameters
+        ):
+            return "unsupported-device-or-dtype"
+        if any(
+            group.get("differentiable", False)
+            for group in groups
+        ):
+            return "differentiable-adam"
+        if all(group.get("fused") is True for group in groups):
+            return "already-enabled"
+
+        # The loaded step value is deliberately not incremented or reset.
+        # GPU transfer is only necessary for counters loaded/created by the
+        # non-fused Adam implementation.
+        for param in parameters:
+            state = adam.state.get(param)
+            if state and "step" in state:
+                step = state["step"]
+                if not torch.is_tensor(step):
+                    step = torch.tensor(float(step), dtype=torch.float32)
+                state["step"] = step.to(
+                    device=param.device, dtype=torch.float32
+                )
+        for group in groups:
+            group["foreach"] = False
+            group["fused"] = True
+        adam.defaults["foreach"] = False
+        adam.defaults["fused"] = True
+        adam._step_supports_amp_scaling = True
+        print(
+            "[Bees PPO kernel] fused CUDA Adam enabled "
+            f"parameters={len(parameters)} state=preserved",
+            flush=True,
+        )
+        return "enabled"
+
     def weighted_poca_update_policy(self):
         """ML-Agents 1.1.0 on-policy update with cached feed-forward minibatch tensors."""
 
@@ -6473,6 +6528,14 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         buffer_length = update_buffer.num_experiences
         if async_buffer is None:
             self.cumulative_returns_since_policy_update.clear()
+
+        fused_adam = configure_fused_cuda_adam(self.optimizer)
+        if fused_adam not in ("enabled", "already-enabled"):
+            print(
+                "[Bees PPO kernel] fused CUDA Adam inactive "
+                f"reason={fused_adam}",
+                flush=True,
+            )
 
         # The Bees learner installs the stock MA-POCA critic. The retired
         # factorized-critic experiment must never silently change PPO semantics.
@@ -7081,6 +7144,25 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             update_stats = self.optimizer.bc_module.update()
             for stat, val in update_stats.items():
                 self._stats_reporter.add_stat(stat, val)
+
+        factorized_critic = getattr(self.optimizer, "critic", None)
+        if (
+            getattr(self.optimizer, "_bees_factorized_poca", False)
+            and factorized_critic is not None
+            and hasattr(
+                factorized_critic,
+                "complete_training_buffer",
+            )
+        ):
+            bootstrap_remaining = (
+                factorized_critic.complete_training_buffer()
+            )
+            if bootstrap_remaining > 0 or not actor_training_enabled:
+                print(
+                    "[Bees POCA factorized] critic bootstrap "
+                    f"buffers_remaining={bootstrap_remaining}",
+                    flush=True,
+                )
 
         update_buffer.reset_agent()
         return True
