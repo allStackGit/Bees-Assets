@@ -19,6 +19,7 @@ internal static class RlOneVsOneTrainingBootstrap
 {
     internal const string TrainingSceneName = "RL 1v1 Training";
     internal const string ObserveVisibleObstaclesFlag = "--bees-rl-observe-visible-obstacles";
+    internal const string ObserveRealtimeFlag = "--bees-rl-observe-realtime";
     internal const int TrainingLevelCount = 1;
 
     // Keep these original proof constants as the stable no-argument defaults. Runtime code uses the
@@ -64,6 +65,9 @@ internal static class RlOneVsOneTrainingBootstrap
 
     internal static bool ObserveVisibleObstaclesRequested =>
         HasCommandLineFlag(ObserveVisibleObstaclesFlag);
+
+    internal static bool ObserveRealtimeRequested =>
+        Application.isEditor && HasCommandLineFlag(ObserveRealtimeFlag);
 
     internal static float CurrentHealthRatio => RuntimeOptions.HealthRatio;
     internal static float CurrentMapSize => RuntimeOptions.MapSize;
@@ -353,6 +357,17 @@ internal static class RlOneVsOneTrainingBootstrap
         stage.UseFullyRandomEnemySquads = false;
         stage.HasRandomizedOptions = false;
         stage.IsRendering = ShouldRenderTraining(Application.isEditor, Application.isBatchMode, SystemInfo.graphicsDeviceType);
+
+        if (ObserveRealtimeRequested)
+        {
+            // StageConfigOptions applies OverrideTimeScale each episode. Ensure
+            // those resets do not replace the observer's normal 1x speed with
+            // the accelerated gameplay/server configuration.
+            stage.OverrideTimeScale = 1;
+            stage.TimeScale = 1f;
+            Time.timeScale = 1f;
+            Debug.Log("RL visual observer running at 1x time scale.");
+        }
 
         // Automated training skips AudioController.Setup(), so inherited scene audio flags must
         // not reach music or effect paths that expect the controller to have a bound Level.
