@@ -2269,15 +2269,15 @@ def _poca_cpu_tensor(values, dtype):
         )
 
 
-# Each ML-Agents observation field contains many individual NumPy arrays. Converting
-# the whole field with to_ndarray() / np.array(field) can require constructing a
-# ~2 GiB intermediate and has occasionally stalled PPO for 20+ minutes on
-# Windows. Materialize directly into the final float32 storage in small blocks.
+# ML-Agents keeps each observation row as a separate NumPy array.
+# np.asarray(list_of_rows) recursively constructs a new dense array and can
+# stall for minutes under Windows. Copy each row directly into the final
+# contiguous float32 allocation, without an intermediate batch allocation.
 POCA_OBSERVATION_COPY_CHUNK_ROWS = 256
 
 
 def _poca_bounded_observation_tensor(field, observation_shape):
-    """Copy a fixed-shape ML-Agents observation field without a full-size temporary."""
+    """Copy fixed-shape ML-Agents observation rows directly to one CPU tensor."""
 
     import numpy as np
     from mlagents.torch_utils import torch
@@ -2291,16 +2291,20 @@ def _poca_bounded_observation_tensor(field, observation_shape):
         for start in range(0, rows, POCA_OBSERVATION_COPY_CHUNK_ROWS):
             stop = min(rows, start + POCA_OBSERVATION_COPY_CHUNK_ROWS)
             started = time.perf_counter()
-            # This bounds the transient NumPy array to at most 256 rows
-            # (~8 MiB for Bees' 7,743-element observation).
-            chunk = np.asarray(field[start:stop], dtype=np.float32)
-            expected_shape = (stop - start, *shape)
-            if chunk.shape != expected_shape:
-                raise ValueError(
-                    f"invalid PPO observation shape at rows {start}:{stop}: "
-                    f"expected {expected_shape}, got {chunk.shape}"
-                )
-            observations[start:stop] = chunk
+            for row_index in range(start, stop):
+                row = field[row_index]
+                # AgentBufferField entries are already ndarrays. In particular,
+                # avoid np.asarray() over the list of multiple array entries.
+                if isinstance(row, np.ndarray):
+                    values = row
+                else:
+                    values = np.asarray(row, dtype=np.float32)
+                if values.shape != shape:
+                    raise ValueError(
+                        f"invalid PPO observation shape at row {row_index}: "
+                        f"expected {shape}, got {values.shape}"
+                    )
+                observations[row_index] = values
             seconds = time.perf_counter() - started
             if seconds >= 1.0:
                 print(
