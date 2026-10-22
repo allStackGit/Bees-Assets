@@ -218,6 +218,10 @@ async function invokeObserve() {
             },
         );
         await waitForSpawn(editor, 'Unity Editor observer');
+        // The Editor is allowed to remain open after Play mode stops. It has
+        // no inherited stdio, so release Node's handle to its process; otherwise
+        // the observe command waits for Unity.exe to exit even after cleanup.
+        editor.unref();
 
         console.log(
             'Unity Editor is opening the RL 1v1 Training scene. Live training policy assignments ' +
