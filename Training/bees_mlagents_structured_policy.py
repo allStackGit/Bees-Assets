@@ -1890,6 +1890,7 @@ class BeesStructuredNetworkBody(nn.Module):
             torch.is_grad_enabled()
             and not torch.onnx.is_in_onnx_export()
             and graph_plan is not None
+            and graph_plan.get("batch_size") == int(inputs[0].shape[0])
         ):
             batch_size = int(inputs[0].shape[0])
             padded_inputs = [
