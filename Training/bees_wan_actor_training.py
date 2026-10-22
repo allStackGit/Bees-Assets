@@ -364,6 +364,9 @@ class WanActorBroker:
             "config": None,
         }
         self._trajectory_batches: queue.Queue = queue.Queue(maxsize=options.max_queued_batches)
+        # A bounded number of concurrent decoders protects broker RPC/control from
+        # upload bursts, even when remote workers use multiple upload threads.
+        self._upload_decode_slots = threading.BoundedSemaphore(2)
         self._cohort_blocked_actors = set()
         self._server: Optional[http.server.ThreadingHTTPServer] = None
         self._server_thread: Optional[threading.Thread] = None
@@ -437,13 +440,20 @@ class WanActorBroker:
                 expected = "Bearer " + broker.auth_token
                 return hmac.compare_digest(supplied, expected)
 
-            def _error(self, status: int, code: str, message: str) -> None:
+            def _error(
+                self, status: int, code: str, message: str, *, close: bool = False
+            ) -> None:
                 body = json.dumps({"error": code, "message": message}).encode("utf-8")
+                if close:
+                    # Reject before reading a potentially huge request body. The
+                    # unread bytes must not be parsed as a subsequent HTTP request.
+                    self.close_connection = True
                 _send_http_response(
                     self,
                     status=status,
                     content_type="application/json",
                     body=body,
+                    headers={"Connection": "close"} if close else None,
                 )
 
             def _binary(
@@ -561,6 +571,15 @@ class WanActorBroker:
                     and self.headers.get("X-Bees-Upload-Diagnostics") == "1"
                     else None
                 )
+                upload_slot = False
+                if parsed.path == "/trajectories":
+                    if not broker.can_accept_upload_without_decoding():
+                        self._error(429, "backpressure", "Central broker queue is full.", close=True)
+                        return
+                    upload_slot = broker._upload_decode_slots.acquire(blocking=False)
+                    if not upload_slot:
+                        self._error(429, "backpressure", "Broker upload decode capacity is full.", close=True)
+                        return
                 try:
                     payload = self._read_payload(timings)
                     if not isinstance(payload, Mapping):
@@ -610,6 +629,9 @@ class WanActorBroker:
                     self._error(429, "backpressure", "Central learner trajectory queue is full.")
                 except (ValueError, RuntimeError) as exc:
                     self._error(400, "invalid-request", str(exc))
+                finally:
+                    if upload_slot:
+                        broker._upload_decode_slots.release()
 
         class Server(http.server.ThreadingHTTPServer):
             daemon_threads = True
@@ -896,6 +918,19 @@ class WanActorBroker:
             self._condition.wait(timeout=max(0.0, float(timeout_seconds)))
             if self._closed:
                 raise RuntimeError("WAN actor broker closed")
+
+    def can_accept_upload_without_decoding(self) -> bool:
+        """Cheap coarse admission check before unpickling an uploaded trajectory."""
+        with self._condition:
+            return (
+                not self._closed
+                and not self._trajectory_batches.full()
+                and not self._cohort_blocked_actors
+            ) or (
+                not self._closed
+                and not self._trajectory_batches.full()
+                and bool(self._cohort_blocked_actors)
+            )
 
     def next_trajectory_batch(self, timeout_seconds: float) -> Mapping[str, Any]:
         try:
