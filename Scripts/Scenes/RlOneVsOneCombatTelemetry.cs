@@ -7,8 +7,9 @@ using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// Episode-scoped combat telemetry for dedicated RL training. Metrics are updated only by actual
-/// shot and damage events, so diagnostics do not add a per-frame fleet/turret scan or a second log line.
+/// Episode-scoped combat telemetry for dedicated RL training. Normal combat metrics follow
+/// shot/damage events; stationary aiming mode also accumulates policy-decision samples in memory.
+/// Diagnostics add no per-frame fleet/turret scan or second log line.
 /// Mutable telemetry is partitioned by Level so simultaneous arenas cannot reset or consume each other's state.
 /// </summary>
 internal static class RlOneVsOneCombatTelemetry
