@@ -9,6 +9,7 @@ const {
     paths,
     removeIfExists,
     resolveUnityEditor,
+    runChecked,
     sleep,
     spawn,
     testControl,
@@ -132,6 +133,17 @@ async function invokeObserve() {
     if (!exists(observerScript)) {
         throw new Error('Training observer helper is missing: ' + observerScript);
     }
+
+    // The learner may be training-enabled but not have published its first policies.
+    // In that state, opening Unity first blocks ML-Agents waiting for actions while
+    // the policy driver waits for the broker. Fail before entering Play mode instead.
+    runChecked(python, [
+        observerScript,
+        '--check-ready',
+        '--broker-port', String(config.brokerPort),
+        '--token-file', paths.wanTokenPath,
+        '--run-id', runId,
+    ], paths.assetsRoot);
 
     const unity = resolveUnityEditor(config);
     let observer = null;
