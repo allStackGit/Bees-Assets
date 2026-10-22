@@ -73,10 +73,13 @@ const {
 } = require('./localActor');
 
 function getEnvironmentArgs(config, options) {
-    if (Array.isArray(options.envArgs) && options.envArgs.length) {
-        return options.envArgs.map(String);
+    const args = Array.isArray(options.envArgs) && options.envArgs.length
+        ? options.envArgs.map(String)
+        : Array.isArray(config.environmentArgs) ? config.environmentArgs.map(String) : [];
+    if (options.noMovement) {
+        args.push('--rl-disable-movement=true');
     }
-    return Array.isArray(config.environmentArgs) ? config.environmentArgs.map(String) : [];
+    return args;
 }
 
 function isInterruptedIncompatibleCutover(release, desired) {
