@@ -14,6 +14,7 @@ using UnityEngine;
 internal static class RlOneVsOneCombatTelemetry
 {
     private const float AccurateAimThresholdDegrees = 5f;
+    private const int PolicyBearingSectorCount = 8;
 
     private sealed class ArenaState
     {
@@ -25,6 +26,23 @@ internal static class RlOneVsOneCombatTelemetry
         internal readonly long[] AimSamples = new long[2];
         internal readonly long[] AccurateAimSamples = new long[2];
         internal readonly long[] AlignedTurretSamples = new long[2];
+
+        // Stationary training: sampled on policy decisions, whether or not a turret fires.
+        internal readonly long[] PolicyDecisions = new long[2];
+        internal readonly long[] PolicyDecisionsWithKnownEnemy = new long[2];
+        internal readonly long[] RequestedAimSamples = new long[2];
+        internal readonly double[] RequestedAimErrorDegrees = new double[2];
+        internal readonly long[] RequestedAimWithin5 = new long[2];
+        internal readonly long[] RequestedAimWithin15 = new long[2];
+        internal readonly long[] RequestedAimWithin30 = new long[2];
+        internal readonly double[] ActualTurretErrorDegrees = new double[2];
+        internal readonly long[] ActualTurretSamples = new long[2];
+        internal readonly double[] RequestedAimCosSum = new double[2];
+        internal readonly double[] RequestedAimSinSum = new double[2];
+        internal readonly long[][] TargetBearingCounts = { new long[PolicyBearingSectorCount], new long[PolicyBearingSectorCount] };
+        internal readonly long[][] RequestedBearingCounts = { new long[PolicyBearingSectorCount], new long[PolicyBearingSectorCount] };
+        internal readonly double[][] TargetSectorErrorDegrees = { new double[PolicyBearingSectorCount], new double[PolicyBearingSectorCount] };
+        internal readonly long[][] TargetSectorWithin15 = { new long[PolicyBearingSectorCount], new long[PolicyBearingSectorCount] };
         internal readonly float[] FirstFireDistance = { -1f, -1f };
         internal readonly float[] FirstHitDistance = { -1f, -1f };
         internal readonly HashSet<long>[] EnemyHitProjectiles =
@@ -69,6 +87,100 @@ internal static class RlOneVsOneCombatTelemetry
         if (level != null)
         {
             States.Remove(level);
+        }
+    }
+
+    /// <summary>
+    /// Capture the actual requested aim at each stationary policy decision, including when
+    /// firing is disabled or a weapon is not ready. Enemy visibility uses the same permanent
+    /// faction-wide cache as the policy observation; bearing sectors are in policy coordinates.
+    /// </summary>
+    internal static void RecordStationaryPolicyDecision(Ship ship, int frameQuarterTurns, Vector2[] requestedWorldAims)
+    {
+        if (!TryGetSideIndex(ship, out ArenaState state, out int sideIndex))
+        {
+            return;
+        }
+
+        state.PolicyDecisions[sideIndex]++;
+        Ship nearestEnemy = null;
+        float nearestDistanceSquared = float.MaxValue;
+        Vector2 shipPosition = ship.GetPosition();
+        foreach (Ship enemy in state.Level.State.GetShipsVisibleToHiveMind(ship.Side))
+        {
+            if (enemy == null || enemy.IsDead || enemy.Side == ship.Side)
+            {
+                continue;
+            }
+
+            float distanceSquared = (enemy.GetPosition() - shipPosition).sqrMagnitude;
+            if (distanceSquared < nearestDistanceSquared)
+            {
+                nearestDistanceSquared = distanceSquared;
+                nearestEnemy = enemy;
+            }
+        }
+        if (nearestEnemy == null)
+        {
+            return;
+        }
+        state.PolicyDecisionsWithKnownEnemy[sideIndex]++;
+
+        if (ship.Weapons == null || requestedWorldAims == null)
+        {
+            return;
+        }
+
+        int slotCount = Mathf.Min(ship.Weapons.Count, requestedWorldAims.Length);
+        for (int slot = 0; slot < slotCount; slot++)
+        {
+            if (!(ship.Weapons[slot] is Turret turret))
+            {
+                continue;
+            }
+
+            Vector2 targetDirection = nearestEnemy.GetPosition() - turret.GetPosition();
+            Vector2 requestedAim = requestedWorldAims[slot];
+            if (targetDirection.sqrMagnitude < 0.000001f || requestedAim.sqrMagnitude < 0.000001f)
+            {
+                continue;
+            }
+
+            Vector2 policyTarget = RlPolicyCoordinateFrame.WorldToPolicy(targetDirection, frameQuarterTurns);
+            Vector2 policyAim = RlPolicyCoordinateFrame.WorldToPolicy(requestedAim, frameQuarterTurns);
+            float targetAngle = Mathf.Repeat(Mathf.Atan2(policyTarget.y, policyTarget.x) * Mathf.Rad2Deg, 360f);
+            float aimAngle = Mathf.Repeat(Mathf.Atan2(policyAim.y, policyAim.x) * Mathf.Rad2Deg, 360f);
+            int targetSector = Mathf.Min(PolicyBearingSectorCount - 1, Mathf.FloorToInt(targetAngle / 45f));
+            int requestedSector = Mathf.Min(PolicyBearingSectorCount - 1, Mathf.FloorToInt(aimAngle / 45f));
+            float errorDegrees = Vector2.Angle(requestedAim, targetDirection);
+
+            state.RequestedAimSamples[sideIndex]++;
+            state.RequestedAimErrorDegrees[sideIndex] += errorDegrees;
+            if (errorDegrees <= 5f) state.RequestedAimWithin5[sideIndex]++;
+            if (errorDegrees <= 15f)
+            {
+                state.RequestedAimWithin15[sideIndex]++;
+                state.TargetSectorWithin15[sideIndex][targetSector]++;
+            }
+            if (errorDegrees <= 30f) state.RequestedAimWithin30[sideIndex]++;
+            state.TargetBearingCounts[sideIndex][targetSector]++;
+            state.RequestedBearingCounts[sideIndex][requestedSector]++;
+            state.TargetSectorErrorDegrees[sideIndex][targetSector] += errorDegrees;
+            state.RequestedAimCosSum[sideIndex] += Mathf.Cos(aimAngle * Mathf.Deg2Rad);
+            state.RequestedAimSinSum[sideIndex] += Mathf.Sin(aimAngle * Mathf.Deg2Rad);
+
+            // Physical turret rotation may lag behind the requested point.
+            if (turret.PieceTransform != null && ship.Level.Map != null)
+            {
+                Vector3 worldForward = turret.PieceTransform.up;
+                Vector3 mapForward = ship.Level.Map.Transform.InverseTransformDirection(worldForward);
+                Vector2 actualForward = new Vector2(mapForward.x, mapForward.y);
+                if (actualForward.sqrMagnitude > 0.000001f)
+                {
+                    state.ActualTurretErrorDegrees[sideIndex] += Vector2.Angle(actualForward, targetDirection);
+                    state.ActualTurretSamples[sideIndex]++;
+                }
+            }
         }
     }
 
@@ -180,7 +292,7 @@ internal static class RlOneVsOneCombatTelemetry
         {
             return new Dictionary<string, object>();
         }
-        return new Dictionary<string, object>
+        var aim = new Dictionary<string, object>
         {
             ["samples"] = state.AimSamples[sideIndex],
             ["error_sum_deg"] = state.AimErrorDegrees[sideIndex],
@@ -191,6 +303,28 @@ internal static class RlOneVsOneCombatTelemetry
             ["first_hit_distance"] = state.FirstHitDistance[sideIndex] < 0f
                 ? (object)null : state.FirstHitDistance[sideIndex]
         };
+        if (RlOneVsOneTrainingBootstrap.CurrentMovementDisabled)
+        {
+            aim["stationary_decisions"] = new Dictionary<string, object>
+            {
+                ["policy_decisions"] = state.PolicyDecisions[sideIndex],
+                ["with_known_enemy"] = state.PolicyDecisionsWithKnownEnemy[sideIndex],
+                ["requested_samples"] = state.RequestedAimSamples[sideIndex],
+                ["requested_error_sum_deg"] = state.RequestedAimErrorDegrees[sideIndex],
+                ["requested_within_5deg"] = state.RequestedAimWithin5[sideIndex],
+                ["requested_within_15deg"] = state.RequestedAimWithin15[sideIndex],
+                ["requested_within_30deg"] = state.RequestedAimWithin30[sideIndex],
+                ["actual_turret_samples"] = state.ActualTurretSamples[sideIndex],
+                ["actual_turret_error_sum_deg"] = state.ActualTurretErrorDegrees[sideIndex],
+                ["target_bearing_sector_counts"] = state.TargetBearingCounts[sideIndex],
+                ["requested_bearing_sector_counts"] = state.RequestedBearingCounts[sideIndex],
+                ["target_sector_error_sum_deg"] = state.TargetSectorErrorDegrees[sideIndex],
+                ["target_sector_within_15deg"] = state.TargetSectorWithin15[sideIndex],
+                ["requested_bearing_cos_sum"] = state.RequestedAimCosSum[sideIndex],
+                ["requested_bearing_sin_sum"] = state.RequestedAimSinSum[sideIndex]
+            };
+        }
+        return aim;
     }
 
     private static bool TryFindBestAimedEnemy(
