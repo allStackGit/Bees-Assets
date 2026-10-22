@@ -4916,7 +4916,7 @@ def _poca_build_faction_cuda_graph_plan(cached, reference):
     if not isinstance(rows, dict):
         return None, None
     batch_size = int(reference.shape[0])
-    plan = {}
+    plan = {"batch_size": batch_size}
     signature = []
     for name in ("bee", "human", "mixed"):
         values = np.asarray(rows.get(name, ()), dtype=np.int64)
@@ -5410,19 +5410,25 @@ def _poca_full_cuda_graph_update(
     )
     previous_dimension_mask = dimension_mask
     previous_sample_weights = sample_weights
-    faction_token = set_training_faction_graph_plan(
-        static["faction_plan"]
-    )
 
     def graph_body(*, optimizer_step: bool):
         optimizer.zero_grad(set_to_none=False)
-        run_out = poca_optimizer.policy.actor.get_stats(
-            static["current_obs"],
-            static["actions"],
-            masks=static["act_masks"],
-            memories=[],
-            sequence_length=poca_optimizer.policy.sequence_length,
+        # The padded faction indices are local to the actor's minibatch.
+        # Never apply them to MA-POCA critic/baseline encodings, which may
+        # invoke the same shared encoder with different row counts.
+        faction_token = set_training_faction_graph_plan(
+            static["faction_plan"]
         )
+        try:
+            run_out = poca_optimizer.policy.actor.get_stats(
+                static["current_obs"],
+                static["actions"],
+                masks=static["act_masks"],
+                memories=[],
+                sequence_length=poca_optimizer.policy.sequence_length,
+            )
+        finally:
+            reset_training_faction_graph_plan(faction_token)
         log_probs = run_out["log_probs"].flatten()
         entropy = run_out["entropy"]
         values, _ = poca_optimizer.critic.critic_pass(
@@ -5513,7 +5519,6 @@ def _poca_full_cuda_graph_update(
                 optimizer_step=True
             )
     finally:
-        reset_training_faction_graph_plan(faction_token)
         _POCA_GROUP_BATCH_STATE.graph_plan = previous_group_plan
         _POCA_GROUP_BATCH_STATE.encoded_cache = previous_cache
         _POCA_GROUP_BATCH_STATE.dedup_plan = previous_dedup
