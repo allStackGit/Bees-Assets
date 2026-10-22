@@ -147,11 +147,11 @@ internal sealed class RlCombatPerception
     private readonly List<ObservedCollisionAsteroid> _collisionAsteroidCandidates = new List<ObservedCollisionAsteroid>();
     private readonly float[] _navigationOccupancy = new float[NavigationGridCellCount];
 
-    internal void Collect(Ship ship, int side, VectorSensor sensor, int frameQuarterTurns)
+    internal void Collect(Ship ship, int side, VectorSensor sensor, int frameQuarterTurns, int teamId = -1)
     {
         Vector2 origin = ship.GetPosition();
         int sideStartingTsv = RlOneVsOneEpisodeCoordinator.GetStartingTsv(ship.Level, side);
-        AddSelfObservations(ship, side, sensor, origin, frameQuarterTurns);
+        AddSelfObservations(ship, side, sensor, origin, frameQuarterTurns, teamId);
         AddCapabilityObservations(ship, sensor, sideStartingTsv);
         AddParentCarrierObservations(ship, sensor, origin, frameQuarterTurns, sideStartingTsv);
         CollectAllies(ship, side, origin);
@@ -175,7 +175,8 @@ internal sealed class RlCombatPerception
         int side,
         VectorSensor sensor,
         Vector2 position,
-        int frameQuarterTurns)
+        int frameQuarterTurns,
+        int teamId)
     {
         AddShipIdentityObservation(sensor, ship);
         AddShipTypeObservation(sensor, ship.ShipType);
@@ -203,7 +204,8 @@ internal sealed class RlCombatPerception
         sensor.AddObservation(NormalizePositive(HiveMindVision.GetEffectiveRange(ship), 80f));
         sensor.AddObservation(NormalizePositive(ship.MaxRange, 80f));
         sensor.AddObservation(NormalizePositive(ship.Firepower, 200f));
-        sensor.AddObservation(ship.IsMobile && !RlOneVsOneTrainingBootstrap.CurrentMovementDisabled ? 1f : 0f);
+        sensor.AddObservation(ship.IsMobile &&
+            !RlOneVsOneTrainingBootstrap.CurrentMovementDisabledForTeam(teamId) ? 1f : 0f);
         sensor.AddObservation(ship.IsBomber ? 1f : 0f);
         sensor.AddObservation(ship.IsCarrierShip ? 1f : 0f);
         sensor.AddObservation(ship.HasWeapons ? 1f : 0f);
