@@ -27,6 +27,7 @@ const { killProcessTree } = require('./validation');
 
 const ARENAS_PER_ENVIRONMENT_FLAG = '--bees-rl-arenas-per-env';
 const OBSERVE_VISIBLE_OBSTACLES_FLAG = '--bees-rl-observe-visible-obstacles';
+const OBSERVE_REALTIME_FLAG = '--bees-rl-observe-realtime';
 const EDITOR_EXECUTE_METHOD = 'BeesRlObserveLauncher.Begin';
 const EDITOR_STOP_FILE_FLAG = '--bees-rl-observe-stop-file=';
 
@@ -44,13 +45,15 @@ function visualEnvironmentArgs(environmentArgs) {
         if (value.toLowerCase().startsWith(ARENAS_PER_ENVIRONMENT_FLAG + '=')) {
             continue;
         }
-        if (value.toLowerCase() === OBSERVE_VISIBLE_OBSTACLES_FLAG) {
+        if (value.toLowerCase() === OBSERVE_VISIBLE_OBSTACLES_FLAG ||
+            value.toLowerCase() === OBSERVE_REALTIME_FLAG) {
             continue;
         }
         result.push(value);
     }
     result.push(ARENAS_PER_ENVIRONMENT_FLAG + '=1');
     result.push(OBSERVE_VISIBLE_OBSTACLES_FLAG);
+    result.push(OBSERVE_REALTIME_FLAG);
     return result;
 }
 
