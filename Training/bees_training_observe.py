@@ -299,10 +299,20 @@ def run_observer(
         )
 
     UnityEnvironment, _ActionTuple, _ = _import_mlagents()
+    from mlagents_envs.side_channel.engine_configuration_channel import (
+        EngineConfigurationChannel,
+    )
     from mlagents_envs.side_channel.environment_parameters_channel import (
         EnvironmentParametersChannel,
     )
 
+    # Observe is a visual inspection session, not a high-throughput rollout.
+    # Disable synthetic frame capture and advance game time at normal wall speed.
+    engine_configuration = EngineConfigurationChannel()
+    engine_configuration.set_configuration_parameters(
+        time_scale=1.0,
+        capture_frame_rate=0,
+    )
     environment_parameters = EnvironmentParametersChannel()
     _apply_environment_parameters(
         environment_parameters,
@@ -324,7 +334,7 @@ def run_observer(
                 seed=int(seed),
                 no_graphics=False,
                 timeout_wait=int(timeout_wait),
-                side_channels=[environment_parameters],
+                side_channels=[engine_configuration, environment_parameters],
             )
             environment.reset()
             teams = _validate_environment_behaviors(
