@@ -25,6 +25,8 @@ internal sealed class RlOneVsOneTrainingOptions
     internal const string ShipsPerSideFlag = "--rl-ships-per-side";
     internal const string DecisionPeriodFlag = "--rl-decision-period";
     internal const string DisableMovementFlag = "--rl-disable-movement";
+    internal const string DisableAgentMovementFlag = "--rl-disable-agent-movement";
+    internal const string DisableOpponentMovementFlag = "--rl-disable-opponent-movement";
     internal const string BeeShipTypesFlag = "--rl-bee-ship-types";
     internal const string HumanShipTypesFlag = "--rl-human-ship-types";
     internal const string MatchupModeFlag = "--rl-matchup-mode";
@@ -95,6 +97,18 @@ internal sealed class RlOneVsOneTrainingOptions
     internal int ShipsPerSide { get; private set; }
     internal int DecisionPeriod { get; private set; }
     internal bool MovementDisabled { get; private set; }
+    internal bool AgentMovementDisabled { get; private set; }
+    internal bool OpponentMovementDisabled { get; private set; }
+
+    // ML-Agents team 0 is the learning agent, team 1 its self-play opponent.
+    // Factions alternate these team IDs each episode, so movement restrictions
+    // must be attached to teams, not Bee/Human sides.
+    internal bool MovementDisabledForTeam(int teamId)
+    {
+        return MovementDisabled ||
+            (teamId == 0 && AgentMovementDisabled) ||
+            (teamId == 1 && OpponentMovementDisabled);
+    }
     internal float CollisionAsteroidSpawnSeconds { get; private set; }
     internal bool StaticObstaclesEnabled { get; private set; }
     internal bool MiningAsteroidsEnabled { get; private set; }
@@ -113,6 +127,8 @@ internal sealed class RlOneVsOneTrainingOptions
         ShipsPerSide = DefaultShipsPerSide;
         DecisionPeriod = DefaultDecisionPeriod;
         MovementDisabled = false;
+        AgentMovementDisabled = false;
+        OpponentMovementDisabled = false;
         CollisionAsteroidSpawnSeconds = DefaultCollisionAsteroidSpawnSeconds;
         StaticObstaclesEnabled = false;
         MiningAsteroidsEnabled = false;
@@ -173,6 +189,14 @@ internal sealed class RlOneVsOneTrainingOptions
             else if (TryReadBooleanOption(argument, DisableMovementFlag, args, ref i, out bool movementDisabled))
             {
                 options.MovementDisabled = movementDisabled;
+            }
+            else if (TryReadBooleanOption(argument, DisableAgentMovementFlag, args, ref i, out bool agentMovementDisabled))
+            {
+                options.AgentMovementDisabled = agentMovementDisabled;
+            }
+            else if (TryReadBooleanOption(argument, DisableOpponentMovementFlag, args, ref i, out bool opponentMovementDisabled))
+            {
+                options.OpponentMovementDisabled = opponentMovementDisabled;
             }
             else if (TryReadOption(argument, BeeShipTypesFlag, args, ref i, out value))
             {
@@ -239,7 +263,10 @@ internal sealed class RlOneVsOneTrainingOptions
             : "off";
         return $"health_ratio={FormatFloat(HealthRatio)} {mapDescription} " +
                $"episode_timeout={EpisodeTimeoutSeconds}s ships_per_side={ShipsPerSide} " +
-               $"decision_period={DecisionPeriod} movement={(MovementDisabled ? "disabled" : "enabled")} matchup_mode={MatchupMode.ToString().ToLowerInvariant()} " +
+               $"decision_period={DecisionPeriod} movement={(MovementDisabled ? "disabled" : "enabled")} " +
+               $"agent_movement={(MovementDisabledForTeam(0) ? "disabled" : "enabled")} " +
+               $"opponent_movement={(MovementDisabledForTeam(1) ? "disabled" : "enabled")} " +
+               $"matchup_mode={MatchupMode.ToString().ToLowerInvariant()} " +
                $"collision_asteroid_spawn={collisionAsteroidDescription} " +
                $"static_obstacles={(StaticObstaclesEnabled ? "on" : "off")} " +
                $"mining_asteroids={(MiningAsteroidsEnabled ? "on" : "off")} " +
