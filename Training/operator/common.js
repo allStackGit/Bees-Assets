@@ -800,6 +800,7 @@ function requestJsonOnce(baseUrl, token, method, requestPath, payload, timeoutMs
 function isTransientControlTransportError(error) {
     const code = String(error && error.code || '').toUpperCase();
     return code === 'ECONNRESET' ||
+        code === 'ECONNABORTED' ||
         code === 'ECONNREFUSED' ||
         code === 'EPIPE' ||
         code === 'ETIMEDOUT' ||
@@ -826,6 +827,10 @@ async function requestJson(baseUrl, token, method, requestPath, payload = null, 
         } catch (error) {
             lastError = error;
             if (!isTransientControlTransportError(error) || attempt >= maximumAttempts) {
+                error.message =
+                    'training-control ' + String(method).toUpperCase() + ' ' +
+                    requestPath + ' failed after ' + attempt + ' attempt(s): ' +
+                    error.message;
                 throw error;
             }
             const delayMs = 250 * attempt;
