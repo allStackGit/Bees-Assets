@@ -117,6 +117,8 @@ class _LearnerStallSampler:
         self._psutil = None
         self._process = None
         self._previous = {}
+        self._previous_thread_cpu = {}
+        self._previous_thread_sample_at = None
         self._last_gpu = {}
         self._last_gpu_at = 0.0
         self._smi = shutil.which("nvidia-smi")
@@ -197,6 +199,72 @@ class _LearnerStallSampler:
             pass
         return self._last_gpu
 
+    def _sample_thread_cpu(self):
+        """Attribute CPU consumption to learner, broker and native threads.
+
+        Request handlers run in this process, so aggregate process CPU alone
+        cannot distinguish slow PPO computation from competing WAN decoding.
+        The first sample establishes a baseline; later values are CPU %
+        relative to the sampling interval (100% means one full logical CPU).
+        """
+        if self._process is None:
+            return {}
+        try:
+            now = time.monotonic()
+            native = {
+                thread.native_id: (thread.name, thread.ident)
+                for thread in threading.enumerate()
+                if thread.native_id is not None
+            }
+            with self._lock:
+                active_learner_threads = set(self._stages)
+            samples = self._process.threads()
+            current = {
+                thread.id: float(thread.user_time + thread.system_time)
+                for thread in samples
+            }
+            previous_time = self._previous_thread_sample_at
+            previous = self._previous_thread_cpu
+            self._previous_thread_sample_at = now
+            self._previous_thread_cpu = current
+            if previous_time is None or now <= previous_time:
+                return {}
+
+            elapsed = now - previous_time
+            buckets = {
+                "learner": 0.0,
+                "wan_http": 0.0,
+                "ppo_prepare": 0.0,
+                "python_other": 0.0,
+                "native_other": 0.0,
+            }
+            wan_threads = 0
+            for thread_id, consumed in current.items():
+                info = native.get(thread_id)
+                if info is not None and "process_request_thread" in info[0]:
+                    wan_threads += 1
+                if thread_id not in previous or consumed < previous[thread_id]:
+                    continue
+                delta = consumed - previous[thread_id]
+                if info is None:
+                    bucket = "native_other"
+                elif info[1] in active_learner_threads:
+                    bucket = "learner"
+                elif "process_request_thread" in info[0]:
+                    bucket = "wan_http"
+                elif info[0].startswith("bees-poca-cpu-prepare"):
+                    bucket = "ppo_prepare"
+                else:
+                    bucket = "python_other"
+                buckets[bucket] += delta
+            return {
+                "thread_cpu_" + key + "_pct": round(100.0 * value / elapsed, 1)
+                for key, value in buckets.items()
+            } | {"wan_http_threads": wan_threads}
+        except (OSError, RuntimeError, ValueError):
+            # Profiling must never interrupt the learner.
+            return {}
+
     def _sample(self):
         data = self._windows.sample()
         if self._psutil is not None and self._process is not None:
@@ -244,6 +312,7 @@ class _LearnerStallSampler:
                         data[name] = int(delta)
             except (OSError, RuntimeError):
                 pass
+        data.update(self._sample_thread_cpu())
         data.update(self._sample_gpu(time.monotonic()))
         return data
 
