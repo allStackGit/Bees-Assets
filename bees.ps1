@@ -28,7 +28,6 @@ param(
     [switch]$SkipEvaluation,
     [switch]$EnableEvaluation,
     [string[]]$EnvArg,
-    [switch]$NoMovement,
     [switch]$Once,
     [ValidateRange(1,60)][int]$RefreshSeconds=2,
     [switch]$Server,
@@ -49,9 +48,6 @@ if($NewRun -and $Command -ne 'start' -and $Command -ne 'build'){
 }
 if($ResumeRun -and $Command -ne 'start'){
     throw '-ResumeRun is only valid with the start command.'
-}
-if($NoMovement -and $Command -ne 'start'){
-    throw '-NoMovement is only valid with the start command.'
 }
 if($ResumeRun -and $NewRun){
     throw '-ResumeRun cannot be combined with -NewRun.'
@@ -156,7 +152,6 @@ if($FullGame){$arguments+='--full-game'}
 if($Force){$arguments+='--force'}
 if($PreserveRun){$arguments+='--preserve-run'}
 if($NewRun){$arguments+='--new-run'}
-if($NoMovement){$arguments+='--no-movement'}
 if($ResumeRun){$arguments+=@('--resume-run',[string]$ResumeRun)}
 if($Threaded){$arguments+='--threaded'}
 if($PSBoundParameters.ContainsKey('PolicyLag')){
