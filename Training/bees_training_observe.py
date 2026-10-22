@@ -225,6 +225,46 @@ def _apply_new_control_if_available(
     return target_epoch
 
 
+
+def check_live_policy_readiness(
+    *, broker_port: int, token_file: str, run_id: str
+) -> None:
+    """Reject an uninitialized learner before connecting the Unity Editor."""
+    token = wan.load_auth_token(token_file)
+    client = BrokerClient("127.0.0.1", int(broker_port), token)
+    session = client.session()
+    session_id = str(session.get("session_id") or "").strip()
+    if not session_id or str(session.get("run_id") or "").strip() != str(run_id).strip():
+        raise RuntimeError("Training broker session is absent or belongs to a different run.")
+
+    control = client.control(session_id, -1)
+    if control is None:
+        raise RuntimeError(
+            "Training broker has no environment control record. "
+            "The learner has not initialized the environment."
+        )
+    state = client.state(session_id, -1, int(control.get("epoch", 0)), 0.0)
+    versions = state.get("policy_versions")
+    if not isinstance(versions, Mapping):
+        versions = {}
+    try:
+        teams = _validate_environment_behaviors(versions, BEHAVIOR_NAME)
+    except Exception as exc:
+        raise RuntimeError(
+            "Live policies for both teams have not been published by the learner. "
+            "Start training and allow at least one training environment to initialize "
+            "before using 'bees.ps1 observe'. No Unity Editor was opened."
+        ) from exc
+    if any(int(versions[behavior]) < 1 for behavior in teams.values()):
+        raise RuntimeError(
+            "Training broker has not published valid initial policy versions for both teams."
+        )
+    print(
+        "Observer preflight: live policies are available for both teams.",
+        flush=True,
+    )
+
+
 def run_observer(
     *,
     broker_port: int,
@@ -309,7 +349,9 @@ def run_observer(
                 session_id=session_id,
                 control_epoch=control_epoch,
                 expected_behaviors=expected_behaviors,
-                timeout_seconds=timeout_wait,
+                # If the policies disappear during Editor launch, fail promptly rather
+                # than leaving ML-Agents blocked in the Editor for ten minutes.
+                timeout_seconds=min(timeout_wait, 15),
             )
             while int(state.get("control_epoch", control_epoch)) != control_epoch:
                 target_control = int(state.get("control_epoch", control_epoch))
@@ -465,6 +507,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--worker-id", type=int, default=0)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--timeout-wait", type=int, default=600)
+    parser.add_argument("--check-ready", action="store_true")
     parser.add_argument(
         "--policy-sync-seconds",
         type=float,
@@ -476,6 +519,13 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args = build_parser().parse_args(argv)
     try:
+        if args.check_ready:
+            check_live_policy_readiness(
+                broker_port=args.broker_port,
+                token_file=args.token_file,
+                run_id=args.run_id,
+            )
+            return 0
         run_observer(
             broker_port=args.broker_port,
             token_file=args.token_file,
