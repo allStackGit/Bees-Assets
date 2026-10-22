@@ -266,7 +266,8 @@ namespace Assets.Scripts.Levels
                 for (int turretIndex = 0; turretIndex < ship.Turrets.Count; turretIndex++)
                 {
                     var turret = ship.Turrets[turretIndex];
-                    if (global::RlOneVsOneTrainingBootstrap.CurrentMovementDisabled)
+                    if (global::RlOneVsOneTrainingBootstrap.CurrentMovementDisabled &&
+                        !(turret is Assets.Scripts.Entities.Ships.Weapons.FullShipTurret))
                     {
                         // For stationary aiming, vary turret orientation independently of
                         // ship facing and the relative target bearing on every episode.
