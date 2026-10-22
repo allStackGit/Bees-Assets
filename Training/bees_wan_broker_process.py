@@ -10,6 +10,7 @@ from __future__ import annotations
 import multiprocessing
 import os
 import secrets
+import threading
 import time
 from multiprocessing.managers import BaseManager
 from typing import Any
@@ -55,10 +56,22 @@ _BROKER_METHODS = (
 )
 
 
+def _exit_with_parent() -> None:
+    # A forced learner termination must not leave an orphan WAN listener owning
+    # the broker port. Python's spawn parent sentinel detects the actual parent
+    # process lifetime rather than guessing from a possibly reused PID.
+    parent = multiprocessing.parent_process()
+    if parent is None:
+        return
+    while parent.is_alive():
+        time.sleep(2.0)
+    os._exit(1)
+
+
 def _new_broker(options, run_options, auth_token, local_envs, threaded_mode, policy_lag):
     from bees_elastic_wan_training import ElasticWanBroker
 
-    return ElasticWanBroker(
+    broker = ElasticWanBroker(
         options,
         run_options,
         auth_token,
@@ -66,6 +79,12 @@ def _new_broker(options, run_options, auth_token, local_envs, threaded_mode, pol
         threaded_mode=threaded_mode,
         max_policy_lag=policy_lag,
     )
+    threading.Thread(
+        target=_exit_with_parent,
+        name="bees-wan-ingest-parent-owner",
+        daemon=True,
+    ).start()
+    return broker
 
 
 class _BrokerManager(BaseManager):
