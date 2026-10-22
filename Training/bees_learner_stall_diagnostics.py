@@ -257,10 +257,12 @@ class _LearnerStallSampler:
                 else:
                     bucket = "python_other"
                 buckets[bucket] += delta
-            return {
+            result = {
                 "thread_cpu_" + key + "_pct": round(100.0 * value / elapsed, 1)
                 for key, value in buckets.items()
-            } | {"wan_http_threads": wan_threads}
+            }
+            result["wan_http_threads"] = wan_threads
+            return result
         except (OSError, RuntimeError, ValueError):
             # Profiling must never interrupt the learner.
             return {}
