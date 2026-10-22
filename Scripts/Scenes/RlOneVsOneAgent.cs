@@ -583,6 +583,13 @@ internal sealed class RlOneVsOneAgent : Agent
             ApplyWeaponCommand(_ship, slot, _weaponAimDirections[slot], fire);
         }
 
+        if (RlOneVsOneTrainingBootstrap.CurrentMovementDisabled)
+        {
+            // Capture aiming quality even on decisions where no projectile is fired.
+            RlOneVsOneCombatTelemetry.RecordStationaryPolicyDecision(
+                _ship, frameQuarterTurns, _weaponAimDirections);
+        }
+
         switch (discrete[SpecialActionBranch])
         {
             case ShipSpecialAction:
