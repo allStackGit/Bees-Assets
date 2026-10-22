@@ -75,8 +75,9 @@ internal static class RlOneVsOneTrainingBootstrap
     internal static bool CurrentMovementDisabled => RuntimeOptions.MovementDisabled;
     internal static bool CurrentMovementDisabledForTeam(int teamId) =>
         RuntimeOptions.MovementDisabledForTeam(teamId);
-    internal static bool CurrentAnyMovementDisabled =>
-        RuntimeOptions.MovementDisabledForTeam(0) || RuntimeOptions.MovementDisabledForTeam(1);
+    internal static bool CurrentMovementDisabledForSide(Level level, int side) =>
+        RuntimeOptions.MovementDisabledForTeam(
+            RlOneVsOneEpisodeCoordinator.GetAssignedOrNextTeamIdForSide(level, side));
     internal static float CurrentCollisionAsteroidSpawnSeconds => RuntimeOptions.CollisionAsteroidSpawnSeconds;
     internal static bool CurrentStaticObstaclesEnabled => RuntimeOptions.StaticObstaclesEnabled;
     internal static bool CurrentMiningAsteroidsEnabled => RuntimeOptions.MiningAsteroidsEnabled;
