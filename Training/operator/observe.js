@@ -292,9 +292,6 @@ async function invokeObserve() {
         }
 
         if (first.source === 'editor') {
-            if (observer.exitCode === null && observer.signalCode === null) {
-                killProcessTree(observer);
-            }
             if (first.result.code !== 0 && first.result.code !== null) {
                 throw new Error(
                     'Unity Editor observation process exited with code ' + first.result.code + '.'
