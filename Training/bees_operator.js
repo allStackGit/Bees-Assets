@@ -33,7 +33,7 @@ function usage() {
         '  node Training/bees_operator.js build [--full-game] [--force] [--preserve-run | --new-run]',
         '  node Training/bees_operator.js runtime [--threaded [--policy-lag N]] [--backpressure-queue N] [--local-training] [--learner-device cpu|cuda] [--local-only] [--local-envs N] [--entropy BETA] [--skip-evaluation | --enable-evaluation] [--no-worker-diagnostics] [--ppo-control | PPO optimization flags]',
         '  node Training/bees_operator.js server',
-        '  node Training/bees_operator.js start [--new-run | --resume-run ID] [--env-arg VALUE ...]',
+        '  node Training/bees_operator.js start [--new-run | --resume-run ID] [--no-movement] [--env-arg VALUE ...]',
         '  node Training/bees_operator.js stop [--server]',
         '  node Training/bees_operator.js status [--once] [--refresh-seconds N]',
         '  node Training/bees_operator.js bundle [--run-id ID] [--log-percent PCT] [--evaluate] [--include-checkpoint]',
@@ -110,6 +110,7 @@ function parseArgs(argv = process.argv.slice(2)) {
         skipEvaluation: false,
         explicitSkipEvaluation: false,
         envArgs: [],
+        noMovement: false,
         once: false,
         refreshSeconds: 2,
         server: false,
@@ -263,6 +264,8 @@ function parseArgs(argv = process.argv.slice(2)) {
                 false,
             );
             options.explicitEntropy = true;
+        } else if (arg === '--no-movement') {
+            options.noMovement = true;
         } else if (arg === '--env-arg') {
             options.envArgs.push(String(requireValue(argv, index, arg)));
             index++;
@@ -320,6 +323,9 @@ function parseArgs(argv = process.argv.slice(2)) {
     }
     if (options.resumeRunId && command !== 'start') {
         throw new Error('--resume-run is only valid with the start command.');
+    }
+    if (options.noMovement && command !== 'start') {
+        throw new Error('--no-movement is only valid with the start command.');
     }
     if (options.resumeRunId && options.newRun) {
         throw new Error('--resume-run cannot be combined with --new-run.');
