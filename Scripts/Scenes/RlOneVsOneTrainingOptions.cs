@@ -263,7 +263,7 @@ internal sealed class RlOneVsOneTrainingOptions
             : "off";
         return $"health_ratio={FormatFloat(HealthRatio)} {mapDescription} " +
                $"episode_timeout={EpisodeTimeoutSeconds}s ships_per_side={ShipsPerSide} " +
-               $"decision_period={DecisionPeriod} movement={(MovementDisabled ? "disabled" : "enabled")} " +
+               $"decision_period={DecisionPeriod} movement={(MovementDisabledForTeam(0) && MovementDisabledForTeam(1) ? "disabled" : MovementDisabledForTeam(0) || MovementDisabledForTeam(1) ? "mixed" : "enabled")} " +
                $"agent_movement={(MovementDisabledForTeam(0) ? "disabled" : "enabled")} " +
                $"opponent_movement={(MovementDisabledForTeam(1) ? "disabled" : "enabled")} " +
                $"matchup_mode={MatchupMode.ToString().ToLowerInvariant()} " +
