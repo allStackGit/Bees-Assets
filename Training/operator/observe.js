@@ -158,6 +158,9 @@ async function invokeObserve() {
     let editor = null;
     let stopSignalDirectory = null;
     let stopSignalPoll = null;
+    let stopOnInput = null;
+    let stopOnSigint = null;
+    let stdinWasPaused = true;
 
     try {
         console.log('Observing live training policies for run ' + runId + '.');
@@ -199,6 +202,7 @@ async function invokeObserve() {
 
         stopSignalDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'bees-rl-observe-'));
         const stopSignalFile = path.join(stopSignalDirectory, 'editor-stopped.signal');
+        const heartbeatFile = stopSignalFile + '.heartbeat';
 
         editor = spawn(
             unity,
@@ -225,24 +229,65 @@ async function invokeObserve() {
             'environment does not contribute experience to PPO.'
         );
 
-        // Unity can remain alive after exiting Play mode, or during Editor
-        // shutdown. The Editor writes an explicit stop signal before its process
-        // exits; do not leave the Python observer running until Unity.exe dies.
+        // The Editor publishes a stop signal and a separate play/edit heartbeat.
+        // The heartbeat covers a missed play-mode callback; a long silent heartbeat
+        // means Unity stopped making progress even if its process remains alive.
+        let hasEnteredPlay = false;
+        let lastHeartbeatTime = Date.now();
         const stoppedInUnity = new Promise(resolve => {
             stopSignalPoll = setInterval(() => {
                 if (exists(stopSignalFile)) {
                     resolve({ source: 'unity-stopped' });
+                    return;
+                }
+                if (exists(heartbeatFile)) {
+                    const phase = fs.readFileSync(heartbeatFile, 'utf8').trim();
+                    lastHeartbeatTime = fs.statSync(heartbeatFile).mtimeMs;
+                    if (phase === 'playing') {
+                        hasEnteredPlay = true;
+                    } else if (phase === 'edit' && hasEnteredPlay) {
+                        resolve({ source: 'unity-stopped' });
+                        return;
+                    }
+                }
+                if (hasEnteredPlay && Date.now() - lastHeartbeatTime > 60000) {
+                    resolve({ source: 'unity-unresponsive' });
                 }
             }, 250);
+        });
+
+        // A Unity window can remain hung after Close, so offer an independent
+        // command to end observation without requiring the Editor callback.
+        const operatorCancelled = new Promise(resolve => {
+            stopOnSigint = () => resolve({ source: 'operator-cancelled' });
+            process.on('SIGINT', stopOnSigint);
+            if (process.stdin.isTTY) {
+                stdinWasPaused = process.stdin.isPaused();
+                stopOnInput = value => {
+                    if (/^(q|quit)$/i.test(String(value).trim())) {
+                        resolve({ source: 'operator-cancelled' });
+                    }
+                };
+                process.stdin.on('data', stopOnInput);
+                process.stdin.resume();
+                console.log('Press Q then Enter (or Ctrl+C) to end observation if Unity does not respond.');
+            }
         });
         const first = await Promise.race([
             waitForExit(observer).then(result => ({ source: 'observer', result })),
             waitForExit(editor).then(result => ({ source: 'editor', result })),
             stoppedInUnity,
+            operatorCancelled,
         ]);
 
-        if (first.source === 'unity-stopped') {
-            console.log('Unity observation stopped; ending Python policy driver.');
+        if (first.source === 'unity-stopped' ||
+            first.source === 'unity-unresponsive' ||
+            first.source === 'operator-cancelled') {
+            console.log(first.source === 'unity-unresponsive'
+                ? 'Unity Editor heartbeat stopped for 60 seconds; ending observation.'
+                : first.source === 'operator-cancelled'
+                    ? 'Observation cancelled by operator.'
+                    : 'Unity observation stopped; ending Python policy driver.');
             return;
         }
 
@@ -268,6 +313,13 @@ async function invokeObserve() {
     } finally {
         if (stopSignalPoll !== null) {
             clearInterval(stopSignalPoll);
+        }
+        if (stopOnSigint !== null) {
+            process.off('SIGINT', stopOnSigint);
+        }
+        if (stopOnInput !== null) {
+            process.stdin.off('data', stopOnInput);
+            if (stdinWasPaused) process.stdin.pause();
         }
         if (observer && observer.exitCode === null && observer.signalCode === null) {
             killProcessTree(observer);
