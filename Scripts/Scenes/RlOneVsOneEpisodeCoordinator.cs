@@ -331,6 +331,27 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         return false;
     }
 
+    // Spawning happens before TryBeginEpisode assigns the next pair of team IDs.
+    // Resolve the upcoming assignment without starting an episode prematurely.
+    internal static int GetAssignedOrNextTeamIdForSide(Level level, int side)
+    {
+        RlOneVsOneEpisodeCoordinator coordinator = GetCoordinator(level, false);
+        if (coordinator != null && coordinator._episodeActive)
+        {
+            if (side == ConfigData.Configuration.BeeSide)
+            {
+                return coordinator._beeTeamId;
+            }
+            if (side == ConfigData.Configuration.HumanSide)
+            {
+                return coordinator._humanTeamId;
+            }
+            return -1;
+        }
+
+        return GetTeamIdForSide(side, (coordinator != null ? coordinator._episodeNumber : 0) + 1);
+    }
+
     internal static int GetTeamIdForSide(int side, int episodeNumber)
     {
         if (ConfigData.Configuration == null || episodeNumber <= 0)
