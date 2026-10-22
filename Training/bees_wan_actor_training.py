@@ -922,15 +922,7 @@ class WanActorBroker:
     def can_accept_upload_without_decoding(self) -> bool:
         """Cheap coarse admission check before unpickling an uploaded trajectory."""
         with self._condition:
-            return (
-                not self._closed
-                and not self._trajectory_batches.full()
-                and not self._cohort_blocked_actors
-            ) or (
-                not self._closed
-                and not self._trajectory_batches.full()
-                and bool(self._cohort_blocked_actors)
-            )
+            return not self._closed and not self._trajectory_batches.full()
 
     def next_trajectory_batch(self, timeout_seconds: float) -> Mapping[str, Any]:
         try:
