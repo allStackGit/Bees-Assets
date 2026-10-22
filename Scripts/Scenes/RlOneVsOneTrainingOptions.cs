@@ -24,6 +24,7 @@ internal sealed class RlOneVsOneTrainingOptions
     internal const string EpisodeTimeoutFlag = "--rl-episode-timeout";
     internal const string ShipsPerSideFlag = "--rl-ships-per-side";
     internal const string DecisionPeriodFlag = "--rl-decision-period";
+    internal const string DisableMovementFlag = "--rl-disable-movement";
     internal const string BeeShipTypesFlag = "--rl-bee-ship-types";
     internal const string HumanShipTypesFlag = "--rl-human-ship-types";
     internal const string MatchupModeFlag = "--rl-matchup-mode";
@@ -93,6 +94,7 @@ internal sealed class RlOneVsOneTrainingOptions
     internal int EpisodeTimeoutSeconds { get; private set; }
     internal int ShipsPerSide { get; private set; }
     internal int DecisionPeriod { get; private set; }
+    internal bool MovementDisabled { get; private set; }
     internal float CollisionAsteroidSpawnSeconds { get; private set; }
     internal bool StaticObstaclesEnabled { get; private set; }
     internal bool MiningAsteroidsEnabled { get; private set; }
@@ -110,6 +112,7 @@ internal sealed class RlOneVsOneTrainingOptions
         EpisodeTimeoutSeconds = DefaultEpisodeTimeoutSeconds;
         ShipsPerSide = DefaultShipsPerSide;
         DecisionPeriod = DefaultDecisionPeriod;
+        MovementDisabled = false;
         CollisionAsteroidSpawnSeconds = DefaultCollisionAsteroidSpawnSeconds;
         StaticObstaclesEnabled = false;
         MiningAsteroidsEnabled = false;
@@ -166,6 +169,10 @@ internal sealed class RlOneVsOneTrainingOptions
             else if (TryReadOption(argument, DecisionPeriodFlag, args, ref i, out value))
             {
                 options.DecisionPeriod = ParseInt(value, DecisionPeriodFlag);
+            }
+            else if (TryReadBooleanOption(argument, DisableMovementFlag, args, ref i, out bool movementDisabled))
+            {
+                options.MovementDisabled = movementDisabled;
             }
             else if (TryReadOption(argument, BeeShipTypesFlag, args, ref i, out value))
             {
@@ -232,7 +239,7 @@ internal sealed class RlOneVsOneTrainingOptions
             : "off";
         return $"health_ratio={FormatFloat(HealthRatio)} {mapDescription} " +
                $"episode_timeout={EpisodeTimeoutSeconds}s ships_per_side={ShipsPerSide} " +
-               $"decision_period={DecisionPeriod} matchup_mode={MatchupMode.ToString().ToLowerInvariant()} " +
+               $"decision_period={DecisionPeriod} movement={(MovementDisabled ? "disabled" : "enabled")} matchup_mode={MatchupMode.ToString().ToLowerInvariant()} " +
                $"collision_asteroid_spawn={collisionAsteroidDescription} " +
                $"static_obstacles={(StaticObstaclesEnabled ? "on" : "off")} " +
                $"mining_asteroids={(MiningAsteroidsEnabled ? "on" : "off")} " +
