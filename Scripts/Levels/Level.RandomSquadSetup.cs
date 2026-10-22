@@ -265,7 +265,16 @@ namespace Assets.Scripts.Levels
                 ship.Rotation = ship.transform.eulerAngles.z;
                 for (int turretIndex = 0; turretIndex < ship.Turrets.Count; turretIndex++)
                 {
-                    ship.Turrets[turretIndex].Rotation = ship.Turrets[turretIndex].PieceTransform.eulerAngles.z;
+                    var turret = ship.Turrets[turretIndex];
+                    if (global::RlOneVsOneTrainingBootstrap.CurrentMovementDisabled)
+                    {
+                        // For stationary aiming, vary turret orientation independently of
+                        // ship facing and the relative target bearing on every episode.
+                        Vector3 turretEuler = turret.PieceTransform.eulerAngles;
+                        turretEuler.z = Random.Range(0f, 360f);
+                        turret.PieceTransform.eulerAngles = turretEuler;
+                    }
+                    turret.Rotation = turret.PieceTransform.eulerAngles.z;
                 }
             }
         }
