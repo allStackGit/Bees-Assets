@@ -10,6 +10,7 @@ from __future__ import annotations
 import multiprocessing
 import os
 import secrets
+import time
 from multiprocessing.managers import BaseManager
 from typing import Any
 
@@ -124,6 +125,28 @@ class IsolatedElasticWanBroker:
             base.encode_payload(wire),
             base._policy_identity_digest(wire),
         )
+
+    def _transfer(self, method: str, *args) -> Any:
+        started = time.perf_counter()
+        result = getattr(self._broker, method)(*args)
+        seconds = time.perf_counter() - started
+        if seconds >= 1.0:
+            count = (
+                len(result) if isinstance(result, (list, tuple)) else
+                (1 if isinstance(result, dict) else 0)
+            )
+            print(
+                f"[Bees WAN IPC] operation={method} seconds={seconds:.3f} "
+                f"batches={count}",
+                flush=True,
+            )
+        return result
+
+    def drain_current_batches(self, maximum: int) -> Any:
+        return self._transfer("drain_current_batches", maximum)
+
+    def next_consumable_batch(self, timeout_seconds: float) -> Any:
+        return self._transfer("next_consumable_batch", timeout_seconds)
 
     def close(self) -> None:
         try:
