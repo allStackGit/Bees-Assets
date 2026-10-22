@@ -1,5 +1,7 @@
 'use strict';
 
+const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 
 const {
@@ -26,6 +28,7 @@ const { killProcessTree } = require('./validation');
 const ARENAS_PER_ENVIRONMENT_FLAG = '--bees-rl-arenas-per-env';
 const OBSERVE_VISIBLE_OBSTACLES_FLAG = '--bees-rl-observe-visible-obstacles';
 const EDITOR_EXECUTE_METHOD = 'BeesRlObserveLauncher.Begin';
+const EDITOR_STOP_FILE_FLAG = '--bees-rl-observe-stop-file=';
 
 function visualEnvironmentArgs(environmentArgs) {
     const source = Array.isArray(environmentArgs)
@@ -148,6 +151,8 @@ async function invokeObserve() {
     const unity = resolveUnityEditor(config);
     let observer = null;
     let editor = null;
+    let stopSignalDirectory = null;
+    let stopSignalPoll = null;
 
     try {
         console.log('Observing live training policies for run ' + runId + '.');
@@ -187,11 +192,15 @@ async function invokeObserve() {
             );
         }
 
+        stopSignalDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'bees-rl-observe-'));
+        const stopSignalFile = path.join(stopSignalDirectory, 'editor-stopped.signal');
+
         editor = spawn(
             unity,
             [
                 '-projectPath', paths.beesRoot,
                 '-executeMethod', EDITOR_EXECUTE_METHOD,
+                EDITOR_STOP_FILE_FLAG + stopSignalFile,
                 ...environmentArgs,
             ],
             {
@@ -211,10 +220,26 @@ async function invokeObserve() {
             'environment does not contribute experience to PPO.'
         );
 
+        // Unity can remain alive after exiting Play mode, or during Editor
+        // shutdown. The Editor writes an explicit stop signal before its process
+        // exits; do not leave the Python observer running until Unity.exe dies.
+        const stoppedInUnity = new Promise(resolve => {
+            stopSignalPoll = setInterval(() => {
+                if (exists(stopSignalFile)) {
+                    resolve({ source: 'unity-stopped' });
+                }
+            }, 250);
+        });
         const first = await Promise.race([
             waitForExit(observer).then(result => ({ source: 'observer', result })),
             waitForExit(editor).then(result => ({ source: 'editor', result })),
+            stoppedInUnity,
         ]);
+
+        if (first.source === 'unity-stopped') {
+            console.log('Unity observation stopped; ending Python policy driver.');
+            return;
+        }
 
         if (first.source === 'editor') {
             if (observer.exitCode === null && observer.signalCode === null) {
@@ -236,8 +261,14 @@ async function invokeObserve() {
         }
         console.log('RL observation ended. Unity Editor remains open.');
     } finally {
+        if (stopSignalPoll !== null) {
+            clearInterval(stopSignalPoll);
+        }
         if (observer && observer.exitCode === null && observer.signalCode === null) {
             killProcessTree(observer);
+        }
+        if (stopSignalDirectory !== null) {
+            removeIfExists(stopSignalDirectory, { recursive: true });
         }
     }
 }
