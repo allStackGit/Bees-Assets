@@ -1009,6 +1009,20 @@ class ElasticWanBroker(base.WanActorBroker):
                 int(batch.get("step_count", 0) or 0)
             )
 
+    def can_accept_upload_without_decoding(self) -> bool:
+        # Only a coarse check is possible before actor identity and step count
+        # are decoded. Authoritative admission remains submit_trajectory_batch.
+        with self._condition:
+            return (
+                not self._closed
+                and not self._trajectory_batches.full()
+                and not (
+                    self.threaded_mode
+                    and self.max_policy_lag > 0
+                    and self._pending_experiences >= self._pending_experience_limit
+                )
+            )
+
     def submit_trajectory_batch(
         self, payload: Mapping[str, Any], *,
         timings: Optional[Dict[str, float]] = None,
