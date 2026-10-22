@@ -576,7 +576,7 @@ class WanActorBroker:
                     if not broker.can_accept_upload_without_decoding():
                         self._error(429, "backpressure", "Central broker queue is full.", close=True)
                         return
-                    upload_slot = broker._upload_decode_slots.acquire(blocking=False)
+                    upload_slot = broker._upload_decode_slots.acquire(timeout=2.0)
                     if not upload_slot:
                         self._error(429, "backpressure", "Broker upload decode capacity is full.", close=True)
                         return
