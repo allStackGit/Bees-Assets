@@ -716,10 +716,14 @@ class WanActorBroker:
             return tuple(sorted(self._registrations))
 
     def publish_policy(self, behavior_name: str, policy: Any) -> int:
-        self.ensure_server_alive()
         wire = dict(_policy_wire_payload(policy))
-        identity = _policy_identity_digest(wire)
-        encoded = encode_payload(wire)
+        return self.publish_policy_wire(
+            behavior_name, encode_payload(wire), _policy_identity_digest(wire)
+        )
+
+    def publish_policy_wire(self, behavior_name: str, encoded: bytes, identity: str) -> int:
+        """Publish a pre-encoded policy when the trainer lives in another process."""
+        self.ensure_server_alive()
         transport_digest = hashlib.sha256(encoded).hexdigest()
         with self._condition:
             previous = self._policy_snapshots.get(behavior_name)
@@ -883,6 +887,15 @@ class WanActorBroker:
             batch.get("control_epoch") == self.control_epoch
             and batch.get("policy_versions") == self.policy_versions
         )
+
+    def wait_for_change(self, timeout_seconds: float) -> None:
+        """Block in the broker's process without exposing its thread Condition."""
+        with self._condition:
+            if self._closed:
+                raise RuntimeError("WAN actor broker closed")
+            self._condition.wait(timeout=max(0.0, float(timeout_seconds)))
+            if self._closed:
+                raise RuntimeError("WAN actor broker closed")
 
     def next_trajectory_batch(self, timeout_seconds: float) -> Mapping[str, Any]:
         try:
