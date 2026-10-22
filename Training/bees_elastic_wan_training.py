@@ -1441,13 +1441,16 @@ class ElasticWanEnvManagerMixin:
         self._bees_wan_options = options
         self._bees_wan_timeout = max(1.0, float(run_options.env_settings.timeout_wait))
         self._bees_wan_initial_reset = False
-        self._bees_wan_broker = ElasticWanBroker(
+        from bees_wan_broker_process import IsolatedElasticWanBroker
+
+        self._bees_wan_broker = IsolatedElasticWanBroker(
             options,
             run_options,
             base.load_auth_token(options.auth_token_file or ""),
             n_env,
+            threaded_mode=False,
+            max_policy_lag=0,
         )
-        self._bees_wan_broker.start()
         write_managed_health(
             "ready",
             details={
