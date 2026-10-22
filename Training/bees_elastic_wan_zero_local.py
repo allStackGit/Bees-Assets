@@ -21,6 +21,7 @@ from typing import Any, Dict, List, Optional
 
 import bees_elastic_wan_training as elastic
 import bees_wan_actor_training as base
+from bees_wan_broker_process import IsolatedElasticWanBroker
 from bees_process_safety import write_managed_health
 
 
@@ -125,7 +126,7 @@ class ZeroLocalElasticWanEnvManagerMixin(elastic.ElasticWanEnvManagerMixin):
         self._bees_wan_options = options
         self._bees_wan_timeout = max(1.0, float(run_options.env_settings.timeout_wait))
         self._bees_wan_initial_reset = False
-        self._bees_wan_broker = elastic.ElasticWanBroker(
+        self._bees_wan_broker = IsolatedElasticWanBroker(
             options,
             run_options,
             base.load_auth_token(options.auth_token_file or ""),
@@ -133,7 +134,6 @@ class ZeroLocalElasticWanEnvManagerMixin(elastic.ElasticWanEnvManagerMixin):
             threaded_mode=threaded_mode,
             max_policy_lag=max_policy_lag,
         )
-        self._bees_wan_broker.start()
         write_managed_health(
             "ready",
             details={
@@ -191,10 +191,7 @@ class ZeroLocalElasticWanEnvManagerMixin(elastic.ElasticWanEnvManagerMixin):
                 )
                 self._bees_wan_broker.report_capacity()
                 last_report = now
-            with self._bees_wan_broker._condition:
-                if self._bees_wan_broker._closed:
-                    raise RuntimeError("WAN actor broker closed while waiting for remote actors")
-                self._bees_wan_broker._condition.wait(timeout=1.0)
+            self._bees_wan_broker.wait_for_change(1.0)
 
     def _behavior_discovery_step(self) -> Any:
         from mlagents.trainers.env_manager import EnvironmentStep
@@ -286,7 +283,7 @@ class ZeroLocalElasticWanEnvManagerMixin(elastic.ElasticWanEnvManagerMixin):
         last_report = 0.0
         while True:
             try:
-                batch = self._bees_wan_broker._trajectory_batches.get(timeout=1.0)
+                batch = self._bees_wan_broker.next_consumable_batch(1.0)
             except queue.Empty:
                 # When the HTTP admission budget is exhausted by already-injected
                 # data, do not wait indefinitely for another upload: let the
@@ -302,16 +299,8 @@ class ZeroLocalElasticWanEnvManagerMixin(elastic.ElasticWanEnvManagerMixin):
                             "[Bees WAN] learner-only mode paused: no remote rollout actors connected."
                         )
                     last_report = now
-                with self._bees_wan_broker._condition:
-                    if self._bees_wan_broker._closed:
-                        raise RuntimeError("WAN actor broker closed while waiting for trajectories")
                 continue
-            if (
-                self._bees_wan_broker._batch_is_current(batch)
-                and self._bees_wan_broker.record_consumed_batch(batch)
-            ):
-                return batch
-            self._bees_wan_broker.release_queued_batch(batch)
+            return batch
 
     def _inject_remote_batches(self) -> None:
         active = self._bees_wan_broker.active_actor_snapshot()
