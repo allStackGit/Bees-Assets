@@ -503,7 +503,7 @@ internal sealed class RlOneVsOneAgent : Agent
         }
 
         int frameQuarterTurns = RlPolicyCoordinateFrame.GetQuarterTurns(_ship.Level, _teamId);
-        CollectPolicyObservations(_perception, _ship, _side, sensor, frameQuarterTurns);
+        CollectPolicyObservations(_perception, _ship, _side, sensor, frameQuarterTurns, _teamId);
     }
 
     private void AddInactivePolicyObservations(VectorSensor sensor)
@@ -550,9 +550,10 @@ internal sealed class RlOneVsOneAgent : Agent
 
         int frameQuarterTurns = RlPolicyCoordinateFrame.GetQuarterTurns(_ship.Level, _teamId);
         var continuous = actions.ContinuousActions;
-        if (RlOneVsOneTrainingBootstrap.CurrentMovementDisabled)
+        bool movementDisabled = RlOneVsOneTrainingBootstrap.CurrentMovementDisabledForTeam(_teamId);
+        if (movementDisabled)
         {
-            // Stationary training still applies every turret aim/fire action.
+            // Stationary agents still apply every turret aim/fire action.
             _ship.RlMovementDirection = 360;
             _ship.IsRlPolicyControlled = true;
             _ship.Body.linearVelocity = Vector2.zero;
@@ -583,7 +584,7 @@ internal sealed class RlOneVsOneAgent : Agent
             ApplyWeaponCommand(_ship, slot, _weaponAimDirections[slot], fire);
         }
 
-        if (RlOneVsOneTrainingBootstrap.CurrentMovementDisabled)
+        if (movementDisabled)
         {
             // Capture aiming quality even on decisions where no projectile is fired.
             RlOneVsOneCombatTelemetry.RecordStationaryPolicyDecision(
@@ -1327,14 +1328,15 @@ internal sealed class RlOneVsOneAgent : Agent
         Ship ship,
         int side,
         VectorSensor sensor,
-        int frameQuarterTurns)
+        int frameQuarterTurns,
+        int teamId = -1)
     {
         if (perception == null || ship == null || sensor == null)
         {
             throw new System.ArgumentNullException();
         }
 
-        perception.Collect(ship, side, sensor, frameQuarterTurns);
+        perception.Collect(ship, side, sensor, frameQuarterTurns, teamId);
         sensor.AddObservation(ship.Level != null ? ship.Level.GetNormalizedRlEpisodeProgress() : 0f);
         sensor.AddObservation(side == ConfigData.Configuration.BeeSide ? 1f : -1f);
         AddZeroObservations(sensor, RlPolicySchema.ReservedObservationCount);
