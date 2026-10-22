@@ -550,8 +550,19 @@ internal sealed class RlOneVsOneAgent : Agent
 
         int frameQuarterTurns = RlPolicyCoordinateFrame.GetQuarterTurns(_ship.Level, _teamId);
         var continuous = actions.ContinuousActions;
-        Vector2 policyMovement = new Vector2(continuous[0], continuous[1]);
-        ApplyMovementCommand(_ship, RlPolicyCoordinateFrame.PolicyToWorld(policyMovement, frameQuarterTurns));
+        if (RlOneVsOneTrainingBootstrap.CurrentMovementDisabled)
+        {
+            // Stationary training still applies every turret aim/fire action.
+            _ship.RlMovementDirection = 360;
+            _ship.IsRlPolicyControlled = true;
+            _ship.Body.linearVelocity = Vector2.zero;
+            _ship.IsMoving = false;
+        }
+        else
+        {
+            Vector2 policyMovement = new Vector2(continuous[0], continuous[1]);
+            ApplyMovementCommand(_ship, RlPolicyCoordinateFrame.PolicyToWorld(policyMovement, frameQuarterTurns));
+        }
         SetCommunicationActions(_ship, continuous);
 
         var discrete = actions.DiscreteActions;
