@@ -304,7 +304,7 @@ internal static class RlOneVsOneCombatTelemetry
             ["first_hit_distance"] = state.FirstHitDistance[sideIndex] < 0f
                 ? (object)null : state.FirstHitDistance[sideIndex]
         };
-        if (RlOneVsOneTrainingBootstrap.CurrentMovementDisabled)
+        if (RlOneVsOneTrainingBootstrap.CurrentAnyMovementDisabled)
         {
             aim["stationary_decisions"] = new Dictionary<string, object>
             {
