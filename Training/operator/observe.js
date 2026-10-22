@@ -160,7 +160,6 @@ async function invokeObserve() {
     let stopSignalPoll = null;
     let stopOnInput = null;
     let stopOnSigint = null;
-    let stdinWasPaused = true;
 
     try {
         console.log('Observing live training policies for run ' + runId + '.');
@@ -262,7 +261,6 @@ async function invokeObserve() {
             stopOnSigint = () => resolve({ source: 'operator-cancelled' });
             process.on('SIGINT', stopOnSigint);
             if (process.stdin.isTTY) {
-                stdinWasPaused = process.stdin.isPaused();
                 stopOnInput = value => {
                     if (/^(q|quit)$/i.test(String(value).trim())) {
                         resolve({ source: 'operator-cancelled' });
@@ -316,7 +314,9 @@ async function invokeObserve() {
         }
         if (stopOnInput !== null) {
             process.stdin.off('data', stopOnInput);
-            if (stdinWasPaused) process.stdin.pause();
+            // The Q shortcut puts stdin into flowing mode. Always pause it after
+            // removing our listener; isPaused() can be false before it was ever read.
+            process.stdin.pause();
         }
         if (observer && observer.exitCode === null && observer.signalCode === null) {
             killProcessTree(observer);
