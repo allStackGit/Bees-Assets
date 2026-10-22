@@ -1254,10 +1254,34 @@ class ElasticWanBroker(base.WanActorBroker):
                     )
             return tuple(retained)
 
+    def next_consumable_batch(self, timeout_seconds: float) -> Mapping[str, Any]:
+        """Apply current-policy and accounting checks before crossing the process boundary.
+
+        A discarded or stale upload must never be materialized in the learner process.
+        """
+        deadline = time.monotonic() + max(0.0, float(timeout_seconds))
+        while True:
+            remaining = max(0.0, deadline - time.monotonic())
+            try:
+                batch = self._trajectory_batches.get(timeout=remaining)
+            except queue.Empty:
+                raise
+            if self._batch_is_current(batch) and self.record_consumed_batch(batch):
+                return batch
+            self.release_queued_batch(batch)
+            if time.monotonic() >= deadline:
+                raise queue.Empty
+
     def publish_policy(self, behavior_name: str, policy: Any) -> int:
+        wire = dict(base._policy_wire_payload(policy))
+        return self.publish_policy_wire(
+            behavior_name, base.encode_payload(wire), base._policy_identity_digest(wire)
+        )
+
+    def publish_policy_wire(self, behavior_name: str, encoded: bytes, identity: str) -> int:
         if self.max_policy_lag <= 0:
             starting_policy_epoch = self.policy_publication_epoch()
-            version = super().publish_policy(behavior_name, policy)
+            version = super().publish_policy_wire(behavior_name, encoded, identity)
             if self.threaded_mode:
                 with self._condition:
                     if self._policy_epoch > starting_policy_epoch:
@@ -1266,9 +1290,6 @@ class ElasticWanBroker(base.WanActorBroker):
             return version
 
         self.ensure_server_alive()
-        wire = dict(base._policy_wire_payload(policy))
-        identity = base._policy_identity_digest(wire)
-        encoded = base.encode_payload(wire)
         transport_digest = base.hashlib.sha256(encoded).hexdigest()
         with self._condition:
             previous = self._policy_snapshots.get(behavior_name)
