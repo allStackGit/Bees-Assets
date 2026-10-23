@@ -214,6 +214,7 @@ namespace Assets.Scripts.Levels
             _projectile_power = weapon.Power;
             if (weapon.Type == ConfigData.WeaponTypes.DualCannon) _projectile_power /= 2;
             _f_projectile.Setup(this, weapon, weapon.Ship, weapon.TargetShip, startingPosition, angle, weapon.Range, _projectile_power);
+            global::RlProjectileNearMissTelemetry.Launched(_f_projectile);
             weapon.Ship.ProjectilesInFlight.Add(_f_projectile);
             return _f_projectile;
         }
