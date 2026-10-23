@@ -88,6 +88,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 }
 
                 _beam.Setup(Level, this, Ship, TargetShip, GetPosition(), AngleToPoint(TargetPoint), Range, Power);
+                global::RlProjectileNearMissTelemetry.Launched(_beam);
                 Ship.ProjectilesInFlight.Add(_beam);
 
                 if (Ship.Squad.HasCustomColor)
