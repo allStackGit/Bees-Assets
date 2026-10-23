@@ -62,6 +62,7 @@ internal static class RlProjectileNearMissTelemetry
         if (sideIndex >= 0 && !arena.Shots.ContainsKey(projectile.RlRootProjectileId))
         {
             arena.Shots.Add(projectile.RlRootProjectileId, new Shot { SideIndex = sideIndex });
+            projectile.RlTrackShot = true;
         }
     }
 
@@ -71,6 +72,7 @@ internal static class RlProjectileNearMissTelemetry
             arena.Shots.TryGetValue(projectile.RlRootProjectileId, out Shot shot))
         {
             shot.Active++;
+            projectile.RlTrackShot = true;
         }
     }
 
