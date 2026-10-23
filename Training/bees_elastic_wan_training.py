@@ -1078,6 +1078,7 @@ class ElasticWanBroker(base.WanActorBroker):
         )
         allowed_behaviors = set(self.merged_behavior_specs())
         step_count = 0
+        estimated_bytes = 1024
         team_steps: Dict[str, int] = collections.defaultdict(int)
         for trajectory in trajectories:
             behavior_id = getattr(trajectory, "behavior_id", None)
@@ -1101,6 +1102,13 @@ class ElasticWanBroker(base.WanActorBroker):
             if not isinstance(steps, list) or not steps:
                 raise ValueError("trajectory must contain at least one experience step")
             step_count += len(steps)
+            # Approximate transfer volume without serializing the trajectory
+            # a second time on admission. The NumPy observation buffers dominate.
+            for step in steps:
+                estimated_bytes += 1024 + sum(
+                    int(getattr(obs, "nbytes", 0))
+                    for obs in getattr(step, "obs", ())
+                )
             team_id = behavior_id.partition("?team=")[2]
             team_steps[team_id if team_id in ("0", "1") else "other"] += len(steps)
 
@@ -1110,6 +1118,7 @@ class ElasticWanBroker(base.WanActorBroker):
             "control_epoch": int(payload["control_epoch"]),
             "trajectories": trajectories,
             "step_count": step_count,
+            "estimated_bytes": estimated_bytes,
             "policy_lag_at_submit": int(policy_lag),
             "ghost_steps": ghost_steps,
             "learning_team_epoch": supplied_team_epoch,
@@ -1241,7 +1250,11 @@ class ElasticWanBroker(base.WanActorBroker):
             return ()
 
         with self._condition:
-            scan_count = self._trajectory_batches.qsize()
+            # Fair scheduling needs a bounded lookahead, not a full O(queue)
+            # scan of hundreds of pending batches on every learner tick.
+            scan_count = min(
+                self._trajectory_batches.qsize(), max(32, maximum * 4)
+            )
             if scan_count <= 0:
                 return ()
 
@@ -1272,14 +1285,30 @@ class ElasticWanBroker(base.WanActorBroker):
             start = self._fair_drain_cursor % len(actor_ids)
             actor_order = actor_ids[start:] + actor_ids[:start]
             chosen: List[Tuple[int, Mapping[str, Any]]] = []
-
+            drained_steps = 0
+            drained_bytes = 0
+            # Bounds are per synchronous IPC drain. An individual large batch
+            # must still be delivered; it cannot be split across trajectories
+            # without violating MA-POCA sequence semantics.
+            max_steps = 512
+            max_bytes = 16 * 1024 * 1024
             while len(chosen) < maximum:
                 progressed = False
                 for actor_id in actor_order:
                     bucket = by_actor[actor_id]
                     if not bucket:
                         continue
+                    ordinal, batch = bucket[0]
+                    batch_steps = int(batch.get("step_count", 0))
+                    batch_bytes = int(batch.get("estimated_bytes", 1024))
+                    if chosen and (
+                        drained_steps + batch_steps > max_steps
+                        or drained_bytes + batch_bytes > max_bytes
+                    ):
+                        continue
                     chosen.append(bucket.popleft())
+                    drained_steps += batch_steps
+                    drained_bytes += batch_bytes
                     progressed = True
                     if len(chosen) >= maximum:
                         break
