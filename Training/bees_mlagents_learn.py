@@ -1146,6 +1146,45 @@ def _install_threaded_trainer_failure_propagation():
             return None
 
     def guarded_save_models(controller):
+        # ML-Agents 1.1.0 join_threads() joins each updater for only one second
+        # before start_learning() calls _save_models() in its finally block.
+        # A Bees PPO update can run much longer. Never serialize mutable policy
+        # and optimizer state while that thread is still updating them.
+        active_threads = [
+            thread for thread in controller.trainer_threads if thread.is_alive()
+        ]
+        if active_threads:
+            if not controller.kill_trainers:
+                raise RuntimeError(
+                    "refusing final checkpoint while trainer updates are still enabled"
+                )
+            started_waiting = time.perf_counter()
+            next_report = started_waiting + 10.0
+            print(
+                "[Bees checkpoint] waiting for in-flight threaded PPO update "
+                "to finish before saving optimizer state.",
+                flush=True,
+            )
+            while active_threads:
+                for thread in active_threads:
+                    thread.join(timeout=1.0)
+                active_threads = [
+                    thread for thread in active_threads if thread.is_alive()
+                ]
+                now = time.perf_counter()
+                if active_threads and now >= next_report:
+                    print(
+                        "[Bees checkpoint] still waiting for "
+                        f"{len(active_threads)} trainer thread(s) after "
+                        f"{now - started_waiting:.1f}s.",
+                        flush=True,
+                    )
+                    next_report = now + 10.0
+            print(
+                "[Bees checkpoint] threaded PPO update stopped after "
+                f"{time.perf_counter() - started_waiting:.3f}s.",
+                flush=True,
+            )
         if failure["exc_info"] is not None:
             print(
                 "[Bees RL] skipping final model/checkpoint save because the threaded trainer "
