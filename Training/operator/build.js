@@ -321,7 +321,7 @@ async function reconcileLatestReleaseBeforeBuild(config, python, unity, adminTok
         return {};
     }
 
-    const centralRuntime = prepareCentralReleaseRuntime(config, python, unity, release);
+    const centralRuntime = await prepareCentralReleaseRuntime(config, python, unity, release);
     await startCentralAgentIfNeeded(config, python, unity, release, centralRuntime);
     const status = await getStatus(config, adminToken);
     const pending = status.desired && status.desired.pending_release;
@@ -655,7 +655,7 @@ async function invokeBuild(options = {}) {
             // previously canonical release remains the durable recovery point.
             persistReleaseLifecycle();
             assertCentralAgentCheckpointSafe();
-            const centralRuntime = prepareCentralReleaseRuntime(config, python, unity, release);
+            const centralRuntime = await prepareCentralReleaseRuntime(config, python, unity, release);
             await startCentralAgentIfNeeded(config, python, unity, release, centralRuntime);
             prepareLocalActorReleaseRuntime(config, release, centralRuntime);
             console.log(
