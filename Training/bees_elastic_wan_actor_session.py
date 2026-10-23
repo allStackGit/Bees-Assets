@@ -7,7 +7,7 @@ import os
 import queue
 import time
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Mapping, Optional
 
 import bees_wan_actor_worker as worker
 
