@@ -15,6 +15,7 @@ pauses learning rather than terminating or advancing a stale optimizer.
 
 from __future__ import annotations
 
+import os
 import queue
 import time
 from typing import Any, Dict, List, Optional
@@ -287,7 +288,21 @@ class ZeroLocalElasticWanEnvManagerMixin(elastic.ElasticWanEnvManagerMixin):
     def _wait_for_current_remote_batch(self) -> Any:
         """Pause a learner-only trainer when no remote rollout data is currently available."""
         last_report = 0.0
+        stop_file = os.environ.get("BEES_TRAINING_STOP_FILE", "").strip()
         while True:
+            # The supervisor must be able to stop a zero-local learner even
+            # after every remote actor has disconnected. A background
+            # _thread.interrupt_main() is not reliable on every Windows
+            # process/signal configuration. Raise on the ML-Agents main
+            # thread, allowing TrainerController.start_learning() to join
+            # the updater and perform its normal final checkpoint save.
+            if stop_file and os.path.isfile(stop_file):
+                print(
+                    "[Bees checkpoint] zero-local WAN wait exiting for "
+                    "managed stop; entering ML-Agents final-save path.",
+                    flush=True,
+                )
+                raise KeyboardInterrupt
             try:
                 batch = self._bees_wan_broker.next_consumable_batch(1.0)
             except queue.Empty:
