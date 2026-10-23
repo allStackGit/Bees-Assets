@@ -197,7 +197,7 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
     private readonly int[] _mapObjectDiscoveryValue = new int[2];
     private readonly int[] _collisionAsteroidDiscoveryCount = new int[2];
     private readonly double[] _rawPositiveShapingReward = new double[2];
-    private readonly double[] _rawMissPenalty = new double[2];
+    private readonly double[] _rawNegativeShapingReward = new double[2];
     private readonly Dictionary<string, float>[] _rewardSources =
     {
         new Dictionary<string, float>(StringComparer.Ordinal),
@@ -414,10 +414,8 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
             return;
         }
 
-        float penalty = RlOneVsOneReward.CalculateBoundedMissPenaltyIncrement(
-            coordinator._rawMissPenalty[sideIndex]);
-        coordinator._rawMissPenalty[sideIndex] += RlOneVsOneReward.RawMissPenalty;
-        coordinator.ApplyImmediateTsvReward(shooter.Side, penalty, "shot_miss");
+        coordinator.ApplyImmediateTsvReward(
+            shooter.Side, -RlOneVsOneReward.RawMissPenalty, "shot_miss");
         if (nearlyHit)
         {
             // Shared positive-shaping cap already bounds the sum of combat and discovery
@@ -1379,7 +1377,7 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
             _mapObjectDiscoveryValue[sideIndex] = 0;
             _collisionAsteroidDiscoveryCount[sideIndex] = 0;
             _rawPositiveShapingReward[sideIndex] = 0d;
-            _rawMissPenalty[sideIndex] = 0d;
+            _rawNegativeShapingReward[sideIndex] = 0d;
             _rewardedShipDiscoveryIds[sideIndex].Clear();
             _rewardedMiningAsteroidDiscoveryIds[sideIndex].Clear();
             _rewardedObstacleDiscoveryIds[sideIndex].Clear();
@@ -1508,6 +1506,18 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
             double boundedIncrement = RlOneVsOneReward.CalculateBoundedPositiveShapingIncrement(rawBefore, reward);
             _rawPositiveShapingReward[sideIndex] = rawBefore + reward;
             emittedReward = (float)Math.Max(0d, boundedIncrement);
+        }
+        else if (reward < 0f)
+        {
+            // The entire side's negative tactical shaping (including missed shots,
+            // damage taken and hazard losses) uses one asymptotic budget. This does
+            // not modify the independently delivered terminal or economic reward.
+            double rawBefore = _rawNegativeShapingReward[sideIndex];
+            double rawPenalty = -(double)reward;
+            double boundedIncrement = RlOneVsOneReward.CalculateBoundedNegativeShapingIncrement(
+                rawBefore, rawPenalty);
+            _rawNegativeShapingReward[sideIndex] = rawBefore + rawPenalty;
+            emittedReward = -(float)Math.Max(0d, boundedIncrement);
         }
 
         if (sideIndex == 0)
