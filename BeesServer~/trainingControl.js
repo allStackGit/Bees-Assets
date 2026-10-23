@@ -1143,7 +1143,16 @@ class TrainingControlStore {
             if (rollingTargetId) {
                 const targetSpec = pending.required_trainers.find(
                     spec => spec.trainer_id === rollingTargetId);
-                if (targetSpec && this._trainerHealthyOnPending(targetSpec, pending)) {
+                const remoteCheckpointBarrierSatisfied =
+                    rollingTargetId !== 'central-learner' ||
+                    pending.required_trainers.every(
+                        spec => spec.trainer_id === 'central-learner' ||
+                            this._trainerStoppedForPending(spec, pending));
+                if (
+                    targetSpec &&
+                    remoteCheckpointBarrierSatisfied &&
+                    this._trainerHealthyOnPending(targetSpec, pending)
+                ) {
                     const previousState = this._snapshotState();
                     let changed = false;
                     if (!pending.rolled_trainers.includes(rollingTargetId)) {
