@@ -1783,7 +1783,7 @@ class ActorSession:
     def _same_upload_cohort(first: Mapping[str, Any], second: Mapping[str, Any]) -> bool:
         return all(
             first.get(key) == second.get(key)
-            for key in ("session_id", "actor_id", "control_epoch", "policy_versions")
+            for key in ("session_id", "actor_id", "control_epoch", "policy_versions", "learning_team_epoch")
         )
 
     def _upload_loop(self) -> None:
@@ -1824,6 +1824,9 @@ class ActorSession:
 
                 payload = dict(first)
                 payload["trajectories"] = trajectories
+                payload["ghost_steps"] = sum(
+                    int(batch.get("ghost_steps", 0)) for batch in batches
+                )
                 with self._upload_pending_lock:
                     self._upload_inflight += 1
                 try:
@@ -1915,6 +1918,11 @@ class ActorSession:
                     if self._upload_pending == 0:
                         self._upload_idle.set()
 
+    def _prepare_upload_trajectories(self, trajectories: List[Any]) -> tuple[List[Any], int, Optional[int]]:
+        # Legacy actors send both teams; elastic actors override this method
+        # only after receiving a versioned authoritative learning-team assignment.
+        return trajectories, 0, None
+
     def _collect_trajectories(self) -> List[Any]:
         trajectories = []
         for manager in self.manager.agent_managers.values():
@@ -1969,11 +1977,16 @@ class ActorSession:
                 self._rollout_profiler.observe(
                     "trajectory_collection", time.perf_counter() - collect_started
                 )
-            if trajectories:
+            trajectories, ghost_steps, learning_team_epoch = self._prepare_upload_trajectories(
+                trajectories
+            )
+            if trajectories or ghost_steps:
                 # One actor generally emits one compact cohort batch. The 256-trajectory ceiling can
                 # represent 32 environments with up to eight policy agents each (e.g. 4v4) while the
                 # bounded queue still provides backpressure when Exeter is saturated.
-                for start in range(0, len(trajectories), MAX_TRAJECTORIES_PER_UPLOAD):
+                # A ghost-only upload is a tiny accounting message: it never
+                # carries the opponent's large observations or action buffers.
+                for start in range(0, max(1, len(trajectories)), MAX_TRAJECTORIES_PER_UPLOAD):
                     payload = {
                         "session_id": self.session_id,
                         "actor_id": self.actor_id,
@@ -1981,6 +1994,9 @@ class ActorSession:
                         "policy_versions": dict(self.policy_versions),
                         "trajectories": trajectories[start : start + MAX_TRAJECTORIES_PER_UPLOAD],
                     }
+                    if learning_team_epoch is not None:
+                        payload["learning_team_epoch"] = learning_team_epoch
+                        payload["ghost_steps"] = ghost_steps if start == 0 else 0
                     if not self._enqueue_upload(payload):
                         break
             self._rollout_profiler.maybe_report()
