@@ -63,6 +63,12 @@ namespace Assets.Scripts.Levels
             {
                 SetupShipsForSide(ConfigData.Configuration.AISide);
                 SetupShipsForSide(ConfigData.Configuration.UserSide);
+                if (rlShipSetup)
+                {
+                    RandomizeRlOneVsOneSpawnPositions();
+                    RandomizeRlOneVsOneFacing(ConfigData.Configuration.AISide);
+                    RandomizeRlOneVsOneFacing(ConfigData.Configuration.UserSide);
+                }
                 AssignShipClearancesForSetup();
                 if (CurrentLevelOptions.EnemyReinforcementDelay == 0)
                 {
@@ -161,10 +167,17 @@ namespace Assets.Scripts.Levels
             HalfMapWidth = MapWidth / 2;
             HalfMapHeight = MapHeight / 2;
 
-            MinX = Map.SpriteRenderer.localBounds.min.x + ConfigData.MapEdgePadding.x;
-            MinY = Map.SpriteRenderer.localBounds.min.y + ConfigData.MapEdgePadding.y;
-            MaxX = Map.SpriteRenderer.localBounds.max.x - ConfigData.MapEdgePadding.x;
-            MaxY = Map.SpriteRenderer.localBounds.max.y - ConfigData.MapEdgePadding.y;
+            // Dedicated RL maps have physical lethal borders at the sprite edges.
+            // Do not subtract the general-gameplay 5-unit navigation padding here:
+            // the spawn sampler already reserves each rotated hull's radius plus
+            // its own safety margin, and 24-unit arenas need the actual interior.
+            bool rlArena = global::RlOneVsOneTrainingBootstrap.IsActiveFor(Stage);
+            float paddingX = rlArena ? 0f : ConfigData.MapEdgePadding.x;
+            float paddingY = rlArena ? 0f : ConfigData.MapEdgePadding.y;
+            MinX = Map.SpriteRenderer.localBounds.min.x + paddingX;
+            MinY = Map.SpriteRenderer.localBounds.min.y + paddingY;
+            MaxX = Map.SpriteRenderer.localBounds.max.x - paddingX;
+            MaxY = Map.SpriteRenderer.localBounds.max.y - paddingY;
             MapX = Map.SpriteRenderer.localBounds.max.x * 2;
             MapY = Map.SpriteRenderer.localBounds.max.y * 2;
             MaxDistance = Mathf.Sqrt(MapX * MapX + MapY * MapY);
