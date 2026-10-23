@@ -11,6 +11,7 @@ import multiprocessing
 import mmap
 import os
 import pickle
+import queue
 import secrets
 import threading
 import time
@@ -82,6 +83,35 @@ class _SharedMemoryWanBroker(ElasticWanBroker):
         super().__init__(*args, **kwargs)
         self._shared_memory_transfers = {}
         self._shared_memory_lock = threading.Lock()
+        self._shutdown_ingestion = False
+
+    def begin_graceful_shutdown(self):
+        """Stop admitting trajectories while keeping checkpoint/control RPC available."""
+        with self._condition:
+            if self._shutdown_ingestion:
+                return
+            self._shutdown_ingestion = True
+            self._condition.notify_all()
+        print(
+            "[Bees WAN] managed learner stop detected; quiescing remote trajectory "
+            "ingestion before PPO checkpoint finalization.",
+            flush=True,
+        )
+
+    def can_accept_upload_without_decoding(self):
+        with self._condition:
+            if self._shutdown_ingestion:
+                return False
+        return super().can_accept_upload_without_decoding()
+
+    def submit_trajectory_batch(self, payload, *, timings=None):
+        with self._condition:
+            if self._shutdown_ingestion:
+                # The HTTP handler maps queue.Full to transient backpressure.
+                # Remote workers retain their current payload until the new
+                # broker session becomes available; no learner data is lost.
+                raise queue.Full
+        return super().submit_trajectory_batch(payload, timings=timings)
 
     def _export_to_shared_memory(self, batches):
         if not batches:
@@ -137,6 +167,20 @@ class _SharedMemoryWanBroker(ElasticWanBroker):
                     shared.unlink()
 
 
+def _quiesce_when_learner_stops(broker):
+    # This lives outside the learner interpreter, so it still reacts if the
+    # main learner thread is blocked in an IPC call or model update.
+    path = os.environ.get("BEES_TRAINING_STOP_FILE", "").strip()
+    if not path:
+        return
+    while not os.path.isfile(path):
+        with broker._condition:
+            if broker._closed:
+                return
+        time.sleep(0.1)
+    broker.begin_graceful_shutdown()
+
+
 def _new_broker(options, run_options, auth_token, local_envs, threaded_mode, policy_lag):
     broker = _SharedMemoryWanBroker(
         options,
@@ -149,6 +193,12 @@ def _new_broker(options, run_options, auth_token, local_envs, threaded_mode, pol
     threading.Thread(
         target=_exit_with_parent,
         name="bees-wan-ingest-parent-owner",
+        daemon=True,
+    ).start()
+    threading.Thread(
+        target=_quiesce_when_learner_stops,
+        args=(broker,),
+        name="bees-wan-ingest-shutdown",
         daemon=True,
     ).start()
     return broker
