@@ -131,7 +131,7 @@ async function reconcilePersistedTrainingAfterServerStart(config, admin) {
 
     ensureTokenFile(paths.wanTokenPath);
     const unity = resolveUnityEditor(config);
-    const preparedRuntime = prepareCentralReleaseRuntime(
+    const preparedRuntime = await prepareCentralReleaseRuntime(
         config,
         bootstrapPython,
         unity,
@@ -364,7 +364,7 @@ async function invokeRuntime(options = {}) {
 
     const unity = resolveUnityEditor(config);
     assertCentralAgentCheckpointSafe();
-    const preparedRuntime = prepareCentralReleaseRuntime(
+    const preparedRuntime = await prepareCentralReleaseRuntime(
         config,
         python,
         unity,
@@ -661,7 +661,7 @@ async function invokeStart(options = {}) {
             );
         }
 
-        const centralRuntime = prepareCentralReleaseRuntime(
+        const centralRuntime = await prepareCentralReleaseRuntime(
             config,
             bootstrapPython,
             unity,
@@ -855,7 +855,7 @@ async function invokeStart(options = {}) {
     let centralRuntime = null;
 
     if (resumeInterruptedIncompatibleCutover) {
-        centralRuntime = prepareCentralReleaseRuntime(
+        centralRuntime = await prepareCentralReleaseRuntime(
             config, bootstrapPython, unity, release
         );
 
@@ -938,7 +938,7 @@ async function invokeStart(options = {}) {
     // the outgoing run, or a live supervisor can briefly launch the new trainer config against
     // the old run's immutable generation directory.
     if (!performForcedNewRun) {
-        centralRuntime = prepareCentralReleaseRuntime(
+        centralRuntime = await prepareCentralReleaseRuntime(
             config, bootstrapPython, unity, release
         );
     }
@@ -967,7 +967,7 @@ async function invokeStart(options = {}) {
 
         // The control plane now owns the new run identity. Only now expose the matching pinned
         // trainer runtime to the stable central/local supervisors.
-        centralRuntime = prepareCentralReleaseRuntime(
+        centralRuntime = await prepareCentralReleaseRuntime(
             config, bootstrapPython, unity, release
         );
         await startCentralAgentIfNeeded(
