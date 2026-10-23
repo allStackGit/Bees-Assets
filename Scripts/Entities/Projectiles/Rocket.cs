@@ -92,6 +92,10 @@ namespace Assets.Scripts.Entities.Projectiles
                 // if hit enemy projectile or Fire Barge explosion. the ships to ignore is for leafcutter split shots
                 if ((!IsFriendly(ship) || (Shooter.ShipType == ConfigData.ShipTypes.FireBarge && this != Shooter)) && !ShipsToIgnore.Contains(ship))
                 {
+                    if (RlTrackShot)
+                    {
+                        global::RlProjectileNearMissTelemetry.EnemyContact(this, ship);
+                    }
                     ContactTarget(ship); // don't do damage because the explosion is what does damage
                 }
             }
