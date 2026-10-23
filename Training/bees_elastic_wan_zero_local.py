@@ -255,6 +255,12 @@ class ZeroLocalElasticWanEnvManagerMixin(elastic.ElasticWanEnvManagerMixin):
 
     def _inject_batches(self, batches: List[Any] | tuple[Any, ...]) -> None:
         for batch in batches:
+            # Ghost data was filtered at the remote worker. Preserve the
+            # GhostTrainer snapshot schedule without shipping opponent observations.
+            self._bees_pending_ghost_steps = (
+                getattr(self, "_bees_pending_ghost_steps", 0)
+                + int(batch.get("ghost_steps", 0))
+            )
             for trajectory in batch["trajectories"]:
                 manager = self.agent_managers.get(trajectory.behavior_id)
                 if manager is None:
@@ -427,7 +433,24 @@ def install_elastic_wan_env_manager(
                 if hasattr(trainer, "_learning_team"):
                     broker.observe_learning_team(trainer._learning_team)
                     break
+        pending_ghost = int(getattr(env_manager, "_bees_pending_ghost_steps", 0))
+        if pending_ghost:
+            ghost_trainers = [
+                trainer for trainer in controller.trainers.values()
+                if hasattr(trainer, "ghost_step")
+            ]
+            if len(ghost_trainers) != 1:
+                raise RuntimeError("Cannot apply ghost-step metadata without one self-play trainer")
+            ghost_trainers[0].ghost_step += pending_ghost
+            env_manager._bees_pending_ghost_steps = 0
         result = original_advance(controller, env_manager)
+        # GhostTrainer can switch teams inside advance, including without a
+        # new policy publication. Publish the new assignment immediately.
+        if broker is not None and threaded_mode:
+            for trainer in controller.trainers.values():
+                if hasattr(trainer, "_learning_team"):
+                    broker.observe_learning_team(trainer._learning_team)
+                    break
         if broker is not None:
             broker.complete_policy_cycle(starting_policy_epoch)
             steps = []
