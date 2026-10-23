@@ -114,6 +114,10 @@ namespace Assets.Scripts.Entities.Projectiles
                 IsHarmless,
                 HasHitShip(ship)))
             {
+                if (RlTrackShot)
+                {
+                    global::RlProjectileNearMissTelemetry.EnemyContact(this, ship);
+                }
                 ContactTarget(ship);
                 string rlDamageSource = "gun";
                 if (Type == ConfigData.ProjectileTypes.FireBargeExplosion)
