@@ -117,20 +117,30 @@ internal static class RlOneVsOneReward
     /// Exact difference of the bounded-positive function before and after one new raw reward. For
     /// positive finite inputs this remains positive without ever consuming a hard episode budget.
     /// </summary>
-    internal static double CalculateBoundedPositiveShapingIncrement(
-        double cumulativeRawPositiveReward,
-        double additionalRawPositiveReward)
+    private static double CalculateBoundedShapingIncrement(
+        double cumulativeRawReward,
+        double additionalRawReward,
+        double maximum)
     {
-        double raw = Math.Max(0d, cumulativeRawPositiveReward);
-        double added = Math.Max(0d, additionalRawPositiveReward);
+        double raw = Math.Max(0d, cumulativeRawReward);
+        double added = Math.Max(0d, additionalRawReward);
         if (added <= 0d)
         {
             return 0d;
         }
 
-        double maximum = MaximumPositiveShapingReward;
         return maximum * maximum * added /
                ((maximum + raw) * (maximum + raw + added));
+    }
+
+    internal static double CalculateBoundedPositiveShapingIncrement(
+        double cumulativeRawPositiveReward,
+        double additionalRawPositiveReward)
+    {
+        return CalculateBoundedShapingIncrement(
+            cumulativeRawPositiveReward,
+            additionalRawPositiveReward,
+            MaximumPositiveShapingReward);
     }
 
     /// <summary>
@@ -141,8 +151,10 @@ internal static class RlOneVsOneReward
         double cumulativeRawNegativeReward,
         double additionalRawNegativeReward)
     {
-        return CalculateBoundedPositiveShapingIncrement(
-            cumulativeRawNegativeReward, additionalRawNegativeReward);
+        return CalculateBoundedShapingIncrement(
+            cumulativeRawNegativeReward,
+            additionalRawNegativeReward,
+            MaximumNegativeShapingReward);
     }
 
     /// <summary>
