@@ -1589,6 +1589,7 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
             ["lost_contact_s"] = bee ? _beeLostContactSeconds : _humanLostContactSeconds
         };
 
+        RlProjectileNearMissTelemetry.AppendEpisodeData(_level, sideIndex, combat);
         diagnostics["combat"] = combat;
         diagnostics["aim"] = RlOneVsOneCombatTelemetry.BuildAimData(_level, sideIndex);
         diagnostics["visibility"] = visibility;
