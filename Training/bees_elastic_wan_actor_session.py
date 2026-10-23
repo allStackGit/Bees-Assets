@@ -802,7 +802,16 @@ class ElasticActorSession(worker.ActorSession):
             # Preserve no unfinished trajectories across the learning-team
             # boundary. Already uploaded batches have their own epoch and
             # are rejected if the trainer has switched sides.
+            worker._drain_inflight_without_training(
+                self.manager,
+                self.worker_offset,
+                max(1.0, float(self.central_run_options.env_settings.timeout_wait)),
+            )
             worker._clear_partial_trajectories(self.manager)
+            # Completed ghost-policy trajectories must also be discarded:
+            # after a team swap their side becomes the learner, but these
+            # observations were generated before the new assignment.
+            self._collect_trajectories()
             self._discard_queued_uploads()
             print(
                 f"[Bees WAN actor] learning team={learning_team} epoch={learning_epoch}.",
