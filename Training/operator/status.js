@@ -850,6 +850,17 @@ async function getStatusFrameLines(config, adminToken) {
                 ' pending remote experiences; excess uploads receive retriable backpressure.'
             );
         }
+        if (broker && broker.broker_upload_rejected_queue_full_total != null) {
+            lines.push(
+                'WAN upload admission (since learner start): ' +
+                'queue rejected=' + broker.broker_upload_rejected_queue_full_total +
+                '  pending-experience rejected=' + (broker.broker_upload_rejected_pending_full_total ?? '-') +
+                '  upload-memory rejected=' + (broker.broker_upload_rejected_body_budget_total ?? '-') +
+                '  decoder waits=' + (broker.broker_upload_decoder_waits_total ?? '-') +
+                '  buffered compressed bytes=' + (broker.broker_upload_buffered_body_bytes ?? '-') +
+                '/' + (broker.broker_upload_buffered_body_limit_bytes ?? '-') + '.'
+            );
+        }
         const brokerLabel = broker ? (
             String(broker.broker_queue_depth) + '/' +
             String(broker.broker_queue_capacity ?? '?')

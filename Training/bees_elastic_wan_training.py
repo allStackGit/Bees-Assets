@@ -865,6 +865,7 @@ class ElasticWanBroker(base.WanActorBroker):
                 "trajectory_queue_depth": self._trajectory_batches.qsize(),
                 "trajectory_queue_capacity": self.options.max_queued_batches,
                 "broker_backpressure_total": self.diagnostics._backpressure_total,
+                **self.upload_admission_snapshot(),
                 "accepted_stale_steps_total": self._accepted_stale_steps,
                 "consumed_stale_steps_total": self._consumed_stale_steps,
                 "discarded_stale_steps_total": (
@@ -1026,19 +1027,19 @@ class ElasticWanBroker(base.WanActorBroker):
                 int(batch.get("step_count", 0) or 0)
             )
 
-    def can_accept_upload_without_decoding(self) -> bool:
-        # Only a coarse check is possible before actor identity and step count
-        # are decoded. Authoritative admission remains submit_trajectory_batch.
+    def upload_admission_failure(self) -> Optional[str]:
+        # Authoritative admission still occurs in submit_trajectory_batch.
         with self._condition:
-            return (
-                not self._closed
-                and not self._trajectory_batches.full()
-                and not (
-                    self.threaded_mode
-                    and self.max_policy_lag > 0
-                    and self._pending_experiences >= self._pending_experience_limit
-                )
-            )
+            if self._closed:
+                return "broker_closed"
+            if self._trajectory_batches.full():
+                return "broker_queue"
+            if (
+                self.threaded_mode and self.max_policy_lag > 0
+                and self._pending_experiences >= self._pending_experience_limit
+            ):
+                return "pending_experiences"
+            return None
 
     def submit_trajectory_batch(
         self, payload: Mapping[str, Any], *,
@@ -1126,6 +1127,7 @@ class ElasticWanBroker(base.WanActorBroker):
             "learning_team_epoch": supplied_team_epoch,
         }
         queue_started = time.perf_counter() if timings is not None else 0.0
+        pending_experience_limited = False
         try:
             # Coordinate queue admission with the learner's fair snapshot drain. This keeps
             # requeueing of unselected batches lossless while producers continue concurrently.
@@ -1135,6 +1137,7 @@ class ElasticWanBroker(base.WanActorBroker):
                     # outstanding; otherwise never allow an unbounded backlog.
                     if (self._pending_experiences > 0 and
                         self._pending_experiences + step_count > self._pending_experience_limit):
+                        pending_experience_limited = True
                         raise queue.Full
                 self._trajectory_batches.put_nowait(item)
                 if self.threaded_mode and self.max_policy_lag > 0:
@@ -1146,6 +1149,9 @@ class ElasticWanBroker(base.WanActorBroker):
                     self._accepted_stale_batches += 1
                     self._accepted_stale_steps += step_count
         except queue.Full:
+            self.observe_upload_rejection(
+                "pending_experiences" if pending_experience_limited else "broker_queue"
+            )
             self.diagnostics.observe_backpressure()
             raise
         if timings is not None:

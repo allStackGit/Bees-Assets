@@ -23,6 +23,7 @@ import hashlib
 import hmac
 import http.server
 import json
+import os
 import pickle
 import queue
 import secrets
@@ -48,6 +49,8 @@ DEFAULT_BROKER_PORT = 55051
 DEFAULT_MIN_ACTORS = 1
 DEFAULT_MAX_QUEUED_BATCHES = 32
 MAX_COMPRESSED_PAYLOAD_BYTES = 512 * 1024 * 1024
+# Bound compressed request bodies independently of the learner trajectory queue.
+MAX_BUFFERED_UPLOAD_BODY_BYTES = 1024 * 1024 * 1024
 MAX_DECOMPRESSED_PAYLOAD_BYTES = 1024 * 1024 * 1024
 MIN_AUTH_TOKEN_CHARS = 32
 
@@ -364,13 +367,65 @@ class WanActorBroker:
             "config": None,
         }
         self._trajectory_batches: queue.Queue = queue.Queue(maxsize=options.max_queued_batches)
-        # A bounded number of concurrent decoders protects broker RPC/control from
-        # upload bursts, even when remote workers use multiple upload threads.
-        self._upload_decode_slots = threading.BoundedSemaphore(2)
+        # Only decoding holds these permits; WAN body transfer must not.
+        # Keep CPU-intensive decompression bounded independently of buffered bytes.
+        self._upload_decode_slots = threading.BoundedSemaphore(
+            min(8, max(2, (os.cpu_count() or 4) // 2))
+        )
+        self._upload_buffered_body_bytes = 0
+        self._upload_decoder_waits_total = 0
+        self._upload_rejections = {
+            "broker_queue": 0,
+            "pending_experiences": 0,
+            "body_budget": 0,
+            "broker_closed": 0,
+        }
         self._cohort_blocked_actors = set()
         self._server: Optional[http.server.ThreadingHTTPServer] = None
         self._server_thread: Optional[threading.Thread] = None
         self._server_started_once = False
+
+    def observe_upload_rejection(self, reason: str) -> None:
+        with self._condition:
+            self._upload_rejections[reason] += 1
+
+    def observe_upload_decoder_wait(self) -> None:
+        with self._condition:
+            self._upload_decoder_waits_total += 1
+
+    def upload_admission_snapshot(self) -> Dict[str, int]:
+        with self._condition:
+            return {
+                "upload_rejected_queue_full_total": self._upload_rejections["broker_queue"],
+                "upload_rejected_pending_full_total": self._upload_rejections["pending_experiences"],
+                "upload_rejected_body_budget_total": self._upload_rejections["body_budget"],
+                "upload_rejected_closed_total": self._upload_rejections["broker_closed"],
+                "upload_decoder_waits_total": self._upload_decoder_waits_total,
+                "upload_buffered_body_bytes": self._upload_buffered_body_bytes,
+                "upload_buffered_body_limit_bytes": MAX_BUFFERED_UPLOAD_BODY_BYTES,
+            }
+
+    def reserve_upload_body(self, length: int) -> bool:
+        # Reserve Content-Length before receiving it. Slow WAN senders do not
+        # occupy decoder slots, and compressed request memory remains bounded.
+        deadline = time.monotonic() + 2.0
+        with self._condition:
+            while not self._closed and (
+                self._upload_buffered_body_bytes + length > MAX_BUFFERED_UPLOAD_BODY_BYTES
+            ):
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return False
+                self._condition.wait(remaining)
+            if self._closed:
+                return False
+            self._upload_buffered_body_bytes += length
+            return True
+
+    def release_upload_body(self, length: int) -> None:
+        with self._condition:
+            self._upload_buffered_body_bytes -= length
+            self._condition.notify_all()
 
     def session_payload(self) -> Mapping[str, Any]:
         return {
@@ -491,26 +546,36 @@ class WanActorBroker:
                     return False
                 return True
 
-            def _read_payload(self, timings: Optional[Dict[str, float]] = None) -> Any:
+            def _payload_length(self) -> int:
                 try:
                     length = int(self.headers.get("Content-Length", "0"))
                 except ValueError as exc:
                     raise ValueError("invalid Content-Length") from exc
                 if length <= 0 or length > MAX_COMPRESSED_PAYLOAD_BYTES:
                     raise ValueError("payload length is outside WAN actor bounds")
+                return length
+
+            def _read_body(self, length: int, timings: Optional[Dict[str, float]] = None) -> bytes:
                 read_started = time.perf_counter() if timings is not None else 0.0
                 data = self.rfile.read(length)
                 if timings is not None:
                     timings["body_read"] = time.perf_counter() - read_started
                 if len(data) != length:
                     raise ValueError("request body ended before Content-Length")
-                # Pickle is intentionally behind both loopback/SSH and a bearer credential. Possession
-                # of this trainer-only token is trusted-code access, not a public-client capability.
+                return data
+
+            def _decode_body(self, data: bytes, timings: Optional[Dict[str, float]] = None) -> Any:
+                # Pickle is protected by the private forward and bearer credential.
                 decode_started = time.perf_counter() if timings is not None else 0.0
                 payload = decode_payload(data)
                 if timings is not None:
                     timings["decode"] = time.perf_counter() - decode_started
                 return payload
+
+            def _read_payload(self, timings: Optional[Dict[str, float]] = None) -> Any:
+                return self._decode_body(
+                    self._read_body(self._payload_length(), timings), timings
+                )
 
             def do_GET(self) -> None:
                 if not self._authorized():
@@ -571,17 +636,35 @@ class WanActorBroker:
                     and self.headers.get("X-Bees-Upload-Diagnostics") == "1"
                     else None
                 )
-                upload_slot = False
-                if parsed.path == "/trajectories":
-                    if not broker.can_accept_upload_without_decoding():
-                        self._error(429, "backpressure", "Central broker queue is full.", close=True)
-                        return
-                    upload_slot = broker._upload_decode_slots.acquire(timeout=2.0)
-                    if not upload_slot:
-                        self._error(429, "backpressure", "Broker upload decode capacity is full.", close=True)
-                        return
                 try:
-                    payload = self._read_payload(timings)
+                    if parsed.path == "/trajectories":
+                        rejection = broker.upload_admission_failure()
+                        if rejection is not None:
+                            broker.observe_upload_rejection(rejection)
+                            self._error(429, "backpressure", f"Broker upload admission: {rejection}.", close=True)
+                            return
+                        body_length = self._payload_length()
+                        if not broker.reserve_upload_body(body_length):
+                            broker.observe_upload_rejection("body_budget")
+                            self._error(429, "backpressure", "Broker compressed upload memory is full.", close=True)
+                            return
+                        try:
+                            compressed = self._read_body(body_length, timings)
+                            decoded_slot = broker._upload_decode_slots.acquire(blocking=False)
+                            if not decoded_slot:
+                                broker.observe_upload_decoder_wait()
+                                broker._upload_decode_slots.acquire()
+                                decoded_slot = True
+                            try:
+                                payload = self._decode_body(compressed, timings)
+                            finally:
+                                if decoded_slot:
+                                    broker._upload_decode_slots.release()
+                                del compressed
+                        finally:
+                            broker.release_upload_body(body_length)
+                    else:
+                        payload = self._read_payload(timings)
                     if not isinstance(payload, Mapping):
                         raise ValueError("WAN actor request payload must be a mapping")
                     if payload.get("session_id") != broker.session_id:
@@ -629,10 +712,6 @@ class WanActorBroker:
                     self._error(429, "backpressure", "Central learner trajectory queue is full.")
                 except (ValueError, RuntimeError) as exc:
                     self._error(400, "invalid-request", str(exc))
-                finally:
-                    if upload_slot:
-                        broker._upload_decode_slots.release()
-
         class Server(http.server.ThreadingHTTPServer):
             daemon_threads = True
             allow_reuse_address = True
@@ -919,10 +998,17 @@ class WanActorBroker:
             if self._closed:
                 raise RuntimeError("WAN actor broker closed")
 
-    def can_accept_upload_without_decoding(self) -> bool:
-        """Cheap coarse admission check before unpickling an uploaded trajectory."""
+    def upload_admission_failure(self) -> Optional[str]:
+        """Return a queue/closed admission reason before unpickling."""
         with self._condition:
-            return not self._closed and not self._trajectory_batches.full()
+            if self._closed:
+                return "broker_closed"
+            if self._trajectory_batches.full():
+                return "broker_queue"
+            return None
+
+    def can_accept_upload_without_decoding(self) -> bool:
+        return self.upload_admission_failure() is None
 
     def next_trajectory_batch(self, timeout_seconds: float) -> Mapping[str, Any]:
         try:
