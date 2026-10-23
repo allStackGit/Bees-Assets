@@ -3434,7 +3434,27 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     )
 
                 if args.role == "dedicated":
-                    if offline:
+                    if (
+                        managed.graceful_checkpoint
+                        and managed.alive()
+                        and managed.stop_request_file is not None
+                        and managed.stop_request_file.is_file()
+                    ):
+                        # managed.stop() has already requested a graceful checkpoint.
+                        # If its observation deadline expires, attempting another stop
+                        # here raises out of the recovery handler and reaches finally.
+                        # On Windows, supervisor exit then closes its kill-on-close job
+                        # and destroys the still-owned learner's unsaved optimizer state.
+                        # Preserve ownership and continue heartbeating until the learner
+                        # actually exits; do not silently treat the stop as complete.
+                        print(
+                            "[Bees control] central learner has not completed its "
+                            "requested final checkpoint; retaining process ownership "
+                            "and retrying reconciliation without forced termination.",
+                            file=sys.stderr,
+                            flush=True,
+                        )
+                    elif offline:
                         if managed.alive():
                             print(
                                 "[Bees control] server lease expired; stopping dedicated trainer.",
