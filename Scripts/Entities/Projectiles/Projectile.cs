@@ -32,6 +32,9 @@ namespace Assets.Scripts.Entities.Projectiles
         public long CommandOutcomeId;
         // Identity of the actual turret-fired shot, shared by explosion/split continuations.
         public long RlRootProjectileId { get; private set; }
+        // Bypasses all additional per-frame work outside tracked RL turret shots.
+        internal bool RlTrackShot { get; set; }
+        private Vector2 _previousRlShotPosition;
         private ShipDamageStatus _damageReservation;
         private int _reservedDamageAmount;
 
@@ -73,6 +76,7 @@ namespace Assets.Scripts.Entities.Projectiles
                 gameObject.name = Name;
             }
             StartingPosition = startingPosition;
+            _previousRlShotPosition = startingPosition;
             Transform.parent = Level.Map.Transform;
             Transform.localPosition = StartingPosition;
             IsDead = false;
@@ -106,6 +110,7 @@ namespace Assets.Scripts.Entities.Projectiles
             ShipIsDead = false;
             CommandOutcomeId = 0;
             RlRootProjectileId = 0;
+            RlTrackShot = false;
             _damageReservation = null;
             _reservedDamageAmount = 0;
         }
@@ -114,6 +119,10 @@ namespace Assets.Scripts.Entities.Projectiles
         {
             CommandOutcomeId = source != null ? source.CommandOutcomeId : 0;
             RlRootProjectileId = source != null ? source.RlRootProjectileId : 0;
+            if (source != null && source.RlTrackShot)
+            {
+                global::RlProjectileNearMissTelemetry.Continuation(this);
+            }
         }
 
         public virtual void Kill()
@@ -123,6 +132,10 @@ namespace Assets.Scripts.Entities.Projectiles
                 return;
             }
 
+            if (RlTrackShot)
+            {
+                global::RlProjectileNearMissTelemetry.Ended(this);
+            }
             RemoveDamageSentEntry();
             Shooter?.ProjectilesInFlight.Remove(this);
             IsDead = true;
@@ -201,6 +214,12 @@ namespace Assets.Scripts.Entities.Projectiles
             if (IsDead)
             {
                 return;
+            }
+
+            if (RlTrackShot)
+            {
+                global::RlProjectileNearMissTelemetry.Travel(this, _previousRlShotPosition);
+                _previousRlShotPosition = GetPosition();
             }
 
             if (CollidingQueue.Count > 0)
@@ -289,6 +308,10 @@ namespace Assets.Scripts.Entities.Projectiles
             {
                 _originalPower = Power;
                 int healthBefore = ship.Health;
+                if (RlTrackShot)
+                {
+                    global::RlProjectileNearMissTelemetry.EnemyContact(this, ship);
+                }
                 ContactTarget(ship);
                 Ship.LogAttackingDamage(_originalPower, Shooter, FleetShip, SavedSquad, ship, CommandOutcomeId);
                 if (ship.Health < healthBefore)
