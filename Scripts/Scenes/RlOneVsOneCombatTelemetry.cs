@@ -268,9 +268,9 @@ internal static class RlOneVsOneCombatTelemetry
 
         return $"map_size={FormatDistance(state.EpisodeMapSize)} " +
                $"bee_aim_samples={state.AimSamples[0]} bee_aim_error={FormatAimError(state, 0)} bee_aim_within_5deg={FormatPercent(state.AccurateAimSamples[0], state.AimSamples[0])} " +
-               $"bee_turret_aligned={FormatPercent(state.AlignedTurretSamples[0], state.AimSamples[0])} bee_first_fire_distance={FormatDistance(state.FirstFireDistance[0])} bee_first_hit_distance={FormatDistance(state.FirstHitDistance[0])} " +
+               $"bee_first_fire_distance={FormatDistance(state.FirstFireDistance[0])} bee_first_hit_distance={FormatDistance(state.FirstHitDistance[0])} " +
                $"human_aim_samples={state.AimSamples[1]} human_aim_error={FormatAimError(state, 1)} human_aim_within_5deg={FormatPercent(state.AccurateAimSamples[1], state.AimSamples[1])} " +
-               $"human_turret_aligned={FormatPercent(state.AlignedTurretSamples[1], state.AimSamples[1])} human_first_fire_distance={FormatDistance(state.FirstFireDistance[1])} human_first_hit_distance={FormatDistance(state.FirstHitDistance[1])}";
+               $"human_first_fire_distance={FormatDistance(state.FirstFireDistance[1])} human_first_hit_distance={FormatDistance(state.FirstHitDistance[1])}";
     }
 
     internal static Dictionary<string, object> BuildAimData(Level level, int sideIndex)
