@@ -9,13 +9,16 @@ from __future__ import annotations
 
 import multiprocessing
 import os
+import pickle
 import secrets
 import threading
 import time
 from multiprocessing.managers import BaseManager
+from multiprocessing.shared_memory import SharedMemory
 from typing import Any
 
 import bees_wan_actor_training as base
+from bees_elastic_wan_training import ElasticWanBroker
 
 
 # Only coherent broker operations are exposed. In particular, no raw queue or
@@ -36,6 +39,9 @@ _BROKER_METHODS = (
     "next_consumable_batch",
     "next_trajectory_cohort",
     "drain_current_batches",
+    "drain_to_shared_memory",
+    "next_to_shared_memory",
+    "release_shared_memory",
     "has_pending_remote_experiences",
     "release_queued_batch",
     "record_consumed_batch",
@@ -68,10 +74,70 @@ def _exit_with_parent() -> None:
     os._exit(1)
 
 
-def _new_broker(options, run_options, auth_token, local_envs, threaded_mode, policy_lag):
-    from bees_elastic_wan_training import ElasticWanBroker
+class _SharedMemoryWanBroker(ElasticWanBroker):
+    """Own shared-memory buffers until the learner acknowledges consumption."""
 
-    broker = ElasticWanBroker(
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._shared_memory_transfers = {}
+        self._shared_memory_lock = threading.Lock()
+
+    def _export_to_shared_memory(self, batches):
+        if not batches:
+            return {"empty": True, "batches": 0, "bytes": 0}
+        started = time.perf_counter()
+        encoded = pickle.dumps(batches, protocol=pickle.HIGHEST_PROTOCOL)
+        serialized_seconds = time.perf_counter() - started
+        shared = SharedMemory(create=True, size=len(encoded))
+        try:
+            shared.buf[:len(encoded)] = encoded
+            token = secrets.token_hex(16)
+            with self._shared_memory_lock:
+                self._shared_memory_transfers[token] = shared
+        except BaseException:
+            shared.close()
+            shared.unlink()
+            raise
+        return {
+            "token": token,
+            "name": shared.name,
+            "bytes": len(encoded),
+            "batches": len(batches) if isinstance(batches, (list, tuple)) else 1,
+            "serialization_seconds": serialized_seconds,
+        }
+
+    def drain_to_shared_memory(self, maximum: int):
+        return self._export_to_shared_memory(self.drain_current_batches(maximum))
+
+    def next_to_shared_memory(self, timeout_seconds: float):
+        return self._export_to_shared_memory(
+            self.next_consumable_batch(timeout_seconds)
+        )
+
+    def release_shared_memory(self, token: str):
+        with self._shared_memory_lock:
+            shared = self._shared_memory_transfers.pop(token)
+        try:
+            shared.close()
+        finally:
+            shared.unlink()
+
+    def close(self):
+        try:
+            super().close()
+        finally:
+            with self._shared_memory_lock:
+                remaining = list(self._shared_memory_transfers.values())
+                self._shared_memory_transfers.clear()
+            for shared in remaining:
+                try:
+                    shared.close()
+                finally:
+                    shared.unlink()
+
+
+def _new_broker(options, run_options, auth_token, local_envs, threaded_mode, policy_lag):
+    broker = _SharedMemoryWanBroker(
         options,
         run_options,
         auth_token,
@@ -147,25 +213,39 @@ class IsolatedElasticWanBroker:
 
     def _transfer(self, method: str, *args) -> Any:
         started = time.perf_counter()
-        result = getattr(self._broker, method)(*args)
-        seconds = time.perf_counter() - started
-        if seconds >= 1.0:
-            count = (
-                len(result) if isinstance(result, (list, tuple)) else
-                (1 if isinstance(result, dict) else 0)
-            )
+        descriptor = getattr(self._broker, method)(*args)
+        if descriptor.get("empty"):
+            return ()
+        token = descriptor["token"]
+        shared = None
+        view = None
+        try:
+            shared = SharedMemory(name=descriptor["name"], create=False)
+            view = shared.buf[:int(descriptor["bytes"])]
+            result = pickle.loads(view)
+        finally:
+            if view is not None:
+                view.release()
+            if shared is not None:
+                shared.close()
+            # Owner process unlinks the allocation even if deserialization fails.
+            self._broker.release_shared_memory(token)
+
+        elapsed = time.perf_counter() - started
+        if elapsed >= 0.5:
             print(
-                f"[Bees WAN IPC] operation={method} seconds={seconds:.3f} "
-                f"batches={count}",
+                f"[Bees WAN IPC] operation={method} seconds={elapsed:.3f} "
+                f"serialize={descriptor['serialization_seconds']:.3f} "
+                f"bytes={descriptor['bytes']} batches={descriptor['batches']}",
                 flush=True,
             )
         return result
 
     def drain_current_batches(self, maximum: int) -> Any:
-        return self._transfer("drain_current_batches", maximum)
+        return self._transfer("drain_to_shared_memory", maximum)
 
     def next_consumable_batch(self, timeout_seconds: float) -> Any:
-        return self._transfer("next_consumable_batch", timeout_seconds)
+        return self._transfer("next_to_shared_memory", timeout_seconds)
 
     def close(self) -> None:
         try:
