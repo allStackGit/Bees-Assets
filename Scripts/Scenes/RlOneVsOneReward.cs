@@ -13,15 +13,15 @@ internal static class RlOneVsOneReward
     internal const float TsvRewardScale = 0.1f;
     internal const float MaximumEpisodeTimePenalty = 0.01f;
 
-    // Positive shaping is transformed through an asymptotic bound rather than hard-clamped. Every
-    // finite useful outcome therefore keeps a positive learning signal while the entire episode's
-    // positive non-terminal shaping remains strictly below the value of winning the battle.
+    // Tactical shaping is bounded independently for each sign, with one shared episode-wide
+    // budget per sign. Damage, hazards, discovery, and near/missed shots all participate.
+    // Terminal and economic rewards remain separate from this shaping budget.
     internal const float MaximumPositiveShapingReward = 0.2f;
-    // Shot shaping is deliberately subordinate to a single terminal win/loss.
-    // Both signs have independent asymptotic budgets, even for arbitrarily many shots.
-    internal const float RawMissPenalty = 0.002f;
-    internal const float RawNearMissReward = 0.004f;
-    internal const float MaximumMissPenalty = 0.05f;
+    internal const float MaximumNegativeShapingReward = MaximumPositiveShapingReward;
+    // A 1v1 missed shot has a stronger learning signal without accumulating past the
+    // negative shaping budget. A near miss is both a miss and a positive shaping event.
+    internal const float RawMissPenalty = 0.01f;
+    internal const float RawNearMissReward = 0.02f;
     internal const float NearMissDistance = 2f;
 
     // Discovery is intentionally a small fraction of combat outcome shaping. Static categories are
@@ -134,16 +134,15 @@ internal static class RlOneVsOneReward
     }
 
     /// <summary>
-    /// Exact bounded increment for the penalty accumulated from resolved missed shots.
-    /// An arbitrarily large number of misses costs less than MaximumMissPenalty.
+    /// The negative tactical-shaping budget has the same magnitude and asymptotic
+    /// behavior as the positive budget; it is shared by misses, damage and hazards.
     /// </summary>
-    internal static float CalculateBoundedMissPenaltyIncrement(double cumulativeRawPenalty)
+    internal static double CalculateBoundedNegativeShapingIncrement(
+        double cumulativeRawNegativeReward,
+        double additionalRawNegativeReward)
     {
-        double raw = Math.Max(0d, cumulativeRawPenalty);
-        double added = RawMissPenalty;
-        double maximum = MaximumMissPenalty;
-        return (float)(-maximum * maximum * added /
-            ((maximum + raw) * (maximum + raw + added)));
+        return CalculateBoundedPositiveShapingIncrement(
+            cumulativeRawNegativeReward, additionalRawNegativeReward);
     }
 
     /// <summary>
