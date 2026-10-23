@@ -17,6 +17,12 @@ internal static class RlOneVsOneReward
     // finite useful outcome therefore keeps a positive learning signal while the entire episode's
     // positive non-terminal shaping remains strictly below the value of winning the battle.
     internal const float MaximumPositiveShapingReward = 0.2f;
+    // Shot shaping is deliberately subordinate to a single terminal win/loss.
+    // Both signs have independent asymptotic budgets, even for arbitrarily many shots.
+    internal const float RawMissPenalty = 0.002f;
+    internal const float RawNearMissReward = 0.004f;
+    internal const float MaximumMissPenalty = 0.05f;
+    internal const float NearMissDistance = 2f;
 
     // Discovery is intentionally a small fraction of combat outcome shaping. Static categories are
     // normalized against the value present when the episode begins. Collision asteroids can spawn
@@ -125,6 +131,19 @@ internal static class RlOneVsOneReward
         double maximum = MaximumPositiveShapingReward;
         return maximum * maximum * added /
                ((maximum + raw) * (maximum + raw + added));
+    }
+
+    /// <summary>
+    /// Exact bounded increment for the penalty accumulated from resolved missed shots.
+    /// An arbitrarily large number of misses costs less than MaximumMissPenalty.
+    /// </summary>
+    internal static float CalculateBoundedMissPenaltyIncrement(double cumulativeRawPenalty)
+    {
+        double raw = Math.Max(0d, cumulativeRawPenalty);
+        double added = RawMissPenalty;
+        double maximum = MaximumMissPenalty;
+        return (float)(-maximum * maximum * added /
+            ((maximum + raw) * (maximum + raw + added)));
     }
 
     /// <summary>
