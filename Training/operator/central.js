@@ -3,11 +3,13 @@
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const os = require('node:os');
+const net = require('node:net');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 
 const {
     ensureDir,
+    ensureTokenFile,
     exists,
     findManagedProcessByOwnerToken,
     getProcessIdentity,
@@ -28,7 +30,7 @@ const {
     writeJsonAtomic,
     writeTextAtomic,
 } = require('./common');
-const { getStatus } = require('./control');
+const { getStatus, setDesiredState } = require('./control');
 const {
     ensureLearnerPython,
     installPackagedReleaseTrainingRuntime,
@@ -453,6 +455,121 @@ function durablePostCheckpointCentralPhase() {
 }
 
 
+// Runtime-only supervisor replacements are not release rollouts. Pause the remote
+// trainer children through BeesServer's durable desired state before requesting the
+// central optimizer checkpoint; never require operators to visit individual workers.
+async function pauseRemoteRolloutsForCentralRestart(config) {
+    if (config.localOnly) return null;
+    const admin = ensureTokenFile(paths.adminTokenPath);
+    const initial = await getStatus(config, admin);
+    if (!initial.desired || !initial.desired.training_enabled) return null;
+    const pending = initial.desired.pending_release;
+    if (pending && pending.incompatible && pending.phase === 'stopping') {
+        // The incompatible-release controller already stops remote trainers first.
+        return null;
+    }
+    const desired = await setDesiredState(config, admin, { remote_rollout_paused: true });
+    if (desired.remote_rollout_paused !== true) {
+        throw new Error(
+            'Training control does not support coordinated remote rollout pause. ' +
+            'Update/restart BeesServer before replacing the central learner.'
+        );
+    }
+    const revision = Number(desired.revision);
+    console.log(
+        'Pausing remote rollout before central checkpoint; control revision ' +
+        revision + '.'
+    );
+    const deadline = Date.now() + 180000;
+    while (Date.now() < deadline) {
+        const status = await getStatus(config, admin);
+        if (!status.desired || status.desired.remote_rollout_paused !== true) {
+            throw new Error('Remote rollout pause was cleared before central checkpoint.');
+        }
+        const waiting = (status.trainers || []).filter(record =>
+            record.role === 'dedicated' &&
+            record.trainer_id !== 'central-learner' &&
+            !record.stale &&
+            (record.process_state !== 'stopped' ||
+                Number(record.applied_revision) < revision)
+        );
+        if (!waiting.length) {
+            console.log('All active remote rollout workers acknowledged stopped.');
+            return revision;
+        }
+        await sleep(500);
+    }
+    throw new Error(
+        'Remote rollout workers did not all stop within 180 seconds. ' +
+        'Central checkpoint has NOT been requested. Remote rollout remains ' +
+        'paused in BeesServer; retry the runtime operation to recover.'
+    );
+}
+
+function isBrokerListening(port) {
+    return new Promise(resolve => {
+        const socket = net.createConnection({
+            host: '127.0.0.1', port: Number(port),
+        });
+        let finished = false;
+        const finish = ok => {
+            if (finished) return;
+            finished = true;
+            socket.destroy();
+            resolve(ok);
+        };
+        socket.setTimeout(1000, () => finish(false));
+        socket.once('connect', () => finish(true));
+        socket.once('error', () => finish(false));
+    });
+}
+
+async function resumeRemoteRolloutsAfterCentralRestart(config) {
+    if (config.localOnly) return;
+    const admin = ensureTokenFile(paths.adminTokenPath);
+    const initial = await getStatus(config, admin);
+    if (!initial.desired || !initial.desired.remote_rollout_paused) return;
+    const requiredRevision = Number(initial.desired.revision);
+    const deadline = Date.now() + 180000;
+    // The previous supervisor's last 'running' heartbeat can still be cached
+    // for a lease interval after replacement. Require a fresh heartbeat.
+    const freshnessNotBefore = Date.now() + 6000;
+    while (Date.now() < deadline) {
+        const status = await getStatus(config, admin);
+        if (!status.desired || status.desired.remote_rollout_paused !== true) {
+            throw new Error('Remote rollout pause ownership changed during central restart.');
+        }
+        const central = (status.trainers || []).find(record =>
+            record.trainer_id === 'central-learner');
+        if (
+            Date.now() >= freshnessNotBefore &&
+            central && !central.stale &&
+            central.process_state === 'running' &&
+            !central.last_error &&
+            Number(central.applied_revision) >= requiredRevision &&
+            Number(central.age_seconds) < 4 &&
+            await isBrokerListening(config.brokerPort)
+        ) {
+            const resumed = await setDesiredState(
+                config, admin, { remote_rollout_paused: false });
+            if (resumed.remote_rollout_paused !== false) {
+                throw new Error('BeesServer failed to release remote rollout pause.');
+            }
+            console.log(
+                'Replacement learner is healthy with WAN broker listening; ' +
+                'remote rollout supervisors will restart automatically.'
+            );
+            return;
+        }
+        await sleep(500);
+    }
+    throw new Error(
+        'Central learner did not become healthy with a listening WAN broker ' +
+        'within 180 seconds. Remote rollout remains paused for safe recovery; ' +
+        'retry the runtime operation.'
+    );
+}
+
 async function stopCentralAgentGracefully(pid, timeoutSeconds = 150) {
     if (pid <= 0) return true;
     let state = null;
@@ -657,11 +774,13 @@ async function startCentralAgentIfNeeded(
                     testManagedProcessIdentity(existing, bootstrapPython) &&
                     centralSupervisorLaunchContractMatches(existing, commandHash, agent)
                 ) {
+                    await resumeRemoteRolloutsAfterCentralRestart(config);
                     return;
                 }
                 console.log(
-                    'Central supervisor/control configuration changed; checkpointing the learner before replacing the verified supervisor.'
+                    'Central supervisor/control configuration changed; quiescing remote rollout before checkpointing the verified supervisor.'
                 );
+                await pauseRemoteRolloutsForCentralRestart(config);
                 const shutdownAlreadyRequested = exists(
                     paths.centralAgentShutdownRequestPath
                 );
@@ -768,6 +887,7 @@ async function startCentralAgentIfNeeded(
     });
     writeTextAtomic(paths.centralAgentPidPath, String(identity.pid), 'ascii');
     console.log('Stable central training supervisor started with PID ' + identity.pid + '.');
+    await resumeRemoteRolloutsAfterCentralRestart(config);
 }
 
 module.exports = {
