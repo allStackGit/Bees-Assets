@@ -59,6 +59,10 @@ namespace Assets.Scripts.Entities.Projectiles
                 BeamCannon.IsFiringLaserBeam = false;
                 BeamCannon.LaserBeamTarget = null;
                 BeamCannon.StopSoundEffect();
+                if (RlTrackShot)
+                {
+                    global::RlProjectileNearMissTelemetry.Ended(this);
+                }
                 RemoveDamageSentEntry();
                 Shooter?.ProjectilesInFlight.Remove(this);
                 Level.State.RemoveProjectile(this);
