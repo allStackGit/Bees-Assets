@@ -535,6 +535,7 @@ class ElasticWanBroker(base.WanActorBroker):
         self._claims: Dict[str, Dict[str, Any]] = {}
         self._consumed_steps_by_actor: Dict[int, int] = collections.defaultdict(int)
         self._accepted_steps_by_team: Dict[str, int] = collections.defaultdict(int)
+        self._accepted_ghost_steps_total = 0
         self._ppo_delivered_steps_total = 0
         # Include all admitted, not-yet-dequeued remote experiences, including
         # batches already transferred to ML-Agents' unbounded trajectory queues.
@@ -853,6 +854,7 @@ class ElasticWanBroker(base.WanActorBroker):
                 "accepted_team_0_steps_total": self._accepted_steps_by_team.get("0", 0),
                 "accepted_team_1_steps_total": self._accepted_steps_by_team.get("1", 0),
                 "accepted_other_steps_total": self._accepted_steps_by_team.get("other", 0),
+                "accepted_ghost_steps_total": self._accepted_ghost_steps_total,
                 "ppo_delivered_steps_total": (
                     self._ppo_delivered_steps_total
                     if self.threaded_mode and self.max_policy_lag > 0 else None
@@ -1139,6 +1141,7 @@ class ElasticWanBroker(base.WanActorBroker):
                     self._pending_experiences += step_count
                 for team_id, accepted_steps in team_steps.items():
                     self._accepted_steps_by_team[team_id] += accepted_steps
+                self._accepted_ghost_steps_total += ghost_steps
                 if policy_lag > 0:
                     self._accepted_stale_batches += 1
                     self._accepted_stale_steps += step_count
