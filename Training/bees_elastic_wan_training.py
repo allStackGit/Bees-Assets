@@ -930,6 +930,10 @@ class ElasticWanBroker(base.WanActorBroker):
             return self._policy_lag_locked(supplied)
 
     def _batch_is_current(self, batch: Mapping[str, Any]) -> bool:
+        with self._condition:
+            assigned_epoch = batch.get("learning_team_epoch")
+            if assigned_epoch is not None and assigned_epoch != self._learning_team_epoch:
+                return False
         if self.max_policy_lag <= 0:
             return super()._batch_is_current(batch)
         with self._condition:
@@ -1077,6 +1081,12 @@ class ElasticWanBroker(base.WanActorBroker):
         team_steps: Dict[str, int] = collections.defaultdict(int)
         for trajectory in trajectories:
             behavior_id = getattr(trajectory, "behavior_id", None)
+            if supplied_team_epoch is not None:
+                team = str(behavior_id).partition("?team=")[2]
+                if team in ("0", "1") and int(team) != self._learning_team_id:
+                    raise base.StaleActorStateError(
+                        "filtered upload contains a non-learning team trajectory"
+                    )
             agent_id = getattr(trajectory, "agent_id", None)
             steps = getattr(trajectory, "steps", None)
             if behavior_id not in allowed_behaviors:
@@ -1144,6 +1154,9 @@ class ElasticWanBroker(base.WanActorBroker):
             raise ValueError("consumed WAN batch has invalid step_count")
         with self._condition:
             if batch.get("control_epoch") != self._control_epoch:
+                return False
+            assigned_epoch = batch.get("learning_team_epoch")
+            if assigned_epoch is not None and assigned_epoch != self._learning_team_epoch:
                 return False
             try:
                 lag = (
