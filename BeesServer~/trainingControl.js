@@ -1664,9 +1664,21 @@ class TrainingControlStore {
                 const alreadyRolled = (pending.rolled_trainers || [])
                     .includes(trainerId);
                 const recollecting = pending.collect_until_ms > this.now();
-                const isRollingTarget = !recollecting &&
-                    this._rollingTargetId() === trainerId;
-                if (alreadyRolled || isRollingTarget) {
+                const rollingTarget = recollecting ? null : this._rollingTargetId();
+                const centralIsNext = rollingTarget === 'central-learner';
+                const remotesStopped = !centralIsNext ||
+                    pending.required_trainers.every(
+                        spec => spec.trainer_id === 'central-learner' ||
+                            this._trainerStoppedForPending(spec, pending));
+                if (centralIsNext && trainerId !== 'central-learner') {
+                    // Compatible rollout: remote workers already upgraded, but
+                    // stop their children again before Exeter's final checkpoint.
+                    forcedStop = true;
+                }
+                const isRollingTarget = rollingTarget === trainerId &&
+                    (trainerId !== 'central-learner' || remotesStopped);
+                if ((alreadyRolled || isRollingTarget) &&
+                    (trainerId !== 'central-learner' || remotesStopped)) {
                     desiredBuildId = pending.build_id;
                     if (Object.prototype.hasOwnProperty.call(pending, 'environment_args')) {
                         desiredEnvironmentArgs = pending.environment_args;
