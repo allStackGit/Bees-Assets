@@ -166,7 +166,7 @@ function newCentralLearnerLaunchCommand(config, learnerPython, unity, runtimeRoo
     return argv;
 }
 
-function prepareCentralReleaseRuntime(config, bootstrapPython, unity, release) {
+function prepareCentralReleaseRuntimeUnchecked(config, bootstrapPython, unity, release) {
     ensureDir(paths.centralAgentInstallRoot);
     const installed = installReleaseTrainingRuntime(bootstrapPython, release, true);
     const runtimeRoot = path.resolve(String(installed.installed_root));
@@ -198,6 +198,28 @@ function prepareCentralReleaseRuntime(config, bootstrapPython, unity, release) {
         learner_python: learnerPython,
         launch_command: launchCommand,
     };
+}
+
+async function prepareCentralReleaseRuntime(config, bootstrapPython, unity, release) {
+    // Publishing the runtime pointer can itself cause the already-running
+    // supervisor to detect a changed child command and checkpoint immediately.
+    // The remote pause must precede the pointer publication, not merely the
+    // operator's explicit stable-supervisor replacement later.
+    if (getRunningCentralAgentPid() > 0) {
+        const pointer = exists(paths.centralRuntimePointerPath)
+            ? readJson(paths.centralRuntimePointerPath, null)
+            : null;
+        const target = release.training_runtime || {};
+        if (
+            !pointer ||
+            String(pointer.runtime_version || '') !== String(target.runtime_version || '') ||
+            String(pointer.build_id || '') !== String(release.build_id || '')
+        ) {
+            await pauseRemoteRolloutsForCentralRestart(config);
+        }
+    }
+    return prepareCentralReleaseRuntimeUnchecked(
+        config, bootstrapPython, unity, release);
 }
 
 async function getCentralFallbackLaunchCommand(config, bootstrapPython, unity, preparedRuntime) {
@@ -709,7 +731,7 @@ async function startCentralAgentIfNeeded(
     const errLog = path.join(paths.logsRoot, 'Training', 'central-agent.err.log');
 
     if (!preparedRuntime) {
-        preparedRuntime = prepareCentralReleaseRuntime(config, bootstrapPython, unity, release);
+        preparedRuntime = await prepareCentralReleaseRuntime(config, bootstrapPython, unity, release);
     }
 
     const agent = centralSupervisorAgentPath(preparedRuntime);
