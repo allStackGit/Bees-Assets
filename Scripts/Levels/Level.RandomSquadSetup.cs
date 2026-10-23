@@ -80,11 +80,6 @@ namespace Assets.Scripts.Levels
                     false);
             }
 
-            if (rlOneVsOneTraining)
-            {
-                RandomizeRlOneVsOneSpawnPositions(side);
-                RandomizeRlOneVsOneFacing(side);
-            }
         }
 
         private void ConfigureRlOneVsOneSpawnPositions()
@@ -96,99 +91,114 @@ namespace Assets.Scripts.Levels
             StartingPositions[ConfigData.Configuration.HumanSide - 1] = offset;
         }
 
-        private void RandomizeRlOneVsOneSpawnPositions(int side)
+        // All starting ships must be present before choosing positions. This lets us
+        // reject an entire layout when one ship leaves no space for another, rather
+        // than getting stuck on the last ship after committing earlier placements.
+        private readonly List<Ship> _rlSpawnShips = new List<Ship>();
+        private readonly List<Vector2> _rlSpawnPositions = new List<Vector2>();
+        private readonly HashSet<Squad> _rlSpawnSquads = new HashSet<Squad>();
+
+        private void RandomizeRlOneVsOneSpawnPositions()
         {
-            List<Ship> ships = State.GetShips(side);
-            if (ships.Count == 0)
+            _rlSpawnShips.Clear();
+            List<Ship> aiShips = State.GetShips(ConfigData.Configuration.AISide);
+            List<Ship> userShips = State.GetShips(ConfigData.Configuration.UserSide);
+            for (int i = 0; i < aiShips.Count; i++)
+            {
+                if (aiShips[i] != null && !aiShips[i].IsDead)
+                {
+                    _rlSpawnShips.Add(aiShips[i]);
+                }
+            }
+            for (int i = 0; i < userShips.Count; i++)
+            {
+                if (userShips[i] != null && !userShips[i].IsDead)
+                {
+                    _rlSpawnShips.Add(userShips[i]);
+                }
+            }
+            if (_rlSpawnShips.Count == 0)
             {
                 return;
             }
 
-            HashSet<Squad> movedSquads = new HashSet<Squad>();
-            for (int shipIndex = 0; shipIndex < ships.Count; shipIndex++)
+            // Vary placement order so no faction consistently receives the easier
+            // first pick. Try complete layouts without moving any actual ship until
+            // every position is valid.
+            for (int i = _rlSpawnShips.Count - 1; i > 0; i--)
             {
-                Ship ship = ships[shipIndex];
-                if (ship == null || ship.IsDead)
-                {
-                    continue;
-                }
-
-                float clearance = GetRlShipClearanceRadius(ship);
-                float minX = MinX + clearance;
-                float maxX = MaxX - clearance;
-                float minY = MinY + clearance;
-                float maxY = MaxY - clearance;
-                if (minX >= maxX || minY >= maxY)
-                {
-                    throw new System.InvalidOperationException(
-                        $"RL training map is too small for the rotation-safe extent of {ship.ShipType}.");
-                }
-
-                bool found = false;
-                Vector2 safePosition = Vector2.zero;
-                // Uniform rejection sampling over the valid, rotation-safe map interior.
-                // Reject overlaps with hazards and any already spawned ship, on either side.
-                for (int attempt = 0; attempt < 256; attempt++)
-                {
-                    Vector2 candidate = new Vector2(
-                        Random.Range(minX, maxX),
-                        Random.Range(minY, maxY));
-                    if (!IsRlShipPositionHazardClear(candidate, clearance, ship))
-                    {
-                        continue;
-                    }
-                    safePosition = candidate;
-                    found = true;
-                    break;
-                }
-                if (!found)
-                {
-                    // A constrained map may contain safe space that rejection sampling
-                    // misses. Jitter each grid cell and sample uniformly from safe cells.
-                    const int cellsPerAxis = 64;
-                    int validCells = 0;
-                    float cellWidth = (maxX - minX) / cellsPerAxis;
-                    float cellHeight = (maxY - minY) / cellsPerAxis;
-                    for (int y = 0; y < cellsPerAxis; y++)
-                    {
-                        for (int x = 0; x < cellsPerAxis; x++)
-                        {
-                            Vector2 candidate = new Vector2(
-                                minX + (x + Random.value) * cellWidth,
-                                minY + (y + Random.value) * cellHeight);
-                            if (!IsRlShipPositionHazardClear(candidate, clearance, ship))
-                            {
-                                continue;
-                            }
-                            validCells++;
-                            if (Random.Range(0, validCells) == 0)
-                            {
-                                safePosition = candidate;
-                                found = true;
-                            }
-                        }
-                    }
-                    if (!found)
-                    {
-                        throw new System.InvalidOperationException(
-                            $"RL training found no hazard-free spawn for {ship.ShipType} on side {side}.");
-                    }
-                }
-
-                ship.transform.localPosition = safePosition;
-                if (ship.Squad != null)
-                {
-                    movedSquads.Add(ship.Squad);
-                }
+                int otherIndex = Random.Range(0, i + 1);
+                Ship temporary = _rlSpawnShips[i];
+                _rlSpawnShips[i] = _rlSpawnShips[otherIndex];
+                _rlSpawnShips[otherIndex] = temporary;
             }
 
-            foreach (Squad squad in movedSquads)
+            bool layoutFound = false;
+            for (int layoutAttempt = 0; layoutAttempt < 128 && !layoutFound; layoutAttempt++)
+            {
+                _rlSpawnPositions.Clear();
+                bool layoutValid = true;
+                for (int shipIndex = 0; shipIndex < _rlSpawnShips.Count; shipIndex++)
+                {
+                    Ship ship = _rlSpawnShips[shipIndex];
+                    float clearance = GetRlShipClearanceRadius(ship);
+                    float minX = MinX + clearance;
+                    float maxX = MaxX - clearance;
+                    float minY = MinY + clearance;
+                    float maxY = MaxY - clearance;
+                    if (minX >= maxX || minY >= maxY)
+                    {
+                        throw new System.InvalidOperationException(
+                            $"RL training map is too small for the rotation-safe extent of {ship.ShipType}.");
+                    }
+
+                    bool positionFound = false;
+                    for (int attempt = 0; attempt < 128; attempt++)
+                    {
+                        Vector2 candidate = new Vector2(
+                            Random.Range(minX, maxX),
+                            Random.Range(minY, maxY));
+                        if (!IsRlShipPositionHazardClear(candidate, clearance))
+                        {
+                            continue;
+                        }
+                        _rlSpawnPositions.Add(candidate);
+                        positionFound = true;
+                        break;
+                    }
+                    if (!positionFound)
+                    {
+                        layoutValid = false;
+                        break;
+                    }
+                }
+                layoutFound = layoutValid;
+            }
+
+            if (!layoutFound)
+            {
+                throw new System.InvalidOperationException(
+                    $"RL training could not fit {_rlSpawnShips.Count} ships together on a " +
+                    $"{global::RlOneVsOneArenaMapSizeState.GetMapSize(this):0.###}-unit map.");
+            }
+
+            _rlSpawnSquads.Clear();
+            for (int i = 0; i < _rlSpawnShips.Count; i++)
+            {
+                Ship ship = _rlSpawnShips[i];
+                ship.transform.localPosition = _rlSpawnPositions[i];
+                if (ship.Squad != null)
+                {
+                    _rlSpawnSquads.Add(ship.Squad);
+                }
+            }
+            foreach (Squad squad in _rlSpawnSquads)
             {
                 squad.SetOffsets();
             }
         }
 
-        private bool IsRlShipPositionHazardClear(Vector2 shipPosition, float shipExtent, Ship spawningShip)
+        private bool IsRlShipPositionHazardClear(Vector2 shipPosition, float shipExtent)
         {
             if (shipPosition.x - shipExtent <= MinX ||
                 shipPosition.x + shipExtent >= MaxX ||
@@ -198,30 +208,14 @@ namespace Assets.Scripts.Levels
                 return false;
             }
 
-            // A rotation-safe bounding circle also prevents same-team and opposing ships
-            // from touching at spawn, even when hulls and turrets begin at random angles.
-            if (State != null && ConfigData.Configuration != null)
+            // Only the already proposed positions participate in collision
+            // checking. Unplaced ships are still at temporary setup positions.
+            for (int i = 0; i < _rlSpawnPositions.Count; i++)
             {
-                for (int sideIndex = 0; sideIndex < 2; sideIndex++)
+                float separation = shipExtent + GetRlShipClearanceRadius(_rlSpawnShips[i]);
+                if ((shipPosition - _rlSpawnPositions[i]).sqrMagnitude <= separation * separation)
                 {
-                    int otherSide = sideIndex == 0
-                        ? ConfigData.Configuration.BeeSide
-                        : ConfigData.Configuration.HumanSide;
-                    List<Ship> others = State.GetShips(otherSide);
-                    for (int i = 0; i < others.Count; i++)
-                    {
-                        Ship other = others[i];
-                        if (other == null || other.IsDead || other == spawningShip)
-                        {
-                            continue;
-                        }
-                        float minDistance = shipExtent + GetRlShipClearanceRadius(other);
-                        if ((shipPosition - (Vector2)other.transform.localPosition).sqrMagnitude
-                            <= minDistance * minDistance)
-                        {
-                            return false;
-                        }
-                    }
+                    return false;
                 }
             }
 
@@ -261,8 +255,7 @@ namespace Assets.Scripts.Levels
             for (int obstacleIndex = 0; obstacleIndex < ObstacleMap.Obstacles.Count; obstacleIndex++)
             {
                 StaticObstacle obstacle = ObstacleMap.Obstacles[obstacleIndex];
-                if (obstacle == null || obstacle.IsDead ||
-                    obstacle.Collider == null)
+                if (obstacle == null || obstacle.IsDead || obstacle.Collider == null)
                 {
                     continue;
                 }
