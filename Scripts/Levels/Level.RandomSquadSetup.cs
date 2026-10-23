@@ -197,6 +197,33 @@ namespace Assets.Scripts.Levels
                 }
             }
 
+            // Moving/collision asteroids use the GameState registry, not the static
+            // obstacle-map list. They can be present during nonstandard episode setups.
+            if (State != null)
+            {
+                List<Obstacle> activeObstacles = State.GetObstacles();
+                for (int i = 0; i < activeObstacles.Count; i++)
+                {
+                    Obstacle obstacle = activeObstacles[i];
+                    if (obstacle == null || obstacle.IsDead ||
+                        obstacle.ObstacleType != ConfigData.ObstacleTypes.CollisionAsteroid ||
+                        obstacle.Collider == null)
+                    {
+                        continue;
+                    }
+                    Bounds bounds = obstacle.Collider.bounds;
+                    Vector3 min = Map.Transform.InverseTransformPoint(bounds.min);
+                    Vector3 max = Map.Transform.InverseTransformPoint(bounds.max);
+                    if (shipPosition.x + shipExtent > Mathf.Min(min.x, max.x) &&
+                        shipPosition.x - shipExtent < Mathf.Max(min.x, max.x) &&
+                        shipPosition.y + shipExtent > Mathf.Min(min.y, max.y) &&
+                        shipPosition.y - shipExtent < Mathf.Max(min.y, max.y))
+                    {
+                        return false;
+                    }
+                }
+            }
+
             if (!global::RlOneVsOneTrainingBootstrap.CurrentStaticObstaclesEnabled ||
                 ObstacleMap == null ||
                 ObstacleMap.Obstacles == null)
