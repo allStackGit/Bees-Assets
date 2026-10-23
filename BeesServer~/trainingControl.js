@@ -216,6 +216,7 @@ class TrainingControlStore {
             schema_version: CONTROL_SCHEMA_VERSION,
             revision: 0,
             training_enabled: false,
+            remote_rollout_paused: false,
             environment_args: [],
             canonical_build_id: "",
             run_id: "",
@@ -382,6 +383,13 @@ class TrainingControlStore {
         }
         if (typeof parsed.training_enabled !== 'boolean') {
             throw new Error('training-control state training_enabled is invalid');
+        }
+        // Older persisted control states predate coordinated central restarts.
+        if (parsed.remote_rollout_paused === undefined) {
+            parsed.remote_rollout_paused = false;
+        }
+        if (typeof parsed.remote_rollout_paused !== 'boolean') {
+            throw new Error('training-control state remote_rollout_paused is invalid');
         }
         parsed.environment_args = normalizeEnvironmentArgs(parsed.environment_args || []);
         if (typeof parsed.run_id !== 'string' ||
@@ -1424,6 +1432,13 @@ class TrainingControlStore {
                 { statusCode: 409 });
         }
 
+        const hasRemotePausePatch = Object.prototype.hasOwnProperty.call(
+            patch, 'remote_rollout_paused');
+        if (hasRemotePausePatch && typeof patch.remote_rollout_paused !== 'boolean') {
+            throw Object.assign(
+                new Error('remote_rollout_paused must be boolean'), { statusCode: 400 });
+        }
+
         const requestedBuildId = this.state.canonical_build_id;
         const hasTrainingPatch = Object.prototype.hasOwnProperty.call(patch, 'training_enabled');
         const requestedTraining = hasTrainingPatch
@@ -1466,13 +1481,21 @@ class TrainingControlStore {
             if (environmentArgsChanged) requestedEnvironmentArgs = normalizedArgs;
         }
 
+        // A full training stop supersedes an outstanding runtime-only pause.
+        const requestedRemotePause = requestedTraining &&
+            (hasRemotePausePatch
+                ? patch.remote_rollout_paused
+                : this.state.remote_rollout_paused);
+        const pauseChanged =
+            requestedRemotePause !== this.state.remote_rollout_paused;
         const trainingChanged =
             hasTrainingPatch && requestedTraining !== this.state.training_enabled;
-        if (trainingChanged || environmentArgsChanged) {
+        if (trainingChanged || environmentArgsChanged || pauseChanged) {
             const previousState = this.state;
             this.state = {
                 ...previousState,
                 training_enabled: requestedTraining,
+                remote_rollout_paused: requestedRemotePause,
                 environment_args: requestedEnvironmentArgs,
                 revision: previousState.revision + 1,
             };
@@ -1611,6 +1634,7 @@ class TrainingControlStore {
             schema_version: CONTROL_SCHEMA_VERSION,
             revision: this.state.revision,
             training_enabled: this.state.training_enabled,
+            remote_rollout_paused: this.state.remote_rollout_paused,
             environment_args: [...this.state.environment_args],
             canonical_build_id: this.state.canonical_build_id,
             run_id: this.state.run_id,
@@ -1631,7 +1655,9 @@ class TrainingControlStore {
         const catalog = this._catalogForRole(role);
         let desiredBuildId = this.state.canonical_build_id;
         let desiredEnvironmentArgs = this.state.environment_args;
-        let forcedStop = false;
+        let forcedStop = role === 'dedicated' &&
+            trainerId !== 'central-learner' &&
+            this.state.remote_rollout_paused;
         const pending = this.state.pending_release;
         if (role === 'dedicated' && pending) {
             if (pending.phase === 'rolling') {
@@ -1647,7 +1673,12 @@ class TrainingControlStore {
                     }
                 }
             } else if (pending.phase === 'stopping') {
-                forcedStop = true;
+                // Quiesce every remote rollout before interrupting the central
+                // learner. Its final checkpoint must not compete with WAN uploads.
+                const awaitingRemotes = pending.required_trainers.some(
+                    spec => spec.trainer_id !== 'central-learner' &&
+                        !this._trainerStoppedForPending(spec, pending));
+                forcedStop = trainerId !== 'central-learner' || !awaitingRemotes;
             }
         }
 
