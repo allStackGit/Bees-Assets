@@ -548,6 +548,7 @@ class ElasticWanBroker(base.WanActorBroker):
         self._pending_experience_limit = 2 * max(buffer_sizes, default=16384)
         self._pending_experiences = 0
         self._learning_team_id: Optional[int] = None
+        self._learning_team_epoch = 0
         self._pipeline_snapshot: Dict[str, int] = {}
         self._last_pipeline_report = 0.0
         self._trainer_step = 0
@@ -814,12 +815,14 @@ class ElasticWanBroker(base.WanActorBroker):
         with self._condition:
             initial_topology = self._topology_epoch
             initial_optimizer_busy = self._optimizer_busy_seconds_total
+            initial_learning_team_epoch = self._learning_team_epoch
             while (
                 not self._closed
                 and policy_epoch == self._policy_epoch
                 and control_epoch == self._control_epoch
                 and initial_topology == self._topology_epoch
                 and initial_optimizer_busy == self._optimizer_busy_seconds_total
+                and initial_learning_team_epoch == self._learning_team_epoch
                 and wait_seconds > 0
             ):
                 remaining = deadline - time.monotonic()
@@ -831,6 +834,8 @@ class ElasticWanBroker(base.WanActorBroker):
                 "session_id": self.session_id,
                 "policy_epoch": self._policy_epoch,
                 "policy_cycle": self._policy_cycle,
+                "learning_team": self._learning_team_id,
+                "learning_team_epoch": self._learning_team_epoch,
                 "control_epoch": self._control_epoch,
                 "topology_epoch": self._topology_epoch,
                 "policy_versions": self._policy_versions_locked(),
@@ -983,8 +988,14 @@ class ElasticWanBroker(base.WanActorBroker):
             )
 
     def observe_learning_team(self, team_id: int) -> None:
+        team = int(team_id)
+        if team not in (0, 1):
+            raise ValueError("self-play learning team must be 0 or 1")
         with self._condition:
-            self._learning_team_id = int(team_id)
+            if self._learning_team_id != team:
+                self._learning_team_id = team
+                self._learning_team_epoch += 1
+                self._condition.notify_all()
 
     def is_ghost_trajectory(self, behavior_id: str) -> bool:
         team = str(behavior_id).partition("?team=")[2]
@@ -1040,8 +1051,20 @@ class ElasticWanBroker(base.WanActorBroker):
                 f"trajectory control epoch {payload.get('control_epoch')!r} != {self.control_epoch}"
             )
         policy_lag = self._validate_policy_versions(payload.get("policy_versions"))
+        ghost_steps = payload.get("ghost_steps", 0)
+        if not isinstance(ghost_steps, int) or isinstance(ghost_steps, bool) or ghost_steps < 0:
+            raise ValueError("ghost_steps must be a non-negative integer")
+        supplied_team_epoch = payload.get("learning_team_epoch")
+        with self._condition:
+            if supplied_team_epoch is not None and (
+                self._learning_team_id is None
+                or supplied_team_epoch != self._learning_team_epoch
+            ):
+                raise base.StaleActorStateError("learning team assignment has changed")
+            if ghost_steps and supplied_team_epoch is None:
+                raise ValueError("ghost-step summaries require a learning-team epoch")
         trajectories = payload.get("trajectories")
-        if not isinstance(trajectories, list) or not trajectories:
+        if not isinstance(trajectories, list) or (not trajectories and not ghost_steps):
             raise ValueError("trajectory batch must contain at least one trajectory")
         if len(trajectories) > 256:
             raise ValueError("trajectory batch may contain at most 256 trajectories")
@@ -1078,6 +1101,8 @@ class ElasticWanBroker(base.WanActorBroker):
             "trajectories": trajectories,
             "step_count": step_count,
             "policy_lag_at_submit": int(policy_lag),
+            "ghost_steps": ghost_steps,
+            "learning_team_epoch": supplied_team_epoch,
         }
         queue_started = time.perf_counter() if timings is not None else 0.0
         try:
