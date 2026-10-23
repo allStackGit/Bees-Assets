@@ -8,6 +8,7 @@ boundaries. No WAN HTTP handler, zlib decoder, or incoming pickle.load runs in t
 from __future__ import annotations
 
 import multiprocessing
+import mmap
 import os
 import pickle
 import secrets
@@ -219,13 +220,30 @@ class IsolatedElasticWanBroker:
         token = descriptor["token"]
         shared = None
         view = None
+        mapping = None
         try:
-            shared = SharedMemory(name=descriptor["name"], create=False)
-            view = shared.buf[:int(descriptor["bytes"])]
-            result = pickle.loads(view)
+            size = int(descriptor["bytes"])
+            if os.name == "posix" and os.path.isdir("/dev/shm"):
+                # Linux: map the POSIX shm file read-only without registering a
+                # second independent resource_tracker owner. The broker alone
+                # creates/unlinks the named segment.
+                fd = os.open(
+                    os.path.join("/dev/shm", descriptor["name"]), os.O_RDONLY
+                )
+                try:
+                    mapping = mmap.mmap(fd, size, access=mmap.ACCESS_READ)
+                finally:
+                    os.close(fd)
+                result = pickle.loads(mapping)
+            else:
+                shared = SharedMemory(name=descriptor["name"], create=False)
+                view = shared.buf[:size]
+                result = pickle.loads(view)
         finally:
             if view is not None:
                 view.release()
+            if mapping is not None:
+                mapping.close()
             if shared is not None:
                 shared.close()
             # Owner process unlinks the allocation even if deserialization fails.
