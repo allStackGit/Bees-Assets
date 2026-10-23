@@ -29,6 +29,8 @@ class ElasticActorSession(worker.ActorSession):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self.topology_epoch = -1
+        self._learning_team_id = None
+        self._learning_team_epoch = -1
         self.policy_cycle = -1
         self.learner_step = -1
         self.optimizer_busy_seconds_total = None
@@ -746,6 +748,24 @@ class ElasticActorSession(worker.ActorSession):
                 f"total_envs={total_envs} rollout_horizons={horizons}."
             )
 
+    def _prepare_upload_trajectories(
+        self, trajectories: list[Any]
+    ) -> tuple[list[Any], int, Optional[int]]:
+        learning_team = self._learning_team_id
+        epoch = self._learning_team_epoch
+        if learning_team not in (0, 1) or epoch < 0:
+            return trajectories, 0, None
+
+        retained = []
+        ghost_steps = 0
+        for trajectory in trajectories:
+            team = str(trajectory.behavior_id).partition("?team=")[2]
+            if team in ("0", "1") and int(team) != learning_team:
+                ghost_steps += len(trajectory.steps)
+            else:
+                retained.append(trajectory)
+        return retained, ghost_steps, epoch
+
     def _synchronize_state(self, *, require_policy: bool = False) -> None:
         # Base synchronization handles policy/control freshness and clears state_changed. Fetch one
         # immediate state afterward so topology metadata is applied atomically before rollout resumes.
@@ -769,6 +789,27 @@ class ElasticActorSession(worker.ActorSession):
         )
         self._apply_live_rollout_horizons(state)
         self._apply_central_throughput(state)
+        learning_team = state.get("learning_team")
+        learning_epoch = state.get("learning_team_epoch")
+        if (
+            not isinstance(learning_epoch, int)
+            or isinstance(learning_epoch, bool)
+            or learning_epoch < 0
+            or learning_team not in (None, 0, 1)
+        ):
+            raise RuntimeError("WAN central state has invalid learning team assignment")
+        if self._learning_team_epoch != learning_epoch:
+            # Preserve no unfinished trajectories across the learning-team
+            # boundary. Already uploaded batches have their own epoch and
+            # are rejected if the trainer has switched sides.
+            worker._clear_partial_trajectories(self.manager)
+            self._discard_queued_uploads()
+            print(
+                f"[Bees WAN actor] learning team={learning_team} epoch={learning_epoch}.",
+                flush=True,
+            )
+        self._learning_team_id = learning_team
+        self._learning_team_epoch = learning_epoch
         if not self._heartbeat():
             return
         self._state_changed.clear()
@@ -788,6 +829,7 @@ class ElasticActorSession(worker.ActorSession):
                     int(state.get("policy_epoch", -1)) != self.policy_epoch
                     or remote_control_epoch != self.control_epoch
                     or int(state.get("topology_epoch", -1)) != self.topology_epoch
+                    or int(state.get("learning_team_epoch", -1)) != self._learning_team_epoch
                 )
                 # Repeated authenticated acknowledgements are also the liveness heartbeat. Do not
                 # acknowledge an epoch the main actor loop has not applied yet.
