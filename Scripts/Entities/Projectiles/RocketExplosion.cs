@@ -91,6 +91,10 @@ namespace Assets.Scripts.Entities.Projectiles
 
         protected override void FixedUpdate()
         {
+            if (RlTrackShot)
+            {
+                global::RlProjectileNearMissTelemetry.Travel(this, GetPosition());
+            }
             // Count changes on Dequeue, so a for-loop bounded by the live Count skips roughly
             // half of simultaneous contacts. Drain the queues instead.
             while (CollidingQueue.Count > 0)
