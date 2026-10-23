@@ -132,8 +132,9 @@ internal static class RlOneVsOneArenaMapSizeState
 
     internal static float GetMinimumSafeMapSizeForShip(ConfigData.ShipTypes shipType)
     {
-        float edgePadding = Mathf.Max(ConfigData.MapEdgePadding.x, ConfigData.MapEdgePadding.y);
-        return 2f * (GetRotationSafeShipRadius(shipType) + edgePadding) + 0.01f;
+        // RL training bounds extend to the physical arena edge. Hull radius already
+        // includes a clearance margin from the lethal border.
+        return 2f * GetRotationSafeShipRadius(shipType) + 0.01f;
     }
 
     private static float GetMinimumSafeMapSizeForPreparedMatchup(Level level)
@@ -155,6 +156,24 @@ internal static class RlOneVsOneArenaMapSizeState
                         RlOneVsOnePerArenaMatchups.GetShipType(level, sides[sideIndex], shipIndex)));
             }
         }
+
+        if (shipCount == 1)
+        {
+            // The two rotation-safe hull circles can occupy opposite corners of a
+            // square only when the diagonal separation is at least their summed
+            // radii. Individual-ship fit checks alone would accept impossible
+            // pairs and fail at every episode reset.
+            float beeRadius = GetRotationSafeShipRadius(
+                RlOneVsOnePerArenaMatchups.GetShipType(
+                    level, ConfigData.Configuration.BeeSide, 0));
+            float humanRadius = GetRotationSafeShipRadius(
+                RlOneVsOnePerArenaMatchups.GetShipType(
+                    level, ConfigData.Configuration.HumanSide, 0));
+            float pairMinimum = (beeRadius + humanRadius) *
+                                (1f + 1f / Mathf.Sqrt(2f)) + 0.01f;
+            required = Mathf.Max(required, pairMinimum);
+        }
+
         return required;
     }
 
