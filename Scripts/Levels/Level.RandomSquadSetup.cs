@@ -177,9 +177,10 @@ namespace Assets.Scripts.Levels
 
             if (!layoutFound)
             {
+                float mapSize = global::RlOneVsOneArenaMapSizeState.GetMapSize(this);
                 throw new System.InvalidOperationException(
                     $"RL training could not fit {_rlSpawnShips.Count} ships together on a " +
-                    $"{global::RlOneVsOneArenaMapSizeState.GetMapSize(this):0.###}-unit map.");
+                    $"{mapSize:0.###}-unit map.");
             }
 
             _rlSpawnSquads.Clear();
