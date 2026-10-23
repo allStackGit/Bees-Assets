@@ -487,8 +487,31 @@ async function pauseRemoteRolloutsForCentralRestart(config) {
     if (!initial.desired || !initial.desired.training_enabled) return null;
     const pending = initial.desired.pending_release;
     if (pending && pending.incompatible && pending.phase === 'stopping') {
-        // The incompatible-release controller already stops remote trainers first.
-        return null;
+        // The incompatible-release controller owns this barrier. Even if a
+        // separate runtime operation is retried mid-cutover, it must not bypass
+        // the remote-first stop ordering by terminating Exeter directly.
+        const deadline = Date.now() + 180000;
+        while (Date.now() < deadline) {
+            const status = await getStatus(config, admin);
+            const active = status.desired && status.desired.pending_release;
+            if (!active || active.phase !== 'stopping') return null;
+            const waiting = (active.required_trainers || []).filter(spec => {
+                if (spec.trainer_id === 'central-learner') return false;
+                const record = (status.trainers || []).find(item =>
+                    item.trainer_id === spec.trainer_id);
+                return !record ||
+                    (!record.stale &&
+                        (record.process_state !== 'stopped' ||
+                            Number(record.applied_revision) <
+                                Number(active.phase_revision)));
+            });
+            if (!waiting.length) return null;
+            await sleep(500);
+        }
+        throw new Error(
+            'Incompatible-release remote stop barrier has not completed; ' +
+            'refusing to checkpoint Exeter while remote rollout continues.'
+        );
     }
     const desired = await setDesiredState(config, admin, { remote_rollout_paused: true });
     if (desired.remote_rollout_paused !== true) {
