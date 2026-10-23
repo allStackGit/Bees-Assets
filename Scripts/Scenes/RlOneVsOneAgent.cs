@@ -467,14 +467,11 @@ internal sealed class RlOneVsOneAgent : Agent
 
     private void ResetWeaponAimDirections()
     {
-        Level level = _ship != null ? _ship.Level : _level;
-        int frameQuarterTurns = level != null
-            ? RlPolicyCoordinateFrame.GetQuarterTurns(level, _teamId)
-            : 0;
-        Vector2 defaultAim = RlPolicyCoordinateFrame.PolicyToWorld(Vector2.up, frameQuarterTurns);
+        // Never replace a randomized physical turret heading with policy-frame up.
+        // Binding the ship initializes each slot from its own actual turret facing.
         for (int slot = 0; slot < _weaponAimDirections.Length; slot++)
         {
-            _weaponAimDirections[slot] = defaultAim;
+            _weaponAimDirections[slot] = Vector2.zero;
         }
     }
 
@@ -1139,13 +1136,24 @@ internal sealed class RlOneVsOneAgent : Agent
         }
 
         _ship.IsRlPolicyControlled = true;
-        Vector2 initialAim = RlPolicyCoordinateFrame.PolicyToWorld(
-            Vector2.up,
-            RlPolicyCoordinateFrame.GetQuarterTurns(_ship.Level, _teamId));
-        for (int i = 0; i < _ship.Turrets.Count; i++)
+        for (int slot = 0; slot < _ship.Weapons.Count && slot < MaxWeaponSlots; slot++)
         {
-            Turret turret = _ship.Turrets[i];
-            turret.SetRlControl(turret.GetPosition() + initialAim * Mathf.Max(1f, turret.Range), false);
+            if (!(_ship.Weapons[slot] is Turret turret) || turret.PieceTransform == null)
+            {
+                continue;
+            }
+
+            Vector3 mapForward = _ship.Level.Map.Transform.InverseTransformDirection(
+                turret.PieceTransform.up);
+            Vector2 initialAim = new Vector2(mapForward.x, mapForward.y).normalized;
+            if (initialAim.sqrMagnitude < 0.000001f)
+            {
+                initialAim = Vector2.right;
+            }
+            _weaponAimDirections[slot] = initialAim;
+            turret.SetRlControl(
+                turret.GetPosition() + initialAim * Mathf.Max(1f, turret.Range),
+                false);
         }
         return true;
     }
