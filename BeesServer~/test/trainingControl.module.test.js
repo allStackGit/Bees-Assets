@@ -718,7 +718,19 @@ test('compatible release prestages everywhere and rolls one dedicated trainer at
         assert.equal(afterRemote.desired_build_id, 'new');
         assert.equal(store.state.canonical_build_id, 'old');
 
-        const centralTurn = store.stateFor({
+        let centralTurn = store.stateFor({
+            trainerId: 'central-learner', role: 'dedicated', platform: 'WindowsPlayer',
+        });
+        assert.equal(centralTurn.desired_build_id, 'old');
+        assert.equal(store.stateFor({
+            trainerId: 'remote-a', role: 'dedicated', platform: 'WindowsPlayer',
+        }).desired_mode, 'stopped');
+        heartbeatDedicated(store, 'remote-a', 'new', newSha, {
+            processState: 'stopped',
+            preparedBuildId: 'new',
+            appliedRevision: store.state.pending_release.phase_revision,
+        });
+        centralTurn = store.stateFor({
             trainerId: 'central-learner', role: 'dedicated', platform: 'WindowsPlayer',
         });
         assert.equal(centralTurn.desired_build_id, 'new');
@@ -1103,13 +1115,24 @@ test('compatible rollout converges across worker loss, server restart, and worke
                 appliedRevision: store.state.pending_release.phase_revision,
             },
         );
-        const centralDesired = heartbeatDedicated(
+        const centralBeforeStop = heartbeatDedicated(
             store,
             'central-learner',
             'resilience-old',
             oldSha,
             { preparedBuildId: 'resilience-new' },
         );
+        assert.equal(centralBeforeStop.desired_build_id, 'resilience-old');
+        heartbeatDedicated(store, 'remote-b', 'resilience-new', newSha, {
+            processState: 'stopped',
+            preparedBuildId: 'resilience-new',
+            appliedRevision: store.state.pending_release.phase_revision,
+        });
+        const centralDesired = store.stateFor({
+            trainerId: 'central-learner',
+            role: 'dedicated',
+            platform: 'WindowsPlayer',
+        });
         assert.equal(centralDesired.desired_build_id, 'resilience-new');
 
         heartbeatDedicated(
@@ -1747,6 +1770,11 @@ test('unchanged environment args do not require new heartbeat identity on code-o
             last_error: '',
         });
         assert.equal(store._rollingTargetId(), 'central-learner');
+        heartbeatDedicated(store, 'remote-a', 'identity-new', newSha, {
+            processState: 'stopped',
+            appliedRevision: rolloutRevision,
+            preparedBuildId: 'identity-new',
+        });
         store.heartbeat({
             trainer_id: 'central-learner',
             role: 'dedicated',
@@ -1763,7 +1791,7 @@ test('unchanged environment args do not require new heartbeat identity on code-o
     });
 });
 
-test('same-run environment rollout is central-first and never exposes mixed desired args', () => {
+test('same-run environment rollout stops remotes before central and never exposes mixed desired args', () => {
     withTempDir(root => {
         const store = new TrainingControlStore({
             statePath: path.join(root, 'state.json'),
@@ -1817,7 +1845,8 @@ test('same-run environment rollout is central-first and never exposes mixed desi
             platform: 'WindowsPlayer',
         });
         assert.deepEqual(remote.environment_args, oldArgs);
-        assert.deepEqual(central.environment_args, newArgs);
+        assert.equal(remote.desired_mode, 'stopped');
+        assert.deepEqual(central.environment_args, oldArgs);
 
         // Every trainer sees the new global control revision. A non-target may therefore
         // acknowledge that revision while it is intentionally still running the old args.
@@ -1837,6 +1866,14 @@ test('same-run environment rollout is central-first and never exposes mixed desi
         });
         assert.deepEqual(remote.environment_args, oldArgs);
         assert.deepEqual(store.state.pending_release.rolled_trainers, []);
+        heartbeatDedicated(store, 'remote-a', 'env-roll', sha, {
+            processState: 'stopped',
+            appliedRevision: phaseRevision,
+            environmentArgs: oldArgs,
+        });
+        assert.deepEqual(store.stateFor({
+            trainerId: 'central-learner', role: 'dedicated', platform: 'WindowsPlayer',
+        }).environment_args, newArgs);
 
         heartbeatDedicated(
             store,
@@ -2167,6 +2204,11 @@ test('compatible rolling skips a persistently crashing remote but never central 
             },
         );
         assert.equal(store._rollingTargetId(), 'central-learner');
+        heartbeatDedicated(store, 'remote-good', 'roll-fail-new', newSha, {
+            processState: 'stopped',
+            preparedBuildId: 'roll-fail-new',
+            appliedRevision: store.state.pending_release.phase_revision,
+        });
 
         heartbeatDedicated(
             store,
@@ -2287,6 +2329,12 @@ test('compatible rollout requires a healthy canary for every active remote platf
         );
         assert.deepEqual(store.state.pending_release.quarantined_trainers, ['remote-linux']);
         assert.equal(store.state.pending_release.phase, 'rolling');
+        heartbeatDedicated(store, 'remote-linux', 'platform-old', oldLinuxSha, {
+            platform: 'LinuxPlayer',
+            processState: 'stopped',
+            appliedRevision: store.state.pending_release.phase_revision,
+            preparedBuildId: 'platform-new',
+        });
 
         heartbeatDedicated(
             store,
