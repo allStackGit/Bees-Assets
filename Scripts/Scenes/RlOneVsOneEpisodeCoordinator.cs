@@ -197,6 +197,7 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
     private readonly int[] _mapObjectDiscoveryValue = new int[2];
     private readonly int[] _collisionAsteroidDiscoveryCount = new int[2];
     private readonly double[] _rawPositiveShapingReward = new double[2];
+    private readonly double[] _rawMissPenalty = new double[2];
     private readonly Dictionary<string, float>[] _rewardSources =
     {
         new Dictionary<string, float>(StringComparer.Ordinal),
@@ -398,6 +399,31 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
             {
                 coordinator._humanFirstFireSeconds = coordinator.ElapsedEpisodeSeconds;
             }
+        }
+    }
+
+    /// <summary>
+    /// Reward only a completed projectile-root miss; fragments and explosion continuations
+    /// are accounted for as one shot by the combat telemetry tracker.
+    /// </summary>
+    internal static void RecordResolvedProjectileMiss(Ship shooter, bool nearlyHit)
+    {
+        if (!TryGetTrackedSide(shooter, out RlOneVsOneEpisodeCoordinator coordinator,
+                out int sideIndex))
+        {
+            return;
+        }
+
+        float penalty = RlOneVsOneReward.CalculateBoundedMissPenaltyIncrement(
+            coordinator._rawMissPenalty[sideIndex]);
+        coordinator._rawMissPenalty[sideIndex] += RlOneVsOneReward.RawMissPenalty;
+        coordinator.ApplyImmediateTsvReward(shooter.Side, penalty, "shot_miss");
+        if (nearlyHit)
+        {
+            // Shared positive-shaping cap already bounds the sum of combat and discovery
+            // shaping. A near miss is never counted as a hit or rewarded twice.
+            coordinator.ApplyImmediateTsvReward(
+                shooter.Side, RlOneVsOneReward.RawNearMissReward, "near_miss");
         }
     }
 
@@ -1353,6 +1379,7 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
             _mapObjectDiscoveryValue[sideIndex] = 0;
             _collisionAsteroidDiscoveryCount[sideIndex] = 0;
             _rawPositiveShapingReward[sideIndex] = 0d;
+            _rawMissPenalty[sideIndex] = 0d;
             _rewardedShipDiscoveryIds[sideIndex].Clear();
             _rewardedMiningAsteroidDiscoveryIds[sideIndex].Clear();
             _rewardedObstacleDiscoveryIds[sideIndex].Clear();
