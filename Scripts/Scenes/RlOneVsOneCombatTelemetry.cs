@@ -289,7 +289,6 @@ internal static class RlOneVsOneCombatTelemetry
             ["first_hit_distance"] = state.FirstHitDistance[sideIndex] < 0f
                 ? (object)null : state.FirstHitDistance[sideIndex]
         };
-        RlProjectileNearMissTelemetry.AppendEpisodeData(level, sideIndex, aim);
         if (RlOneVsOneTrainingBootstrap.CurrentMovementDisabledForSide(
             level, sideIndex == 0 ? ConfigData.Configuration.BeeSide : ConfigData.Configuration.HumanSide))
         {
