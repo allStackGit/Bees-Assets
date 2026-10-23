@@ -82,7 +82,7 @@ namespace Assets.Scripts.Levels
 
             if (rlOneVsOneTraining)
             {
-                EnsureRlSpawnedShipsAreHazardClear(side);
+                RandomizeRlOneVsOneSpawnPositions(side);
                 RandomizeRlOneVsOneFacing(side);
             }
         }
@@ -96,7 +96,7 @@ namespace Assets.Scripts.Levels
             StartingPositions[ConfigData.Configuration.HumanSide - 1] = offset;
         }
 
-        private void EnsureRlSpawnedShipsAreHazardClear(int side)
+        private void RandomizeRlOneVsOneSpawnPositions(int side)
         {
             List<Ship> ships = State.GetShips(side);
             if (ships.Count == 0)
@@ -114,16 +114,37 @@ namespace Assets.Scripts.Levels
                 }
 
                 float clearance = GetRlShipClearanceRadius(ship);
-                Vector2 current = ship.transform.localPosition;
-                if (IsRlShipPositionHazardClear(current, clearance))
-                {
-                    continue;
-                }
-
-                if (!TryFindNearestRlHazardClearPosition(current, clearance, out Vector2 safePosition))
+                float minX = MinX + clearance;
+                float maxX = MaxX - clearance;
+                float minY = MinY + clearance;
+                float maxY = MaxY - clearance;
+                if (minX >= maxX || minY >= maxY)
                 {
                     throw new System.InvalidOperationException(
-                        $"RL training could not place {ship.ShipType} on side {side} clear of the map border and lethal obstacles.");
+                        $"RL training map is too small for the rotation-safe extent of {ship.ShipType}.");
+                }
+
+                bool found = false;
+                Vector2 safePosition = Vector2.zero;
+                // Uniform rejection sampling over the valid, rotation-safe map interior.
+                // Reject overlaps with hazards and any already spawned ship, on either side.
+                for (int attempt = 0; attempt < 256; attempt++)
+                {
+                    Vector2 candidate = new Vector2(
+                        Random.Range(minX, maxX),
+                        Random.Range(minY, maxY));
+                    if (!IsRlShipPositionHazardClear(candidate, clearance, ship))
+                    {
+                        continue;
+                    }
+                    safePosition = candidate;
+                    found = true;
+                    break;
+                }
+                if (!found)
+                {
+                    throw new System.InvalidOperationException(
+                        $"RL training found no safe random spawn for {ship.ShipType} on side {side} after 256 attempts.");
                 }
 
                 ship.transform.localPosition = safePosition;
@@ -139,71 +160,7 @@ namespace Assets.Scripts.Levels
             }
         }
 
-        private bool TryFindNearestRlHazardClearPosition(
-            Vector2 requested,
-            float clearance,
-            out Vector2 safePosition)
-        {
-            if (IsRlShipPositionHazardClear(requested, clearance))
-            {
-                safePosition = requested;
-                return true;
-            }
-
-            int step = Mathf.Max(1, Pathfinder.Scale);
-            int maxSearchDistance = Mathf.Max(MapWidth, MapHeight);
-            int maxRadius = Mathf.CeilToInt((float)maxSearchDistance / step);
-            for (int radius = 1; radius <= maxRadius; radius++)
-            {
-                Vector2 best = Vector2.zero;
-                float bestDistance = float.MaxValue;
-                bool found = false;
-                for (int x = -radius; x <= radius; x++)
-                {
-                    for (int y = -radius; y <= radius; y++)
-                    {
-                        if (Mathf.Abs(x) != radius && Mathf.Abs(y) != radius)
-                        {
-                            continue;
-                        }
-
-                        Vector2 candidate = requested + new Vector2(x * step, y * step);
-                        if (!IsRlShipPositionHazardClear(candidate, clearance))
-                        {
-                            continue;
-                        }
-
-                        float distance = (candidate - requested).sqrMagnitude;
-                        if (!found || distance < bestDistance)
-                        {
-                            found = true;
-                            bestDistance = distance;
-                            best = candidate;
-                        }
-                    }
-                }
-
-                if (found)
-                {
-                    safePosition = best;
-                    return true;
-                }
-            }
-
-            // The RL obstacle generator always leaves the center cross clear. Checking the center
-            // explicitly also covers coarse Pathfinder-scale searches on maps where a very large
-            // ship has only a narrow valid center region.
-            if (IsRlShipPositionHazardClear(Vector2.zero, clearance))
-            {
-                safePosition = Vector2.zero;
-                return true;
-            }
-
-            safePosition = requested;
-            return false;
-        }
-
-        private bool IsRlShipPositionHazardClear(Vector2 shipPosition, float shipExtent)
+        private bool IsRlShipPositionHazardClear(Vector2 shipPosition, float shipExtent, Ship spawningShip)
         {
             if (shipPosition.x - shipExtent <= MinX ||
                 shipPosition.x + shipExtent >= MaxX ||
@@ -211,6 +168,33 @@ namespace Assets.Scripts.Levels
                 shipPosition.y + shipExtent >= MaxY)
             {
                 return false;
+            }
+
+            // A rotation-safe bounding circle also prevents same-team and opposing ships
+            // from touching at spawn, even when hulls and turrets begin at random angles.
+            if (State != null && ConfigData.Configuration != null)
+            {
+                for (int sideIndex = 0; sideIndex < 2; sideIndex++)
+                {
+                    int otherSide = sideIndex == 0
+                        ? ConfigData.Configuration.BeeSide
+                        : ConfigData.Configuration.HumanSide;
+                    List<Ship> others = State.GetShips(otherSide);
+                    for (int i = 0; i < others.Count; i++)
+                    {
+                        Ship other = others[i];
+                        if (other == null || other.IsDead || other == spawningShip)
+                        {
+                            continue;
+                        }
+                        float minDistance = shipExtent + GetRlShipClearanceRadius(other);
+                        if ((shipPosition - (Vector2)other.transform.localPosition).sqrMagnitude
+                            <= minDistance * minDistance)
+                        {
+                            return false;
+                        }
+                    }
+                }
             }
 
             if (!global::RlOneVsOneTrainingBootstrap.CurrentStaticObstaclesEnabled ||
@@ -266,11 +250,10 @@ namespace Assets.Scripts.Levels
                 for (int turretIndex = 0; turretIndex < ship.Turrets.Count; turretIndex++)
                 {
                     var turret = ship.Turrets[turretIndex];
-                    if (global::RlOneVsOneTrainingBootstrap.CurrentMovementDisabledForSide(this, side) &&
-                        !(turret is Assets.Scripts.Entities.Ships.Weapons.FullShipTurret))
+                    if (!(turret is Assets.Scripts.Entities.Ships.Weapons.FullShipTurret))
                     {
-                        // For stationary aiming, vary turret orientation independently of
-                        // ship facing and the relative target bearing on every episode.
+                        // All independently rotating turrets start at a random orientation,
+                        // irrespective of whether movement is enabled for this team.
                         Vector3 turretEuler = turret.PieceTransform.eulerAngles;
                         turretEuler.z = Random.Range(0f, 360f);
                         turret.PieceTransform.eulerAngles = turretEuler;
