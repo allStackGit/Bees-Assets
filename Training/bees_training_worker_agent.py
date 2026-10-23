@@ -401,6 +401,8 @@ class EpisodeLogMetrics:
                             return None
                         if key == "error":
                             return float(value["error_sum_deg"]) / samples
+                        if key not in value:
+                            return None
                         return 100.0 * int(value[key]) / samples
                     self._episodes.append({
                         "episode": int(record["episode"]),
@@ -409,6 +411,12 @@ class EpisodeLogMetrics:
                         "bee_win": record["outcome"] == "bee",
                         "human_win": record["outcome"] == "human",
                         "bee_shots": int(bee_combat["shots"]),
+                        "bee_completed_shots": int(bee_combat.get("completed_projectile_shots", 0)),
+                        "bee_missed_shots": int(bee_combat.get("missed_projectile_shots", 0)),
+                        "bee_near_misses": int(bee_combat.get("near_missed_projectile_shots_within_2", 0)),
+                        "human_completed_shots": int(human_combat.get("completed_projectile_shots", 0)),
+                        "human_missed_shots": int(human_combat.get("missed_projectile_shots", 0)),
+                        "human_near_misses": int(human_combat.get("near_missed_projectile_shots_within_2", 0)),
                         # Newly captured episodes count unique turret-fired
                         # projectiles with enemy health damage, not damage events.
                         # Preserve legacy behavior when reading older JSONL files.
@@ -507,6 +515,12 @@ class EpisodeLogMetrics:
         bee_hits = sum(int(item["bee_hits"]) for item in episodes)
         human_shots = sum(int(item["human_shots"]) for item in episodes)
         human_hits = sum(int(item["human_hits"]) for item in episodes)
+        bee_completed = sum(int(item.get("bee_completed_shots", 0)) for item in episodes)
+        human_completed = sum(int(item.get("human_completed_shots", 0)) for item in episodes)
+        bee_missed = sum(int(item.get("bee_missed_shots", 0)) for item in episodes)
+        human_missed = sum(int(item.get("human_missed_shots", 0)) for item in episodes)
+        bee_near = sum(int(item.get("bee_near_misses", 0)) for item in episodes)
+        human_near = sum(int(item.get("human_near_misses", 0)) for item in episodes)
 
         def weighted_metric(sample_key: str, value_key: str) -> Optional[float]:
             weighted_total = 0.0
@@ -548,6 +562,14 @@ class EpisodeLogMetrics:
                 human_hits / human_shots, 3) if human_shots else 0.0,
             "bee_shots_per_episode": round(bee_shots / count, 2),
             "human_shots_per_episode": round(human_shots / count, 2),
+            "bee_missed_shots": bee_missed,
+            "human_missed_shots": human_missed,
+            "bee_near_missed_shots": bee_near,
+            "human_near_missed_shots": human_near,
+            "bee_missed_pct": round(100 * bee_missed / bee_completed, 2) if bee_completed else None,
+            "human_missed_pct": round(100 * human_missed / human_completed, 2) if human_completed else None,
+            "bee_near_miss_pct": round(100 * bee_near / bee_completed, 2) if bee_completed else None,
+            "human_near_miss_pct": round(100 * human_near / human_completed, 2) if human_completed else None,
             "bee_aim_samples": bee_aim_samples,
             "human_aim_samples": human_aim_samples,
             "bee_aim_error_deg": weighted_metric(
