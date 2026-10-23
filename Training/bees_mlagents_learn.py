@@ -1154,7 +1154,16 @@ def _install_threaded_trainer_failure_propagation():
                 flush=True,
             )
             return None
-        return original_save(controller)
+        started = time.perf_counter()
+        print("[Bees checkpoint] ML-Agents final save started.", flush=True)
+        try:
+            return original_save(controller)
+        finally:
+            print(
+                f"[Bees checkpoint] ML-Agents final save returned after "
+                f"{time.perf_counter() - started:.3f}s.",
+                flush=True,
+            )
 
     TrainerController.trainer_update_func = guarded_trainer_update
     TrainerController._save_models = guarded_save_models
@@ -1181,6 +1190,11 @@ def _start_managed_stop_watcher():
     def watch() -> None:
         while not stop_event.wait(MANAGED_STOP_POLL_SECONDS):
             if os.path.isfile(path):
+                print(
+                    "[Bees checkpoint] managed stop request observed by learner; "
+                    "interrupting for graceful final checkpoint.",
+                    flush=True,
+                )
                 _thread.interrupt_main()
                 return
 
