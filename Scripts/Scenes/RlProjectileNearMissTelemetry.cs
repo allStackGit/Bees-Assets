@@ -171,7 +171,7 @@ internal static class RlProjectileNearMissTelemetry
         }
     }
 
-    internal static void AppendEpisodeData(Level level, int sideIndex, Dictionary<string, object> aim)
+    internal static void AppendEpisodeData(Level level, int sideIndex, Dictionary<string, object> combat)
     {
         if (!Arenas.TryGetValue(level, out Arena arena))
         {
@@ -186,9 +186,9 @@ internal static class RlProjectileNearMissTelemetry
                 inFlight++;
             }
         }
-        aim["completed_projectile_shots"] = arena.Completed[sideIndex];
-        aim["missed_projectile_shots"] = arena.Missed[sideIndex];
-        aim["near_missed_projectile_shots_within_2"] = arena.NearMissed[sideIndex];
-        aim["in_flight_projectile_shots"] = inFlight;
+        combat["completed_projectile_shots"] = arena.Completed[sideIndex];
+        combat["missed_projectile_shots"] = arena.Missed[sideIndex];
+        combat["near_missed_projectile_shots_within_2"] = arena.NearMissed[sideIndex];
+        combat["in_flight_projectile_shots"] = inFlight;
     }
 }
