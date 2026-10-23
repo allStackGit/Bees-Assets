@@ -52,6 +52,8 @@ internal static class RlProjectileNearMissTelemetry
     {
         if (projectile == null || projectile.RlRootProjectileId <= 0 ||
             !(projectile.Weapon is Turret turret) || !turret.IsRlControlled ||
+            projectile.Shooter == null ||
+            RlPlayerDerivedActionReplay.IsScriptedSide(projectile.Level, projectile.Shooter.Side) ||
             !Arenas.TryGetValue(projectile.Level, out Arena arena))
         {
             return;
