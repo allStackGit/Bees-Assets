@@ -1041,6 +1041,18 @@ class TrainingControlStore {
             record.applied_revision >= pending.phase_revision;
     }
 
+    _remoteRolloutQuiescedForPending(pending) {
+        // Include active remotes not currently in the release barrier, such as
+        // quarantined workers and late joiners. They can still have old learner
+        // connections until their supervisor acknowledges the stop instruction.
+        const required = pending.required_trainers.filter(
+            spec => spec.trainer_id !== 'central-learner');
+        const active = this._activeDedicatedTrainers().filter(
+            record => record.trainer_id !== 'central-learner');
+        return [...required, ...active].every(
+            spec => this._trainerStoppedForPending(spec, pending));
+    }
+
     _rollingTargetId() {
         const pending = this.state.pending_release;
         if (!pending || pending.phase !== 'rolling') return null;
@@ -1145,9 +1157,7 @@ class TrainingControlStore {
                     spec => spec.trainer_id === rollingTargetId);
                 const remoteCheckpointBarrierSatisfied =
                     rollingTargetId !== 'central-learner' ||
-                    pending.required_trainers.every(
-                        spec => spec.trainer_id === 'central-learner' ||
-                            this._trainerStoppedForPending(spec, pending));
+                    this._remoteRolloutQuiescedForPending(pending);
                 if (
                     targetSpec &&
                     remoteCheckpointBarrierSatisfied &&
@@ -1676,9 +1686,7 @@ class TrainingControlStore {
                 const rollingTarget = recollecting ? null : this._rollingTargetId();
                 const centralIsNext = rollingTarget === 'central-learner';
                 const remotesStopped = !centralIsNext ||
-                    pending.required_trainers.every(
-                        spec => spec.trainer_id === 'central-learner' ||
-                            this._trainerStoppedForPending(spec, pending));
+                    this._remoteRolloutQuiescedForPending(pending);
                 if (centralIsNext && trainerId !== 'central-learner') {
                     // Compatible rollout: remote workers already upgraded, but
                     // stop their children again before Exeter's final checkpoint.
@@ -1696,10 +1704,9 @@ class TrainingControlStore {
             } else if (pending.phase === 'stopping') {
                 // Quiesce every remote rollout before interrupting the central
                 // learner. Its final checkpoint must not compete with WAN uploads.
-                const awaitingRemotes = pending.required_trainers.some(
-                    spec => spec.trainer_id !== 'central-learner' &&
-                        !this._trainerStoppedForPending(spec, pending));
-                forcedStop = trainerId !== 'central-learner' || !awaitingRemotes;
+                const remoteRolloutStopped =
+                    this._remoteRolloutQuiescedForPending(pending);
+                forcedStop = trainerId !== 'central-learner' || remoteRolloutStopped;
             }
         }
 
