@@ -6624,17 +6624,34 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
 
 
     def pipelined_poca_save_model(self):
-        """Wait for an in-flight asynchronous PPO update before final checkpoint export."""
-
-        future = getattr(self, "_bees_poca_update_future", None)
-        if future is not None:
-            future.result()
+        """Finish any in-flight optimizer update before writing its checkpoint."""
+        if getattr(self, "_bees_poca_update_future", None) is not None:
+            started = time.perf_counter()
+            print(
+                "[Bees checkpoint] waiting for in-flight PPO optimizer update.",
+                flush=True,
+            )
+            self._bees_poca_update_future.result()
             self._bees_poca_update_future = None
+            print(
+                f"[Bees checkpoint] PPO optimizer finished in "
+                f"{time.perf_counter() - started:.3f}s.",
+                flush=True,
+            )
         executor = getattr(self, "_bees_poca_update_executor", None)
         if executor is not None:
             executor.shutdown(wait=True)
             self._bees_poca_update_executor = None
-        return original_poca_save_model(self)
+        started = time.perf_counter()
+        print("[Bees checkpoint] beginning PyTorch save and ONNX export.", flush=True)
+        try:
+            return original_poca_save_model(self)
+        finally:
+            print(
+                f"[Bees checkpoint] PyTorch save/ONNX export returned after "
+                f"{time.perf_counter() - started:.3f}s.",
+                flush=True,
+            )
 
     def configure_fused_cuda_adam(optimizer):
         """Enable PyTorch 2.1 CUDA fused Adam on the existing optimizer state.
