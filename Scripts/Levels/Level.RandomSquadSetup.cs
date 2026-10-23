@@ -143,8 +143,36 @@ namespace Assets.Scripts.Levels
                 }
                 if (!found)
                 {
-                    throw new System.InvalidOperationException(
-                        $"RL training found no safe random spawn for {ship.ShipType} on side {side} after 256 attempts.");
+                    // A constrained map may contain safe space that rejection sampling
+                    // misses. Jitter each grid cell and sample uniformly from safe cells.
+                    const int cellsPerAxis = 64;
+                    int validCells = 0;
+                    float cellWidth = (maxX - minX) / cellsPerAxis;
+                    float cellHeight = (maxY - minY) / cellsPerAxis;
+                    for (int y = 0; y < cellsPerAxis; y++)
+                    {
+                        for (int x = 0; x < cellsPerAxis; x++)
+                        {
+                            Vector2 candidate = new Vector2(
+                                minX + (x + Random.value) * cellWidth,
+                                minY + (y + Random.value) * cellHeight);
+                            if (!IsRlShipPositionHazardClear(candidate, clearance, ship))
+                            {
+                                continue;
+                            }
+                            validCells++;
+                            if (Random.Range(0, validCells) == 0)
+                            {
+                                safePosition = candidate;
+                                found = true;
+                            }
+                        }
+                    }
+                    if (!found)
+                    {
+                        throw new System.InvalidOperationException(
+                            $"RL training found no hazard-free spawn for {ship.ShipType} on side {side}.");
+                    }
                 }
 
                 ship.transform.localPosition = safePosition;
@@ -197,8 +225,7 @@ namespace Assets.Scripts.Levels
                 }
             }
 
-            // Moving/collision asteroids use the GameState registry, not the static
-            // obstacle-map list. They can be present during nonstandard episode setups.
+            // Dynamic obstacles are registered in GameState, not the static map list.
             if (State != null)
             {
                 List<Obstacle> activeObstacles = State.GetObstacles();
@@ -206,7 +233,7 @@ namespace Assets.Scripts.Levels
                 {
                     Obstacle obstacle = activeObstacles[i];
                     if (obstacle == null || obstacle.IsDead ||
-                        obstacle.ObstacleType != ConfigData.ObstacleTypes.CollisionAsteroid ||
+                        obstacle.ObstacleType == ConfigData.ObstacleTypes.MapBorder ||
                         obstacle.Collider == null)
                     {
                         continue;
@@ -234,7 +261,7 @@ namespace Assets.Scripts.Levels
             for (int obstacleIndex = 0; obstacleIndex < ObstacleMap.Obstacles.Count; obstacleIndex++)
             {
                 StaticObstacle obstacle = ObstacleMap.Obstacles[obstacleIndex];
-                if (obstacle == null || obstacle.IsDead || !obstacle.KillsShipsOnContact ||
+                if (obstacle == null || obstacle.IsDead ||
                     obstacle.Collider == null)
                 {
                     continue;
