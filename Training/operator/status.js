@@ -748,8 +748,10 @@ async function getStatusFrameLines(config, adminToken) {
                 HAim: episodes && metrics.human_aim_error_deg != null ? number(metrics.human_aim_error_deg, 1, 'deg') : '-',
                 'B<5': episodes && metrics.bee_aim_within_5_pct != null ? number(metrics.bee_aim_within_5_pct, 1, '%') : '-',
                 'H<5': episodes && metrics.human_aim_within_5_pct != null ? number(metrics.human_aim_within_5_pct, 1, '%') : '-',
-                BAligned: episodes && metrics.bee_turret_aligned_pct != null ? number(metrics.bee_turret_aligned_pct, 1, '%') : '-',
-                HAligned: episodes && metrics.human_turret_aligned_pct != null ? number(metrics.human_turret_aligned_pct, 1, '%') : '-',
+                'BMiss%': episodes && metrics.bee_missed_pct != null ? number(metrics.bee_missed_pct, 1, '%') : '-',
+                'HMiss%': episodes && metrics.human_missed_pct != null ? number(metrics.human_missed_pct, 1, '%') : '-',
+                'BNear%': episodes && metrics.bee_near_miss_pct != null ? number(metrics.bee_near_miss_pct, 1, '%') : '-',
+                'HNear%': episodes && metrics.human_near_miss_pct != null ? number(metrics.human_near_miss_pct, 1, '%') : '-',
                 Error: statusError(record),
             };
         });
@@ -759,7 +761,7 @@ async function getStatusFrameLines(config, adminToken) {
                 'Trainer', 'Role', 'Platform', 'State', 'Envs', 'vCPU', 'CPU%', 'RAM%', 'LiveExp/s', 'Staged/s', 'Accept/s', 'OptStep/s',
                 'Accepted', 'Consumed', 'UploadQ', 'BrokerQ', 'SentGiB', 'RecvGiB', 'MiB/s', 'Opt', 'Build', 'Rev', 'Age',
                 'Timeout', 'BWin', 'HWin', 'Draw', 'Dur', 'BHit/Sh', 'HHit/Sh',
-                'BAim', 'HAim', 'B<5', 'H<5', 'BAligned', 'HAligned', 'Error',
+                'BAim', 'HAim', 'B<5', 'H<5', 'BMiss%', 'HMiss%', 'BNear%', 'HNear%', 'Error',
             ]));
         } else {
             lines.push('No managed trainers/gameplay builds have checked in.');
