@@ -26,7 +26,7 @@ internal static class RlOneVsOneCombatTelemetry
         internal readonly double[] AimErrorDegrees = new double[2];
         internal readonly long[] AimSamples = new long[2];
         internal readonly long[] AccurateAimSamples = new long[2];
-        internal readonly long[] AlignedTurretSamples = new long[2];
+
 
         // Stationary training: sampled on policy decisions, whether or not a turret fires.
         internal readonly long[] PolicyDecisions = new long[2];
@@ -36,8 +36,6 @@ internal static class RlOneVsOneCombatTelemetry
         internal readonly long[] RequestedAimWithin5 = new long[2];
         internal readonly long[] RequestedAimWithin15 = new long[2];
         internal readonly long[] RequestedAimWithin30 = new long[2];
-        internal readonly double[] ActualTurretErrorDegrees = new double[2];
-        internal readonly long[] ActualTurretSamples = new long[2];
         internal readonly double[] RequestedAimCosSum = new double[2];
         internal readonly double[] RequestedAimSinSum = new double[2];
         internal readonly long[][] TargetBearingCounts = { new long[PolicyBearingSectorCount], new long[PolicyBearingSectorCount] };
@@ -81,12 +79,15 @@ internal static class RlOneVsOneCombatTelemetry
             ConfigData.Configuration.BeeSide,
             ConfigData.Configuration.HumanSide,
             RlOneVsOneArenaMapSizeState.GetMapSize(level));
+        RlProjectileNearMissTelemetry.Begin(
+            level, ConfigData.Configuration.BeeSide, ConfigData.Configuration.HumanSide);
     }
 
     internal static void End(Level level)
     {
         if (level != null)
         {
+            RlProjectileNearMissTelemetry.End(level);
             States.Remove(level);
         }
     }
@@ -170,18 +171,6 @@ internal static class RlOneVsOneCombatTelemetry
             state.RequestedAimCosSum[sideIndex] += Mathf.Cos(aimAngle * Mathf.Deg2Rad);
             state.RequestedAimSinSum[sideIndex] += Mathf.Sin(aimAngle * Mathf.Deg2Rad);
 
-            // Physical turret rotation may lag behind the requested point.
-            if (turret.PieceTransform != null && ship.Level.Map != null)
-            {
-                Vector3 worldForward = turret.PieceTransform.up;
-                Vector3 mapForward = ship.Level.Map.Transform.InverseTransformDirection(worldForward);
-                Vector2 actualForward = new Vector2(mapForward.x, mapForward.y);
-                if (actualForward.sqrMagnitude > 0.000001f)
-                {
-                    state.ActualTurretErrorDegrees[sideIndex] += Vector2.Angle(actualForward, targetDirection);
-                    state.ActualTurretSamples[sideIndex]++;
-                }
-            }
         }
     }
 
@@ -211,10 +200,6 @@ internal static class RlOneVsOneCombatTelemetry
             if (errorDegrees <= AccurateAimThresholdDegrees)
             {
                 state.AccurateAimSamples[sideIndex]++;
-            }
-            if (turret.IsAlignedWithTargetPoint)
-            {
-                state.AlignedTurretSamples[sideIndex]++;
             }
             return;
         }
@@ -261,6 +246,7 @@ internal static class RlOneVsOneCombatTelemetry
         }
 
         state.EnemyHitProjectiles[sideIndex].Add(projectile.RlRootProjectileId);
+        RlProjectileNearMissTelemetry.EnemyContact(projectile, target);
     }
 
     internal static int GetProjectileHitCount(Level level, int sideIndex)
@@ -276,8 +262,8 @@ internal static class RlOneVsOneCombatTelemetry
         if (!TryGetState(level, out ArenaState state))
         {
             return "map_size=none " +
-                   "bee_aim_samples=0 bee_aim_error=none bee_aim_within_5deg=none bee_turret_aligned=none bee_first_fire_distance=none bee_first_hit_distance=none " +
-                   "human_aim_samples=0 human_aim_error=none human_aim_within_5deg=none human_turret_aligned=none human_first_fire_distance=none human_first_hit_distance=none";
+                   "bee_aim_samples=0 bee_aim_error=none bee_aim_within_5deg=none bee_first_fire_distance=none bee_first_hit_distance=none " +
+                   "human_aim_samples=0 human_aim_error=none human_aim_within_5deg=none human_first_fire_distance=none human_first_hit_distance=none";
         }
 
         return $"map_size={FormatDistance(state.EpisodeMapSize)} " +
@@ -298,12 +284,12 @@ internal static class RlOneVsOneCombatTelemetry
             ["samples"] = state.AimSamples[sideIndex],
             ["error_sum_deg"] = state.AimErrorDegrees[sideIndex],
             ["within_5deg"] = state.AccurateAimSamples[sideIndex],
-            ["turret_aligned"] = state.AlignedTurretSamples[sideIndex],
             ["first_fire_distance"] = state.FirstFireDistance[sideIndex] < 0f
                 ? (object)null : state.FirstFireDistance[sideIndex],
             ["first_hit_distance"] = state.FirstHitDistance[sideIndex] < 0f
                 ? (object)null : state.FirstHitDistance[sideIndex]
         };
+        RlProjectileNearMissTelemetry.AppendEpisodeData(level, sideIndex, aim);
         if (RlOneVsOneTrainingBootstrap.CurrentMovementDisabledForSide(
             level, sideIndex == 0 ? ConfigData.Configuration.BeeSide : ConfigData.Configuration.HumanSide))
         {
@@ -316,8 +302,6 @@ internal static class RlOneVsOneCombatTelemetry
                 ["requested_within_5deg"] = state.RequestedAimWithin5[sideIndex],
                 ["requested_within_15deg"] = state.RequestedAimWithin15[sideIndex],
                 ["requested_within_30deg"] = state.RequestedAimWithin30[sideIndex],
-                ["actual_turret_samples"] = state.ActualTurretSamples[sideIndex],
-                ["actual_turret_error_sum_deg"] = state.ActualTurretErrorDegrees[sideIndex],
                 ["target_bearing_sector_counts"] = state.TargetBearingCounts[sideIndex],
                 ["requested_bearing_sector_counts"] = state.RequestedBearingCounts[sideIndex],
                 ["target_sector_error_sum_deg"] = state.TargetSectorErrorDegrees[sideIndex],
