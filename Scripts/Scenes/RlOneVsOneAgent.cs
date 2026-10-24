@@ -565,12 +565,14 @@ internal sealed class RlOneVsOneAgent : Agent
 
         var discrete = actions.DiscreteActions;
         bool allowWeaponFire = SpecialActionAllowsWeaponFire(discrete[SpecialActionBranch]);
+        int freshAimSlotMask = 0;
         for (int slot = 0; slot < MaxWeaponSlots; slot++)
         {
             int aimStart = WeaponAimContinuousActionStart + slot * WeaponAimContinuousActionsPerSlot;
             Vector2 policyAim = new Vector2(continuous[aimStart], continuous[aimStart + 1]);
             if (policyAim.sqrMagnitude >= AimDeadZone * AimDeadZone)
             {
+                freshAimSlotMask |= 1 << slot;
                 _weaponAimDirections[slot] = RlPolicyCoordinateFrame.PolicyToWorld(
                     policyAim.normalized,
                     frameQuarterTurns);
@@ -581,12 +583,10 @@ internal sealed class RlOneVsOneAgent : Agent
             ApplyWeaponCommand(_ship, slot, _weaponAimDirections[slot], fire);
         }
 
-        if (movementDisabled)
-        {
-            // Capture aiming quality even on decisions where no projectile is fired.
-            RlOneVsOneCombatTelemetry.RecordStationaryPolicyDecision(
-                _ship, frameQuarterTurns, _weaponAimDirections);
-        }
+        // Record unfired aiming decisions from both the learning and opponent
+        // policies. Distinguish fresh policy outputs from held dead-zone aims.
+        RlOneVsOneCombatTelemetry.RecordPolicyDecision(
+            _ship, _teamId, frameQuarterTurns, _weaponAimDirections, freshAimSlotMask);
 
         switch (discrete[SpecialActionBranch])
         {
