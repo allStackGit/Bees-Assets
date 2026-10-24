@@ -1044,6 +1044,7 @@ class ElasticWanBroker(base.WanActorBroker):
     def submit_trajectory_batch(
         self, payload: Mapping[str, Any], *,
         timings: Optional[Dict[str, float]] = None,
+        serialized_payload: Optional[bytes] = None,
     ) -> int:
         actor_id = self._validate_actor_id(payload.get("actor_id"))
         with self._condition:
@@ -1119,13 +1120,20 @@ class ElasticWanBroker(base.WanActorBroker):
             "actor_id": actor_id,
             "policy_versions": dict(payload["policy_versions"]),
             "control_epoch": int(payload["control_epoch"]),
-            "trajectories": trajectories,
             "step_count": step_count,
             "estimated_bytes": estimated_bytes,
             "policy_lag_at_submit": int(policy_lag),
             "ghost_steps": ghost_steps,
             "learning_team_epoch": supplied_team_epoch,
         }
+        # Keep the worker's validated pickle stream instead of materializing it
+        # again during cross-process export. The learner reconstructs trajectories
+        # after the broker has selected this policy-current batch. Manual callers
+        # without a serialized stream keep the original in-process behavior.
+        if serialized_payload is not None:
+            item["serialized_payload"] = serialized_payload
+        else:
+            item["trajectories"] = trajectories
         queue_started = time.perf_counter() if timings is not None else 0.0
         pending_experience_limited = False
         try:

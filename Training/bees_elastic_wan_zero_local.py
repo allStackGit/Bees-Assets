@@ -266,6 +266,11 @@ class ZeroLocalElasticWanEnvManagerMixin(elastic.ElasticWanEnvManagerMixin):
         return len(step_infos)
 
     def _inject_batches(self, batches: List[Any] | tuple[Any, ...]) -> None:
+        # Group by queue before insertion. AgentManagerQueue is backed by the
+        # standard library's queue.Queue in pinned ML-Agents 1.1.0; filling an
+        # unbounded queue under one condition lock avoids thousands of
+        # individual lock acquisitions while preserving per-queue FIFO order.
+        grouped = {}
         for batch in batches:
             # Ghost data was filtered at the remote worker. Preserve the
             # GhostTrainer snapshot schedule without shipping opponent observations.
@@ -294,7 +299,20 @@ class ZeroLocalElasticWanEnvManagerMixin(elastic.ElasticWanEnvManagerMixin):
                         dict(batch["policy_versions"]),
                         int(batch["control_epoch"]),
                     )
-                manager.trajectory_queue.put(queued_trajectory)
+                grouped.setdefault(manager.trajectory_queue, []).append(queued_trajectory)
+
+        for trajectory_queue, trajectories in grouped.items():
+            inner = getattr(trajectory_queue, "_queue", None)
+            if isinstance(inner, queue.Queue) and inner.maxsize == 0:
+                with inner.not_full:
+                    inner.queue.extend(trajectories)
+                    inner.unfinished_tasks += len(trajectories)
+                    inner.not_empty.notify_all()
+            else:
+                # Preserve regular blocking behavior for bounded or different
+                # queue implementations.
+                for trajectory in trajectories:
+                    trajectory_queue.put(trajectory)
 
     def _wait_for_current_remote_batch(self) -> Any:
         """Pause a learner-only trainer when no remote rollout data is currently available."""

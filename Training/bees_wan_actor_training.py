@@ -231,7 +231,7 @@ def encode_payload(value: Any) -> bytes:
     return encoded
 
 
-def decode_payload(data: bytes) -> Any:
+def decode_payload(data: bytes, *, return_serialized: bool = False) -> Any:
     if not isinstance(data, (bytes, bytearray)) or len(data) > MAX_COMPRESSED_PAYLOAD_BYTES:
         raise ValueError("WAN actor payload exceeds compressed size limit")
     decompressor = zlib.decompressobj()
@@ -243,7 +243,8 @@ def decode_payload(data: bytes) -> Any:
     raw += decompressor.flush()
     if len(raw) > MAX_DECOMPRESSED_PAYLOAD_BYTES:
         raise ValueError("WAN actor payload exceeds decompressed size limit")
-    return pickle.loads(raw)
+    payload = pickle.loads(raw)
+    return (payload, raw) if return_serialized else payload
 
 
 def _behavior_spec_signature(spec: Any) -> Tuple[Any, ...]:
@@ -564,10 +565,13 @@ class WanActorBroker:
                     raise ValueError("request body ended before Content-Length")
                 return data
 
-            def _decode_body(self, data: bytes, timings: Optional[Dict[str, float]] = None) -> Any:
+            def _decode_body(
+                self, data: bytes, timings: Optional[Dict[str, float]] = None,
+                *, return_serialized: bool = False,
+            ) -> Any:
                 # Pickle is protected by the private forward and bearer credential.
                 decode_started = time.perf_counter() if timings is not None else 0.0
-                payload = decode_payload(data)
+                payload = decode_payload(data, return_serialized=return_serialized)
                 if timings is not None:
                     timings["decode"] = time.perf_counter() - decode_started
                 return payload
@@ -656,7 +660,9 @@ class WanActorBroker:
                                 broker._upload_decode_slots.acquire()
                                 decoded_slot = True
                             try:
-                                payload = self._decode_body(compressed, timings)
+                                payload, serialized_payload = self._decode_body(
+                                    compressed, timings, return_serialized=True
+                                )
                             finally:
                                 if decoded_slot:
                                     broker._upload_decode_slots.release()
@@ -684,7 +690,10 @@ class WanActorBroker:
                         return
                     if parsed.path == "/trajectories":
                         submit_started = time.perf_counter() if timings is not None else 0.0
-                        accepted = broker.submit_trajectory_batch(payload, timings=timings)
+                        accepted = broker.submit_trajectory_batch(
+                            payload, timings=timings,
+                            serialized_payload=serialized_payload,
+                        )
                         if timings is None:
                             self._json({"status": "accepted", "trajectories": accepted})
                         else:
@@ -935,6 +944,7 @@ class WanActorBroker:
     def submit_trajectory_batch(
         self, payload: Mapping[str, Any], *,
         timings: Optional[Dict[str, float]] = None,
+        serialized_payload: Optional[bytes] = None,
     ) -> int:
         actor_id = self._validate_actor_id(payload.get("actor_id"))
         if actor_id not in self.registered_actor_ids():

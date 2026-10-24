@@ -104,19 +104,24 @@ class _SharedMemoryWanBroker(ElasticWanBroker):
                 return False
         return super().can_accept_upload_without_decoding()
 
-    def submit_trajectory_batch(self, payload, *, timings=None):
+    def submit_trajectory_batch(self, payload, *, timings=None, serialized_payload=None):
         with self._condition:
             if self._shutdown_ingestion:
                 # The HTTP handler maps queue.Full to transient backpressure.
                 # Remote workers retain their current payload until the new
                 # broker session becomes available; no learner data is lost.
                 raise queue.Full
-        return super().submit_trajectory_batch(payload, timings=timings)
+        return super().submit_trajectory_batch(
+            payload, timings=timings, serialized_payload=serialized_payload
+        )
 
     def _export_to_shared_memory(self, batches):
         if not batches:
             return {"empty": True, "batches": 0, "bytes": 0}
         started = time.perf_counter()
+        # Batches from WAN uploads carry the already-validated pickle bytes.
+        # Serializing their bytes is cheap; avoid recursively repickling
+        # thousands of NumPy observations in the broker process.
         encoded = pickle.dumps(batches, protocol=pickle.HIGHEST_PROTOCOL)
         serialized_seconds = time.perf_counter() - started
         shared = SharedMemory(create=True, size=len(encoded))
@@ -306,6 +311,16 @@ class IsolatedElasticWanBroker:
                 shared.close()
             # Owner process unlinks the allocation even if deserialization fails.
             self._broker.release_shared_memory(token)
+
+        # The original worker pickle was validated by the broker before queue
+        # admission. Reconstruct exactly those same trajectories only after
+        # policy-current selection, without a second broker-side serialization.
+        batches = result if isinstance(result, (list, tuple)) else (result,)
+        for batch in batches:
+            serialized = batch.pop("serialized_payload", None)
+            if serialized is not None:
+                payload = pickle.loads(serialized)
+                batch["trajectories"] = payload["trajectories"]
 
         finished = time.perf_counter()
         elapsed = finished - started
