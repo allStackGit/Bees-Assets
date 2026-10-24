@@ -225,6 +225,10 @@ class IsolatedElasticWanBroker:
         max_policy_lag: int,
     ) -> None:
         self.max_policy_lag = int(max_policy_lag)
+        self._drain_metrics = {
+            "started": time.perf_counter(), "calls": 0, "batches": 0,
+            "bytes": 0, "rpc_seconds": 0.0, "decode_seconds": 0.0,
+        }
         # spawn is mandatory: Windows requires it, and fork after CUDA
         # initialization can poison the learner's GPU runtime.
         manager = _BrokerManager(
@@ -265,12 +269,14 @@ class IsolatedElasticWanBroker:
     def _transfer(self, method: str, *args) -> Any:
         started = time.perf_counter()
         descriptor = getattr(self._broker, method)(*args)
+        rpc_elapsed = time.perf_counter() - started
         if descriptor.get("empty"):
             return ()
         token = descriptor["token"]
         shared = None
         view = None
         mapping = None
+        decode_started = time.perf_counter()
         try:
             size = int(descriptor["bytes"])
             if os.name == "posix" and os.path.isdir("/dev/shm"):
@@ -299,7 +305,31 @@ class IsolatedElasticWanBroker:
             # Owner process unlinks the allocation even if deserialization fails.
             self._broker.release_shared_memory(token)
 
-        elapsed = time.perf_counter() - started
+        finished = time.perf_counter()
+        elapsed = finished - started
+        # The blocking next_to_shared_memory RPC includes waiting for a
+        # producer; only measure non-blocking drains as ingestion overhead.
+        if method == "drain_to_shared_memory":
+            metrics = self._drain_metrics
+            metrics["calls"] += 1
+            metrics["batches"] += int(descriptor["batches"])
+            metrics["bytes"] += int(descriptor["bytes"])
+            metrics["rpc_seconds"] += rpc_elapsed
+            metrics["decode_seconds"] += finished - decode_started
+            interval = finished - metrics["started"]
+            if interval >= 30.0:
+                print(
+                    "[Bees WAN shared-memory drain] "
+                    f"calls={metrics['calls']} batches={metrics['batches']} "
+                    f"bytes={metrics['bytes']} "
+                    f"rpc_s={metrics['rpc_seconds']:.3f} "
+                    f"mapping_and_unpickle_s={metrics['decode_seconds']:.3f}",
+                    flush=True,
+                )
+                self._drain_metrics = {
+                    "started": finished, "calls": 0, "batches": 0,
+                    "bytes": 0, "rpc_seconds": 0.0, "decode_seconds": 0.0,
+                }
         if elapsed >= 0.5:
             print(
                 f"[Bees WAN IPC] operation={method} seconds={elapsed:.3f} "

@@ -336,8 +336,48 @@ class ZeroLocalElasticWanEnvManagerMixin(elastic.ElasticWanEnvManagerMixin):
 
     def _inject_remote_batches(self) -> None:
         active = self._bees_wan_broker.active_actor_snapshot()
-        batches = self._bees_wan_broker.drain_current_batches(max(1, len(active) * 2))
+        # The broker independently bounds transfer experiences and bytes.
+        # Request enough small upload batches to fill a POCA evaluation batch
+        # rather than only two per actor on each learner advance.
+        maximum = max(16, len(active) * 8)
+        started = time.perf_counter()
+        batches = self._bees_wan_broker.drain_current_batches(maximum)
+        transferred = time.perf_counter()
         self._inject_batches(batches)
+        injected = time.perf_counter()
+
+        metrics = getattr(self, "_bees_ingest_metrics", None)
+        if metrics is None:
+            metrics = {
+                "started": started, "calls": 0, "batches": 0,
+                "trajectories": 0, "experiences": 0,
+                "transfer_seconds": 0.0, "inject_seconds": 0.0,
+            }
+            self._bees_ingest_metrics = metrics
+        metrics["calls"] += 1
+        metrics["batches"] += len(batches)
+        metrics["trajectories"] += sum(len(batch["trajectories"]) for batch in batches)
+        metrics["experiences"] += sum(int(batch.get("step_count", 0)) for batch in batches)
+        metrics["transfer_seconds"] += transferred - started
+        metrics["inject_seconds"] += injected - transferred
+        interval = injected - metrics["started"]
+        if interval >= 30.0:
+            print(
+                "[Bees WAN learner drain] "
+                f"calls={metrics['calls']} batches={metrics['batches']} "
+                f"trajectories={metrics['trajectories']} "
+                f"experiences={metrics['experiences']} "
+                f"experiences_per_s={metrics['experiences'] / interval:.1f} "
+                f"transfer_s={metrics['transfer_seconds']:.3f} "
+                f"inject_s={metrics['inject_seconds']:.3f} "
+                f"requested_max_batches={maximum}",
+                flush=True,
+            )
+            self._bees_ingest_metrics = {
+                "started": injected, "calls": 0, "batches": 0,
+                "trajectories": 0, "experiences": 0,
+                "transfer_seconds": 0.0, "inject_seconds": 0.0,
+            }
 
     def _step(self) -> List[Any]:
         if self._bees_local_manager is not None:

@@ -1299,8 +1299,12 @@ class ElasticWanBroker(base.WanActorBroker):
             # Bounds are per synchronous IPC drain. An individual large batch
             # must still be delivered; it cannot be split across trajectories
             # without violating MA-POCA sequence semantics.
-            max_steps = 512
-            max_bytes = 16 * 1024 * 1024
+            # A 512-step/16-MiB limit forced a separate learner pass for
+            # tiny incoming WAN batches even when hundreds were queued.
+            # Bound each shared-memory transfer to one existing POCA critic
+            # batch (2048 experiences) and its estimated observation memory.
+            max_steps = 2048
+            max_bytes = 64 * 1024 * 1024
             while len(chosen) < maximum:
                 progressed = False
                 for actor_id in actor_order:
