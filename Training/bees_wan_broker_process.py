@@ -118,15 +118,49 @@ class _SharedMemoryWanBroker(ElasticWanBroker):
     def _export_to_shared_memory(self, batches):
         if not batches:
             return {"empty": True, "batches": 0, "bytes": 0}
+
+        # The incoming HTTP upload was already pickled on the actor and
+        # validated after decoding in this broker. Transfer those exact pickle
+        # bytes rather than repickling the expanded NumPy trajectory graph.
+        # A small descriptor records metadata and offsets into one bounded
+        # shared-memory segment, so only one large byte copy is needed.
         started = time.perf_counter()
-        # Batches from WAN uploads carry the already-validated pickle bytes.
-        # Serializing their bytes is cheap; avoid recursively repickling
-        # thousands of NumPy observations in the broker process.
-        encoded = pickle.dumps(batches, protocol=pickle.HIGHEST_PROTOCOL)
+        multiple = isinstance(batches, (list, tuple))
+        records = batches if multiple else (batches,)
+        fragments = []
+        frames = []
+        total_payload_bytes = 0
+        for batch in records:
+            serialized = batch.get("serialized_payload")
+            if serialized is None:
+                # In-process callers retain the original batch format.
+                serialized = pickle.dumps(batch, protocol=pickle.HIGHEST_PROTOCOL)
+                metadata = None
+                is_worker_payload = False
+            else:
+                metadata = {
+                    key: value for key, value in batch.items()
+                    if key != "serialized_payload"
+                }
+                is_worker_payload = True
+            frames.append(
+                (is_worker_payload, metadata, total_payload_bytes, len(serialized))
+            )
+            fragments.append(serialized)
+            total_payload_bytes += len(serialized)
+
+        header = pickle.dumps((multiple, frames), protocol=pickle.HIGHEST_PROTOCOL)
         serialized_seconds = time.perf_counter() - started
-        shared = SharedMemory(create=True, size=len(encoded))
+        header_end = 8 + len(header)
+        shared = SharedMemory(create=True, size=header_end + total_payload_bytes)
         try:
-            shared.buf[:len(encoded)] = encoded
+            shared.buf[:8] = len(header).to_bytes(8, "big")
+            shared.buf[8:header_end] = header
+            offset = header_end
+            for fragment in fragments:
+                next_offset = offset + len(fragment)
+                shared.buf[offset:next_offset] = fragment
+                offset = next_offset
             token = secrets.token_hex(16)
             with self._shared_memory_lock:
                 self._shared_memory_transfers[token] = shared
@@ -137,8 +171,8 @@ class _SharedMemoryWanBroker(ElasticWanBroker):
         return {
             "token": token,
             "name": shared.name,
-            "bytes": len(encoded),
-            "batches": len(batches) if isinstance(batches, (list, tuple)) else 1,
+            "bytes": header_end + total_payload_bytes,
+            "batches": len(records),
             "serialization_seconds": serialized_seconds,
         }
 
@@ -287,9 +321,8 @@ class IsolatedElasticWanBroker:
         try:
             size = int(descriptor["bytes"])
             if os.name == "posix" and os.path.isdir("/dev/shm"):
-                # Linux: map the POSIX shm file read-only without registering a
-                # second independent resource_tracker owner. The broker alone
-                # creates/unlinks the named segment.
+                # Broker owns resource tracking and unlinks the segment. The
+                # learner opens a read-only view without claiming ownership.
                 fd = os.open(
                     os.path.join("/dev/shm", descriptor["name"]), os.O_RDONLY
                 )
@@ -297,11 +330,37 @@ class IsolatedElasticWanBroker:
                     mapping = mmap.mmap(fd, size, access=mmap.ACCESS_READ)
                 finally:
                     os.close(fd)
-                result = pickle.loads(mapping)
+                view = memoryview(mapping)
             else:
                 shared = SharedMemory(name=descriptor["name"], create=False)
                 view = shared.buf[:size]
-                result = pickle.loads(view)
+
+            if size < 8:
+                raise ValueError("WAN shared-memory frame is truncated")
+            header_length = int.from_bytes(view[:8], "big")
+            header_end = 8 + header_length
+            if header_length <= 0 or header_end > size:
+                raise ValueError("WAN shared-memory header is invalid")
+            multiple, frames = pickle.loads(view[8:header_end])
+            restored = []
+            for is_worker_payload, metadata, offset, length in frames:
+                first = header_end + offset
+                last = first + length
+                if length <= 0 or offset < 0 or last > size:
+                    raise ValueError("WAN shared-memory trajectory frame is invalid")
+                fragment = view[first:last]
+                try:
+                    decoded = pickle.loads(fragment)
+                finally:
+                    fragment.release()
+                if is_worker_payload:
+                    # The broker already validated this exact serialized upload,
+                    # and only retained policy-current batches for handoff.
+                    metadata["trajectories"] = decoded["trajectories"]
+                    restored.append(metadata)
+                else:
+                    restored.append(decoded)
+            result = tuple(restored) if multiple else restored[0]
         finally:
             if view is not None:
                 view.release()
@@ -309,23 +368,10 @@ class IsolatedElasticWanBroker:
                 mapping.close()
             if shared is not None:
                 shared.close()
-            # Owner process unlinks the allocation even if deserialization fails.
             self._broker.release_shared_memory(token)
-
-        # The original worker pickle was validated by the broker before queue
-        # admission. Reconstruct exactly those same trajectories only after
-        # policy-current selection, without a second broker-side serialization.
-        batches = result if isinstance(result, (list, tuple)) else (result,)
-        for batch in batches:
-            serialized = batch.pop("serialized_payload", None)
-            if serialized is not None:
-                payload = pickle.loads(serialized)
-                batch["trajectories"] = payload["trajectories"]
 
         finished = time.perf_counter()
         elapsed = finished - started
-        # The blocking next_to_shared_memory RPC includes waiting for a
-        # producer; only measure non-blocking drains as ingestion overhead.
         if self._worker_diagnostics and method == "drain_to_shared_memory":
             metrics = self._drain_metrics
             metrics["calls"] += 1
