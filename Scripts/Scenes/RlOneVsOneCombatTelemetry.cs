@@ -8,7 +8,7 @@ using UnityEngine;
 
 /// <summary>
 /// Episode-scoped combat telemetry for dedicated RL training. Normal combat metrics follow
-/// shot/damage events; stationary aiming mode also accumulates policy-decision samples in memory.
+/// shot/damage events; both learner and opponent policy decisions accumulate aim samples in memory.
 /// Diagnostics add no per-frame fleet/turret scan or second log line.
 /// Mutable telemetry is partitioned by Level so simultaneous arenas cannot reset or consume each other's state.
 /// </summary>
@@ -28,7 +28,15 @@ internal static class RlOneVsOneCombatTelemetry
         internal readonly long[] AccurateAimSamples = new long[2];
 
 
-        // Stationary training: sampled on policy decisions, whether or not a turret fires.
+        // Collected for both training roles, even when the ship is moving or not firing.
+        internal readonly int[] TeamIds = { -1, -1 };
+        internal readonly int[] FrameQuarterTurns = { -1, -1 };
+        internal readonly long[] FreshAimSamples = new long[2];
+        internal readonly long[] HeldAimSamples = new long[2];
+        internal readonly long[][][] TargetRequestedSectors =
+        {
+            CreateSectorPairCounts(), CreateSectorPairCounts()
+        };
         internal readonly long[] PolicyDecisions = new long[2];
         internal readonly long[] PolicyDecisionsWithKnownEnemy = new long[2];
         internal readonly long[] RequestedAimSamples = new long[2];
@@ -93,11 +101,14 @@ internal static class RlOneVsOneCombatTelemetry
     }
 
     /// <summary>
-    /// Capture the actual requested aim at each stationary policy decision, including when
-    /// firing is disabled or a weapon is not ready. Enemy visibility uses the same permanent
-    /// faction-wide cache as the policy observation; bearing sectors are in policy coordinates.
+    /// Capture aim on every policy decision, including moving agents and unfired shots.
+    /// FreshAimSlotMask distinguishes a new aim action from the previously held aim
+    /// when its continuous output falls inside the policy's aim dead zone.
+    /// Enemy visibility matches policy observations; sectors are policy-relative.
     /// </summary>
-    internal static void RecordStationaryPolicyDecision(Ship ship, int frameQuarterTurns, Vector2[] requestedWorldAims)
+    internal static void RecordPolicyDecision(
+        Ship ship, int teamId, int frameQuarterTurns, Vector2[] requestedWorldAims,
+        int freshAimSlotMask)
     {
         if (!TryGetSideIndex(ship, out ArenaState state, out int sideIndex))
         {
@@ -105,6 +116,8 @@ internal static class RlOneVsOneCombatTelemetry
         }
 
         state.PolicyDecisions[sideIndex]++;
+        state.TeamIds[sideIndex] = teamId;
+        state.FrameQuarterTurns[sideIndex] = frameQuarterTurns;
         Ship nearestEnemy = null;
         float nearestDistanceSquared = float.MaxValue;
         Vector2 shipPosition = ship.GetPosition();
@@ -157,6 +170,15 @@ internal static class RlOneVsOneCombatTelemetry
             float errorDegrees = Vector2.Angle(requestedAim, targetDirection);
 
             state.RequestedAimSamples[sideIndex]++;
+            if ((freshAimSlotMask & (1 << slot)) != 0)
+            {
+                state.FreshAimSamples[sideIndex]++;
+            }
+            else
+            {
+                state.HeldAimSamples[sideIndex]++;
+            }
+            state.TargetRequestedSectors[sideIndex][targetSector][requestedSector]++;
             state.RequestedAimErrorDegrees[sideIndex] += errorDegrees;
             if (errorDegrees <= 5f) state.RequestedAimWithin5[sideIndex]++;
             if (errorDegrees <= 15f)
@@ -273,6 +295,16 @@ internal static class RlOneVsOneCombatTelemetry
                $"human_first_fire_distance={FormatDistance(state.FirstFireDistance[1])} human_first_hit_distance={FormatDistance(state.FirstHitDistance[1])}";
     }
 
+    private static long[][] CreateSectorPairCounts()
+    {
+        long[][] rows = new long[PolicyBearingSectorCount][];
+        for (int i = 0; i < rows.Length; i++)
+        {
+            rows[i] = new long[PolicyBearingSectorCount];
+        }
+        return rows;
+    }
+
     internal static Dictionary<string, object> BuildAimData(Level level, int sideIndex)
     {
         if (!TryGetState(level, out ArenaState state))
@@ -289,25 +321,44 @@ internal static class RlOneVsOneCombatTelemetry
             ["first_hit_distance"] = state.FirstHitDistance[sideIndex] < 0f
                 ? (object)null : state.FirstHitDistance[sideIndex]
         };
-        if (RlOneVsOneTrainingBootstrap.CurrentMovementDisabledForSide(
-            level, sideIndex == 0 ? ConfigData.Configuration.BeeSide : ConfigData.Configuration.HumanSide))
+        // Team 0 trains; team 1 is selected from the self-play opponent pool.
+        // Unity has no authoritative checkpoint/version ID for either policy.
+        // Do not pretend that a learner publication version identifies the
+        // historical self-play checkpoint used for this episode.
+        int teamId = state.TeamIds[sideIndex];
+        bool movementDisabled = RlOneVsOneTrainingBootstrap.CurrentMovementDisabledForSide(
+            level, sideIndex == 0 ? ConfigData.Configuration.BeeSide : ConfigData.Configuration.HumanSide);
+        var decisions = new Dictionary<string, object>
         {
-            aim["stationary_decisions"] = new Dictionary<string, object>
-            {
-                ["policy_decisions"] = state.PolicyDecisions[sideIndex],
-                ["with_known_enemy"] = state.PolicyDecisionsWithKnownEnemy[sideIndex],
-                ["requested_samples"] = state.RequestedAimSamples[sideIndex],
-                ["requested_error_sum_deg"] = state.RequestedAimErrorDegrees[sideIndex],
-                ["requested_within_5deg"] = state.RequestedAimWithin5[sideIndex],
-                ["requested_within_15deg"] = state.RequestedAimWithin15[sideIndex],
-                ["requested_within_30deg"] = state.RequestedAimWithin30[sideIndex],
-                ["target_bearing_sector_counts"] = state.TargetBearingCounts[sideIndex],
-                ["requested_bearing_sector_counts"] = state.RequestedBearingCounts[sideIndex],
-                ["target_sector_error_sum_deg"] = state.TargetSectorErrorDegrees[sideIndex],
-                ["target_sector_within_15deg"] = state.TargetSectorWithin15[sideIndex],
-                ["requested_bearing_cos_sum"] = state.RequestedAimCosSum[sideIndex],
-                ["requested_bearing_sin_sum"] = state.RequestedAimSinSum[sideIndex]
-            };
+            ["team_id"] = teamId,
+            ["policy_role"] = teamId == 0 ? "learner" : teamId == 1 ? "self_play_opponent" : "unknown",
+            ["policy_version"] = null,
+            ["policy_version_source"] = "not_exposed_to_unity",
+            ["frame_quarter_turns"] = state.FrameQuarterTurns[sideIndex],
+            ["movement_disabled"] = movementDisabled,
+            ["policy_decisions"] = state.PolicyDecisions[sideIndex],
+            ["with_known_enemy"] = state.PolicyDecisionsWithKnownEnemy[sideIndex],
+            ["requested_samples"] = state.RequestedAimSamples[sideIndex],
+            ["fresh_aim_samples"] = state.FreshAimSamples[sideIndex],
+            ["held_aim_samples"] = state.HeldAimSamples[sideIndex],
+            ["requested_error_sum_deg"] = state.RequestedAimErrorDegrees[sideIndex],
+            ["requested_within_5deg"] = state.RequestedAimWithin5[sideIndex],
+            ["requested_within_15deg"] = state.RequestedAimWithin15[sideIndex],
+            ["requested_within_30deg"] = state.RequestedAimWithin30[sideIndex],
+            ["target_bearing_sector_counts"] = state.TargetBearingCounts[sideIndex],
+            ["requested_bearing_sector_counts"] = state.RequestedBearingCounts[sideIndex],
+            ["target_requested_sector_counts"] = state.TargetRequestedSectors[sideIndex],
+            ["target_sector_error_sum_deg"] = state.TargetSectorErrorDegrees[sideIndex],
+            ["target_sector_within_15deg"] = state.TargetSectorWithin15[sideIndex],
+            ["requested_bearing_cos_sum"] = state.RequestedAimCosSum[sideIndex],
+            ["requested_bearing_sin_sum"] = state.RequestedAimSinSum[sideIndex]
+        };
+        aim["policy_decisions"] = decisions;
+        // Preserve the preexisting stationary-only field for dashboards reading
+        // historical and current episodes side by side.
+        if (movementDisabled)
+        {
+            aim["stationary_decisions"] = decisions;
         }
         return aim;
     }
