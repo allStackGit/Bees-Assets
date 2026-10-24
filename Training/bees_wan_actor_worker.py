@@ -1426,12 +1426,15 @@ class ActorSession:
             f" ({'explicit' if self.torch_threads is not None else 'default'}).",
             flush=True,
         )
-        # ML-Agents 1.1.0 switches PyTorch's global default device to CUDA during
-        # module initialization when CUDA is available, but its CPU reconfiguration
-        # path does not switch that global default back. Actors may intentionally
-        # perform inference on CPU even when the host has CUDA, so make the actual
-        # PyTorch tensor-allocation default agree with the actor device.
-        torch.set_default_device(str(options.torch_settings.device or "cpu"))
+        # ML-Agents may have installed a global CUDA default-device hook.
+        # CPU is already PyTorch's native default; removing the hook keeps
+        # CPU allocations correct without paying its cost on every torch call.
+        # CUDA actors still need their explicitly selected default device.
+        actor_device = str(options.torch_settings.device or "cpu")
+        if torch.device(actor_device).type == "cpu":
+            torch.set_default_device(None)
+        else:
+            torch.set_default_device(actor_device)
         np.random.seed(int(options.env_settings.seed))
         torch.manual_seed(int(options.env_settings.seed))
 
