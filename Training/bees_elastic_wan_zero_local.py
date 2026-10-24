@@ -164,6 +164,24 @@ class ZeroLocalElasticWanEnvManagerMixin(elastic.ElasticWanEnvManagerMixin):
         from mlagents.trainers.env_manager import EnvManager
 
         EnvManager.set_agent_manager(self, brain_name, manager)
+        if self._bees_local_manager is None and self._bees_wan_broker.max_policy_lag > 0:
+            # ML-Agents' threaded AgentManager uses a 20-entry trajectory
+            # queue. Bulk WAN injection could block here for seconds while
+            # PPO was busy, independently of broker throughput. The WAN
+            # broker already caps all outstanding remote experiences at two
+            # PPO buffers and releases the reservation on PPO dequeue, so
+            # its limit is the authoritative backpressure for zero-local
+            # threaded training.
+            trajectory_queue = manager.trajectory_queue
+            inner = trajectory_queue._queue
+            if not isinstance(inner, queue.Queue):
+                raise RuntimeError("Unexpected ML-Agents trajectory queue implementation")
+            with inner.not_full:
+                if inner.queue:
+                    raise RuntimeError("Cannot resize a nonempty learner trajectory queue")
+                inner.maxsize = 0
+                trajectory_queue._maxlen = 0
+                inner.not_full.notify_all()
         if self._bees_local_manager is not None:
             self._bees_local_manager.set_agent_manager(brain_name, manager)
 
