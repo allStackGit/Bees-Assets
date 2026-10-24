@@ -395,18 +395,14 @@ internal sealed class RlCombatPerception
         int frameQuarterTurns,
         int sideStartingTsv)
     {
-        for (int slot = 0; slot < slots; slot++)
+        int populated = Mathf.Min(slots, ships.Count);
+        for (int slot = 0; slot < populated; slot++)
         {
-            if (slot >= ships.Count)
-            {
-                AddZeroObservations(sensor, AllyObservationSize);
-                continue;
-            }
-
             Ship ally = ships[slot];
             AddEntityObservation(sensor, ally, origin, frameQuarterTurns, sideStartingTsv);
             RlOneVsOneAgent.AddCommunicationObservations(sensor, ally);
         }
+        AddZeroObservations(sensor, (slots - populated) * AllyObservationSize);
     }
 
     private static void AddEntitySlots(
@@ -417,15 +413,12 @@ internal sealed class RlCombatPerception
         int frameQuarterTurns,
         int sideStartingTsv)
     {
-        for (int slot = 0; slot < slots; slot++)
+        int populated = Mathf.Min(slots, ships.Count);
+        for (int slot = 0; slot < populated; slot++)
         {
-            if (slot >= ships.Count)
-            {
-                AddZeroObservations(sensor, EntityObservationSize);
-                continue;
-            }
             AddEntityObservation(sensor, ships[slot], origin, frameQuarterTurns, sideStartingTsv);
         }
+        AddZeroObservations(sensor, (slots - populated) * EntityObservationSize);
     }
 
     private static void AddEntityObservation(
@@ -458,28 +451,41 @@ internal sealed class RlCombatPerception
 
     private static void AddWeaponSlots(Ship ship, VectorSensor sensor, int frameQuarterTurns)
     {
-        for (int slot = 0; slot < MaxWeaponSlots; slot++)
+        int populated = ship.Weapons == null ? 0 : Mathf.Min(MaxWeaponSlots, ship.Weapons.Count);
+        for (int slot = 0; slot < populated; slot++)
         {
-            if (ship.Weapons == null || slot >= ship.Weapons.Count || ship.Weapons[slot] == null)
+            Weapon weapon = ship.Weapons[slot];
+            if (weapon == null)
             {
+                // A missing mount inside the populated range must retain its slot.
                 AddZeroObservations(sensor, SelfWeaponObservationSize);
-                continue;
             }
-            AddSelfWeaponObservation(ship, ship.Weapons[slot], sensor, frameQuarterTurns);
+            else
+            {
+                AddSelfWeaponObservation(ship, weapon, sensor, frameQuarterTurns);
+            }
         }
+        AddZeroObservations(sensor, (MaxWeaponSlots - populated) * SelfWeaponObservationSize);
     }
 
     private static void AddEntityWeaponSlots(Ship ship, VectorSensor sensor)
     {
-        for (int slot = 0; slot < MaxObservedEntityWeaponSlots; slot++)
+        int populated = ship.Weapons == null
+            ? 0 : Mathf.Min(MaxObservedEntityWeaponSlots, ship.Weapons.Count);
+        for (int slot = 0; slot < populated; slot++)
         {
-            if (ship.Weapons == null || slot >= ship.Weapons.Count || ship.Weapons[slot] == null)
+            Weapon weapon = ship.Weapons[slot];
+            if (weapon == null)
             {
                 AddZeroObservations(sensor, ObservedWeaponObservationSize);
-                continue;
             }
-            AddObservedWeaponObservation(ship.Weapons[slot], sensor);
+            else
+            {
+                AddObservedWeaponObservation(weapon, sensor);
+            }
         }
+        AddZeroObservations(
+            sensor, (MaxObservedEntityWeaponSlots - populated) * ObservedWeaponObservationSize);
     }
 
     private static void AddSelfWeaponObservation(
@@ -590,14 +596,9 @@ internal sealed class RlCombatPerception
 
     private void AddMiningAsteroidSlots(VectorSensor sensor, Vector2 origin, int frameQuarterTurns)
     {
-        for (int slot = 0; slot < MaxObservedMiningAsteroids; slot++)
+        int populated = Mathf.Min(MaxObservedMiningAsteroids, _miningAsteroidCandidates.Count);
+        for (int slot = 0; slot < populated; slot++)
         {
-            if (slot >= _miningAsteroidCandidates.Count)
-            {
-                AddZeroObservations(sensor, MiningAsteroidObservationSize);
-                continue;
-            }
-
             ObservedMiningAsteroid asteroid = _miningAsteroidCandidates[slot];
             Vector2 relative = RlPolicyCoordinateFrame.WorldToPolicy(
                 asteroid.Position - origin,
@@ -613,6 +614,8 @@ internal sealed class RlCombatPerception
             sensor.AddObservation(NormalizePositive(halfExtents.y, 20f));
             sensor.AddObservation(NormalizePositive(asteroid.Activity, 4f));
         }
+        AddZeroObservations(
+            sensor, (MaxObservedMiningAsteroids - populated) * MiningAsteroidObservationSize);
     }
 
     private void CollectVisibleMapObjects(Ship ship, int side, Vector2 origin)
@@ -661,14 +664,9 @@ internal sealed class RlCombatPerception
 
     private void AddMapObjectSlots(VectorSensor sensor, Vector2 origin, int frameQuarterTurns)
     {
-        for (int slot = 0; slot < MaxObservedMapObjects; slot++)
+        int populated = Mathf.Min(MaxObservedMapObjects, _mapObjectCandidates.Count);
+        for (int slot = 0; slot < populated; slot++)
         {
-            if (slot >= _mapObjectCandidates.Count)
-            {
-                AddZeroObservations(sensor, MapObjectObservationSize);
-                continue;
-            }
-
             ObservedMapObject mapObject = _mapObjectCandidates[slot];
             Vector2 relative = RlPolicyCoordinateFrame.WorldToPolicy(
                 mapObject.Position - origin,
@@ -686,6 +684,7 @@ internal sealed class RlCombatPerception
             sensor.AddObservation(mapObject.Targetable ? 1f : 0f);
             sensor.AddObservation(NormalizePositive(mapObject.Activity, 4f));
         }
+        AddZeroObservations(sensor, (MaxObservedMapObjects - populated) * MapObjectObservationSize);
     }
 
     private void CollectVisibleEnvironment(Ship ship, int side, Vector2 origin)
@@ -742,14 +741,9 @@ internal sealed class RlCombatPerception
 
     private void AddCollisionAsteroidSlots(VectorSensor sensor, Vector2 origin, int frameQuarterTurns)
     {
-        for (int slot = 0; slot < MaxObservedCollisionAsteroids; slot++)
+        int populated = Mathf.Min(MaxObservedCollisionAsteroids, _collisionAsteroidCandidates.Count);
+        for (int slot = 0; slot < populated; slot++)
         {
-            if (slot >= _collisionAsteroidCandidates.Count)
-            {
-                AddZeroObservations(sensor, CollisionAsteroidObservationSize);
-                continue;
-            }
-
             ObservedCollisionAsteroid asteroid = _collisionAsteroidCandidates[slot];
             Vector2 relative = RlPolicyCoordinateFrame.WorldToPolicy(
                 asteroid.Position - origin,
@@ -778,6 +772,8 @@ internal sealed class RlCombatPerception
             sensor.AddObservation(asteroid.HealthFraction);
             sensor.AddObservation(1f); // Collision asteroids are destructible point-fire targets.
         }
+        AddZeroObservations(
+            sensor, (MaxObservedCollisionAsteroids - populated) * CollisionAsteroidObservationSize);
     }
 
     private static void AddObjectiveObservations(VectorSensor sensor)
