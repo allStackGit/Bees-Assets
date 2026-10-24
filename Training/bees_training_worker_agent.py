@@ -67,7 +67,7 @@ WORKER_MEMORY_RESERVE_BYTES = 1 * 1024 * 1024 * 1024
 WORKER_MEMORY_PER_ENV_BYTES = 256 * 1024 * 1024
 
 
-MAX_RETAINED_RUN_LOG_DIRS = 3
+MAX_RETAINED_RUN_LOG_DIRS = 1
 RUN_ID_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 
 
@@ -1335,8 +1335,6 @@ class TrainingLogUploader:
     FINALIZE_KEEPALIVE_SECONDS = 5.0
     STATE_SCHEMA_VERSION = 1
     STATE_WRITE_INTERVAL_SECONDS = 30.0
-    EPISODE_SEGMENT_PATTERN = re.compile(r"^(BeesEpisode-\d+-[0-9a-f]{32}-)(\d+)\.jsonl$")
-    COMPLETED_SEGMENT_GRACE_SECONDS = 300.0
 
     def __init__(self, root: Path, state_path: Optional[Path] = None) -> None:
         self.root = root
@@ -1782,112 +1780,8 @@ class TrainingLogUploader:
             if next_path != self._next_path:
                 self._next_path = next_path
                 self._state_dirty = True
-        self._prune_acknowledged_episode_segments(log_paths)
-        self._prune_acknowledged_actor_sessions(run_root)
         self._persist_state()
         return uploaded
-
-    def _prune_acknowledged_episode_segments(self, log_paths: Sequence[Path]) -> None:
-        """Reclaim immutable rotated episode segments after Exeter acknowledged every byte.
-
-        The last segment of a Unity process may still be open; always retain it.
-        """
-        groups: dict[tuple[Path, str], list[tuple[int, Path]]] = {}
-        for path in log_paths:
-            match = self.EPISODE_SEGMENT_PATTERN.fullmatch(path.name)
-            if match is None or path.is_symlink() or not path.is_file():
-                continue
-            groups.setdefault((path.parent, match.group(1)), []).append(
-                (int(match.group(2)), path)
-            )
-        cutoff_ns = time.time_ns() - int(self.COMPLETED_SEGMENT_GRACE_SECONDS * 1e9)
-        for segments in groups.values():
-            if len(segments) < 2:
-                continue
-            segments.sort()
-            # A later segment proves Unity closed every preceding segment.
-            for _index, path in segments[:-1]:
-                try:
-                    stat_result = path.stat()
-                    size = stat_result.st_size
-                    if (
-                        size <= 0
-                        or size > self.MAX_FILE_UPLOAD_BYTES
-                        or stat_result.st_mtime_ns > cutoff_ns
-                        or self._positions.get(path) != size
-                        or self._file_mtimes_ns.get(path) != stat_result.st_mtime_ns
-                        or self._file_identities.get(path) != _log_file_identity(stat_result)
-                        or self._prefix_anchors.get(path) != (
-                            size, _sampled_prefix_anchor(path, size)
-                        )
-                    ):
-                        continue
-                    path.unlink()
-                except OSError:
-                    continue
-                self._positions.pop(path, None)
-                self._file_identities.pop(path, None)
-                self._file_mtimes_ns.pop(path, None)
-                self._prefix_anchors.pop(path, None)
-                self._remote_paths.pop(path, None)
-                if self._next_path == path:
-                    self._next_path = None
-                self._state_dirty = True
-
-    def _prune_acknowledged_actor_sessions(self, run_root: Path) -> None:
-        """Reclaim closed actor-session logs after all of their bytes reached Exeter."""
-        try:
-            sessions = list(run_root.iterdir())
-        except OSError:
-            return
-        for directory in sessions:
-            if (
-                not directory.name.startswith("actor-")
-                or not directory.is_dir()
-                or directory.is_symlink()
-                or not (directory / ".bees-session-closed").is_file()
-            ):
-                continue
-            try:
-                files = list(directory.rglob("*"))
-            except OSError:
-                continue
-            if any(path.is_symlink() for path in files):
-                continue
-            eligible = True
-            for path in files:
-                if not path.is_file() or path.name == ".bees-session-closed":
-                    continue
-                try:
-                    stat_result = path.stat()
-                except OSError:
-                    eligible = False
-                    break
-                size = stat_result.st_size
-                if (
-                    path.suffix.lower() not in (".log", ".txt", ".json", ".jsonl")
-                    or size > self.MAX_FILE_UPLOAD_BYTES
-                    or (size > 0 and self._positions.get(path) != size)
-                    or (size > 0 and self._file_mtimes_ns.get(path) != stat_result.st_mtime_ns)
-                    or (size > 0 and self._file_identities.get(path) != _log_file_identity(stat_result))
-                ):
-                    eligible = False
-                    break
-            if not eligible:
-                continue
-            try:
-                shutil.rmtree(directory)
-            except OSError:
-                continue
-            for path in files:
-                self._positions.pop(path, None)
-                self._file_identities.pop(path, None)
-                self._file_mtimes_ns.pop(path, None)
-                self._prefix_anchors.pop(path, None)
-                self._remote_paths.pop(path, None)
-                if self._next_path == path:
-                    self._next_path = None
-            self._state_dirty = True
 
     def _has_pending_local_bytes(self, run_id: str) -> bool:
         run_id = _validate_run_id(run_id)
