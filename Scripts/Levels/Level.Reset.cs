@@ -83,12 +83,15 @@ namespace Assets.Scripts.Levels
             // Ship/projectile cleanup, matchup preparation, map geometry resizing and
             // physics synchronization must still run on every episode.
             bool reuseTrainingMap = isDedicatedRlTraining &&
+                !Stage.IsRendering &&
                 !Stage.HasRandomizedOptions &&
                 !global::RlOneVsOneTrainingBootstrap.CurrentStaticObstaclesEnabled &&
                 global::RlOneVsOneTrainingBootstrap.CurrentCollisionAsteroidSpawnSeconds <= 0f &&
                 !global::RlOneVsOneTrainingBootstrap.CurrentMiningAsteroidsEnabled &&
                 Map != null && Map.Index == Stage.OverrideMapIndex &&
-                Map.transform.parent == transform && Map.gameObject.activeSelf;
+                Map.transform.parent == transform &&
+                Map.transform.localPosition == Vector3.zero &&
+                Map.gameObject.activeSelf;
             if (isDedicatedRlTraining)
             {
                 // Dedicated ML-Agents training owns an ephemeral local level. Do not touch the
