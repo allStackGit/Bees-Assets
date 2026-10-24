@@ -80,7 +80,7 @@ class _RolloutStageProfiler:
         self._upload_payloads = self._upload_bytes = self._upload_max_bytes = 0
         self._process = None
         self._psutil = None
-        if self.enabled:
+        if self.enabled and os.environ.get("BEES_DIAGNOSTICS_CPU", "1") != "0":
             try:
                 import psutil
 
@@ -185,7 +185,7 @@ class _RolloutStageProfiler:
                 ))
             except (OSError, ValueError, AttributeError):
                 pass
-        if hasattr(os, "getloadavg"):
+        if os.environ.get("BEES_DIAGNOSTICS_CPU", "1") != "0" and hasattr(os, "getloadavg"):
             try:
                 details["host_load_1m"] = round(os.getloadavg()[0], 2)
                 parts.append(f"host_load_1m={details['host_load_1m']}")
@@ -432,12 +432,13 @@ class BrokerClient:
         self._upload_connections = threading.local()
         self.token = token
         self.timeout = timeout
+        self._traffic_enabled = os.environ.get("BEES_DIAGNOSTICS_NETWORK", "1") != "0"
         self._traffic_lock = threading.Lock()
         self._traffic_run_id = os.environ.get(TRAINING_RUN_ID_ENV, "").strip()
         throughput_path = os.environ.get(THROUGHPUT_METRICS_ENV, "").strip()
         self._traffic_state_path = (
             Path(throughput_path).expanduser().resolve().with_name(NETWORK_TRAFFIC_STATE_FILE)
-            if throughput_path and self._traffic_run_id
+            if throughput_path and self._traffic_run_id and self._traffic_enabled
             else None
         )
         self._traffic_sent_bytes = 0
@@ -487,11 +488,15 @@ class BrokerClient:
             return
 
     def _record_traffic(self, *, sent: int = 0, received: int = 0) -> None:
+        if not self._traffic_enabled:
+            return
         with self._traffic_lock:
             self._traffic_sent_bytes += max(0, int(sent))
             self._traffic_received_bytes += max(0, int(received))
 
     def traffic_snapshot(self) -> Mapping[str, object]:
+        if not self._traffic_enabled:
+            return {}
         now = time.monotonic()
         with self._traffic_lock:
             total = self._traffic_sent_bytes + self._traffic_received_bytes

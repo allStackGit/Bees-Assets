@@ -664,7 +664,11 @@ def read_host_hardware_metrics(*, detailed: bool = True) -> dict[str, object]:
     result: dict[str, object] = {
         "logical_cpus": int(os.cpu_count() or 1),
     }
-    if not detailed or os.environ.get("BEES_WAN_DIAGNOSTICS", "1") == "0":
+    if (
+        not detailed
+        or os.environ.get("BEES_WAN_DIAGNOSTICS", "1") == "0"
+        or os.environ.get("BEES_DIAGNOSTICS_CPU", "1") == "0"
+    ):
         return result
     if hasattr(os, "getloadavg"):
         try:

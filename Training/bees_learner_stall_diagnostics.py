@@ -112,7 +112,9 @@ class _LearnerStallSampler:
     def __init__(self):
         self._lock = threading.Lock()
         self._stages = {}
-        self._windows = _WindowsMemoryCounters()
+        self._cpu_diagnostics_enabled = os.environ.get("BEES_DIAGNOSTICS_CPU", "1") != "0"
+        self._gpu_diagnostics_enabled = os.environ.get("BEES_DIAGNOSTICS_GPU", "1") != "0"
+        self._windows = _WindowsMemoryCounters() if self._cpu_diagnostics_enabled else None
         self._stop = threading.Event()
         self._psutil = None
         self._process = None
@@ -121,8 +123,8 @@ class _LearnerStallSampler:
         self._previous_thread_sample_at = None
         self._last_gpu = {}
         self._last_gpu_at = 0.0
-        self._smi = shutil.which("nvidia-smi")
-        if not self._smi and os.name == "nt":
+        self._smi = shutil.which("nvidia-smi") if self._gpu_diagnostics_enabled else None
+        if self._gpu_diagnostics_enabled and not self._smi and os.name == "nt":
             for candidate in (
                 os.path.join(os.environ.get("ProgramW6432", r"C:\Program Files"),
                              "NVIDIA Corporation", "NVSMI", "nvidia-smi.exe"),
@@ -132,14 +134,15 @@ class _LearnerStallSampler:
                 if os.path.isfile(candidate):
                     self._smi = candidate
                     break
-        try:
-            import psutil
-            self._psutil = psutil
-            self._process = psutil.Process(os.getpid())
-            self._process.cpu_percent(None)
-            psutil.cpu_percent(None)
-        except (ImportError, OSError):
-            pass
+        if self._cpu_diagnostics_enabled:
+            try:
+                import psutil
+                self._psutil = psutil
+                self._process = psutil.Process(os.getpid())
+                self._process.cpu_percent(None)
+                psutil.cpu_percent(None)
+            except (ImportError, OSError):
+                pass
         self._thread = threading.Thread(
             target=self._loop, name="bees-learner-stall-sampler", daemon=True
         )
@@ -268,7 +271,7 @@ class _LearnerStallSampler:
             return {}
 
     def _sample(self):
-        data = self._windows.sample()
+        data = self._windows.sample() if self._windows is not None else {}
         if self._psutil is not None and self._process is not None:
             psutil = self._psutil
             process = self._process

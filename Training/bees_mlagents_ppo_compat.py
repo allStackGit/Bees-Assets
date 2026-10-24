@@ -1152,7 +1152,9 @@ class _PocaUpdateHardwareProfiler:
         self._cuda_start = {}
         self._psutil = None
         self._process = None
-        self._nvidia_smi = self._find_nvidia_smi()
+        self._cpu_diagnostics_enabled = os.environ.get("BEES_DIAGNOSTICS_CPU", "1") != "0"
+        self._gpu_diagnostics_enabled = os.environ.get("BEES_DIAGNOSTICS_GPU", "1") != "0"
+        self._nvidia_smi = self._find_nvidia_smi() if self._gpu_diagnostics_enabled else None
 
     @staticmethod
     def _find_nvidia_smi():
@@ -1188,21 +1190,22 @@ class _PocaUpdateHardwareProfiler:
 
     def start(self):
         self._process_cpu_start = time.process_time()
-        try:
-            import psutil
+        if self._cpu_diagnostics_enabled:
+            try:
+                import psutil
 
-            self._psutil = psutil
-            self._process = psutil.Process(os.getpid())
-            self._process.cpu_percent(None)
-            psutil.cpu_percent(None, percpu=True)
-        except (ImportError, OSError):
-            self._psutil = None
-            self._process = None
+                self._psutil = psutil
+                self._process = psutil.Process(os.getpid())
+                self._process.cpu_percent(None)
+                psutil.cpu_percent(None, percpu=True)
+            except (ImportError, OSError):
+                self._psutil = None
+                self._process = None
 
         try:
             from mlagents.torch_utils import torch
 
-            if torch.cuda.is_available():
+            if self._gpu_diagnostics_enabled and torch.cuda.is_available():
                 device = int(torch.cuda.current_device())
                 free_bytes, total_bytes = torch.cuda.mem_get_info(device)
                 self._cuda_start = {
@@ -1216,6 +1219,8 @@ class _PocaUpdateHardwareProfiler:
         except (ImportError, AttributeError, RuntimeError):
             self._cuda_start = {}
 
+        if not (self._cpu_diagnostics_enabled or self._gpu_diagnostics_enabled):
+            return self
         self._thread = threading.Thread(
             target=self._sample_loop,
             name="bees-poca-hardware-profiler",
@@ -1399,7 +1404,7 @@ class _PocaUpdateHardwareProfiler:
         try:
             from mlagents.torch_utils import torch
 
-            if torch.cuda.is_available():
+            if self._gpu_diagnostics_enabled and torch.cuda.is_available():
                 device = int(torch.cuda.current_device())
                 free_bytes, total_bytes = torch.cuda.mem_get_info(device)
                 result.update(
