@@ -167,6 +167,10 @@ namespace Assets.Scripts.Levels
         public void ResetState()
         {
             CleanupRuntimeObjectsForReset();
+            // Vision query lists hold references to the previous episode's
+            // components. Release them before pooled maps can be reused.
+            _hiveMindObstacleQuery.Clear();
+            _hiveMindMapObjectQuery.Clear();
 
             if (Level != null)
             {

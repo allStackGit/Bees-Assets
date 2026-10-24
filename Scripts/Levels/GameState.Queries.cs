@@ -34,6 +34,12 @@ namespace Assets.Scripts.Levels
                 : Ships;
         }
 
+        // Unity's list overload fills caller-owned storage without allocating
+        // managed arrays for each faction's vision refresh. These are reused
+        // within the current observer pass and cleared on Level reset.
+        private readonly List<Obstacle> _hiveMindObstacleQuery = new List<Obstacle>();
+        private readonly List<MapObject> _hiveMindMapObjectQuery = new List<MapObject>();
+
         private bool SuppressHiveMindLearningDuringRlSetup =>
             Level != null && Level.IsRlShipSetupInProgress;
 
@@ -188,8 +194,8 @@ namespace Assets.Scripts.Levels
                 return;
             }
 
-            GameObject[] activeObstacleObjects = null;
-            MapObject[] activeMapObjects = null;
+            bool collectedObstacles = false;
+            bool collectedMapObjects = false;
             for (int observerIndex = 0; observerIndex < observers.Count; observerIndex++)
             {
                 Ship observer = observers[observerIndex];
@@ -216,13 +222,16 @@ namespace Assets.Scripts.Levels
                     }
                 }
 
-                if (activeObstacleObjects == null)
+                if (!collectedObstacles)
                 {
-                    activeObstacleObjects = PathfinderObstacleScope.GetActiveObstacleObjects(Level);
+                    _hiveMindObstacleQuery.Clear();
+                    Level.Map.Transform.GetComponentsInChildren<Obstacle>(
+                        false, _hiveMindObstacleQuery);
+                    collectedObstacles = true;
                 }
-                for (int obstacleIndex = 0; obstacleIndex < activeObstacleObjects.Length; obstacleIndex++)
+                for (int obstacleIndex = 0; obstacleIndex < _hiveMindObstacleQuery.Count; obstacleIndex++)
                 {
-                    Obstacle obstacle = activeObstacleObjects[obstacleIndex].GetComponent<Obstacle>();
+                    Obstacle obstacle = _hiveMindObstacleQuery[obstacleIndex];
                     if (obstacle == null || obstacle.IsDead || obstacle.Level != observer.Level)
                     {
                         continue;
@@ -236,13 +245,16 @@ namespace Assets.Scripts.Levels
                     }
                 }
 
-                if (activeMapObjects == null)
+                if (!collectedMapObjects)
                 {
-                    activeMapObjects = Level.Map.Transform.GetComponentsInChildren<MapObject>(false);
+                    _hiveMindMapObjectQuery.Clear();
+                    Level.Map.Transform.GetComponentsInChildren<MapObject>(
+                        false, _hiveMindMapObjectQuery);
+                    collectedMapObjects = true;
                 }
-                for (int objectIndex = 0; objectIndex < activeMapObjects.Length; objectIndex++)
+                for (int objectIndex = 0; objectIndex < _hiveMindMapObjectQuery.Count; objectIndex++)
                 {
-                    MapObject mapObject = activeMapObjects[objectIndex];
+                    MapObject mapObject = _hiveMindMapObjectQuery[objectIndex];
                     if (mapObject == null || mapObject.IsDead || mapObject.Level != observer.Level)
                     {
                         continue;

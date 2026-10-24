@@ -215,7 +215,7 @@ internal sealed class RlCombatPerception
 
         GameState state = level.State;
         sensor.AddObservation(NormalizePositive(CountLiveShips(state.GetShips(side)), 64f));
-        sensor.AddObservation(NormalizePositive(CountLiveShips(state.GetAllEnemyShips(side)), 64f));
+        sensor.AddObservation(NormalizePositive(CountLiveEnemyShips(state.Ships, side), 64f));
     }
 
     internal static float NormalizeMinedValueForPolicy(int minedTsv, int receivingSideStartingTsv)
@@ -241,6 +241,20 @@ internal sealed class RlCombatPerception
         foreach (Ship candidate in ships)
         {
             if (candidate != null && !candidate.IsDead)
+            {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private static int CountLiveEnemyShips(List<Ship> ships, int observerSide)
+    {
+        int count = 0;
+        for (int i = 0; i < ships.Count; i++)
+        {
+            Ship candidate = ships[i];
+            if (candidate != null && !candidate.IsDead && candidate.Side != observerSide)
             {
                 count++;
             }
