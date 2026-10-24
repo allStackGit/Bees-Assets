@@ -231,7 +231,14 @@ namespace Assets.Scripts.Levels
                 }
                 for (int obstacleIndex = 0; obstacleIndex < _hiveMindObstacleQuery.Count; obstacleIndex++)
                 {
-                    Obstacle obstacle = _hiveMindObstacleQuery[obstacleIndex];
+                    // Preserve the original GameObject.GetComponent<Obstacle>
+                    // behavior even if an authored GameObject has multiple
+                    // Obstacle components; only the temporary query storage
+                    // and LINQ array construction are eliminated.
+                    Obstacle queried = _hiveMindObstacleQuery[obstacleIndex];
+                    Obstacle obstacle = queried != null
+                        ? queried.gameObject.GetComponent<Obstacle>()
+                        : null;
                     if (obstacle == null || obstacle.IsDead || obstacle.Level != observer.Level)
                     {
                         continue;
