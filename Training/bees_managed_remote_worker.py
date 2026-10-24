@@ -50,8 +50,8 @@ REMOTE_PID_FILE = "remote-worker.pid"
 REMOTE_STOP_REQUEST_FILE = "remote-worker.stop"
 REMOTE_WORKER_AGENT_STOP_REQUEST_FILE = "worker-agent-stop.request"
 REMOTE_TAILNET_READY_FILE = "tailnet-forward.ready"
-MAX_RETAINED_RUNTIME_VERSIONS = 4
-MAX_RETAINED_VENV_VERSIONS = 4
+MAX_RETAINED_RUNTIME_VERSIONS = 1
+MAX_RETAINED_VENV_VERSIONS = 1
 RUN_ID_PATTERN = re.compile(r"^[A-Za-z0-9._-]+$")
 
 
@@ -983,6 +983,15 @@ class RuntimeUpdater:
         archive = Path(args.runtime_archive).expanduser().resolve()
         self.current_sha256 = _sha256_file(archive) if archive.is_file() else ""
         self.current_version = _runtime_version_from_root(Path(__file__).resolve().parent)
+        # The fixed Downloads/bees-remote-runtime.zip is the only archive read on
+        # restart. Older content-hashed ZIP copies were never used by the updater.
+        for obsolete in (self.install_root / "Downloads").glob("bees-remote-runtime-*.zip"):
+            if obsolete.is_symlink() or not obsolete.is_file():
+                continue
+            try:
+                obsolete.unlink()
+            except OSError:
+                pass
         self.staged_sha256 = ""
         self.staged_root: Optional[Path] = None
         self.staged_bridge: Optional[Path] = None
@@ -1504,8 +1513,6 @@ class RuntimeUpdater:
         runtime_root = destination if runtime_changed else Path(__file__).resolve().parent
         staged_python = self._prepare_python_for_requirements(runtime_root)
         if runtime_changed:
-            archive = self.install_root / "Downloads" / f"bees-remote-runtime-{runtime_sha}.zip"
-            _atomic_bytes(archive, runtime_zip, 0o644)
             _atomic_bytes(Path(self.args.runtime_archive).expanduser().resolve(), runtime_zip, 0o644)
 
         staged_bridge = None
