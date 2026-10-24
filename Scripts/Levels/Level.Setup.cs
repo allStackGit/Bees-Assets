@@ -116,7 +116,7 @@ namespace Assets.Scripts.Levels
         }
 
         private ScaledTimer _timeoutTimer = new ScaledTimer();
-        public void SetupMapAndCamera()
+        public void SetupMapAndCamera(bool reuseActiveTrainingMap = false)
         {
             if (global::RlOneVsOneTrainingBootstrap.IsActiveFor(Stage))
             {
@@ -141,8 +141,15 @@ namespace Assets.Scripts.Levels
                 ActivateFogOfWar = false;
             }
 
-            Map.Setup(this);
-            
+            // A retained training map is already parented to this Level, active and
+            // owned by the same Stage. Avoid re-walking its authored obstacle
+            // hierarchy. ConfigureTrainingMap above still updates every arena
+            // size and border transform before new ships are positioned.
+            if (!reuseActiveTrainingMap)
+            {
+                Map.Setup(this);
+            }
+
             if (CurrentLevelOptions.UserStartingPosition != Vector2.zero)
             {
                 StartingPositions[ConfigData.Configuration.UserSide - 1] = CurrentLevelOptions.UserStartingPosition;

@@ -76,6 +76,19 @@ namespace Assets.Scripts.Levels
         {
             StartTime = Time.realtimeSinceStartup;
             bool isDedicatedRlTraining = global::RlOneVsOneTrainingBootstrap.IsActiveFor(Stage);
+            // A headless obstacle-free RL arena keeps the same map prefab, parent and
+            // authored borders across episodes. Reuse its active instance instead of
+            // releasing/reacquiring it (which toggles every map child). Only do this
+            // when there are no generated obstacles, asteroids or randomized maps.
+            // Ship/projectile cleanup, matchup preparation, map geometry resizing and
+            // physics synchronization must still run on every episode.
+            bool reuseTrainingMap = isDedicatedRlTraining &&
+                !Stage.HasRandomizedOptions &&
+                !global::RlOneVsOneTrainingBootstrap.CurrentStaticObstaclesEnabled &&
+                global::RlOneVsOneTrainingBootstrap.CurrentCollisionAsteroidSpawnSeconds <= 0f &&
+                !global::RlOneVsOneTrainingBootstrap.CurrentMiningAsteroidsEnabled &&
+                Map != null && Map.Index == Stage.OverrideMapIndex &&
+                Map.transform.parent == transform && Map.gameObject.activeSelf;
             if (isDedicatedRlTraining)
             {
                 // Dedicated ML-Agents training owns an ephemeral local level. Do not touch the
@@ -118,7 +131,7 @@ namespace Assets.Scripts.Levels
                 CurrentLevelOptions.EnemySquadGenerationCount = Stage.GeneratedSquadCountOverride;
             }
 
-            ResetGameData();
+            ResetGameData(reuseTrainingMap);
             if (ConfigData.LevelOptions != null && !isDedicatedRlTraining)
             {
                 ConfigData.LevelOptions.ChosenSquads.ForEach((savedSquad) =>
@@ -169,10 +182,13 @@ namespace Assets.Scripts.Levels
                 }
                 CurrentLevelOptions.MapIndex = Stage.OverrideMapIndex;
                 MapData = ConfigData.Maps[CurrentLevelOptions.MapIndex];
-                Map = Stage.Pool.GetPooledMap(CurrentLevelOptions.MapIndex);
+                if (!reuseTrainingMap)
+                {
+                    Map = Stage.Pool.GetPooledMap(CurrentLevelOptions.MapIndex);
+                }
                 HasObstacles = false;
             }
-            SetupMapAndCamera();
+            SetupMapAndCamera(reuseTrainingMap);
             SetupShips();
             if (!Stage.IsTraining)
             {
@@ -273,7 +289,7 @@ namespace Assets.Scripts.Levels
         /// <summary>
         /// Cleans up the game state and requests and deletes the previous map
         /// </summary>
-        public void ResetGameData()
+        public void ResetGameData(bool preserveCurrentMap = false)
         {
             ReconcilePersistedFleetForSetup();
             ResetRuntimeState(ConfigData.Socket.HandledRequests);
@@ -281,7 +297,7 @@ namespace Assets.Scripts.Levels
 
             ReleasePooledObstacleLayoutForReset();
 
-            if (Map != null)
+            if (Map != null && !preserveCurrentMap)
             {
                 Stage.Pool.ReturnMapToPool(Map);
             }
