@@ -340,6 +340,9 @@ class ZeroLocalElasticWanEnvManagerMixin(elastic.ElasticWanEnvManagerMixin):
         # Request enough small upload batches to fill a POCA evaluation batch
         # rather than only two per actor on each learner advance.
         maximum = max(16, len(active) * 8)
+        if not self._bees_wan_options.worker_diagnostics:
+            self._inject_batches(self._bees_wan_broker.drain_current_batches(maximum))
+            return
         started = time.perf_counter()
         batches = self._bees_wan_broker.drain_current_batches(maximum)
         transferred = time.perf_counter()

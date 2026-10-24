@@ -225,6 +225,7 @@ class IsolatedElasticWanBroker:
         max_policy_lag: int,
     ) -> None:
         self.max_policy_lag = int(max_policy_lag)
+        self._worker_diagnostics = bool(options.worker_diagnostics)
         self._drain_metrics = {
             "started": time.perf_counter(), "calls": 0, "batches": 0,
             "bytes": 0, "rpc_seconds": 0.0,
@@ -310,7 +311,7 @@ class IsolatedElasticWanBroker:
         elapsed = finished - started
         # The blocking next_to_shared_memory RPC includes waiting for a
         # producer; only measure non-blocking drains as ingestion overhead.
-        if method == "drain_to_shared_memory":
+        if self._worker_diagnostics and method == "drain_to_shared_memory":
             metrics = self._drain_metrics
             metrics["calls"] += 1
             metrics["batches"] += int(descriptor["batches"])
@@ -332,9 +333,9 @@ class IsolatedElasticWanBroker:
                 self._drain_metrics = {
                     "started": finished, "calls": 0, "batches": 0,
                     "bytes": 0, "rpc_seconds": 0.0,
-            "serialize_seconds": 0.0, "decode_seconds": 0.0,
+                    "serialize_seconds": 0.0, "decode_seconds": 0.0,
                 }
-        if elapsed >= 0.5:
+        if self._worker_diagnostics and elapsed >= 0.5:
             print(
                 f"[Bees WAN IPC] operation={method} seconds={elapsed:.3f} "
                 f"serialize={descriptor['serialization_seconds']:.3f} "
