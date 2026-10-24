@@ -180,7 +180,18 @@ class ZeroLocalElasticWanEnvManagerMixin(elastic.ElasticWanEnvManagerMixin):
         """Wait indefinitely for enough remote actors to define/train the zero-local session."""
         required = max(1, int(self._bees_wan_options.min_actors))
         last_report = 0.0
+        stop_file = os.environ.get("BEES_TRAINING_STOP_FILE", "").strip()
         while True:
+            # With no connected actor, ML-Agents cannot discover the behavior or
+            # construct a trainer yet. Honor managed shutdown on this main thread:
+            # _thread.interrupt_main() alone is not reliable on Windows.
+            if stop_file and os.path.isfile(stop_file):
+                print(
+                    "[Bees checkpoint] zero-local WAN behavior discovery exiting "
+                    "for managed stop before trainer initialization.",
+                    flush=True,
+                )
+                raise KeyboardInterrupt
             active = self._bees_wan_broker.active_actor_snapshot()
             if len(active) >= required:
                 return
