@@ -334,6 +334,35 @@ def _mlp(input_size: int, output_size: int) -> nn.Sequential:
     )
 
 
+def _pool_single_occupied_entity(
+    entities: torch.Tensor,
+    presence: torch.Tensor,
+) -> Optional[torch.Tensor]:
+    """Skip attention when each CPU inference row contains at most one entity.
+
+    With binary presence, an empty row contributes zero and a single entity
+    receives softmax weight one, independently of the learned attention scores.
+    Keep the original attention calculation for multi-entity rows, fractional
+    masks, PPO gradients, ONNX export and GPU inference.
+    """
+    if (
+        torch.is_grad_enabled()
+        or torch.onnx.is_in_onnx_export()
+        or presence.device.type != "cpu"
+        or presence.shape[0] == 0
+    ):
+        return None
+
+    mask = torch.clamp(presence, 0.0, 1.0)
+    if bool(torch.any(torch.count_nonzero(mask, dim=1) > 1)):
+        return None
+    if not bool(torch.all((mask == 0.0) | (mask == 1.0))):
+        return None
+
+    # Masking is still required: embeddings of absent entities need not be zero.
+    return torch.sum(entities * mask.unsqueeze(2), dim=1)
+
+
 class _MaskedAttentionPool(nn.Module):
     def __init__(self, query_size: int, entity_size: int, attention_size: int) -> None:
         super().__init__()
@@ -357,6 +386,10 @@ class _MaskedAttentionPool(nn.Module):
         entities: torch.Tensor,
         presence: torch.Tensor,
     ) -> torch.Tensor:
+        singleton = _pool_single_occupied_entity(entities, presence)
+        if singleton is not None:
+            return singleton
+
         q = self.query(query).unsqueeze(1)
         k = self.key(entities)
         scores = torch.sum(q * k, dim=2) / self.scale
@@ -449,6 +482,10 @@ class _MaskedScalarPool(nn.Module):
         entities: torch.Tensor,
         presence: torch.Tensor,
     ) -> torch.Tensor:
+        singleton = _pool_single_occupied_entity(entities, presence)
+        if singleton is not None:
+            return singleton
+
         scores = self.score(entities).squeeze(2)
         mask = torch.clamp(presence, 0.0, 1.0)
         masked_scores = scores + (1.0 - mask) * -10000.0
@@ -929,10 +966,13 @@ class BeesStructuredObservationEncoder(nn.Module):
         flat_raw = raw.reshape(-1, raw.shape[2])
         active_normalized = flat_normalized.index_select(0, active)
         active_raw = flat_raw.index_select(0, active)
-        entity = self._encode_entities(
-            active_normalized[:, :ENEMY_SIZE].unsqueeze(1),
-            active_raw[:, :ENEMY_SIZE].unsqueeze(1),
-        )[:, 0, :]
+        # These rows were selected using the ally presence mask above. Encode
+        # them directly instead of scanning and scattering the same entity
+        # presence a second time inside _encode_entities().
+        entity, _ = self._encode_entity_rows(
+            active_normalized[:, :ENEMY_SIZE],
+            active_raw[:, :ENEMY_SIZE],
+        )
         communication = self.ally_communication_encoder(
             active_normalized[:, ENEMY_SIZE:ALLY_SIZE]
         )
