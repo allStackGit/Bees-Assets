@@ -1339,6 +1339,12 @@ class ActorSession:
                 f"actor-{self.actor_id}-session-{session_key}"
             )
             log_dir.mkdir(parents=True, exist_ok=True)
+            # A session ID can be reused after a reconnect; never let the old
+            # closed marker authorize deletion of an active Unity log directory.
+            try:
+                (log_dir / ".bees-session-closed").unlink()
+            except FileNotFoundError:
+                pass
             self._session_log_dir = log_dir
             return str(log_dir)
         return str(options.checkpoint_settings.run_logs_dir)
