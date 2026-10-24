@@ -2815,6 +2815,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         install_root / "logs",
         state_path=install_root / "log-upload-state.json",
     )
+    startup_pruned_run_id = ""
     stop = False
     last_contact = 0.0
     lease_seconds = max(1.0, args.heartbeat_seconds * 2.0)
@@ -3227,6 +3228,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     else:
                         applied_revision = revision
                 elif mode == "training":
+                    # Reclaim completed older runs before a canonical build download.
+                    # This is startup work, never part of the running rollout/upload loop.
+                    if (
+                        args.role == "dedicated"
+                        and run_id
+                        and not managed.alive()
+                        and startup_pruned_run_id != run_id
+                    ):
+                        _prune_run_log_directories(install_root / "logs", run_id)
+                        startup_pruned_run_id = run_id
                     if not descriptor:
                         raise RuntimeError(
                             f"server has no canonical {args.platform} build published"
