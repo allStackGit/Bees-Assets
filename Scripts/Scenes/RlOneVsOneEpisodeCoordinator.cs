@@ -313,6 +313,15 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         }
 
         progress = level.GetNormalizedRlEpisodeProgress();
+        // A stationary training side does not need an exploration-grid pass
+        // every rendered frame. Refresh immediately before its observation so
+        // its current sight is included at the decision boundary.
+        if (RlOneVsOneTrainingBootstrap.CurrentMovementDisabledForTeam(
+            side == ConfigData.Configuration.BeeSide
+                ? coordinator._beeTeamId : coordinator._humanTeamId))
+        {
+            grid.Update(level, level.State.GetShips(side), progress);
+        }
         return true;
     }
 
@@ -1219,13 +1228,33 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         }
         int beeSide = ConfigData.Configuration.BeeSide;
         int humanSide = ConfigData.Configuration.HumanSide;
-        List<Ship> beeShips = level.State.GetShips(beeSide);
-        List<Ship> humanShips = level.State.GetShips(humanSide);
-        float episodeProgress = level.GetNormalizedRlEpisodeProgress();
-        _beeExplorationGrid.Update(level, beeShips, episodeProgress);
-        _humanExplorationGrid.Update(level, humanShips, episodeProgress);
+        RefreshExplorationGrids(level, false);
         TrackEnemyVisibility(level, beeSide, humanSide);
         RlOneVsOneEpisodeDiagnostics.Track(level);
+    }
+
+    private void RefreshExplorationGrids(Level level, bool includeStationarySides)
+    {
+        if (ConfigData.Configuration == null)
+        {
+            return;
+        }
+
+        float progress = level.GetNormalizedRlEpisodeProgress();
+        // Moving ships can cross multiple cells between decisions. Keep their
+        // original frame-cadence coverage so that transits remain observable.
+        if (includeStationarySides ||
+            !RlOneVsOneTrainingBootstrap.CurrentMovementDisabledForTeam(_beeTeamId))
+        {
+            _beeExplorationGrid.Update(
+                level, level.State.GetShips(ConfigData.Configuration.BeeSide), progress);
+        }
+        if (includeStationarySides ||
+            !RlOneVsOneTrainingBootstrap.CurrentMovementDisabledForTeam(_humanTeamId))
+        {
+            _humanExplorationGrid.Update(
+                level, level.State.GetShips(ConfigData.Configuration.HumanSide), progress);
+        }
     }
 
     private void TrackEnemyVisibility(Level level, int beeSide, int humanSide)
@@ -1701,6 +1730,9 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         }
 
         TrackEpisodeShips(level);
+        // Include the terminal positions of both sides, even when no more
+        // policy observations will be requested for this episode.
+        RefreshExplorationGrids(level, true);
         int beeSide = ConfigData.Configuration.BeeSide;
         int humanSide = ConfigData.Configuration.HumanSide;
         int beeFinalTsv = level.State.GetTsvBySide(beeSide);
