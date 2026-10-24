@@ -370,7 +370,24 @@ internal static class RlOneVsOneCombatTelemetry
         // historical and current episodes side by side.
         if (movementDisabled)
         {
-            aim["stationary_decisions"] = decisions;
+            // The legacy payload remains small: copying the new three 8x8
+            // cross-tabs here would double JSONL size on stationary episodes.
+            aim["stationary_decisions"] = new Dictionary<string, object>
+            {
+                ["policy_decisions"] = state.PolicyDecisions[sideIndex],
+                ["with_known_enemy"] = state.PolicyDecisionsWithKnownEnemy[sideIndex],
+                ["requested_samples"] = state.RequestedAimSamples[sideIndex],
+                ["requested_error_sum_deg"] = state.RequestedAimErrorDegrees[sideIndex],
+                ["requested_within_5deg"] = state.RequestedAimWithin5[sideIndex],
+                ["requested_within_15deg"] = state.RequestedAimWithin15[sideIndex],
+                ["requested_within_30deg"] = state.RequestedAimWithin30[sideIndex],
+                ["target_bearing_sector_counts"] = state.TargetBearingCounts[sideIndex],
+                ["requested_bearing_sector_counts"] = state.RequestedBearingCounts[sideIndex],
+                ["target_sector_error_sum_deg"] = state.TargetSectorErrorDegrees[sideIndex],
+                ["target_sector_within_15deg"] = state.TargetSectorWithin15[sideIndex],
+                ["requested_bearing_cos_sum"] = state.RequestedAimCosSum[sideIndex],
+                ["requested_bearing_sin_sum"] = state.RequestedAimSinSum[sideIndex]
+            };
         }
         return aim;
     }
