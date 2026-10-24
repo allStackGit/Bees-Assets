@@ -265,18 +265,17 @@ namespace Bees.Tests.EditMode
         [Test]
         public void SecondaryArenasApplyTheSameDurabilityCurriculumAsPrimaryArena()
         {
-            string source = File.ReadAllText(Path.Combine(
-                Application.dataPath,
-                "Scripts",
-                "Scenes",
-                "RlOneVsOneTrainingDurabilityGuard.cs"));
+            string shipSetup = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "Entities", "Ships", "Ship.Lifecycle.cs"));
+            string curriculum = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "Scenes", "RlOneVsOneTrainingDurabilityGuard.cs"));
 
-            Assert.That(source, Does.Contain("IReadOnlyList<Level> levels = _stage.Levels;"));
-            Assert.That(source, Does.Contain("for (int levelIndex = 0; levelIndex < levels.Count; levelIndex++)"),
-                "The centralized durability guard must explicitly process every training Level.");
-            Assert.That(source, Does.Contain("ApplyTrainingDurability(ships[shipIndex]);"));
-            Assert.That(source, Does.Contain("RlOneVsOneTrainingBootstrap.CurrentHealthRatio"),
-                "All arenas must use the same configured health ratio.");
+            Assert.That(shipSetup, Does.Contain("RlOneVsOneTrainingDurabilityGuard.ApplyTrainingDurability(this)"),
+                "Every arena uses the common Ship.Setup path, including mid-episode spawns.");
+            Assert.That(curriculum, Does.Contain("RlOneVsOneTrainingBootstrap.CurrentHealthRatio"),
+                "Every arena must use the same configured health ratio.");
+            Assert.That(curriculum, Does.Not.Contain("FixedUpdate()"),
+                "Curriculum application should no longer scan every arena on each physics step.");
         }
 
         [Test]

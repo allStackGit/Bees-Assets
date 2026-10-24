@@ -41,20 +41,20 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void DurabilityCurriculumRunsBeforeAgentActionsAndPreservesAuthoredStatsAndTsv()
+        public void DurabilityCurriculumAppliesAtShipSetupAndPreservesAuthoredStatsAndTsv()
         {
-            DefaultExecutionOrder executionOrder = _guardType.GetCustomAttribute<DefaultExecutionOrder>();
-            Assert.That(executionOrder, Is.Not.Null);
-            Assert.That(executionOrder.order, Is.LessThan(0));
+            // The common Ship.Setup path covers primary and secondary arenas,
+            // pooled episode resets and mid-episode spawns without frame polling.
+            Assert.That(_guardType.IsAbstract && _guardType.IsSealed, Is.True);
+
+            string shipSetup = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "Entities", "Ships", "Ship.Lifecycle.cs"));
+            Assert.That(shipSetup, Does.Contain("RlOneVsOneTrainingBootstrap.IsActiveFor(Stage)"));
+            Assert.That(shipSetup, Does.Contain("RlOneVsOneTrainingDurabilityGuard.ApplyTrainingDurability(this)"));
 
             string source = File.ReadAllText(Path.Combine(
-                Application.dataPath,
-                "Scripts",
-                "Scenes",
-                "RlOneVsOneTrainingDurabilityGuard.cs"));
-
-            Assert.That(source, Does.Contain("RlOneVsOneTrainingBootstrap.IsDedicatedTrainingRuntime"));
-            Assert.That(source, Does.Contain("RlOneVsOneTrainingBootstrap.IsActiveFor(_stage)"));
+                Application.dataPath, "Scripts", "Scenes", "RlOneVsOneTrainingDurabilityGuard.cs"));
+            Assert.That(source, Does.Not.Contain("FixedUpdate()"));
             Assert.That(source, Does.Contain("ship.MaxHealth = trainingHealth;"));
             Assert.That(source, Does.Contain("if (ship.Health > trainingHealth)"));
             Assert.That(source, Does.Contain("ship.Health = trainingHealth;"));

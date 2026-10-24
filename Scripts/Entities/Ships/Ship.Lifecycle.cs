@@ -225,6 +225,12 @@ namespace Assets.Scripts.Entities.Ships
                 (ShipType == ConfigData.ShipTypes.Factory || ShipType == ConfigData.ShipTypes.CarpenterBee))
                 Level.State.MiningShips.Add(this);
             UpdateHealthBar();
+            if (global::RlOneVsOneTrainingBootstrap.IsActiveFor(Stage))
+            {
+                // Ship.Setup runs for both arena-start ships and spawned ships.
+                // Apply the curriculum before this ship can enter combat.
+                global::RlOneVsOneTrainingDurabilityGuard.ApplyTrainingDurability(this);
+            }
             Activate();
         }
 
