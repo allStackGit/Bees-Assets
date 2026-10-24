@@ -288,6 +288,34 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         }
     }
 
+    internal static bool TryGetExplorationSnapshot(
+        Level level, int side, out RlTeamExplorationGrid grid, out float progress)
+    {
+        grid = null;
+        progress = 0f;
+        RlOneVsOneEpisodeCoordinator coordinator = GetCoordinator(level, false);
+        if (coordinator == null || !coordinator._episodeActive || ConfigData.Configuration == null)
+        {
+            return false;
+        }
+
+        if (side == ConfigData.Configuration.BeeSide)
+        {
+            grid = coordinator._beeExplorationGrid;
+        }
+        else if (side == ConfigData.Configuration.HumanSide)
+        {
+            grid = coordinator._humanExplorationGrid;
+        }
+        if (grid == null)
+        {
+            return false;
+        }
+
+        progress = level.GetNormalizedRlEpisodeProgress();
+        return true;
+    }
+
     internal static float GetExplorationFreshness(Level level, int side, int worldIndex)
     {
         RlOneVsOneEpisodeCoordinator coordinator = GetCoordinator(level, false);

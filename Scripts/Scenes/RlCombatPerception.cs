@@ -147,6 +147,42 @@ internal sealed class RlCombatPerception
     private readonly List<ObservedCollisionAsteroid> _collisionAsteroidCandidates = new List<ObservedCollisionAsteroid>();
     private readonly float[] _navigationOccupancy = new float[NavigationGridCellCount];
 
+    // Each team uses one of four quarter-turn frames for its entire episode.
+    // Precompute the exact existing policy-to-world slot permutations rather
+    // than repeating hundreds of modulo/coordinate transformations per action.
+    private static readonly int[][] NavigationPolicyToWorld = BuildNavigationPolicyToWorld();
+    private static readonly int[][] ExplorationPolicyToWorld = BuildExplorationPolicyToWorld();
+
+    private static int[][] BuildNavigationPolicyToWorld()
+    {
+        int[][] indices = new int[4][];
+        for (int turns = 0; turns < indices.Length; turns++)
+        {
+            indices[turns] = new int[NavigationGridCellCount];
+            for (int index = 0; index < NavigationGridCellCount; index++)
+            {
+                indices[turns][index] = RlPolicyCoordinateFrame.WorldGridIndexForPolicyIndex(
+                    index, NavigationGridSize, turns);
+            }
+        }
+        return indices;
+    }
+
+    private static int[][] BuildExplorationPolicyToWorld()
+    {
+        int[][] indices = new int[4][];
+        for (int turns = 0; turns < indices.Length; turns++)
+        {
+            indices[turns] = new int[ExplorationGridCellCount];
+            for (int index = 0; index < ExplorationGridCellCount; index++)
+            {
+                indices[turns][index] = PolicyGridIndexToWorldIndex(
+                    index, ExplorationGridSize, turns);
+            }
+        }
+        return indices;
+    }
+
     internal void Collect(Ship ship, int side, VectorSensor sensor, int frameQuarterTurns, int teamId = -1)
     {
         Vector2 origin = ship.GetPosition();
@@ -753,13 +789,11 @@ internal sealed class RlCombatPerception
 
     private void AddNavigationGridObservations(VectorSensor sensor, int frameQuarterTurns)
     {
+        int normalizedTurns = ((frameQuarterTurns % 4) + 4) % 4;
+        int[] indices = NavigationPolicyToWorld[normalizedTurns];
         for (int policyIndex = 0; policyIndex < _navigationOccupancy.Length; policyIndex++)
         {
-            int worldIndex = RlPolicyCoordinateFrame.WorldGridIndexForPolicyIndex(
-                policyIndex,
-                NavigationGridSize,
-                frameQuarterTurns);
-            sensor.AddObservation(_navigationOccupancy[worldIndex]);
+            sensor.AddObservation(_navigationOccupancy[indices[policyIndex]]);
         }
     }
 
@@ -769,10 +803,21 @@ internal sealed class RlCombatPerception
         VectorSensor sensor,
         int frameQuarterTurns)
     {
+        // A grid and its timeout progress are constant throughout one sensor
+        // collection. Looking up the arena coordinator for every cell used to
+        // perform 256 dictionary/component lookups per policy decision.
+        if (!RlOneVsOneEpisodeCoordinator.TryGetExplorationSnapshot(
+            level, side, out RlTeamExplorationGrid grid, out float progress))
+        {
+            AddZeroObservations(sensor, ExplorationGridCellCount);
+            return;
+        }
+
+        int normalizedTurns = ((frameQuarterTurns % 4) + 4) % 4;
+        int[] indices = ExplorationPolicyToWorld[normalizedTurns];
         for (int policyIndex = 0; policyIndex < ExplorationGridCellCount; policyIndex++)
         {
-            int worldIndex = PolicyGridIndexToWorldIndex(policyIndex, ExplorationGridSize, frameQuarterTurns);
-            sensor.AddObservation(RlOneVsOneEpisodeCoordinator.GetExplorationFreshness(level, side, worldIndex));
+            sensor.AddObservation(grid.GetFreshness(indices[policyIndex], progress));
         }
     }
 
