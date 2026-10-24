@@ -74,19 +74,23 @@ internal static class RlOneVsOneArenaMapSizeState
             else
             {
                 RlOneVsOneTrainingOptions options = Options;
-                if (options.MapSizeMaximum + 0.001f < minimumSafeMapSize)
-                {
-                    throw new InvalidOperationException(
-                        $"RL map maximum {options.MapSizeMaximum:0.###} cannot safely contain the prepared matchup; " +
-                        $"at least {minimumSafeMapSize:0.###} is required.");
-                }
-                mapSize = options.HasMapSizeRange
+                // A sampled pair may need more room than either ship alone. Rejecting
+                // that episode prevents Unity reset from completing and leaves the
+                // remote rollout actor stuck waiting for its first environment step.
+                // Preserve every matchup and requested map size when it fits; only
+                // enlarge the specific arena that needs more room. One map-size step
+                // of slack keeps random rotation-safe placement away from the exact
+                // two-hull geometric fit boundary.
+                float safeMapSize = Mathf.Ceil(
+                    (minimumSafeMapSize + MapSizeStep) / MapSizeStep) * MapSizeStep;
+                float requestedMapSize = options.HasMapSizeRange
                     ? SampleMapSizeForLevel(
                         level,
                         options.MapSizeMinimum,
                         options.MapSizeMaximum,
-                        minimumSafeMapSize)
+                        minimumSafeMapSize + MapSizeStep)
                     : options.MapSize;
+                mapSize = Mathf.Max(requestedMapSize, safeMapSize);
             }
             EpisodeMapSizes[level] = mapSize;
         }
