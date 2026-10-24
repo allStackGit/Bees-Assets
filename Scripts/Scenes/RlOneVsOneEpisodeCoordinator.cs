@@ -1734,7 +1734,10 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         // Diagnostics must never make an otherwise valid training episode fail.
         try
         {
-            WriteUnifiedEpisodeRecord(level, result, mapSize);
+            if (RlOneVsOneTrainingBootstrap.CurrentEpisodeLoggingEnabled)
+            {
+                WriteUnifiedEpisodeRecord(level, result, mapSize);
+            }
         }
         catch (Exception exception)
         {

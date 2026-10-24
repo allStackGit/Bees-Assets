@@ -334,7 +334,8 @@ def _safe_zip_member(root: Path, name: str) -> Path:
 
 
 class ManagedBuildStore:
-    MAX_RETAINED_BUILDS = 4
+    # Only keep a current build and any pending prepared replacement during a cutover.
+    MAX_RETAINED_BUILDS = 1
 
     def __init__(self, root: str | os.PathLike[str]):
         self.root = Path(root).expanduser().resolve()

@@ -1002,6 +1002,7 @@ class ActorSession:
         self.templates: Dict[str, Any] = {}
         self._behavior_specs: Dict[str, Any] = {}
         self.manager = None
+        self._session_log_dir: Optional[Path] = None
         self._state_changed = threading.Event()
         self._session_changed = threading.Event()
         self._stale = threading.Event()
@@ -1262,12 +1263,14 @@ class ActorSession:
         self._write_throughput_metrics()
 
     def close(self) -> None:
+        unity_closed_cleanly = True
         self._upload_stop.set()
         self._step_diagnostic_stop.set()
         if self.manager is not None:
             try:
                 self.manager.close()
             except Exception as exc:
+                unity_closed_cleanly = False
                 print(
                     "[Bees WAN actor] ML-Agents manager shutdown failed; "
                     f"checking for detached Unity environments: {type(exc).__name__}: {exc}",
@@ -1294,6 +1297,11 @@ class ActorSession:
         self._rollout_profiler.maybe_report(force=True)
         self._write_throughput_metrics(force=True)
         self._onnx_temp.cleanup()
+        if unity_closed_cleanly and self._session_log_dir is not None:
+            try:
+                (self._session_log_dir / ".bees-session-closed").touch()
+            except OSError:
+                pass
 
     def _remote_run_options(self) -> Any:
         options = copy.deepcopy(self.central_run_options)
@@ -1331,6 +1339,7 @@ class ActorSession:
                 f"actor-{self.actor_id}-session-{session_key}"
             )
             log_dir.mkdir(parents=True, exist_ok=True)
+            self._session_log_dir = log_dir
             return str(log_dir)
         return str(options.checkpoint_settings.run_logs_dir)
 
