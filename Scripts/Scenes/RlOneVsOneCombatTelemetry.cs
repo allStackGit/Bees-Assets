@@ -37,6 +37,14 @@ internal static class RlOneVsOneCombatTelemetry
         {
             CreateSectorPairCounts(), CreateSectorPairCounts()
         };
+        internal readonly long[][][] FreshTargetRequestedSectors =
+        {
+            CreateSectorPairCounts(), CreateSectorPairCounts()
+        };
+        internal readonly long[][][] HeldTargetRequestedSectors =
+        {
+            CreateSectorPairCounts(), CreateSectorPairCounts()
+        };
         internal readonly long[] PolicyDecisions = new long[2];
         internal readonly long[] PolicyDecisionsWithKnownEnemy = new long[2];
         internal readonly long[] RequestedAimSamples = new long[2];
@@ -173,10 +181,12 @@ internal static class RlOneVsOneCombatTelemetry
             if ((freshAimSlotMask & (1 << slot)) != 0)
             {
                 state.FreshAimSamples[sideIndex]++;
+                state.FreshTargetRequestedSectors[sideIndex][targetSector][requestedSector]++;
             }
             else
             {
                 state.HeldAimSamples[sideIndex]++;
+                state.HeldTargetRequestedSectors[sideIndex][targetSector][requestedSector]++;
             }
             state.TargetRequestedSectors[sideIndex][targetSector][requestedSector]++;
             state.RequestedAimErrorDegrees[sideIndex] += errorDegrees;
@@ -348,6 +358,8 @@ internal static class RlOneVsOneCombatTelemetry
             ["target_bearing_sector_counts"] = state.TargetBearingCounts[sideIndex],
             ["requested_bearing_sector_counts"] = state.RequestedBearingCounts[sideIndex],
             ["target_requested_sector_counts"] = state.TargetRequestedSectors[sideIndex],
+            ["fresh_target_requested_sector_counts"] = state.FreshTargetRequestedSectors[sideIndex],
+            ["held_target_requested_sector_counts"] = state.HeldTargetRequestedSectors[sideIndex],
             ["target_sector_error_sum_deg"] = state.TargetSectorErrorDegrees[sideIndex],
             ["target_sector_within_15deg"] = state.TargetSectorWithin15[sideIndex],
             ["requested_bearing_cos_sum"] = state.RequestedAimCosSum[sideIndex],
