@@ -227,7 +227,8 @@ class IsolatedElasticWanBroker:
         self.max_policy_lag = int(max_policy_lag)
         self._drain_metrics = {
             "started": time.perf_counter(), "calls": 0, "batches": 0,
-            "bytes": 0, "rpc_seconds": 0.0, "decode_seconds": 0.0,
+            "bytes": 0, "rpc_seconds": 0.0,
+            "serialize_seconds": 0.0, "decode_seconds": 0.0,
         }
         # spawn is mandatory: Windows requires it, and fork after CUDA
         # initialization can poison the learner's GPU runtime.
@@ -315,6 +316,7 @@ class IsolatedElasticWanBroker:
             metrics["batches"] += int(descriptor["batches"])
             metrics["bytes"] += int(descriptor["bytes"])
             metrics["rpc_seconds"] += rpc_elapsed
+            metrics["serialize_seconds"] += float(descriptor["serialization_seconds"])
             metrics["decode_seconds"] += finished - decode_started
             interval = finished - metrics["started"]
             if interval >= 30.0:
@@ -323,12 +325,14 @@ class IsolatedElasticWanBroker:
                     f"calls={metrics['calls']} batches={metrics['batches']} "
                     f"bytes={metrics['bytes']} "
                     f"rpc_s={metrics['rpc_seconds']:.3f} "
-                    f"mapping_and_unpickle_s={metrics['decode_seconds']:.3f}",
+                    f"broker_serialize_s={metrics['serialize_seconds']:.3f} "
+                    f"mapping_unpickle_release_s={metrics['decode_seconds']:.3f}",
                     flush=True,
                 )
                 self._drain_metrics = {
                     "started": finished, "calls": 0, "batches": 0,
-                    "bytes": 0, "rpc_seconds": 0.0, "decode_seconds": 0.0,
+                    "bytes": 0, "rpc_seconds": 0.0,
+            "serialize_seconds": 0.0, "decode_seconds": 0.0,
                 }
         if elapsed >= 0.5:
             print(
