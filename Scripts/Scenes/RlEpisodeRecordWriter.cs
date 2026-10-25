@@ -19,8 +19,8 @@ internal static class RlEpisodeRecordWriter
     private static bool _warned;
 
     // Preserve the episode header, winner/elimination and ship outcomes even with all
-    // optional categories disabled. The writer filters only the serialized copy,
-    // after all reward, gameplay and diagnostic calculations have completed.
+    // optional categories disabled. This record is diagnostic-only, so filtering it
+    // cannot affect gameplay, delivered rewards or PPO trajectories.
     private static readonly string[] CombatSideFields =
     {
         "combat", "damage_by_source", "damage_by_ship_type", "self_damage",
