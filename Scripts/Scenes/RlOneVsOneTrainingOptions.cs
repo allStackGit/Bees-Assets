@@ -15,6 +15,20 @@ internal enum RlOneVsOneMatchupMode
 /// these arguments to standalone Unity workers through --env-args, keeping curriculum/environment
 /// changes out of serialized scene state and out of the trainer YAML.
 /// </summary>
+[Flags]
+internal enum RlEpisodeLogCategory
+{
+    None = 0,
+    Combat = 1 << 0,
+    Aim = 1 << 1,
+    AimDirections = 1 << 2,
+    Visibility = 1 << 3,
+    Environment = 1 << 4,
+    Rewards = 1 << 5,
+    Policy = 1 << 6,
+    All = Combat | Aim | AimDirections | Visibility | Environment | Rewards | Policy
+}
+
 internal sealed class RlOneVsOneTrainingOptions
 {
     internal const string HealthRatioFlag = "--rl-health-ratio";
@@ -35,6 +49,13 @@ internal sealed class RlOneVsOneTrainingOptions
     internal const string MiningAsteroidsFlag = "--rl-mining-asteroids";
     internal const string CommunicationLoggingFlag = "--rl-log-communications";
     internal const string EpisodeLoggingFlag = "--rl-log-episodes";
+    internal const string CombatLoggingFlag = "--rl-log-combat";
+    internal const string AimLoggingFlag = "--rl-log-aim";
+    internal const string AimDirectionsLoggingFlag = "--rl-log-aim-directions";
+    internal const string VisibilityLoggingFlag = "--rl-log-visibility";
+    internal const string EnvironmentLoggingFlag = "--rl-log-environment";
+    internal const string RewardsLoggingFlag = "--rl-log-rewards";
+    internal const string PolicyLoggingFlag = "--rl-log-policy";
     internal const string ValidationOnlyFlag = "--rl-validate-options-only";
 
     internal const float DefaultHealthRatio = 0.25f;
@@ -115,6 +136,7 @@ internal sealed class RlOneVsOneTrainingOptions
     internal bool MiningAsteroidsEnabled { get; private set; }
     internal bool CommunicationLoggingEnabled { get; private set; }
     internal bool EpisodeLoggingEnabled { get; private set; }
+    internal RlEpisodeLogCategory EpisodeLogCategories { get; private set; }
     internal RlOneVsOneMatchupMode MatchupMode { get; private set; }
     internal IReadOnlyList<ConfigData.ShipTypes> BeeShipTypes => _beeShipTypes;
     internal IReadOnlyList<ConfigData.ShipTypes> HumanShipTypes => _humanShipTypes;
@@ -136,6 +158,7 @@ internal sealed class RlOneVsOneTrainingOptions
         MiningAsteroidsEnabled = false;
         CommunicationLoggingEnabled = false;
         EpisodeLoggingEnabled = true;
+        EpisodeLogCategories = RlEpisodeLogCategory.All;
         MatchupMode = DefaultMatchupMode;
         _beeShipTypes = new List<ConfigData.ShipTypes> { ConfigData.ShipTypes.Wasp };
         _humanShipTypes = new List<ConfigData.ShipTypes> { ConfigData.ShipTypes.Gunship };
@@ -235,6 +258,34 @@ internal sealed class RlOneVsOneTrainingOptions
             {
                 options.EpisodeLoggingEnabled = episodeLogging;
             }
+            else if (TryReadBooleanOption(argument, CombatLoggingFlag, args, ref i, out bool combatLogging))
+            {
+                options.SetEpisodeLogCategory(RlEpisodeLogCategory.Combat, combatLogging);
+            }
+            else if (TryReadBooleanOption(argument, AimLoggingFlag, args, ref i, out bool aimLogging))
+            {
+                options.SetEpisodeLogCategory(RlEpisodeLogCategory.Aim, aimLogging);
+            }
+            else if (TryReadBooleanOption(argument, AimDirectionsLoggingFlag, args, ref i, out bool directionsLogging))
+            {
+                options.SetEpisodeLogCategory(RlEpisodeLogCategory.AimDirections, directionsLogging);
+            }
+            else if (TryReadBooleanOption(argument, VisibilityLoggingFlag, args, ref i, out bool visibilityLogging))
+            {
+                options.SetEpisodeLogCategory(RlEpisodeLogCategory.Visibility, visibilityLogging);
+            }
+            else if (TryReadBooleanOption(argument, EnvironmentLoggingFlag, args, ref i, out bool environmentLogging))
+            {
+                options.SetEpisodeLogCategory(RlEpisodeLogCategory.Environment, environmentLogging);
+            }
+            else if (TryReadBooleanOption(argument, RewardsLoggingFlag, args, ref i, out bool rewardsLogging))
+            {
+                options.SetEpisodeLogCategory(RlEpisodeLogCategory.Rewards, rewardsLogging);
+            }
+            else if (TryReadBooleanOption(argument, PolicyLoggingFlag, args, ref i, out bool policyLogging))
+            {
+                options.SetEpisodeLogCategory(RlEpisodeLogCategory.Policy, policyLogging);
+            }
             else if (argument.Equals(ValidationOnlyFlag, StringComparison.OrdinalIgnoreCase))
             {
                 // Validation-only is an operator/preflight control flag, not an environment value.
@@ -279,7 +330,26 @@ internal sealed class RlOneVsOneTrainingOptions
                $"mining_asteroids={(MiningAsteroidsEnabled ? "on" : "off")} " +
                $"communication_logging={(CommunicationLoggingEnabled ? "on" : "off")} " +
                $"episode_logging={(EpisodeLoggingEnabled ? "on" : "off")} " +
+               $"log_combat={LogCategoryState(RlEpisodeLogCategory.Combat)} " +
+               $"log_aim={LogCategoryState(RlEpisodeLogCategory.Aim)} " +
+               $"log_aim_directions={LogCategoryState(RlEpisodeLogCategory.AimDirections)} " +
+               $"log_visibility={LogCategoryState(RlEpisodeLogCategory.Visibility)} " +
+               $"log_environment={LogCategoryState(RlEpisodeLogCategory.Environment)} " +
+               $"log_rewards={LogCategoryState(RlEpisodeLogCategory.Rewards)} " +
+               $"log_policy={LogCategoryState(RlEpisodeLogCategory.Policy)} " +
                $"bee_ship_types={JoinShipTypes(_beeShipTypes)} human_ship_types={JoinShipTypes(_humanShipTypes)}";
+    }
+
+    private string LogCategoryState(RlEpisodeLogCategory category)
+    {
+        return (EpisodeLogCategories & category) != 0 ? "on" : "off";
+    }
+
+    private void SetEpisodeLogCategory(RlEpisodeLogCategory category, bool enabled)
+    {
+        EpisodeLogCategories = enabled
+            ? EpisodeLogCategories | category
+            : EpisodeLogCategories & ~category;
     }
 
     private void ApplySampledRosterDefaults()
