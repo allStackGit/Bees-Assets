@@ -638,6 +638,126 @@ if [[ -n "$PID" ]] && pid_is_supervisor "$PID"; then
     fi
 fi
 rm -f "$SUPERVISOR_PID_FILE" "$SHUTDOWN_REQUEST_FILE"
+
+# A fresh bootstrap is the one safe time to reclaim previously uploaded training
+# logs. This must happen BEFORE the runtime ZIP download, which itself needs disk
+# space. The existing-supervisor path exits above without touching active logs.
+reclaim_stopped_worker_logs() {
+    local python_bin="$INSTALL_ROOT/.venv/bin/python"
+    if [[ ! -x "$python_bin" ]]; then
+        if ! have python3; then
+            echo "[Bees remote] no Python available for early log cleanup; skipping." >&2
+            return
+        fi
+        python_bin="$(command -v python3)"
+    fi
+    "$python_bin" - "$INSTALL_ROOT" <<'PY'
+import hashlib
+import json
+import re
+import shutil
+import sys
+from pathlib import Path
+
+managed = Path(sys.argv[1]) / "ManagedBuilds"
+logs = managed / "logs"
+if not logs.is_dir() or logs.is_symlink():
+    raise SystemExit(0)
+
+def read_state(name):
+    try:
+        value = json.loads((managed / name).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return value if isinstance(value, dict) else {}
+
+control = read_state("control-state.json")
+upload = read_state("log-upload-state.json")
+valid_run = re.compile(r"[A-Za-z0-9_.-]+")
+def run_id(value):
+    return value if isinstance(value, str) and value not in (".", "..") and valid_run.fullmatch(value) else ""
+
+current = run_id(control.get("run_id")) or run_id(upload.get("run_id"))
+removed_count = removed_bytes = removed_runs = 0
+
+# These are previous *runs*, not the session this supervisor is about to start.
+# The managed training agent already removes them on launch, but waiting until
+# then is too late if the runtime download itself fails for lack of disk space.
+if current:
+    for run in logs.iterdir():
+        if run.name == current or not run.is_dir() or run.is_symlink():
+            continue
+        shutil.rmtree(run)
+        removed_runs += 1
+
+# Within the preserved run, remove only immutable files whose complete contents
+# have already been acknowledged by Exeter and whose identity has not changed.
+# Unacknowledged, changed, or oversized files remain for the next uploader pass.
+uploaded_run = run_id(upload.get("run_id"))
+entries = upload.get("files")
+if upload.get("schema_version") == 1 and uploaded_run and isinstance(entries, dict):
+    run_root = logs / uploaded_run
+    for relative, entry in entries.items():
+        if not isinstance(relative, str) or not isinstance(entry, dict):
+            continue
+        parts = relative.split("/")
+        if any(p in ("", ".", "..") or "\\" in p for p in parts):
+            continue
+        target = run_root.joinpath(*parts)
+        if target.is_symlink() or not target.is_file():
+            continue
+        try:
+            target.resolve().relative_to(run_root.resolve())
+            stat = target.stat()
+            size = stat.st_size
+            if size <= 0 or size > 64 * 1024 * 1024:
+                continue
+            if entry.get("position") != size or entry.get("mtime_ns") != stat.st_mtime_ns:
+                continue
+            if entry.get("identity") != [stat.st_dev, stat.st_ino]:
+                continue
+            anchor = entry.get("prefix_anchor")
+            if not isinstance(anchor, list) or len(anchor) != 2 or anchor[0] != size:
+                continue
+            digest = hashlib.sha256(str(size).encode("ascii"))
+            window = min(4096, size)
+            offsets = sorted({0, max(0, size // 2 - window // 2), max(0, size - window)})
+            with target.open("rb") as stream:
+                for offset in offsets:
+                    stream.seek(offset)
+                    sample = stream.read(min(window, size - offset))
+                    if not sample:
+                        raise ValueError("incomplete log sample")
+                    digest.update(offset.to_bytes(8, "little", signed=False))
+                    digest.update(sample)
+            if digest.hexdigest() != anchor[1]:
+                continue
+            target.unlink()
+            removed_count += 1
+            removed_bytes += size
+        except (OSError, ValueError):
+            continue
+    if run_root.is_dir():
+        # Empty actor-session directories are obsolete; remove without touching
+        # any remaining unacknowledged files.
+        for directory in sorted(
+            (p for p in run_root.rglob("*") if p.is_dir() and not p.is_symlink()),
+            key=lambda p: len(p.parts), reverse=True,
+        ):
+            try:
+                directory.rmdir()
+            except OSError:
+                pass
+print(
+    f"[Bees remote] startup log cleanup: {removed_runs} old runs, "
+    f"{removed_count} acknowledged files, {removed_bytes / 1048576:.1f} MiB reclaimed."
+)
+PY
+}
+reclaim_stopped_worker_logs
+# A failed earlier download may have left a large abandoned temporary archive.
+rm -f -- "$INSTALL_ROOT/Downloads/bees-remote-runtime.zip.tmp"
+
 # A new supervisor uses the explicit startup count, or an implicit safe default.
 # An old live-resize request must not override a fresh start with omitted --envs.
 if [[ -n "$ENVS" ]]; then
