@@ -148,6 +148,13 @@ namespace Bees.Tests.EditMode
                 ["environment"] = new Dictionary<string, object>(),
                 ["bee"] = bee
             };
+            // Disable only the large sector histograms/matrices. Accuracy and role
+            // metadata must remain available for ordinary learning analysis.
+            filter.Invoke(null, new object[] { episode, Enum.ToObject(category, 127 & ~4) });
+            Assert.That(aimDecisions.ContainsKey("target_requested_sector_counts"), Is.False);
+            Assert.That(aimDecisions["requested_samples"], Is.EqualTo(12));
+            Assert.That(aimDecisions["team_id"], Is.EqualTo(0));
+
             filter.Invoke(null, new object[] { episode, Enum.Parse(category, "None") });
             CollectionAssert.AreEquivalent(
                 new[] { "ships" }, bee.Keys);
