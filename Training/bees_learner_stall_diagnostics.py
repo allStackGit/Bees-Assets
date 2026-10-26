@@ -19,6 +19,12 @@ import time
 MIB = 1024 * 1024
 SAMPLE_SECONDS = 5.0
 
+def _category_enabled(name):
+    raw = os.environ.get("BEES_LOG_CATEGORIES", "all").strip().lower()
+    return raw == "all" or name in (part.strip() for part in raw.split(","))
+
+
+
 
 class _WindowsMemoryCounters:
     """System commit and physical page-read counters (not per-process hard faults)."""
@@ -165,7 +171,7 @@ class _LearnerStallSampler:
                     stack.pop()
                 if not stack:
                     self._stages.pop(tid, None)
-            if seconds >= 5.0:
+            if seconds >= 5.0 and _category_enabled("learner-stages"):
                 print(
                     "[Bees learner stage] "
                     f"utc={datetime.now(timezone.utc).isoformat()} "
@@ -323,6 +329,8 @@ class _LearnerStallSampler:
 
     def _loop(self):
         while not self._stop.wait(SAMPLE_SECONDS):
+            if not _category_enabled("learner-samples"):
+                continue
             try:
                 with self._lock:
                     now = time.monotonic()
@@ -350,7 +358,9 @@ _sampler_lock = threading.Lock()
 
 def learner_stage(name, *, enabled=True):
     """Cheap no-op when diagnostics are disabled; nested/thread-aware otherwise."""
-    if not enabled:
+    if not enabled or not (
+        _category_enabled("learner-stages") or _category_enabled("learner-samples")
+    ):
         return nullcontext()
     global _sampler
     if _sampler is None:

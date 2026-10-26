@@ -160,12 +160,22 @@ async function reconcilePersistedTrainingAfterServerStart(config, admin) {
 
 async function invokeRuntime(options = {}) {
     let config = loadConfig();
-    const runtimeOverrides = {
+    // Changing only output categories must not silently disable threaded PPO,
+    // local rollouts, or worker diagnostics on an already-running training cluster.
+    const loggingOnly = Boolean(
+        options.explicitLogCategories &&
+        !options.threaded && !options.localTraining && !options.localOnly &&
+        !options.noWorkerDiagnostics && !options.explicitLocalEnvs &&
+        !options.explicitLearnerDevice && !options.explicitPolicyLag &&
+        !options.explicitBackpressureQueue && !options.explicitEntropy &&
+        !options.explicitSkipEvaluation && !options.explicitLearnerOptimizations
+    );
+    const runtimeOverrides = loggingOnly ? {} : {
         threadedTraining: Boolean(options.threaded),
         localTraining: Boolean(options.localTraining),
         localOnly: Boolean(options.localOnly),
         workerDiagnostics: !Boolean(options.noWorkerDiagnostics),
-        // Runtime invocations default to zero direct local Unity environments.
+        // Runtime invocations otherwise default to zero direct local Unity environments.
         numLocalEnvs: options.explicitLocalEnvs ? Number(options.localEnvs) : 0,
     };
     if (options.explicitLearnerDevice) {
@@ -185,6 +195,9 @@ async function invokeRuntime(options = {}) {
     }
     if (options.explicitSkipEvaluation) {
         runtimeOverrides.skipEvaluation = Boolean(options.skipEvaluation);
+    }
+    if (options.explicitLogCategories) {
+        runtimeOverrides.logCategories = String(options.logCategories);
     }
     if (options.explicitLearnerOptimizations) {
         runtimeOverrides.learnerOptimizations = options.ppoControl
@@ -306,6 +319,7 @@ async function invokeRuntime(options = {}) {
                 learnerOptimizations: config.learnerOptimizations,
                 entropyBeta: config.entropyBeta,
                 skipEvaluation: Boolean(config.skipEvaluation),
+                logCategories: config.logCategories,
             });
             console.log(
                 'Latest release is an interrupted incompatible cutover. ' +
@@ -360,6 +374,7 @@ async function invokeRuntime(options = {}) {
         learnerOptimizations: config.learnerOptimizations,
         entropyBeta: config.entropyBeta,
         skipEvaluation: Boolean(config.skipEvaluation),
+        logCategories: config.logCategories,
     });
 
     const unity = resolveUnityEditor(config);
@@ -427,6 +442,7 @@ async function invokeRuntime(options = {}) {
         ' ppo_diagnostics=' + (
             config.learnerOptimizations.detailedDiagnostics ? 'on' : 'off'
         ) +
+        ' log_categories=' + String(config.logCategories || 'all') +
         ' entropy_beta=' + (
             config.entropyBeta == null ? 'base' : String(config.entropyBeta)
         ) +

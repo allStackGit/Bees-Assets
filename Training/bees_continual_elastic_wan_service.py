@@ -9,6 +9,7 @@ phase waits safely for remote actors; release/publish behavior is unchanged.
 from __future__ import annotations
 
 from dataclasses import replace
+import os
 import re
 import sys
 from pathlib import Path
@@ -155,6 +156,21 @@ def trainer_config_for_threading(config_path: Path, enabled: bool) -> Path:
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     raw_args = list(sys.argv[1:] if argv is None else argv)
+    # The control is learner-side, not an ML-Agents or Unity environment argument.
+    # Set it before the managed log tee starts; children inherit the selection.
+    selected_log_categories = [
+        item.split("=", 1)[1]
+        for item in raw_args if item.startswith("--bees-log-categories=")
+    ]
+    if len(selected_log_categories) > 1:
+        raise ValueError("--bees-log-categories may be supplied only once")
+    if selected_log_categories:
+        learner_launcher.parse_log_categories(selected_log_categories[0])
+        os.environ[learner_launcher.LOG_CATEGORIES_ENV] = selected_log_categories[0]
+        raw_args = [
+            item for item in raw_args
+            if not item.startswith("--bees-log-categories=")
+        ]
     local_only = "--bees-local-only" in raw_args
     if local_only:
         raw_args.remove("--bees-local-only")
