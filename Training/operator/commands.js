@@ -309,6 +309,7 @@ async function invokeRuntime(options = {}) {
                 learnerOptimizations: config.learnerOptimizations,
                 entropyBeta: config.entropyBeta,
                 skipEvaluation: Boolean(config.skipEvaluation),
+                logCategories: config.logCategories,
             });
             console.log(
                 'Latest release is an interrupted incompatible cutover. ' +
@@ -363,6 +364,7 @@ async function invokeRuntime(options = {}) {
         learnerOptimizations: config.learnerOptimizations,
         entropyBeta: config.entropyBeta,
         skipEvaluation: Boolean(config.skipEvaluation),
+        logCategories: config.logCategories,
     });
 
     const unity = resolveUnityEditor(config);
