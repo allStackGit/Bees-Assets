@@ -160,12 +160,22 @@ async function reconcilePersistedTrainingAfterServerStart(config, admin) {
 
 async function invokeRuntime(options = {}) {
     let config = loadConfig();
-    const runtimeOverrides = {
+    // Changing only output categories must not silently disable threaded PPO,
+    // local rollouts, or worker diagnostics on an already-running training cluster.
+    const loggingOnly = Boolean(
+        options.explicitLogCategories &&
+        !options.threaded && !options.localTraining && !options.localOnly &&
+        !options.noWorkerDiagnostics && !options.explicitLocalEnvs &&
+        !options.explicitLearnerDevice && !options.explicitPolicyLag &&
+        !options.explicitBackpressureQueue && !options.explicitEntropy &&
+        !options.explicitSkipEvaluation && !options.explicitLearnerOptimizations
+    );
+    const runtimeOverrides = loggingOnly ? {} : {
         threadedTraining: Boolean(options.threaded),
         localTraining: Boolean(options.localTraining),
         localOnly: Boolean(options.localOnly),
         workerDiagnostics: !Boolean(options.noWorkerDiagnostics),
-        // Runtime invocations default to zero direct local Unity environments.
+        // Runtime invocations otherwise default to zero direct local Unity environments.
         numLocalEnvs: options.explicitLocalEnvs ? Number(options.localEnvs) : 0,
     };
     if (options.explicitLearnerDevice) {
