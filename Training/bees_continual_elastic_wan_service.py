@@ -18,6 +18,7 @@ from typing import List, Optional, Sequence, Tuple
 import bees_continual_service as service
 import bees_elastic_wan_training as elastic
 import bees_mlagents_learn as learner_launcher
+from bees_log_categories import log_category
 
 
 
@@ -329,7 +330,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     service.training_command = elastic_training_command
     if threaded_mode:
-        print(
+        log_category("wan-other",
             "[Bees WAN] runtime threaded training enabled; "
             f"rolling policy lag <= {max_policy_lag}."
         )

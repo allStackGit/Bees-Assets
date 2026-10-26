@@ -23,6 +23,7 @@ from dataclasses import dataclass
 from typing import List, Optional, Sequence, Tuple
 
 import bees_continual_train as continual_train
+from bees_log_categories import log_category
 import bees_distributed_training as distributed
 from bees_continual_adversarial import (
     encode_geometry_catalog_for_unity,
@@ -165,7 +166,7 @@ def _watch_public_learning(
     while not stop.wait(options.watch_seconds):
         try:
             result = _process(store, options)
-            print(
+            log_category("continual",
                 "[Bees continual] automatic gameplay telemetry refresh "
                 f"selected={len(result.get('selected_batches', []))} "
                 f"scenarios={len(result.get('scenario_ids', []))} "
@@ -265,13 +266,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 total_envs=total_envs,
                 external_worker_ids=external_worker_ids,
             )
-            print(
+            log_category("distributed",
                 "[Bees distributed] "
                 + distributed.describe_topology(base_port, total_envs, external_worker_ids)
             )
-            print(f"[Bees distributed] remote_session_spec={spec_path}")
+            log_category("distributed", f"[Bees distributed] remote_session_spec={spec_path}")
 
-        print(
+        log_category("continual",
             "[Bees continual] automatic gameplay learning "
             f"generation={auto_options.generation_id or 'legacy'} "
             f"selected={len(initial.get('selected_batches', []))} "

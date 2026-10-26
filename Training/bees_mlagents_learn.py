@@ -53,6 +53,7 @@ MODEL_SNAPSHOT_REQUEST_FILE_ENV = "BEES_TRAINING_MODEL_SNAPSHOT_REQUEST_FILE"
 MODEL_SNAPSHOT_RESPONSE_FILE_ENV = "BEES_TRAINING_MODEL_SNAPSHOT_RESPONSE_FILE"
 MANAGED_STOP_POLL_SECONDS = 0.25
 MANAGED_LEARNER_PROGRESS_FILE_NAME = "learner-progress.json"
+from bees_log_categories import LOG_CATEGORIES_ENV, LOG_CATEGORY_NAMES, parse_log_categories
 MANAGED_LOG_DIR_ENV = "BEES_TRAINING_LOG_DIR"
 LIVE_LEARNER_LOG_NAME = "learner-live.log"
 LIVE_LEARNER_LOG_MAX_BYTES = 16 * 1024 * 1024
@@ -174,29 +175,6 @@ class _LiveLogSink:
 # Unknown third-party/ML-Agents messages are placed in "other", not silently
 # treated as always enabled. Errors, warnings and checkpoint resume identity
 # remain visible even when their normal category is disabled.
-LOG_CATEGORY_NAMES = frozenset((
-    "training", "learner-samples", "learner-stages", "wan-capacity",
-    "wan-pipeline", "wan-lag", "wan-other", "continual", "ppo",
-    "checkpoints", "distributed", "other",
-))
-LOG_CATEGORIES_ENV = "BEES_LOG_CATEGORIES"
-
-def parse_log_categories(raw: str):
-    value = str(raw or "all").strip().lower()
-    if value == "all":
-        return LOG_CATEGORY_NAMES
-    if value == "none":
-        return frozenset()
-    categories = [name.strip() for name in value.split(",")]
-    if not all(categories) or any(name not in LOG_CATEGORY_NAMES for name in categories):
-        names = ", ".join(sorted(LOG_CATEGORY_NAMES))
-        raise ValueError(
-            f"Invalid logging categories {raw!r}; use all, none, or a comma-separated "
-            f"selection from: {names}"
-        )
-    return frozenset(categories)
-
-
 def _classify_log_line(line: str) -> str:
     if line.startswith("[Bees learner sample]"):
         return "learner-samples"
@@ -208,6 +186,11 @@ def _classify_log_line(line: str) -> str:
         return "wan-pipeline"
     if line.startswith("[Bees WAN lag]"):
         return "wan-lag"
+    if line.startswith((
+        "[Bees WAN learner drain]", "[Bees WAN shared-memory drain]",
+        "[Bees WAN IPC]",
+    )):
+        return "wan-pipeline"
     if line.startswith("[Bees WAN]"):
         return "wan-other"
     if line.startswith("[Bees continual]"):
@@ -218,7 +201,7 @@ def _classify_log_line(line: str) -> str:
         return "checkpoints"
     if line.startswith("[Bees distributed]"):
         return "distributed"
-    if line.startswith(("[Bees RL]", "[INFO]", "[Bees training]")):
+    if line.startswith(("[Bees RL]", "[INFO]", "[Bees training]", "[Bees continuous]")):
         return "training"
     return "other"
 
@@ -242,7 +225,7 @@ def _always_show_log_line(line: str, is_stderr: bool) -> bool:
 
 
 class _LiveLogTee:
-    def __init__(self, primary, sink: _LiveLogSink, *, stderr: bool = False) -> None:
+    def __init__(self, primary, sink: Optional[_LiveLogSink], *, stderr: bool = False) -> None:
         self.primary = primary
         self.sink = sink
         self.stderr = stderr
@@ -263,7 +246,8 @@ class _LiveLogTee:
             self._previous_category = category
         if category in self.categories or _always_show_log_line(line, self.stderr):
             self.primary.write(line)
-            self.sink.write(line)
+            if self.sink is not None:
+                self.sink.write(line)
 
     def write(self, value):
         value = str(value)
@@ -287,9 +271,15 @@ class _LiveLogTee:
 
 def _install_managed_live_log():
     root = os.environ.get(MANAGED_LOG_DIR_ENV, "").strip()
-    if not root:
+    selected = os.environ.get(LOG_CATEGORIES_ENV, "all").strip().lower()
+    # Console categories must work without the optional managed learner log
+    # destination; the log directory controls file persistence, not filtering.
+    if not root and selected == "all":
         return None
-    sink = _LiveLogSink(Path(root).expanduser().resolve() / LIVE_LEARNER_LOG_NAME)
+    sink = (
+        _LiveLogSink(Path(root).expanduser().resolve() / LIVE_LEARNER_LOG_NAME)
+        if root else None
+    )
     originals = (sys.stdout, sys.stderr)
     stdout_tee = _LiveLogTee(originals[0], sink)
     stderr_tee = _LiveLogTee(originals[1], sink, stderr=True)
