@@ -83,6 +83,9 @@ function buildCentralLearnerArgv(config, learnerPython, unity, runtimeRoot) {
     if (config.learnerDevice) {
         argv.push('--learner-device', String(config.learnerDevice));
     }
+    // Passing through the managed learner command keeps controls in the
+    // persisted release supervisor and avoids Unity --env-args entirely.
+    argv.push('--bees-log-categories=' + String(config.logCategories || 'all'));
     if (config.localOnly) {
         argv.push('--bees-local-only');
     } else {
