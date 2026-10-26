@@ -15,6 +15,8 @@ pauses learning rather than terminating or advancing a stale optimizer.
 
 from __future__ import annotations
 
+from bees_log_categories import log_category
+
 import os
 import queue
 import time
@@ -146,12 +148,12 @@ class ZeroLocalElasticWanEnvManagerMixin(elastic.ElasticWanEnvManagerMixin):
             },
         )
         if n_env == 0:
-            print(
+            log_category("wan-other",
                 "[Bees WAN] Exeter local_envs=0: PPO learner-only mode enabled; "
                 "waiting for remote rollout actors."
             )
         if threaded_mode:
-            print(
+            log_category("wan-other",
                 "[Bees WAN] threaded PPO collection enabled with rolling "
                 f"max_policy_lag={max_policy_lag}."
             )
@@ -192,7 +194,7 @@ class ZeroLocalElasticWanEnvManagerMixin(elastic.ElasticWanEnvManagerMixin):
         if self._bees_local_manager is not None:
             self._bees_local_manager.set_policy(brain_name, policy)
         version = self._bees_wan_broker.publish_policy(brain_name, policy)
-        print(f"[Bees WAN] policy {brain_name} version={version}")
+        log_category("wan-other", f"[Bees WAN] policy {brain_name} version={version}")
 
     def _wait_for_behavior_source(self) -> None:
         """Wait indefinitely for enough remote actors to define/train the zero-local session."""
@@ -215,7 +217,7 @@ class ZeroLocalElasticWanEnvManagerMixin(elastic.ElasticWanEnvManagerMixin):
                 return
             now = time.monotonic()
             if now - last_report >= 30.0:
-                print(
+                log_category("wan-other",
                     f"[Bees WAN] learner-only mode waiting for remote actors: "
                     f"{len(active)}/{required} connected."
                 )
@@ -363,7 +365,7 @@ class ZeroLocalElasticWanEnvManagerMixin(elastic.ElasticWanEnvManagerMixin):
                     self._bees_wan_broker.report_capacity()
                     active = self._bees_wan_broker.active_actor_snapshot()
                     if not active:
-                        print(
+                        log_category("wan-other",
                             "[Bees WAN] learner-only mode paused: no remote rollout actors connected."
                         )
                     last_report = now
@@ -401,7 +403,7 @@ class ZeroLocalElasticWanEnvManagerMixin(elastic.ElasticWanEnvManagerMixin):
         metrics["inject_seconds"] += injected - transferred
         interval = injected - metrics["started"]
         if interval >= 30.0:
-            print(
+            log_category("wan-pipeline",
                 "[Bees WAN learner drain] "
                 f"calls={metrics['calls']} batches={metrics['batches']} "
                 f"trajectories={metrics['trajectories']} "
