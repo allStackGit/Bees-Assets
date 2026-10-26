@@ -269,9 +269,9 @@ class _LiveLogTee:
         value = str(value)
         with self._lock:
             self._pending += value
-            while "\\n" in self._pending:
-                line, self._pending = self._pending.split("\\n", 1)
-                self._emit_line(line + "\\n")
+            while "\n" in self._pending:
+                line, self._pending = self._pending.split("\n", 1)
+                self._emit_line(line + "\n")
         return len(value)
 
     def flush(self) -> None:
