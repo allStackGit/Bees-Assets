@@ -31,6 +31,9 @@ from pathlib import Path
 from typing import Dict, List, Mapping, Optional, Sequence, Tuple
 
 
+from bees_log_categories import log_category
+
+
 CONTINUAL_ROOT_FLAG = "--continual-root"
 CONTINUAL_CONFIG_FLAG = "--continual-config"
 GAME_BUILD_FLAG = "--continual-game-build"
@@ -804,7 +807,7 @@ class CandidateMonitor:
         )
         self._clear_pending(path)
         self._registered[key] = identity
-        print(
+        log_category("continual",
             f"[Bees continual] registered candidate model_id={model['model_id']} step={step} "
             f"artifact={path}"
         )
@@ -853,7 +856,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             batch_size=imitation_batch_size,
         )
         trainer_args = replace_training_config_argument(trainer_args, training_config)
-        print(
+        log_category("continual",
             f"[Bees continual] human behavioral cloning enabled demos={demo_file_count} "
             f"set={demo_snapshot_hash[:24]} strength={strength:g} steps={imitation_steps} "
             f"batch_size={imitation_batch_size}"
@@ -881,7 +884,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             provider=historical_provider,
             cache_size=historical_cache_size,
         )
-        print(
+        log_category("continual",
             f"[Bees continual] persistent historical opponent share={historical_ratio:.1%} "
             f"provider={historical_provider or 'CPUExecutionProvider'} "
             f"policy_cache={historical_cache_size}"
@@ -896,7 +899,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         parent_model_id=parent_model_id,
         interval_seconds=options.scan_seconds,
     )
-    print(
+    log_category("continual",
         f"[Bees continual] root={store.root} run_id={run_id} "
         f"parent_model_id={parent_model_id or 'none'} results={results_run_dir}"
     )
