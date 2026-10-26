@@ -25,6 +25,49 @@ assert SPEC.loader is not None
 SPEC.loader.exec_module(launcher)
 
 
+class LearnerLogCategoryTests(unittest.TestCase):
+    def test_logging_categories_validate_selection(self):
+        self.assertIn("wan-capacity", launcher.parse_log_categories("all"))
+        self.assertFalse(launcher.parse_log_categories("none"))
+        self.assertEqual(
+            launcher.parse_log_categories("wan-capacity,training"),
+            frozenset(("wan-capacity", "training")),
+        )
+        with self.assertRaises(ValueError):
+            launcher.parse_log_categories("wan-mystery")
+
+    def test_logging_categories_filter_console_and_persisted_stream(self):
+        import io
+
+        class Sink:
+            def __init__(self):
+                self.lines = []
+
+            def write(self, text):
+                self.lines.append(text)
+
+        with mock.patch.dict(
+            os.environ, {launcher.LOG_CATEGORIES_ENV: "wan-capacity,training"},
+        ):
+            stdout = io.StringIO()
+            sink = Sink()
+            tee = launcher._LiveLogTee(stdout, sink)
+            tee.write("[Bees learner sample] no-longer-needed")
+            tee.write("\\n")
+            tee.write("[Bees WAN capacity] trainer_steps_per_sec=100\\n")
+            tee.write("[INFO] Training.\\n")
+            tee.write("[Bees WAN pipeline] hidden\\n")
+            tee.write("[ERROR] retain failure diagnostics\\n")
+            tee.flush()
+            visible = stdout.getvalue()
+            self.assertNotIn("no-longer-needed", visible)
+            self.assertNotIn("hidden", visible)
+            self.assertIn("trainer_steps_per_sec=100", visible)
+            self.assertIn("[INFO] Training.", visible)
+            self.assertIn("[ERROR] retain failure diagnostics", visible)
+            self.assertEqual(visible, "".join(sink.lines))
+
+
 class BeesOptionParsingTests(unittest.TestCase):
     def test_batch_flag_is_removed_before_mlagents_parsing(self):
         (
