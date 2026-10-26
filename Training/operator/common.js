@@ -397,12 +397,31 @@ function normalizeLocalEnvs(value, fallback = 0) {
     return candidate;
 }
 
+const TRAINING_LOG_CATEGORIES = new Set([
+    'training', 'learner-samples', 'learner-stages', 'wan-capacity',
+    'wan-pipeline', 'wan-lag', 'wan-other', 'continual', 'ppo',
+    'checkpoints', 'distributed', 'other',
+]);
+
+function normalizeLogCategories(value) {
+    const raw = String(value == null ? 'all' : value).trim().toLowerCase();
+    if (raw === 'all' || raw === 'none') return raw;
+    const selected = raw.split(',').map(x => x.trim());
+    if (!selected.length || selected.some(x => !TRAINING_LOG_CATEGORIES.has(x))) {
+        throw new Error('Invalid training log categories: ' + String(value) +
+            '. Use all, none, or comma-separated names from: ' +
+            [...TRAINING_LOG_CATEGORIES].join(', '));
+    }
+    return [...new Set(selected)].join(',');
+}
+
 function applyRuntimeTrainingOptions(config, options = {}) {
     const result = {
         ...config,
         entropyBeta: normalizeEntropyBeta(config && config.entropyBeta, null),
         skipEvaluation: Boolean(config && config.skipEvaluation),
         workerDiagnostics: config && config.workerDiagnostics !== false,
+        logCategories: normalizeLogCategories(config && config.logCategories),
         learnerDevice: normalizeLearnerDevice(config && config.learnerDevice),
         localOnly: Boolean(config && config.localOnly),
         numLocalEnvs: normalizeLocalEnvs(config && config.numLocalEnvs),
@@ -471,6 +490,9 @@ function applyRuntimeTrainingOptions(config, options = {}) {
     if (Object.prototype.hasOwnProperty.call(options, 'workerDiagnostics')) {
         result.workerDiagnostics = Boolean(options.workerDiagnostics);
     }
+    if (Object.prototype.hasOwnProperty.call(options, 'logCategories')) {
+        result.logCategories = normalizeLogCategories(options.logCategories);
+    }
     return result;
 }
 
@@ -512,6 +534,7 @@ function readRuntimeTrainingOptions(
         ),
         skipEvaluation: Boolean(value.skipEvaluation),
         workerDiagnostics: value.workerDiagnostics !== false,
+        logCategories: normalizeLogCategories(value.logCategories),
         localOnly: Boolean(value.localOnly),
         numLocalEnvs: normalizeLocalEnvs(value.numLocalEnvs),
         learnerDevice: normalizeLearnerDevice(value.learnerDevice),
@@ -540,6 +563,7 @@ function saveRuntimeTrainingOptions(options) {
         ),
         skipEvaluation: Boolean(options && options.skipEvaluation),
         workerDiagnostics: !options || options.workerDiagnostics !== false,
+        logCategories: normalizeLogCategories(options && options.logCategories),
         localOnly: Boolean(options && options.localOnly),
         numLocalEnvs: normalizeLocalEnvs(options && options.numLocalEnvs),
         learnerDevice: normalizeLearnerDevice(options && options.learnerDevice),
