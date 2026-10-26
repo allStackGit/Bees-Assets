@@ -186,6 +186,11 @@ def _classify_log_line(line: str) -> str:
         return "wan-pipeline"
     if line.startswith("[Bees WAN lag]"):
         return "wan-lag"
+    if line.startswith((
+        "[Bees WAN learner drain]", "[Bees WAN shared-memory drain]",
+        "[Bees WAN IPC]",
+    )):
+        return "wan-pipeline"
     if line.startswith("[Bees WAN]"):
         return "wan-other"
     if line.startswith("[Bees continual]"):
@@ -196,7 +201,7 @@ def _classify_log_line(line: str) -> str:
         return "checkpoints"
     if line.startswith("[Bees distributed]"):
         return "distributed"
-    if line.startswith(("[Bees RL]", "[INFO]", "[Bees training]")):
+    if line.startswith(("[Bees RL]", "[INFO]", "[Bees training]", "[Bees continuous]")):
         return "training"
     return "other"
 
