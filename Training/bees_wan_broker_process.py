@@ -7,6 +7,8 @@ boundaries. No WAN HTTP handler, zlib decoder, or incoming pickle.load runs in t
 """
 from __future__ import annotations
 
+from bees_log_categories import log_category
+
 import multiprocessing
 import mmap
 import os
@@ -92,7 +94,7 @@ class _SharedMemoryWanBroker(ElasticWanBroker):
                 return
             self._shutdown_ingestion = True
             self._condition.notify_all()
-        print(
+        log_category("checkpoints",
             "[Bees WAN] managed learner stop detected; quiescing remote trajectory "
             "ingestion before PPO checkpoint finalization.",
             flush=True,
@@ -288,7 +290,7 @@ class IsolatedElasticWanBroker:
         except BaseException:
             manager.shutdown()
             raise
-        print(
+        log_category("wan-other",
             f"[Bees WAN] isolated trajectory-ingestion broker process "
             f"pid={manager._process.pid} learner_pid={os.getpid()}.",
             flush=True,
@@ -382,7 +384,7 @@ class IsolatedElasticWanBroker:
             metrics["decode_seconds"] += finished - decode_started
             interval = finished - metrics["started"]
             if interval >= 30.0:
-                print(
+                log_category("wan-pipeline",
                     "[Bees WAN shared-memory drain] "
                     f"calls={metrics['calls']} batches={metrics['batches']} "
                     f"bytes={metrics['bytes']} "
@@ -397,7 +399,7 @@ class IsolatedElasticWanBroker:
                     "serialize_seconds": 0.0, "decode_seconds": 0.0,
                 }
         if self._worker_diagnostics and elapsed >= 0.5:
-            print(
+            log_category("wan-pipeline",
                 f"[Bees WAN IPC] operation={method} seconds={elapsed:.3f} "
                 f"serialize={descriptor['serialization_seconds']:.3f} "
                 f"bytes={descriptor['bytes']} batches={descriptor['batches']}",
