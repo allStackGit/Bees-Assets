@@ -186,6 +186,9 @@ async function invokeRuntime(options = {}) {
     if (options.explicitSkipEvaluation) {
         runtimeOverrides.skipEvaluation = Boolean(options.skipEvaluation);
     }
+    if (options.explicitLogCategories) {
+        runtimeOverrides.logCategories = String(options.logCategories);
+    }
     if (options.explicitLearnerOptimizations) {
         runtimeOverrides.learnerOptimizations = options.ppoControl
             ? {
