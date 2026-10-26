@@ -28,6 +28,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Dict, Mapping, Optional, Sequence
 
+from bees_log_categories import log_category
+
 from bees_process_safety import (
     OWNED_CHILD_TERMINATION_GRACE_SECONDS,
     close_windows_owned_child_job,
@@ -506,7 +508,7 @@ def write_generation_config(options: ServiceOptions, index: int) -> Path:
     config_root = _service_root(options) / "trainer-configs"
     destination = config_root / f"{generation_id(index)}.yaml"
     if destination.exists():
-        print(
+        log_category("training",
             "[Bees continuous] reconciling saved generation trainer configuration "
             f"service_source={Path(__file__).resolve()} "
             f"saved={destination}",
@@ -1098,7 +1100,7 @@ def run_service(
                 if state.get("last_hot_deployment_id") is not None:
                     state["last_hot_deployment_id"] = None
                     save_state(options, state)
-                print(
+                log_category("training",
                     "[Bees continuous] no compatible validated champion exists yet; "
                     "starting training before generation-zero bootstrap/publish."
                 )
@@ -1132,7 +1134,7 @@ def run_service(
                     and not resume
                     and training_run_dir(options).is_dir()
                 )
-                print(
+                log_category("training",
                     f"[Bees continuous] training {generation_id(index)} "
                     f"target_steps={generation_target_steps(options, index)} "
                     f"resume={resume} force_fresh={force_fresh}"
@@ -1152,7 +1154,7 @@ def run_service(
                 phase = "release"
 
             if phase == "release" and options.skip_evaluation:
-                print(
+                log_category("training",
                     f"[Bees continuous] skipping evaluation/release for {generation_id(index)}; "
                     "continuing the persistent training checkpoint lineage."
                 )
@@ -1172,7 +1174,7 @@ def run_service(
                         "generation_index": index,
                     },
                 )
-                print(f"[Bees continuous] evaluating/releasing {generation_id(index)}")
+                log_category("training", f"[Bees continuous] evaluating/releasing {generation_id(index)}")
                 _run(
                     release_command(options),
                     options,
@@ -1195,7 +1197,7 @@ def run_service(
                 if deployment is None:
                     raise RuntimeError("Release phase left no validated current deployment.")
                 if deployment != state.get("last_hot_deployment_id"):
-                    print(f"[Bees continuous] publishing validated champion {deployment}")
+                    log_category("training", f"[Bees continuous] publishing validated champion {deployment}")
                     deployment = publish_current_hot_bundle(options, runner)
                     state["last_hot_deployment_id"] = deployment
 
@@ -1203,7 +1205,7 @@ def run_service(
                 state["phase"] = "train"
                 state["training_started"] = False
                 save_state(options, state)
-                print(
+                log_category("training",
                     f"[Bees continuous] completed {generation_id(index)}; "
                     f"next={generation_id(index + 1)}"
                 )
