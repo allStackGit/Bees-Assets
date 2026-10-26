@@ -169,18 +169,117 @@ class _LiveLogSink:
                 pass
 
 
+
+# Every learner console message belongs to a selectable output category.
+# Unknown third-party/ML-Agents messages are placed in "other", not silently
+# treated as always enabled. Errors, warnings and checkpoint resume identity
+# remain visible even when their normal category is disabled.
+LOG_CATEGORY_NAMES = frozenset((
+    "training", "learner-samples", "learner-stages", "wan-capacity",
+    "wan-pipeline", "wan-lag", "wan-other", "continual", "ppo",
+    "checkpoints", "distributed", "other",
+))
+LOG_CATEGORIES_ENV = "BEES_LOG_CATEGORIES"
+
+def parse_log_categories(raw: str):
+    value = str(raw or "all").strip().lower()
+    if value == "all":
+        return LOG_CATEGORY_NAMES
+    if value == "none":
+        return frozenset()
+    categories = [name.strip() for name in value.split(",")]
+    if not all(categories) or any(name not in LOG_CATEGORY_NAMES for name in categories):
+        names = ", ".join(sorted(LOG_CATEGORY_NAMES))
+        raise ValueError(
+            f"Invalid logging categories {raw!r}; use all, none, or a comma-separated "
+            f"selection from: {names}"
+        )
+    return frozenset(categories)
+
+
+def _classify_log_line(line: str) -> str:
+    if line.startswith("[Bees learner sample]"):
+        return "learner-samples"
+    if line.startswith("[Bees learner stage]"):
+        return "learner-stages"
+    if line.startswith("[Bees WAN capacity]"):
+        return "wan-capacity"
+    if line.startswith("[Bees WAN pipeline]"):
+        return "wan-pipeline"
+    if line.startswith("[Bees WAN lag]"):
+        return "wan-lag"
+    if line.startswith("[Bees WAN]"):
+        return "wan-other"
+    if line.startswith("[Bees continual]"):
+        return "continual"
+    if line.startswith(("[Bees PPO", "[Bees POCA", "[Bees ppo")):
+        return "ppo"
+    if line.startswith(("[Bees checkpoint]", "[Bees RL] Diagnostic model snapshot")):
+        return "checkpoints"
+    if line.startswith("[Bees distributed]"):
+        return "distributed"
+    if line.startswith(("[Bees RL]", "[INFO]", "[Bees training]")):
+        return "training"
+    return "other"
+
+
+def _always_show_log_line(line: str, is_stderr: bool) -> bool:
+    stripped = line.lstrip()
+    # Preserve failure diagnostics regardless of logging preferences.
+    if stripped.startswith(("[ERROR]", "[WARNING]", "[WARN]", "[CRITICAL]",
+                            "[FATAL]", "Traceback ", "Error:", "Warning:", "error:")):
+        return True
+    if "Resuming training from step" in line:
+        # _LiveLogSink uses this message to publish the authoritative restart step.
+        return True
+    if is_stderr and _classify_log_line(stripped) == "other":
+        return True
+    if stripped.startswith("[Bees ") and (
+        " failed:" in stripped or " error:" in stripped or " warning:" in stripped
+    ):
+        return True
+    return False
+
+
 class _LiveLogTee:
-    def __init__(self, primary, sink: _LiveLogSink) -> None:
+    def __init__(self, primary, sink: _LiveLogSink, *, stderr: bool = False) -> None:
         self.primary = primary
         self.sink = sink
+        self.stderr = stderr
+        self.categories = parse_log_categories(os.environ.get(LOG_CATEGORIES_ENV, "all"))
+        self._lock = threading.Lock()
+        self._pending = ""
+        self._previous_category = "other"
+
+    def _emit_line(self, line: str) -> None:
+        stripped = line.lstrip()
+        # Indented lines inherit the preceding classification (for example an
+        # ML-Agents multi-line status). Exceptions on stderr remain visible.
+        category = (
+            self._previous_category if line[:1].isspace() and stripped
+            else _classify_log_line(stripped)
+        )
+        if stripped:
+            self._previous_category = category
+        if category in self.categories or _always_show_log_line(line, self.stderr):
+            self.primary.write(line)
+            self.sink.write(line)
 
     def write(self, value):
-        result = self.primary.write(value)
-        self.sink.write(value)
-        return result
+        value = str(value)
+        with self._lock:
+            self._pending += value
+            while "\\n" in self._pending:
+                line, self._pending = self._pending.split("\\n", 1)
+                self._emit_line(line + "\\n")
+        return len(value)
 
     def flush(self) -> None:
-        self.primary.flush()
+        with self._lock:
+            if self._pending:
+                self._emit_line(self._pending)
+                self._pending = ""
+            self.primary.flush()
 
     def __getattr__(self, name):
         return getattr(self.primary, name)
@@ -193,7 +292,7 @@ def _install_managed_live_log():
     sink = _LiveLogSink(Path(root).expanduser().resolve() / LIVE_LEARNER_LOG_NAME)
     originals = (sys.stdout, sys.stderr)
     stdout_tee = _LiveLogTee(originals[0], sink)
-    stderr_tee = _LiveLogTee(originals[1], sink)
+    stderr_tee = _LiveLogTee(originals[1], sink, stderr=True)
     sys.stdout = stdout_tee
     sys.stderr = stderr_tee
 
