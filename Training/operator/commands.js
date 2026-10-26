@@ -442,6 +442,7 @@ async function invokeRuntime(options = {}) {
         ' ppo_diagnostics=' + (
             config.learnerOptimizations.detailedDiagnostics ? 'on' : 'off'
         ) +
+        ' log_categories=' + String(config.logCategories || 'all') +
         ' entropy_beta=' + (
             config.entropyBeta == null ? 'base' : String(config.entropyBeta)
         ) +
