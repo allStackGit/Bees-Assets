@@ -87,6 +87,7 @@ internal static class RlOneVsOneTrainingBootstrap
     internal static bool CurrentMiningAsteroidsEnabled => RuntimeOptions.MiningAsteroidsEnabled;
     internal static bool CurrentCommunicationLoggingEnabled => RuntimeOptions.CommunicationLoggingEnabled;
     internal static bool CurrentEpisodeLoggingEnabled => RuntimeOptions.EpisodeLoggingEnabled;
+    internal static RlEpisodeLogCategory CurrentEpisodeLogCategories => RuntimeOptions.EpisodeLogCategories;
 
     internal static bool ShouldConstrainShipsToArena(bool staticObstaclesEnabled)
     {

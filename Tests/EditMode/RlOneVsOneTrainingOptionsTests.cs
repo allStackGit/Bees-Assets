@@ -77,6 +77,93 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void EpisodeLogCategoriesCanBeControlledIndependently()
+        {
+            Assert.That(Convert.ToInt32(GetProperty(Parse(), "EpisodeLogCategories")), Is.EqualTo(127),
+                "Existing runs must retain the complete episode record by default.");
+
+            object minimal = Parse(
+                "--rl-log-combat=false",
+                "--rl-log-aim=false",
+                "--rl-log-aim-directions=false",
+                "--rl-log-visibility=false",
+                "--rl-log-environment=false",
+                "--rl-log-rewards=false",
+                "--rl-log-policy=false");
+            Assert.That(Convert.ToInt32(GetProperty(minimal, "EpisodeLogCategories")), Is.Zero);
+
+            object selective = Parse(
+                "--rl-log-combat=false",
+                "--rl-log-aim=false",
+                "--rl-log-aim-directions=false",
+                "--rl-log-visibility=false",
+                "--rl-log-environment=false",
+                "--rl-log-rewards=false",
+                "--rl-log-policy=false",
+                "--rl-log-combat", // bare flag turns combat back on
+                "--rl-log-aim=true");
+            Assert.That(Convert.ToInt32(GetProperty(selective, "EpisodeLogCategories")), Is.EqualTo(3));
+            AssertParseFails("--rl-log-aim-directions=maybe");
+        }
+
+        [Test]
+        public void EpisodeLogFilteringKeepsTheOutcomeWhenAllOptionalGroupsAreDisabled()
+        {
+            Type writer = RuntimeAssembly.GetType("RlEpisodeRecordWriter");
+            Type category = RuntimeAssembly.GetType("RlEpisodeLogCategory");
+            MethodInfo filter = writer.GetMethod("FilterCategories", BindingFlags.Static | BindingFlags.NonPublic);
+            Assert.That(filter, Is.Not.Null);
+
+            var aimDecisions = new Dictionary<string, object>
+            {
+                ["team_id"] = 0,
+                ["requested_samples"] = 12,
+                ["target_requested_sector_counts"] = new long[8][]
+            };
+            var bee = new Dictionary<string, object>
+            {
+                ["ships"] = new[] { "Hornet" },
+                ["combat"] = new Dictionary<string, object> { ["shots"] = 3 },
+                ["damage_by_source"] = new Dictionary<string, object>(),
+                ["border_contacts"] = 0,
+                ["visibility"] = new Dictionary<string, object>(),
+                ["rewards"] = new Dictionary<string, object>(),
+                ["retained_mining_tsv"] = 0,
+                ["aim"] = new Dictionary<string, object>
+                {
+                    ["samples"] = 8,
+                    ["policy_decisions"] = aimDecisions,
+                    ["stationary_decisions"] = new Dictionary<string, object>
+                    {
+                        ["requested_samples"] = 12
+                    }
+                }
+            };
+            var episode = new Dictionary<string, object>
+            {
+                ["schema"] = 1,
+                ["episode"] = 123,
+                ["outcome"] = "human",
+                ["final_elimination"] = new Dictionary<string, object> { ["bee"] = "enemy" },
+                ["environment"] = new Dictionary<string, object>(),
+                ["bee"] = bee
+            };
+            // Disable only the large sector histograms/matrices. Accuracy and role
+            // metadata must remain available for ordinary learning analysis.
+            filter.Invoke(null, new object[] { episode, Enum.ToObject(category, 127 & ~4) });
+            Assert.That(aimDecisions.ContainsKey("target_requested_sector_counts"), Is.False);
+            Assert.That(aimDecisions["requested_samples"], Is.EqualTo(12));
+            Assert.That(aimDecisions["team_id"], Is.EqualTo(0));
+
+            filter.Invoke(null, new object[] { episode, Enum.Parse(category, "None") });
+            CollectionAssert.AreEquivalent(
+                new[] { "ships" }, bee.Keys);
+            Assert.That(episode.ContainsKey("environment"), Is.False);
+            Assert.That(episode["outcome"], Is.EqualTo("human"));
+            Assert.That(episode.ContainsKey("final_elimination"), Is.True);
+        }
+
+        [Test]
         public void OneConfiguredTypeCanBeRepeatedAcrossAConfiguredTeamSize()
         {
             object options = Parse(
