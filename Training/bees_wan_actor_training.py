@@ -37,6 +37,9 @@ from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 
+from bees_log_categories import log_category
+
+
 EXPECTED_MLAGENTS_VERSION = "1.1.0"
 WAN_ACTORS_FLAG = "--bees-wan-actors"
 WAN_ENVS_PER_ACTOR_FLAG = "--bees-wan-envs-per-actor"
@@ -733,7 +736,7 @@ class WanActorBroker:
         )
         self._server_thread.start()
         self._server_started_once = True
-        print(
+        log_category("wan-other",
             f"[Bees WAN] actor broker listening only on 127.0.0.1:{self.options.broker_port}; "
             "remote machines must use the managed authenticated private forward."
         )
@@ -1161,7 +1164,7 @@ class WanActorEnvManagerMixin:
 
         EnvManager.set_policy(self, brain_name, policy)
         version = self._bees_wan_broker.publish_policy(brain_name, policy)
-        print(f"[Bees WAN] policy {brain_name} version={version}")
+        log_category("wan-other", f"[Bees WAN] policy {brain_name} version={version}")
 
     def set_env_parameters(self, config: Optional[Dict] = None) -> None:
         if self._bees_wan_initial_reset:
