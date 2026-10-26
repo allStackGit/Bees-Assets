@@ -220,7 +220,7 @@ def _always_show_log_line(line: str, is_stderr: bool) -> bool:
 
 
 class _LiveLogTee:
-    def __init__(self, primary, sink: _LiveLogSink, *, stderr: bool = False) -> None:
+    def __init__(self, primary, sink: Optional[_LiveLogSink], *, stderr: bool = False) -> None:
         self.primary = primary
         self.sink = sink
         self.stderr = stderr
@@ -241,7 +241,8 @@ class _LiveLogTee:
             self._previous_category = category
         if category in self.categories or _always_show_log_line(line, self.stderr):
             self.primary.write(line)
-            self.sink.write(line)
+            if self.sink is not None:
+                self.sink.write(line)
 
     def write(self, value):
         value = str(value)
@@ -265,9 +266,15 @@ class _LiveLogTee:
 
 def _install_managed_live_log():
     root = os.environ.get(MANAGED_LOG_DIR_ENV, "").strip()
-    if not root:
+    selected = os.environ.get(LOG_CATEGORIES_ENV, "all").strip().lower()
+    # Console categories must work without the optional managed learner log
+    # destination; the log directory controls file persistence, not filtering.
+    if not root and selected == "all":
         return None
-    sink = _LiveLogSink(Path(root).expanduser().resolve() / LIVE_LEARNER_LOG_NAME)
+    sink = (
+        _LiveLogSink(Path(root).expanduser().resolve() / LIVE_LEARNER_LOG_NAME)
+        if root else None
+    )
     originals = (sys.stdout, sys.stderr)
     stdout_tee = _LiveLogTee(originals[0], sink)
     stderr_tee = _LiveLogTee(originals[1], sink, stderr=True)
