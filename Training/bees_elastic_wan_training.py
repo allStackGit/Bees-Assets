@@ -23,6 +23,7 @@ from typing import Any, Deque, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import bees_wan_actor_training as base
 from bees_process_safety import write_managed_health
+from bees_log_categories import log_category
 
 
 MAX_REMOTE_ACTORS = 12
@@ -412,7 +413,7 @@ class CapacityDiagnostics:
             }
         elif remote_envs < previous_envs:
             self._pending = None
-        print(
+        log_category("wan-capacity",
             f"[Bees WAN capacity] topology local_envs={self.local_envs} "
             f"remote_actors={actor_count} remote_envs={remote_envs} "
             f"total_envs={self.local_envs + remote_envs}."
@@ -427,7 +428,7 @@ class CapacityDiagnostics:
         remote_rate = self.remote_rate(now)
         queue_ratio = queue_size / max(1, queue_capacity)
         backpressure_recent, backpressure_per_minute = self.backpressure_recent(now)
-        print(
+        log_category("wan-capacity",
             "[Bees WAN capacity] "
             f"remote_actors={self._remote_actors} remote_envs={self._remote_envs} "
             f"trainer_steps_per_sec={(f'{trainer_rate:.1f}' if trainer_rate is not None else 'warming')} "
@@ -449,19 +450,19 @@ class CapacityDiagnostics:
             backpressure_events=backpressure,
         )
         gain_text = "unknown" if gain is None else f"{gain * 100.0:+.1f}%"
-        print(
+        log_category("wan-capacity",
             "[Bees WAN capacity] marginal-test "
             f"remote_envs={pending['from_envs']}->{pending['to_envs']} "
             f"gain={gain_text} status={status}."
         )
         if status == "exeter-saturated":
-            print(
+            log_category("wan-capacity",
                 "[Bees WAN capacity] CAPACITY LIMIT LIKELY: the newest remote capacity did not "
                 "materially increase trainer steps/sec while Exeter showed queued/backpressured "
                 "rollouts. Additional workers are unlikely to improve training speed."
             )
         elif status == "no-measurable-gain":
-            print(
+            log_category("wan-capacity",
                 "[Bees WAN capacity] No measurable trainer-speed gain from the newest remote "
                 "capacity, but Exeter is not showing sustained queue pressure; the added actor may "
                 "be slow or the sample may be noisy rather than centrally saturated."
@@ -1467,7 +1468,7 @@ class ElasticWanBroker(base.WanActorBroker):
                     if self.threaded_mode and self.max_policy_lag > 0 else "-"
                 )
                 pipeline = dict(self._pipeline_snapshot)
-            print(
+            log_category("wan-pipeline",
                 "[Bees WAN pipeline] "
                 f"accepted_team0={accepted.get('0', 0)} "
                 f"accepted_team1={accepted.get('1', 0)} "
@@ -1486,7 +1487,7 @@ class ElasticWanBroker(base.WanActorBroker):
             now = time.monotonic()
             if now - self._last_lag_report >= DIAGNOSTIC_INTERVAL_SECONDS:
                 self._last_lag_report = now
-                print(
+                log_category("wan-lag",
                     "[Bees WAN lag] "
                     f"threaded={self.threaded_mode} max_policy_lag={self.max_policy_lag} "
                     f"accepted_stale_batches={self._accepted_stale_batches} "
@@ -1560,7 +1561,7 @@ class ElasticWanEnvManagerMixin:
         EnvManager.set_policy(self, brain_name, policy)
         self._bees_local_manager.set_policy(brain_name, policy)
         version = self._bees_wan_broker.publish_policy(brain_name, policy)
-        print(f"[Bees WAN] policy {brain_name} version={version}")
+        log_category("wan-other", f"[Bees WAN] policy {brain_name} version={version}")
 
     def _reset_env(self, config: Optional[Dict] = None) -> List[Any]:
         local_steps = self._bees_local_manager._reset_env(config)
