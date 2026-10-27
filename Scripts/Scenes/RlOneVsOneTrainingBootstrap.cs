@@ -75,6 +75,27 @@ internal static class RlOneVsOneTrainingBootstrap
     internal static float CurrentSpawnRadius => CurrentMapSize / 4f;
     internal static int CurrentTimeoutSeconds => RuntimeOptions.EpisodeTimeoutSeconds;
     internal static int CurrentShipsPerSide => RuntimeOptions.ShipsPerSide;
+
+    // The RL team-size setting caps all living ships, including temporary minions and Carrier
+    // children. Normal campaign, Free Play, and other gameplay modes retain their own rules.
+    internal static int GetAvailableSpawnSlots(Level level, int side)
+    {
+        if (level == null || level.State == null || !IsActiveFor(level.Stage))
+        {
+            return int.MaxValue;
+        }
+
+        int available = CurrentShipsPerSide;
+        List<Ship> ships = level.State.GetShips(side);
+        for (int i = 0; i < ships.Count && available > 0; i++)
+        {
+            if (ships[i] != null && !ships[i].IsDead)
+            {
+                available--;
+            }
+        }
+        return available;
+    }
     internal static int CurrentDecisionPeriod => RuntimeOptions.DecisionPeriod;
     internal static bool CurrentMovementDisabled => RuntimeOptions.MovementDisabled;
     internal static bool CurrentMovementDisabledForTeam(int teamId) =>
