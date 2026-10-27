@@ -203,13 +203,37 @@ namespace Assets.Scripts.Levels
                         }
                     }
 
-                    if (drones > 0)
+                    CarrierSquad droneSquad = drones > 0
+                        ? AddCarrierChildSquad(carrier, ConfigData.ShipTypes.Drone, squadIndex + 1)
+                        : null;
+                    CarrierSquad strikerSquad = strikers > 0
+                        ? AddCarrierChildSquad(carrier, ConfigData.ShipTypes.Striker, squadIndex + 1)
+                        : null;
+
+                    for (int shipIndex = 0; shipIndex < Mathf.Max(drones, strikers); shipIndex++)
                     {
-                        AddCarrierChildSquad(carrier, ConfigData.ShipTypes.Drone, squadIndex + 1, drones);
+                        if (shipIndex < drones)
+                        {
+                            droneSquad.AddInitialCarrierShip();
+                        }
+                        if (shipIndex < strikers)
+                        {
+                            strikerSquad.AddInitialCarrierShip();
+                        }
                     }
-                    if (strikers > 0)
+
+                    if (droneSquad != null)
                     {
-                        AddCarrierChildSquad(carrier, ConfigData.ShipTypes.Striker, squadIndex + 1, strikers);
+                        droneSquad.CompleteInitialCarrierSquad();
+                    }
+                    if (strikerSquad != null)
+                    {
+                        strikerSquad.CompleteInitialCarrierSquad();
+                    }
+                    if (carrier.Squad.IsMatchingSpeed)
+                    {
+                        droneSquad?.MatchSpeed();
+                        strikerSquad?.MatchSpeed();
                     }
                 }
             }
@@ -222,7 +246,7 @@ namespace Assets.Scripts.Levels
             }
         }
 
-        private void AddCarrierChildSquad(Carrier carrier, ConfigData.ShipTypes childType, int squadNumber, int count)
+        private CarrierSquad AddCarrierChildSquad(Carrier carrier, ConfigData.ShipTypes childType, int squadNumber)
         {
             CarrierSquad childSquad = Stage.Pool.GetCarrierSquadFromPool();
             childSquad.Setup(
@@ -240,11 +264,8 @@ namespace Assets.Scripts.Levels
                 carrier.Squad.Color);
             Level.State.AddSquad(childSquad);
             _setupSquads.Add(childSquad);
-            childSquad.SetupCarrierSquad(carrier, childType, count);
-            if (carrier.Squad.IsMatchingSpeed)
-            {
-                childSquad.MatchSpeed();
-            }
+            childSquad.SetupCarrierSquad(carrier, childType);
+            return childSquad;
         }
 
         private void PositionSquads(
