@@ -157,7 +157,7 @@ internal static class RlOneVsOneArenaMapSizeState
                 required = Mathf.Max(
                     required,
                     GetMinimumSafeMapSizeForShip(
-                        RlOneVsOnePerArenaMatchups.GetShipType(level, sides[sideIndex], shipIndex)));
+                        RlOneVsOneTrainingBootstrap.GetInitialRosterShipType(level, sides[sideIndex], shipIndex)));
             }
         }
 
@@ -168,10 +168,10 @@ internal static class RlOneVsOneArenaMapSizeState
             // radii. Individual-ship fit checks alone would accept impossible
             // pairs and fail at every episode reset.
             float beeRadius = GetRotationSafeShipRadius(
-                RlOneVsOnePerArenaMatchups.GetShipType(
+                RlOneVsOneTrainingBootstrap.GetInitialRosterShipType(
                     level, ConfigData.Configuration.BeeSide, 0));
             float humanRadius = GetRotationSafeShipRadius(
-                RlOneVsOnePerArenaMatchups.GetShipType(
+                RlOneVsOneTrainingBootstrap.GetInitialRosterShipType(
                     level, ConfigData.Configuration.HumanSide, 0));
             float pairMinimum = (beeRadius + humanRadius) *
                                 (1f + 1f / Mathf.Sqrt(2f)) + 0.01f;
