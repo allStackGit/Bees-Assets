@@ -27,7 +27,7 @@ namespace Assets.Scripts.Levels
             IsCarrierSquad = true;
             IsMinionSquad = true;
         }
-        public void SetupCarrierSquad(Carrier carrier, ConfigData.ShipTypes squadType)
+        public void SetupCarrierSquad(Carrier carrier, ConfigData.ShipTypes squadType, int shipCount)
         {
             Carrier = carrier;
             CarrierSquadType = squadType;
@@ -37,16 +37,19 @@ namespace Assets.Scripts.Levels
             // before spawning so a pooled CarrierSquad cannot inherit the previous
             // lifecycle's Drone/Striker count.
             IsDroneSquad = CarrierSquadType == ConfigData.ShipTypes.Drone;
-            SetupShips();
+            SetupShips(shipCount);
             SetShootingStrategy(carrier.Squad.GetShootingStrategy());
             SetSquadTab();
         }
         private int _shipCount, _shipIndex;
         private long _id;
         private CarrierShip _ship;
-        private void SetupShips()
+        private void SetupShips(int requestedShipCount)
         {
-            _shipCount = IsDroneSquad ? ConfigData.Configuration.CarrierCarryDroneMax : ConfigData.Configuration.CarrierCarryStrikerMax;
+            int naturalMaximum = IsDroneSquad
+                ? ConfigData.Configuration.CarrierCarryDroneMax
+                : ConfigData.Configuration.CarrierCarryStrikerMax;
+            _shipCount = Mathf.Clamp(requestedShipCount, 0, naturalMaximum);
 
             for (_shipIndex = 0; _shipIndex < _shipCount; _shipIndex++)
             {
