@@ -175,17 +175,43 @@ namespace Assets.Scripts.Levels
             for (int carrierIndex = 0; carrierIndex < _carriers.Count; carrierIndex++)
             {
                 Carrier carrier = (Carrier)_carriers[carrierIndex];
-                // Normal gameplay has no RL cap. In training, each Carrier gets only the
-                // slots left after all initial roster ships and earlier Carrier children.
-                int available = global::RlOneVsOneTrainingBootstrap.GetAvailableSpawnSlots(Level, carrier.Side);
-                if (global::RlOneVsOneTrainingBootstrap.IsActiveFor(Stage))
+                // Keep the original full Drone-squad-then-Striker-squad construction order
+                // in ordinary gameplay. Only dedicated RL uses capped alternating children.
+                if (!global::RlOneVsOneTrainingBootstrap.IsActiveFor(Stage))
                 {
-                    // Split finite deck slots across multiple friendly Carriers instead of
-                    // giving the first Carrier the whole complement.
-                    int carriersRemaining = _carriers.Count - carrierIndex;
-                    available = available / carriersRemaining +
-                        (available % carriersRemaining == 0 ? 0 : 1);
+                    for (int squadIndex = 0; squadIndex < ConfigData.Configuration.CarrierSquadCount; squadIndex++)
+                    {
+                        CarrierSquad droneSquad = AddCarrierChildSquad(
+                            carrier, ConfigData.ShipTypes.Drone, squadIndex + 1);
+                        for (int i = 0; i < ConfigData.Configuration.CarrierCarryDroneMax; i++)
+                        {
+                            droneSquad.AddInitialCarrierShip();
+                        }
+                        droneSquad.CompleteInitialCarrierSquad();
+
+                        CarrierSquad strikerSquad = AddCarrierChildSquad(
+                            carrier, ConfigData.ShipTypes.Striker, squadIndex + 1);
+                        for (int i = 0; i < ConfigData.Configuration.CarrierCarryStrikerMax; i++)
+                        {
+                            strikerSquad.AddInitialCarrierShip();
+                        }
+                        strikerSquad.CompleteInitialCarrierSquad();
+
+                        if (carrier.Squad.IsMatchingSpeed)
+                        {
+                            strikerSquad.MatchSpeed();
+                            droneSquad.MatchSpeed();
+                        }
+                    }
+                    continue;
                 }
+
+                int available = global::RlOneVsOneTrainingBootstrap.GetAvailableSpawnSlots(Level, carrier.Side);
+                // Split finite deck slots across multiple friendly Carriers instead of
+                // giving the first Carrier the whole complement.
+                int carriersRemaining = _carriers.Count - carrierIndex;
+                available = available / carriersRemaining +
+                    (available % carriersRemaining == 0 ? 0 : 1);
                 int droneMaximum = Mathf.Max(0, ConfigData.Configuration.CarrierCarryDroneMax);
                 int strikerMaximum = Mathf.Max(0, ConfigData.Configuration.CarrierCarryStrikerMax);
 
