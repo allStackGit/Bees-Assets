@@ -178,6 +178,14 @@ namespace Assets.Scripts.Levels
                 // Normal gameplay has no RL cap. In training, each Carrier gets only the
                 // slots left after all initial roster ships and earlier Carrier children.
                 int available = global::RlOneVsOneTrainingBootstrap.GetAvailableSpawnSlots(Level, carrier.Side);
+                if (global::RlOneVsOneTrainingBootstrap.IsActiveFor(Stage))
+                {
+                    // Split finite deck slots across multiple friendly Carriers instead of
+                    // giving the first Carrier the whole complement.
+                    int carriersRemaining = _carriers.Count - carrierIndex;
+                    available = available / carriersRemaining +
+                        (available % carriersRemaining == 0 ? 0 : 1);
+                }
                 int droneMaximum = Mathf.Max(0, ConfigData.Configuration.CarrierCarryDroneMax);
                 int strikerMaximum = Mathf.Max(0, ConfigData.Configuration.CarrierCarryStrikerMax);
 
