@@ -22,7 +22,8 @@ namespace Assets.Scripts.Entities.Ships
         public bool IsBeaconReady =>
             CanDropBeacons &&
             BeaconsDropped < ConfigData.MaxBeaconsDroppedPerScout &&
-            BeaconClock - TimeSinceLastBeaconDropped > ConfigData.MinimumDelayPerBeacon;
+            BeaconClock - TimeSinceLastBeaconDropped > ConfigData.MinimumDelayPerBeacon &&
+            global::RlOneVsOneTrainingBootstrap.GetAvailableSpawnSlots(Level, Side) > 0;
 
         public override void Create(Stage stage)
         {

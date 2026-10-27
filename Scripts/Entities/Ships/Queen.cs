@@ -158,6 +158,13 @@ namespace Assets.Scripts.Entities.Ships
         }
         private void SpawnMinion(int shipIndex)
         {
+            // Each minion is a separate timed spawn. Teammates may have died (or another Queen
+            // may have spawned) since the wave began, so check capacity for every ship.
+            if (global::RlOneVsOneTrainingBootstrap.GetAvailableSpawnSlots(Level, Side) == 0)
+            {
+                return;
+            }
+
             //Debug.Log($"Spawning minion {MinionType} #{shipIndex}");
             Squad squad = CurrentMinionSquad;
             if (squad == null || squad.IsDead)

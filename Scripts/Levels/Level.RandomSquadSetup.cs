@@ -330,9 +330,46 @@ namespace Assets.Scripts.Levels
                 ConfigData.UnsetColor,
                 null);
 
-            for (int shipIndex = 0; shipIndex < shipCount; shipIndex++)
+            // First reserve every Carrier's finite initial complement. The cap is on living ships,
+            // not just on this saved roster: Carrier children will fill the reserved slots below.
+            // Keep selected non-Carrier teammates only when room remains after those children.
+            var requestedTypes = new List<ConfigData.ShipTypes>(shipCount);
+            int carrierCount = 0;
+            for (int slot = 0; slot < shipCount; slot++)
             {
-                ConfigData.ShipTypes type = global::RlOneVsOnePerArenaMatchups.GetShipType(this, side, shipIndex);
+                ConfigData.ShipTypes requested = global::RlOneVsOneTrainingBootstrap.GetInitialRosterShipType(this, side, slot);
+                requestedTypes.Add(requested);
+                if (requested == ConfigData.ShipTypes.Carrier)
+                {
+                    carrierCount++;
+                }
+            }
+
+            long childrenPerCarrier = (long)System.Math.Max(0, ConfigData.Configuration.CarrierSquadCount) *
+                (System.Math.Max(0, ConfigData.Configuration.CarrierCarryDroneMax) +
+                 (long)System.Math.Max(0, ConfigData.Configuration.CarrierCarryStrikerMax));
+            int reservedChildren = (int)System.Math.Min(
+                shipCount - carrierCount, carrierCount * childrenPerCarrier);
+            int rootShipCount = shipCount - reservedChildren;
+            var roster = new List<ConfigData.ShipTypes>(rootShipCount);
+            for (int i = 0; i < requestedTypes.Count; i++)
+            {
+                if (requestedTypes[i] == ConfigData.ShipTypes.Carrier)
+                {
+                    roster.Add(requestedTypes[i]);
+                }
+            }
+            for (int i = 0; i < requestedTypes.Count && roster.Count < rootShipCount; i++)
+            {
+                if (requestedTypes[i] != ConfigData.ShipTypes.Carrier)
+                {
+                    roster.Add(requestedTypes[i]);
+                }
+            }
+
+            for (int shipIndex = 0; shipIndex < roster.Count; shipIndex++)
+            {
+                ConfigData.ShipTypes type = roster[shipIndex];
                 if (Utilities.ConvertShipTypeToSide[type] != side)
                 {
                     throw new System.InvalidOperationException(
@@ -355,7 +392,7 @@ namespace Assets.Scripts.Levels
 
                 // Preserve the exact original spawn for the default 1v1. Larger teams use a compact,
                 // deterministic formation around the same side-specific squad starting position.
-                if (shipCount == 1)
+                if (roster.Count == 1)
                 {
                     savedSquad.AddShipToSquad(new SquadShip(fleetShip, Vector2.zero));
                 }

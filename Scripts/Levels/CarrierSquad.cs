@@ -33,36 +33,38 @@ namespace Assets.Scripts.Levels
             CarrierSquadType = squadType;
             IsCarrierSquad = true;
             IsMinionSquad = true;
-            // SetupShips uses IsDroneSquad to choose the configured ship count. Set it
-            // before spawning so a pooled CarrierSquad cannot inherit the previous
-            // lifecycle's Drone/Striker count.
-            IsDroneSquad = CarrierSquadType == ConfigData.ShipTypes.Drone;
-            SetupShips();
-            SetShootingStrategy(carrier.Squad.GetShootingStrategy());
-            SetSquadTab();
+            IsDroneSquad = squadType == ConfigData.ShipTypes.Drone;
         }
-        private int _shipCount, _shipIndex;
-        private long _id;
-        private CarrierShip _ship;
-        private void SetupShips()
+
+        // Called in alternating Drone/Striker order by the LevelConstructor. Keeping each
+        // ship in its own type-specific squad preserves Carrier commands and formations.
+        public void AddInitialCarrierShip()
         {
-            _shipCount = IsDroneSquad ? ConfigData.Configuration.CarrierCarryDroneMax : ConfigData.Configuration.CarrierCarryStrikerMax;
-
-            for (_shipIndex = 0; _shipIndex < _shipCount; _shipIndex++)
+            int shipIndex = GetShips().Count;
+            int naturalMaximum = IsDroneSquad
+                ? ConfigData.Configuration.CarrierCarryDroneMax
+                : ConfigData.Configuration.CarrierCarryStrikerMax;
+            if (shipIndex >= naturalMaximum)
             {
-                _id = TransientIdAllocator.GetFleetShipId();
-                _ship = (CarrierShip)Level.LevelConstructor.InstantiateShip(CarrierSquadType);
-                _ship.IsCarrierShip = true;
-
-                _ship.Setup(
-                        Level,
-                        new FleetShip(_id, CarrierSquadType, true, false, 0, 0, 0, 0, 0, 0, 0),
-                        this,
-                        ConfigData.CarrierColumnFormationOffsets[_shipIndex]
-                    );
-                AddShip(_ship);
-                _ship.SetColor();
+                throw new System.InvalidOperationException("Carrier squad exceeded its natural ship capacity.");
             }
+
+            long id = TransientIdAllocator.GetFleetShipId();
+            CarrierShip ship = (CarrierShip)Level.LevelConstructor.InstantiateShip(CarrierSquadType);
+            ship.IsCarrierShip = true;
+            ship.Setup(
+                Level,
+                new FleetShip(id, CarrierSquadType, true, false, 0, 0, 0, 0, 0, 0, 0),
+                this,
+                ConfigData.CarrierColumnFormationOffsets[shipIndex]);
+            AddShip(ship);
+            ship.SetColor();
+        }
+
+        public void CompleteInitialCarrierSquad()
+        {
+            SetShootingStrategy(Carrier.Squad.GetShootingStrategy());
+            SetSquadTab();
         }
     }
 }

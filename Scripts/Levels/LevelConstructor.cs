@@ -174,50 +174,100 @@ namespace Assets.Scripts.Levels
 
             for (int carrierIndex = 0; carrierIndex < _carriers.Count; carrierIndex++)
             {
-                Ship carrier = _carriers[carrierIndex];
-                Squad squad = carrier.Squad;
-                for (int i = 0; i < ConfigData.Configuration.CarrierSquadCount; i++)
+                Carrier carrier = (Carrier)_carriers[carrierIndex];
+                // Keep the original full Drone-squad-then-Striker-squad construction order
+                // in ordinary gameplay. Only dedicated RL uses capped alternating children.
+                if (!global::RlOneVsOneTrainingBootstrap.IsActiveFor(Stage))
                 {
-                    CarrierSquad droneSquad = Stage.Pool.GetCarrierSquadFromPool();
-                    droneSquad.Setup(
-                        Level,
-                        carrier.Squad.SavedSquad,
-                        carrier.Squad.GetShootingStrategy(),
-                        carrier.Squad.CeaseFire,
-                        carrier.Squad.IsMatchingSpeed,
-                        carrier.Squad.ShouldChase(),
-                        false,
-                        TransientIdAllocator.GetSavedSquadId(),
-                        carrier.Squad.Side,
-                        Level.State.OriginalSquadCounts[carrier.Side - 1] + 1,
-                        $"{carrier.Squad.Name} - Drone Force #{i + 1}",
-                        carrier.Squad.Color);
-                    Level.State.AddSquad(droneSquad);
-                    _setupSquads.Add(droneSquad);
-                    droneSquad.SetupCarrierSquad((Carrier)carrier, ConfigData.ShipTypes.Drone);
-
-                    CarrierSquad strikerSquad = Stage.Pool.GetCarrierSquadFromPool();
-                    strikerSquad.Setup(
-                        Level,
-                        carrier.Squad.SavedSquad,
-                        carrier.Squad.GetShootingStrategy(),
-                        carrier.Squad.CeaseFire,
-                        carrier.Squad.IsMatchingSpeed,
-                        carrier.Squad.ShouldChase(),
-                        false,
-                        TransientIdAllocator.GetSavedSquadId(),
-                        carrier.Squad.Side,
-                        Level.State.OriginalSquadCounts[carrier.Side - 1] + 1,
-                        $"{carrier.Squad.Name} - Striker Force #{i + 1}",
-                        carrier.Squad.Color);
-                    Level.State.AddSquad(strikerSquad);
-                    _setupSquads.Add(strikerSquad);
-                    strikerSquad.SetupCarrierSquad((Carrier)carrier, ConfigData.ShipTypes.Striker);
-
-                    if (squad.IsMatchingSpeed)
+                    for (int squadIndex = 0; squadIndex < ConfigData.Configuration.CarrierSquadCount; squadIndex++)
                     {
-                        strikerSquad.MatchSpeed();
-                        droneSquad.MatchSpeed();
+                        CarrierSquad droneSquad = AddCarrierChildSquad(
+                            carrier, ConfigData.ShipTypes.Drone, squadIndex + 1);
+                        for (int i = 0; i < ConfigData.Configuration.CarrierCarryDroneMax; i++)
+                        {
+                            droneSquad.AddInitialCarrierShip();
+                        }
+                        droneSquad.CompleteInitialCarrierSquad();
+
+                        CarrierSquad strikerSquad = AddCarrierChildSquad(
+                            carrier, ConfigData.ShipTypes.Striker, squadIndex + 1);
+                        for (int i = 0; i < ConfigData.Configuration.CarrierCarryStrikerMax; i++)
+                        {
+                            strikerSquad.AddInitialCarrierShip();
+                        }
+                        strikerSquad.CompleteInitialCarrierSquad();
+
+                        if (carrier.Squad.IsMatchingSpeed)
+                        {
+                            strikerSquad.MatchSpeed();
+                            droneSquad.MatchSpeed();
+                        }
+                    }
+                    continue;
+                }
+
+                int available = global::RlOneVsOneTrainingBootstrap.GetAvailableSpawnSlots(Level, carrier.Side);
+                // Split finite deck slots across multiple friendly Carriers instead of
+                // giving the first Carrier the whole complement.
+                int carriersRemaining = _carriers.Count - carrierIndex;
+                available = available / carriersRemaining +
+                    (available % carriersRemaining == 0 ? 0 : 1);
+                int droneMaximum = Mathf.Max(0, ConfigData.Configuration.CarrierCarryDroneMax);
+                int strikerMaximum = Mathf.Max(0, ConfigData.Configuration.CarrierCarryStrikerMax);
+
+                for (int squadIndex = 0;
+                     squadIndex < ConfigData.Configuration.CarrierSquadCount && available > 0;
+                     squadIndex++)
+                {
+                    int drones = 0;
+                    int strikers = 0;
+                    // Allocate Drone, Striker, Drone, Striker until the team is full
+                    // or this pair of Carrier squads reaches its natural capacities.
+                    while (available > 0 && (drones < droneMaximum || strikers < strikerMaximum))
+                    {
+                        if (drones < droneMaximum && available > 0)
+                        {
+                            drones++;
+                            available--;
+                        }
+                        if (strikers < strikerMaximum && available > 0)
+                        {
+                            strikers++;
+                            available--;
+                        }
+                    }
+
+                    CarrierSquad droneSquad = drones > 0
+                        ? AddCarrierChildSquad(carrier, ConfigData.ShipTypes.Drone, squadIndex + 1)
+                        : null;
+                    CarrierSquad strikerSquad = strikers > 0
+                        ? AddCarrierChildSquad(carrier, ConfigData.ShipTypes.Striker, squadIndex + 1)
+                        : null;
+
+                    for (int shipIndex = 0; shipIndex < Mathf.Max(drones, strikers); shipIndex++)
+                    {
+                        if (shipIndex < drones)
+                        {
+                            droneSquad.AddInitialCarrierShip();
+                        }
+                        if (shipIndex < strikers)
+                        {
+                            strikerSquad.AddInitialCarrierShip();
+                        }
+                    }
+
+                    if (droneSquad != null)
+                    {
+                        droneSquad.CompleteInitialCarrierSquad();
+                    }
+                    if (strikerSquad != null)
+                    {
+                        strikerSquad.CompleteInitialCarrierSquad();
+                    }
+                    if (carrier.Squad.IsMatchingSpeed)
+                    {
+                        droneSquad?.MatchSpeed();
+                        strikerSquad?.MatchSpeed();
                     }
                 }
             }
@@ -228,6 +278,28 @@ namespace Assets.Scripts.Levels
             {
                 SetCarrierShipFleetships(_setupSquads);
             }
+        }
+
+        private CarrierSquad AddCarrierChildSquad(Carrier carrier, ConfigData.ShipTypes childType, int squadNumber)
+        {
+            CarrierSquad childSquad = Stage.Pool.GetCarrierSquadFromPool();
+            childSquad.Setup(
+                Level,
+                carrier.Squad.SavedSquad,
+                carrier.Squad.GetShootingStrategy(),
+                carrier.Squad.CeaseFire,
+                carrier.Squad.IsMatchingSpeed,
+                carrier.Squad.ShouldChase(),
+                false,
+                TransientIdAllocator.GetSavedSquadId(),
+                carrier.Side,
+                Level.State.OriginalSquadCounts[carrier.Side - 1] + 1,
+                $"{carrier.Squad.Name} - {(childType == ConfigData.ShipTypes.Drone ? "Drone" : "Striker")} Force #{squadNumber}",
+                carrier.Squad.Color);
+            Level.State.AddSquad(childSquad);
+            _setupSquads.Add(childSquad);
+            childSquad.SetupCarrierSquad(carrier, childType);
+            return childSquad;
         }
 
         private void PositionSquads(
