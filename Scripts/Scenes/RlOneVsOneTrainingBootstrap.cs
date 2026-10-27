@@ -78,6 +78,32 @@ internal static class RlOneVsOneTrainingBootstrap
 
     // The RL team-size setting caps all living ships, including temporary minions and Carrier
     // children. Normal campaign, Free Play, and other gameplay modes retain their own rules.
+    // Fixed single-type spawner matchups use one spawner and ordinary faction teammates,
+    // rather than N copies of the Queen, Scout, or Carrier. Explicit multi-type and sampled
+    // compositions remain intact.
+    internal static ConfigData.ShipTypes GetInitialRosterShipType(Level level, int side, int slot)
+    {
+        ConfigData.ShipTypes type = RlOneVsOnePerArenaMatchups.GetShipType(level, side, slot);
+        if (slot == 0 || RuntimeOptions.MatchupMode != RlOneVsOneMatchupMode.Fixed)
+        {
+            return type;
+        }
+
+        IReadOnlyList<ConfigData.ShipTypes> configured = side == ConfigData.Configuration.BeeSide
+            ? RuntimeOptions.BeeShipTypes
+            : RuntimeOptions.HumanShipTypes;
+        if (configured.Count == 1 &&
+            (type == ConfigData.ShipTypes.Queen ||
+             type == ConfigData.ShipTypes.Scout ||
+             type == ConfigData.ShipTypes.Carrier))
+        {
+            return side == ConfigData.Configuration.BeeSide
+                ? ConfigData.ShipTypes.Wasp
+                : ConfigData.ShipTypes.Gunship;
+        }
+        return type;
+    }
+
     internal static int GetAvailableSpawnSlots(Level level, int side)
     {
         if (level == null || level.State == null || !IsActiveFor(level.Stage))
