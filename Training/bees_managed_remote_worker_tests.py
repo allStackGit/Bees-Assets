@@ -1623,7 +1623,53 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
         self.assertNotIn("--auto-worker-envs", command)
         self.assertEqual(command[command.index("--worker-envs") + 1], "12")
         self.assertEqual(command[command.index("--worker-envs-min") + 1], "12")
-        self.assertEqual(command[command.index("--worker-envs-max") + 1], "12")
+        self.assertEqual(command[command.index("--worker-envs-max") + 1], "64")
+        self.assertIn("--manual-worker-envs-file", command)
+
+    def test_explicit_envs_bypass_ram_estimate_at_startup(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            bridge = root / "bees-tailnet-bridge"
+            bridge.touch()
+            argv = [
+                "--tailnet-bridge", str(bridge),
+                "--tailnet-target", "100.64.0.10",
+                "--install-root", str(root / "install"),
+                "--runtime-archive", str(root / "runtime.zip"),
+                "--bootstrap-token-file", str(root / "bootstrap.token"),
+                "--worker-token-file", str(root / "worker.token"),
+                "--wan-token-file", str(root / "wan.token"),
+                "--envs", "12",
+            ]
+            with (
+                mock.patch.object(managed, "_memory_hard_limit", return_value=10),
+                mock.patch.object(managed, "_memory_env_limit", return_value=10),
+                mock.patch.object(managed, "_available_cpu_threads", return_value=4),
+                mock.patch.object(managed, "_acquire_supervisor_lock", return_value=None) as lock,
+            ):
+                # Reaching the lock proves the explicit override passed startup
+                # validation; returning None leaves the machine unchanged.
+                self.assertEqual(managed.main(argv), 0)
+                lock.assert_called_once()
+
+    def test_automatic_envs_still_respect_ram_estimate(self):
+        with (
+            mock.patch.object(managed, "_memory_hard_limit", return_value=10),
+            mock.patch.object(managed, "_memory_env_limit", return_value=10),
+            mock.patch.object(managed, "_available_cpu_threads", return_value=4),
+            mock.patch("sys.stderr", new_callable=io.StringIO) as stderr,
+        ):
+            self.assertEqual(managed.main([
+                "--auto-envs", "--min-envs", "12",
+                "--tailnet-bridge", "missing",
+                "--tailnet-target", "100.64.0.10",
+                "--install-root", "missing",
+                "--runtime-archive", "missing",
+                "--bootstrap-token-file", "missing",
+                "--worker-token-file", "missing",
+                "--wan-token-file", "missing",
+            ]), 2)
+            self.assertIn("RAM safety bound of 10 envs", stderr.getvalue())
 
     def test_runtime_stage_rejects_payload_that_disagrees_with_release_identity(self):
         with tempfile.TemporaryDirectory() as temp:
