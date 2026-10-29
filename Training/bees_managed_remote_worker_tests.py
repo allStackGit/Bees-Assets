@@ -1626,7 +1626,7 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
         command = managed._worker_command(args, Path("/runtime"), "b" * 32)
         self.assertNotIn("--auto-worker-envs", command)
         self.assertEqual(command[command.index("--worker-envs") + 1], "12")
-        self.assertEqual(command[command.index("--worker-envs-min") + 1], "12")
+        self.assertEqual(command[command.index("--worker-envs-min") + 1], "1")
         self.assertEqual(command[command.index("--worker-envs-max") + 1], "64")
         self.assertIn("--manual-worker-envs-file", command)
 
