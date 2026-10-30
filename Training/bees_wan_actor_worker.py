@@ -1508,7 +1508,9 @@ class ActorSession:
         )
         _install_rollout_env_manager(
             stage_profiler=self._rollout_profiler if self._rollout_profiler.enabled else None,
-            coalesce_seconds=0.001,
+            # Windows queue timeouts can overshoot small waits substantially.
+            # Limit this initial rollout experiment to Linux actors.
+            coalesce_seconds=0.001 if os.name != "nt" else 0.0,
         )
         self._report_startup_phase("preparing-session")
         # A previous ML-Agents session can leave Unity alive because Unity is deliberately
