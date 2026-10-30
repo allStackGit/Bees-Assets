@@ -9,6 +9,8 @@ using UnityEngine;
 /// <summary>
 /// Episode-scoped combat telemetry for dedicated RL training. Normal combat metrics follow
 /// shot/damage events; both learner and opponent policy decisions accumulate aim samples in memory.
+/// Requested angular error compares a chosen aim with the enemy's current bearing;
+/// it is not projectile-intercept accuracy and cannot substitute for physical hit rates.
 /// Diagnostics add no per-frame fleet/turret scan or second log line.
 /// Mutable telemetry is partitioned by Level so simultaneous arenas cannot reset or consume each other's state.
 /// </summary>
@@ -331,17 +333,16 @@ internal static class RlOneVsOneCombatTelemetry
             ["first_hit_distance"] = state.FirstHitDistance[sideIndex] < 0f
                 ? (object)null : state.FirstHitDistance[sideIndex]
         };
-        // Team 0 trains; team 1 is selected from the self-play opponent pool.
-        // Unity has no authoritative checkpoint/version ID for either policy.
-        // Do not pretend that a learner publication version identifies the
-        // historical self-play checkpoint used for this episode.
+        // The authoritative learning team changes during self-play and is not
+        // transmitted to Unity. Do not mislabel team 0 as the learner or
+        // mistake either team's ID for its actual policy version.
         int teamId = state.TeamIds[sideIndex];
         bool movementDisabled = RlOneVsOneTrainingBootstrap.CurrentMovementDisabledForSide(
             level, sideIndex == 0 ? ConfigData.Configuration.BeeSide : ConfigData.Configuration.HumanSide);
         var decisions = new Dictionary<string, object>
         {
             ["team_id"] = teamId,
-            ["policy_role"] = teamId == 0 ? "learner" : teamId == 1 ? "self_play_opponent" : "unknown",
+            ["policy_role"] = "unknown",
             ["policy_version"] = null,
             ["policy_version_source"] = "not_exposed_to_unity",
             ["frame_quarter_turns"] = state.FrameQuarterTurns[sideIndex],
