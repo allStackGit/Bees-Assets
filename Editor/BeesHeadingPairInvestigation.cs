@@ -65,7 +65,7 @@ public static class BeesHeadingPairInvestigation
                 gun.SetCurrentSpeed(speed);
                 gun.HasTargetCoordinates = false;
                 gun.IsRlPolicyControlled = true;
-                gun.RlMovementDirection = gun.Rotation;
+                gun.RlMovementDirection = (int)gun.Rotation;
                 typeof(Ship).GetMethod("RlDirectionalMovement",BindingFlags.Instance|BindingFlags.NonPublic).Invoke(gun,null);
                 foreach(var turret in bee.Turrets)
                 {
