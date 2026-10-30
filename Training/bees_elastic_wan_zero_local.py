@@ -323,7 +323,7 @@ class ZeroLocalElasticWanEnvManagerMixin(elastic.ElasticWanEnvManagerMixin):
             abandoned.put(experiences)
             raise
         log_category(
-            "wan-pipeline",
+            "training",
             f"[Bees WAN] released {experiences} stranded experiences "
             f"from {count} abandoned trajectories.",
             flush=True,
