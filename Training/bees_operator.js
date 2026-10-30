@@ -31,7 +31,7 @@ function usage() {
     return [
         'Usage:',
         '  node Training/bees_operator.js build [--full-game] [--force] [--preserve-run | --new-run]',
-        '  node Training/bees_operator.js runtime [--threaded [--policy-lag N]] [--backpressure-queue N] [--local-training] [--learner-device cpu|cuda] [--local-only] [--local-envs N] [--entropy BETA] [--skip-evaluation | --enable-evaluation] [--no-worker-diagnostics] [--log-categories LIST] [--ppo-control | PPO optimization flags]',
+        '  node Training/bees_operator.js runtime [--threaded [--policy-lag N]] [--backpressure-queue N] [--local-training] [--learner-device cpu|cuda] [--local-only] [--local-envs N] [--skip-evaluation | --enable-evaluation] [--no-worker-diagnostics] [--log-categories LIST] [--ppo-control | PPO optimization flags]',
         '  node Training/bees_operator.js server',
         '  node Training/bees_operator.js start [--new-run | --resume-run ID] [--env-arg VALUE ...]',
         '  node Training/bees_operator.js stop [--server]',
@@ -107,8 +107,6 @@ function parseArgs(argv = process.argv.slice(2)) {
         logCategories: 'all',
         explicitLogCategories: false,
         explicitLearnerOptimizations: false,
-        entropy: null,
-        explicitEntropy: false,
         skipEvaluation: false,
         explicitSkipEvaluation: false,
         envArgs: [],
@@ -253,25 +251,6 @@ function parseArgs(argv = process.argv.slice(2)) {
         } else if (arg.startsWith('--log-categories=')) {
             options.logCategories = arg.slice('--log-categories='.length);
             options.explicitLogCategories = true;
-        } else if (arg === '--entropy') {
-            options.entropy = parseNumber(
-                requireValue(argv, index, arg),
-                arg,
-                0,
-                100,
-                false,
-            );
-            options.explicitEntropy = true;
-            index++;
-        } else if (arg.startsWith('--entropy=')) {
-            options.entropy = parseNumber(
-                arg.slice('--entropy='.length),
-                '--entropy',
-                0,
-                100,
-                false,
-            );
-            options.explicitEntropy = true;
         } else if (arg === '--env-arg') {
             options.envArgs.push(String(requireValue(argv, index, arg)));
             index++;
@@ -362,9 +341,6 @@ function parseArgs(argv = process.argv.slice(2)) {
     }
     if (options.explicitLearnerOptimizations && command !== 'runtime') {
         throw new Error('PPO learner optimization flags are only valid with the runtime command.');
-    }
-    if (options.explicitEntropy && command !== 'runtime') {
-        throw new Error('--entropy is only valid with the runtime command.');
     }
     if (options.explicitSkipEvaluation && command !== 'runtime') {
         throw new Error('--skip-evaluation and --enable-evaluation are only valid with the runtime command.');

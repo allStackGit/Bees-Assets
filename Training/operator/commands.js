@@ -166,7 +166,6 @@ async function invokeRuntime(options = {}) {
         !options.threaded && !options.localTraining && !options.localOnly &&
         !options.noWorkerDiagnostics && !options.explicitLocalEnvs &&
         !options.explicitLearnerDevice && !options.explicitPolicyLag &&
-        !options.explicitBackpressureQueue && !options.explicitEntropy &&
         !options.explicitSkipEvaluation && !options.explicitLearnerOptimizations
     );
     const runtimeOverrides = loggingOnly ? {} : {
@@ -188,9 +187,6 @@ async function invokeRuntime(options = {}) {
     }
     if (options.explicitBackpressureQueue) {
         runtimeOverrides.wanMaxQueuedBatches = Number(options.backpressureQueue);
-    }
-    if (options.explicitEntropy) {
-        runtimeOverrides.entropyBeta = Number(options.entropy);
     }
     if (options.explicitSkipEvaluation) {
         runtimeOverrides.skipEvaluation = Boolean(options.skipEvaluation);
@@ -316,7 +312,6 @@ async function invokeRuntime(options = {}) {
                 numLocalEnvs: Number(config.numLocalEnvs),
                 learnerDevice: config.learnerDevice,
                 learnerOptimizations: config.learnerOptimizations,
-                entropyBeta: config.entropyBeta,
                 skipEvaluation: Boolean(config.skipEvaluation),
                 logCategories: config.logCategories,
             });
@@ -371,7 +366,6 @@ async function invokeRuntime(options = {}) {
         numLocalEnvs: Number(config.numLocalEnvs),
         learnerDevice: config.learnerDevice,
         learnerOptimizations: config.learnerOptimizations,
-        entropyBeta: config.entropyBeta,
         skipEvaluation: Boolean(config.skipEvaluation),
         logCategories: config.logCategories,
     });
@@ -442,9 +436,6 @@ async function invokeRuntime(options = {}) {
             config.learnerOptimizations.detailedDiagnostics ? 'on' : 'off'
         ) +
         ' log_categories=' + String(config.logCategories || 'all') +
-        ' entropy_beta=' + (
-            config.entropyBeta == null ? 'base' : String(config.entropyBeta)
-        ) +
         ' evaluation=' + (config.skipEvaluation ? 'off' : 'on') + '.'
     );
 }
