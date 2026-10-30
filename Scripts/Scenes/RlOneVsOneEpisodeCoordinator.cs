@@ -1660,6 +1660,7 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         };
 
         RlProjectileNearMissTelemetry.AppendEpisodeData(_level, sideIndex, combat);
+        RlOneVsOneCombatTelemetry.AppendFlagshipCombatData(_level, sideIndex, combat);
         diagnostics["combat"] = combat;
         diagnostics["aim"] = RlOneVsOneCombatTelemetry.BuildAimData(_level, sideIndex);
         diagnostics["visibility"] = visibility;
