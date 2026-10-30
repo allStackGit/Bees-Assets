@@ -205,6 +205,21 @@ function getTailnetBridgePaths() {
     return value;
 }
 
+function hostTailnetGatewayExecutable(bridges) {
+    // The same Go bridge source serves Windows and Linux; only the host
+    // gateway executable differs. Keep remote distribution filenames intact.
+    const value = process.platform === 'win32'
+        ? bridges.gateway_windows
+        : process.platform === 'linux'
+            ? bridges.distribution_linux
+            : '';
+    if (!value || !exists(String(value))) {
+        throw new Error('Tailnet gateway binary is missing for host platform ' +
+            process.platform + '.');
+    }
+    return path.resolve(String(value));
+}
+
 function validateTailnetIp(value) {
     return /^100\.(?:\d{1,3}\.){2}\d{1,3}$/.test(String(value || '').trim());
 }
@@ -229,7 +244,7 @@ function ensureTailnetIdentity(config) {
     if (transport !== 'tailnet') return;
 
     const bridges = getTailnetBridgePaths();
-    const bridge = String(bridges.gateway_windows);
+    const bridge = hostTailnetGatewayExecutable(bridges);
     const hostname = String(config.tailnetLearnerName || 'bees-learner').trim();
     if (!/^[A-Za-z0-9-]{1,63}$/.test(hostname)) {
         throw new Error('tailnetLearnerName must contain only letters, digits, and dashes.');
@@ -299,7 +314,7 @@ async function startTailnetGatewayIfNeeded(config) {
     if (transport !== 'tailnet') return;
 
     const bridges = getTailnetBridgePaths();
-    const bridge = String(bridges.gateway_windows);
+    const bridge = hostTailnetGatewayExecutable(bridges);
     const stateDir = path.join(paths.tailnetRoot, 'LearnerState');
     const hostname = String(config.tailnetLearnerName || 'bees-learner').trim();
     const controlPort = Number(config.controlPort);
@@ -752,6 +767,7 @@ module.exports = {
     ensureTailnetIdentity,
     getTailnetBridgePaths,
     getTailnetBridgeSourceHash,
+    hostTailnetGatewayExecutable,
     prepareRemoteBootstrap,
     resolvePortableGo,
     startTailnetGatewayIfNeeded,
