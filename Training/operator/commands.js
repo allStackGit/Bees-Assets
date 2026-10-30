@@ -37,7 +37,6 @@ const {
     waitReleaseRollout,
 } = require('./control');
 const {
-    archiveTrainingRun,
     commitTrainingRunPlan,
     completeForcedNewRunPlan,
     convertReleaseToForcedRunPlan,
@@ -702,18 +701,6 @@ async function invokeStart(options = {}) {
             centralRuntime,
         );
 
-        if (
-            release.previous_run_id &&
-            String(release.previous_run_id) !== String(release.run_id)
-        ) {
-            await sleep(2000);
-            archiveTrainingRun(
-                python,
-                String(release.previous_run_id),
-                'replaced-accidental-run',
-            );
-        }
-
         console.log(
             'Existing-run restoration complete. Active run: ' +
             release.run_id
@@ -837,7 +824,6 @@ async function invokeStart(options = {}) {
         outgoingRun = String(
             status.desired && status.desired.run_id || release.run_id || ''
         ).trim();
-        archiveTrainingRun(python, outgoingRun, 'forced-new-precutover');
 
         forcedPlan = newTrainingRunPlan(python, {
             forceNew: true,
@@ -910,18 +896,6 @@ async function invokeStart(options = {}) {
                 String(release.build_id),
                 String(release.run_id),
                 String(release.compatibility_key),
-            );
-        }
-
-        if (
-            release.previous_run_id &&
-            String(release.previous_run_id) !== String(release.run_id)
-        ) {
-            await sleep(2000);
-            archiveTrainingRun(
-                python,
-                String(release.previous_run_id),
-                'incompatible-run-final',
             );
         }
 
@@ -1043,10 +1017,6 @@ async function invokeStart(options = {}) {
             String(release.run_id),
             String(release.compatibility_key),
         );
-        if (outgoingRun) {
-            await sleep(2000);
-            archiveTrainingRun(python, outgoingRun, 'forced-new-final');
-        }
         completeForcedNewRunPlan(forcedPlan, release);
         console.log(
             'Forced new-run cutover complete. Active run: ' + release.run_id

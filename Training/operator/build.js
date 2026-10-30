@@ -25,7 +25,6 @@ const {
     testControl,
 } = require('./common');
 const {
-    archiveTrainingRun,
     commitTrainingRunPlan,
     getLatestRelease,
     getPendingForcedNewRunPlan,
@@ -471,10 +470,6 @@ async function invokeBuild(options = {}) {
         }
     }
 
-    const preBuildAdmin = exists(paths.adminTokenPath) ? readText(paths.adminTokenPath).trim() : '';
-    const outgoingRun = await getActiveRunId(config, preBuildAdmin);
-    if (outgoingRun) archiveTrainingRun(python, outgoingRun, 'pre-build');
-
     const preserveExistingRun = Boolean(
         options.preserveRun ||
         (!options.newRun && exists(paths.runStatePath))
@@ -694,17 +689,6 @@ async function invokeBuild(options = {}) {
                     String(release.run_id),
                     String(release.compatibility_key),
                 );
-                if (
-                    release.previous_run_id &&
-                    String(release.previous_run_id) !== String(release.run_id)
-                ) {
-                    await sleep(2000);
-                    archiveTrainingRun(
-                        python,
-                        String(release.previous_run_id),
-                        'incompatible-run-final',
-                    );
-                }
                 console.log(
                     release.preserve_run_override
                         ? 'Compatibility cutover complete; preserved run: ' + release.run_id

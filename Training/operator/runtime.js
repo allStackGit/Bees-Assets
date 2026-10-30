@@ -397,23 +397,7 @@ function completeForcedNewRunPlan(plan, release) {
     removeIfExists(paths.runPlanPath);
 }
 
-function archiveTrainingRun(python, runId, reason) {
-    if (!runId) return;
-    if (!exists(paths.archiveRunScript)) {
-        throw new Error('Training log archive helper is missing: ' + paths.archiveRunScript);
-    }
-    console.log('Archiving training logs locally for run ' + runId + ' (' + reason + ')...');
-    runChecked(python, [
-        paths.archiveRunScript,
-        '--assets-root', paths.assetsRoot,
-        '--bees-root', paths.beesRoot,
-        '--run-id', String(runId),
-        '--reason', String(reason),
-    ], paths.assetsRoot);
-}
-
 module.exports = {
-    archiveTrainingRun,
     commitTrainingRunPlan,
     completeForcedNewRunPlan,
     convertReleaseToForcedRunPlan,

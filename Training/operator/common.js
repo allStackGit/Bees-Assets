@@ -33,7 +33,6 @@ const paths = Object.freeze({
     runStatePath: path.join(beesRoot, 'Training', 'RunLifecycle', 'current.json'),
     runPlanPath: path.join(beesRoot, 'Runtime', 'pending-training-run.json'),
     runLifecycleScript: path.join(assetsRoot, 'Training', 'bees_run_lifecycle.py'),
-    archiveRunScript: path.join(assetsRoot, 'Training', 'bees_archive_training_run.py'),
     diagnosticBundleScript: path.join(assetsRoot, 'Training', 'bees_training_bundle.py'),
     diagnosticBenchmarkScript: path.join(assetsRoot, 'Training', 'bees_training_diagnostic_benchmark.py'),
     robustnessQualificationScript: path.join(assetsRoot, 'Training', 'bees_training_robustness_qualification.py'),
