@@ -60,6 +60,7 @@ const { startBeesServerIfNeeded } = require('./server');
 const {
     ensureTailnetIdentity,
     getTailnetBridgePaths,
+    hostTailnetGatewayExecutable,
     prepareRemoteBootstrap,
     startTailnetGatewayIfNeeded,
 } = require('./tailnet');
@@ -1194,7 +1195,7 @@ async function invokeStop(options = {}) {
     }
 
     const bridges = getTailnetBridgePaths();
-    const gatewayExecutable = String(bridges.gateway_windows);
+    const gatewayExecutable = hostTailnetGatewayExecutable(bridges);
     let gatewayState = null;
     if (exists(paths.tailnetGatewayStatePath)) {
         try { gatewayState = readJson(paths.tailnetGatewayStatePath); } catch (_) {}
