@@ -129,6 +129,38 @@ Automatic processing:
 
 The default occurrence/contributor thresholds remain permissive enough for a small testing population. Raise them when public traffic is large enough for stronger population-level evidence.
 
+## Linux central learner (Halifax migration branch)
+
+The operator is the same Node.js program on both hosts, not a PowerShell rewrite. Run it from the Unity project root (the parent of `Assets/`):
+
+```bash
+node Assets/Training/bees_operator.js --help
+node Assets/Training/bees_operator.js status --once
+```
+
+A Linux central host requires Node.js, Git, Go, Unity Editor with **both Linux and Windows dedicated build support**, Python **3.10** with `venv` and `pip`, and a driver/PyTorch stack verified on the actual GPU. Point the shared operator at host-specific tools without editing the tracked Windows cluster defaults:
+
+```bash
+export BEES_UNITY_EDITOR=/absolute/path/to/Unity
+export BEES_PYTHON=/absolute/path/to/python3.10
+export BEES_LEARNER_REQUIREMENTS=/absolute/path/to/learner-requirements.txt
+```
+
+The committed `bees_learner_requirements.txt` pins an NVIDIA CUDA 12.1 PyTorch wheel and **must not** be installed for AMD ROCm. On Linux the override is mandatory and its content is hashed into the isolated learner virtual environment identity. The override must specify a compatible ML-Agents 1.1.0 and hardware-specific PyTorch dependency set (including the existing numerical and ONNX dependencies); do not assume that a newer ROCm torch wheel is compatible with Bees' patched ML-Agents until it has been exercised on Halifax. When `--learner-device cuda` is selected, the operator also checks `torch.cuda.is_available()` (the PyTorch API used for ROCm).
+
+The operator selects `LinuxPlayer` for central and local training supervisors and the native Linux tsnet gateway binary. Existing Windows remote workers retain their `WindowsPlayer` builds and PowerShell bootstrap; they need not be rewritten to switch the **central operator** to Linux. Packaging new Windows worker launchers still validates the Windows bootstrap using `pwsh` on Linux, so PowerShell 7 is currently a **build/publishing tool dependency** even though day-to-day Linux commands do not use PowerShell.
+
+After a verified release and run state have been migrated, the equivalent Linux commands are:
+
+```bash
+node Assets/Training/bees_operator.js build --preserve-run
+node Assets/Training/bees_operator.js runtime --threaded --policy-lag 4 --backpressure-queue 512 --ppo-sync-cleanup --learner-device cuda --no-worker-diagnostics --log-categories training,checkpoints
+node Assets/Training/bees_operator.js status --once
+node Assets/Training/bees_operator.js stop
+```
+
+**Do not execute `build`, `start`, or `runtime` on Halifax merely after copying the code.** First stop/checkpoint the authoritative Exeter learner safely, back up and verify the run lifecycle, checkpoints, control state, secrets, and build packages; reconcile their machine-specific absolute paths and platform-specific artifacts; and verify that no two learner instances can claim the optimizer. The existing release metadata and process state can contain Windows paths and cannot be copied to Linux unchanged. The cross-machine checkpoint/control-state migration and end-to-end ROCm training are **not yet qualified** by this branch. Never use `--new-run` or `--force` as a workaround for an incompatible release unless abandoning the old lineage is intentional.
+
 ## Multi-machine rollout modes
 
 There are two supported ways to add remote rollout machines. Both keep exactly one authoritative PPO optimizer/checkpoint owner on Exeter.
