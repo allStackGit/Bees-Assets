@@ -232,7 +232,17 @@ public sealed class BeesShotExperimentDriver : MonoBehaviour
         var turret=bee.Turrets[0];
         turret.Rotation=scenario.q*90; turret.PieceTransform.eulerAngles=new Vector3(0,0,turret.Rotation);
         turret.ReadyToFire=false; turret.TargetingPasses=0; turret.IsAlignedWithTargetPoint=false;
-        heldAim=ToWorld(Vector2.up);
+        heldAim=new Vector2(-Mathf.Sin(turret.Rotation*Mathf.Deg2Rad),Mathf.Cos(turret.Rotation*Mathf.Deg2Rad));
+        // Match the initial cooldown phase without bypassing the production targeting clock.
+        var timer=typeof(Assets.Scripts.Entities.Ships.Weapons.Turret).GetField("_targetingSequenceTimer",Hidden).GetValue(turret);
+        timer.GetType().GetField("Elapsed",Hidden).SetValue(timer,0f);
+        // Remove exploration left by the randomized pre-intervention spawn.
+        foreach(string field in new[]{"_beeExplorationGrid","_humanExplorationGrid"})
+        {
+            var grid=Field(coordinator,field);
+            grid.GetType().GetMethod("Reset",Hidden).Invoke(grid,null);
+        }
+        coordinatorType.GetMethod("RefreshExplorationGrids",Hidden).Invoke(coordinator,new object[]{level,true});
         // This explicitly defines the known-from-start condition; no live training cache is involved.
         level.State.VisionCache[bee.Side-1].Add(target);
         level.State.VisionCache[target.Side-1].Add(bee);
