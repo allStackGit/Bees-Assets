@@ -299,6 +299,36 @@ class ZeroLocalElasticWanEnvManagerMixin(elastic.ElasticWanEnvManagerMixin):
         # Return the synthetic tick count so TrainerController continues curriculum/self-play checks.
         return len(step_infos)
 
+    def _release_abandoned_reservations(self) -> None:
+        """Release only trajectories that have actually lost their last owner.
+
+        Do not guess from aggregate queue sizes: live queued trajectories retain
+        their reservation, and only the finalizer of an unreachable wrapper
+        produces a compensating release. If the RPC fails, retain the count for
+        the next attempt instead of silently losing the release.
+        """
+        abandoned = self._bees_abandoned_reservations
+        experiences = count = 0
+        while True:
+            try:
+                experiences += abandoned.get_nowait()
+                count += 1
+            except queue.Empty:
+                break
+        if not experiences:
+            return
+        try:
+            self._bees_wan_broker.release_trajectory_reservation(experiences)
+        except Exception:
+            abandoned.put(experiences)
+            raise
+        log_category(
+            "wan-pipeline",
+            f"[Bees WAN] released {experiences} stranded experiences "
+            f"from {count} abandoned trajectories.",
+            flush=True,
+        )
+
     def _inject_batches(self, batches: List[Any] | tuple[Any, ...]) -> None:
         # Group by queue before insertion. AgentManagerQueue is backed by the
         # standard library's queue.Queue in pinned ML-Agents 1.1.0; filling an
@@ -508,6 +538,10 @@ def install_elastic_wan_env_manager(
     original_manager = learn.SubprocessEnvManager
     original_advance = TrainerController.advance
     original_queue_get_nowait = AgentManagerQueue.get_nowait
+    # The self-play trainer, not the broker's asynchronously published team
+    # assignment, determines whether an outer-queue trajectory is discarded.
+    # Capture the decision on the same learner thread before each advance.
+    ghost_learning_queues: Dict[int, Optional[int]] = {}
 
     if threaded_mode:
         def version_checked_get_nowait(queue_self: Any) -> Any:
@@ -524,8 +558,11 @@ def install_elastic_wan_env_manager(
                 # from the inner, unsuffixed PPO queue represents useful learning data.
                 if queue_self.behavior_id != item.trajectory.behavior_id:
                     item.mark_ppo_delivered()
-                elif item.broker.is_ghost_trajectory(item.trajectory.behavior_id):
-                    item.mark_ghost_discarded()
+                elif id(queue_self) in ghost_learning_queues:
+                    team = item.trajectory.behavior_id.partition("?team=")[2]
+                    learning_team = ghost_learning_queues[id(queue_self)]
+                    if team in ("0", "1") and int(team) != learning_team:
+                        item.mark_ghost_discarded()
                 return item
 
         AgentManagerQueue.get_nowait = version_checked_get_nowait
@@ -547,6 +584,14 @@ def install_elastic_wan_env_manager(
         from bees_mlagents_ppo_compat import poca_update_busy_seconds_total
 
         broker = getattr(env_manager, "_bees_wan_broker", None)
+        if broker is not None and threaded_mode:
+            env_manager._release_abandoned_reservations()
+            ghost_learning_queues.clear()
+            for trainer in controller.trainers.values():
+                if hasattr(trainer, "_learning_team"):
+                    ghost_learning_queues.update({
+                        id(q): trainer._learning_team for q in trainer.trajectory_queues
+                    })
         starting_policy_epoch = (
             broker.policy_publication_epoch() if broker is not None else 0
         )
@@ -566,6 +611,8 @@ def install_elastic_wan_env_manager(
             ghost_trainers[0].ghost_step += pending_ghost
             env_manager._bees_pending_ghost_steps = 0
         result = original_advance(controller, env_manager)
+        if broker is not None and threaded_mode:
+            env_manager._release_abandoned_reservations()
         # GhostTrainer can switch teams inside advance, including without a
         # new policy publication. Publish the new assignment immediately.
         if broker is not None and threaded_mode:
