@@ -892,8 +892,11 @@ def _install_batched_inference(cpu_inference: bool = False, stage_profiler=None)
     return original_queue_steps
 
 
-def _install_fast_env_manager(stage_profiler=None):
-    """Block for the first result, then drain every worker already ready."""
+def _install_fast_env_manager(stage_profiler=None, coalesce_seconds=0.0):
+    """Block for the first result, then briefly coalesce ready rollout workers."""
+
+    if not 0.0 <= coalesce_seconds <= 0.005:
+        raise ValueError("Worker result coalescing must be between 0 and 5 milliseconds.")
 
     from queue import Empty as EmptyQueueException
 
@@ -917,11 +920,13 @@ def _install_fast_env_manager(stage_profiler=None):
     if step_installed or process_installed:
         if step_installed and process_installed:
             original_step._bees_stage_profiler = stage_profiler
+            original_step._bees_coalesce_seconds = float(coalesce_seconds)
             return None, None
         raise RuntimeError("Bees fast environment-manager patch is only partially installed.")
 
     def fast_step(self):
         profiler = fast_step._bees_stage_profiler
+        coalesce = fast_step._bees_coalesce_seconds
         self._queue_steps()
         worker_steps = []
         step_workers = set()
@@ -954,10 +959,18 @@ def _install_fast_env_manager(stage_profiler=None):
                 continue
 
             restarted = False
+            # A short bounded wait lets near-simultaneous Unity replies join the
+            # same inference batch instead of launching many tiny policy calls.
+            # Once all workers have replied there is nothing left to wait for.
+            deadline = time.perf_counter() + coalesce if coalesce else 0.0
             with hierarchical_timer("BeesEnv.drain_ready_workers"):
                 while True:
                     try:
-                        step = self.step_queue.get_nowait()
+                        remaining = deadline - time.perf_counter() if coalesce else 0.0
+                        if remaining > 0.0 and len(step_workers) < len(self.env_workers):
+                            step = self.step_queue.get(timeout=remaining)
+                        else:
+                            step = self.step_queue.get_nowait()
                     except EmptyQueueException:
                         break
                     if accept_response(step):
@@ -975,6 +988,7 @@ def _install_fast_env_manager(stage_profiler=None):
 
     fast_step._bees_fast_env_manager = True
     fast_step._bees_stage_profiler = stage_profiler
+    fast_step._bees_coalesce_seconds = float(coalesce_seconds)
     timed_process_step_infos._bees_fast_env_manager = True
     SubprocessEnvManager._step = fast_step
     EnvManager._process_step_infos = timed_process_step_infos
