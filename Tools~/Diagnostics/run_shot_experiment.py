@@ -8,6 +8,8 @@ PROJECT = pathlib.Path(r"B:\Bees")
 UNITY = pathlib.Path(r"C:\Program Files\Unity\Hub\Editor\6000.5.4f1\Editor\Unity.exe")
 if sys.argv[1:] != ["--approved-15-minute-window"]:
     raise SystemExit("Explicit approval and --approved-15-minute-window are required; this is not an automatic continuation.")
+if sys.version_info[:2] != (3,10):
+    raise SystemExit("Use the existing Python 3.10 runtime for the isolated CPU ONNX dependencies.")
 started = time.time()
 deadline = started + 900
 root = BASE / time.strftime("run-%Y%m%dT%H%M%SZ", time.gmtime())
@@ -39,7 +41,7 @@ info=EXT()
 info.BasicLimitInformation.LimitFlags=0x2000|0x200|0x10|0x20
 info.BasicLimitInformation.Affinity=15
 info.BasicLimitInformation.PriorityClass=0x40
-info.JobMemoryLimit=16*1024**3
+info.JobMemoryLimit=15*1024**3
 assert k.SetInformationJobObject(job,9,ctypes.byref(info),ctypes.sizeof(info)),ctypes.get_last_error()
 def sizes(folder):
     output={}
@@ -75,6 +77,9 @@ config_path.write_text(json.dumps(config,indent=2))
 source=BASE/"BeesShotExperiment.cs"
 installed=PROJECT/"Assets"/"Editor"/"BeesShotExperiment.cs"
 metadata=pathlib.Path(str(installed)+".meta")
+timer_output=PROJECT/"Assets"/"ML-Agents"/"Timers"/"BeesShotInvestigation_timers.json"
+if timer_output.exists():
+    raise SystemExit("Diagnostic timer output already exists; refusing to overwrite it.")
 if installed.exists() or metadata.exists():
     raise SystemExit("Diagnostic source/metadata path already exists; refusing to replace it.")
 source_hash=hashlib.sha256(source.read_bytes()).hexdigest()
@@ -130,7 +135,7 @@ finally:
             metadata.unlink()
     result={"exit_code":exit_code,"reason":reason,"started_epoch":started,"finished_epoch":time.time(),
             "deadline_epoch":deadline,"peak_job_commit_bytes":info.PeakJobMemoryUsed,
-            "peak_additional_disk_bytes":peak_disk,"cpu_affinity":15,"memory_limit_bytes":16*1024**3,
+            "peak_additional_disk_bytes":peak_disk,"cpu_affinity":15,"memory_limit_bytes":15*1024**3,
             "source_sha256":source_hash,"gpu":False,"complete_marker":(root/"complete.json").exists()}
     (root/"resources.json").write_text(json.dumps(result,indent=2))
     try:
