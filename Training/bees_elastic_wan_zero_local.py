@@ -72,6 +72,9 @@ class _VersionedTrajectory:
         self._reservation_finalizer = weakref.finalize(
             self, abandoned_reservations.put, self.step_count
         )
+        # At process shutdown the broker may already be closed; this fallback
+        # only applies to trajectories abandoned during an active learner run.
+        self._reservation_finalizer.atexit = False
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self.trajectory, name)
