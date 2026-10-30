@@ -218,6 +218,12 @@ public sealed class BeesShotExperimentDriver : MonoBehaviour
         Vector2 relative=new Vector2(Mathf.Cos(scenario.bearing*Mathf.Deg2Rad),Mathf.Sin(scenario.bearing*Mathf.Deg2Rad))*scenario.distance;
         Position(bee,center,scenario.q*90);
         Position(target,center+ToWorld(relative),scenario.bearing+scenario.q*90);
+        foreach(var ship in new[]{bee,target})
+        {
+            ship.Squad.IsUserControlled=false;
+            ship.Squad.IsHiveMindControlled=true;
+            ship.Squad.CanAcceptUserInput=false;
+        }
         bee.HasTargetCoordinates=false; target.HasTargetCoordinates=false;
         bee.HasTargetDirection=false; target.HasTargetDirection=false;
         bee.IsCeaseFire=false; target.IsCeaseFire=true;
