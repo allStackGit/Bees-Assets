@@ -26,6 +26,12 @@ if time.time()>=config["deadline_epoch"]:raise SystemExit("Original approved dea
 
 sys.path.append(config["deps"])
 import numpy as np, torch, onnx, onnxruntime as ort
+# Fail closed before ML-Agents imports its global default-device configuration.
+torch.cuda.is_available=lambda: False
+def deny_cuda(*args,**kwargs): raise RuntimeError("CUDA forbidden in this diagnostic")
+torch._C._cuda_init=deny_cuda
+torch.cuda._lazy_init=deny_cuda
+torch.set_default_device("cpu")
 import importlib.util, zipfile, io, pickle, collections
 from onnx import helper,TensorProto
 from mlagents_envs.base_env import ObservationSpec,DimensionProperty,ObservationType,ActionSpec
@@ -64,6 +70,8 @@ actions=module.BeesStructuredActionModel(128,ActionSpec(continuous_size=16,discr
 body.load_state_dict({k[len("network_body."):]:v for k,v in state.items() if k.startswith("network_body.")},strict=True)
 actions.load_state_dict({k[len("action_model."):]:v for k,v in state.items() if k.startswith("action_model.")},strict=True)
 body.eval();actions.eval()
+assert all(v.device.type=="cpu" for v in body.state_dict().values())
+assert all(v.device.type=="cpu" for v in actions.state_dict().values())
 obs=[];trials=[]
 with (root/"trace.jsonl").open() as f:
  for line in f:
