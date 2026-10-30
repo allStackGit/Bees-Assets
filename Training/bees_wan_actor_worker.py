@@ -1404,7 +1404,8 @@ class ActorSession:
             stage_profiler=self._rollout_profiler if self._rollout_profiler.enabled else None,
         )
         _install_fast_env_manager(
-            stage_profiler=self._rollout_profiler if self._rollout_profiler.enabled else None
+            stage_profiler=self._rollout_profiler if self._rollout_profiler.enabled else None,
+            coalesce_seconds=0.001,
         )
         self._report_startup_phase("preparing-session")
         # A previous ML-Agents session can leave Unity alive because Unity is deliberately
