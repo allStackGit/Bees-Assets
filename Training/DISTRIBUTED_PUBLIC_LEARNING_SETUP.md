@@ -138,7 +138,7 @@ node Assets/Training/bees_operator.js --help
 node Assets/Training/bees_operator.js status --once
 ```
 
-A Linux central host requires Node.js, Git, Go, Unity Editor with **both Linux and Windows dedicated build support**, Python **3.10** with `venv` and `pip`, and a driver/PyTorch stack verified on the actual GPU. Point the shared operator at host-specific tools without editing the tracked Windows cluster defaults:
+A Linux central host requires Node.js, Git, Go **1.26.6 or newer** (per the embedded tailnet bridge module), Unity Editor with **both Linux and Windows dedicated build support**, Python **3.10** with `venv` and `pip`, and a driver/PyTorch stack verified on the actual GPU. Point the shared operator at host-specific tools without editing the tracked Windows cluster defaults:
 
 ```bash
 export BEES_UNITY_EDITOR=/absolute/path/to/Unity
