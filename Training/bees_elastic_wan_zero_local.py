@@ -20,6 +20,7 @@ from bees_log_categories import log_category
 import os
 import queue
 import time
+import weakref
 from typing import Any, Dict, List, Optional
 
 import bees_elastic_wan_training as elastic
@@ -42,6 +43,8 @@ class _VersionedTrajectory:
         "_ppo_delivered_accounted",
         "_pending_released",
         "_discarded_accounted",
+        "_reservation_finalizer",
+        "__weakref__",
     )
 
     def __init__(
@@ -51,6 +54,7 @@ class _VersionedTrajectory:
         actor_id: int,
         policy_versions: Dict[str, int],
         control_epoch: int,
+        abandoned_reservations: queue.SimpleQueue,
     ) -> None:
         self.trajectory = trajectory
         self.broker = broker
@@ -62,6 +66,12 @@ class _VersionedTrajectory:
         self._ppo_delivered_accounted = False
         self._pending_released = False
         self._discarded_accounted = False
+        # A trajectory can be abandoned by a downstream queue without passing
+        # through our dequeue hooks. Defer its fallback release to the learner
+        # thread rather than performing a broker RPC during garbage collection.
+        self._reservation_finalizer = weakref.finalize(
+            self, abandoned_reservations.put, self.step_count
+        )
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self.trajectory, name)
@@ -88,12 +98,14 @@ class _VersionedTrajectory:
         self.broker.record_ppo_trajectory_delivered(self.step_count)
         self._ppo_delivered_accounted = True
         self._pending_released = True
+        self._reservation_finalizer.detach()
 
     def mark_ghost_discarded(self) -> None:
         if self._pending_released:
             return
         self.broker.release_trajectory_reservation(self.step_count)
         self._pending_released = True
+        self._reservation_finalizer.detach()
 
     def mark_discarded(self) -> None:
         if self._discarded_accounted:
@@ -103,6 +115,7 @@ class _VersionedTrajectory:
         )
         self._discarded_accounted = True
         self._pending_released = True
+        self._reservation_finalizer.detach()
 
 
 class ZeroLocalElasticWanEnvManagerMixin(elastic.ElasticWanEnvManagerMixin):
@@ -129,6 +142,7 @@ class ZeroLocalElasticWanEnvManagerMixin(elastic.ElasticWanEnvManagerMixin):
         self._bees_wan_options = options
         self._bees_wan_timeout = max(1.0, float(run_options.env_settings.timeout_wait))
         self._bees_wan_initial_reset = False
+        self._bees_abandoned_reservations = queue.SimpleQueue()
         self._bees_wan_broker = IsolatedElasticWanBroker(
             options,
             run_options,
@@ -318,6 +332,7 @@ class ZeroLocalElasticWanEnvManagerMixin(elastic.ElasticWanEnvManagerMixin):
                         int(batch["actor_id"]),
                         dict(batch["policy_versions"]),
                         int(batch["control_epoch"]),
+                        self._bees_abandoned_reservations,
                     )
                 grouped.setdefault(manager.trajectory_queue, []).append(queued_trajectory)
 
