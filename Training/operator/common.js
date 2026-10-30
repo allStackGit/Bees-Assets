@@ -480,6 +480,7 @@ function applyRuntimeTrainingOptions(config, options = {}) {
 function readRuntimeTrainingOptions(
     defaultPolicyLag = 1,
     defaultWanMaxQueuedBatches = 32,
+    defaultLearnerOptimizations = null,
 ) {
     if (!exists(paths.runtimeTrainingOptionsPath)) return null;
     const value = readJson(paths.runtimeTrainingOptionsPath);
@@ -552,6 +553,7 @@ function loadConfig() {
     const runtimeOptions = readRuntimeTrainingOptions(
         normalizeThreadedPolicyLag(config.threadedPolicyLag, 1),
         normalizeWanMaxQueuedBatches(config.wanMaxQueuedBatches, 32),
+        normalizeLearnerOptimizations(config.learnerOptimizations),
     );
     return runtimeOptions
         ? applyRuntimeTrainingOptions(config, runtimeOptions)
