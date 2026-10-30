@@ -8,16 +8,19 @@ boundaries. No WAN HTTP handler, zlib decoder, or incoming pickle.load runs in t
 from __future__ import annotations
 
 from bees_log_categories import log_category
+from bees_process_safety import write_managed_health
 
+import faulthandler
 import multiprocessing
 import mmap
 import os
 import pickle
 import queue
 import secrets
+import sys
 import threading
 import time
-from multiprocessing.managers import BaseManager
+from multiprocessing.managers import BaseManager, MakeProxyType, convert_to_error, dispatch
 from multiprocessing.shared_memory import SharedMemory
 from typing import Any
 
@@ -249,7 +252,64 @@ class _BrokerManager(BaseManager):
     pass
 
 
-_BrokerManager.register("create_broker", callable=_new_broker, exposed=_BROKER_METHODS)
+# Manager proxies normally block indefinitely on a server response. Every learner-side
+# broker method uses this reply deadline, not just the high-volume trajectory drain.
+# A broker which cannot reply cannot safely be used to complete the current PPO cycle;
+# the existing managed supervisor can restore the last completed checkpoint.
+BROKER_RPC_REPLY_DEADLINE_SECONDS = 300.0
+
+
+class _DeadlineBrokerProxy(MakeProxyType("BeesDeadlineBrokerProxy", _BROKER_METHODS)):
+    def _callmethod(self, methodname, args=(), kwds=None):
+        if kwds is None:
+            kwds = {}
+        try:
+            conn = self._tls.connection
+        except AttributeError:
+            self._connect()
+            conn = self._tls.connection
+
+        conn.send((self._id, methodname, args, kwds))
+        if not conn.poll(BROKER_RPC_REPLY_DEADLINE_SECONDS):
+            error = (
+                f"WAN broker RPC {methodname} received no reply for "
+                f"{BROKER_RPC_REPLY_DEADLINE_SECONDS:.0f}s; "
+                "abandoning this learner and restoring the last completed checkpoint"
+            )
+            write_managed_health("error", error=error)
+            print(f"[Bees liveness] {error}", file=sys.stderr, flush=True)
+            try:
+                faulthandler.dump_traceback(file=sys.stderr, all_threads=True)
+            finally:
+                # A broker RPC can be holding a Python or native lock. Neither a
+                # normal exception nor final-save can safely unwind an unresponsive
+                # optimizer/broker; let the supervisor restart the entire process.
+                os._exit(75)
+
+        kind, result = conn.recv()
+        if kind == "#RETURN":
+            return result
+        if kind == "#PROXY":
+            exposed, token = result
+            proxytype = self._manager._registry[token.typeid][-1]
+            token.address = self._token.address
+            proxy = proxytype(
+                token, self._serializer, manager=self._manager,
+                authkey=self._authkey, exposed=exposed,
+            )
+            other = self._Client(token.address, authkey=self._authkey)
+            dispatch(other, None, "decref", (token.id,))
+            return proxy
+        try:
+            raise convert_to_error(kind, result)
+        finally:
+            del result
+
+
+_BrokerManager.register(
+    "create_broker", callable=_new_broker, exposed=_BROKER_METHODS,
+    proxytype=_DeadlineBrokerProxy,
+)
 
 
 class IsolatedElasticWanBroker:

@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import faulthandler
 import math
 import os
 import shutil
 import subprocess
+import sys
 import threading
 import time
 from bees_learner_stall_diagnostics import learner_stage
@@ -36,6 +38,9 @@ ACTION_ENTROPY_EPSILON = 1e-7
 POCA_ENCODER_CHUNK_ROWS = 2048
 POCA_TRAJECTORY_BATCH_MAX_EXPERIENCES = 2048
 POCA_TRAJECTORY_TIMING_REPORT_SECONDS = 30.0
+# A normal optimizer update is measured in seconds. A ten-minute incomplete update
+# means its mutable CUDA/optimizer state cannot safely be checkpointed or cancelled.
+POCA_ASYNC_UPDATE_DEADLINE_SECONDS = 600.0
 POCA_PACKED_GROUP_CACHE_MAX_BYTES = 8 * 1024 * 1024 * 1024
 POCA_PACKED_GROUP_CACHE_MIN_RAM_RESERVE_BYTES = 6 * 1024 * 1024 * 1024
 POCA_GROUP_COMPACT_PROJECT_CHUNK_ROWS = 512
@@ -6370,6 +6375,27 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         finally:
             _POCA_ASYNC_UPDATE_STATE.buffer = None
 
+    def _abort_stuck_poca_update(future, started_at):
+        if future.done():
+            return
+        elapsed = time.monotonic() - started_at
+        error = (
+            f"asynchronous PPO update still running after {elapsed:.1f}s "
+            f"(limit {POCA_ASYNC_UPDATE_DEADLINE_SECONDS:.0f}s); "
+            "optimizer state cannot be saved safely while the update is stuck"
+        )
+        from bees_process_safety import write_managed_health
+
+        try:
+            write_managed_health("error", error=error)
+            print(f"[Bees liveness] {error}", file=sys.stderr, flush=True)
+            faulthandler.dump_traceback(file=sys.stderr, all_threads=True)
+        finally:
+            # Killing a CUDA training thread in-process would leave parameters and
+            # Adam moments partially modified. Terminate the learner instead;
+            # the managed supervisor restarts it from its last valid checkpoint.
+            os._exit(75)
+
     def _ensure_poca_pipeline_state(trainer):
         from collections import deque
         from concurrent.futures import ThreadPoolExecutor
@@ -6380,6 +6406,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                 thread_name_prefix="bees-poca-update",
             )
             trainer._bees_poca_update_future = None
+            trainer._bees_poca_update_deadline = None
             trainer._bees_poca_staged_trajectories = deque()
             trainer._bees_poca_staged_experiences = 0
 
@@ -6518,6 +6545,10 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         future = getattr(trainer, "_bees_poca_update_future", None)
         if future is None or not future.done():
             return False
+        deadline = getattr(trainer, "_bees_poca_update_deadline", None)
+        if deadline is not None:
+            deadline.cancel()
+            trainer._bees_poca_update_deadline = None
         updated = future.result()
         trainer._bees_poca_update_future = None
         if updated:
@@ -6544,13 +6575,20 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         # Stock POCA clears this at update start. No trajectory completion occurs while
         # the async optimizer owns the model, so clearing here preserves that boundary.
         trainer.cumulative_returns_since_policy_update.clear()
-        trainer._bees_poca_update_future = (
-            trainer._bees_poca_update_executor.submit(
-                _run_poca_async_update,
-                trainer,
-                frozen_buffer,
-            )
+        future = trainer._bees_poca_update_executor.submit(
+            _run_poca_async_update,
+            trainer,
+            frozen_buffer,
         )
+        trainer._bees_poca_update_future = future
+        deadline = threading.Timer(
+            POCA_ASYNC_UPDATE_DEADLINE_SECONDS,
+            _abort_stuck_poca_update,
+            args=(future, time.monotonic()),
+        )
+        deadline.daemon = True
+        trainer._bees_poca_update_deadline = deadline
+        deadline.start()
         print(
             "[Bees PPO pipeline] async update started "
             f"buffer={frozen_experiences} "
@@ -6637,6 +6675,10 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                 flush=True,
             )
             self._bees_poca_update_future.result()
+            deadline = getattr(self, "_bees_poca_update_deadline", None)
+            if deadline is not None:
+                deadline.cancel()
+                self._bees_poca_update_deadline = None
             self._bees_poca_update_future = None
             print(
                 f"[Bees checkpoint] PPO optimizer finished in "
