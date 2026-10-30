@@ -270,7 +270,7 @@ def _episode_numeric_field(line: str, key: str) -> Optional[float]:
 
 
 class EpisodeLogMetrics:
-    def __init__(self, root: Path, window: int = 100) -> None:
+    def __init__(self, root: Path, window: int = 500) -> None:
         self.root = root
         self.window = max(1, int(window))
         self._episodes = deque(maxlen=self.window)
@@ -599,7 +599,7 @@ class BackgroundEpisodeLogMetrics:
     def __init__(
         self,
         root: Path,
-        window: int = 100,
+        window: int = 500,
         *,
         minimum_refresh_seconds: float = 10.0,
     ) -> None:

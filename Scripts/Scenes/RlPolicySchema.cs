@@ -11,7 +11,7 @@ using System.Collections.Generic;
 /// </summary>
 internal static partial class RlPolicySchema
 {
-    internal const int Version = 25;
+    internal const int Version = 26;
     internal const string ExpectedBehaviorName = "BeesRL1v1";
     internal const int PerceptionObservationSize = 7722;
     internal const int EpisodeProgressObservationIndex = PerceptionObservationSize;
@@ -27,13 +27,13 @@ internal static partial class RlPolicySchema
     internal const int ExpectedSpecialActionBranchSize = 5;
 
     internal const string Signature =
-        "bees-rl-v25|behavior=BeesRL1v1|trainer=ma-poca|network=structured-shared-faction-conditioned-layernorm-silu-128x3|normalize=true|obs=7743|tail=episode-progress+faction+19-reserved|cont=16|disc=2x5,5|" +
+        "bees-rl-v26|behavior=BeesRL1v1|trainer=ma-poca|network=structured-shared-faction-conditioned-layernorm-silu-128x3|normalize=true|obs=7743|tail=episode-progress+faction+19-reserved|cont=16|disc=2x5,5|" +
         "entity-encoder=shared-attention96|slot-normalization=raw-bounded-shared|weapon-encoder=shared-common32-slot64|weapon-head=shared-per-slot-faction-conditioned|team-gradient=inverse-active-group|" +
         "coord-frame=team-episode-distinct-quarter-turn|weapon-aim=slotwise-xy|weapon-fire=slotwise-cease-or-fire|healing=weapon-exclusive|special-mask=executable-only|weapon-ready=rl-latched-until-fire|" +
         "shiptype=fixed-scrambled-scalar24|weapontype=fixed-scrambled-scalar10|mapbits=4|shipmap=v1-0..23|weaponmap=v1-0..9|" +
         "allies=64|enemies=64|weapons=5|entity-weapons=5|enemy-mounts=0|mining=8|map-objects=64|moving-asteroids=48|" +
         "self=25|ship-id=episode-permuted-scalar23|capability=12-with-self-and-team-mined-value|parent-carrier=41|entity-core=15-with-mined-value|entity=41|ally=45-with-private-comm4|communication=4-continuous-private-allied|self-weapon=15|observed-weapon=5|weapon-observation=split-self-vs-observed|mining-slot=7|" +
-        "map-slot=12|moving-asteroid-slot=11|objective=16|grid=21x21-cell6|exploration-grid=16x16-team-shared-sight-recency|entity-order=distance,type,fleet-id,runtime-id";
+        "map-slot=12|moving-asteroid-slot=11|objective=16|grid=21x21-cell6|exploration-grid=16x16-team-shared-sight-recency|entity-order=distance,type,fleet-id,runtime-id|heading=physical-forward-negative-sin";
 
     internal static void ValidateOrThrow()
     {

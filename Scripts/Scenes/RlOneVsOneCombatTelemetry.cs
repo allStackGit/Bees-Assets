@@ -9,6 +9,8 @@ using UnityEngine;
 /// <summary>
 /// Episode-scoped combat telemetry for dedicated RL training. Normal combat metrics follow
 /// shot/damage events; both learner and opponent policy decisions accumulate aim samples in memory.
+/// Requested angular error compares a chosen aim with the enemy's current bearing;
+/// it is not projectile-intercept accuracy and cannot substitute for physical hit rates.
 /// Diagnostics add no per-frame fleet/turret scan or second log line.
 /// Mutable telemetry is partitioned by Level so simultaneous arenas cannot reset or consume each other's state.
 /// </summary>
@@ -16,6 +18,15 @@ internal static class RlOneVsOneCombatTelemetry
 {
     private const float AccurateAimThresholdDegrees = 5f;
     private const int PolicyBearingSectorCount = 8;
+
+    private sealed class FlagshipWeaponMetrics
+    {
+        internal long Shots;
+        internal readonly HashSet<long> EnemyHitRoots = new HashSet<long>();
+        internal long LaunchAngleSamples;
+        internal long LaunchWithin5Degrees;
+        internal double LaunchErrorDegrees;
+    }
 
     private sealed class ArenaState
     {
@@ -65,6 +76,13 @@ internal static class RlOneVsOneCombatTelemetry
             new HashSet<long>(),
             new HashSet<long>()
         };
+        // Index [side][0=Flagship main hull cannon, 1=Flagship other turrets].
+        internal readonly FlagshipWeaponMetrics[][] FlagshipWeapons =
+        {
+            new[] { new FlagshipWeaponMetrics(), new FlagshipWeaponMetrics() },
+            new[] { new FlagshipWeaponMetrics(), new FlagshipWeaponMetrics() }
+        };
+        internal readonly bool[] FlagshipSeen = new bool[2];
 
         internal ArenaState(Level level, int beeSide, int humanSide, float episodeMapSize)
         {
@@ -124,6 +142,10 @@ internal static class RlOneVsOneCombatTelemetry
         }
 
         state.PolicyDecisions[sideIndex]++;
+        if (ship.ShipType == ConfigData.ShipTypes.Flagship)
+        {
+            state.FlagshipSeen[sideIndex] = true;
+        }
         state.TeamIds[sideIndex] = teamId;
         state.FrameQuarterTurns[sideIndex] = frameQuarterTurns;
         Ship nearestEnemy = null;
@@ -220,6 +242,26 @@ internal static class RlOneVsOneCombatTelemetry
         }
 
         Vector2 origin = turret.GetPosition();
+        if (ship.ShipType == ConfigData.ShipTypes.Flagship)
+        {
+            // This event follows the actual projectile launch, after the main
+            // cannon replaces the requested aim with its hull-forward direction.
+            FlagshipWeaponMetrics metrics = state.FlagshipWeapons[sideIndex][
+                turret is FullShipTurret ? 0 : 1];
+            state.FlagshipSeen[sideIndex] = true;
+            metrics.Shots++;
+            if (TryFindBestAimedEnemy(
+                state, ship.Side, origin, turret.TargetPoint,
+                out float launchDistance, out float launchError))
+            {
+                metrics.LaunchAngleSamples++;
+                metrics.LaunchErrorDegrees += launchError;
+                if (launchError <= AccurateAimThresholdDegrees)
+                {
+                    metrics.LaunchWithin5Degrees++;
+                }
+            }
+        }
         if (TryFindBestAimedEnemy(state, ship.Side, origin, turret.RlTargetPoint, out float distance, out float errorDegrees))
         {
             if (state.FirstFireDistance[sideIndex] < 0f)
@@ -278,7 +320,46 @@ internal static class RlOneVsOneCombatTelemetry
         }
 
         state.EnemyHitProjectiles[sideIndex].Add(projectile.RlRootProjectileId);
+        if (projectile.Shooter.ShipType == ConfigData.ShipTypes.Flagship)
+        {
+            state.FlagshipWeapons[sideIndex][
+                projectile.Weapon is FullShipTurret ? 0 : 1
+            ].EnemyHitRoots.Add(projectile.RlRootProjectileId);
+        }
         RlProjectileNearMissTelemetry.EnemyContact(projectile, target);
+    }
+
+    /// <summary>
+    /// Compact per-episode counts for the actual Flagship main and secondary
+    /// projectile launches. Angular samples use the launch direction versus
+    /// current target bearing, not predicted interception or actual hit rate.
+    /// </summary>
+    internal static void AppendFlagshipCombatData(
+        Level level, int sideIndex, Dictionary<string, object> combat)
+    {
+        if (combat == null || sideIndex < 0 || sideIndex > 1 ||
+            !TryGetState(level, out ArenaState state) ||
+            !state.FlagshipSeen[sideIndex])
+        {
+            return;
+        }
+
+        combat["flagship_main_turret"] =
+            BuildFlagshipWeaponData(state.FlagshipWeapons[sideIndex][0]);
+        combat["flagship_other_turrets"] =
+            BuildFlagshipWeaponData(state.FlagshipWeapons[sideIndex][1]);
+    }
+
+    private static Dictionary<string, object> BuildFlagshipWeaponData(FlagshipWeaponMetrics metrics)
+    {
+        return new Dictionary<string, object>
+        {
+            ["shots"] = metrics.Shots,
+            ["hits"] = metrics.EnemyHitRoots.Count,
+            ["launch_angle_samples"] = metrics.LaunchAngleSamples,
+            ["launch_error_sum_deg"] = metrics.LaunchErrorDegrees,
+            ["launch_within_5deg"] = metrics.LaunchWithin5Degrees
+        };
     }
 
     internal static int GetProjectileHitCount(Level level, int sideIndex)
@@ -331,17 +412,16 @@ internal static class RlOneVsOneCombatTelemetry
             ["first_hit_distance"] = state.FirstHitDistance[sideIndex] < 0f
                 ? (object)null : state.FirstHitDistance[sideIndex]
         };
-        // Team 0 trains; team 1 is selected from the self-play opponent pool.
-        // Unity has no authoritative checkpoint/version ID for either policy.
-        // Do not pretend that a learner publication version identifies the
-        // historical self-play checkpoint used for this episode.
+        // The authoritative learning team changes during self-play and is not
+        // transmitted to Unity. Do not mislabel team 0 as the learner or
+        // mistake either team's ID for its actual policy version.
         int teamId = state.TeamIds[sideIndex];
         bool movementDisabled = RlOneVsOneTrainingBootstrap.CurrentMovementDisabledForSide(
             level, sideIndex == 0 ? ConfigData.Configuration.BeeSide : ConfigData.Configuration.HumanSide);
         var decisions = new Dictionary<string, object>
         {
             ["team_id"] = teamId,
-            ["policy_role"] = teamId == 0 ? "learner" : teamId == 1 ? "self_play_opponent" : "unknown",
+            ["policy_role"] = "unknown",
             ["policy_version"] = null,
             ["policy_version_source"] = "not_exposed_to_unity",
             ["frame_quarter_turns"] = state.FrameQuarterTurns[sideIndex],

@@ -17,9 +17,9 @@ const RL_TELEMETRY_POLICY = Object.freeze({
     behaviorName: RL_DEMO_POLICY.behaviorName,
     policyAbiVersion: RL_DEMO_POLICY.policyAbiVersion,
     policySignature: RL_DEMO_POLICY.policySignature,
-    observationSchemaVersion: 13,
+    observationSchemaVersion: 14,
     actionSchemaVersion: 9,
-    rewardSchemaVersion: 5,
+    rewardSchemaVersion: 6,
     scenarioSchemaVersion: 1,
 });
 

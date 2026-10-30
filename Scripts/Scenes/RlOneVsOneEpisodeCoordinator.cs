@@ -451,14 +451,17 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
             return;
         }
 
-        coordinator.ApplyImmediateTsvReward(
-            shooter.Side, -RlOneVsOneReward.RawMissPenalty, "shot_miss");
+        // Near misses remain physical misses for shot telemetry, but receive
+        // positive shaping instead of the ordinary-miss penalty.
         if (nearlyHit)
         {
-            // Shared positive-shaping cap already bounds the sum of combat and discovery
-            // shaping. A near miss is never counted as a hit or rewarded twice.
             coordinator.ApplyImmediateTsvReward(
                 shooter.Side, RlOneVsOneReward.RawNearMissReward, "near_miss");
+        }
+        else
+        {
+            coordinator.ApplyImmediateTsvReward(
+                shooter.Side, -RlOneVsOneReward.RawMissPenalty, "shot_miss");
         }
     }
 
@@ -1657,6 +1660,7 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         };
 
         RlProjectileNearMissTelemetry.AppendEpisodeData(_level, sideIndex, combat);
+        RlOneVsOneCombatTelemetry.AppendFlagshipCombatData(_level, sideIndex, combat);
         diagnostics["combat"] = combat;
         diagnostics["aim"] = RlOneVsOneCombatTelemetry.BuildAimData(_level, sideIndex);
         diagnostics["visibility"] = visibility;

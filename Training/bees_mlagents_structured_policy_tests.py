@@ -1,4 +1,4 @@
-"""Focused tests for the Bees v25 structured MA-POCA actor architecture."""
+"""Focused tests for the Bees v26 structured MA-POCA actor architecture."""
 
 from __future__ import annotations
 

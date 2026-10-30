@@ -18,10 +18,10 @@ internal static class RlOneVsOneReward
     // Terminal and economic rewards remain separate from this shaping budget.
     internal const float MaximumPositiveShapingReward = 0.2f;
     internal const float MaximumNegativeShapingReward = MaximumPositiveShapingReward;
-    // A 1v1 missed shot has a stronger learning signal without accumulating past the
-    // negative shaping budget. A near miss is both a miss and a positive shaping event.
-    internal const float RawMissPenalty = 0.01f;
-    internal const float RawNearMissReward = 0.02f;
+    // Ordinary misses incur negative shaping; near misses earn positive shaping instead.
+    // Both remain bounded by the existing independent episode-wide shaping budgets.
+    internal const float RawMissPenalty = 0.02f;
+    internal const float RawNearMissReward = 0.03f;
     internal const float NearMissDistance = 2f;
 
     // Discovery is intentionally a small fraction of combat outcome shaping. Static categories are
