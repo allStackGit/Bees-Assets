@@ -25,7 +25,7 @@ public static class BeesHeadingPairInvestigation
     }
     [Serializable] public class Row
     {
-        public int q; public float distance;
+        public int q; public float distance, targetSpeed;
         public Vector2 observerPosition, targetPosition, targetVelocity, policyVelocity;
         public float observerHeading, targetHeading;
         public float[] observations;
@@ -49,6 +49,7 @@ public static class BeesHeadingPairInvestigation
             var get = typeof(VectorSensor).GetMethod("GetObservations", BindingFlags.Instance | BindingFlags.NonPublic);
             var rows = new List<Row>();
             Vector2 center = new Vector2((bee.Level.MinX + bee.Level.MaxX)/2, (bee.Level.MinY + bee.Level.MaxY)/2);
+            foreach(float speed in new float[]{0,18.75f})
             foreach(float distance in new float[]{40,100})
             foreach(int q in new int[]{0,1})
             {
@@ -61,20 +62,30 @@ public static class BeesHeadingPairInvestigation
                 bee.Transform.eulerAngles = new Vector3(0,0,bee.Rotation);
                 gun.Transform.eulerAngles = new Vector3(0,0,gun.Rotation);
                 bee.Body.linearVelocity = Vector2.zero;
-                gun.SetCurrentSpeed(18.75f);
-                gun.Body.linearVelocity = new Vector2(-Mathf.Sin(gun.Rotation*Mathf.Deg2Rad), Mathf.Cos(gun.Rotation*Mathf.Deg2Rad))*18.75f;
+                gun.SetCurrentSpeed(speed);
+                gun.HasTargetCoordinates = false;
+                gun.IsRlPolicyControlled = true;
+                gun.RlMovementDirection = gun.Rotation;
+                typeof(Ship).GetMethod("RlDirectionalMovement",BindingFlags.Instance|BindingFlags.NonPublic).Invoke(gun,null);
+                foreach(var turret in bee.Turrets)
+                {
+                    turret.Rotation = q == 0 ? 0 : 90;
+                    turret.PieceTransform.eulerAngles = new Vector3(0,0,turret.Rotation);
+                    turret.ReadyToFire = true;
+                    turret.IsAlignedWithTargetPoint = true;
+                }
                 Physics2D.SyncTransforms();
                 var sensor = new VectorSensor(7743);
                 collect.Invoke(null,new object[]{Activator.CreateInstance(perception,true),bee,bee.Side,sensor,q,0});
                 float[] obs = ((IEnumerable<float>)get.Invoke(sensor,null)).ToArray();
                 Vector2 velocity = gun.Body.linearVelocity;
-                rows.Add(new Row { q=q,distance=distance, observerPosition=bee.GetPosition(),targetPosition=gun.GetPosition(),
+                rows.Add(new Row { q=q,distance=distance,targetSpeed=speed, observerPosition=bee.GetPosition(),targetPosition=gun.GetPosition(),
                     targetVelocity=velocity,policyVelocity=q==0?velocity:new Vector2(-velocity.y,velocity.x),
                     observerHeading=bee.Rotation,targetHeading=gun.Rotation,observations=obs });
             }
             Directory.CreateDirectory(Path.GetDirectoryName(Output));
             File.WriteAllText(Output,JsonUtility.ToJson(new Payload {utc=DateTime.UtcNow.ToString("O"),source="ae6aaec56dc2c9fdc86683be4938dbddbe7e1032",
-                rows=rows.ToArray(),limitation="Production observation builder invoked on actual instantiated ships with explicit diagnostic poses/frame; background exploration state was not overwritten. No projectile episode or decision-time policy inference performed."},true));
+                rows=rows.ToArray(),limitation="Production observation builder invoked on actual instantiated ships with explicit diagnostic poses/frame; background exploration state was not overwritten. Turret starting direction is explicitly matched; target velocity comes from production RlDirectionalMovement. No projectile episode or decision-time policy inference performed."},true));
             Debug.Log("Heading pair observations saved: "+Output);
             EditorApplication.Exit(0);
         }
