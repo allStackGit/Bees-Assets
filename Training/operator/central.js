@@ -13,6 +13,7 @@ const {
     exists,
     findManagedProcessByOwnerToken,
     getProcessIdentity,
+    hostTrainingPlatform,
     getStateReferencedLivePid,
     paths,
     readJson,
@@ -78,7 +79,7 @@ function buildCentralLearnerArgv(config, learnerPython, unity, runtimeRoot) {
         '--unity-project-root', paths.beesRoot,
         '--generation-steps', String(config.generationSteps),
         '--num-envs', String(config.numLocalEnvs),
-        '--platform', 'WindowsPlayer',
+        '--platform', hostTrainingPlatform(),
     ];
     if (config.learnerDevice) {
         argv.push('--learner-device', String(config.learnerDevice));
@@ -774,7 +775,7 @@ async function startCentralAgentIfNeeded(
         '--token-file', paths.workerTokenPath,
         '--trainer-id', 'central-learner',
         '--role', 'dedicated',
-        '--platform', 'WindowsPlayer',
+        '--platform', hostTrainingPlatform(),
         '--install-root', paths.centralAgentInstallRoot,
         '--runtime-ready-file', paths.centralRuntimeReadyBuildPath,
         '--runtime-cutover-pointer', paths.centralRuntimePointerPath,
