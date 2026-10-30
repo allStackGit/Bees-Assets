@@ -969,6 +969,110 @@ def _drain_queue(q: queue.Queue) -> None:
             return
 
 
+def _install_rollout_env_manager(stage_profiler=None, coalesce_seconds=0.0):
+    """Block for the first result, then briefly coalesce ready rollout workers."""
+
+    if not 0.0 <= coalesce_seconds <= 0.005:
+        raise ValueError("Worker result coalescing must be between 0 and 5 milliseconds.")
+
+    from queue import Empty as EmptyQueueException
+
+    from mlagents.trainers.env_manager import EnvManager
+    from mlagents.trainers.subprocess_env_manager import (
+        EnvironmentCommand,
+        SubprocessEnvManager,
+    )
+    from mlagents_envs.timers import hierarchical_timer
+
+    original_step = SubprocessEnvManager._step
+    original_process_step_infos = EnvManager._process_step_infos
+    step_installed = bool(getattr(original_step, "_bees_fast_env_manager", False))
+    process_installed = bool(
+        getattr(
+            original_process_step_infos,
+            "_bees_fast_env_manager",
+            False,
+        )
+    )
+    if step_installed or process_installed:
+        if step_installed and process_installed:
+            original_step._bees_stage_profiler = stage_profiler
+            original_step._bees_coalesce_seconds = float(coalesce_seconds)
+            return None, None
+        raise RuntimeError("Bees fast environment-manager patch is only partially installed.")
+
+    def fast_step(self):
+        profiler = fast_step._bees_stage_profiler
+        coalesce = fast_step._bees_coalesce_seconds
+        self._queue_steps()
+        worker_steps = []
+        step_workers = set()
+
+        def accept_response(step) -> bool:
+            """Return True when a worker failure caused a manager restart."""
+            if step.cmd == EnvironmentCommand.ENV_EXITED:
+                self._restart_failed_workers(step)
+                worker_steps.clear()
+                step_workers.clear()
+                self._queue_steps()
+                return True
+            if step.worker_id not in step_workers:
+                self.env_workers[step.worker_id].waiting = False
+                worker_steps.append(step)
+                step_workers.add(step.worker_id)
+            return False
+
+        while not worker_steps:
+            wait_started = time.perf_counter() if profiler is not None else 0.0
+            try:
+                with hierarchical_timer("BeesEnv.wait_first_worker"):
+                    first_step = self.step_queue.get()
+            finally:
+                if profiler is not None:
+                    profiler.observe(
+                        "unity_wait_first", time.perf_counter() - wait_started
+                    )
+            if accept_response(first_step):
+                continue
+
+            restarted = False
+            # A short bounded wait lets near-simultaneous Unity replies join the
+            # same inference batch instead of launching many tiny policy calls.
+            # Once all workers have replied there is nothing left to wait for.
+            deadline = time.perf_counter() + coalesce if coalesce else 0.0
+            with hierarchical_timer("BeesEnv.drain_ready_workers"):
+                while True:
+                    try:
+                        remaining = deadline - time.perf_counter() if coalesce else 0.0
+                        if remaining > 0.0 and len(step_workers) < len(self.env_workers):
+                            step = self.step_queue.get(timeout=remaining)
+                        else:
+                            step = self.step_queue.get_nowait()
+                    except EmptyQueueException:
+                        break
+                    if accept_response(step):
+                        restarted = True
+                        break
+            if restarted:
+                continue
+
+        with hierarchical_timer("BeesEnv.postprocess_steps"):
+            return self._postprocess_steps(worker_steps)
+
+    def timed_process_step_infos(self, step_infos):
+        with hierarchical_timer("BeesEnv.process_step_infos"):
+            return original_process_step_infos(self, step_infos)
+
+    fast_step._bees_fast_env_manager = True
+    fast_step._bees_stage_profiler = stage_profiler
+    fast_step._bees_coalesce_seconds = float(coalesce_seconds)
+    timed_process_step_infos._bees_fast_env_manager = True
+    SubprocessEnvManager._step = fast_step
+    EnvManager._process_step_infos = timed_process_step_infos
+    return original_step, original_process_step_infos
+
+
+
 class ActorSession:
     def __init__(
         self,
@@ -1389,7 +1493,6 @@ class ActorSession:
         from mlagents.trainers.subprocess_env_manager import SubprocessEnvManager
         from bees_mlagents_learn import (
             _install_batched_inference,
-            _install_fast_env_manager,
             _install_sampled_worker_timers,
         )
 
@@ -1403,7 +1506,7 @@ class ActorSession:
             cpu_inference=False,
             stage_profiler=self._rollout_profiler if self._rollout_profiler.enabled else None,
         )
-        _install_fast_env_manager(
+        _install_rollout_env_manager(
             stage_profiler=self._rollout_profiler if self._rollout_profiler.enabled else None,
             coalesce_seconds=0.001,
         )
