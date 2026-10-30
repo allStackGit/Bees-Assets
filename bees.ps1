@@ -25,7 +25,6 @@ param(
     [switch]$PpoDiagnostics,
     [switch]$NoWorkerDiagnostics,
     [string]$LogCategories,
-    [ValidateRange(0.0,100.0)][double]$Entropy,
     [switch]$SkipEvaluation,
     [switch]$EnableEvaluation,
     [string[]]$EnvArg,
@@ -93,9 +92,6 @@ if($NoWorkerDiagnostics -and $Command -ne 'runtime'){
 }
 if($PSBoundParameters.ContainsKey('LogCategories') -and $Command -ne 'runtime'){
     throw '-LogCategories is only valid with the runtime command.'
-}
-if($PSBoundParameters.ContainsKey('Entropy') -and $Command -ne 'runtime'){
-    throw '-Entropy is only valid with the runtime command.'
 }
 if(($SkipEvaluation -or $EnableEvaluation) -and $Command -ne 'runtime'){
     throw '-SkipEvaluation and -EnableEvaluation are only valid with the runtime command.'
@@ -181,9 +177,6 @@ if($PpoNsight){$arguments+='--ppo-nsight'}
 if($PpoDiagnostics){$arguments+='--ppo-diagnostics'}
 if($NoWorkerDiagnostics){$arguments+='--no-worker-diagnostics'}
 if($PSBoundParameters.ContainsKey('LogCategories')){$arguments+=@('--log-categories',$LogCategories)}
-if($PSBoundParameters.ContainsKey('Entropy')){
-    $arguments+=@('--entropy',$Entropy.ToString('G',[Globalization.CultureInfo]::InvariantCulture))
-}
 if($SkipEvaluation){$arguments+='--skip-evaluation'}
 if($EnableEvaluation){$arguments+='--enable-evaluation'}
 foreach($value in @($EnvArg)){

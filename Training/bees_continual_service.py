@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import math
 import os
 import re
 import signal
@@ -79,7 +78,6 @@ class ServiceOptions:
     retry_seconds: float
     once: bool
     environment_args: tuple[str, ...] = ()
-    entropy_beta: Optional[float] = None
     skip_evaluation: bool = False
     learner_device: Optional[str] = None
 
@@ -109,27 +107,6 @@ def rewrite_max_steps(text: str, max_steps: int) -> str:
     if count != 1:
         raise ValueError(
             f"Expected exactly one integer max_steps entry in trainer config; found {count}."
-        )
-    return updated
-
-
-def rewrite_entropy_beta(text: str, beta: float) -> str:
-    if not math.isfinite(beta) or beta < 0.0 or beta > 100.0:
-        raise ValueError("entropy beta must be a finite number in 0-100")
-    pattern = re.compile(
-        r"^(?P<prefix>\s*beta:\s*)"
-        r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?"
-        r"(?P<suffix>\s*(?:#.*)?)$",
-        re.MULTILINE,
-    )
-    replacement = format(beta, ".12g")
-    updated, count = pattern.subn(
-        lambda match: f"{match.group('prefix')}{replacement}{match.group('suffix')}",
-        text,
-    )
-    if count != 1:
-        raise ValueError(
-            f"Expected exactly one numeric beta entry in trainer config; found {count}."
         )
     return updated
 
@@ -501,8 +478,6 @@ def write_generation_config(options: ServiceOptions, index: int) -> Path:
             )
             if count != 1 or _torch_device_from_config(source) != options.learner_device:
                 raise ValueError("Could not apply learner device override to trainer config")
-    if options.entropy_beta is not None:
-        source = rewrite_entropy_beta(source, options.entropy_beta)
     target_steps = generation_target_steps(options, index)
     body = rewrite_max_steps(source, target_steps).encode("utf-8")
     config_root = _service_root(options) / "trainer-configs"
@@ -1268,7 +1243,6 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--platform", choices=tuple(PLATFORM_BUILD_TARGETS), default="WindowsPlayer")
     parser.add_argument("--retry-seconds", type=float, default=DEFAULT_RETRY_SECONDS)
-    parser.add_argument("--entropy-beta", type=float, default=None)
     parser.add_argument("--learner-device", choices=("cpu", "cuda"), default=None)
     parser.add_argument(
         "--skip-evaluation",
@@ -1287,15 +1261,6 @@ def parse_options(argv: Optional[Sequence[str]] = None) -> ServiceOptions:
         raise ValueError("--num-envs must be zero or greater")
     if args.retry_seconds <= 0:
         raise ValueError("--retry-seconds must be greater than zero")
-    if (
-        args.entropy_beta is not None
-        and (
-            not math.isfinite(args.entropy_beta)
-            or args.entropy_beta < 0.0
-            or args.entropy_beta > 100.0
-        )
-    ):
-        raise ValueError("--entropy-beta must be a finite number in 0-100")
     if not isinstance(args.run_id, str) or not args.run_id.strip():
         raise ValueError("--run-id must be non-empty")
     if not isinstance(args.game_build_version, str) or not args.game_build_version.strip():
@@ -1347,7 +1312,6 @@ def parse_options(argv: Optional[Sequence[str]] = None) -> ServiceOptions:
         retry_seconds=args.retry_seconds,
         once=args.once,
         environment_args=parse_environment_args_json(args.environment_args_json),
-        entropy_beta=args.entropy_beta,
         skip_evaluation=args.skip_evaluation,
         learner_device=args.learner_device,
     )
