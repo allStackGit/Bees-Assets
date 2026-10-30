@@ -317,10 +317,13 @@ class ContinualServiceTests(unittest.TestCase):
             self.assertIn("batch_size: 1024", revised.read_text(encoding="utf-8"))
             self.assertEqual(service.write_generation_config(options, 0), revised)
 
-            entropy_options = service.ServiceOptions(
-                **{**options.__dict__, "entropy_beta": 0.002}
+            options.trainer_config.write_text(
+                options.trainer_config.read_text(encoding="utf-8").replace(
+                    "beta: 0.001", "beta: 0.002"
+                ),
+                encoding="utf-8",
             )
-            entropy_revised = service.write_generation_config(entropy_options, 0)
+            entropy_revised = service.write_generation_config(options, 0)
             self.assertEqual(
                 entropy_revised.name,
                 "generation-00000000-batch-1024-beta-0.002.yaml",
@@ -330,7 +333,7 @@ class ContinualServiceTests(unittest.TestCase):
                 entropy_revised.read_text(encoding="utf-8"),
             )
             self.assertEqual(
-                service.write_generation_config(entropy_options, 0),
+                service.write_generation_config(options, 0),
                 entropy_revised,
             )
 
