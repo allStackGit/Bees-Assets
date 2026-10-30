@@ -1523,13 +1523,26 @@ class ActorSession:
         )
         options = self._remote_run_options()
         run_logs_dir = self._run_logs_dir(options)
-        # Configure CPU intra-op parallelism before constructing the actor.
-        if self.torch_threads is not None:
-            torch.set_num_threads(self.torch_threads)
+        # Small CPU inference batches can spend more time coordinating the
+        # default thread pool than computing. Preserve explicit operator choices.
+        inference_threads = self.torch_threads
+        if (
+            inference_threads is None
+            and os.name != "nt"
+            and torch.device(options.torch_settings.device or "cpu").type == "cpu"
+        ):
+            inference_threads = 1
+        if inference_threads is not None:
+            torch.set_num_threads(inference_threads)
         set_torch_config(options.torch_settings)
+        thread_source = (
+            "explicit" if self.torch_threads is not None
+            else "linux-cpu-default" if inference_threads is not None
+            else "default"
+        )
         print(
             f"[Bees WAN actor] PyTorch intra-op threads={torch.get_num_threads()}"
-            f" ({'explicit' if self.torch_threads is not None else 'default'}).",
+            f" ({thread_source}).",
             flush=True,
         )
         # ML-Agents may have installed a global CUDA default-device hook.
