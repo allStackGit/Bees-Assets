@@ -561,7 +561,19 @@ function loadConfig() {
 }
 
 function resolvePython(config) {
-    return resolveCommand(config.python || 'python');
+    // The tracked cluster config is shared with Windows. A Linux host should not
+    // silently resolve its "python" alias to an incompatible system Python.
+    const configured = String(process.env.BEES_PYTHON || config.python || 'python');
+    if (process.platform === 'linux' && configured === 'python') {
+        try { return resolveCommand('python3.10'); } catch (_) {}
+    }
+    return resolveCommand(configured);
+}
+
+function hostTrainingPlatform() {
+    if (process.platform === 'win32') return 'WindowsPlayer';
+    if (process.platform === 'linux') return 'LinuxPlayer';
+    throw new Error('Central Bees training is supported on Windows and Linux only.');
 }
 
 function resolveGit() {
@@ -588,7 +600,7 @@ function resolveGit() {
         const found = candidates.find(exists);
         if (found) return path.resolve(found);
     }
-    throw new Error('Git was not found. Install Git for Windows or GitHub Desktop.');
+    throw new Error('Git was not found. Install Git and make it available on PATH.');
 }
 
 function resolveUnityEditor(config) {
@@ -862,14 +874,30 @@ function powershellExecutable() {
 function getProcessIdentity(pid) {
     const id = Number(pid);
     if (!Number.isInteger(id) || id <= 0) return null;
-    if (process.platform !== 'win32') {
+    if (process.platform === 'linux') {
+        // /proc stat field 22 is the kernel start tick. Combining it with the
+        // boot ID makes the persisted identity safe against PID reuse/reboots.
+        // Do not use process.kill(pid, 0): it proves liveness, not ownership.
         try {
-            process.kill(id, 0);
-            return { pid: id, process_start_utc: '', executable_path: '' };
+            const stat = readText('/proc/' + id + '/stat');
+            const closing = stat.lastIndexOf(')');
+            if (closing < 0) return null;
+            const fields = stat.slice(closing + 2).trim().split(/\\s+/);
+            const startTicks = fields[19];
+            if (!/^\\d+$/.test(startTicks || '')) return null;
+            const bootId = readText('/proc/sys/kernel/random/boot_id').trim();
+            if (!/^[0-9a-f-]{36}$/i.test(bootId)) return null;
+            const executable = fs.realpathSync('/proc/' + id + '/exe');
+            return {
+                pid: id,
+                process_start_utc: 'linux-boot-ticks:' + bootId + ':' + startTicks,
+                executable_path: executable,
+            };
         } catch (_) {
             return null;
         }
     }
+    if (process.platform !== 'win32') return null;
     const ps = powershellExecutable();
     const script =
         '$p=Get-Process -Id ' + id + ' -ErrorAction SilentlyContinue;' +
@@ -910,7 +938,14 @@ function samePath(left, right) {
     if (!left || !right) return false;
     const a = path.resolve(String(left));
     const b = path.resolve(String(right));
-    return process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b;
+    if (process.platform === 'win32') return a.toLowerCase() === b.toLowerCase();
+    // /proc/PID/exe resolves interpreter symlinks. The configured Python may
+    // be a venv launcher or /usr/bin/python3.10 symlink to that same binary.
+    try {
+        return fs.realpathSync(a) === fs.realpathSync(b);
+    } catch (_) {
+        return a === b;
+    }
 }
 
 function testManagedProcessIdentity(state, expectedExecutable = '') {
@@ -929,7 +964,35 @@ function getStateReferencedLivePid(state) {
 }
 
 function findManagedProcessByOwnerToken(expectedExecutable, ownerToken, label) {
-    if (!ownerToken || process.platform !== 'win32') return null;
+    if (!ownerToken) return null;
+    if (process.platform === 'linux') {
+        const matches = [];
+        for (const entry of fs.readdirSync('/proc')) {
+            if (!/^\\d+$/.test(entry)) continue;
+            const pid = Number(entry);
+            let argv;
+            try {
+                argv = fs.readFileSync('/proc/' + entry + '/cmdline', 'utf8')
+                    .split('\\0').filter(Boolean);
+            } catch (error) {
+                if (['ENOENT', 'ESRCH', 'EACCES', 'EPERM'].includes(error.code)) continue;
+                throw error;
+            }
+            if (!argv.some((arg, index) =>
+                arg === '--owner-token' && argv[index + 1] === String(ownerToken))) continue;
+            const identity = getProcessIdentity(pid);
+            if (identity && samePath(identity.executable_path, expectedExecutable)) {
+                matches.push(identity);
+            }
+        }
+        if (matches.length > 1) {
+            throw new Error('Multiple ' + label + ' processes claim managed owner token ' +
+                ownerToken + ' (PIDs ' + matches.map(item => item.pid).join(',') +
+                '). Refusing ambiguous recovery.');
+        }
+        return matches[0] || null;
+    }
+    if (process.platform !== 'win32') return null;
     const ps = powershellExecutable();
     const env = {
         ...process.env,
@@ -1021,6 +1084,7 @@ module.exports = {
     getNamedFileSetSha256,
     getProcessIdentity,
     getStateReferencedLivePid,
+    hostTrainingPlatform,
     hmacSha256,
     invokePythonJson,
     isProcessAlive,
