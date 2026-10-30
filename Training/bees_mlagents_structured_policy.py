@@ -10,7 +10,7 @@ BeesRL1v1 model. Inside that model, Bees replaces ML-Agents' flat vector MLP wit
   explicit faction observation channel; and
 * the existing MA-POCA critic, without changing its configuration.
 
-The patch is deliberately limited to the exact Bees v25 observation/action shapes.
+The patch is deliberately limited to the exact Bees v26 observation/action shapes.
 All other ML-Agents behaviors retain the upstream implementation.
 """
 
@@ -107,7 +107,7 @@ ACTION_ENCODING_SIZE = (
     FACTION_TRUNK_SIZE + BEES_WEAPON_SLOTS * WEAPON_SLOT_EMBED + 1
 )
 
-_STRUCTURED_ENCODER_MARKER = "bees_structured_v25"
+_STRUCTURED_ENCODER_MARKER = "bees_structured_v26"
 _INSTALLED_STATE = None
 _TRAINING_SLOT_LIMITS = contextvars.ContextVar(
     "bees_structured_training_slot_limits",
@@ -1818,11 +1818,11 @@ class BeesStructuredNetworkBody(nn.Module):
             )
         if network_settings.memory is not None:
             raise UnityTrainerException(
-                "Bees structured actor is feed-forward; recurrent memory is not part of policy ABI v25."
+                "Bees structured actor is feed-forward; recurrent memory is not part of policy ABI v26."
             )
         if int(network_settings.hidden_units) != FACTION_TRUNK_SIZE:
             raise UnityTrainerException(
-                "Bees policy ABI v24 requires hidden_units=128."
+                "Bees policy ABI v26 requires hidden_units=128."
             )
 
         self._fallback = None
