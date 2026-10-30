@@ -91,7 +91,21 @@ function pruneLearnerPythonRuntimes(extraExecutables = [], keepNewest = 3) {
 
 function ensureLearnerPython(config, requirementsRoot = '') {
     const root = requirementsRoot ? path.resolve(requirementsRoot) : path.join(paths.assetsRoot, 'Training');
-    const learnerRequirements = path.join(root, 'bees_learner_requirements.txt');
+    const override = String(process.env.BEES_LEARNER_REQUIREMENTS || '').trim();
+    // The tracked learner requirements pin an NVIDIA CUDA 12.1 wheel. Never
+    // install that wheel silently on a Linux ROCm host. A host-owned, absolute
+    // requirements path explicitly selects its PyTorch/accelerator stack.
+    if (process.platform === 'linux' && !override) {
+        throw new Error(
+            'Linux learner requires BEES_LEARNER_REQUIREMENTS pointing to an absolute ' +
+            'Python requirements file validated for this host (ROCm or CPU). ' +
+            'The tracked requirements pin an NVIDIA CUDA 12.1 wheel.'
+        );
+    }
+    if (override && !path.isAbsolute(override)) {
+        throw new Error('BEES_LEARNER_REQUIREMENTS must be an absolute path: ' + override);
+    }
+    const learnerRequirements = override || path.join(root, 'bees_learner_requirements.txt');
     const remoteRequirements = path.join(root, 'bees_remote_requirements.txt');
     if (!exists(learnerRequirements)) {
         throw new Error('Learner Python requirements are missing: ' + learnerRequirements);
@@ -132,6 +146,18 @@ function ensureLearnerPython(config, requirementsRoot = '') {
         importsOk = testPythonCode(venvPython, preflight);
         if (!importsOk) throw new Error('Central learner Python dependency preflight failed after installation.');
         writeTextAtomic(stampPath, requirementsHash, 'ascii');
+    }
+
+    // ROCm PyTorch intentionally exposes its accelerators through torch.cuda.
+    // A successful import alone must not be mistaken for a usable GPU learner.
+    if (config.learnerDevice === 'cuda' && !testPythonCode(
+        venvPython,
+        'import torch; raise SystemExit(0 if torch.cuda.is_available() else 1)',
+    )) {
+        throw new Error(
+            'Configured CUDA/ROCm learner device is unavailable in the selected ' +
+            'Python environment. Check the installed PyTorch build and GPU driver.'
+        );
     }
 
     pruneLearnerPythonRuntimes([venvPython]);
