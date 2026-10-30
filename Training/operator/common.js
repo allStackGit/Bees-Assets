@@ -882,9 +882,9 @@ function getProcessIdentity(pid) {
             const stat = readText('/proc/' + id + '/stat');
             const closing = stat.lastIndexOf(')');
             if (closing < 0) return null;
-            const fields = stat.slice(closing + 2).trim().split(/\\s+/);
+            const fields = stat.slice(closing + 2).trim().split(/\s+/);
             const startTicks = fields[19];
-            if (!/^\\d+$/.test(startTicks || '')) return null;
+            if (!/^\d+$/.test(startTicks || '')) return null;
             const bootId = readText('/proc/sys/kernel/random/boot_id').trim();
             if (!/^[0-9a-f-]{36}$/i.test(bootId)) return null;
             const executable = fs.realpathSync('/proc/' + id + '/exe');
@@ -968,12 +968,12 @@ function findManagedProcessByOwnerToken(expectedExecutable, ownerToken, label) {
     if (process.platform === 'linux') {
         const matches = [];
         for (const entry of fs.readdirSync('/proc')) {
-            if (!/^\\d+$/.test(entry)) continue;
+            if (!/^\d+$/.test(entry)) continue;
             const pid = Number(entry);
             let argv;
             try {
                 argv = fs.readFileSync('/proc/' + entry + '/cmdline', 'utf8')
-                    .split('\\0').filter(Boolean);
+                    .split('\0').filter(Boolean);
             } catch (error) {
                 if (['ENOENT', 'ESRCH', 'EACCES', 'EPERM'].includes(error.code)) continue;
                 throw error;
