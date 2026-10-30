@@ -1148,7 +1148,8 @@ internal sealed class RlCombatPerception
     {
         float radians = degrees * Mathf.Deg2Rad;
         Vector2 heading = RlPolicyCoordinateFrame.WorldToPolicy(
-            new Vector2(Mathf.Sin(radians), Mathf.Cos(radians)),
+            // Match the physical forward vector used by ship movement and turrets.
+            new Vector2(-Mathf.Sin(radians), Mathf.Cos(radians)),
             frameQuarterTurns);
         sensor.AddObservation(heading.x);
         sensor.AddObservation(heading.y);
