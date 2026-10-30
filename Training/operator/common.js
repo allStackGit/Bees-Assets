@@ -419,6 +419,8 @@ function applyRuntimeTrainingOptions(config, options = {}) {
                 : {}),
         },
     };
+    // A persisted pre-v26 entropyBeta setting must never override trainer YAML.
+    delete result.entropyBeta;
     if (Object.prototype.hasOwnProperty.call(options, 'threadedTraining')) {
         result.threadedTraining = Boolean(options.threadedTraining);
     }
