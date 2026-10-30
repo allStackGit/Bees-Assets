@@ -48,7 +48,7 @@ options=ort.SessionOptions();options.intra_op_num_threads=1;options.inter_op_num
 ort.set_seed(config["seed"])
 session=ort.InferenceSession(graph.SerializeToString(),sess_options=options,providers=["CPUExecutionProvider"])
 assert session.get_providers()==["CPUExecutionProvider"]
-base=np.asarray(first["observations"],np.float32);mask=np.asarray([1,1,1,0,1,0,1,0,1,0,0,0,0],np.float32)[None,:]
+base=np.asarray(first["observations"],np.float32);mask=np.asarray([1,1]+[1,0]*4+[1,0,0,0,0],np.float32)[None,:]
 names=["deterministic_continuous_actions","continuous_actions"]+extra
 used=0
 def evaluate(obs):
