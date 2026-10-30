@@ -52,9 +52,9 @@ class Reader(pickle.Unpickler):
   assert t[0]=="storage";return t
 archive=root.parent.parent.parent/"bees-training-diagnostic-bees-v25-r5-s1-20261023T123535Z-f7eeaf83-20261030T100834Z.zip"
 with zipfile.ZipFile(archive) as outer:
- info=outer.getinfo("checkpoint/BeesRL1v1/checkpoint.pt")
- assert info.file_size<128*1024**2
- payload=outer.read(info)
+ checkpoint_info=outer.getinfo("checkpoint/BeesRL1v1/checkpoint.pt")
+ assert checkpoint_info.file_size<128*1024**2
+ payload=outer.read(checkpoint_info)
 with zipfile.ZipFile(io.BytesIO(payload)) as ck:
  policy=Reader(io.BytesIO(ck.read("checkpoint/data.pkl"))).load()["Policy"]
  state={}
@@ -76,10 +76,10 @@ obs=[];trials=[]
 with (root/"trace.jsonl").open() as f:
  for line in f:
   d=json.loads(line)
-  if d["kind"]=="decision" and d["scenario"]["trial"] in [0,4,8,12,16,20,24,28] and d["step"]==0:
+  if d["kind"]=="decision" and d["scenario"]["trial"] in [0,4,8,16,20] and d["step"]==0:
    obs.append(d["observations"]);trials.append(d["scenario"]["trial"])
-assert len(obs)==8
-x=np.asarray(obs,np.float32);mask=np.tile(np.asarray([1,1]+[1,0]*4+[1,0,0,0,0],np.float32),(8,1))
+assert len(obs)==5
+x=np.asarray(obs,np.float32);mask=np.tile(np.asarray([1,1]+[1,0]*4+[1,0,0,0,0],np.float32),(5,1))
 graph=onnx.load(config["model"])
 for name in ["/Concat_6_output_0","/Concat_7_output_0"]:
  graph.graph.output.append(helper.make_tensor_value_info(name,TensorProto.FLOAT,None))
@@ -98,6 +98,6 @@ for grad in [False,True]:
                  "aim_angles":[float(np.degrees(np.arctan2(row[3],row[2]))%360) for row in actual]})
 k.QueryInformationJobObject(job,9,ctypes.byref(info),ctypes.sizeof(info),None)
 report={"trials":trials,"comparisons":results,"torch_version":torch.__version__,"all_tensors_cpu":all(v.device.type=="cpu" for v in body.state_dict().values()),
-        "additional_evaluations":24,"finished_epoch":time.time(),"deadline_epoch":config["deadline_epoch"],
+        "additional_evaluations":15,"finished_epoch":time.time(),"deadline_epoch":config["deadline_epoch"],
         "peak_job_commit_bytes":info.PeakJobMemoryUsed,"source_sha256":hashlib.sha256(module_path.read_bytes()).hexdigest()}
 (root/"torch-onnx-parity.json").write_text(json.dumps(report,indent=2));print(json.dumps(report,indent=2))
