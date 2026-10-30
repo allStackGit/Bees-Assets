@@ -166,6 +166,7 @@ async function invokeRuntime(options = {}) {
         !options.threaded && !options.localTraining && !options.localOnly &&
         !options.noWorkerDiagnostics && !options.explicitLocalEnvs &&
         !options.explicitLearnerDevice && !options.explicitPolicyLag &&
+        !options.explicitBackpressureQueue &&
         !options.explicitSkipEvaluation && !options.explicitLearnerOptimizations
     );
     const runtimeOverrides = loggingOnly ? {} : {
