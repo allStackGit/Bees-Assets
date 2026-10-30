@@ -1579,6 +1579,8 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
             worker_token_file="worker.token",
             install_root="install",
             envs=24,
+            actors=1,
+            upload_workers=2,
             min_envs=2,
             max_envs=40,
             auto_envs=True,
@@ -1613,6 +1615,8 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
             worker_token_file="worker.token",
             install_root="install",
             envs=12,
+            actors=1,
+            upload_workers=2,
             min_envs=12,
             max_envs=12,
             auto_envs=False,
@@ -1622,8 +1626,9 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
         command = managed._worker_command(args, Path("/runtime"), "b" * 32)
         self.assertNotIn("--auto-worker-envs", command)
         self.assertEqual(command[command.index("--worker-envs") + 1], "12")
-        self.assertEqual(command[command.index("--worker-envs-min") + 1], "12")
-        self.assertEqual(command[command.index("--worker-envs-max") + 1], "12")
+        self.assertEqual(command[command.index("--worker-envs-min") + 1], "1")
+        self.assertEqual(command[command.index("--worker-envs-max") + 1], "64")
+        self.assertIn("--manual-worker-envs-file", command)
 
     def test_runtime_stage_rejects_payload_that_disagrees_with_release_identity(self):
         with tempfile.TemporaryDirectory() as temp:

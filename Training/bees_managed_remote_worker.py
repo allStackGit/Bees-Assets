@@ -2092,7 +2092,9 @@ def _worker_command(args: argparse.Namespace, root: Path, actor_key: str) -> lis
         "--worker-envs-min",
         str(args.min_envs if args.auto_envs else 1),
         "--worker-envs-max",
-        str(args.max_envs if args.auto_envs else _memory_hard_limit()),
+        # Only automatic tuning obeys the installed-RAM estimate. A fixed/manual
+        # count is operator-selected and may be changed live up to the protocol limit.
+        str(args.max_envs if args.auto_envs else MAX_ENVS_PER_ACTOR),
     ]
     if args.auto_envs:
         command.append("--auto-worker-envs")
@@ -2188,13 +2190,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         if not 1 <= args.envs <= MAX_ENVS_PER_ACTOR:
             print(f"error: --envs must be in 1-{MAX_ENVS_PER_ACTOR}", file=sys.stderr)
             return 2
-        if args.envs > memory_hard_cap:
-            print(
-                f"error: --envs={args.envs} exceeds the RAM safety bound of "
-                f"{memory_hard_cap} environments",
-                file=sys.stderr,
-            )
-            return 2
+        # Explicit --envs overrides the default CPU/RAM sizing heuristics.
+        # Retain only the protocol and actor-count bounds for a manual count.
         args.min_envs = args.envs
         args.max_envs = args.envs
     if args.envs < args.actors:
