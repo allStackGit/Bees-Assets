@@ -283,6 +283,26 @@ function chart(items) {
         p.setAttribute('stroke', color); svg.append(p);
     }
     line(55, 20, 55, 210, '#000000'); line(55, 210, 765, 210, '#000000');
+    // Show stage boundaries only when every selected lineage shares the same
+    // step schedule. Otherwise a single marker would misrepresent other runs.
+    const boundaries = all[0]?.stages?.slice(0, -1).map(stage => stage.end_step);
+    if (boundaries && all.every(item => item.stages &&
+        JSON.stringify(item.stages.slice(0, -1).map(stage => stage.end_step)) ===
+            JSON.stringify(boundaries))) {
+        for (const boundary of boundaries) {
+            if (boundary >= xmax) continue;
+            const marker = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            marker.setAttribute('x1', xx(boundary));
+            marker.setAttribute('x2', xx(boundary));
+            marker.setAttribute('y1', '20');
+            marker.setAttribute('y2', '210');
+            marker.setAttribute('stroke', '#000000');
+            marker.setAttribute('stroke-dasharray', '4 5');
+            marker.setAttribute('opacity', '0.6');
+            svg.append(marker);
+        }
+        if (boundaries.length) $('legend').append(txt('span', 'Dashed black lines: curriculum stage boundaries'));
+    }
     const xLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
     xLabel.setAttribute('x','660'); xLabel.setAttribute('y','237'); xLabel.setAttribute('fill','currentColor');
     xLabel.textContent = fmt(xmax) + ' steps'; svg.append(xLabel);
