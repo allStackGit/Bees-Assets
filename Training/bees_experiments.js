@@ -15,6 +15,7 @@ const HOST = '127.0.0.1';
 const PORT = 7148;
 const DB = path.join(paths.trainingRoot, 'Experiments', 'experiments-v1.json');
 const HTML = path.join(__dirname, 'experiments.html');
+const BENCHMARK_REPORTS = path.join(paths.trainingRoot, 'Experiments', 'Benchmarks');
 const empty = () => ({ version: 1, armed: false, stop_requested: false, active_id: null, message: '', items: [] });
 const state = fs.existsSync(DB) ? readJson(DB) : empty();
 if (!state || state.version !== 1 || !Array.isArray(state.items) || typeof state.armed !== 'boolean') {
@@ -277,6 +278,20 @@ function definition(input) {
     };
 }
 
+function benchmarkReports() {
+    if (!fs.existsSync(BENCHMARK_REPORTS)) return [];
+    // Reports are small immutable JSON summaries. Never enumerate raw training
+    // data, checkpoints or unrelated files to populate the UI.
+    return fs.readdirSync(BENCHMARK_REPORTS, { withFileTypes: true })
+        .filter(entry => entry.isFile() &&
+            /^\d{8}T\d{6}-[a-f0-9]{32}\.json$/.test(entry.name))
+        .map(entry => entry.name)
+        .sort().reverse().slice(0, 200)
+        .map(name => readJson(path.join(BENCHMARK_REPORTS, name)))
+        .filter(report => report && report.schema_version === 1 && report.benchmark &&
+            report.metrics);
+}
+
 function json(res, status, obj) {
     const body = JSON.stringify(obj);
     res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8',
@@ -318,6 +333,9 @@ const server = http.createServer(async (req, res) => {
         if (req.method === 'GET' && route === '/api/workers') {
             const status = await control();
             return json(res, 200, workerSnapshot(status));
+        }
+        if (req.method === 'GET' && route === '/api/benchmarks') {
+            return json(res, 200, { reports: benchmarkReports() });
         }
         if (req.method !== 'POST') return json(res, 404, { error: 'Not found.' });
         const value = await body(req);
@@ -363,4 +381,4 @@ if (require.main === module) {
         setInterval(cycle, 30000);
     });
 }
-module.exports = { server, definition, measure, workerSnapshot };
+module.exports = { server, definition, measure, workerSnapshot, benchmarkReports };
