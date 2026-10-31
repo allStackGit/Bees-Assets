@@ -56,7 +56,9 @@ def prepare(base, overrides, output):
     # These experiments always start a new optimizer/policy lineage.
     if value.get("checkpoint_settings", {}).get("initialize_from"):
         raise ValueError("Fresh experiments cannot initialize from another run.")
+    from mlagents.plugins.trainer_type import register_trainer_plugins
     from mlagents.trainers.settings import RunOptions
+    register_trainer_plugins()
     RunOptions.from_dict(value)
     text = yaml.safe_dump(value, sort_keys=False)
     sha = hashlib.sha256(text.encode("utf-8")).hexdigest()
