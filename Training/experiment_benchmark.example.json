@@ -1,13 +1,15 @@
 {
   "schema_version": 1,
   "id": "one-v-one-ranged",
-  "revision": 1,
+  "revision": 2,
   "behavior_name": "BeesRL1v1",
   "matches": 100,
   "seed": 10031,
   "max_environment_steps_per_match": 200000,
   "env_args": [
     "--rl-ships-per-side=1",
+    "--rl-bee-ship-types=Wasp",
+    "--rl-human-ship-types=Gunship",
     "--rl-map-size-min=96",
     "--rl-map-size-max=112",
     "--rl-episode-timeout=15",
