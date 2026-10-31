@@ -72,9 +72,19 @@ queued experiment will **not** continue this network. To introduce movement
 and longer ranges **within the same experiment/run**, use the generic curriculum
 stages below. Only configure those transitions after checking that the proposed
 scenario is physically and scientifically meaningful.
-The current checkpoint-finalization fix is not live-qualified: deploy a new
-immutable release and pass a short save/export/evaluation check on Exeter
-before committing expensive training.
+The checkpoint-finalization and stage-evaluation path passed a focused live
+qualification on Exeter on 2026-10-31 using immutable release
+`2026-10-31-172403-4909bbd32f05`. Run
+`bees-v26-r6-s1-20261031T213146Z-b3ac8e22` saved readable checkpoints at
+104,086 and 206,014 learner steps and registered distinct ONNX exports.
+The same run resumed with all 159 Adam parameter states retained; optimizer
+update counts advanced from 48 to 96. All three scripted scenarios completed
+100 fixed-seed matches at both boundaries (600 matches, six distinct reports),
+then the coordinator disarmed automatically. An isolated zero-action mechanics
+probe observed an effective 24-by-24 arena and three exact 5-second timeouts.
+This qualifies the save/evaluate/resume workflow, not policy quality or
+crash-proof host supervision. Evidence is retained outside Assets under
+`Training/Experiments/Qualification-20261031/`.
 
 ## Multi-stage training (same optimizer lineage)
 
@@ -129,7 +139,8 @@ boundaries; an unexpected state may require operator intervention. The
 existing maximum wall time and no-progress stop limits apply to the **entire
 run**, not to each curriculum stage. Optional **per-stage fixed-seed evaluation**
 uses the frozen suite below. The previous final-only evaluation remains
-available as a separate mode; both require a frozen reference model.
+available as a separate mode. Opponents may be versioned scripted controllers
+or a frozen ONNX model, as recorded in the evaluation plan.
 
 ## Per-stage fixed-seed benchmark suite
 
