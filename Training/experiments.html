@@ -241,6 +241,10 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
 <button id="benchmark-refresh">Refresh results</button>
 </div>
 <div id="benchmark-summary" class="summary" style="margin:12px 0"></div>
+<h2>Stage × scenario comparison</h2>
+<p class="muted">Each row is one frozen candidate at a curriculum boundary. Each column uses one benchmark/reference/build identity. Cells show win rate and timeout rate; separate columns never pool incompatible references.</p>
+<div class="tablewrap"><table><thead id="benchmark-matrix-head"></thead><tbody id="benchmark-matrix-rows"></tbody></table></div>
+<h2 style="margin-top:16px">Evaluation details</h2>
 <div class="tablewrap"><table><thead><tr>
 <th>Benchmark</th><th>Experiment</th><th>Stage</th><th>Candidate step</th><th>Candidate run</th><th>Reference SHA</th><th>Matches</th><th>Win % · 95% interval</th><th>Timeout % · 95% interval</th><th>Hits / shots</th><th>Damage</th><th>Mean seconds</th><th>Build</th><th>Details</th>
 </tr></thead><tbody id="benchmark-rows"></tbody></table></div>
@@ -465,10 +469,13 @@ function benchmarkKey(r) {
     return r.benchmark.id + ' v' + r.benchmark.revision +
         ' · ' + r.benchmark.sha256.slice(0, 8);
 }
-function benchmarkComparisonKey(r) {
+function scenarioIdentityKey(r) {
     return [r.benchmark.sha256, r.opponent_sha256, r.build_id,
         r.environment_executable_sha256, r.evaluation_code_sha256,
-        r.evaluation_protocol_version, r.experiment?.stage_index ?? 'legacy'].join('|');
+        r.evaluation_protocol_version].join('|');
+}
+function benchmarkComparisonKey(r) {
+    return [scenarioIdentityKey(r), r.experiment?.stage_index ?? 'legacy'].join('|');
 }
 
 function outcomeInterval(count, total) {
@@ -537,6 +544,53 @@ function renderBenchmarks() {
             '\nPinned candidate step: ' + fmt(report.experiment?.candidate_training_step));
         details.append(summary, pre); td.append(details); tr.append(td);
         $('benchmark-rows').append(tr);
+    }
+    const stageReports = visible.filter(r => Number.isInteger(r.experiment?.stage_index));
+    const columns = new Map();
+    const stageRows = new Map();
+    for (const report of stageReports) {
+        const scenarioKey = scenarioIdentityKey(report);
+        if (!columns.has(scenarioKey)) columns.set(scenarioKey,
+            benchmarkKey(report) + ' · ref ' +
+            (report.opponent_sha256 || '').slice(0, 8) + ' · build ' + report.build_id);
+        const key = report.experiment.id + '|' + report.experiment.stage_index;
+        if (!stageRows.has(key)) stageRows.set(key, {
+            experimentId: report.experiment.id,
+            stageIndex: report.experiment.stage_index,
+            stageName: report.experiment.stage_name,
+            reports: new Map(),
+        });
+        const target = stageRows.get(key).reports;
+        // Newest report first; never combine repeated attempts or their samples.
+        if (!target.has(scenarioKey)) target.set(scenarioKey, report);
+    }
+    const head = document.createElement('tr');
+    for (const name of ['Experiment / beta', 'Stage', ...columns.values()]) {
+        head.append(txt('th', name));
+    }
+    $('benchmark-matrix-head').replaceChildren(head);
+    $('benchmark-matrix-rows').replaceChildren();
+    const experimentNames = new Map((latest?.items || []).map(item =>
+        [item.id, item.name + ' / β=' +
+            fmt(item.trainer_config?.resolved?.hyperparameters?.beta, 6)]));
+    for (const entry of [...stageRows.values()].sort((a,b) =>
+        a.experimentId.localeCompare(b.experimentId) || a.stageIndex-b.stageIndex)) {
+        const tr = document.createElement('tr');
+        cell(tr, experimentNames.get(entry.experimentId) || entry.experimentId.slice(0, 12), 'name');
+        cell(tr, (entry.stageIndex + 1) + '. ' + (entry.stageName || 'Unnamed'));
+        for (const key of columns.keys()) {
+            const report = entry.reports.get(key);
+            const metrics = report?.metrics || {};
+            cell(tr, !report ? '—' : 'Win ' + fmt(metrics.matches ?
+                100*metrics.wins/metrics.matches : null, 1) + '% · TO ' +
+                fmt(metrics.matches ? 100*metrics.timeouts/metrics.matches : null, 1) +
+                '% · Hits ' + fmt(metrics.candidate_hits) + '/' + fmt(metrics.candidate_shots));
+        }
+        $('benchmark-matrix-rows').append(tr);
+    }
+    if (!stageRows.size) {
+        const tr = document.createElement('tr'), td = txt('td', 'No per-stage evaluations recorded yet.');
+        td.colSpan = columns.size + 2; tr.append(td); $('benchmark-matrix-rows').append(tr);
     }
     $('benchmark-summary').replaceChildren(
         txt('span', visible.length + ' stored evaluations'),
