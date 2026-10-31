@@ -12,7 +12,7 @@ Queue one or more experiments. Each creates a **new run** from the current built
 
 Existing training must be stopped before starting a queue, and the latest release must match the release recorded when experiments were queued. If the operator or another process changes training ownership, the queue pauses rather than taking over an unrelated run. Stop requests are persisted, so restarting the coordinator does not silently cancel a requested graceful stop. After a crash during startup, the coordinator can resume monitoring a new run when the control-plane run identity and environment arguments match; ambiguous states pause the queue for operator inspection.
 
-Summaries are written to `Training/Experiments/experiments-v1.json` **outside Assets**, not to the Git repository. It contains experiment definitions, run IDs, bounded sampled learner/worker metrics and outcomes. No raw trajectories or checkpoint copies are created; standard Bees checkpoint lifecycle is unchanged. Every sample is from training telemetry, **not an independent fixed-seed benchmark**; run-to-run results remain stochastic. Live worker summaries are included only after their training-control revision matches the active run; older worker windows are excluded. The UI supports per-run inspection, learning-curve comparisons and group aggregates. Expand **Worker Status** to see live remote-worker state, errors, throughput and queue depths from the existing training control; it is read-only, refreshes while expanded and stores no additional history. PPO parameter sweeps, randomized seeds, scheduler boot persistence, and multi-machine validation are not implemented.
+Summaries are written to `Training/Experiments/experiments-v1.json` **outside Assets**, not to the Git repository. It contains experiment definitions, run IDs, bounded sampled learner/worker metrics and outcomes. No raw trajectories or checkpoint copies are created; standard Bees checkpoint lifecycle is unchanged. Every sample is from training telemetry, **not an independent fixed-seed benchmark**; run-to-run results remain stochastic. Live worker summaries are included only after their training-control revision matches the active run; older worker windows are excluded. The UI supports per-run inspection, learning-curve comparisons and group aggregates. Expand **Worker Status** to see live remote-worker state, errors, throughput and queue depths from the existing training control; it is read-only, refreshes while expanded and stores no additional history. Trainer settings are frozen per queued experiment as described below. Automatic parameter sweeps and scheduler boot persistence are not implemented.
 
 A running experiment depends on the coordinator continuing to execute; if its process or host stops, it cannot enforce the step/time limit until restarted. For expensive unattended runs, keep the host and coordinator monitored. Do not treat this release as a crash-proof unattended training service until that behavior has been validated in the actual cluster.
 
@@ -81,4 +81,62 @@ can leave another immutable summary. Inspect all summaries before pooling result
 For CLI selection from the same registry, replace `--candidate FILE` with
 `--candidate-run RUN_ID`; `--registry FILE` defaults to
 `Training/registry.sqlite3`. This reads existing provenance without updating it.
-PPO settings still use the existing release workflow; evaluation does not change them.
+Evaluation does not change trainer settings.
+
+## Independent trainer configurations
+
+Expand **Trainer configuration** when queuing an experiment. Defaults come from
+the current immutable release runtime. Beta, lambda, learning rate, batch/buffer
+size, epoch count, network depth, normalization and initialization/environment
+seed are explicit. Each experiment starts a fresh policy and optimizer; checkpoint
+warm starts are not supported by this form. The seed does not replace the
+separate historical-opponent sampler's existing seed.
+
+A content-addressed YAML snapshot is stored once under
+`Training/Experiments/Configurations`. The item records its hash, resolved
+settings, baseline hash, runtime version and operator execution settings.
+Launch verifies the snapshot and release, then passes that exact file through
+the existing central learner launcher. The coordinator compares the generated
+run-scoped YAML settings with the snapshot; a mismatch triggers a safe stop
+and disarms the queue. Run details show the verified generated configurations.
+The complete YAML includes fixed reward, self-play and scheduling settings too.
+
+The v26 structured policy requires feedforward width 128. Layer count and
+observation normalization can vary in a fresh run, with network settings included
+in its checkpoint compatibility key. Arbitrary width or recurrent architecture
+changes require a separate versioned policy implementation and are rejected here.
+Illustrative settings are not recommendations; short validation runs do not
+establish which PPO configuration learns best.
+
+## Combat screening suite
+
+Separate `experiment_benchmark.short.json`, `.medium.json` and `.long.json`
+recipes preserve the original example and its reports. Each requests 100 matches,
+seed 10031, Wasp/Gunship, quarter health on both sides, decision period 5, and
+no static obstacles or mining asteroids. Map ranges and episode timeouts are:
+
+| Scenario | Map range | Timeout |
+| --- | --- | --- |
+| Short aiming | 32–40 | 60 seconds |
+| Medium combat | 64–80 | 90 seconds |
+| Long engagement | 96–112 | 120 seconds |
+
+Use every recipe with the same frozen opponent for every candidate. The same
+seed initializes the scenario streams; all matches in a report use their
+deterministic sequence. Faction roles are fixed, so compare candidate networks
+in the same role and use the frozen network's self-comparison as a control.
+These scenarios measure a narrow matchup, not general combat strength.
+
+Simulation speed is explicitly fixed at 20 in these recipes and recorded in
+reports. Changing speed can change Unity outcomes: do not pool speeds.
+The evaluator reapplies it after arena resets because gameplay setup restores
+the stage's time scale. Owned Unity processes terminate with their evaluator,
+including after an abrupt coordinator restart.
+
+The web table shows wins, timeouts, hit/shot counts, damage and mean episode
+duration. Win and timeout ranges are 95% Wilson intervals conditional on this
+screening sample; fixed seeds, correlated episodes and one training seed limit
+broader statistical conclusions. Shot accuracy is descriptive, without treating
+correlated shots as independent trials. Early five-match probes produced close
+range damage but no medium/long hits; calibration remains provisional until
+larger screening results demonstrate useful distinctions.
