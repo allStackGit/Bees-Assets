@@ -464,6 +464,8 @@ async function transitionStage(item, status) {
         return;
     }
     if (matches(d.environment_args, previous.env_args) && d.training_enabled) {
+        item.stage_stop_confirmed = false;
+        save();
         await invokeStop({});
         status = await control();
         if (status.desired?.run_id !== item.run_id ||
@@ -471,12 +473,18 @@ async function transitionStage(item, status) {
             !matches(status.desired.environment_args, previous.env_args)) {
             throw Error('Safe curriculum stop not confirmed; refusing to switch environments.');
         }
+        item.stage_stop_confirmed = true;
+        save();
     }
     if (state.stop_requested || !state.armed) {
         item.end_reason = 'manual';
         item.status = 'stopping';
         save();
         await finalize(item, status);
+        return;
+    }
+    if (!item.stage_stop_confirmed) {
+        blocked(item, 'Curriculum stop ownership was not durably confirmed; inspect the stopped run before manual recovery.');
         return;
     }
     if (!status.desired.training_enabled) {
@@ -506,6 +514,7 @@ async function transitionStage(item, status) {
     stageRecord(item, item.stage_index);
     item.last_progress = now();
     item.stage_transition_at = null;
+    delete item.stage_stop_confirmed;
     item.status = 'running';
     state.message = 'Continued ' + item.name + ' on ' + next.name + ' (same run and optimizer).';
     save();
