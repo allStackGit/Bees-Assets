@@ -644,6 +644,11 @@ async function transitionStage(item, status) {
         return;
     }
     verifyTrainerSnapshot(item);
+    if (item.stage_stop_confirmed && d.training_enabled &&
+        matches(d.environment_args, previous.env_args)) {
+        blocked(item, 'Previous curriculum stage restarted after its verified stop; refusing to evaluate or overwrite the pinned boundary.');
+        return;
+    }
     if (matches(previous.env_args, next.env_args) && !item.stage_benchmarks) {
         if (!d.training_enabled) {
             blocked(item, 'Training was disabled outside the manager at a metric-only stage boundary.');
