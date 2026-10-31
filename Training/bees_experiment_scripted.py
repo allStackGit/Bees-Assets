@@ -170,6 +170,7 @@ class ScriptedPolicy:
 
         longest_side = max(1.0, _positive(obs[SELF_LONGEST_SIDE], 10.0))
         preferred_range = 40.0
+        found_range = False
         if seen:
             for slot in range(MAX_WEAPONS):
                 weapon = obs[
@@ -179,7 +180,9 @@ class ScriptedPolicy:
                 if weapon[WEAPON_PRESENT] < 0.5 or weapon[WEAPON_TURRET] < 0.5:
                     continue
                 weapon_range = _positive(weapon[WEAPON_RANGE], 80.0)
-                preferred_range = min(preferred_range, weapon_range) if slot else weapon_range
+                preferred_range = (min(preferred_range, weapon_range)
+                                   if found_range else weapon_range)
+                found_range = True
                 aim_x = target[0] - float(weapon[WEAPON_OFFSET_X]) * longest_side
                 aim_y = target[1] - float(weapon[WEAPON_OFFSET_Y]) * longest_side
                 aiming = _unit(aim_x, aim_y)
