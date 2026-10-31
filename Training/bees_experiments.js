@@ -537,12 +537,9 @@ function blocked(item, message) {
 
 async function finishFinalStageEvaluation(item, status) {
     if (state.stop_requested) {
-        item.status = 'completed';
-        item.finished_at = item.finished_at || now();
-        state.active_id = null;
         state.stop_requested = false;
         state.armed = false;
-        state.message = 'Final-stage evaluation was stopped; inspect partial reports before rearming.';
+        state.message = 'Final-stage evaluation paused; inspect partial reports, then rearm to finish.';
         save();
         return;
     }
