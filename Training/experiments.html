@@ -234,7 +234,7 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
 <section>
 <details id="benchmark-panel" class="worker-details">
 <summary class="worker-summary">Checkpoint benchmarks <small>· Independent fixed-seed evaluations</small></summary>
-<p class="muted">These results come from the existing Unity/ONNX evaluator, not the training-telemetry graph. Only identical benchmark definitions, reference models, and environment builds are directly comparable. Win and timeout intervals use the 95% Wilson method. Fixed-seed results are screening evidence; these intervals do not measure training-seed variability. Accuracy is descriptive because shots within a match are correlated.</p>
+<p class="muted">These results come from the existing Unity/ONNX evaluator, not the training-telemetry graph. Only identical benchmark definitions, scripted/ONNX opponent identities, and environment builds are directly comparable. Win and timeout intervals use the 95% Wilson method. Fixed-seed results are screening evidence; these intervals do not measure training-seed variability. Accuracy is descriptive because shots within a match are correlated.</p>
 <div class="bar">
 <label>Benchmark <select id="benchmark-filter"><option value="">All benchmarks</option></select></label>
 <label>Curriculum stage <select id="benchmark-stage-filter"><option value="">All stages</option></select></label>
@@ -352,7 +352,7 @@ function render(data) {
     $('evaluate-after').disabled = !data.benchmark_configured;
     $('evaluate-stages').disabled = !data.benchmark_configured;
     $('benchmark-config').textContent = data.benchmark_configured
-        ? 'Uses the frozen recipes, reference model and evaluation build from benchmark-settings.json.'
+        ? 'Uses frozen recipes, scripted or ONNX opponents, and evaluation build from benchmark-settings.json.'
         : 'Configure Training/Experiments/benchmark-settings.json to enable evaluations.';
     const groups = [...new Set(items.map(x => x.group))].sort();
     const filter = $('filter'), before = filter.value;
@@ -471,7 +471,7 @@ function benchmarkKey(r) {
 }
 function scenarioIdentityKey(r) {
     return [r.benchmark.sha256, r.opponent_sha256, r.build_id,
-        r.environment_executable_sha256, r.evaluation_code_sha256,
+        r.environment_executable_sha256, r.evaluation_code_sha256, r.opponent_kind || 'onnx',
         r.evaluation_protocol_version].join('|');
 }
 function benchmarkComparisonKey(r) {
