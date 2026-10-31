@@ -785,7 +785,7 @@ def run_match_group(
     *,
     environment_path: os.PathLike[str] | str,
     candidate_model_path: os.PathLike[str] | str,
-    opponent_model_path: os.PathLike[str] | str,
+    opponent_model_path: os.PathLike[str] | str | None,
     matches: int,
     behavior_name: str,
     env_args: Sequence[str],
@@ -796,7 +796,10 @@ def run_match_group(
     no_graphics: bool = True,
     max_environment_steps_per_match: int = DEFAULT_MAX_ENVIRONMENT_STEPS_PER_MATCH,
     time_scale: Optional[float] = None,
+    opponent_script: Optional[str] = None,
 ) -> MatchSummary:
+    if (opponent_model_path is None) == (opponent_script is None):
+        raise EvaluationError("Select exactly one opponent ONNX model or scripted controller.")
     if matches <= 0:
         raise EvaluationError("Match group must request at least one match.")
     if max_environment_steps_per_match <= 0:
@@ -818,7 +821,11 @@ def run_match_group(
         engine.set_configuration_parameters(time_scale=float(time_scale))
         channels.append(engine)
     candidate = OnnxPolicy(candidate_model_path, provider=onnx_provider)
-    opponent = OnnxPolicy(opponent_model_path, provider=onnx_provider)
+    if opponent_script is not None:
+        from bees_experiment_scripted import ScriptedPolicy
+        opponent = ScriptedPolicy(opponent_script)
+    else:
+        opponent = OnnxPolicy(opponent_model_path, provider=onnx_provider)
     environment = _owned_unity_environment(UnityEnvironment,
         file_name=str(Path(environment_path)),
         worker_id=worker_id,
