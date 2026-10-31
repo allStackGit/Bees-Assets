@@ -6,6 +6,7 @@ const crypto = require('node:crypto');
 const { execFile } = require('node:child_process');
 const { invokeStart, invokeStop } = require('./operator/commands');
 const { getStatus } = require('./operator/control');
+const { getPendingForcedNewRunPlan } = require('./operator/runtime');
 const { getAuthoritativeLearnerStats, statusError } = require('./operator/status');
 const { paths, readJson, writeJsonAtomic, ensureDir, loadConfig } = require('./operator/common');
 
@@ -203,8 +204,11 @@ function measure(item, status, force = false) {
         if (!force && stage && stage.timeout_target_pct != null &&
             step != null && windowTimeout != null) {
             const record = stageRecord(item);
-            record.consecutive_qualifying_samples = windowTimeout <= stage.timeout_target_pct
-                ? record.consecutive_qualifying_samples + 1 : 0;
+            if (record.last_sample_step !== step) {
+                record.consecutive_qualifying_samples = windowTimeout <= stage.timeout_target_pct
+                    ? record.consecutive_qualifying_samples + 1 : 0;
+                record.last_sample_step = step;
+            }
             // Three sampled training windows are a provisional milestone, not
             // independent benchmark evidence or an automatic stage transition.
             if (record.consecutive_qualifying_samples >= 3 && record.first_target_step == null) {
@@ -249,7 +253,7 @@ function verifyBenchmarkPlan(plan) {
 function executionOptions(config) {
     return Object.fromEntries(['learnerDevice', 'threadedTraining', 'threadedPolicyLag',
         'generationSteps', 'numLocalEnvs', 'localOnly', 'minRemoteActors',
-        'maxRemoteActors', 'learnerOptimizations'].map(k => [k, config[k] ?? null]));
+        'maxRemoteActors', 'learnerOptimizations', 'environmentArgs'].map(k => [k, config[k] ?? null]));
 }
 
 async function configTool(args) {
@@ -373,6 +377,14 @@ async function finalize(item, status) {
     item.status = item.end_reason === 'budget' ? 'completed' :
         item.end_reason === 'manual' ? 'stopped' : 'ended_early';
     item.finished_at = now();
+    if (stageFor(item)) {
+        const record = stageRecord(item);
+        if (!record.finished_at) {
+            record.finished_at = item.finished_at;
+            record.finished_step = item.step;
+            record.exit_reason = item.end_reason;
+        }
+    }
     if (item.benchmark && item.status === 'completed') {
         item.benchmark_status = 'pending';
         save();
@@ -399,6 +411,9 @@ function assertSameLineageCheckpoint(item) {
     const info = fs.statSync(checkpoint);
     if (!info.isFile() || info.size === 0) {
         throw Error('Same-run transition requires a saved optimizer checkpoint: ' + checkpoint);
+    }
+    if (getPendingForcedNewRunPlan()) {
+        throw Error('Another forced-new run plan is pending; refusing a same-run stage restart.');
     }
     // The resumed ML-Agents trainer verifies tensor compatibility. This check
     // prevents silently initializing from scratch when no checkpoint exists.
@@ -430,6 +445,10 @@ async function transitionStage(item, status) {
     }
     verifyTrainerSnapshot(item);
     if (matches(previous.env_args, next.env_args)) {
+        if (!d.training_enabled) {
+            blocked(item, 'Training was disabled outside the manager at a metric-only stage boundary.');
+            return;
+        }
         // A metric-only stage boundary needs no optimizer restart.
         const finished = stageRecord(item, index);
         if (!finished.finished_at) {
