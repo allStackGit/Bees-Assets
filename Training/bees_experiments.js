@@ -88,16 +88,18 @@ function blocked(item, message) {
 }
 
 async function finalize(item, status) {
-    if (status.desired && status.desired.training_enabled) {
-        if (status.desired.run_id !== item.run_id) {
-            blocked(item, 'Control plane switched runs during stop.');
-            return;
-        }
-        await invokeStop({}); // checkpoints and distributed workers stop through the existing operator
-        status = await control();
+    if (!status.desired || status.desired.run_id !== item.run_id) {
+        blocked(item, 'Control plane changed run ownership during stop.');
+        return;
     }
-    if (!status.desired || status.desired.training_enabled) {
-        throw Error('Stop is not confirmed; refusing to advance the queue.');
+    // A disabled desired flag alone does not prove remote trainers have
+    // finalized their checkpoints. The operator must confirm the whole stop,
+    // including when a prior attempt already disabled training but then failed.
+    await invokeStop({});
+    status = await control();
+    if (!status.desired || status.desired.run_id !== item.run_id ||
+        status.desired.training_enabled) {
+        throw Error('Safe training stop is unconfirmed; refusing to advance the queue.');
     }
     measure(item, status, true);
     item.status = item.end_reason === 'budget' ? 'completed' :
