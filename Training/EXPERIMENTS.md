@@ -99,7 +99,10 @@ then starts the next environment with the **same run ID, trainer YAML, policy
 and optimizer lineage**. The regular ML-Agents checkpoint resume path restores
 learning; checkpoint compatibility and correct resumption must still be
 qualified on Exeter. If consecutive stages have identical effective environment
-arguments, their boundary is recorded without an unnecessary stop/restart.
+arguments **and stage evaluations are disabled**, their boundary is recorded
+without an unnecessary stop/restart. With stage evaluations enabled, even an
+identical-environment boundary requires a graceful stop, fixed-seed suite and
+checkpoint resume so its performance is measured at that exact stage.
 Repeated manager cycles or a restart during a transition
 reconcile the control-plane run ID/environment against the saved stages; an
 ambiguous identity disarms the queue. A stop that occurred before its completion
