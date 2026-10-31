@@ -424,7 +424,17 @@ async function definition(input) {
     const config = loadConfig();
     const defaults = Array.isArray(config.environmentArgs) ? config.environmentArgs.map(String) : [];
     const keys = new Set(overrides.map(x => x.split('=')[0]));
-    const env_args = defaults.filter(x => !keys.has(x.split('=')[0])).concat(overrides);
+    const exactMap = '--rl-map-size';
+    const rangedMap = ['--rl-map-size-min', '--rl-map-size-max'];
+    if (keys.has(exactMap) && rangedMap.some(key => keys.has(key))) {
+        throw Error('Choose either --rl-map-size or --rl-map-size-min/max, not both.');
+    }
+    // The single-size and ranged-size flags are mutually exclusive in Unity.
+    // Replacing one form must remove the other form from cluster defaults.
+    const excluded = new Set(keys);
+    if (keys.has(exactMap)) rangedMap.forEach(key => excluded.add(key));
+    if (rangedMap.some(key => keys.has(key))) excluded.add(exactMap);
+    const env_args = defaults.filter(x => !excluded.has(x.split('=')[0])).concat(overrides);
     const release = readJson(paths.latestReleasePath);
     if (!release || !release.build_id) throw Error('Build a training release before queuing experiments.');
     return {
