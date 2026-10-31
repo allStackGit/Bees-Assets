@@ -374,6 +374,158 @@ async function evaluateItem(item) {
     save();
 }
 
+function execBenchmark(python, args) {
+    return new Promise((resolve, reject) => {
+        execFile(python, args, { windowsHide: true, maxBuffer: 65536 },
+            (error, stdout, stderr) => error
+                ? reject(Error(String(stderr || error.message).trim()))
+                : resolve(String(stdout).trim()));
+    });
+}
+
+function verifyStageCandidate(candidate, minimumStep) {
+    if (!candidate || typeof candidate.path !== 'string' ||
+        !/^[a-f0-9]{64}$/.test(String(candidate.sha256)) ||
+        !Number.isSafeInteger(candidate.training_step) ||
+        candidate.training_step < minimumStep ||
+        !fs.statSync(candidate.path).isFile() ||
+        hashFile(candidate.path) !== candidate.sha256) {
+        throw Error('No verified ONNX export at or after this stage boundary; refusing stale-model evaluation.');
+    }
+}
+
+function stageEvaluationKey(item, index, scenario, scenarioIndex, candidate, plan) {
+    const identity = [
+        item.id, item.run_id, index, scenario.id,
+        plan.hashes['recipe_' + scenarioIndex], plan.hashes.opponent,
+        plan.hashes.environment, plan.hashes.evaluator, plan.hashes.runner,
+        plan.build_id, candidate.sha256, candidate.training_step,
+    ];
+    return crypto.createHash('sha256').update(JSON.stringify(identity)).digest('hex');
+}
+
+function stageReportMatches(report, item, index, scenario, candidate, plan, evaluationId) {
+    return report && report.schema_version === 1 &&
+        report.run_id === item.run_id &&
+        report.candidate_sha256 === candidate.sha256 &&
+        report.opponent_sha256 === plan.hashes.opponent &&
+        report.environment_executable_sha256 === plan.hashes.environment &&
+        report.evaluation_code_sha256 === plan.hashes.evaluator &&
+        report.build_id === plan.build_id &&
+        report.benchmark?.id === scenario.benchmark_id &&
+        report.benchmark?.revision === scenario.benchmark_revision &&
+        report.experiment?.id === item.id &&
+        report.experiment?.stage_index === index &&
+        report.experiment?.evaluation_id === evaluationId &&
+        report.experiment?.candidate_training_step === candidate.training_step &&
+        report.metrics?.telemetry_validated === true;
+}
+
+function findStageReport(item, index, scenario, candidate, plan, evaluationId, savedName) {
+    // A process can exit after the evaluator atomically creates its report but
+    // before the coordinator stores the filename. Re-link that immutable result
+    // instead of launching the same benchmark a second time.
+    const validFilename = name => /^\d{8}T\d{6}-[a-f0-9]{32}\.json$/.test(name);
+    let names = [];
+    if (savedName && validFilename(savedName)) names.push(savedName);
+    if (fs.existsSync(BENCHMARK_REPORTS)) {
+        names.push(...fs.readdirSync(BENCHMARK_REPORTS)
+            .filter(validFilename).sort().reverse());
+    }
+    for (const name of new Set(names)) {
+        const target = path.join(BENCHMARK_REPORTS, name);
+        if (!fs.existsSync(target)) continue;
+        const report = readJson(target);
+        if (stageReportMatches(report, item, index, scenario, candidate, plan, evaluationId)) {
+            return name;
+        }
+        if (name === savedName) {
+            throw Error('Previously recorded stage benchmark no longer matches its frozen provenance.');
+        }
+    }
+    return null;
+}
+
+async function evaluateStageSuite(item, index, status) {
+    const plan = item.stage_benchmarks;
+    if (!plan) return true;
+    const record = stageRecord(item, index);
+    try {
+        if (!status.desired || status.desired.training_enabled ||
+            status.desired.pending_release || status.desired.run_id !== item.run_id ||
+            status.desired.canonical_build_id !== item.release_build) {
+            throw Error('Stage benchmark requires a stopped, unchanged training run.');
+        }
+        verifyTrainerSnapshot(item);
+        verifyBenchmarkPlan(plan);
+        if (!record.evaluation) {
+            const result = await execBenchmark(plan.python, [
+                BENCHMARK_RUNNER, '--resolve-candidate-run', item.run_id,
+                '--registry', path.join(paths.trainingRoot, 'registry.sqlite3'),
+            ]);
+            const candidate = JSON.parse(result);
+            const boundary = Math.max(record.entered_step || 0, item.step || 0);
+            verifyStageCandidate(candidate, boundary);
+            record.evaluation = {
+                candidate, boundary_step: item.step, started_at: now(),
+                status: 'running', reports: {},
+            };
+            save();
+        }
+        const evaluation = record.evaluation;
+        verifyStageCandidate(evaluation.candidate,
+            Math.max(record.entered_step || 0, evaluation.boundary_step || 0));
+        evaluation.reports = evaluation.reports || {};
+        for (const [scenarioIndex, scenario] of plan.scenarios.entries()) {
+            verifyBenchmarkPlan(plan);
+            const evaluationId = stageEvaluationKey(
+                item, index, scenario, scenarioIndex, evaluation.candidate, plan);
+            let reportName = findStageReport(item, index, scenario, evaluation.candidate,
+                plan, evaluationId, evaluation.reports[scenario.id]);
+            if (!reportName) {
+                state.message = 'Stage ' + (index + 1) + ' evaluation: ' + scenario.id +
+                    ' for ' + item.name;
+                save();
+                const output = await execBenchmark(plan.python, [
+                    BENCHMARK_RUNNER, '--benchmark', scenario.recipe,
+                    '--candidate', evaluation.candidate.path,
+                    '--candidate-sha256', evaluation.candidate.sha256,
+                    '--candidate-training-step', String(evaluation.candidate.training_step),
+                    '--run-id', item.run_id, '--experiment-id', item.id,
+                    '--stage-index', String(index), '--stage-name', item.stages[index].name,
+                    '--stage-step', String(evaluation.boundary_step),
+                    '--evaluation-id', evaluationId,
+                    '--opponent', plan.files.opponent, '--env', plan.files.environment,
+                    '--build-id', plan.build_id, '--output-root', BENCHMARK_REPORTS,
+                ]);
+                reportName = path.basename(output.split(/\r?\n/).pop());
+                if (!findStageReport(item, index, scenario, evaluation.candidate,
+                    plan, evaluationId, reportName)) {
+                    throw Error('Evaluator did not return a matching immutable stage report.');
+                }
+            }
+            evaluation.reports[scenario.id] = reportName;
+            save();
+        }
+        evaluation.status = 'completed';
+        evaluation.finished_at = now();
+        delete evaluation.error;
+        delete item.stage_evaluation_error;
+        save();
+        return true;
+    } catch (error) {
+        if (record.evaluation) {
+            record.evaluation.status = 'failed';
+            record.evaluation.error = error.message;
+        }
+        item.stage_evaluation_error = error.message;
+        state.armed = false;
+        state.message = 'Stage evaluation failed; queue disarmed: ' + error.message;
+        save();
+        return false;
+    }
+}
+
 function blocked(item, message) {
     if (item) { item.status = 'interrupted'; item.error = message; }
     state.armed = false;
