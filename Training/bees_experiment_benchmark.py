@@ -71,13 +71,16 @@ def read_benchmark(path: Path) -> tuple[dict, str]:
 
 
 def evaluate(recipe: Path, candidate: Path, opponent: Path, environment: Path,
-             build_id: str, run_id: str, output_root: Path) -> Path:
+             build_id: str, run_id: str, output_root: Path, *,
+             candidate_sha256: str = "", experiment: dict | None = None) -> Path:
     benchmark, recipe_hash = read_benchmark(recipe)
     artifacts = {"candidate": candidate, "opponent": opponent, "environment": environment}
     for name, source in artifacts.items():
         if not source.is_file():
             raise ValueError(f"{name} file does not exist: {source}")
     hashes = {key: sha256_file(value) for key, value in artifacts.items()}
+    if candidate_sha256 and hashes["candidate"] != candidate_sha256:
+        raise ValueError("Selected candidate changed after its registry hash was pinned.")
 
     # The canonical evaluator is imported only for actual evaluation, so recipe
     # validation and --help do not need the ML-Agents/ONNX runtime installed.
@@ -122,6 +125,8 @@ def evaluate(recipe: Path, candidate: Path, opponent: Path, environment: Path,
         "environment_executable_sha256": hashes["environment"],
         "metrics": result.to_dict(),
     }
+    if experiment is not None:
+        record["experiment"] = experiment
     output_root.mkdir(parents=True, exist_ok=True)
     name = stamp.strftime("%Y%m%dT%H%M%S") + "-" + uuid.uuid4().hex + ".json"
     destination = output_root / name
@@ -137,12 +142,12 @@ def evaluate(recipe: Path, candidate: Path, opponent: Path, environment: Path,
     return destination
 
 
-def candidate_for_run(registry: Path, run_id: str) -> Path:
-    # The registry already owns model/run provenance. Read it without creating
-    # another model index or changing promotion/checkpoint state.
+def registered_candidate_for_run(registry: Path, run_id: str) -> dict:
+    # Pin the exact immutable export and its training step before starting a
+    # multi-scenario stage suite. Never select "latest" separately per scenario.
     with sqlite3.connect(registry.resolve().as_uri() + "?mode=ro", uri=True) as db:
         row = db.execute(
-            "SELECT artifact_path, artifact_sha256 FROM models "
+            "SELECT artifact_path, artifact_sha256, training_step FROM models "
             "WHERE training_run_id = ? ORDER BY training_step DESC, created_at DESC, model_id DESC LIMIT 1",
             (run_id,),
         ).fetchone()
@@ -151,30 +156,64 @@ def candidate_for_run(registry: Path, run_id: str) -> Path:
     candidate = Path(row[0]).resolve()
     if not candidate.is_file() or sha256_file(candidate) != row[1]:
         raise ValueError(f"Registered checkpoint is missing or changed: {candidate}")
-    return candidate
+    return {"path": str(candidate), "sha256": row[1], "training_step": int(row[2])}
 
+
+def candidate_for_run(registry: Path, run_id: str) -> Path:
+    return Path(registered_candidate_for_run(registry, run_id)["path"])
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Fixed-seed independent Bees combat evaluation.")
-    parser.add_argument("--benchmark", type=Path, required=True, help="Versioned benchmark JSON.")
+    parser.add_argument("--benchmark", type=Path, help="Versioned benchmark JSON.")
     selection = parser.add_mutually_exclusive_group(required=True)
     selection.add_argument("--candidate", type=Path, help="Exported candidate ONNX model.")
     selection.add_argument("--candidate-run", help="Use the latest registered export from this stopped run.")
+    selection.add_argument("--resolve-candidate-run", help="Return a read-only JSON record of the latest registered export.")
     parser.add_argument("--registry", type=Path, default=DEFAULT_REPORT_DIR.parents[1] / "registry.sqlite3")
-    parser.add_argument("--opponent", type=Path, required=True, help="Fixed reference ONNX model.")
-    parser.add_argument("--env", type=Path, required=True, help="Matching Unity evaluation executable.")
-    parser.add_argument("--build-id", required=True, help="Unity build identity; keeps results comparable.")
+    parser.add_argument("--opponent", type=Path, help="Fixed reference ONNX model.")
+    parser.add_argument("--env", type=Path, help="Matching Unity evaluation executable.")
+    parser.add_argument("--build-id", default="", help="Unity build identity; keeps results comparable.")
+    parser.add_argument("--candidate-sha256", default="", help="Require this immutable candidate hash.")
+    parser.add_argument("--candidate-training-step", type=int, help="Pinned candidate registry step.")
+    parser.add_argument("--experiment-id", default="", help="Experiment ID for stage provenance.")
+    parser.add_argument("--stage-index", type=int, help="Zero-based curriculum stage for stage provenance.")
+    parser.add_argument("--stage-name", default="", help="Curriculum stage name for report presentation.")
+    parser.add_argument("--stage-step", type=int, help="Observed cumulative learner steps at the stage boundary.")
     parser.add_argument("--run-id", default="", help="Optional training run for web cross-reference.")
     parser.add_argument("--output-root", type=Path, default=DEFAULT_REPORT_DIR)
     args = parser.parse_args()
-    if not args.build_id.strip():
-        parser.error("--build-id must not be empty.")
+    if args.resolve_candidate_run:
+        if any((args.benchmark, args.opponent, args.env, args.build_id, args.run_id,
+                args.candidate_sha256, args.experiment_id, args.stage_index is not None)):
+            parser.error("--resolve-candidate-run only accepts --registry.")
+        print(json.dumps(registered_candidate_for_run(args.registry, args.resolve_candidate_run)))
+        return 0
+    if not args.benchmark or not args.opponent or not args.env or not args.build_id.strip():
+        parser.error("Evaluation requires --benchmark, --opponent, --env and --build-id.")
     if args.candidate_run and args.run_id and args.candidate_run != args.run_id:
         parser.error("--run-id must match --candidate-run.")
+    if args.candidate_sha256 and not re.fullmatch(r"[a-f0-9]{64}", args.candidate_sha256):
+        parser.error("--candidate-sha256 must be a SHA-256 hex string.")
+    if args.experiment_id and not re.fullmatch(r"[a-zA-Z0-9._-]{1,128}", args.experiment_id):
+        parser.error("--experiment-id is invalid.")
+    if args.stage_index is not None and (args.stage_index < 0 or not args.experiment_id):
+        parser.error("Stage index requires a valid experiment ID.")
+    if args.stage_step is not None and args.stage_step < 0:
+        parser.error("--stage-step must be nonnegative.")
+    if args.candidate_training_step is not None and args.candidate_training_step < 0:
+        parser.error("--candidate-training-step must be nonnegative.")
+    if (args.stage_name or args.stage_step is not None or args.candidate_training_step is not None) and args.stage_index is None:
+        parser.error("Stage metadata requires --stage-index.")
+    experiment = None if args.stage_index is None else {
+        "id": args.experiment_id, "stage_index": args.stage_index,
+        "stage_name": args.stage_name, "stage_step": args.stage_step,
+        "candidate_training_step": args.candidate_training_step,
+    }
     candidate = candidate_for_run(args.registry, args.candidate_run) if args.candidate_run else args.candidate.resolve()
     result = evaluate(
         args.benchmark.resolve(), candidate, args.opponent.resolve(),
-        args.env.resolve(), args.build_id.strip(), (args.candidate_run or args.run_id).strip(), args.output_root.resolve(),
+        args.env.resolve(), args.build_id.strip(), (args.candidate_run or args.run_id).strip(),
+        args.output_root.resolve(), candidate_sha256=args.candidate_sha256, experiment=experiment,
     )
     print(result)
     return 0
