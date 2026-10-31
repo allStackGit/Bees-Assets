@@ -144,10 +144,12 @@ Evaluation does not change trainer settings.
 
 Expand **Trainer configuration** when queuing an experiment. Defaults come from
 the current immutable release runtime. Beta, lambda, learning rate, batch/buffer
-size, epoch count, network depth, normalization and initialization/environment
-seed are explicit. Each experiment starts a fresh policy and optimizer; checkpoint
-warm starts are not supported by this form. The seed does not replace the
-separate historical-opponent sampler's existing seed.
+size, epoch count, network depth, normalization and ML-Agents seed
+are explicit. Each experiment starts a fresh policy and optimizer; checkpoint
+warm starts are not supported by this form. Ordinary Unity training generates
+an independent process-root scenario seed, so the ML-Agents seed alone cannot
+reproduce identical training encounters. It also does not replace the separate
+historical-opponent sampler's existing seed.
 
 A content-addressed YAML snapshot is stored once under
 `Training/Experiments/Configurations`. The item records its hash, resolved
