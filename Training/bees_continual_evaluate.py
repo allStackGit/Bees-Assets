@@ -833,6 +833,9 @@ def run_match_group(
     environment_steps = 0
     try:
         environment.reset()
+        if time_scale is not None:
+            # Stage reapplies its gameplay time scale when each arena resets.
+            engine.set_configuration_parameters(time_scale=float(time_scale))
         teams = _validate_environment_behaviors(environment.behavior_specs, behavior_name)
         policies = {0: candidate, 1: opponent}
         for team, name in teams.items():
@@ -854,7 +857,10 @@ def run_match_group(
                     environment.set_actions(name, actions)
             environment.step()
             environment_steps += 1
-            completed.extend(channel.drain())
+            fresh_results = channel.drain()
+            completed.extend(fresh_results)
+            if fresh_results and time_scale is not None:
+                engine.set_configuration_parameters(time_scale=float(time_scale))
             if len(completed) > matches:
                 raise EvaluationError(
                     f"Unity emitted {len(completed)} results for a {matches}-match group."
