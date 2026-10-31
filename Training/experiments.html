@@ -216,7 +216,10 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
 <button id="add-stage" type="button">Add curriculum stage</button>
 </details>
 <p class="muted">Arguments override the cluster defaults. Each experiment starts a fresh policy and optimizer using its frozen trainer configuration. v26 supports width 128 and feedforward networks; layer count and normalization can vary.</p><details style="margin:12px 0"><summary>Trainer configuration · fresh initialization</summary><p id="trainer-config-status">Loading release defaults…</p><div class="formgrid"><label>Entropy beta<input id="trainer-beta" type="number" min="0" step="any" required></label><label>Lambda<input id="trainer-lambd" type="number" min="0" step="any" required></label><label>Learning rate<input id="trainer-learning_rate" type="number" min="0" step="any" required></label><label>Batch size<input id="trainer-batch_size" type="number" min="1" step="1" required></label><label>Buffer size<input id="trainer-buffer_size" type="number" min="1" step="1" required></label><label>PPO epochs<input id="trainer-num_epoch" type="number" min="1" step="1" required></label><label>Network layers (width 128)<input id="trainer-num_layers" type="number" min="1" step="1" required></label><label>ML-Agents initialization seed<input id="trainer-seed" type="number" min="0" step="1" required></label><label>Observation normalization<select id="trainer-normalize"><option value="true">Enabled</option><option value="false">Disabled</option></select></label></div></details>
-<p><label><input id="evaluate-after" type="checkbox" style="width:auto" disabled> Evaluate final checkpoint before the next experiment</label><small id="benchmark-config">Loading evaluation settings…</small></p>
+<p><label><input id="evaluate-stages" type="checkbox" style="width:auto" disabled> Evaluate every curriculum stage against the frozen benchmark suite</label>
+<label><input id="evaluate-after" type="checkbox" style="width:auto" disabled> Evaluate final checkpoint only (first benchmark recipe)</label>
+<small id="benchmark-config">Loading evaluation settings…</small></p>
+<p class="muted">Stage evaluations stop the learner, pin its exported checkpoint, run each configured scenario, and resume the same optimizer only after all reports are verified. All scenarios run at every stage, including earlier ones to measure retention. An evaluation failure disarms the queue.</p>
 <button class="primary" type="submit">Add to queue</button>
 </form>
 </section>
@@ -234,11 +237,12 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
 <p class="muted">These results come from the existing Unity/ONNX evaluator, not the training-telemetry graph. Only identical benchmark definitions, reference models, and environment builds are directly comparable. Win and timeout intervals use the 95% Wilson method. Fixed-seed results are screening evidence; these intervals do not measure training-seed variability. Accuracy is descriptive because shots within a match are correlated.</p>
 <div class="bar">
 <label>Benchmark <select id="benchmark-filter"><option value="">All benchmarks</option></select></label>
+<label>Curriculum stage <select id="benchmark-stage-filter"><option value="">All stages</option></select></label>
 <button id="benchmark-refresh">Refresh results</button>
 </div>
 <div id="benchmark-summary" class="summary" style="margin:12px 0"></div>
 <div class="tablewrap"><table><thead><tr>
-<th>Benchmark</th><th>Candidate run</th><th>Reference SHA</th><th>Matches</th><th>Win % · 95% interval</th><th>Timeout % · 95% interval</th><th>Hits / shots</th><th>Damage</th><th>Mean seconds</th><th>Build</th><th>Details</th>
+<th>Benchmark</th><th>Experiment</th><th>Stage</th><th>Candidate step</th><th>Candidate run</th><th>Reference SHA</th><th>Matches</th><th>Win % · 95% interval</th><th>Timeout % · 95% interval</th><th>Hits / shots</th><th>Damage</th><th>Mean seconds</th><th>Build</th><th>Details</th>
 </tr></thead><tbody id="benchmark-rows"></tbody></table></div>
 </details>
 </section>
@@ -336,12 +340,16 @@ function render(data) {
         txt('span', data.armed ? 'Queue armed' : 'Queue not armed')
     );
     $('start').disabled = data.busy || data.armed ||
-        (!items.some(x => x.status === 'queued') && active?.status !== 'transitioning');
+        (!items.some(x => x.status === 'queued') &&
+            !['transitioning', 'evaluating_final_stage'].includes(active?.status));
     $('stop').disabled = !data.active_id && !data.armed;
     $('message').textContent = data.message || '';
     $('message').classList.toggle('error', /failed|error|attention|paused|interrupted|refusing|changed|not started/i.test(data.message || ''));
     $('evaluate-after').disabled = !data.benchmark_configured;
-    $('benchmark-config').textContent = data.benchmark_configured ? 'Uses the configured fixed benchmark and reference.' : 'Configure Training/Experiments/benchmark-settings.json to enable evaluations.';
+    $('evaluate-stages').disabled = !data.benchmark_configured;
+    $('benchmark-config').textContent = data.benchmark_configured
+        ? 'Uses the frozen recipes, reference model and evaluation build from benchmark-settings.json.'
+        : 'Configure Training/Experiments/benchmark-settings.json to enable evaluations.';
     const groups = [...new Set(items.map(x => x.group))].sort();
     const filter = $('filter'), before = filter.value;
     filter.replaceChildren(new Option('All', ''), ...groups.map(x => new Option(x, x)));
@@ -380,16 +388,29 @@ function render(data) {
                     ' · sampled timeout target at ' + fmt(record.first_target_step) +
                     ' total steps' + (stageStart == null ? '' :
                         ' (' + fmt(record.first_target_step - stageStart) + ' in stage)');
+                const evaluations = record.evaluation;
+                const assessment = evaluations
+                    ? ' · fixed-seed suite: ' + evaluations.status +
+                        ' (' + Object.keys(evaluations.reports || {}).length +
+                        '/' + (item.stage_benchmarks?.scenarios?.length || 1) + ' scenarios)' +
+                        (evaluations.candidate ? ' · ONNX step ' +
+                            fmt(evaluations.candidate.training_step) : '') +
+                        (evaluations.error ? ' · ' + evaluations.error : '')
+                    : '';
                 return (current ? 'CURRENT ' : '') + (index + 1) + '/' + item.stages.length +
                     ' ' + stage.name + ' · through ' + fmt(stage.end_step) + ' cumulative steps' +
                     (stage.timeout_target_pct == null ? '' :
                         ' · timeout target ' + fmt(stage.timeout_target_pct, 1) + '%') +
-                    completion + milestone + '\nArguments:\n' +
+                    completion + milestone + assessment + '\nArguments:\n' +
                     stage.env_args.join('\n');
             }).join('\n\n');
             details.append(txt('pre', 'CURRICULUM · SAME POLICY / OPTIMIZER\n' + description));
         }
         if (item.trainer_config) details.append(txt('pre', 'Initialization: fresh\nFrozen configuration SHA: ' + item.trainer_config.sha256 + '\nSettings:\n' + JSON.stringify(item.trainer_config.resolved, null, 2) + '\nVerified generated configurations: ' + (item.applied_configurations || []).length));
+        if (item.stage_evaluation_error) {
+            details.append(Object.assign(txt('p', 'Stage evaluation failure: ' +
+                item.stage_evaluation_error), { className: 'error' }));
+        }
         if (item.benchmark_status) {
             const evaluation = txt('p', 'Checkpoint evaluation: ' + item.benchmark_status +
                 (item.benchmark_report ? ' · ' + item.benchmark_report : '') +
@@ -447,7 +468,7 @@ function benchmarkKey(r) {
 function benchmarkComparisonKey(r) {
     return [r.benchmark.sha256, r.opponent_sha256, r.build_id,
         r.environment_executable_sha256, r.evaluation_code_sha256,
-        r.evaluation_protocol_version].join('|');
+        r.evaluation_protocol_version, r.experiment?.stage_index ?? 'legacy'].join('|');
 }
 
 function outcomeInterval(count, total) {
@@ -465,7 +486,16 @@ function renderBenchmarks() {
     const previous = filter.value;
     filter.replaceChildren(new Option('All benchmarks', ''), ...options.map(x => new Option(x, x)));
     filter.value = options.includes(previous) ? previous : '';
-    const visible = benchmarkData.filter(r => !filter.value || benchmarkKey(r) === filter.value);
+    const stageFilter = $('benchmark-stage-filter');
+    const stages = [...new Set(benchmarkData.map(r => r.experiment?.stage_index)
+        .filter(x => Number.isInteger(x)))].sort((a,b) => a-b);
+    const previousStage = stageFilter.value;
+    stageFilter.replaceChildren(new Option('All stages', ''),
+        ...stages.map(x => new Option('Stage ' + (x + 1), String(x))));
+    stageFilter.value = stages.some(x => String(x) === previousStage) ? previousStage : '';
+    const visible = benchmarkData.filter(r =>
+        (!filter.value || benchmarkKey(r) === filter.value) &&
+        (!stageFilter.value || String(r.experiment?.stage_index) === stageFilter.value));
     $('benchmark-rows').replaceChildren();
     const grouped = new Map();
     for (const report of visible) {
@@ -474,6 +504,10 @@ function renderBenchmarks() {
         const m = report.metrics || {};
         const tr = document.createElement('tr');
         cell(tr, benchmarkKey(report));
+        cell(tr, report.experiment?.id ? report.experiment.id.slice(0, 8) : '—');
+        cell(tr, report.experiment?.stage_index == null ? 'Final only' :
+            (report.experiment.stage_index + 1) + '. ' + report.experiment.stage_name);
+        cell(tr, fmt(report.experiment?.candidate_training_step));
         cell(tr, report.run_id || (report.candidate_sha256 || '').slice(0, 12));
         cell(tr, (report.opponent_sha256 || '').slice(0, 12));
         cell(tr, fmt(m.matches));
@@ -496,7 +530,11 @@ function renderBenchmarks() {
             '\nSeed: ' + report.benchmark.seed +
             '\nTime scale: ' + (report.benchmark.time_scale ?? 'Unity default') +
             '\nArgs: ' + report.benchmark.env_args.join(' ') +
-            '\nEvaluated: ' + report.evaluated_at);
+            '\nEvaluated: ' + report.evaluated_at +
+            '\nExperiment: ' + (report.experiment?.id || '—') +
+            '\nStage: ' + (report.experiment?.stage_name || '—') +
+            '\nStage boundary step: ' + fmt(report.experiment?.stage_step) +
+            '\nPinned candidate step: ' + fmt(report.experiment?.candidate_training_step));
         details.append(summary, pre); td.append(details); tr.append(td);
         $('benchmark-rows').append(tr);
     }
@@ -507,7 +545,7 @@ function renderBenchmarks() {
     );
     if (!visible.length) {
         const row = document.createElement('tr'), c = document.createElement('td');
-        c.colSpan = 11; c.textContent = 'No benchmark results recorded yet.';
+        c.colSpan = 14; c.textContent = 'No benchmark results recorded yet.';
         row.append(c); $('benchmark-rows').append(row);
     }
 }
@@ -528,6 +566,7 @@ async function refreshBenchmarks() {
 $('benchmark-panel').addEventListener('toggle', refreshBenchmarks);
 $('benchmark-refresh').addEventListener('click', refreshBenchmarks);
 $('benchmark-filter').addEventListener('change', renderBenchmarks);
+$('benchmark-stage-filter').addEventListener('change', renderBenchmarks);
 
 let workerRefreshPending = false;
 async function refreshWorkers() {
@@ -635,6 +674,12 @@ function addCurriculumStage() {
     $('stage-rows').append(row);
 }
 $('add-stage').addEventListener('click', addCurriculumStage);
+$('evaluate-stages').addEventListener('change', () => {
+    if ($('evaluate-stages').checked) $('evaluate-after').checked = false;
+});
+$('evaluate-after').addEventListener('change', () => {
+    if ($('evaluate-after').checked) $('evaluate-stages').checked = false;
+});
 $('create').addEventListener('submit', async e => {
     e.preventDefault();
     try {
@@ -653,6 +698,7 @@ $('create').addEventListener('submit', async e => {
                     .map(x => x.trim()).filter(Boolean),
             })),
             benchmark: $('evaluate-after').checked,
+            evaluate_stages: $('evaluate-stages').checked,
             trainer: {
                 hyperparameters: Object.fromEntries(['beta','lambd','learning_rate','batch_size','buffer_size','num_epoch'].map(k => [k, Number($('trainer-' + k).value)])),
                 network_settings: { num_layers: Number($('trainer-num_layers').value), normalize: $('trainer-normalize').value === 'true' },
