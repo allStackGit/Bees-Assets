@@ -175,6 +175,7 @@ def main() -> int:
     parser.add_argument("--build-id", default="", help="Unity build identity; keeps results comparable.")
     parser.add_argument("--candidate-sha256", default="", help="Require this immutable candidate hash.")
     parser.add_argument("--candidate-training-step", type=int, help="Pinned candidate registry step.")
+    parser.add_argument("--evaluation-id", default="", help="Stable 64-character report identity for interrupted suite reconciliation.")
     parser.add_argument("--experiment-id", default="", help="Experiment ID for stage provenance.")
     parser.add_argument("--stage-index", type=int, help="Zero-based curriculum stage for stage provenance.")
     parser.add_argument("--stage-name", default="", help="Curriculum stage name for report presentation.")
@@ -194,6 +195,8 @@ def main() -> int:
         parser.error("--run-id must match --candidate-run.")
     if args.candidate_sha256 and not re.fullmatch(r"[a-f0-9]{64}", args.candidate_sha256):
         parser.error("--candidate-sha256 must be a SHA-256 hex string.")
+    if args.evaluation_id and not re.fullmatch(r"[a-f0-9]{64}", args.evaluation_id):
+        parser.error("--evaluation-id must be a SHA-256 hex string.")
     if args.experiment_id and not re.fullmatch(r"[a-zA-Z0-9._-]{1,128}", args.experiment_id):
         parser.error("--experiment-id is invalid.")
     if args.stage_index is not None and (args.stage_index < 0 or not args.experiment_id):
@@ -202,12 +205,13 @@ def main() -> int:
         parser.error("--stage-step must be nonnegative.")
     if args.candidate_training_step is not None and args.candidate_training_step < 0:
         parser.error("--candidate-training-step must be nonnegative.")
-    if (args.stage_name or args.stage_step is not None or args.candidate_training_step is not None) and args.stage_index is None:
+    if (args.stage_name or args.stage_step is not None or args.candidate_training_step is not None or args.evaluation_id) and args.stage_index is None:
         parser.error("Stage metadata requires --stage-index.")
     experiment = None if args.stage_index is None else {
         "id": args.experiment_id, "stage_index": args.stage_index,
         "stage_name": args.stage_name, "stage_step": args.stage_step,
         "candidate_training_step": args.candidate_training_step,
+        "evaluation_id": args.evaluation_id,
     }
     candidate = candidate_for_run(args.registry, args.candidate_run) if args.candidate_run else args.candidate.resolve()
     result = evaluate(
