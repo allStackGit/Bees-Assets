@@ -673,6 +673,11 @@ async function transitionStage(item, status) {
             throw Error('Safe curriculum stop not confirmed; refusing to switch environments.');
         }
         item.stage_stop_confirmed = true;
+        const finished = stageRecord(item, index);
+        if (!finished.finished_at) {
+            finished.finished_at = now();
+            finished.finished_step = item.step;
+        }
         save();
     }
     if (state.stop_requested || !state.armed) {
