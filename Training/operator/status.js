@@ -205,6 +205,21 @@ function getLocalLearnerStats(runId = '') {
 }
 
 
+// Unlike the interactive status command, experiments must never use an older
+// run's fallback logs as evidence that a newly started learner has advanced.
+function getAuthoritativeLearnerStats(runId) {
+    if (!runId || !/^[A-Za-z0-9._-]+$/.test(runId)) return null;
+    const file = path.join(
+        paths.centralAgentInstallRoot, 'logs', runId, 'learner-live.log'
+    );
+    if (!exists(file)) return null;
+    const result = parseLearnerLogFiles([{
+        full: file,
+        mtimeMs: fs.statSync(file).mtimeMs,
+    }]);
+    return result.Step === null ? null : result;
+}
+
 function restartWallClockRate(learner, runId, running) {
     if (!runId || !/^[a-zA-Z0-9_.-]+$/.test(runId)) {
         return learner.RestartAverageStepsPerSecond;
@@ -942,6 +957,7 @@ async function showStatus(config, adminToken, single, refreshSeconds = 2) {
 
 module.exports = {
     getLocalLearnerStats,
+    getAuthoritativeLearnerStats,
     getLatestPpoUpdate,
     getStatusFrameLines,
     rolloutBlockers,
