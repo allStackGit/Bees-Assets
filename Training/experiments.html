@@ -371,11 +371,15 @@ function render(data) {
             const description = item.stages.map((stage, index) => {
                 const record = history[index] || {};
                 const current = index === (item.stage_index || 0);
+                const stageStart = record.entered_step ?? (index ? null : 0);
                 const completion = record.finished_step == null ? '' :
-                    ' · finished at ' + fmt(record.finished_step) + ' steps';
+                    ' · finished at ' + fmt(record.finished_step) + ' total steps' +
+                    (stageStart == null ? '' :
+                        ' (' + fmt(record.finished_step - stageStart) + ' in stage)');
                 const milestone = record.first_target_step == null ? '' :
-                    ' · sampled timeout target first sustained near ' +
-                    fmt(record.first_target_step) + ' steps';
+                    ' · sampled timeout target at ' + fmt(record.first_target_step) +
+                    ' total steps' + (stageStart == null ? '' :
+                        ' (' + fmt(record.first_target_step - stageStart) + ' in stage)');
                 return (current ? 'CURRENT ' : '') + (index + 1) + '/' + item.stages.length +
                     ' ' + stage.name + ' · through ' + fmt(stage.end_step) + ' cumulative steps' +
                     (stage.timeout_target_pct == null ? '' :
