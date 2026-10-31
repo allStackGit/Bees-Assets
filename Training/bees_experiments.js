@@ -622,7 +622,18 @@ async function launch() {
         await assertRlEnvironmentArgsValid(config, latest, stage.env_args, python);
     }
     if (!state.armed || state.stop_requested) return;
-    item.previous_run_id = String(status.desired.run_id || '');
+    const afterValidation = await control();
+    if (!afterValidation.desired ||
+        afterValidation.desired.training_enabled ||
+        afterValidation.desired.pending_release ||
+        afterValidation.desired.run_id !== status.desired.run_id ||
+        readJson(paths.latestReleasePath).build_id !== item.release_build) {
+        state.armed = false;
+        state.message = 'Training or release ownership changed during curriculum validation.';
+        save();
+        return;
+    }
+    item.previous_run_id = String(afterValidation.desired.run_id || '');
     item.status = 'starting';
     item.started_at = now();
     state.active_id = item.id;
