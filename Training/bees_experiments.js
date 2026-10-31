@@ -146,6 +146,61 @@ function verifyBenchmarkPlan(plan) {
     }
 }
 
+
+function executionOptions(config) {
+    return Object.fromEntries(['learnerDevice', 'threadedTraining', 'threadedPolicyLag',
+        'generationSteps', 'numLocalEnvs', 'localOnly', 'minRemoteActors',
+        'maxRemoteActors', 'learnerOptimizations'].map(k => [k, config[k] ?? null]));
+}
+
+async function configTool(args) {
+    const runtime = readJson(paths.centralRuntimePointerPath);
+    return new Promise((resolve, reject) => {
+        execFile(runtime.python_executable, [path.join(__dirname, 'bees_experiment_config.py'), ...args],
+            { windowsHide: true, maxBuffer: 65536 }, (error, stdout, stderr) => {
+                if (error) reject(Error(String(stderr || error.message).trim()));
+                else { try { resolve(JSON.parse(stdout)); } catch (e) { reject(e); } }
+            });
+    });
+}
+
+async function trainerConfiguration(overrides) {
+    const runtime = readJson(paths.centralRuntimePointerPath);
+    const release = readJson(paths.latestReleasePath);
+    if (runtime.runtime_version !== release.training_runtime.runtime_version) {
+        throw Error('Prepared training runtime differs from the current release.');
+    }
+    return configTool(['prepare', '--base', path.join(runtime.runtime_root, 'rl_1v1_config.yaml'),
+        '--overrides', JSON.stringify(overrides),
+        '--output', path.join(paths.trainingRoot, 'Experiments', 'Configurations')]);
+}
+
+function verifyTrainerSnapshot(item) {
+    if (hashFile(item.trainer_config.path) !== item.trainer_config.sha256) {
+        throw Error('Frozen experiment trainer configuration changed.');
+    }
+}
+
+async function verifyEffectiveConfiguration(item) {
+    verifyTrainerSnapshot(item);
+    const release = readJson(paths.latestReleasePath);
+    if (release.run_id !== item.run_id || release.experiment_config?.sha256 !== item.trainer_config.sha256) {
+        throw Error('Active release does not own this experiment configuration.');
+    }
+    const root = path.join(paths.trainingRoot, 'metadata', 'continuous-service', item.run_id, 'trainer-configs');
+    const files = fs.existsSync(root) ? fs.readdirSync(root).filter(f => /^generation-\d{8}[-a-z0-9]*\.yaml$/.test(f)) : [];
+    item.applied_configurations = item.applied_configurations || [];
+    for (const file of files) {
+        const actual = path.join(root, file);
+        if (item.applied_configurations.some(x => x.path === actual && x.sha256 === hashFile(actual))) continue;
+        const result = await configTool(['verify', '--expected', item.trainer_config.path, '--actual', actual]);
+        item.applied_configurations.push({ ...result, verified_at: now() });
+    }
+    if (item.step > 0 && !item.applied_configurations.length) {
+        throw Error('Learner progressed without a verifiable generated experiment configuration.');
+    }
+}
+
 async function evaluateItem(item) {
     try {
         const status = await control();
@@ -241,7 +296,8 @@ async function monitor() {
     if (item.status === 'starting') {
         // Recovery is intentionally conservative: never assume another live run is ours.
         if (!(d.training_enabled && d.run_id && d.run_id !== item.previous_run_id &&
-            matches(d.environment_args, item.env_args))) {
+            matches(d.environment_args, item.env_args) &&
+            (!item.trainer_config || readJson(paths.latestReleasePath).experiment_config?.sha256 === item.trainer_config.sha256))) {
             blocked(item, 'Interrupted startup could not be matched to a new run; inspect training.');
             return;
         }
@@ -266,9 +322,14 @@ async function monitor() {
         return;
     }
     measure(item, status);
+    let configurationError = '';
+    if (item.trainer_config) {
+        try { await verifyEffectiveConfiguration(item); }
+        catch (error) { configurationError = error.message; item.error = error.message; }
+    }
     const elapsed = Date.now() - Date.parse(item.started_at);
     const stagnant = Date.now() - Date.parse(item.last_progress);
-    const reason = state.stop_requested ? 'manual' :
+    const reason = configurationError ? 'configuration_mismatch' : state.stop_requested ? 'manual' :
         item.step != null && item.step >= item.max_steps ? 'budget' :
         elapsed >= item.max_minutes * 60000 ? 'time_limit' :
         stagnant >= item.stall_minutes * 60000 ? 'no_progress' : '';
@@ -300,13 +361,19 @@ async function launch() {
         save(); return;
     }
     if (item.benchmark) verifyBenchmarkPlan(item.benchmark);
+    if (item.trainer_config) {
+        verifyTrainerSnapshot(item);
+        if (JSON.stringify(executionOptions(loadConfig())) !== JSON.stringify(item.execution_options)) {
+            throw Error('Training execution settings changed since this experiment was queued.');
+        }
+    }
     item.previous_run_id = String(status.desired.run_id || '');
     item.status = 'starting';
     item.started_at = now();
     state.active_id = item.id;
     state.message = 'Starting ' + item.name;
     save();
-    await invokeStart({ newRun: true, envArgs: item.env_args });
+    await invokeStart({ newRun: true, envArgs: item.env_args, experimentConfig: item.trainer_config });
     await monitor();
 }
 
@@ -335,7 +402,7 @@ async function cycle() {
     }
 }
 
-function definition(input) {
+async function definition(input) {
     const name = String(input.name || '').trim(), group = String(input.group || 'General').trim();
     const max_steps = Number(input.max_steps), max_minutes = Number(input.max_minutes);
     const stall_minutes = Number(input.stall_minutes);
@@ -361,6 +428,8 @@ function definition(input) {
         max_steps, max_minutes, stall_minutes, env_args,
         release_build: String(release.build_id), samples: [], step: null, run_id: null,
         benchmark: input.benchmark === true ? benchmarkPlan() : null,
+        trainer_config: await trainerConfiguration(input.trainer || {}),
+        execution_options: executionOptions(config),
     };
 }
 
@@ -416,6 +485,9 @@ const server = http.createServer(async (req, res) => {
         if (req.method === 'GET' && route === '/api/state') {
             return json(res, 200, { ...state, busy, benchmark_configured: fs.existsSync(BENCHMARK_SETTINGS) });
         }
+        if (req.method === 'GET' && route === '/api/configuration') {
+            return json(res, 200, await trainerConfiguration({}));
+        }
         if (req.method === 'GET' && route === '/api/workers') {
             const status = await control();
             return json(res, 200, workerSnapshot(status));
@@ -426,7 +498,7 @@ const server = http.createServer(async (req, res) => {
         if (req.method !== 'POST') return json(res, 404, { error: 'Not found.' });
         const value = await body(req);
         if (route === '/api/queue') {
-            const item = definition(value);
+            const item = await definition(value);
             state.items.push(item); save();
             return json(res, 201, item);
         }

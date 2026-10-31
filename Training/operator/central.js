@@ -55,7 +55,7 @@ function centralSupervisorAgentPath(preparedRuntime) {
 
 function buildCentralLearnerArgv(config, learnerPython, unity, runtimeRoot) {
     const service = path.join(runtimeRoot, 'bees_continual_elastic_wan_service.py');
-    const trainerConfig = path.join(runtimeRoot, 'rl_1v1_config.yaml');
+    const trainerConfig = config.experimentTrainerConfig || path.join(runtimeRoot, 'rl_1v1_config.yaml');
     const continualConfig = path.join(runtimeRoot, 'continual_learning_config.json');
     const telemetry = path.join(paths.trainingRoot, 'Telemetry');
     const models = path.join(paths.trainingRoot, 'Models');
@@ -172,8 +172,12 @@ function prepareCentralReleaseRuntimeUnchecked(config, bootstrapPython, unity, r
     const runtimeRoot = path.resolve(String(installed.installed_root));
     const runtimeVersion = String(installed.runtime_version || '').trim().toLowerCase();
     const learnerPython = path.resolve(ensureLearnerPython(config, runtimeRoot));
+    const experiment = release.experiment_config;
+    if (experiment && sha256File(experiment.path) !== experiment.sha256) {
+        throw Error('Frozen experiment trainer configuration changed.');
+    }
     const launchCommand = newCentralLearnerLaunchCommand(
-        config,
+        { ...config, experimentTrainerConfig: experiment ? experiment.path : null },
         learnerPython,
         unity,
         runtimeRoot,

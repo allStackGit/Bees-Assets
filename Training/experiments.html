@@ -83,7 +83,7 @@ pre { font: 12px/1.4 Arial, Helvetica, sans-serif; white-space: pre-wrap; overfl
 <label>No-progress limit (minutes)<input id="stall" type="number" min="10" max="43200" value="45" required></label>
 <label class="wide">Environment argument overrides, one per line<textarea id="args" placeholder="--rl-map-size-min=96&#10;--rl-map-size-max=112"></textarea></label>
 </div>
-<p class="muted">Arguments override flags from the current cluster configuration. Every queued experiment starts a fresh run using the existing release. Change PPO/network configuration and rebuild the release separately; these settings are not editable here yet.</p>
+<p class="muted">Arguments override the cluster defaults. Each experiment starts a fresh policy and optimizer using its frozen trainer configuration. v26 supports width 128 and feedforward networks; layer count and normalization can vary.</p><details style="margin:12px 0"><summary>Trainer configuration · fresh initialization</summary><p id="trainer-config-status">Loading release defaults…</p><div class="formgrid"><label>Entropy beta<input id="trainer-beta" type="number" min="0" step="any" required></label><label>Lambda<input id="trainer-lambd" type="number" min="0" step="any" required></label><label>Learning rate<input id="trainer-learning_rate" type="number" min="0" step="any" required></label><label>Batch size<input id="trainer-batch_size" type="number" min="1" step="1" required></label><label>Buffer size<input id="trainer-buffer_size" type="number" min="1" step="1" required></label><label>PPO epochs<input id="trainer-num_epoch" type="number" min="1" step="1" required></label><label>Network layers (width 128)<input id="trainer-num_layers" type="number" min="1" step="1" required></label><label>Initialization / environment seed<input id="trainer-seed" type="number" min="0" step="1" required></label><label>Observation normalization<select id="trainer-normalize"><option value="true">Enabled</option><option value="false">Disabled</option></select></label></div></details>
 <p><label><input id="evaluate-after" type="checkbox" style="width:auto" disabled> Evaluate final checkpoint before the next experiment</label><small id="benchmark-config">Loading evaluation settings…</small></p>
 <button class="primary" type="submit">Add to queue</button>
 </form>
@@ -212,6 +212,7 @@ function render(data) {
             '\nEnd reason: ' + (item.end_reason || '—') +
             '\nArguments:\n' + item.env_args.join('\n') + '\n' + (item.error || ''));
         details.append(summary,info);
+        if (item.trainer_config) details.append(txt('pre', 'Initialization: fresh\nFrozen configuration SHA: ' + item.trainer_config.sha256 + '\nSettings:\n' + JSON.stringify(item.trainer_config.resolved, null, 2) + '\nVerified generated configurations: ' + (item.applied_configurations || []).length));
         if (item.benchmark_status) details.append(txt('p', 'Checkpoint evaluation: ' + item.benchmark_status +
             (item.benchmark_report ? ' · ' + item.benchmark_report : '') +
             (item.benchmark_error ? ' · ' + item.benchmark_error : '')));
@@ -396,6 +397,11 @@ $('create').addEventListener('submit', async e => {
             stall_minutes: Number($('stall').value),
             env_args: $('args').value.split('\n').map(s => s.trim()).filter(Boolean),
             benchmark: $('evaluate-after').checked,
+            trainer: {
+                hyperparameters: Object.fromEntries(['beta','lambd','learning_rate','batch_size','buffer_size','num_epoch'].map(k => [k, Number($('trainer-' + k).value)])),
+                network_settings: { num_layers: Number($('trainer-num_layers').value), normalize: $('trainer-normalize').value === 'true' },
+                seed: Number($('trainer-seed').value),
+            },
         });
         $('name').value = ''; await refresh();
     } catch(err) { $('message').textContent = err.message; $('message').classList.add('error'); }
@@ -412,6 +418,26 @@ $('stop').addEventListener('click', async () => {
 $('filter').addEventListener('change', () => latest && render(latest));
 $('metric').addEventListener('change', () => latest && chart(
     latest.items.filter(x => !$('filter').value || x.group === $('filter').value)));
+async function loadTrainerDefaults() {
+    const button = $('create').querySelector('button[type=submit]');
+    button.disabled = true;
+    try {
+        const r = await fetch('/api/configuration', {cache:'no-store'});
+        const data = await r.json();
+        if (!r.ok) throw Error(data.error || 'Trainer configuration unavailable');
+        const settings = data.resolved;
+        for (const [k,v] of Object.entries({...settings.hyperparameters, ...settings.network_settings, seed: settings.seed})) {
+            const input = $('trainer-' + k);
+            if (input) input.value = String(v);
+        }
+        $('trainer-config-status').textContent = 'Defaults from the pinned release. Settings are frozen when added to the queue.';
+        button.disabled = false;
+    } catch (error) {
+        $('trainer-config-status').textContent = error.message;
+        $('trainer-config-status').className = 'error';
+    }
+}
+loadTrainerDefaults();
 refresh(); setInterval(refresh, 5000);
 </script>
 </body></html>
