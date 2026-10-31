@@ -535,6 +535,17 @@ function blocked(item, message) {
     save();
 }
 
+async function finishFinalStageEvaluation(item, status) {
+    if (!state.armed) return;
+    if (!(await evaluateStageSuite(item, item.stage_index || 0, status))) return;
+    item.status = 'completed';
+    item.finished_at = item.finished_at || now();
+    state.active_id = null;
+    state.stop_requested = false;
+    state.message = '';
+    save();
+}
+
 async function finalize(item, status) {
     if (!status.desired || status.desired.run_id !== item.run_id) {
         blocked(item, 'Control plane changed run ownership during stop.');
@@ -560,6 +571,12 @@ async function finalize(item, status) {
             record.finished_step = item.step;
             record.exit_reason = item.end_reason;
         }
+    }
+    if (item.stage_benchmarks && item.status === 'completed') {
+        item.status = 'evaluating_final_stage';
+        save();
+        await finishFinalStageEvaluation(item, status);
+        return;
     }
     if (item.benchmark && item.status === 'completed') {
         item.benchmark_status = 'pending';
@@ -620,7 +637,7 @@ async function transitionStage(item, status) {
         return;
     }
     verifyTrainerSnapshot(item);
-    if (matches(previous.env_args, next.env_args)) {
+    if (matches(previous.env_args, next.env_args) && !item.stage_benchmarks) {
         if (!d.training_enabled) {
             blocked(item, 'Training was disabled outside the manager at a metric-only stage boundary.');
             return;
@@ -663,6 +680,14 @@ async function transitionStage(item, status) {
         return;
     }
     if (!status.desired.training_enabled) {
+        if (!(await evaluateStageSuite(item, index, status))) return;
+        if (state.stop_requested || !state.armed) {
+            item.end_reason = 'manual';
+            item.status = 'stopping';
+            save();
+            await finalize(item, status);
+            return;
+        }
         assertSameLineageCheckpoint(item);
         await invokeStart({ envArgs: next.env_args });
         status = await control();
@@ -705,6 +730,10 @@ async function monitor() {
     const status = await control(), d = status.desired || {};
     if (item.status === 'transitioning') {
         await transitionStage(item, status);
+        return;
+    }
+    if (item.status === 'evaluating_final_stage') {
+        await finishFinalStageEvaluation(item, status);
         return;
     }
     if (item.status === 'starting') {
@@ -979,7 +1008,7 @@ const server = http.createServer(async (req, res) => {
                 }
             }
             if (!state.items.some(x => x.status === 'queued') &&
-                active()?.status !== 'transitioning') {
+                !['transitioning', 'evaluating_final_stage'].includes(active()?.status)) {
                 return json(res, 409, { error: 'Queue is empty.' });
             }
             state.armed = true;
