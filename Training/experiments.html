@@ -565,14 +565,18 @@ function renderBenchmarks() {
         if (!target.has(scenarioKey)) target.set(scenarioKey, report);
     }
     const head = document.createElement('tr');
-    for (const name of ['Experiment / beta', 'Stage', ...columns.values()]) {
+    for (const name of ['Experiment / PPO settings', 'Stage', ...columns.values()]) {
         head.append(txt('th', name));
     }
     $('benchmark-matrix-head').replaceChildren(head);
     $('benchmark-matrix-rows').replaceChildren();
-    const experimentNames = new Map((latest?.items || []).map(item =>
-        [item.id, item.name + ' / β=' +
-            fmt(item.trainer_config?.resolved?.hyperparameters?.beta, 6)]));
+    const experimentNames = new Map((latest?.items || []).map(item => {
+        const hp = item.trainer_config?.resolved?.hyperparameters;
+        return [item.id, item.name + (hp
+            ? ' · β=' + fmt(hp.beta, 6) + ' · λ=' + fmt(hp.lambd, 4) +
+                ' · LR=' + fmt(hp.learning_rate, 6)
+            : '')];
+    }));
     for (const entry of [...stageRows.values()].sort((a,b) =>
         a.experimentId.localeCompare(b.experimentId) || a.stageIndex-b.stageIndex)) {
         const tr = document.createElement('tr');
