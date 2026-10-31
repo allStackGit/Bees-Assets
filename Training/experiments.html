@@ -28,6 +28,10 @@ small, .muted { color: GrayText; }
 table { width: 100%; border-collapse: collapse; }
 th, td { border-bottom: 1px solid #8884; text-align: left; padding: 8px; white-space: nowrap; }
 td.name { white-space: normal; min-width: 170px; }
+td.worker-error { white-space: normal; min-width: 250px; overflow-wrap: anywhere; }
+.worker-issue { color: #d67b62; }
+.worker-summary { cursor: pointer; font-weight: 600; font-size: 16px; }
+details.worker-details[open] > summary { margin-bottom: 12px; }
 th { font-size: 12px; color: GrayText; }
 details { font-size: 12px; }
 pre { white-space: pre-wrap; overflow-wrap: anywhere; max-width: 850px; }
@@ -44,6 +48,17 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; max-width: 850px; }
 <section>
 <h2>Overview</h2><div id="overview" class="summary"></div>
 <p class="muted">Progress is measured from the active run's ML-Agents learner summaries. Combat metrics are sampled from live worker windows, <strong>not</strong> a frozen evaluation benchmark.</p>
+</section>
+<section>
+<details id="worker-panel" class="worker-details">
+<summary class="worker-summary">Worker Status <small id="worker-indicator">· Open for live diagnostics</small></summary>
+<p class="muted" id="worker-summary">Loading current Bees training control status…</p>
+<div class="tablewrap"><table><thead><tr>
+<th>Worker</th><th>State</th><th>Envs</th><th>CPU</th><th>RAM</th>
+<th>LiveExp/s</th><th>Staged/s</th><th>Accept/s</th><th>UploadQ</th><th>BrokerQ</th><th>Age</th><th>Error / diagnostic</th>
+</tr></thead><tbody id="worker-rows"></tbody></table></div>
+<p class="muted">Live training-control information (same source as <code>bees.ps1 status</code>). Updates while this panel is open; nothing is written to experiment history.</p>
+</details>
 </section>
 <section>
 <h2>Queue an experiment</h2>
@@ -186,6 +201,59 @@ function render(data) {
     );
     chart(visible);
 }
+let workerRefreshPending = false;
+async function refreshWorkers() {
+    if (!$('worker-panel').open || workerRefreshPending) return;
+    workerRefreshPending = true;
+    try {
+        const response = await fetch('/api/workers', {cache: 'no-store'});
+        const data = await response.json();
+        if (!response.ok) throw Error(data.error || 'Training control unavailable');
+        const workers = data.workers || [];
+        const troubled = workers.filter(w => w.state === 'STALE' || Boolean(w.error));
+        $('worker-indicator').textContent = '· ' + workers.length + ' reported, ' +
+            troubled.length + ' with warnings';
+        $('worker-summary').textContent =
+            'Training: ' + (data.training_enabled ? 'enabled' : 'stopped') +
+            ' · Run: ' + (data.run_id || '—') +
+            ' · Revision: ' + data.revision +
+            (data.pending_release ? ' · Release: ' + data.pending_release : '') +
+            ' · Updated: ' + new Date().toLocaleTimeString();
+        $('worker-rows').replaceChildren();
+        for (const w of workers) {
+            const tr = document.createElement('tr');
+            cell(tr, w.trainer_id || '—');
+            const stateCell = cell(tr, w.state);
+            if (w.state === 'STALE' || w.state === 'failed') stateCell.className = 'worker-issue';
+            cell(tr, w.desired_envs == null || w.desired_envs === w.envs ?
+                fmt(w.envs) : fmt(w.envs) + ' → ' + fmt(w.desired_envs));
+            cell(tr, w.cpu_pct == null ? '—' : fmt(w.cpu_pct, 0) + '%');
+            cell(tr, w.ram_pct == null ? '—' : fmt(w.ram_pct, 0) + '%');
+            cell(tr, fmt(w.live_exp_s, 0));
+            cell(tr, fmt(w.staged_s, 0));
+            cell(tr, fmt(w.accepted_s, 0));
+            cell(tr, fmt(w.upload_queue));
+            cell(tr, fmt(w.broker_queue) +
+                (w.broker_capacity == null ? '' : '/' + fmt(w.broker_capacity)));
+            cell(tr, w.age_seconds == null ? '—' : fmt(w.age_seconds, 0) + 's');
+            const errorCell = cell(tr, w.error || '—', 'worker-error');
+            if (w.error) errorCell.classList.add('worker-issue');
+            $('worker-rows').append(tr);
+        }
+        if (!workers.length) $('worker-rows').append(
+            Object.assign(document.createElement('tr'), {
+                textContent: 'No workers currently reporting.',
+            }));
+    } catch (error) {
+        $('worker-indicator').textContent = '· Unavailable';
+        $('worker-summary').textContent = 'Could not read Bees training control: ' + error.message;
+    } finally {
+        workerRefreshPending = false;
+    }
+}
+$('worker-panel').addEventListener('toggle', refreshWorkers);
+setInterval(refreshWorkers, 5000);
+
 async function refresh() {
     try {
         const r = await fetch('/api/state', {cache:'no-store'});
