@@ -937,7 +937,7 @@ function benchmarkReports() {
         .filter(entry => entry.isFile() &&
             /^\d{8}T\d{6}-[a-f0-9]{32}\.json$/.test(entry.name))
         .map(entry => entry.name)
-        .sort().reverse().slice(0, 200)
+        .sort().reverse().slice(0, 1000)
         .map(name => readJson(path.join(BENCHMARK_REPORTS, name)))
         .filter(report => report && report.schema_version === 1 && report.benchmark &&
             report.metrics);
