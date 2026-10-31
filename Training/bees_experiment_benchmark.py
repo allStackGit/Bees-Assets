@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import os
 import re
 import sqlite3
@@ -40,6 +41,7 @@ def read_benchmark(path: Path) -> tuple[dict, str]:
     matches = value.get("matches")
     seed = value.get("seed")
     arguments = value.get("env_args")
+    time_scale = value.get("time_scale")
     step_limit = value.get("max_environment_steps_per_match", 200000)
     if not isinstance(name, str) or not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,63}", name):
         raise ValueError("Benchmark id must be a lowercase slug (up to 64 characters).")
@@ -51,6 +53,10 @@ def read_benchmark(path: Path) -> tuple[dict, str]:
         raise ValueError("Benchmark matches must be an integer in 1..10000.")
     if type(seed) is not int or not 0 <= seed <= 2**31 - 1:
         raise ValueError("Benchmark seed must be an integer in 0..2^31-1.")
+    if time_scale is not None and (
+            type(time_scale) not in (int, float) or not math.isfinite(time_scale)
+            or not 0 < time_scale <= 100):
+        raise ValueError("Benchmark time_scale must be finite and in (0, 100].")
     if type(step_limit) is not int or not 1 <= step_limit <= 2000000:
         raise ValueError("Benchmark step limit must be an integer in 1..2000000.")
     if (not isinstance(arguments, list) or len(arguments) > 64 or
@@ -88,6 +94,7 @@ def evaluate(recipe: Path, candidate: Path, opponent: Path, environment: Path,
         worker_id=0,
         timeout_wait=300,
         onnx_provider="CPUExecutionProvider",
+        time_scale=benchmark.get("time_scale"),
         max_environment_steps_per_match=benchmark.get(
             "max_environment_steps_per_match", 200000
         ),
@@ -101,6 +108,7 @@ def evaluate(recipe: Path, candidate: Path, opponent: Path, environment: Path,
             "sha256": recipe_hash, "seed": benchmark["seed"],
             "matches": benchmark["matches"], "env_args": benchmark["env_args"],
             "behavior_name": benchmark["behavior_name"],
+            "time_scale": benchmark.get("time_scale"),
         },
         "evaluation_protocol_version": EVALUATION_PROTOCOL_VERSION,
         "evaluation_code_sha256": sha256_file(Path(__file__).with_name("bees_continual_evaluate.py")),

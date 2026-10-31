@@ -439,6 +439,7 @@ const server = http.createServer(async (req, res) => {
             if (item.benchmark_status === 'completed') return json(res, 409, { error: 'This run already has a saved evaluation.' });
             item.benchmark = benchmarkPlan();
             item.benchmark_status = 'pending';
+            delete item.benchmark_error;
             state.active_id = item.id;
             save();
             setImmediate(cycle);

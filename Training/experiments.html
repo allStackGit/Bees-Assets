@@ -281,6 +281,7 @@ function renderBenchmarks() {
             '\nProtocol: ' + report.evaluation_protocol_version +
             '\nEvaluator SHA256: ' + (report.evaluation_code_sha256 || 'unrecorded') +
             '\nSeed: ' + report.benchmark.seed +
+            '\nTime scale: ' + (report.benchmark.time_scale ?? 'Unity default') +
             '\nArgs: ' + report.benchmark.env_args.join(' ') +
             '\nEvaluated: ' + report.evaluated_at);
         details.append(summary, pre); td.append(details); tr.append(td);
