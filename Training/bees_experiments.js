@@ -11,8 +11,8 @@ const { paths, readJson, writeJsonAtomic, ensureDir, loadConfig } = require('./o
 // The existing Bees operator owns safe run transitions. This module owns only
 // an unattended queue, bounded metric summaries, and a loopback-only UI.
 const HOST = '127.0.0.1';
-const PORT = Number(process.env.BEES_EXPERIMENTS_PORT || 7148);
-if (!Number.isInteger(PORT) || PORT < 1024 || PORT > 65535) throw Error('Invalid experiments port.');
+// A fixed port also prevents two coordinators from writing the same state file.
+const PORT = 7148;
 const DB = path.join(paths.trainingRoot, 'Experiments', 'experiments-v1.json');
 const HTML = path.join(__dirname, 'experiments.html');
 const empty = () => ({ version: 1, armed: false, active_id: null, message: '', items: [] });
@@ -67,7 +67,7 @@ function measure(item, status, force = false) {
             timeout_pct: last('timeout_pct'), bee_win_pct: last('bee_win_pct'),
             bee_hits_per_shot: last('bee_hits_per_shot'),
         });
-        if (samples.length > 2000) item.samples = samples.filter((_, i) =>
+        if (samples.length > 500) item.samples = samples.filter((_, i) =>
             i === 0 || i === samples.length - 1 || i % 2 === 0);
     }
 }
