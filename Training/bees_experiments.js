@@ -170,9 +170,10 @@ async function trainerConfiguration(overrides) {
     if (runtime.runtime_version !== release.training_runtime.runtime_version) {
         throw Error('Prepared training runtime differs from the current release.');
     }
-    return configTool(['prepare', '--base', path.join(runtime.runtime_root, 'rl_1v1_config.yaml'),
+    const snapshot = await configTool(['prepare', '--base', path.join(runtime.runtime_root, 'rl_1v1_config.yaml'),
         '--overrides', JSON.stringify(overrides),
         '--output', path.join(paths.trainingRoot, 'Experiments', 'Configurations')]);
+    return { ...snapshot, runtime_version: runtime.runtime_version };
 }
 
 function verifyTrainerSnapshot(item) {
@@ -363,6 +364,9 @@ async function launch() {
     if (item.benchmark) verifyBenchmarkPlan(item.benchmark);
     if (item.trainer_config) {
         verifyTrainerSnapshot(item);
+        if (item.trainer_config.runtime_version && item.trainer_config.runtime_version !== latest.training_runtime.runtime_version) {
+            throw Error('Training runtime changed since this experiment was queued.');
+        }
         if (JSON.stringify(executionOptions(loadConfig())) !== JSON.stringify(item.execution_options)) {
             throw Error('Training execution settings changed since this experiment was queued.');
         }
