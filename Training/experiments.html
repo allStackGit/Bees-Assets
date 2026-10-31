@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bees · Experiments</title>
+<style>
+:root { color-scheme: light dark; font: 14px/1.45 system-ui, sans-serif; }
+body { max-width: 1200px; margin: 24px auto; padding: 0 20px; }
+h1 { margin: 0; font-size: 26px; } h2 { font-size: 18px; margin: 0 0 12px; }
+header, .bar, .formgrid, .summary { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+header { justify-content: space-between; margin-bottom: 20px; }
+section { border: 1px solid #8885; border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+button { cursor: pointer; padding: 9px 14px; border-radius: 6px; border: 1px solid #8889; background: Canvas; color: CanvasText; }
+button.primary { color: white; background: #285dc4; border-color: #285dc4; }
+button.danger { color: #b44; }
+button:disabled { opacity: .5; cursor: default; }
+input, textarea, select { color: CanvasText; background: Canvas; border: 1px solid #8889; border-radius: 6px; padding: 8px; font: inherit; box-sizing: border-box; width: 100%; }
+label { display: block; font-size: 12px; color: GrayText; }
+label input, label textarea { margin-top: 3px; color: CanvasText; }
+.formgrid > label { flex: 1 1 170px; }
+.formgrid > label.wide { flex: 2 1 350px; }
+textarea { min-height: 74px; resize: vertical; }
+small, .muted { color: GrayText; }
+#message:not(:empty) { padding: 10px; border-left: 3px solid #d99026; margin: 12px 0; }
+.summary span { background: color-mix(in srgb, CanvasText 6%, Canvas); border-radius: 5px; padding: 6px 10px; }
+.tablewrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; }
+th, td { border-bottom: 1px solid #8884; text-align: left; padding: 8px; white-space: nowrap; }
+td.name { white-space: normal; min-width: 170px; }
+th { font-size: 12px; color: GrayText; }
+details { font-size: 12px; }
+pre { white-space: pre-wrap; overflow-wrap: anywhere; max-width: 850px; }
+.graph { width: 100%; height: 250px; border: 1px solid #8883; border-radius: 6px; }
+#legend { display: flex; gap: 15px; flex-wrap: wrap; font-size: 12px; }
+.dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; }
+@media (max-width: 650px) { body { margin: 10px auto; padding: 0 10px; } }
+</style>
+</head>
+<body>
+<header><div><h1>Bees Experiments</h1><small>Local experiment queue and training comparisons · Version 1</small></div>
+<div class="bar"><button id="start" class="primary">Run queue</button><button id="stop" class="danger">Stop safely</button></div></header>
+<div id="message" role="status"></div>
+<section>
+<h2>Overview</h2><div id="overview" class="summary"></div>
+<p class="muted">Progress is measured from the active run's ML-Agents learner summaries. Combat metrics are sampled from live worker windows, <strong>not</strong> a frozen evaluation benchmark.</p>
+</section>
+<section>
+<h2>Queue an experiment</h2>
+<form id="create">
+<div class="formgrid">
+<label>Experiment name<input id="name" maxlength="100" required placeholder="Long-range baseline"></label>
+<label>Campaign / comparison group<input id="group" maxlength="80" value="Turret combat"></label>
+<label>Step budget<input id="steps" type="number" min="1000" max="5000000000000" step="1000" value="20000000" required></label>
+<label>Time limit (minutes)<input id="minutes" type="number" min="10" max="43200" value="1440" required></label>
+<label>No-progress limit (minutes)<input id="stall" type="number" min="10" max="43200" value="45" required></label>
+<label class="wide">Environment argument overrides, one per line<textarea id="args" placeholder="--rl-map-size-min=96&#10;--rl-map-size-max=112"></textarea></label>
+</div>
+<p class="muted">Arguments override flags from the current cluster configuration. Every queued experiment starts a fresh run using the existing release. Change PPO/network configuration and rebuild the release separately; these settings are not editable here yet.</p>
+<button class="primary" type="submit">Add to queue</button>
+</form>
+</section>
+<section>
+<div class="bar"><h2>Runs and comparisons</h2><label>Show group <select id="filter"><option value="">All</option></select></label>
+<label>Graph <select id="metric"><option value="timeout_pct">Timeout %</option><option value="bee_hits_per_shot">Bee hits per shot</option><option value="bee_win_pct">Bee win %</option><option value="reward">Mean reward</option><option value="steps_per_second">Learner steps/s</option></select></label></div>
+<svg id="graph" class="graph" viewBox="0 0 800 250" role="img" aria-label="Selected training curves"></svg>
+<div id="legend"></div>
+<div id="aggregate" class="summary" style="margin:14px 0"></div>
+<div class="tablewrap"><table><thead><tr><th>Plot</th><th>Experiment</th><th>Status</th><th>Steps</th><th>Timeout</th><th>Hit/shot</th><th>Run</th></tr></thead><tbody id="rows"></tbody></table></div>
+</section>
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+const chosen = new Set();
+let latest = null;
+const colors = ['#3278d6','#cb8527','#5a9b64','#a656c0','#d05456','#368c98','#a3a134','#b16b9d'];
+const fmt = (n, d = 0) => n == null || !Number.isFinite(Number(n)) ? '—' : Number(n).toLocaleString(undefined, { maximumFractionDigits: d });
+const txt = (tag, value) => { const e = document.createElement(tag); e.textContent = value; return e; };
+function request(url, value) {
+    return fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(value) })
+        .then(async r => { const data = await r.json(); if (!r.ok) throw Error(data.error || r.statusText); return data; });
+}
+function cell(tr, text, className) {
+    const td = txt('td', String(text)); if (className) td.className = className;
+    tr.append(td); return td;
+}
+function chart(items) {
+    const svg = $('graph'); svg.replaceChildren(); $('legend').replaceChildren();
+    const metric = $('metric').value;
+    const all = items.filter(x => chosen.has(x.id));
+    const points = all.flatMap(x => x.samples.filter(p => p.step != null && Number.isFinite(p[metric]) ));
+    if (!points.length) {
+        const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        label.setAttribute('x', '280'); label.setAttribute('y', '125');
+        label.setAttribute('fill', 'currentColor');
+        label.textContent = 'Select runs with training samples to compare';
+        svg.append(label); return;
+    }
+    const xmax = Math.max(1, ...points.map(p => p.step));
+    let ymin = Math.min(...points.map(p => p[metric]));
+    let ymax = Math.max(...points.map(p => p[metric]));
+    if (ymin === ymax) { ymin -= 1; ymax += 1; }
+    const xx = x => 55 + x / xmax * 710;
+    const yy = y => 210 - (y - ymin) / (ymax - ymin) * 175;
+    function line(x1, y1, x2, y2, color) {
+        const p = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        for (const [key, val] of Object.entries({ x1, y1, x2, y2 })) p.setAttribute(key, String(val));
+        p.setAttribute('stroke', color); svg.append(p);
+    }
+    line(55, 20, 55, 210, '#888'); line(55, 210, 765, 210, '#888');
+    const xLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    xLabel.setAttribute('x','660'); xLabel.setAttribute('y','237'); xLabel.setAttribute('fill','currentColor');
+    xLabel.textContent = fmt(xmax) + ' steps'; svg.append(xLabel);
+    for (const [y, val] of [[204,ymin],[24,ymax]]) {
+        const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        t.setAttribute('x','4');t.setAttribute('y',String(y));
+        t.setAttribute('font-size','12');t.setAttribute('fill','currentColor');
+        t.textContent = fmt(val, 3);svg.append(t);
+    }
+    all.forEach((item, index) => {
+        const series = item.samples.filter(p => p.step != null && Number.isFinite(p[metric]));
+        if (!series.length) return;
+        const color = colors[index % colors.length];
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+        path.setAttribute('points', series.map(p => xx(p.step) + ',' + yy(p[metric])).join(' '));
+        path.setAttribute('stroke', color); path.setAttribute('stroke-width','2.5');
+        path.setAttribute('fill','none'); svg.append(path);
+        const label = txt('span', item.name + ' (' + item.status + ')');
+        const dot = document.createElement('span');dot.className = 'dot';dot.style.background = color;
+        label.prepend(dot);$('legend').append(label);
+    });
+}
+function render(data) {
+    latest = data;
+    const items = data.items;
+    const active = items.find(x => x.id === data.active_id);
+    $('overview').replaceChildren(
+        txt('span', items.filter(x => x.status === 'completed').length + ' completed'),
+        txt('span', items.filter(x => x.status === 'queued').length + ' queued'),
+        txt('span', active ? active.name + ' · ' + active.status : 'No active experiment'),
+        txt('span', data.armed ? 'Queue armed' : 'Queue not armed')
+    );
+    $('start').disabled = data.busy || data.armed || !items.some(x => x.status === 'queued');
+    $('stop').disabled = !data.active_id && !data.armed;
+    $('message').textContent = data.message || '';
+    const groups = [...new Set(items.map(x => x.group))].sort();
+    const filter = $('filter'), before = filter.value;
+    filter.replaceChildren(new Option('All', ''), ...groups.map(x => new Option(x, x)));
+    filter.value = groups.includes(before) ? before : '';
+    const visible = items.filter(x => !filter.value || x.group === filter.value);
+    $('rows').replaceChildren();
+    visible.slice().reverse().forEach(item => {
+        const tr = document.createElement('tr');
+        const td = document.createElement('td'), check = document.createElement('input');
+        check.type = 'checkbox'; check.checked = chosen.has(item.id); check.style.width = 'auto';
+        check.addEventListener('change', () => { if (check.checked) chosen.add(item.id); else chosen.delete(item.id); chart(visible); });
+        td.append(check);tr.append(td);
+        const name = cell(tr, '', 'name');
+        const details = document.createElement('details');
+        const summary = txt('summary', item.name);
+        const info = txt('pre', 'Campaign: ' + item.group + '\nCreated: ' + item.created_at +
+            '\nBuild: ' + (item.build_id || item.release_build) +
+            '\nBudget: ' + fmt(item.max_steps) + ' steps / ' + item.max_minutes + ' minutes' +
+            '\nEnd reason: ' + (item.end_reason || '—') +
+            '\nArguments:\n' + item.env_args.join('\n') + '\n' + (item.error || ''));
+        details.append(summary,info);name.append(details);
+        const last = item.samples[item.samples.length - 1] || {};
+        cell(tr, item.status);
+        cell(tr, fmt(item.step));
+        cell(tr, fmt(last.timeout_pct,1) + (last.timeout_pct == null ? '' : '%'));
+        cell(tr, fmt(last.bee_hits_per_shot,3));
+        cell(tr, item.run_id ? item.run_id.slice(0,24) : '—');
+        $('rows').append(tr);
+    });
+    const complete = visible.filter(x => x.status === 'completed');
+    const avg = field => {
+        const vals = complete.map(x => x.samples.length ? x.samples[x.samples.length - 1][field] : null)
+            .filter(v => v != null && Number.isFinite(v));
+        return vals.length ? vals.reduce((a,b) => a + b,0) / vals.length : null;
+    };
+    const avgSteps = complete.length ? complete.reduce((v,x) => v + (x.step || 0),0) / complete.length : null;
+    $('aggregate').replaceChildren(
+        txt('span', complete.length + ' completed in displayed group'),
+        txt('span', 'Mean final steps: ' + fmt(avgSteps)),
+        txt('span', 'Mean final timeout: ' + fmt(avg('timeout_pct'),1) + '%')
+    );
+    chart(visible);
+}
+async function refresh() {
+    try {
+        const r = await fetch('/api/state', {cache:'no-store'});
+        if (!r.ok) throw Error('Status request failed');
+        render(await r.json());
+    } catch(e) { $('message').textContent = e.message; }
+}
+$('create').addEventListener('submit', async e => {
+    e.preventDefault();
+    try {
+        await request('/api/queue', {
+            name: $('name').value, group: $('group').value,
+            max_steps: Number($('steps').value), max_minutes: Number($('minutes').value),
+            stall_minutes: Number($('stall').value),
+            env_args: $('args').value.split('\n').map(s => s.trim()).filter(Boolean),
+        });
+        $('name').value = ''; await refresh();
+    } catch(err) { $('message').textContent = err.message; }
+});
+$('start').addEventListener('click', async () => {
+    try { await request('/api/start', {}); await refresh(); }
+    catch(err) { $('message').textContent = err.message; }
+});
+$('stop').addEventListener('click', async () => {
+    if (!confirm('Safely stop the current experiment and disarm the queue?')) return;
+    try { await request('/api/stop', {}); await refresh(); }
+    catch(err) { $('message').textContent = err.message; }
+});
+$('filter').addEventListener('change', () => latest && render(latest));
+$('metric').addEventListener('change', () => latest && chart(
+    latest.items.filter(x => !$('filter').value || x.group === $('filter').value)));
+refresh(); setInterval(refresh, 5000);
+</script>
+</body></html>
