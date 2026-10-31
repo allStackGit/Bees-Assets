@@ -28,6 +28,89 @@ const save = () => { ensureDir(path.dirname(DB)); writeJsonAtomic(DB, state); };
 const active = () => state.items.find(x => x.id === state.active_id);
 const matches = (a, b) => JSON.stringify(a || []) === JSON.stringify(b || []);
 const now = () => new Date().toISOString();
+const MAX_STEPS = 5000000000000;
+
+function overridesForStage(raw, label) {
+    if (!Array.isArray(raw) || raw.length > 64) throw Error(label + ': invalid environment arguments.');
+    const overrides = raw.map(x => String(x).trim()).filter(Boolean);
+    if (overrides.some(x => x.length > 512 || !/^--rl-[a-z0-9-]+(?:=[^\r\n]*)?$/.test(x))) {
+        throw Error(label + ': only individual --rl-* arguments are accepted.');
+    }
+    if (new Set(overrides.map(x => x.split('=')[0])).size !== overrides.length) {
+        throw Error(label + ': duplicate environment argument.');
+    }
+    return overrides;
+}
+
+function mergeEnvironmentArgs(previous, overrides) {
+    const keys = new Set(overrides.map(x => x.split('=')[0]));
+    const exactMap = '--rl-map-size';
+    const rangedMap = ['--rl-map-size-min', '--rl-map-size-max'];
+    if (keys.has(exactMap) && rangedMap.some(key => keys.has(key))) {
+        throw Error('Choose either --rl-map-size or --rl-map-size-min/max, not both.');
+    }
+    const excluded = new Set(keys);
+    if (keys.has(exactMap)) rangedMap.forEach(key => excluded.add(key));
+    if (rangedMap.some(key => keys.has(key))) excluded.add(exactMap);
+    return previous.filter(x => !excluded.has(x.split('=')[0])).concat(overrides);
+}
+
+function timeoutTarget(raw, label) {
+    if (raw == null || raw === '') return null;
+    const number = Number(raw);
+    if (!Number.isFinite(number) || number < 0 || number > 100) {
+        throw Error(label + ': timeout target must be 0–100% or blank.');
+    }
+    return number;
+}
+
+function stagesForDefinition(input, defaults, firstSteps) {
+    const firstName = String(input.stage_name || 'Initial stage').trim();
+    if (!firstName || firstName.length > 100) throw Error('Invalid initial stage name.');
+    let args = mergeEnvironmentArgs(defaults, overridesForStage(input.env_args, firstName));
+    const stages = [{
+        name: firstName, end_step: firstSteps, env_args: args,
+        timeout_target_pct: timeoutTarget(input.target_timeout_pct, firstName),
+    }];
+    const additions = input.stages == null ? [] : input.stages;
+    if (!Array.isArray(additions) || additions.length > 11) {
+        throw Error('At most 11 additional curriculum stages are supported.');
+    }
+    let end = firstSteps;
+    for (const [index, stage] of additions.entries()) {
+        if (!stage || typeof stage !== 'object' || Array.isArray(stage)) {
+            throw Error('Invalid stage ' + (index + 2) + '.');
+        }
+        const name = String(stage.name || '').trim();
+        const steps = Number(stage.steps);
+        if (!name || name.length > 100 || !Number.isSafeInteger(steps) || steps < 1000 ||
+            end + steps > MAX_STEPS) {
+            throw Error('Each stage requires a name and a positive step budget within the run limit.');
+        }
+        args = mergeEnvironmentArgs(args, overridesForStage(stage.env_args || [], name));
+        end += steps;
+        stages.push({
+            name, end_step: end, env_args: args,
+            timeout_target_pct: timeoutTarget(stage.target_timeout_pct, name),
+        });
+    }
+    return stages;
+}
+
+function stageFor(item) {
+    return item.stages ? item.stages[item.stage_index || 0] : null;
+}
+
+function stageRecord(item, index = item.stage_index || 0) {
+    item.stage_history = item.stage_history || [];
+    if (!item.stage_history[index]) {
+        item.stage_history[index] = {
+            entered_at: now(), entered_step: index ? item.step : 0,
+            consecutive_qualifying_samples: 0,
+        };
+    }
+    return item.stage_history[index];
+}
 
 async function control() {
     const token = fs.readFileSync(paths.adminTokenPath, 'utf8').trim();
@@ -106,13 +189,29 @@ function measure(item, status, force = false) {
         // Preserve the last observed live worker metrics at finalization, when
         // workers may already be stopped and their rolling windows unavailable.
         const last = key => mean(key) ?? (prior ? prior[key] : null);
-        samples.push({
-            at: now(), step, reward: Number.isFinite(learner.MeanReward) ? learner.MeanReward : null,
+        const observation = {
+            at: now(), step, stage_index: item.stage_index || 0,
+            reward: Number.isFinite(learner.MeanReward) ? learner.MeanReward : null,
             steps_per_second: Number.isFinite(learner.LiveStepsPerSecond) ?
                 learner.LiveStepsPerSecond : null,
             timeout_pct: last('timeout_pct'), bee_win_pct: last('bee_win_pct'),
             bee_hits_per_shot: last('bee_hits_per_shot'),
-        });
+        };
+        samples.push(observation);
+        const stage = stageFor(item);
+        const windowTimeout = mean('timeout_pct');
+        if (!force && stage && stage.timeout_target_pct != null &&
+            step != null && windowTimeout != null) {
+            const record = stageRecord(item);
+            record.consecutive_qualifying_samples = windowTimeout <= stage.timeout_target_pct
+                ? record.consecutive_qualifying_samples + 1 : 0;
+            // Three sampled training windows are a provisional milestone, not
+            // independent benchmark evidence or an automatic stage transition.
+            if (record.consecutive_qualifying_samples >= 3 && record.first_target_step == null) {
+                record.first_target_step = step;
+                record.first_target_at = observation.at;
+            }
+        }
         if (samples.length > 500) item.samples = samples.filter((_, i) =>
             i === 0 || i === samples.length - 1 || i % 2 === 0);
     }
@@ -286,6 +385,98 @@ async function finalize(item, status) {
     save();
 }
 
+function assertSameLineageCheckpoint(item) {
+    const release = readJson(paths.latestReleasePath);
+    if (!release || release.run_id !== item.run_id ||
+        release.build_id !== item.release_build ||
+        release.experiment_config?.sha256 !== item.trainer_config?.sha256) {
+        throw Error('Run or frozen trainer configuration changed before curriculum transition.');
+    }
+    const behavior = String(release.contract?.behavior_name || '');
+    if (!/^[A-Za-z0-9._-]+$/.test(behavior)) throw Error('Cannot resolve checkpoint behavior.');
+    const checkpoint = path.join(paths.trainingRoot, 'trainer-results',
+        item.run_id, behavior, 'checkpoint.pt');
+    const info = fs.statSync(checkpoint);
+    if (!info.isFile() || info.size === 0) {
+        throw Error('Same-run transition requires a saved optimizer checkpoint: ' + checkpoint);
+    }
+    // The resumed ML-Agents trainer verifies tensor compatibility. This check
+    // prevents silently initializing from scratch when no checkpoint exists.
+}
+
+async function transitionStage(item, status) {
+    const index = item.stage_index || 0;
+    const previous = item.stages[index];
+    const next = item.stages[index + 1];
+    if (!previous || !next) throw Error('Invalid saved curriculum stage index.');
+    const d = status.desired || {};
+    if (d.run_id !== item.run_id || d.pending_release ||
+        String(d.canonical_build_id || '') !== item.release_build) {
+        blocked(item, 'Curriculum transition lost control-plane run/build ownership.');
+        return;
+    }
+    if (!matches(d.environment_args, previous.env_args) &&
+        !matches(d.environment_args, next.env_args)) {
+        blocked(item, 'Another operator changed environment arguments during curriculum transition.');
+        return;
+    }
+    if (!state.armed && !state.stop_requested) return; // error pause: do not restart
+    if (state.stop_requested || !state.armed) {
+        item.end_reason = 'manual';
+        item.status = 'stopping';
+        save();
+        await finalize(item, status);
+        return;
+    }
+    verifyTrainerSnapshot(item);
+    if (matches(previous.env_args, next.env_args)) {
+        // A metric-only stage boundary needs no optimizer restart.
+        const finished = stageRecord(item, index);
+        if (!finished.finished_at) {
+            finished.finished_at = now();
+            finished.finished_step = item.step;
+        }
+        item.stage_index = index + 1;
+        stageRecord(item, item.stage_index);
+        item.status = 'running';
+        item.stage_transition_at = null;
+        save();
+        return;
+    }
+    if (matches(d.environment_args, previous.env_args) && d.training_enabled) {
+        await invokeStop({});
+        status = await control();
+        if (status.desired?.run_id !== item.run_id ||
+            status.desired.training_enabled ||
+            !matches(status.desired.environment_args, previous.env_args)) {
+            throw Error('Safe curriculum stop not confirmed; refusing to switch environments.');
+        }
+    }
+    if (!status.desired.training_enabled) {
+        assertSameLineageCheckpoint(item);
+        await invokeStart({ envArgs: next.env_args });
+        status = await control();
+    }
+    if (!status.desired || !status.desired.training_enabled ||
+        status.desired.run_id !== item.run_id || status.desired.pending_release ||
+        !matches(status.desired.environment_args, next.env_args)) {
+        throw Error('Same-run curriculum restart is not confirmed.');
+    }
+    const finished = stageRecord(item, index);
+    if (!finished.finished_at) {
+        finished.finished_at = now();
+        finished.finished_step = item.step;
+    }
+    item.stage_index = index + 1;
+    item.env_args = next.env_args;
+    stageRecord(item, item.stage_index);
+    item.last_progress = now();
+    item.stage_transition_at = null;
+    item.status = 'running';
+    state.message = 'Continued ' + item.name + ' on ' + next.name + ' (same run and optimizer).';
+    save();
+}
+
 async function monitor() {
     const item = active();
     if (!item) { blocked(null, 'Active experiment record is missing.'); return; }
@@ -294,6 +485,10 @@ async function monitor() {
         return;
     }
     const status = await control(), d = status.desired || {};
+    if (item.status === 'transitioning') {
+        await transitionStage(item, status);
+        return;
+    }
     if (item.status === 'starting') {
         // Recovery is intentionally conservative: never assume another live run is ours.
         if (!(d.training_enabled && d.run_id && d.run_id !== item.previous_run_id &&
@@ -307,6 +502,7 @@ async function monitor() {
         item.started_at = item.started_at || now();
         item.last_progress = item.started_at;
         item.status = 'running';
+        if (item.stages) stageRecord(item, 0);
         save();
     }
     if (item.status === 'stopping') {
@@ -340,6 +536,13 @@ async function monitor() {
         state.message = 'Safely stopping ' + item.name + ' (' + reason + ')';
         save();
         await finalize(item, status);
+    } else if (item.stages && item.stage_index + 1 < item.stages.length &&
+        item.step != null && item.step >= item.stages[item.stage_index].end_step) {
+        item.status = 'transitioning';
+        item.stage_transition_at = now();
+        state.message = 'Switching ' + item.name + ' to ' + item.stages[item.stage_index + 1].name;
+        save();
+        await transitionStage(item, status);
     } else save();
 }
 
@@ -393,6 +596,7 @@ async function cycle() {
         } else if (state.armed && !state.stop_requested) await launch();
     } catch (err) {
         state.armed = false; // fail closed; do not start another experiment
+        if (active()?.status === 'transitioning') state.stop_requested = true;
         state.message = 'Operator attention required: ' + err.message;
         if (active()) active().error = err.message;
         save();
@@ -417,29 +621,16 @@ async function definition(input) {
         throw Error('Time limit must be 10-43200 minutes.');
     if (!Number.isInteger(stall_minutes) || stall_minutes < 10 || stall_minutes > max_minutes)
         throw Error('No-progress limit must be between 10 minutes and the time limit.');
-    if (!Array.isArray(input.env_args) || input.env_args.length > 64) throw Error('Invalid arguments.');
-    const overrides = input.env_args.map(x => String(x).trim()).filter(Boolean);
-    if (overrides.some(s => s.length > 512 || !/^--rl-[a-z0-9-]+(?:=[^\r\n]*)?$/.test(s)))
-        throw Error('Only individual --rl-* environment arguments are accepted.');
     const config = loadConfig();
     const defaults = Array.isArray(config.environmentArgs) ? config.environmentArgs.map(String) : [];
-    const keys = new Set(overrides.map(x => x.split('=')[0]));
-    const exactMap = '--rl-map-size';
-    const rangedMap = ['--rl-map-size-min', '--rl-map-size-max'];
-    if (keys.has(exactMap) && rangedMap.some(key => keys.has(key))) {
-        throw Error('Choose either --rl-map-size or --rl-map-size-min/max, not both.');
-    }
-    // The single-size and ranged-size flags are mutually exclusive in Unity.
-    // Replacing one form must remove the other form from cluster defaults.
-    const excluded = new Set(keys);
-    if (keys.has(exactMap)) rangedMap.forEach(key => excluded.add(key));
-    if (rangedMap.some(key => keys.has(key))) excluded.add(exactMap);
-    const env_args = defaults.filter(x => !excluded.has(x.split('=')[0])).concat(overrides);
+    const stages = stagesForDefinition(input, defaults, max_steps);
+    const env_args = stages[0].env_args;
     const release = readJson(paths.latestReleasePath);
     if (!release || !release.build_id) throw Error('Build a training release before queuing experiments.');
     return {
         id: crypto.randomUUID(), name, group, status: 'queued', created_at: now(),
-        max_steps, max_minutes, stall_minutes, env_args,
+        max_steps: stages[stages.length - 1].end_step,
+        max_minutes, stall_minutes, env_args, stages, stage_index: 0, stage_history: [],
         release_build: String(release.build_id), samples: [], step: null, run_id: null,
         benchmark: input.benchmark === true ? benchmarkPlan() : null,
         trainer_config: await trainerConfiguration(input.trainer || {}),
