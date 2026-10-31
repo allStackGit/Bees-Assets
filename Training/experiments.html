@@ -246,7 +246,7 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
 <div class="tablewrap"><table><thead id="benchmark-matrix-head"></thead><tbody id="benchmark-matrix-rows"></tbody></table></div>
 <h2 style="margin-top:16px">Evaluation details</h2>
 <div class="tablewrap"><table><thead><tr>
-<th>Benchmark</th><th>Experiment</th><th>Stage</th><th>Candidate step</th><th>Candidate run</th><th>Reference SHA</th><th>Matches</th><th>Win % · 95% interval</th><th>Timeout % · 95% interval</th><th>Hits / shots</th><th>Damage</th><th>Mean seconds</th><th>Build</th><th>Details</th>
+<th>Benchmark</th><th>Experiment</th><th>Stage</th><th>Candidate step</th><th>Candidate run</th><th>Opponent identity</th><th>Matches</th><th>Win % · 95% interval</th><th>Timeout % · 95% interval</th><th>Hits / shots</th><th>Damage</th><th>Mean seconds</th><th>Build</th><th>Details</th>
 </tr></thead><tbody id="benchmark-rows"></tbody></table></div>
 </details>
 </section>
@@ -516,7 +516,7 @@ function renderBenchmarks() {
             (report.experiment.stage_index + 1) + '. ' + report.experiment.stage_name);
         cell(tr, fmt(report.experiment?.candidate_training_step));
         cell(tr, report.run_id || (report.candidate_sha256 || '').slice(0, 12));
-        cell(tr, (report.opponent_sha256 || '').slice(0, 12));
+        cell(tr, (report.opponent_kind === 'scripted' ? report.opponent_script_name + ' v' + report.opponent_script_version + ' · ' : '') + (report.opponent_sha256 || '').slice(0, 12));
         cell(tr, fmt(m.matches));
         cell(tr, outcomeInterval(m.wins, m.matches));
         cell(tr, outcomeInterval(m.timeouts, m.matches));
