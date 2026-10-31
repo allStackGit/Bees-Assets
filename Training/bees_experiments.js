@@ -228,18 +228,41 @@ const hashFile = file => crypto.createHash('sha256').update(fs.readFileSync(file
 
 function benchmarkPlan() {
     const plan = readJson(BENCHMARK_SETTINGS);
-    for (const key of ['python', 'recipe', 'opponent', 'environment', 'build_id']) {
+    for (const key of ['python', 'opponent', 'environment', 'build_id']) {
         if (typeof plan[key] !== 'string' || !plan[key].trim()) throw Error('Benchmark settings require ' + key + '.');
     }
     if (!fs.statSync(path.resolve(plan.python)).isFile()) throw Error('Benchmark Python executable is missing.');
+    const defined = plan.scenarios == null
+        ? [{ id: 'default', recipe: plan.recipe }]
+        : plan.scenarios;
+    if (!Array.isArray(defined) || defined.length < 1 || defined.length > 12) {
+        throw Error('Benchmark suite must contain 1–12 scenarios.');
+    }
+    const ids = new Set();
+    const scenarios = defined.map((entry, index) => {
+        if (!entry || typeof entry !== 'object' || Array.isArray(entry) ||
+            typeof entry.id !== 'string' || !/^[a-z0-9][a-z0-9_-]{0,63}$/.test(entry.id) ||
+            typeof entry.recipe !== 'string' || !entry.recipe.trim() || ids.has(entry.id)) {
+            throw Error('Benchmark scenario ' + (index + 1) + ' requires a unique slug and recipe path.');
+        }
+        ids.add(entry.id);
+        const recipe = path.resolve(entry.recipe);
+        const spec = JSON.parse(fs.readFileSync(recipe, 'utf8'));
+        if (!spec || spec.schema_version !== 1 || !spec.id || !spec.matches) {
+            throw Error('Benchmark scenario is missing its versioned recipe metadata: ' + recipe);
+        }
+        return { id: entry.id, recipe, benchmark_id: spec.id, benchmark_revision: spec.revision };
+    });
     const files = {
-        recipe: path.resolve(plan.recipe), opponent: path.resolve(plan.opponent),
+        recipe: scenarios[0].recipe, opponent: path.resolve(plan.opponent),
         environment: path.resolve(plan.environment),
         evaluator: path.join(__dirname, 'bees_continual_evaluate.py'),
         runner: BENCHMARK_RUNNER,
     };
+    scenarios.forEach((scenario, index) => { files['recipe_' + index] = scenario.recipe; });
     return {
-        python: path.resolve(plan.python), build_id: plan.build_id.trim(), files,
+        python: path.resolve(plan.python), build_id: plan.build_id.trim(),
+        files, scenarios,
         hashes: Object.fromEntries(Object.entries(files).map(([key, file]) => [key, hashFile(file)])),
     };
 }
@@ -608,6 +631,7 @@ async function launch() {
         save(); return;
     }
     if (item.benchmark) verifyBenchmarkPlan(item.benchmark);
+    if (item.stage_benchmarks) verifyBenchmarkPlan(item.stage_benchmarks);
     if (item.trainer_config) {
         verifyTrainerSnapshot(item);
         if (item.trainer_config.runtime_version && item.trainer_config.runtime_version !== latest.training_runtime.runtime_version) {
@@ -692,6 +716,9 @@ async function definition(input) {
     const config = loadConfig();
     const defaults = Array.isArray(config.environmentArgs) ? config.environmentArgs.map(String) : [];
     const stages = stagesForDefinition(input, defaults, max_steps);
+    if (input.benchmark === true && input.evaluate_stages === true) {
+        throw Error('Choose stage-suite evaluations or final-only evaluation, not both.');
+    }
     const env_args = stages[0].env_args;
     const release = readJson(paths.latestReleasePath);
     if (!release || !release.build_id) throw Error('Build a training release before queuing experiments.');
@@ -701,6 +728,7 @@ async function definition(input) {
         max_minutes, stall_minutes, env_args, stages, stage_index: 0, stage_history: [],
         release_build: String(release.build_id), samples: [], step: null, run_id: null,
         benchmark: input.benchmark === true ? benchmarkPlan() : null,
+        stage_benchmarks: input.evaluate_stages === true ? benchmarkPlan() : null,
         trainer_config: await trainerConfiguration(input.trainer || {}),
         execution_options: executionOptions(config),
     };
