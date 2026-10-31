@@ -536,6 +536,16 @@ function blocked(item, message) {
 }
 
 async function finishFinalStageEvaluation(item, status) {
+    if (state.stop_requested) {
+        item.status = 'completed';
+        item.finished_at = item.finished_at || now();
+        state.active_id = null;
+        state.stop_requested = false;
+        state.armed = false;
+        state.message = 'Final-stage evaluation was stopped; inspect partial reports before rearming.';
+        save();
+        return;
+    }
     if (!state.armed) return;
     if (!(await evaluateStageSuite(item, item.stage_index || 0, status))) return;
     item.status = 'completed';
@@ -679,7 +689,14 @@ async function transitionStage(item, status) {
         blocked(item, 'Curriculum stop ownership was not durably confirmed; inspect the stopped run before manual recovery.');
         return;
     }
+    if (status.desired.training_enabled && item.stage_benchmarks &&
+        stageRecord(item, index).evaluation?.status !== 'completed' &&
+        matches(status.desired.environment_args, next.env_args)) {
+        blocked(item, 'Next curriculum stage was started without verified stage evaluations.');
+        return;
+    }
     if (!status.desired.training_enabled) {
+        assertSameLineageCheckpoint(item);
         if (!(await evaluateStageSuite(item, index, status))) return;
         if (state.stop_requested || !state.armed) {
             item.end_reason = 'manual';
