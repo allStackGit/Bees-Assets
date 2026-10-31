@@ -379,7 +379,7 @@ async function evaluateItem(item) {
         const args = [BENCHMARK_RUNNER, '--benchmark', plan.files.recipe,
             '--candidate-run', item.run_id,
             '--registry', path.join(paths.trainingRoot, 'registry.sqlite3'),
-            '--opponent', plan.files.opponent, '--env', plan.files.environment,
+            '--opponent', plan.scenarios?.[0]?.opponent || plan.files.opponent, '--env', plan.files.environment,
             '--build-id', plan.build_id, '--output-root', BENCHMARK_REPORTS];
         const output = await new Promise((resolve, reject) => {
             execFile(plan.python, args, { windowsHide: true, maxBuffer: 65536 },
@@ -433,7 +433,8 @@ function verifyStageCandidate(candidate, minimumStep) {
 function stageEvaluationKey(item, index, scenario, scenarioIndex, candidate, plan) {
     const identity = [
         item.id, item.run_id, index, scenario.id,
-        plan.hashes['recipe_' + scenarioIndex], plan.hashes.opponent,
+        plan.hashes['recipe_' + scenarioIndex],
+        scenario.opponent_sha256 || plan.hashes.opponent,
         plan.hashes.environment, plan.hashes.evaluator, plan.hashes.runner,
         plan.build_id, candidate.sha256, candidate.training_step,
     ];
@@ -444,7 +445,11 @@ function stageReportMatches(report, item, index, scenario, candidate, plan, eval
     return report && report.schema_version === 1 &&
         report.run_id === item.run_id &&
         report.candidate_sha256 === candidate.sha256 &&
-        report.opponent_sha256 === plan.hashes.opponent &&
+        report.opponent_sha256 === (scenario.opponent_sha256 || plan.hashes.opponent) &&
+        (!scenario.opponent || report.opponent_path === scenario.opponent) &&
+        (scenario.opponent_kind !== 'scripted' ||
+            (report.opponent_kind === 'scripted' &&
+                report.opponent_script_sha256 === plan.hashes.scripted)) &&
         report.environment_executable_sha256 === plan.hashes.environment &&
         report.evaluation_code_sha256 === plan.hashes.evaluator &&
         report.build_id === plan.build_id &&
@@ -531,7 +536,7 @@ async function evaluateStageSuite(item, index, status) {
                     '--stage-index', String(index), '--stage-name', item.stages[index].name,
                     '--stage-step', String(evaluation.boundary_step),
                     '--evaluation-id', evaluationId,
-                    '--opponent', plan.files.opponent, '--env', plan.files.environment,
+                    '--opponent', scenario.opponent || plan.files.opponent, '--env', plan.files.environment,
                     '--build-id', plan.build_id, '--output-root', BENCHMARK_REPORTS,
                 ]);
                 reportName = path.basename(output.split(/\r?\n/).pop());
