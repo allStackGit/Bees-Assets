@@ -15,13 +15,13 @@ const HOST = '127.0.0.1';
 const PORT = 7148;
 const DB = path.join(paths.trainingRoot, 'Experiments', 'experiments-v1.json');
 const HTML = path.join(__dirname, 'experiments.html');
-const empty = () => ({ version: 1, armed: false, active_id: null, message: '', items: [] });
+const empty = () => ({ version: 1, armed: false, stop_requested: false, active_id: null, message: '', items: [] });
 const state = fs.existsSync(DB) ? readJson(DB) : empty();
 if (!state || state.version !== 1 || !Array.isArray(state.items) || typeof state.armed !== 'boolean') {
     throw Error('Invalid experiment data; no training started: ' + DB);
 }
+if (typeof state.stop_requested !== 'boolean') state.stop_requested = false;
 let busy = false;
-let haltRequested = false;
 const save = () => { ensureDir(path.dirname(DB)); writeJsonAtomic(DB, state); };
 const active = () => state.items.find(x => x.id === state.active_id);
 const matches = (a, b) => JSON.stringify(a || []) === JSON.stringify(b || []);
@@ -75,6 +75,7 @@ function measure(item, status, force = false) {
 function blocked(item, message) {
     if (item) { item.status = 'interrupted'; item.error = message; }
     state.armed = false;
+    state.stop_requested = false;
     state.active_id = null;
     state.message = message;
     save();
@@ -97,6 +98,7 @@ async function finalize(item, status) {
         item.end_reason === 'manual' ? 'stopped' : 'ended_early';
     item.finished_at = now();
     state.active_id = null;
+    state.stop_requested = false;
     state.message = '';
     save();
 }
@@ -120,7 +122,7 @@ async function monitor() {
         save();
     }
     if (item.status === 'stopping') {
-        if (d.training_enabled && d.run_id !== item.run_id) {
+        if (d.run_id !== item.run_id) {
             blocked(item, 'Another training run owns the control plane.');
             return;
         }
@@ -135,7 +137,7 @@ async function monitor() {
     measure(item, status);
     const elapsed = Date.now() - Date.parse(item.started_at);
     const stagnant = Date.now() - Date.parse(item.last_progress);
-    const reason = haltRequested ? 'manual' :
+    const reason = state.stop_requested ? 'manual' :
         item.step != null && item.step >= item.max_steps ? 'budget' :
         elapsed >= item.max_minutes * 60000 ? 'time_limit' :
         stagnant >= item.stall_minutes * 60000 ? 'no_progress' : '';
@@ -178,7 +180,7 @@ async function cycle() {
     busy = true;
     try {
         if (state.active_id) await monitor();
-        else if (state.armed && !haltRequested) await launch();
+        else if (state.armed && !state.stop_requested) await launch();
     } catch (err) {
         state.armed = false; // fail closed; do not start another experiment
         state.message = 'Operator attention required: ' + err.message;
@@ -186,7 +188,10 @@ async function cycle() {
         save();
         console.error('[experiments]', err.stack || String(err));
     } finally {
-        if (!state.active_id) haltRequested = false;
+        if (!state.active_id && state.stop_requested) {
+            state.stop_requested = false;
+            save();
+        }
         busy = false;
     }
 }
@@ -255,7 +260,7 @@ const server = http.createServer(async (req, res) => {
             return res.end(page);
         }
         if (req.method === 'GET' && route === '/api/state') {
-            return json(res, 200, { ...state, busy, halt_requested: haltRequested });
+            return json(res, 200, { ...state, busy });
         }
         if (req.method !== 'POST') return json(res, 404, { error: 'Not found.' });
         const value = await body(req);
@@ -275,6 +280,7 @@ const server = http.createServer(async (req, res) => {
             if (!state.items.some(x => x.status === 'queued'))
                 return json(res, 409, { error: 'Queue is empty.' });
             state.armed = true;
+            state.stop_requested = false;
             state.message = '';
             save();
             setImmediate(cycle);
@@ -282,7 +288,7 @@ const server = http.createServer(async (req, res) => {
         }
         if (route === '/api/stop') {
             state.armed = false;
-            haltRequested = Boolean(state.active_id);
+            state.stop_requested = Boolean(state.active_id);
             state.message = state.active_id ? 'Graceful stop requested.' : 'Queue disarmed.';
             save(); setImmediate(cycle);
             return json(res, 200, { ok: true });
