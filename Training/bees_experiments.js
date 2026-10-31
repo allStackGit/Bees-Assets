@@ -7,8 +7,9 @@ const { execFile } = require('node:child_process');
 const { invokeStart, invokeStop } = require('./operator/commands');
 const { getStatus } = require('./operator/control');
 const { getPendingForcedNewRunPlan } = require('./operator/runtime');
+const { assertRlEnvironmentArgsValid } = require('./operator/validation');
 const { getAuthoritativeLearnerStats, statusError } = require('./operator/status');
-const { paths, readJson, writeJsonAtomic, ensureDir, loadConfig } = require('./operator/common');
+const { paths, readJson, writeJsonAtomic, ensureDir, loadConfig, resolvePython } = require('./operator/common');
 
 // The existing Bees operator owns safe run transitions. This module owns only
 // an unattended queue, bounded metric summaries, and a loopback-only UI.
@@ -612,6 +613,15 @@ async function launch() {
             throw Error('Training execution settings changed since this experiment was queued.');
         }
     }
+    // Validate every queued environment against the actual Unity release
+    // before spending training steps. These preflights are cached by the
+    // operator's existing release/argument validation identity.
+    const config = loadConfig();
+    const python = resolvePython(config);
+    for (const stage of item.stages || [{ env_args: item.env_args }]) {
+        await assertRlEnvironmentArgsValid(config, latest, stage.env_args, python);
+    }
+    if (!state.armed || state.stop_requested) return;
     item.previous_run_id = String(status.desired.run_id || '');
     item.status = 'starting';
     item.started_at = now();
