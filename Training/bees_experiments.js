@@ -452,10 +452,24 @@ async function transitionStage(item, status) {
             throw Error('Safe curriculum stop not confirmed; refusing to switch environments.');
         }
     }
+    if (state.stop_requested || !state.armed) {
+        item.end_reason = 'manual';
+        item.status = 'stopping';
+        save();
+        await finalize(item, status);
+        return;
+    }
     if (!status.desired.training_enabled) {
         assertSameLineageCheckpoint(item);
         await invokeStart({ envArgs: next.env_args });
         status = await control();
+    }
+    if (state.stop_requested || !state.armed) {
+        item.end_reason = 'manual';
+        item.status = 'stopping';
+        save();
+        await finalize(item, status);
+        return;
     }
     if (!status.desired || !status.desired.training_enabled ||
         status.desired.run_id !== item.run_id || status.desired.pending_release ||
@@ -730,8 +744,10 @@ const server = http.createServer(async (req, res) => {
                     return json(res, 409, { error: 'Existing training or release is active.' });
                 }
             }
-            if (!state.items.some(x => x.status === 'queued'))
+            if (!state.items.some(x => x.status === 'queued') &&
+                active()?.status !== 'transitioning') {
                 return json(res, 409, { error: 'Queue is empty.' });
+            }
             state.armed = true;
             state.stop_requested = false;
             state.message = '';
