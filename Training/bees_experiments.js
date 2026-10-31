@@ -603,7 +603,12 @@ async function launch() {
         if (item.trainer_config.runtime_version && item.trainer_config.runtime_version !== latest.training_runtime.runtime_version) {
             throw Error('Training runtime changed since this experiment was queued.');
         }
-        if (JSON.stringify(executionOptions(loadConfig())) !== JSON.stringify(item.execution_options)) {
+        // Older queued items did not freeze every later-added execution field.
+        // Compare the exact set they recorded; new items include the complete set.
+        const currentOptions = executionOptions(loadConfig());
+        if (!item.execution_options || Object.entries(item.execution_options).some(
+            ([key, value]) => JSON.stringify(currentOptions[key]) !== JSON.stringify(value)
+        )) {
             throw Error('Training execution settings changed since this experiment was queued.');
         }
     }
