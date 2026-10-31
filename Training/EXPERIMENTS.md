@@ -122,9 +122,78 @@ The step budget is a safety/experimental boundary, not a declaration of
 competence. Keep the manager running: while it is offline, it cannot enforce
 boundaries; an unexpected state may require operator intervention. The
 existing maximum wall time and no-progress stop limits apply to the **entire
-run**, not to each curriculum stage. Automatic benchmark evaluation, when
-configured, happens only after the final budget-completed stage and still
-requires a frozen reference model.
+run**, not to each curriculum stage. Optional **per-stage fixed-seed evaluation**
+uses the frozen suite below. The previous final-only evaluation remains
+available as a separate mode; both require a frozen reference model.
+
+## Per-stage fixed-seed benchmark suite
+
+To observe **adaptation and retention**, configure a frozen benchmark suite in
+`Training/Experiments/benchmark-settings.json` outside Assets. For example:
+
+```json
+{
+  "python": "PATH_TO_EXISTING_MLAGENTS_PYTHON",
+  "opponent": "PATH_TO_FROZEN_REFERENCE_ONNX",
+  "environment": "PATH_TO_UNITY_EXECUTABLE",
+  "build_id": "EXACT_EVALUATION_BUILD_ID",
+  "scenarios": [
+    {"id": "aiming", "recipe": "ABSOLUTE_PATH_TO_experiment_benchmark.aiming.json"},
+    {"id": "moving", "recipe": "ABSOLUTE_PATH_TO_experiment_benchmark.short.json"},
+    {"id": "distance", "recipe": "ABSOLUTE_PATH_TO_experiment_benchmark.long.json"}
+  ]
+}
+```
+
+The recipes, opponent, executable and evaluator code are hashed and frozen
+**when the experiment is queued**. The same scenarios, frozen opponent, build,
+seed and evaluator are used at **every** stage, even before the network is
+expected to solve them. The resulting stage-by-scenario matrix separates
+new capabilities from retention of earlier ones. The included short/medium/long
+recipes are provisional screening benchmarks, **not yet calibrated measures**
+of Bees combat competence; select and qualify meaningful scenarios before
+interpreting results.
+
+Select **Evaluate every curriculum stage** in the manager's queue form.
+Stage transitions remain controlled by **cumulative learner steps**, never
+benchmark results. At each boundary (including the last), the manager:
+
+1. Coordinates the existing graceful distributed stop; training and worker
+   rollout must be fully stopped before evaluation.
+2. Requires a saved optimizer checkpoint and a **registered ONNX export at or
+   beyond the last observed learner step**. It pins that candidate's exact
+   file path, SHA-256 and registry training step once for the whole suite.
+3. Runs each recipe against the same frozen reference policy and stores one
+   immutable report per scenario. Every report records experiment ID, stage
+   index/name, cumulative boundary step, selected candidate step/hash,
+   recipe/build/evaluator identities and outcomes.
+4. After all reports are verified, resumes the **same optimizer lineage** in
+   the next stage, or marks the final stage completed and advances to the next
+   experiment.
+
+The manager writes each completed scenario's report filename to the experiment
+record. If interrupted after a report was atomically written but before that
+filename was recorded, it re-links the matching immutable report by a stable
+evaluation identity. It never substitutes a later or older ONNX candidate
+mid-suite. A failed evaluation **disarms the queue and leaves training stopped**;
+the manager records the error and retains successful reports. After inspecting
+the stopped run, **Run queue** retries the remaining work. An ambiguous
+external restart or missing checkpoint does not silently advance the stage.
+
+The **Checkpoint benchmarks** panel can filter by scenario and curriculum
+stage. Only compare rows from identical recipe, frozen opponent, Unity build,
+evaluator, and **same stage index**. The training telemetry curve is
+observational, not an independent fixed-seed evaluation. This suite does not
+automatically establish causal significance from one training seed per setting.
+A stage suite may take substantial real time; do not assume the next training
+stage starts immediately after the step boundary.
+
+A legacy single `recipe` in `benchmark-settings.json` remains supported and
+works as a one-scenario suite. **Final checkpoint only** runs its first
+configured recipe, preserving the previous final-evaluation behavior.
+A queued item may use either stage-suite mode or final-only mode, not both.
+Automatic stage evaluation requires a frozen opponent and a registered export;
+it is not usable immediately after starting from scratch.
 
 ## Fixed-seed checkpoint evaluation (first independent benchmark)
 
