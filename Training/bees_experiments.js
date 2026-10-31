@@ -35,8 +35,14 @@ async function control() {
 
 function measure(item, status, force = false) {
     const learner = getAuthoritativeLearnerStats(item.run_id) || {};
+    // Only score workers that have applied the current run revision. Heartbeats
+    // from the outgoing run may remain live briefly during a release cutover.
+    const desired = status.desired || {};
     const workers = (status.trainers || []).filter(x =>
-        !x.stale && x.metrics && Number(x.metrics.window_episodes) > 0);
+        !x.stale && x.process_state === 'running' &&
+        Number(x.applied_revision) >= Number(desired.revision) &&
+        x.build_id === desired.canonical_build_id &&
+        x.metrics && Number(x.metrics.window_episodes) > 0);
     const mean = key => {
         let count = 0, total = 0;
         for (const w of workers) {
