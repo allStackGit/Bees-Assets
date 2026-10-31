@@ -56,6 +56,7 @@ const {
     getRunningCentralAgentPid,
     prepareCentralReleaseRuntime,
     startCentralAgentIfNeeded,
+    stopCentralAgentGracefully,
 } = require('./central');
 const { startBeesServerIfNeeded } = require('./server');
 const {
@@ -952,6 +953,12 @@ async function invokeStart(options = {}) {
     let staged;
     let desired;
     if (performForcedNewRun) {
+        // A live supervisor still owns the outgoing launch command. Stop it
+        // before enabling the new run, or it can create that run's immutable
+        // generation directory with the outgoing trainer configuration.
+        await invokeStop({});
+        const outgoingSupervisor = getRunningCentralAgentPid();
+        if (outgoingSupervisor > 0) await stopCentralAgentGracefully(outgoingSupervisor);
         staged = await stageRelease(
             config, admin, release, envArgs, environmentValidationKey
         );
