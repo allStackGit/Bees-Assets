@@ -331,9 +331,13 @@ function render(data) {
             '\nArguments:\n' + item.env_args.join('\n') + '\n' + (item.error || ''));
         details.append(summary,info);
         if (item.trainer_config) details.append(txt('pre', 'Initialization: fresh\nFrozen configuration SHA: ' + item.trainer_config.sha256 + '\nSettings:\n' + JSON.stringify(item.trainer_config.resolved, null, 2) + '\nVerified generated configurations: ' + (item.applied_configurations || []).length));
-        if (item.benchmark_status) details.append(txt('p', 'Checkpoint evaluation: ' + item.benchmark_status +
-            (item.benchmark_report ? ' · ' + item.benchmark_report : '') +
-            (item.benchmark_error ? ' · ' + item.benchmark_error : '')));
+        if (item.benchmark_status) {
+            const evaluation = txt('p', 'Checkpoint evaluation: ' + item.benchmark_status +
+                (item.benchmark_report ? ' · ' + item.benchmark_report : '') +
+                (item.benchmark_error ? ' · ' + item.benchmark_error : ''));
+            if (item.benchmark_status === 'failed') evaluation.classList.add('error');
+            details.append(evaluation);
+        }
         if (data.benchmark_configured && item.run_id &&
             ['completed', 'stopped', 'ended_early'].includes(item.status) &&
             item.benchmark_status !== 'completed') {
@@ -347,8 +351,9 @@ function render(data) {
         }
         name.append(details);
         const last = item.samples[item.samples.length - 1] || {};
-        cell(tr, item.benchmark_status === 'running' || item.benchmark_status === 'pending' ?
+        const runState = cell(tr, item.benchmark_status === 'running' || item.benchmark_status === 'pending' ?
             item.status + ' · evaluating' : item.status);
+        if (item.status === 'interrupted' || item.benchmark_status === 'failed') runState.classList.add('error');
         cell(tr, fmt(item.step));
         cell(tr, fmt(last.timeout_pct,1) + (last.timeout_pct == null ? '' : '%'));
         cell(tr, fmt(last.bee_hits_per_shot,3));
@@ -449,8 +454,10 @@ async function refreshBenchmarks() {
         const value = await response.json();
         if (!response.ok) throw Error(value.error || 'Could not load benchmark results.');
         benchmarkData = value.reports || [];
+        $('benchmark-summary').classList.remove('error');
         renderBenchmarks();
     } catch (error) {
+        $('benchmark-summary').classList.add('error');
         $('benchmark-summary').replaceChildren(txt('span', 'Benchmark results unavailable: ' + error.message));
     }
 }
@@ -467,6 +474,8 @@ async function refreshWorkers() {
         const data = await response.json();
         if (!response.ok) throw Error(data.error || 'Training control unavailable');
         const workers = data.workers || [];
+        $('worker-indicator').classList.remove('error');
+        $('worker-summary').classList.remove('error');
         const troubled = workers.filter(w => w.state === 'STALE' || Boolean(w.error));
         $('worker-indicator').textContent = '· ' + workers.length + ' reported, ' +
             troubled.length + ' with warnings';
@@ -503,7 +512,9 @@ async function refreshWorkers() {
             }));
     } catch (error) {
         $('worker-indicator').textContent = '· Unavailable';
+        $('worker-indicator').classList.add('error');
         $('worker-summary').textContent = 'Could not read Bees training control: ' + error.message;
+        $('worker-summary').classList.add('error');
     } finally {
         workerRefreshPending = false;
     }
