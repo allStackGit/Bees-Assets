@@ -187,8 +187,12 @@ async function cycle() {
     if (busy) return;
     busy = true;
     try {
-        if (state.active_id) await monitor();
-        else if (state.armed && !state.stop_requested) await launch();
+        if (state.active_id) {
+            await monitor();
+            // The outgoing run has completed a verified stop. Move to the next
+            // queued run now rather than leave remote workers idle for a poll.
+            if (!state.active_id && state.armed && !state.stop_requested) await launch();
+        } else if (state.armed && !state.stop_requested) await launch();
     } catch (err) {
         state.armed = false; // fail closed; do not start another experiment
         state.message = 'Operator attention required: ' + err.message;
