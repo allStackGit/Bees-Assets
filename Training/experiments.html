@@ -5,40 +5,52 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Bees · Experiments</title>
 <style>
-:root { color-scheme: light dark; font: 14px/1.45 system-ui, sans-serif; }
-body { max-width: 1200px; margin: 24px auto; padding: 0 20px; }
-h1 { margin: 0; font-size: 26px; } h2 { font-size: 18px; margin: 0 0 12px; }
+:root { color-scheme: light; font: 14px/1.35 Arial, Helvetica, sans-serif; color: #000000; background: #ffffff; }
+* { box-sizing: border-box; }
+body { max-width: 1200px; margin: 24px auto; padding: 0 20px; background: #ffffff; color: #000000; }
+h1 { margin: 0; font-size: 42px; line-height: 1; font-weight: 900; letter-spacing: -2px; }
+h2 { font-size: 22px; line-height: 1.1; margin: 0 0 12px; font-weight: 900; }
 header, .bar, .formgrid, .summary { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
-header { justify-content: space-between; margin-bottom: 20px; }
-section { border: 1px solid #8885; border-radius: 10px; padding: 16px; margin-bottom: 16px; }
-button { cursor: pointer; padding: 9px 14px; border-radius: 6px; border: 1px solid #8889; background: Canvas; color: CanvasText; }
-button.primary { color: white; background: #285dc4; border-color: #285dc4; }
-button.danger { color: #b44; }
-button:disabled { opacity: .5; cursor: default; }
-input, textarea, select { color: CanvasText; background: Canvas; border: 1px solid #8889; border-radius: 6px; padding: 8px; font: inherit; box-sizing: border-box; width: 100%; }
-label { display: block; font-size: 12px; color: GrayText; }
-label input, label textarea { margin-top: 3px; color: CanvasText; }
+header { justify-content: space-between; border: 3px solid #000000; border-bottom-width: 12px; padding: 16px; margin-bottom: 16px; }
+header small { display: block; margin-top: 7px; }
+section { border: 2px solid #000000; padding: 14px; margin-bottom: 16px; }
+section > h2, section > .bar { border-bottom: 7px solid #000000; padding-bottom: 8px; margin-bottom: 12px; }
+button { cursor: pointer; padding: 9px 14px; border-radius: 0; border: 2px solid #000000; background: #ffffff; color: #000000; font: bold 13px Arial, Helvetica, sans-serif; }
+button:hover:not(:disabled), button.primary { color: #ffffff; background: #000000; }
+button.primary:hover:not(:disabled) { color: #000000; background: #ffffff; }
+button:disabled { cursor: default; border-style: dotted; }
+input, textarea, select { color: #000000; background: #ffffff; border: 1px solid #000000; border-radius: 0; padding: 8px; font: inherit; width: 100%; }
+input:focus, textarea:focus, select:focus, button:focus-visible { outline: 2px solid #000000; outline-offset: 2px; }
+input[type=checkbox] { accent-color: #000000; }
+label { display: block; font-size: 12px; font-weight: bold; color: #000000; }
+label input, label textarea { margin-top: 3px; }
 .formgrid > label { flex: 1 1 170px; }
 .formgrid > label.wide { flex: 2 1 350px; }
 textarea { min-height: 74px; resize: vertical; }
-small, .muted { color: GrayText; }
-#message:not(:empty) { padding: 10px; border-left: 3px solid #d99026; margin: 12px 0; }
-.summary span { background: color-mix(in srgb, CanvasText 6%, Canvas); border-radius: 5px; padding: 6px 10px; }
+small, .muted { color: #000000; }
+#message:not(:empty) { padding: 10px; border: 2px solid #000000; margin: 12px 0; font-weight: bold; }
+#message.error { border-color: #cc0000; color: #cc0000; }
+.summary { gap: 0; border-top: 1px solid #000000; border-bottom: 1px solid #000000; }
+.summary span { background: #ffffff; border-right: 1px solid #000000; padding: 7px 12px; font-weight: bold; }
+.summary span:last-child { border-right: 0; }
 .tablewrap { overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; }
-th, td { border-bottom: 1px solid #8884; text-align: left; padding: 8px; white-space: nowrap; }
+th, td { border-bottom: 1px solid #000000; text-align: left; padding: 8px; white-space: nowrap; }
+thead { border-top: 4px solid #000000; border-bottom: 2px solid #000000; }
+th { font-size: 11px; color: #000000; font-weight: 900; text-transform: uppercase; }
 td.name { white-space: normal; min-width: 170px; }
 td.worker-error { white-space: normal; min-width: 250px; overflow-wrap: anywhere; }
-.worker-issue { color: #d67b62; }
-.worker-summary { cursor: pointer; font-weight: 600; font-size: 16px; }
-details.worker-details[open] > summary { margin-bottom: 12px; }
-th { font-size: 12px; color: GrayText; }
+.worker-issue, .error { color: #cc0000; }
+.worker-summary { cursor: pointer; font-weight: 900; font-size: 22px; line-height: 1.2; }
+.worker-summary small { font-weight: normal; font-size: 12px; }
+details.worker-details[open] > summary { border-bottom: 7px solid #000000; padding-bottom: 10px; margin-bottom: 12px; }
 details { font-size: 12px; }
-pre { white-space: pre-wrap; overflow-wrap: anywhere; max-width: 850px; }
-.graph { width: 100%; height: 250px; border: 1px solid #8883; border-radius: 6px; }
+summary { cursor: pointer; font-weight: bold; }
+pre { font: 12px/1.4 Arial, Helvetica, sans-serif; white-space: pre-wrap; overflow-wrap: anywhere; max-width: 850px; }
+.graph { width: 100%; height: 250px; border: 1px solid #000000; border-radius: 0; background: #ffffff; }
 #legend { display: flex; gap: 15px; flex-wrap: wrap; font-size: 12px; }
-.dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; }
-@media (max-width: 650px) { body { margin: 10px auto; padding: 0 10px; } }
+.dot { display: inline-block; width: 9px; height: 9px; border-radius: 0; margin-right: 5px; }
+@media (max-width: 650px) { body { margin: 10px auto; padding: 0 10px; } h1 { font-size: 34px; } }
 </style>
 </head>
 <body>
@@ -137,7 +149,7 @@ function chart(items) {
         for (const [key, val] of Object.entries({ x1, y1, x2, y2 })) p.setAttribute(key, String(val));
         p.setAttribute('stroke', color); svg.append(p);
     }
-    line(55, 20, 55, 210, '#888'); line(55, 210, 765, 210, '#888');
+    line(55, 20, 55, 210, '#000000'); line(55, 210, 765, 210, '#000000');
     const xLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
     xLabel.setAttribute('x','660'); xLabel.setAttribute('y','237'); xLabel.setAttribute('fill','currentColor');
     xLabel.textContent = fmt(xmax) + ' steps'; svg.append(xLabel);
@@ -173,6 +185,7 @@ function render(data) {
     $('start').disabled = data.busy || data.armed || !items.some(x => x.status === 'queued');
     $('stop').disabled = !data.active_id && !data.armed;
     $('message').textContent = data.message || '';
+    $('message').classList.toggle('error', /failed|error|attention|paused|interrupted|refusing|changed|not started/i.test(data.message || ''));
     $('evaluate-after').disabled = !data.benchmark_configured;
     $('benchmark-config').textContent = data.benchmark_configured ? 'Uses the configured fixed benchmark and reference.' : 'Configure Training/Experiments/benchmark-settings.json to enable evaluations.';
     const groups = [...new Set(items.map(x => x.group))].sort();
@@ -209,7 +222,7 @@ function render(data) {
             evaluate.disabled = data.busy || Boolean(data.active_id) || data.armed;
             evaluate.addEventListener('click', async () => {
                 try { await request('/api/evaluate', { id: item.id }); await refresh(); }
-                catch (error) { $('message').textContent = error.message; }
+                catch (error) { $('message').textContent = error.message; $('message').classList.add('error'); }
             });
             details.append(evaluate);
         }
@@ -372,7 +385,7 @@ async function refresh() {
         const r = await fetch('/api/state', {cache:'no-store'});
         if (!r.ok) throw Error('Status request failed');
         render(await r.json());
-    } catch(e) { $('message').textContent = e.message; }
+    } catch(e) { $('message').textContent = e.message; $('message').classList.add('error'); }
 }
 $('create').addEventListener('submit', async e => {
     e.preventDefault();
@@ -385,16 +398,16 @@ $('create').addEventListener('submit', async e => {
             benchmark: $('evaluate-after').checked,
         });
         $('name').value = ''; await refresh();
-    } catch(err) { $('message').textContent = err.message; }
+    } catch(err) { $('message').textContent = err.message; $('message').classList.add('error'); }
 });
 $('start').addEventListener('click', async () => {
     try { await request('/api/start', {}); await refresh(); }
-    catch(err) { $('message').textContent = err.message; }
+    catch(err) { $('message').textContent = err.message; $('message').classList.add('error'); }
 });
 $('stop').addEventListener('click', async () => {
     if (!confirm('Safely stop the current experiment and disarm the queue?')) return;
     try { await request('/api/stop', {}); await refresh(); }
-    catch(err) { $('message').textContent = err.message; }
+    catch(err) { $('message').textContent = err.message; $('message').classList.add('error'); }
 });
 $('filter').addEventListener('change', () => latest && render(latest));
 $('metric').addEventListener('change', () => latest && chart(
