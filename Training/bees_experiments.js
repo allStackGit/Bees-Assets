@@ -224,21 +224,32 @@ function measure(item, status, force = false) {
 
 const BENCHMARK_SETTINGS = path.join(paths.trainingRoot, 'Experiments', 'benchmark-settings.json');
 const BENCHMARK_RUNNER = path.join(__dirname, 'bees_experiment_benchmark.py');
+const SCRIPTED_OPPONENTS = path.join(__dirname, 'bees_experiment_scripted.py');
+const SCRIPTED_NAMES = new Set(['stationary', 'strafe', 'pursuit']);
 const hashFile = file => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 
 function benchmarkPlan() {
-    const plan = readJson(BENCHMARK_SETTINGS);
-    for (const key of ['python', 'opponent', 'environment', 'build_id']) {
-        if (typeof plan[key] !== 'string' || !plan[key].trim()) throw Error('Benchmark settings require ' + key + '.');
+    const settings = readJson(BENCHMARK_SETTINGS);
+    for (const key of ['python', 'environment', 'build_id']) {
+        if (typeof settings[key] !== 'string' || !settings[key].trim()) {
+            throw Error('Benchmark settings require ' + key + '.');
+        }
     }
-    if (!fs.statSync(path.resolve(plan.python)).isFile()) throw Error('Benchmark Python executable is missing.');
-    const defined = plan.scenarios == null
-        ? [{ id: 'default', recipe: plan.recipe }]
-        : plan.scenarios;
+    if (!fs.statSync(path.resolve(settings.python)).isFile()) {
+        throw Error('Benchmark Python executable is missing.');
+    }
+    const defined = settings.scenarios == null
+        ? [{ id: 'default', recipe: settings.recipe, opponent: settings.opponent }]
+        : settings.scenarios;
     if (!Array.isArray(defined) || defined.length < 1 || defined.length > 12) {
         throw Error('Benchmark suite must contain 1–12 scenarios.');
     }
     const ids = new Set();
+    const files = {
+        environment: path.resolve(settings.environment),
+        evaluator: path.join(__dirname, 'bees_continual_evaluate.py'),
+        runner: BENCHMARK_RUNNER,
+    };
     const scenarios = defined.map((entry, index) => {
         if (!entry || typeof entry !== 'object' || Array.isArray(entry) ||
             typeof entry.id !== 'string' || !/^[a-z0-9][a-z0-9_-]{0,63}$/.test(entry.id) ||
@@ -246,24 +257,49 @@ function benchmarkPlan() {
             throw Error('Benchmark scenario ' + (index + 1) + ' requires a unique slug and recipe path.');
         }
         ids.add(entry.id);
-        const recipe = path.resolve(entry.recipe);
-        const spec = JSON.parse(fs.readFileSync(recipe, 'utf8'));
-        if (!spec || spec.schema_version !== 1 || !spec.id || !spec.matches) {
-            throw Error('Benchmark scenario is missing its versioned recipe metadata: ' + recipe);
+        const opponentSpec = entry.opponent ?? settings.opponent;
+        if (typeof opponentSpec !== 'string' || !opponentSpec.trim()) {
+            throw Error('Benchmark scenario ' + entry.id + ' requires an opponent ONNX path or scripted controller.');
         }
-        return { id: entry.id, recipe, benchmark_id: spec.id, benchmark_revision: spec.revision };
+        const recipe = path.resolve(entry.recipe);
+        const recipeSpec = JSON.parse(fs.readFileSync(recipe, 'utf8'));
+        if (!recipeSpec || recipeSpec.schema_version !== 1 ||
+            !recipeSpec.id || !recipeSpec.matches) {
+            throw Error('Benchmark scenario is missing versioned recipe metadata: ' + recipe);
+        }
+        files['recipe_' + index] = recipe;
+        let opponent, opponent_kind;
+        if (opponentSpec.startsWith('scripted:')) {
+            const mode = opponentSpec.slice('scripted:'.length);
+            if (!SCRIPTED_NAMES.has(mode)) {
+                throw Error('Unknown scripted opponent ' + opponentSpec + '.');
+            }
+            opponent = opponentSpec;
+            opponent_kind = 'scripted';
+            files.scripted = SCRIPTED_OPPONENTS;
+        } else {
+            opponent = path.resolve(opponentSpec);
+            opponent_kind = 'onnx';
+            files['opponent_' + index] = opponent;
+        }
+        return {
+            id: entry.id, recipe, benchmark_id: recipeSpec.id,
+            benchmark_revision: recipeSpec.revision, opponent, opponent_kind,
+        };
     });
-    const files = {
-        recipe: scenarios[0].recipe, opponent: path.resolve(plan.opponent),
-        environment: path.resolve(plan.environment),
-        evaluator: path.join(__dirname, 'bees_continual_evaluate.py'),
-        runner: BENCHMARK_RUNNER,
-    };
-    scenarios.forEach((scenario, index) => { files['recipe_' + index] = scenario.recipe; });
+    files.recipe = scenarios[0].recipe;
+    if (scenarios[0].opponent_kind === 'onnx') files.opponent = scenarios[0].opponent;
+    const hashes = Object.fromEntries(
+        Object.entries(files).map(([key, file]) => [key, hashFile(file)]));
+    for (const [index, scenario] of scenarios.entries()) {
+        scenario.opponent_sha256 = scenario.opponent_kind === 'scripted'
+            ? crypto.createHash('sha256')
+                .update(scenario.opponent + ':' + hashes.scripted).digest('hex')
+            : hashes['opponent_' + index];
+    }
     return {
-        python: path.resolve(plan.python), build_id: plan.build_id.trim(),
-        files, scenarios,
-        hashes: Object.fromEntries(Object.entries(files).map(([key, file]) => [key, hashFile(file)])),
+        python: path.resolve(settings.python), build_id: settings.build_id.trim(),
+        files, hashes, scenarios,
     };
 }
 
