@@ -158,6 +158,10 @@ details.worker-details[open] > summary {
 }
 details { font-size: 12px; }
 summary { cursor: pointer; font-weight: 800; }
+.curriculum-stages { display: grid; gap: 14px; margin: 14px 0; }
+.curriculum-stages fieldset { margin: 0; border: 2px solid var(--ink); padding: 12px; min-width: 0; background: var(--paper); }
+.curriculum-stages legend { padding: 0 5px; font-weight: 900; text-transform: uppercase; }
+.curriculum-stages .bar { margin-top: 10px; }
 pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.5 Arial, Helvetica, sans-serif; }
 .graph { width: 100%; height: 250px; border: 2px solid var(--ink); border-radius: 0; background: var(--paper); color: var(--ink); }
 #legend { display: flex; gap: 15px; flex-wrap: wrap; padding: 8px 0; font-size: 12px; font-weight: 800; }
@@ -196,11 +200,21 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
 <div class="formgrid">
 <label>Experiment name<input id="name" maxlength="100" required placeholder="Long-range baseline"></label>
 <label>Campaign / comparison group<input id="group" maxlength="80" value="Turret combat"></label>
-<label>Step budget<input id="steps" type="number" min="1000" max="5000000000000" step="1000" value="20000000" required></label>
+<label>First-stage step budget<input id="steps" type="number" min="1000" max="5000000000000" step="1000" value="20000000" required></label>
 <label>Time limit (minutes)<input id="minutes" type="number" min="10" max="43200" value="1440" required></label>
 <label>No-progress limit (minutes)<input id="stall" type="number" min="10" max="43200" value="45" required></label>
 <label class="wide">Environment argument overrides, one per line<textarea id="args" placeholder="--rl-map-size-min=96&#10;--rl-map-size-max=112"></textarea></label>
 </div>
+<details style="margin:14px 0">
+<summary>Curriculum stages · continue the same checkpoint</summary>
+<p class="muted">The first stage uses the settings above. Add later stages with an additional step budget and optional environment overrides. Every stage inherits the previous stage's settings. Boundaries stop and resume the same training run; they do not create a new network. Timeout targets are recorded from sampled training telemetry, not used for automatic advancement.</p>
+<div class="formgrid">
+<label>First stage name<input id="stage-name" maxlength="100" value="Initial combat"></label>
+<label>First stage timeout target % (optional)<input id="stage-target" type="number" min="0" max="100" step="any" placeholder="5"></label>
+</div>
+<div id="stage-rows" class="curriculum-stages"></div>
+<button id="add-stage" type="button">Add curriculum stage</button>
+</details>
 <p class="muted">Arguments override the cluster defaults. Each experiment starts a fresh policy and optimizer using its frozen trainer configuration. v26 supports width 128 and feedforward networks; layer count and normalization can vary.</p><details style="margin:12px 0"><summary>Trainer configuration · fresh initialization</summary><p id="trainer-config-status">Loading release defaults…</p><div class="formgrid"><label>Entropy beta<input id="trainer-beta" type="number" min="0" step="any" required></label><label>Lambda<input id="trainer-lambd" type="number" min="0" step="any" required></label><label>Learning rate<input id="trainer-learning_rate" type="number" min="0" step="any" required></label><label>Batch size<input id="trainer-batch_size" type="number" min="1" step="1" required></label><label>Buffer size<input id="trainer-buffer_size" type="number" min="1" step="1" required></label><label>PPO epochs<input id="trainer-num_epoch" type="number" min="1" step="1" required></label><label>Network layers (width 128)<input id="trainer-num_layers" type="number" min="1" step="1" required></label><label>ML-Agents initialization seed<input id="trainer-seed" type="number" min="0" step="1" required></label><label>Observation normalization<select id="trainer-normalize"><option value="true">Enabled</option><option value="false">Disabled</option></select></label></div></details>
 <p><label><input id="evaluate-after" type="checkbox" style="width:auto" disabled> Evaluate final checkpoint before the next experiment</label><small id="benchmark-config">Loading evaluation settings…</small></p>
 <button class="primary" type="submit">Add to queue</button>
@@ -301,7 +315,8 @@ function render(data) {
         txt('span', active ? active.name + ' · ' + active.status : 'No active experiment'),
         txt('span', data.armed ? 'Queue armed' : 'Queue not armed')
     );
-    $('start').disabled = data.busy || data.armed || !items.some(x => x.status === 'queued');
+    $('start').disabled = data.busy || data.armed ||
+        (!items.some(x => x.status === 'queued') && active?.status !== 'transitioning');
     $('stop').disabled = !data.active_id && !data.armed;
     $('message').textContent = data.message || '';
     $('message').classList.toggle('error', /failed|error|attention|paused|interrupted|refusing|changed|not started/i.test(data.message || ''));
@@ -331,6 +346,25 @@ function render(data) {
             '\nEnd reason: ' + (item.end_reason || '—') +
             '\nArguments:\n' + item.env_args.join('\n') + '\n' + (item.error || ''));
         details.append(summary,info);
+        if (item.stages && item.stages.length) {
+            const history = item.stage_history || [];
+            const description = item.stages.map((stage, index) => {
+                const record = history[index] || {};
+                const current = index === (item.stage_index || 0);
+                const completion = record.finished_step == null ? '' :
+                    ' · finished at ' + fmt(record.finished_step) + ' steps';
+                const milestone = record.first_target_step == null ? '' :
+                    ' · sampled timeout target first sustained near ' +
+                    fmt(record.first_target_step) + ' steps';
+                return (current ? 'CURRENT ' : '') + (index + 1) + '/' + item.stages.length +
+                    ' ' + stage.name + ' · through ' + fmt(stage.end_step) + ' cumulative steps' +
+                    (stage.timeout_target_pct == null ? '' :
+                        ' · timeout target ' + fmt(stage.timeout_target_pct, 1) + '%') +
+                    completion + milestone + '\nArguments:\n' +
+                    stage.env_args.join('\n');
+            }).join('\n\n');
+            details.append(txt('pre', 'CURRICULUM · SAME POLICY / OPTIMIZER\n' + description));
+        }
         if (item.trainer_config) details.append(txt('pre', 'Initialization: fresh\nFrozen configuration SHA: ' + item.trainer_config.sha256 + '\nSettings:\n' + JSON.stringify(item.trainer_config.resolved, null, 2) + '\nVerified generated configurations: ' + (item.applied_configurations || []).length));
         if (item.benchmark_status) {
             const evaluation = txt('p', 'Checkpoint evaluation: ' + item.benchmark_status +
@@ -352,8 +386,13 @@ function render(data) {
         }
         name.append(details);
         const last = item.samples[item.samples.length - 1] || {};
+        const stageLabel = item.stages && item.stages.length > 1 &&
+            ['running', 'transitioning'].includes(item.status)
+            ? ' · stage ' + (Math.min(item.stages.length,
+                (item.stage_index || 0) + (item.status === 'transitioning' ? 2 : 1))) +
+                '/' + item.stages.length : '';
         const runState = cell(tr, item.benchmark_status === 'running' || item.benchmark_status === 'pending' ?
-            item.status + ' · evaluating' : item.status);
+            item.status + ' · evaluating' : item.status + stageLabel);
         if (item.status === 'interrupted' || item.benchmark_status === 'failed') runState.classList.add('error');
         cell(tr, fmt(item.step));
         cell(tr, fmt(last.timeout_pct,1) + (last.timeout_pct == null ? '' : '%'));
@@ -530,6 +569,48 @@ async function refresh() {
         render(await r.json());
     } catch(e) { $('message').textContent = e.message; $('message').classList.add('error'); }
 }
+function addCurriculumStage() {
+    const row = document.createElement('fieldset');
+    const legend = document.createElement('legend');
+    legend.textContent = 'Next stage';
+    const grid = document.createElement('div');
+    grid.className = 'formgrid';
+    const name = document.createElement('label');
+    name.textContent = 'Stage name';
+    name.append(Object.assign(document.createElement('input'), {
+        className: 'stage-name', maxLength: 100, placeholder: 'Moving combat', required: true,
+    }));
+    const steps = document.createElement('label');
+    steps.textContent = 'Additional learner steps';
+    const stepInput = document.createElement('input');
+    Object.assign(stepInput, { className: 'stage-steps', type: 'number',
+        min: '1000', step: '1000', required: true, placeholder: '30000000' });
+    steps.append(stepInput);
+    const target = document.createElement('label');
+    target.textContent = 'Timeout target % (optional)';
+    const targetInput = document.createElement('input');
+    Object.assign(targetInput, { className: 'stage-target', type: 'number',
+        min: '0', max: '100', step: 'any', placeholder: '5' });
+    target.append(targetInput);
+    const args = document.createElement('label');
+    args.className = 'wide';
+    args.textContent = 'Environment overrides, one per line';
+    const area = document.createElement('textarea');
+    area.className = 'stage-args';
+    area.placeholder = '--rl-disable-movement=false';
+    args.append(area);
+    grid.append(name, steps, target, args);
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.textContent = 'Remove stage';
+    remove.addEventListener('click', () => row.remove());
+    const actions = document.createElement('div');
+    actions.className = 'bar';
+    actions.append(remove);
+    row.append(legend, grid, actions);
+    $('stage-rows').append(row);
+}
+$('add-stage').addEventListener('click', addCurriculumStage);
 $('create').addEventListener('submit', async e => {
     e.preventDefault();
     try {
@@ -538,6 +619,15 @@ $('create').addEventListener('submit', async e => {
             max_steps: Number($('steps').value), max_minutes: Number($('minutes').value),
             stall_minutes: Number($('stall').value),
             env_args: $('args').value.split('\n').map(s => s.trim()).filter(Boolean),
+            stage_name: $('stage-name').value,
+            target_timeout_pct: $('stage-target').value.trim() || null,
+            stages: [...$('stage-rows').children].map(row => ({
+                name: row.querySelector('.stage-name').value,
+                steps: Number(row.querySelector('.stage-steps').value),
+                target_timeout_pct: row.querySelector('.stage-target').value.trim() || null,
+                env_args: row.querySelector('.stage-args').value.split('\n')
+                    .map(x => x.trim()).filter(Boolean),
+            })),
             benchmark: $('evaluate-after').checked,
             trainer: {
                 hyperparameters: Object.fromEntries(['beta','lambd','learning_rate','batch_size','buffer_size','num_epoch'].map(k => [k, Number($('trainer-' + k).value)])),
