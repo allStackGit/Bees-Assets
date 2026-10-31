@@ -180,6 +180,7 @@ function render(data) {
     filter.replaceChildren(new Option('All', ''), ...groups.map(x => new Option(x, x)));
     filter.value = groups.includes(before) ? before : '';
     const visible = items.filter(x => !filter.value || x.group === filter.value);
+    const openRuns = new Set([...$('rows').querySelectorAll('details[open]')].map(d => d.dataset.runId));
     $('rows').replaceChildren();
     visible.slice().reverse().forEach(item => {
         const tr = document.createElement('tr');
@@ -189,6 +190,8 @@ function render(data) {
         td.append(check);tr.append(td);
         const name = cell(tr, '', 'name');
         const details = document.createElement('details');
+        details.dataset.runId = item.id;
+        details.open = openRuns.has(item.id);
         const summary = txt('summary', item.name);
         const info = txt('pre', 'Campaign: ' + item.group + '\nCreated: ' + item.created_at +
             '\nBuild: ' + (item.build_id || item.release_build) +
