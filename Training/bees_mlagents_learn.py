@@ -1289,11 +1289,24 @@ def _install_threaded_trainer_failure_propagation(managed_stop_event=None, manag
                 flush=True,
             )
             return None
+        # ML-Agents writes checkpoint.pt directly. A second managed-stop or
+        # console interrupt during serialization can leave an unreadable file.
+        # Only defer interrupts while the final save owns the checkpoint; prior
+        # trainer/worker shutdown remains fully interruptible.
+        saved_handlers = {}
+        signals_to_defer = [signal.SIGINT]
+        if os.name == "nt" and hasattr(signal, "SIGBREAK"):
+            signals_to_defer.append(signal.SIGBREAK)
         started = time.perf_counter()
-        print("[Bees checkpoint] ML-Agents final save started.", flush=True)
         try:
+            for sig in signals_to_defer:
+                saved_handlers[sig] = signal.getsignal(sig)
+                signal.signal(sig, signal.SIG_IGN)
+            print("[Bees checkpoint] ML-Agents final save started.", flush=True)
             return original_save(controller)
         finally:
+            for sig, handler in saved_handlers.items():
+                signal.signal(sig, handler)
             print(
                 f"[Bees checkpoint] ML-Agents final save returned after "
                 f"{time.perf_counter() - started:.3f}s.",
