@@ -3,6 +3,7 @@ const fs = require('node:fs');
 const http = require('node:http');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const { execFile } = require('node:child_process');
 const { invokeStart, invokeStop } = require('./operator/commands');
 const { getStatus } = require('./operator/control');
 const { getAuthoritativeLearnerStats, statusError } = require('./operator/status');
@@ -117,6 +118,79 @@ function measure(item, status, force = false) {
     }
 }
 
+const BENCHMARK_SETTINGS = path.join(paths.trainingRoot, 'Experiments', 'benchmark-settings.json');
+const BENCHMARK_RUNNER = path.join(__dirname, 'bees_experiment_benchmark.py');
+const hashFile = file => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+
+function benchmarkPlan() {
+    const plan = readJson(BENCHMARK_SETTINGS);
+    for (const key of ['python', 'recipe', 'opponent', 'environment', 'build_id']) {
+        if (typeof plan[key] !== 'string' || !plan[key].trim()) throw Error('Benchmark settings require ' + key + '.');
+    }
+    if (!fs.statSync(path.resolve(plan.python)).isFile()) throw Error('Benchmark Python executable is missing.');
+    const files = {
+        recipe: path.resolve(plan.recipe), opponent: path.resolve(plan.opponent),
+        environment: path.resolve(plan.environment),
+        evaluator: path.join(__dirname, 'bees_continual_evaluate.py'),
+        runner: BENCHMARK_RUNNER,
+    };
+    return {
+        python: path.resolve(plan.python), build_id: plan.build_id.trim(), files,
+        hashes: Object.fromEntries(Object.entries(files).map(([key, file]) => [key, hashFile(file)])),
+    };
+}
+
+function verifyBenchmarkPlan(plan) {
+    for (const [key, file] of Object.entries(plan.files)) {
+        if (hashFile(file) !== plan.hashes[key]) throw Error('Benchmark ' + key + ' changed since it was selected.');
+    }
+}
+
+async function evaluateItem(item) {
+    try {
+        const status = await control();
+        if (!status.desired || status.desired.training_enabled || status.desired.pending_release) {
+            throw Error('Benchmark requires idle training with no release in progress.');
+        }
+        verifyBenchmarkPlan(item.benchmark);
+        item.benchmark_status = 'running';
+        state.message = 'Evaluating checkpoint for ' + item.name;
+        save();
+        const plan = item.benchmark;
+        const args = [BENCHMARK_RUNNER, '--benchmark', plan.files.recipe,
+            '--candidate-run', item.run_id,
+            '--registry', path.join(paths.trainingRoot, 'registry.sqlite3'),
+            '--opponent', plan.files.opponent, '--env', plan.files.environment,
+            '--build-id', plan.build_id, '--output-root', BENCHMARK_REPORTS];
+        const output = await new Promise((resolve, reject) => {
+            execFile(plan.python, args, { windowsHide: true, maxBuffer: 65536 },
+                (error, stdout, stderr) => error
+                    ? reject(Error(String(stderr || error.message).trim()))
+                    : resolve(stdout));
+        });
+        const reportPath = String(output).trim().split(/\r?\n/).pop();
+        if (path.dirname(path.resolve(reportPath)) !== path.resolve(BENCHMARK_REPORTS)) {
+            throw Error('Evaluator returned an unexpected report path.');
+        }
+        const report = readJson(reportPath);
+        if (report.run_id !== item.run_id || !report.metrics || !report.metrics.telemetry_validated) {
+            throw Error('Evaluator did not return validated outcomes for this run.');
+        }
+        item.benchmark_report = path.basename(reportPath);
+        item.benchmark_status = 'completed';
+        delete item.benchmark_error;
+        state.message = '';
+    } catch (error) {
+        item.benchmark_status = 'failed';
+        item.benchmark_error = error.message;
+        state.armed = false;
+        state.message = 'Checkpoint evaluation failed; queue paused: ' + error.message;
+    }
+    state.active_id = null;
+    state.stop_requested = false;
+    save();
+}
+
 function blocked(item, message) {
     if (item) { item.status = 'interrupted'; item.error = message; }
     state.armed = false;
@@ -144,6 +218,12 @@ async function finalize(item, status) {
     item.status = item.end_reason === 'budget' ? 'completed' :
         item.end_reason === 'manual' ? 'stopped' : 'ended_early';
     item.finished_at = now();
+    if (item.benchmark && item.status === 'completed') {
+        item.benchmark_status = 'pending';
+        save();
+        await evaluateItem(item);
+        return;
+    }
     state.active_id = null;
     state.stop_requested = false;
     state.message = '';
@@ -153,6 +233,10 @@ async function finalize(item, status) {
 async function monitor() {
     const item = active();
     if (!item) { blocked(null, 'Active experiment record is missing.'); return; }
+    if (['pending', 'running'].includes(item.benchmark_status)) {
+        await evaluateItem(item);
+        return;
+    }
     const status = await control(), d = status.desired || {};
     if (item.status === 'starting') {
         // Recovery is intentionally conservative: never assume another live run is ours.
@@ -215,6 +299,7 @@ async function launch() {
         state.message = 'Release changed since experiment was queued. Review before starting.';
         save(); return;
     }
+    if (item.benchmark) verifyBenchmarkPlan(item.benchmark);
     item.previous_run_id = String(status.desired.run_id || '');
     item.status = 'starting';
     item.started_at = now();
@@ -275,6 +360,7 @@ function definition(input) {
         id: crypto.randomUUID(), name, group, status: 'queued', created_at: now(),
         max_steps, max_minutes, stall_minutes, env_args,
         release_build: String(release.build_id), samples: [], step: null, run_id: null,
+        benchmark: input.benchmark === true ? benchmarkPlan() : null,
     };
 }
 
@@ -328,7 +414,7 @@ const server = http.createServer(async (req, res) => {
             return res.end(page);
         }
         if (req.method === 'GET' && route === '/api/state') {
-            return json(res, 200, { ...state, busy });
+            return json(res, 200, { ...state, busy, benchmark_configured: fs.existsSync(BENCHMARK_SETTINGS) });
         }
         if (req.method === 'GET' && route === '/api/workers') {
             const status = await control();
@@ -343,6 +429,20 @@ const server = http.createServer(async (req, res) => {
             const item = definition(value);
             state.items.push(item); save();
             return json(res, 201, item);
+        }
+        if (route === '/api/evaluate') {
+            if (busy || state.active_id || state.armed) return json(res, 409, { error: 'Wait for the queue to be idle.' });
+            const item = state.items.find(x => x.id === value.id);
+            if (!item || !item.run_id || !['completed', 'stopped', 'ended_early'].includes(item.status)) {
+                return json(res, 400, { error: 'Select a finished training run.' });
+            }
+            if (item.benchmark_status === 'completed') return json(res, 409, { error: 'This run already has a saved evaluation.' });
+            item.benchmark = benchmarkPlan();
+            item.benchmark_status = 'pending';
+            state.active_id = item.id;
+            save();
+            setImmediate(cycle);
+            return json(res, 202, { ok: true });
         }
         if (route === '/api/start') {
             if (!state.active_id) {
@@ -381,4 +481,4 @@ if (require.main === module) {
         setInterval(cycle, 30000);
     });
 }
-module.exports = { server, definition, measure, workerSnapshot, benchmarkReports };
+module.exports = { server, definition, measure, workerSnapshot, benchmarkReports, benchmarkPlan, verifyBenchmarkPlan };

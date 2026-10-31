@@ -10,6 +10,7 @@ import hashlib
 import json
 import os
 import re
+import sqlite3
 import tempfile
 import uuid
 from datetime import datetime, timezone
@@ -128,10 +129,30 @@ def evaluate(recipe: Path, candidate: Path, opponent: Path, environment: Path,
     return destination
 
 
+def candidate_for_run(registry: Path, run_id: str) -> Path:
+    # The registry already owns model/run provenance. Read it without creating
+    # another model index or changing promotion/checkpoint state.
+    with sqlite3.connect(registry.resolve().as_uri() + "?mode=ro", uri=True) as db:
+        row = db.execute(
+            "SELECT artifact_path, artifact_sha256 FROM models "
+            "WHERE training_run_id = ? ORDER BY training_step DESC, created_at DESC, model_id DESC LIMIT 1",
+            (run_id,),
+        ).fetchone()
+    if row is None:
+        raise ValueError(f"No exported checkpoint is registered for run {run_id}.")
+    candidate = Path(row[0]).resolve()
+    if not candidate.is_file() or sha256_file(candidate) != row[1]:
+        raise ValueError(f"Registered checkpoint is missing or changed: {candidate}")
+    return candidate
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Fixed-seed independent Bees combat evaluation.")
     parser.add_argument("--benchmark", type=Path, required=True, help="Versioned benchmark JSON.")
-    parser.add_argument("--candidate", type=Path, required=True, help="Exported candidate ONNX model.")
+    selection = parser.add_mutually_exclusive_group(required=True)
+    selection.add_argument("--candidate", type=Path, help="Exported candidate ONNX model.")
+    selection.add_argument("--candidate-run", help="Use the latest registered export from this stopped run.")
+    parser.add_argument("--registry", type=Path, default=DEFAULT_REPORT_DIR.parents[1] / "registry.sqlite3")
     parser.add_argument("--opponent", type=Path, required=True, help="Fixed reference ONNX model.")
     parser.add_argument("--env", type=Path, required=True, help="Matching Unity evaluation executable.")
     parser.add_argument("--build-id", required=True, help="Unity build identity; keeps results comparable.")
@@ -140,9 +161,12 @@ def main() -> int:
     args = parser.parse_args()
     if not args.build_id.strip():
         parser.error("--build-id must not be empty.")
+    if args.candidate_run and args.run_id and args.candidate_run != args.run_id:
+        parser.error("--run-id must match --candidate-run.")
+    candidate = candidate_for_run(args.registry, args.candidate_run) if args.candidate_run else args.candidate.resolve()
     result = evaluate(
-        args.benchmark.resolve(), args.candidate.resolve(), args.opponent.resolve(),
-        args.env.resolve(), args.build_id.strip(), args.run_id.strip(), args.output_root.resolve(),
+        args.benchmark.resolve(), candidate, args.opponent.resolve(),
+        args.env.resolve(), args.build_id.strip(), (args.candidate_run or args.run_id).strip(), args.output_root.resolve(),
     )
     print(result)
     return 0

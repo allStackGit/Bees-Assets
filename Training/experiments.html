@@ -72,6 +72,7 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; max-width: 850px; }
 <label class="wide">Environment argument overrides, one per line<textarea id="args" placeholder="--rl-map-size-min=96&#10;--rl-map-size-max=112"></textarea></label>
 </div>
 <p class="muted">Arguments override flags from the current cluster configuration. Every queued experiment starts a fresh run using the existing release. Change PPO/network configuration and rebuild the release separately; these settings are not editable here yet.</p>
+<p><label><input id="evaluate-after" type="checkbox" style="width:auto" disabled> Evaluate final checkpoint before the next experiment</label><small id="benchmark-config">Loading evaluation settings…</small></p>
 <button class="primary" type="submit">Add to queue</button>
 </form>
 </section>
@@ -172,6 +173,8 @@ function render(data) {
     $('start').disabled = data.busy || data.armed || !items.some(x => x.status === 'queued');
     $('stop').disabled = !data.active_id && !data.armed;
     $('message').textContent = data.message || '';
+    $('evaluate-after').disabled = !data.benchmark_configured;
+    $('benchmark-config').textContent = data.benchmark_configured ? 'Uses the configured fixed benchmark and reference.' : 'Configure Training/Experiments/benchmark-settings.json to enable evaluations.';
     const groups = [...new Set(items.map(x => x.group))].sort();
     const filter = $('filter'), before = filter.value;
     filter.replaceChildren(new Option('All', ''), ...groups.map(x => new Option(x, x)));
@@ -192,9 +195,25 @@ function render(data) {
             '\nBudget: ' + fmt(item.max_steps) + ' steps / ' + item.max_minutes + ' minutes' +
             '\nEnd reason: ' + (item.end_reason || '—') +
             '\nArguments:\n' + item.env_args.join('\n') + '\n' + (item.error || ''));
-        details.append(summary,info);name.append(details);
+        details.append(summary,info);
+        if (item.benchmark_status) details.append(txt('p', 'Checkpoint evaluation: ' + item.benchmark_status +
+            (item.benchmark_report ? ' · ' + item.benchmark_report : '') +
+            (item.benchmark_error ? ' · ' + item.benchmark_error : '')));
+        if (data.benchmark_configured && item.run_id &&
+            ['completed', 'stopped', 'ended_early'].includes(item.status) &&
+            item.benchmark_status !== 'completed') {
+            const evaluate = txt('button', 'Evaluate checkpoint');
+            evaluate.disabled = data.busy || Boolean(data.active_id) || data.armed;
+            evaluate.addEventListener('click', async () => {
+                try { await request('/api/evaluate', { id: item.id }); await refresh(); }
+                catch (error) { $('message').textContent = error.message; }
+            });
+            details.append(evaluate);
+        }
+        name.append(details);
         const last = item.samples[item.samples.length - 1] || {};
-        cell(tr, item.status);
+        cell(tr, item.benchmark_status === 'running' || item.benchmark_status === 'pending' ?
+            item.status + ' · evaluating' : item.status);
         cell(tr, fmt(item.step));
         cell(tr, fmt(last.timeout_pct,1) + (last.timeout_pct == null ? '' : '%'));
         cell(tr, fmt(last.bee_hits_per_shot,3));
@@ -359,6 +378,7 @@ $('create').addEventListener('submit', async e => {
             max_steps: Number($('steps').value), max_minutes: Number($('minutes').value),
             stall_minutes: Number($('stall').value),
             env_args: $('args').value.split('\n').map(s => s.trim()).filter(Boolean),
+            benchmark: $('evaluate-after').checked,
         });
         $('name').value = ''; await refresh();
     } catch(err) { $('message').textContent = err.message; }
