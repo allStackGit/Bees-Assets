@@ -30,8 +30,8 @@ one per line:
 --rl-bee-ship-types=Wasp
 --rl-human-ship-types=Gunship
 --rl-matchup-mode=fixed
---rl-map-size=32
---rl-episode-timeout=30
+--rl-map-size=24
+--rl-episode-timeout=5
 --rl-health-ratio=0.00001
 --rl-disable-movement=true
 --rl-static-obstacles=false
@@ -42,8 +42,9 @@ one per line:
 
 Both ships have a single weapon with nominal range 40 and 6-by-6-unit hulls.
 The placement code randomizes both positions and facings with collision/border
-clearance. On a 32-unit square, the two centers can be at most about 30.4 units
-apart, hence they start within sight and weapon range. The very small health
+clearance. On the requested 24-unit square, the two ships start at close range;
+verify the **effective** map size in a short live run because spawn-safety
+logic can enlarge an arena when the requested dimensions are too small. The very small health
 ratio gives each ship one hit point, so the first landed hit wins. The purpose
 is to isolate **aim and fire decisions**, without movement or long-range search.
 It does not establish mobile combat competence. Preserve random facing and
@@ -62,7 +63,8 @@ matches) against an explicitly recorded, unchanged opponent. An initial
 same-model-on-both-sides check only validates combat/evaluation mechanics, not
 relative policy quality.
 
-**Do not set up automatic post-run evaluation without a valid frozen opponent.**
+**Stage evaluation can use the versioned scripted controllers described below;
+a frozen ONNX opponent is no longer required.**
 Manual safe stop of a successful baseline does not trigger the manager's
 automatic evaluation; evaluate the finished checkpoint explicitly afterward.
 The queue starts a **fresh** policy/optimizer for each item: a second
@@ -132,30 +134,53 @@ available as a separate mode; both require a frozen reference model.
 ## Per-stage fixed-seed benchmark suite
 
 To observe **adaptation and retention**, configure a frozen benchmark suite in
-`Training/Experiments/benchmark-settings.json` outside Assets. For example:
+`Training/Experiments/benchmark-settings.json` outside Assets. The three
+versioned scripted opponents require **no pretrained network**:
 
 ```json
 {
   "python": "PATH_TO_EXISTING_MLAGENTS_PYTHON",
-  "opponent": "PATH_TO_FROZEN_REFERENCE_ONNX",
   "environment": "PATH_TO_UNITY_EXECUTABLE",
   "build_id": "EXACT_EVALUATION_BUILD_ID",
   "scenarios": [
-    {"id": "aiming", "recipe": "ABSOLUTE_PATH_TO_experiment_benchmark.aiming.json"},
-    {"id": "moving", "recipe": "ABSOLUTE_PATH_TO_experiment_benchmark.short.json"},
-    {"id": "distance", "recipe": "ABSOLUTE_PATH_TO_experiment_benchmark.long.json"}
+    {
+      "id": "aiming",
+      "recipe": "ABSOLUTE_PATH_TO_experiment_benchmark.scripted-aiming.json",
+      "opponent": "scripted:stationary"
+    },
+    {
+      "id": "moving",
+      "recipe": "ABSOLUTE_PATH_TO_experiment_benchmark.scripted-moving.json",
+      "opponent": "scripted:strafe"
+    },
+    {
+      "id": "pursuit",
+      "recipe": "ABSOLUTE_PATH_TO_experiment_benchmark.scripted-pursuit.json",
+      "opponent": "scripted:pursuit"
+    }
   ]
 }
 ```
 
-The recipes, opponent, executable and evaluator code are hashed and frozen
-**when the experiment is queued**. The same scenarios, frozen opponent, build,
-seed and evaluator are used at **every** stage, even before the network is
-expected to solve them. The resulting stage-by-scenario matrix separates
-new capabilities from retention of earlier ones. The included short/medium/long
-recipes are provisional screening benchmarks, **not yet calibrated measures**
-of Bees combat competence; select and qualify meaningful scenarios before
-interpreting results.
+The scripted controllers live in `Training/bees_experiment_scripted.py` and
+operate solely on the existing BeesRL1v1 observation/action tensors: they do
+not have Unity ground-truth positions or an extra training reward. **Stationary**
+aims/fires but does not move; **strafe** tracks and orbits a visible enemy;
+**pursuit** approaches a detected opponent and otherwise follows a fixed
+search pattern. These are simple baselines, not optimal game-playing agents.
+Their code is frozen by SHA-256 along with the recipe, evaluator, Unity build
+and candidate provenance. A different script version or opponent mode produces
+a different comparison identity.
+
+The recipes, opponent identities, executable and evaluation code are hashed
+and frozen **when the experiment is queued**. The same three scenarios,
+opponents, seeds and build are used at **every** stage, including earlier
+competencies. The new recipes match the proposed curriculum: 24 units/5 s
+stationary, 32–64 units/15 s moving and 96–128 units/30 s pursuit, all
+one-hit Wasp versus Gunship combat. They remain **uncalibrated screening
+benchmarks** until a live evaluation confirms useful discriminating behavior.
+Verify the actual physical arena dimensions on 24-unit maps before treating
+the nominal recipe size as effective.
 
 Select **Evaluate every curriculum stage** in the manager's queue form.
 Stage transitions remain controlled by **cumulative learner steps**, never
@@ -166,8 +191,9 @@ benchmark results. At each boundary (including the last), the manager:
 2. Requires a saved optimizer checkpoint and a **registered ONNX export at or
    beyond the last observed learner step**. It pins that candidate's exact
    file path, SHA-256 and registry training step once for the whole suite.
-3. Runs each recipe against the same frozen reference policy and stores one
-   immutable report per scenario. Every report records experiment ID, stage
+3. Runs each recipe against its own **frozen scripted or ONNX opponent**
+   (unchanged across all candidates and stages), storing one immutable report
+   per scenario. Every report records experiment ID, stage
    index/name, cumulative boundary step, selected candidate step/hash,
    recipe/build/evaluator identities and outcomes.
 4. After all reports are verified, resumes the **same optimizer lineage** in
@@ -195,8 +221,9 @@ A legacy single `recipe` in `benchmark-settings.json` remains supported and
 works as a one-scenario suite. **Final checkpoint only** runs its first
 configured recipe, preserving the previous final-evaluation behavior.
 A queued item may use either stage-suite mode or final-only mode, not both.
-Automatic stage evaluation requires a frozen opponent and a registered export;
-it is not usable immediately after starting from scratch.
+Automatic stage evaluation requires the versioned scripted policy or a
+frozen ONNX opponent, plus a registered candidate export. There is no
+requirement to train an opponent network first.
 
 ## Fixed-seed checkpoint evaluation (first independent benchmark)
 
@@ -210,7 +237,9 @@ python Assets/Training/bees_experiment_benchmark.py --benchmark Assets/Training/
 
 This is an offline evaluation and does not start or modify training. It uses
 the existing `bees_continual_evaluate.run_match_group` evaluator and deterministic
-ONNX actions. The versioned JSON recipe sets the seed, match count, environment
+ONNX actions. The `--opponent` flag also accepts `scripted:stationary`,
+`scripted:strafe` or `scripted:pursuit`; both modes use authoritative
+Unity match outcomes. The versioned JSON recipe sets the seed, match count, environment
 scenario arguments, and behavior. A revision or content change creates a new
 benchmark identity. The built Unity executable must support the existing RL
 evaluation side channel and match the policies' observation/action signature.
