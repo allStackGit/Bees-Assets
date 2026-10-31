@@ -82,7 +82,11 @@ define stage 1. Expand **Curriculum stages** to name that stage and add further
 stages. Each later stage defines a name, **additional** learner steps and
 optional `--rl-*` overrides. Overrides inherit the preceding stage's effective
 arguments (including removal of mutually exclusive fixed/ranged map flags).
-All stage definitions are frozen on queue creation. For example, a hypothetical
+All stage definitions are frozen on queue creation. Before an experiment
+starts, the manager checks **every stage's environment arguments** with the
+existing built-Unity startup validator; invalid later-stage arguments cannot
+silently consume an earlier stage's training budget. A control-plane ownership
+change during this preflight disarms the queue. For example, a hypothetical
 first-stage budget of 30 million steps followed by 20 million additional steps
 would change environments near 30 million cumulative learner steps and end the
 run around 50 million; actual transition steps may overshoot published learner
