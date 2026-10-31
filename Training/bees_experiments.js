@@ -5,7 +5,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { invokeStart, invokeStop } = require('./operator/commands');
 const { getStatus } = require('./operator/control');
-const { getAuthoritativeLearnerStats } = require('./operator/status');
+const { getAuthoritativeLearnerStats, statusError } = require('./operator/status');
 const { paths, readJson, writeJsonAtomic, ensureDir, loadConfig } = require('./operator/common');
 
 // The existing Bees operator owns safe run transitions. This module owns only
@@ -31,6 +31,44 @@ async function control() {
     const token = fs.readFileSync(paths.adminTokenPath, 'utf8').trim();
     if (!token) throw Error('Missing training control token.');
     return getStatus(loadConfig(), token);
+}
+
+// Read-only projection of the existing control-plane status. Nothing here
+// changes learner/worker ownership or persists another telemetry copy.
+function workerSnapshot(status) {
+    const desired = status.desired || {};
+    return {
+        training_enabled: Boolean(desired.training_enabled),
+        run_id: String(desired.run_id || ''),
+        revision: Number(desired.revision || 0),
+        pending_release: desired.pending_release
+            ? String(desired.pending_release.phase || 'pending') : null,
+        workers: (status.trainers || []).map(record => {
+            const metrics = record.metrics || {};
+            const throughput = metrics.throughput || {};
+            const host = metrics.host || {};
+            const capacity = record.worker_capacity || {};
+            const optimizer = record.env_optimizer || {};
+            return {
+                trainer_id: String(record.trainer_id || ''),
+                role: String(record.role || ''),
+                platform: String(record.platform || ''),
+                state: record.stale ? 'STALE' : String(record.process_state || 'unknown'),
+                envs: capacity.current_envs ?? null,
+                desired_envs: optimizer.desired_envs ?? null,
+                cpu_pct: host.cpu_percent ?? null,
+                ram_pct: host.ram_percent ?? null,
+                live_exp_s: throughput.learner_consumed_steps_per_sec ?? null,
+                staged_s: throughput.staged_steps_per_sec ?? null,
+                accepted_s: throughput.accepted_steps_per_sec ?? null,
+                upload_queue: throughput.upload_queue_depth ?? null,
+                broker_queue: throughput.broker_queue_depth ?? null,
+                broker_capacity: throughput.broker_queue_capacity ?? null,
+                age_seconds: record.age_seconds ?? null,
+                error: statusError(record),
+            };
+        }),
+    };
 }
 
 function measure(item, status, force = false) {
@@ -277,6 +315,10 @@ const server = http.createServer(async (req, res) => {
         if (req.method === 'GET' && route === '/api/state') {
             return json(res, 200, { ...state, busy });
         }
+        if (req.method === 'GET' && route === '/api/workers') {
+            const status = await control();
+            return json(res, 200, workerSnapshot(status));
+        }
         if (req.method !== 'POST') return json(res, 404, { error: 'Not found.' });
         const value = await body(req);
         if (route === '/api/queue') {
@@ -321,4 +363,4 @@ if (require.main === module) {
         setInterval(cycle, 30000);
     });
 }
-module.exports = { server, definition, measure };
+module.exports = { server, definition, measure, workerSnapshot };
