@@ -756,6 +756,31 @@ def _evaluation_environment_args(env_args: Sequence[str]) -> List[str]:
     return result
 
 
+def _owned_unity_environment(UnityEnvironment: Any, **kwargs: Any) -> Any:
+    # ML-Agents launches Unity internally. Use Bees' existing OS-owned child
+    # launcher during construction so an interrupted evaluator cannot orphan it.
+    import subprocess
+    from mlagents_envs import env_utils
+    from bees_process_safety import popen_owned
+
+    original = env_utils.launch_executable
+
+    def launch(file_name: str, args: List[str]) -> Any:
+        executable = env_utils.validate_environment_path(file_name)
+        if executable is None:
+            raise EvaluationError(f"Could not locate Unity executable: {file_name}")
+        return popen_owned(
+            [executable, *args], start_new_session=True,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+
+    env_utils.launch_executable = launch
+    try:
+        return UnityEnvironment(**kwargs)
+    finally:
+        env_utils.launch_executable = original
+
+
 def run_match_group(
     *,
     environment_path: os.PathLike[str] | str,
@@ -770,6 +795,7 @@ def run_match_group(
     onnx_provider: Optional[str],
     no_graphics: bool = True,
     max_environment_steps_per_match: int = DEFAULT_MAX_ENVIRONMENT_STEPS_PER_MATCH,
+    time_scale: Optional[float] = None,
 ) -> MatchSummary:
     if matches <= 0:
         raise EvaluationError("Match group must request at least one match.")
@@ -778,24 +804,38 @@ def run_match_group(
     if _managed_stop_requested():
         raise KeyboardInterrupt
 
+    if time_scale is not None and (
+        type(time_scale) not in (int, float) or not math.isfinite(time_scale)
+        or not 0 < time_scale <= 100
+    ):
+        raise EvaluationError("Evaluation time_scale must be finite and in (0, 100].")
     UnityEnvironment, ActionTuple, _ = _import_mlagents()
     channel = _create_result_channel()
+    channels = [channel]
+    if time_scale is not None:
+        from mlagents_envs.side_channel.engine_configuration_channel import EngineConfigurationChannel
+        engine = EngineConfigurationChannel()
+        engine.set_configuration_parameters(time_scale=float(time_scale))
+        channels.append(engine)
     candidate = OnnxPolicy(candidate_model_path, provider=onnx_provider)
     opponent = OnnxPolicy(opponent_model_path, provider=onnx_provider)
-    environment = UnityEnvironment(
+    environment = _owned_unity_environment(UnityEnvironment,
         file_name=str(Path(environment_path)),
         worker_id=worker_id,
         seed=seed,
         no_graphics=no_graphics,
         timeout_wait=timeout_wait,
         additional_args=_evaluation_environment_args(env_args),
-        side_channels=[channel],
+        side_channels=channels,
     )
 
     completed: List[EpisodeResult] = []
     environment_steps = 0
     try:
         environment.reset()
+        if time_scale is not None:
+            # Stage reapplies its gameplay time scale when each arena resets.
+            engine.set_configuration_parameters(time_scale=float(time_scale))
         teams = _validate_environment_behaviors(environment.behavior_specs, behavior_name)
         policies = {0: candidate, 1: opponent}
         for team, name in teams.items():
@@ -817,7 +857,10 @@ def run_match_group(
                     environment.set_actions(name, actions)
             environment.step()
             environment_steps += 1
-            completed.extend(channel.drain())
+            fresh_results = channel.drain()
+            completed.extend(fresh_results)
+            if fresh_results and time_scale is not None:
+                engine.set_configuration_parameters(time_scale=float(time_scale))
             if len(completed) > matches:
                 raise EvaluationError(
                     f"Unity emitted {len(completed)} results for a {matches}-match group."

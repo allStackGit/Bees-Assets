@@ -23,6 +23,7 @@ const {
     resolveUnityEditor,
     runChecked,
     saveRuntimeTrainingOptions,
+    sha256File,
     sleep,
     stopManagedProcessTree,
     testControl,
@@ -55,6 +56,7 @@ const {
     getRunningCentralAgentPid,
     prepareCentralReleaseRuntime,
     startCentralAgentIfNeeded,
+    stopCentralAgentGracefully,
 } = require('./central');
 const { startBeesServerIfNeeded } = require('./server');
 const {
@@ -444,6 +446,10 @@ async function invokeRuntime(options = {}) {
 
 async function invokeServer() {
     const config = loadConfig();
+    if (options.experimentConfig && !options.newRun) throw Error('Experiment configuration requires a fresh run.');
+    if (options.experimentConfig && sha256File(options.experimentConfig.path) !== options.experimentConfig.sha256) {
+        throw Error('Frozen experiment trainer configuration changed.');
+    }
     const worker = ensureTokenFile(paths.workerTokenPath);
     const admin = ensureTokenFile(paths.adminTokenPath);
     await startBeesServerIfNeeded(config, worker, admin);
@@ -527,6 +533,10 @@ async function invokeStart(options = {}) {
 
     let forcedPlan = getPendingForcedNewRunPlan();
     const resumeForcedNewRun = Boolean(forcedPlan);
+    if (forcedPlan && options.experimentConfig &&
+        (!forcedPlan.trainer_config || forcedPlan.trainer_config.sha256 !== options.experimentConfig.sha256)) {
+        throw Error('Pending new-run operation belongs to another experiment configuration.');
+    }
     const initialStatus = await getStatus(config, admin);
 
     if (options.resumeRunId) {
@@ -821,6 +831,7 @@ async function invokeStart(options = {}) {
             forceNew: true,
             buildId: String(release.build_id),
             environmentArgs: envArgs,
+            trainerConfig: options.experimentConfig && options.experimentConfig.path,
         });
         if (
             forcedPlan.previous_run_id &&
@@ -942,6 +953,12 @@ async function invokeStart(options = {}) {
     let staged;
     let desired;
     if (performForcedNewRun) {
+        // A live supervisor still owns the outgoing launch command. Stop it
+        // before enabling the new run, or it can create that run's immutable
+        // generation directory with the outgoing trainer configuration.
+        await invokeStop({});
+        const outgoingSupervisor = getRunningCentralAgentPid();
+        if (outgoingSupervisor > 0) await stopCentralAgentGracefully(outgoingSupervisor);
         staged = await stageRelease(
             config, admin, release, envArgs, environmentValidationKey
         );

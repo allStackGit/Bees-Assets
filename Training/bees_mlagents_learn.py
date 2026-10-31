@@ -1196,7 +1196,7 @@ def _install_model_snapshot_requests():
     return original
 
 
-def _install_threaded_trainer_failure_propagation():
+def _install_threaded_trainer_failure_propagation(managed_stop_event=None, managed_stop_watcher=None):
     """Fail the learner process when ML-Agents' daemon trainer thread crashes.
 
     ML-Agents 1.1.0 otherwise prints an exception from trainer_update_func and leaves the
@@ -1235,6 +1235,13 @@ def _install_threaded_trainer_failure_propagation():
             return None
 
     def guarded_save_models(controller):
+        # Zero-local WAN waits can observe the stop file before the background
+        # watcher. Retire that interrupt source before entering finalization so
+        # a second KeyboardInterrupt cannot truncate checkpoint serialization.
+        if managed_stop_event is not None:
+            managed_stop_event.set()
+        if managed_stop_watcher is not None:
+            managed_stop_watcher.join()
         # ML-Agents 1.1.0 join_threads() joins each updater for only one second
         # before start_learning() calls _save_models() in its finally block.
         # A Bees PPO update can run much longer. Never serialize mutable policy
@@ -1282,11 +1289,24 @@ def _install_threaded_trainer_failure_propagation():
                 flush=True,
             )
             return None
+        # ML-Agents writes checkpoint.pt directly. A second managed-stop or
+        # console interrupt during serialization can leave an unreadable file.
+        # Only defer interrupts while the final save owns the checkpoint; prior
+        # trainer/worker shutdown remains fully interruptible.
+        saved_handlers = {}
+        signals_to_defer = [signal.SIGINT]
+        if os.name == "nt" and hasattr(signal, "SIGBREAK"):
+            signals_to_defer.append(signal.SIGBREAK)
         started = time.perf_counter()
-        print("[Bees checkpoint] ML-Agents final save started.", flush=True)
         try:
+            for sig in signals_to_defer:
+                saved_handlers[sig] = signal.getsignal(sig)
+                signal.signal(sig, signal.SIG_IGN)
+            print("[Bees checkpoint] ML-Agents final save started.", flush=True)
             return original_save(controller)
         finally:
+            for sig, handler in saved_handlers.items():
+                signal.signal(sig, handler)
             print(
                 f"[Bees checkpoint] ML-Agents final save returned after "
                 f"{time.perf_counter() - started:.3f}s.",
@@ -1459,7 +1479,9 @@ def main() -> None:
     previous_argv = sys.argv
     previous_sigbreak_handler = _install_windows_break_interrupt()
     managed_stop_event, managed_stop_watcher = _start_managed_stop_watcher()
-    threaded_failure_state = _install_threaded_trainer_failure_propagation()
+    threaded_failure_state = _install_threaded_trainer_failure_propagation(
+        managed_stop_event, managed_stop_watcher
+    )
     original_maybe_save_model = _install_model_snapshot_requests()
     original_trainer_advance = _install_managed_learner_progress_marker()
     torch_utils.torch.load = device_safe_torch_load

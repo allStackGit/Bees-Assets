@@ -1,0 +1,803 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bees · Experiments</title>
+<style>
+:root {
+    color-scheme: light;
+    font: 14px/1.4 Arial, Helvetica, sans-serif;
+    color: #000000;
+    background: #ffffff;
+    --ink: #000000;
+    --paper: #ffffff;
+    --error: #c40000;
+}
+* { box-sizing: border-box; }
+html { background: var(--paper); }
+body {
+    max-width: 1200px;
+    margin: 20px auto;
+    padding: 18px 22px;
+    border: 4px solid var(--ink);
+    background: var(--paper);
+    color: var(--ink);
+}
+h1 {
+    margin: 0;
+    font-size: clamp(40px, 5.8vw, 68px);
+    line-height: .94;
+    font-weight: 900;
+    letter-spacing: -2.5px;
+}
+h2 {
+    margin: 0;
+    font-size: 24px;
+    line-height: 1.1;
+    font-weight: 900;
+    letter-spacing: -.5px;
+}
+header, .bar, .formgrid, .summary { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+header {
+    justify-content: space-between;
+    align-items: end;
+    gap: 20px;
+    border-bottom: 14px solid var(--ink);
+    padding: 2px 0 16px;
+    margin-bottom: 14px;
+}
+header small {
+    display: block;
+    margin-top: 10px;
+    font-size: 11px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: .7px;
+}
+section { border-bottom: 9px solid var(--ink); padding: 16px 0 20px; }
+section:last-of-type { border-bottom: 0; padding-bottom: 6px; }
+section > h2, section > .bar {
+    border-bottom: 2px solid var(--ink);
+    padding-bottom: 10px;
+    margin-bottom: 14px;
+}
+section > .bar { justify-content: space-between; }
+section > .bar h2 { margin: 0; }
+button {
+    cursor: pointer;
+    padding: 9px 13px;
+    border: 2px solid var(--ink);
+    border-radius: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font: 800 13px Arial, Helvetica, sans-serif;
+    text-transform: uppercase;
+    letter-spacing: .3px;
+}
+button.primary { border-width: 3px; font-weight: 900; }
+button:hover:not(:disabled) { text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 3px; }
+button:active:not(:disabled) { outline: 2px solid var(--ink); outline-offset: -5px; }
+button:disabled { cursor: default; border-style: dotted; }
+input, textarea, select {
+    width: 100%;
+    padding: 8px;
+    border: 1px solid var(--ink);
+    border-radius: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font: inherit;
+}
+input::placeholder, textarea::placeholder { color: var(--ink); opacity: 1; font-style: italic; }
+input:disabled, textarea:disabled, select:disabled { background: var(--paper); color: var(--ink); border-style: dotted; }
+input:focus, textarea:focus, select:focus, button:focus-visible, summary:focus-visible {
+    outline: 2px solid var(--ink);
+    outline-offset: 2px;
+}
+input[type=checkbox] { accent-color: var(--ink); }
+label {
+    display: block;
+    font-size: 12px;
+    font-weight: 800;
+    color: var(--ink);
+}
+label input, label textarea { margin-top: 5px; }
+.formgrid { align-items: start; gap: 14px; }
+.formgrid > label { flex: 1 1 170px; }
+.formgrid > label.wide { flex: 2 1 350px; }
+textarea { min-height: 80px; resize: vertical; }
+small, .muted { color: var(--ink); }
+small { font-size: 11px; }
+.muted { font-size: 12px; }
+#message:not(:empty) {
+    margin: 12px 0;
+    padding: 10px 0;
+    border-top: 2px solid var(--ink);
+    border-bottom: 2px solid var(--ink);
+    font-weight: 800;
+}
+#message.error { border-color: var(--error); color: var(--error); }
+.summary {
+    gap: 0;
+    align-items: stretch;
+    border-top: 2px solid var(--ink);
+    border-bottom: 2px solid var(--ink);
+}
+.summary span {
+    flex: 1 1 auto;
+    padding: 8px 12px;
+    border-right: 1px solid var(--ink);
+    background: var(--paper);
+    color: var(--ink);
+    font-weight: 900;
+    font-variant-numeric: tabular-nums;
+}
+.summary span:last-child { border-right: 0; }
+.summary.error, .summary.error span { color: var(--error); border-color: var(--error); }
+.tablewrap { max-width: 100%; overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+th, td {
+    padding: 8px 9px;
+    border-bottom: 1px solid var(--ink);
+    text-align: left;
+    white-space: nowrap;
+    background: var(--paper);
+    color: var(--ink);
+}
+thead { border-top: 5px solid var(--ink); border-bottom: 2px solid var(--ink); }
+th { font-size: 11px; font-weight: 900; text-transform: uppercase; }
+td.name { white-space: normal; min-width: 170px; }
+td.worker-error { white-space: normal; min-width: 250px; overflow-wrap: anywhere; }
+.worker-issue, .error { color: var(--error); font-weight: 800; }
+.worker-summary { cursor: pointer; font-weight: 900; font-size: 24px; line-height: 1.1; }
+.worker-summary small { font-size: 11px; font-weight: 800; letter-spacing: .3px; }
+details.worker-details[open] > summary {
+    border-bottom: 7px solid var(--ink);
+    padding-bottom: 10px;
+    margin-bottom: 14px;
+}
+details { font-size: 12px; }
+summary { cursor: pointer; font-weight: 800; }
+.curriculum-stages { display: grid; gap: 14px; margin: 14px 0; }
+.curriculum-stages fieldset { margin: 0; border: 2px solid var(--ink); padding: 12px; min-width: 0; background: var(--paper); }
+.curriculum-stages legend { padding: 0 5px; font-weight: 900; text-transform: uppercase; }
+.curriculum-stages .bar { margin-top: 10px; }
+pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.5 Arial, Helvetica, sans-serif; }
+.graph { width: 100%; height: 250px; border: 2px solid var(--ink); border-radius: 0; background: var(--paper); color: var(--ink); }
+#legend { display: flex; gap: 15px; flex-wrap: wrap; padding: 8px 0; font-size: 12px; font-weight: 800; }
+.dot { display: inline-block; width: 10px; height: 10px; border: 1px solid var(--ink); border-radius: 0; margin-right: 6px; }
+@media (max-width: 650px) {
+    body { margin: 8px; padding: 12px; border-width: 3px; }
+    h1 { font-size: 40px; letter-spacing: -1.5px; }
+    header { align-items: start; }
+    section { padding: 14px 0 17px; }
+    .summary span { flex-basis: 50%; }
+}
+</style>
+</head>
+<body>
+<header><div><h1>Bees Experiments</h1><small>Local experiment queue and training comparisons · Version 1</small></div>
+<div class="bar"><button id="start" class="primary">Run queue</button><button id="stop" class="danger">Stop safely</button></div></header>
+<div id="message" role="status"></div>
+<section>
+<h2>Overview</h2><div id="overview" class="summary"></div>
+<p class="muted">Progress is measured from the active run's ML-Agents learner summaries. Combat metrics are sampled from live worker windows, <strong>not</strong> a frozen evaluation benchmark.</p>
+</section>
+<section>
+<details id="worker-panel" class="worker-details">
+<summary class="worker-summary">Worker Status <small id="worker-indicator">· Open for live diagnostics</small></summary>
+<p class="muted" id="worker-summary">Loading current Bees training control status…</p>
+<div class="tablewrap"><table><thead><tr>
+<th>Worker</th><th>State</th><th>Envs</th><th>CPU</th><th>RAM</th>
+<th>LiveExp/s</th><th>Staged/s</th><th>Accept/s</th><th>UploadQ</th><th>BrokerQ</th><th>Age</th><th>Error / diagnostic</th>
+</tr></thead><tbody id="worker-rows"></tbody></table></div>
+<p class="muted">Live training-control information (same source as <code>bees.ps1 status</code>). Updates while this panel is open; nothing is written to experiment history.</p>
+</details>
+</section>
+<section>
+<h2>Queue an experiment</h2>
+<form id="create">
+<div class="formgrid">
+<label>Experiment name<input id="name" maxlength="100" required placeholder="Long-range baseline"></label>
+<label>Campaign / comparison group<input id="group" maxlength="80" value="Turret combat"></label>
+<label>First-stage step budget<input id="steps" type="number" min="1000" max="5000000000000" step="1000" value="20000000" required></label>
+<label>Time limit (minutes)<input id="minutes" type="number" min="10" max="43200" value="1440" required></label>
+<label>No-progress limit (minutes)<input id="stall" type="number" min="10" max="43200" value="45" required></label>
+<label class="wide">Environment argument overrides, one per line<textarea id="args" placeholder="--rl-map-size-min=96&#10;--rl-map-size-max=112"></textarea></label>
+</div>
+<details style="margin:14px 0">
+<summary>Curriculum stages · continue the same checkpoint</summary>
+<p class="muted">The first stage uses the settings above. Add later stages with an additional step budget and optional environment overrides. Every stage inherits the previous stage's settings. Boundaries stop and resume the same training run; they do not create a new network. Timeout targets are recorded from sampled training telemetry, not used for automatic advancement.</p>
+<div class="formgrid">
+<label>First stage name<input id="stage-name" maxlength="100" value="Initial combat"></label>
+<label>First stage timeout target % (optional)<input id="stage-target" type="number" min="0" max="100" step="any" placeholder="5"></label>
+</div>
+<div id="stage-rows" class="curriculum-stages"></div>
+<button id="add-stage" type="button">Add curriculum stage</button>
+</details>
+<p class="muted">Arguments override the cluster defaults. Each experiment starts a fresh policy and optimizer using its frozen trainer configuration. v26 supports width 128 and feedforward networks; layer count and normalization can vary.</p><details style="margin:12px 0"><summary>Trainer configuration · fresh initialization</summary><p id="trainer-config-status">Loading release defaults…</p><div class="formgrid"><label>Entropy beta<input id="trainer-beta" type="number" min="0" step="any" required></label><label>Lambda<input id="trainer-lambd" type="number" min="0" step="any" required></label><label>Learning rate<input id="trainer-learning_rate" type="number" min="0" step="any" required></label><label>Batch size<input id="trainer-batch_size" type="number" min="1" step="1" required></label><label>Buffer size<input id="trainer-buffer_size" type="number" min="1" step="1" required></label><label>PPO epochs<input id="trainer-num_epoch" type="number" min="1" step="1" required></label><label>Network layers (width 128)<input id="trainer-num_layers" type="number" min="1" step="1" required></label><label>ML-Agents initialization seed<input id="trainer-seed" type="number" min="0" step="1" required></label><label>Observation normalization<select id="trainer-normalize"><option value="true">Enabled</option><option value="false">Disabled</option></select></label></div></details>
+<p><label><input id="evaluate-stages" type="checkbox" style="width:auto" disabled> Evaluate every curriculum stage against the frozen benchmark suite</label>
+<label><input id="evaluate-after" type="checkbox" style="width:auto" disabled> Evaluate final checkpoint only (first benchmark recipe)</label>
+<small id="benchmark-config">Loading evaluation settings…</small></p>
+<p class="muted">Stage evaluations stop the learner, pin its exported checkpoint, run each configured scenario, and resume the same optimizer only after all reports are verified. All scenarios run at every stage, including earlier ones to measure retention. An evaluation failure disarms the queue.</p>
+<button class="primary" type="submit">Add to queue</button>
+</form>
+</section>
+<section>
+<div class="bar"><h2>Runs and comparisons</h2><label>Show group <select id="filter"><option value="">All</option></select></label>
+<label>Graph <select id="metric"><option value="timeout_pct">Timeout %</option><option value="bee_hits_per_shot">Bee hits per shot</option><option value="bee_win_pct">Bee win %</option><option value="reward">Mean reward</option><option value="steps_per_second">Learner steps/s</option></select></label></div>
+<svg id="graph" class="graph" viewBox="0 0 800 250" role="img" aria-label="Selected training curves"></svg>
+<div id="legend"></div>
+<div id="aggregate" class="summary" style="margin:14px 0"></div>
+<div class="tablewrap"><table><thead><tr><th>Plot</th><th>Experiment</th><th>Status</th><th>Steps</th><th>Timeout</th><th>Hit/shot</th><th>Run</th></tr></thead><tbody id="rows"></tbody></table></div>
+</section>
+<section>
+<details id="benchmark-panel" class="worker-details">
+<summary class="worker-summary">Checkpoint benchmarks <small>· Independent fixed-seed evaluations</small></summary>
+<p class="muted">These results come from the existing Unity/ONNX evaluator, not the training-telemetry graph. Only identical benchmark definitions, reference models, and environment builds are directly comparable. Win and timeout intervals use the 95% Wilson method. Fixed-seed results are screening evidence; these intervals do not measure training-seed variability. Accuracy is descriptive because shots within a match are correlated.</p>
+<div class="bar">
+<label>Benchmark <select id="benchmark-filter"><option value="">All benchmarks</option></select></label>
+<label>Curriculum stage <select id="benchmark-stage-filter"><option value="">All stages</option></select></label>
+<button id="benchmark-refresh">Refresh results</button>
+</div>
+<div id="benchmark-summary" class="summary" style="margin:12px 0"></div>
+<h2>Stage × scenario comparison</h2>
+<p class="muted">Each row is one frozen candidate at a curriculum boundary. Each column uses one benchmark/reference/build identity. Cells show win rate and timeout rate; separate columns never pool incompatible references.</p>
+<div class="tablewrap"><table><thead id="benchmark-matrix-head"></thead><tbody id="benchmark-matrix-rows"></tbody></table></div>
+<h2 style="margin-top:16px">Evaluation details</h2>
+<div class="tablewrap"><table><thead><tr>
+<th>Benchmark</th><th>Experiment</th><th>Stage</th><th>Candidate step</th><th>Candidate run</th><th>Reference SHA</th><th>Matches</th><th>Win % · 95% interval</th><th>Timeout % · 95% interval</th><th>Hits / shots</th><th>Damage</th><th>Mean seconds</th><th>Build</th><th>Details</th>
+</tr></thead><tbody id="benchmark-rows"></tbody></table></div>
+</details>
+</section>
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+const chosen = new Set();
+let latest = null;
+// Series colors are confined to the chart and its legend; red is reserved for errors.
+const colors = ['#2469aa','#946100','#347857','#7952a3','#087c9b','#64711a','#8b4d83','#465f9a'];
+const fmt = (n, d = 0) => n == null || !Number.isFinite(Number(n)) ? '—' : Number(n).toLocaleString(undefined, { maximumFractionDigits: d });
+const txt = (tag, value) => { const e = document.createElement(tag); e.textContent = value; return e; };
+function request(url, value) {
+    return fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(value) })
+        .then(async r => { const data = await r.json(); if (!r.ok) throw Error(data.error || r.statusText); return data; });
+}
+function cell(tr, text, className) {
+    const td = txt('td', String(text)); if (className) td.className = className;
+    tr.append(td); return td;
+}
+function chart(items) {
+    const svg = $('graph'); svg.replaceChildren(); $('legend').replaceChildren();
+    const metric = $('metric').value;
+    const all = items.filter(x => chosen.has(x.id));
+    const points = all.flatMap(x => x.samples.filter(p => p.step != null && Number.isFinite(p[metric]) ));
+    if (!points.length) {
+        const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        label.setAttribute('x', '280'); label.setAttribute('y', '125');
+        label.setAttribute('fill', 'currentColor');
+        label.textContent = 'Select runs with training samples to compare';
+        svg.append(label); return;
+    }
+    const xmax = Math.max(1, ...points.map(p => p.step));
+    let ymin = Math.min(...points.map(p => p[metric]));
+    let ymax = Math.max(...points.map(p => p[metric]));
+    if (ymin === ymax) { ymin -= 1; ymax += 1; }
+    const xx = x => 55 + x / xmax * 710;
+    const yy = y => 210 - (y - ymin) / (ymax - ymin) * 175;
+    function line(x1, y1, x2, y2, color) {
+        const p = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        for (const [key, val] of Object.entries({ x1, y1, x2, y2 })) p.setAttribute(key, String(val));
+        p.setAttribute('stroke', color); svg.append(p);
+    }
+    line(55, 20, 55, 210, '#000000'); line(55, 210, 765, 210, '#000000');
+    // Show stage boundaries only when every selected lineage shares the same
+    // step schedule. Otherwise a single marker would misrepresent other runs.
+    const boundaries = all[0]?.stages?.slice(0, -1).map(stage => stage.end_step);
+    if (boundaries && all.every(item => item.stages &&
+        JSON.stringify(item.stages.slice(0, -1).map(stage => stage.end_step)) ===
+            JSON.stringify(boundaries))) {
+        for (const boundary of boundaries) {
+            if (boundary >= xmax) continue;
+            const marker = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            marker.setAttribute('x1', xx(boundary));
+            marker.setAttribute('x2', xx(boundary));
+            marker.setAttribute('y1', '20');
+            marker.setAttribute('y2', '210');
+            marker.setAttribute('stroke', '#000000');
+            marker.setAttribute('stroke-dasharray', '4 5');
+            marker.setAttribute('opacity', '0.6');
+            svg.append(marker);
+        }
+        if (boundaries.length) $('legend').append(txt('span', 'Dashed black lines: curriculum stage boundaries'));
+    }
+    const xLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    xLabel.setAttribute('x','660'); xLabel.setAttribute('y','237'); xLabel.setAttribute('fill','currentColor');
+    xLabel.textContent = fmt(xmax) + ' steps'; svg.append(xLabel);
+    for (const [y, val] of [[204,ymin],[24,ymax]]) {
+        const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        t.setAttribute('x','4');t.setAttribute('y',String(y));
+        t.setAttribute('font-size','12');t.setAttribute('fill','currentColor');
+        t.textContent = fmt(val, 3);svg.append(t);
+    }
+    all.forEach((item, index) => {
+        const series = item.samples.filter(p => p.step != null && Number.isFinite(p[metric]));
+        if (!series.length) return;
+        const color = colors[index % colors.length];
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+        path.setAttribute('points', series.map(p => xx(p.step) + ',' + yy(p[metric])).join(' '));
+        path.setAttribute('stroke', color); path.setAttribute('stroke-width','2.5');
+        path.setAttribute('fill','none'); svg.append(path);
+        const label = txt('span', item.name + ' (' + item.status + ')');
+        const dot = document.createElement('span');dot.className = 'dot';dot.style.background = color;
+        label.prepend(dot);$('legend').append(label);
+    });
+}
+function render(data) {
+    latest = data;
+    const items = data.items;
+    const active = items.find(x => x.id === data.active_id);
+    $('overview').replaceChildren(
+        txt('span', items.filter(x => x.status === 'completed').length + ' completed'),
+        txt('span', items.filter(x => x.status === 'queued').length + ' queued'),
+        txt('span', active ? active.name + ' · ' + active.status : 'No active experiment'),
+        txt('span', data.armed ? 'Queue armed' : 'Queue not armed')
+    );
+    $('start').disabled = data.busy || data.armed ||
+        (!items.some(x => x.status === 'queued') &&
+            !['transitioning', 'evaluating_final_stage'].includes(active?.status));
+    $('stop').disabled = !data.active_id && !data.armed;
+    $('message').textContent = data.message || '';
+    $('message').classList.toggle('error', /failed|error|attention|paused|interrupted|refusing|changed|not started/i.test(data.message || ''));
+    $('evaluate-after').disabled = !data.benchmark_configured;
+    $('evaluate-stages').disabled = !data.benchmark_configured;
+    $('benchmark-config').textContent = data.benchmark_configured
+        ? 'Uses the frozen recipes, reference model and evaluation build from benchmark-settings.json.'
+        : 'Configure Training/Experiments/benchmark-settings.json to enable evaluations.';
+    const groups = [...new Set(items.map(x => x.group))].sort();
+    const filter = $('filter'), before = filter.value;
+    filter.replaceChildren(new Option('All', ''), ...groups.map(x => new Option(x, x)));
+    filter.value = groups.includes(before) ? before : '';
+    const visible = items.filter(x => !filter.value || x.group === filter.value);
+    const openRuns = new Set([...$('rows').querySelectorAll('details[open]')].map(d => d.dataset.runId));
+    $('rows').replaceChildren();
+    visible.slice().reverse().forEach(item => {
+        const tr = document.createElement('tr');
+        const td = document.createElement('td'), check = document.createElement('input');
+        check.type = 'checkbox'; check.checked = chosen.has(item.id); check.style.width = 'auto';
+        check.addEventListener('change', () => { if (check.checked) chosen.add(item.id); else chosen.delete(item.id); chart(visible); });
+        td.append(check);tr.append(td);
+        const name = cell(tr, '', 'name');
+        const details = document.createElement('details');
+        details.dataset.runId = item.id;
+        details.open = openRuns.has(item.id);
+        const summary = txt('summary', item.name);
+        const info = txt('pre', 'Campaign: ' + item.group + '\nCreated: ' + item.created_at +
+            '\nBuild: ' + (item.build_id || item.release_build) +
+            '\nBudget: ' + fmt(item.max_steps) + ' steps / ' + item.max_minutes + ' minutes' +
+            '\nEnd reason: ' + (item.end_reason || '—') +
+            '\nArguments:\n' + item.env_args.join('\n') + '\n' + (item.error || ''));
+        details.append(summary,info);
+        if (item.stages && item.stages.length) {
+            const history = item.stage_history || [];
+            const description = item.stages.map((stage, index) => {
+                const record = history[index] || {};
+                const current = index === (item.stage_index || 0);
+                const stageStart = record.entered_step ?? (index ? null : 0);
+                const completion = record.finished_step == null ? '' :
+                    ' · finished at ' + fmt(record.finished_step) + ' total steps' +
+                    (stageStart == null ? '' :
+                        ' (' + fmt(record.finished_step - stageStart) + ' in stage)');
+                const milestone = record.first_target_step == null ? '' :
+                    ' · sampled timeout target at ' + fmt(record.first_target_step) +
+                    ' total steps' + (stageStart == null ? '' :
+                        ' (' + fmt(record.first_target_step - stageStart) + ' in stage)');
+                const evaluations = record.evaluation;
+                const assessment = evaluations
+                    ? ' · fixed-seed suite: ' + evaluations.status +
+                        ' (' + Object.keys(evaluations.reports || {}).length +
+                        '/' + (item.stage_benchmarks?.scenarios?.length || 1) + ' scenarios)' +
+                        (evaluations.candidate ? ' · ONNX step ' +
+                            fmt(evaluations.candidate.training_step) : '') +
+                        (evaluations.error ? ' · ' + evaluations.error : '')
+                    : '';
+                return (current ? 'CURRENT ' : '') + (index + 1) + '/' + item.stages.length +
+                    ' ' + stage.name + ' · through ' + fmt(stage.end_step) + ' cumulative steps' +
+                    (stage.timeout_target_pct == null ? '' :
+                        ' · timeout target ' + fmt(stage.timeout_target_pct, 1) + '%') +
+                    completion + milestone + assessment + '\nArguments:\n' +
+                    stage.env_args.join('\n');
+            }).join('\n\n');
+            details.append(txt('pre', 'CURRICULUM · SAME POLICY / OPTIMIZER\n' + description));
+        }
+        if (item.trainer_config) details.append(txt('pre', 'Initialization: fresh\nFrozen configuration SHA: ' + item.trainer_config.sha256 + '\nSettings:\n' + JSON.stringify(item.trainer_config.resolved, null, 2) + '\nVerified generated configurations: ' + (item.applied_configurations || []).length));
+        if (item.stage_evaluation_error) {
+            details.append(Object.assign(txt('p', 'Stage evaluation failure: ' +
+                item.stage_evaluation_error), { className: 'error' }));
+        }
+        if (item.benchmark_status) {
+            const evaluation = txt('p', 'Checkpoint evaluation: ' + item.benchmark_status +
+                (item.benchmark_report ? ' · ' + item.benchmark_report : '') +
+                (item.benchmark_error ? ' · ' + item.benchmark_error : ''));
+            if (item.benchmark_status === 'failed') evaluation.classList.add('error');
+            details.append(evaluation);
+        }
+        if (data.benchmark_configured && item.run_id &&
+            ['completed', 'stopped', 'ended_early'].includes(item.status) &&
+            item.benchmark_status !== 'completed') {
+            const evaluate = txt('button', 'Evaluate checkpoint');
+            evaluate.disabled = data.busy || Boolean(data.active_id) || data.armed;
+            evaluate.addEventListener('click', async () => {
+                try { await request('/api/evaluate', { id: item.id }); await refresh(); }
+                catch (error) { $('message').textContent = error.message; $('message').classList.add('error'); }
+            });
+            details.append(evaluate);
+        }
+        name.append(details);
+        const last = item.samples[item.samples.length - 1] || {};
+        const stageLabel = item.stages && item.stages.length > 1 &&
+            ['running', 'transitioning'].includes(item.status)
+            ? ' · stage ' + (Math.min(item.stages.length,
+                (item.stage_index || 0) + (item.status === 'transitioning' ? 2 : 1))) +
+                '/' + item.stages.length : '';
+        const runState = cell(tr, item.benchmark_status === 'running' || item.benchmark_status === 'pending' ?
+            item.status + ' · evaluating' : item.status + stageLabel);
+        if (item.status === 'interrupted' || item.benchmark_status === 'failed') runState.classList.add('error');
+        cell(tr, fmt(item.step));
+        cell(tr, fmt(last.timeout_pct,1) + (last.timeout_pct == null ? '' : '%'));
+        cell(tr, fmt(last.bee_hits_per_shot,3));
+        cell(tr, item.run_id ? item.run_id.slice(0,24) : '—');
+        $('rows').append(tr);
+    });
+    const complete = visible.filter(x => x.status === 'completed');
+    const avg = field => {
+        const vals = complete.map(x => x.samples.length ? x.samples[x.samples.length - 1][field] : null)
+            .filter(v => v != null && Number.isFinite(v));
+        return vals.length ? vals.reduce((a,b) => a + b,0) / vals.length : null;
+    };
+    const avgSteps = complete.length ? complete.reduce((v,x) => v + (x.step || 0),0) / complete.length : null;
+    $('aggregate').replaceChildren(
+        txt('span', complete.length + ' completed in displayed group'),
+        txt('span', 'Mean final steps: ' + fmt(avgSteps)),
+        txt('span', 'Mean final timeout: ' + fmt(avg('timeout_pct'),1) + '%')
+    );
+    chart(visible);
+}
+
+let benchmarkData = [];
+function benchmarkKey(r) {
+    return r.benchmark.id + ' v' + r.benchmark.revision +
+        ' · ' + r.benchmark.sha256.slice(0, 8);
+}
+function scenarioIdentityKey(r) {
+    return [r.benchmark.sha256, r.opponent_sha256, r.build_id,
+        r.environment_executable_sha256, r.evaluation_code_sha256,
+        r.evaluation_protocol_version].join('|');
+}
+function benchmarkComparisonKey(r) {
+    return [scenarioIdentityKey(r), r.experiment?.stage_index ?? 'legacy'].join('|');
+}
+
+function outcomeInterval(count, total) {
+    if (!Number.isFinite(count) || !Number.isFinite(total) || total <= 0) return '—';
+    const z = 1.959963984540054, p = count / total, d = 1 + z*z/total;
+    const center = (p + z*z/(2*total))/d;
+    const radius = z*Math.sqrt(p*(1-p)/total + z*z/(4*total*total))/d;
+    return fmt(100*p,1) + '% [' + fmt(100*Math.max(0,center-radius),1) + '–' +
+        fmt(100*Math.min(1,center+radius),1) + ']';
+}
+
+function renderBenchmarks() {
+    const filter = $('benchmark-filter');
+    const options = [...new Set(benchmarkData.map(benchmarkKey))].sort();
+    const previous = filter.value;
+    filter.replaceChildren(new Option('All benchmarks', ''), ...options.map(x => new Option(x, x)));
+    filter.value = options.includes(previous) ? previous : '';
+    const stageFilter = $('benchmark-stage-filter');
+    const stages = [...new Set(benchmarkData.map(r => r.experiment?.stage_index)
+        .filter(x => Number.isInteger(x)))].sort((a,b) => a-b);
+    const previousStage = stageFilter.value;
+    stageFilter.replaceChildren(new Option('All stages', ''),
+        ...stages.map(x => new Option('Stage ' + (x + 1), String(x))));
+    stageFilter.value = stages.some(x => String(x) === previousStage) ? previousStage : '';
+    const visible = benchmarkData.filter(r =>
+        (!filter.value || benchmarkKey(r) === filter.value) &&
+        (!stageFilter.value || String(r.experiment?.stage_index) === stageFilter.value));
+    $('benchmark-rows').replaceChildren();
+    const grouped = new Map();
+    for (const report of visible) {
+        const key = benchmarkComparisonKey(report);
+        grouped.set(key, (grouped.get(key) || 0) + 1);
+        const m = report.metrics || {};
+        const tr = document.createElement('tr');
+        cell(tr, benchmarkKey(report));
+        cell(tr, report.experiment?.id ? report.experiment.id.slice(0, 8) : '—');
+        cell(tr, report.experiment?.stage_index == null ? 'Final only' :
+            (report.experiment.stage_index + 1) + '. ' + report.experiment.stage_name);
+        cell(tr, fmt(report.experiment?.candidate_training_step));
+        cell(tr, report.run_id || (report.candidate_sha256 || '').slice(0, 12));
+        cell(tr, (report.opponent_sha256 || '').slice(0, 12));
+        cell(tr, fmt(m.matches));
+        cell(tr, outcomeInterval(m.wins, m.matches));
+        cell(tr, outcomeInterval(m.timeouts, m.matches));
+        cell(tr, fmt(m.candidate_hits) + '/' + fmt(m.candidate_shots) +
+            (m.candidate_shots ? ' (' + fmt(100*m.candidate_hits/m.candidate_shots,1) + '%)' : ''));
+        cell(tr, fmt(m.candidate_damage));
+        cell(tr, fmt(m.average_duration_seconds,2));
+        cell(tr, report.build_id || '—');
+        const td = document.createElement('td'), details = document.createElement('details');
+        const summary = txt('summary', 'Provenance');
+        const pre = txt('pre',
+            'Candidate: ' + report.candidate_path + '\nSHA256: ' + report.candidate_sha256 +
+            '\nOpponent: ' + report.opponent_path + '\nSHA256: ' + report.opponent_sha256 +
+            '\nUnity build: ' + report.build_id +
+            '\nExecutable SHA256: ' + report.environment_executable_sha256 +
+            '\nProtocol: ' + report.evaluation_protocol_version +
+            '\nEvaluator SHA256: ' + (report.evaluation_code_sha256 || 'unrecorded') +
+            '\nSeed: ' + report.benchmark.seed +
+            '\nTime scale: ' + (report.benchmark.time_scale ?? 'Unity default') +
+            '\nArgs: ' + report.benchmark.env_args.join(' ') +
+            '\nEvaluated: ' + report.evaluated_at +
+            '\nExperiment: ' + (report.experiment?.id || '—') +
+            '\nStage: ' + (report.experiment?.stage_name || '—') +
+            '\nStage boundary step: ' + fmt(report.experiment?.stage_step) +
+            '\nPinned candidate step: ' + fmt(report.experiment?.candidate_training_step));
+        details.append(summary, pre); td.append(details); tr.append(td);
+        $('benchmark-rows').append(tr);
+    }
+    const stageReports = visible.filter(r => Number.isInteger(r.experiment?.stage_index));
+    const columns = new Map();
+    const stageRows = new Map();
+    for (const report of stageReports) {
+        const scenarioKey = scenarioIdentityKey(report);
+        if (!columns.has(scenarioKey)) columns.set(scenarioKey,
+            benchmarkKey(report) + ' · ref ' +
+            (report.opponent_sha256 || '').slice(0, 8) + ' · build ' + report.build_id);
+        const key = report.experiment.id + '|' + report.experiment.stage_index;
+        if (!stageRows.has(key)) stageRows.set(key, {
+            experimentId: report.experiment.id,
+            stageIndex: report.experiment.stage_index,
+            stageName: report.experiment.stage_name,
+            reports: new Map(),
+        });
+        const target = stageRows.get(key).reports;
+        // Newest report first; never combine repeated attempts or their samples.
+        if (!target.has(scenarioKey)) target.set(scenarioKey, report);
+    }
+    const head = document.createElement('tr');
+    for (const name of ['Experiment / PPO settings', 'Stage', ...columns.values()]) {
+        head.append(txt('th', name));
+    }
+    $('benchmark-matrix-head').replaceChildren(head);
+    $('benchmark-matrix-rows').replaceChildren();
+    const experimentNames = new Map((latest?.items || []).map(item => {
+        const hp = item.trainer_config?.resolved?.hyperparameters;
+        return [item.id, item.name + (hp
+            ? ' · β=' + fmt(hp.beta, 6) + ' · λ=' + fmt(hp.lambd, 4) +
+                ' · LR=' + fmt(hp.learning_rate, 6)
+            : '')];
+    }));
+    for (const entry of [...stageRows.values()].sort((a,b) =>
+        a.experimentId.localeCompare(b.experimentId) || a.stageIndex-b.stageIndex)) {
+        const tr = document.createElement('tr');
+        cell(tr, experimentNames.get(entry.experimentId) || entry.experimentId.slice(0, 12), 'name');
+        cell(tr, (entry.stageIndex + 1) + '. ' + (entry.stageName || 'Unnamed'));
+        for (const key of columns.keys()) {
+            const report = entry.reports.get(key);
+            const metrics = report?.metrics || {};
+            cell(tr, !report ? '—' : 'Win ' + fmt(metrics.matches ?
+                100*metrics.wins/metrics.matches : null, 1) + '% · TO ' +
+                fmt(metrics.matches ? 100*metrics.timeouts/metrics.matches : null, 1) +
+                '% · Hits ' + fmt(metrics.candidate_hits) + '/' + fmt(metrics.candidate_shots));
+        }
+        $('benchmark-matrix-rows').append(tr);
+    }
+    if (!stageRows.size) {
+        const tr = document.createElement('tr'), td = txt('td', 'No per-stage evaluations recorded yet.');
+        td.colSpan = columns.size + 2; tr.append(td); $('benchmark-matrix-rows').append(tr);
+    }
+    $('benchmark-summary').replaceChildren(
+        txt('span', visible.length + ' stored evaluations'),
+        txt('span', [...grouped.values()].filter(n => n > 1).length +
+            ' directly comparable groups (2+ evaluations)')
+    );
+    if (!visible.length) {
+        const row = document.createElement('tr'), c = document.createElement('td');
+        c.colSpan = 14; c.textContent = 'No benchmark results recorded yet.';
+        row.append(c); $('benchmark-rows').append(row);
+    }
+}
+async function refreshBenchmarks() {
+    if (!$('benchmark-panel').open) return;
+    try {
+        const response = await fetch('/api/benchmarks', {cache:'no-store'});
+        const value = await response.json();
+        if (!response.ok) throw Error(value.error || 'Could not load benchmark results.');
+        benchmarkData = value.reports || [];
+        $('benchmark-summary').classList.remove('error');
+        renderBenchmarks();
+    } catch (error) {
+        $('benchmark-summary').classList.add('error');
+        $('benchmark-summary').replaceChildren(txt('span', 'Benchmark results unavailable: ' + error.message));
+    }
+}
+$('benchmark-panel').addEventListener('toggle', refreshBenchmarks);
+$('benchmark-refresh').addEventListener('click', refreshBenchmarks);
+$('benchmark-filter').addEventListener('change', renderBenchmarks);
+$('benchmark-stage-filter').addEventListener('change', renderBenchmarks);
+
+let workerRefreshPending = false;
+async function refreshWorkers() {
+    if (!$('worker-panel').open || workerRefreshPending) return;
+    workerRefreshPending = true;
+    try {
+        const response = await fetch('/api/workers', {cache: 'no-store'});
+        const data = await response.json();
+        if (!response.ok) throw Error(data.error || 'Training control unavailable');
+        const workers = data.workers || [];
+        $('worker-indicator').classList.remove('error');
+        $('worker-summary').classList.remove('error');
+        const troubled = workers.filter(w => w.state === 'STALE' || Boolean(w.error));
+        $('worker-indicator').textContent = '· ' + workers.length + ' reported, ' +
+            troubled.length + ' with warnings';
+        $('worker-summary').textContent =
+            'Training: ' + (data.training_enabled ? 'enabled' : 'stopped') +
+            ' · Run: ' + (data.run_id || '—') +
+            ' · Revision: ' + data.revision +
+            (data.pending_release ? ' · Release: ' + data.pending_release : '') +
+            ' · Updated: ' + new Date().toLocaleTimeString();
+        $('worker-rows').replaceChildren();
+        for (const w of workers) {
+            const tr = document.createElement('tr');
+            cell(tr, w.trainer_id || '—');
+            const stateCell = cell(tr, w.state);
+            if (w.state === 'STALE' || w.state === 'failed') stateCell.className = 'worker-issue';
+            cell(tr, w.desired_envs == null || w.desired_envs === w.envs ?
+                fmt(w.envs) : fmt(w.envs) + ' → ' + fmt(w.desired_envs));
+            cell(tr, w.cpu_pct == null ? '—' : fmt(w.cpu_pct, 0) + '%');
+            cell(tr, w.ram_pct == null ? '—' : fmt(w.ram_pct, 0) + '%');
+            cell(tr, fmt(w.live_exp_s, 0));
+            cell(tr, fmt(w.staged_s, 0));
+            cell(tr, fmt(w.accepted_s, 0));
+            cell(tr, fmt(w.upload_queue));
+            cell(tr, fmt(w.broker_queue) +
+                (w.broker_capacity == null ? '' : '/' + fmt(w.broker_capacity)));
+            cell(tr, w.age_seconds == null ? '—' : fmt(w.age_seconds, 0) + 's');
+            const errorCell = cell(tr, w.error || '—', 'worker-error');
+            if (w.error) errorCell.classList.add('worker-issue');
+            $('worker-rows').append(tr);
+        }
+        if (!workers.length) $('worker-rows').append(
+            Object.assign(document.createElement('tr'), {
+                textContent: 'No workers currently reporting.',
+            }));
+    } catch (error) {
+        $('worker-indicator').textContent = '· Unavailable';
+        $('worker-indicator').classList.add('error');
+        $('worker-summary').textContent = 'Could not read Bees training control: ' + error.message;
+        $('worker-summary').classList.add('error');
+    } finally {
+        workerRefreshPending = false;
+    }
+}
+$('worker-panel').addEventListener('toggle', refreshWorkers);
+setInterval(refreshWorkers, 5000);
+
+async function refresh() {
+    try {
+        const r = await fetch('/api/state', {cache:'no-store'});
+        if (!r.ok) throw Error('Status request failed');
+        render(await r.json());
+    } catch(e) { $('message').textContent = e.message; $('message').classList.add('error'); }
+}
+function addCurriculumStage() {
+    const row = document.createElement('fieldset');
+    const legend = document.createElement('legend');
+    legend.textContent = 'Next stage';
+    const grid = document.createElement('div');
+    grid.className = 'formgrid';
+    const name = document.createElement('label');
+    name.textContent = 'Stage name';
+    name.append(Object.assign(document.createElement('input'), {
+        className: 'stage-name', maxLength: 100, placeholder: 'Moving combat', required: true,
+    }));
+    const steps = document.createElement('label');
+    steps.textContent = 'Additional learner steps';
+    const stepInput = document.createElement('input');
+    Object.assign(stepInput, { className: 'stage-steps', type: 'number',
+        min: '1000', step: '1000', required: true, placeholder: '30000000' });
+    steps.append(stepInput);
+    const target = document.createElement('label');
+    target.textContent = 'Timeout target % (optional)';
+    const targetInput = document.createElement('input');
+    Object.assign(targetInput, { className: 'stage-target', type: 'number',
+        min: '0', max: '100', step: 'any', placeholder: '5' });
+    target.append(targetInput);
+    const args = document.createElement('label');
+    args.className = 'wide';
+    args.textContent = 'Environment overrides, one per line';
+    const area = document.createElement('textarea');
+    area.className = 'stage-args';
+    area.placeholder = '--rl-disable-movement=false';
+    args.append(area);
+    grid.append(name, steps, target, args);
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.textContent = 'Remove stage';
+    remove.addEventListener('click', () => row.remove());
+    const actions = document.createElement('div');
+    actions.className = 'bar';
+    actions.append(remove);
+    row.append(legend, grid, actions);
+    $('stage-rows').append(row);
+}
+$('add-stage').addEventListener('click', addCurriculumStage);
+$('evaluate-stages').addEventListener('change', () => {
+    if ($('evaluate-stages').checked) $('evaluate-after').checked = false;
+});
+$('evaluate-after').addEventListener('change', () => {
+    if ($('evaluate-after').checked) $('evaluate-stages').checked = false;
+});
+$('create').addEventListener('submit', async e => {
+    e.preventDefault();
+    try {
+        await request('/api/queue', {
+            name: $('name').value, group: $('group').value,
+            max_steps: Number($('steps').value), max_minutes: Number($('minutes').value),
+            stall_minutes: Number($('stall').value),
+            env_args: $('args').value.split('\n').map(s => s.trim()).filter(Boolean),
+            stage_name: $('stage-name').value,
+            target_timeout_pct: $('stage-target').value.trim() || null,
+            stages: [...$('stage-rows').children].map(row => ({
+                name: row.querySelector('.stage-name').value,
+                steps: Number(row.querySelector('.stage-steps').value),
+                target_timeout_pct: row.querySelector('.stage-target').value.trim() || null,
+                env_args: row.querySelector('.stage-args').value.split('\n')
+                    .map(x => x.trim()).filter(Boolean),
+            })),
+            benchmark: $('evaluate-after').checked,
+            evaluate_stages: $('evaluate-stages').checked,
+            trainer: {
+                hyperparameters: Object.fromEntries(['beta','lambd','learning_rate','batch_size','buffer_size','num_epoch'].map(k => [k, Number($('trainer-' + k).value)])),
+                network_settings: { num_layers: Number($('trainer-num_layers').value), normalize: $('trainer-normalize').value === 'true' },
+                seed: Number($('trainer-seed').value),
+            },
+        });
+        $('name').value = ''; await refresh();
+    } catch(err) { $('message').textContent = err.message; $('message').classList.add('error'); }
+});
+$('start').addEventListener('click', async () => {
+    try { await request('/api/start', {}); await refresh(); }
+    catch(err) { $('message').textContent = err.message; $('message').classList.add('error'); }
+});
+$('stop').addEventListener('click', async () => {
+    if (!confirm('Safely stop the current experiment and disarm the queue?')) return;
+    try { await request('/api/stop', {}); await refresh(); }
+    catch(err) { $('message').textContent = err.message; $('message').classList.add('error'); }
+});
+$('filter').addEventListener('change', () => latest && render(latest));
+$('metric').addEventListener('change', () => latest && chart(
+    latest.items.filter(x => !$('filter').value || x.group === $('filter').value)));
+async function loadTrainerDefaults() {
+    const button = $('create').querySelector('button[type=submit]');
+    button.disabled = true;
+    try {
+        const r = await fetch('/api/configuration', {cache:'no-store'});
+        const data = await r.json();
+        if (!r.ok) throw Error(data.error || 'Trainer configuration unavailable');
+        const settings = data.resolved;
+        for (const [k,v] of Object.entries({...settings.hyperparameters, ...settings.network_settings, seed: settings.seed})) {
+            const input = $('trainer-' + k);
+            if (input) input.value = String(v);
+        }
+        $('trainer-config-status').textContent = 'Defaults from the pinned release. Settings are frozen when added to the queue.';
+        button.disabled = false;
+    } catch (error) {
+        $('trainer-config-status').textContent = error.message;
+        $('trainer-config-status').className = 'error';
+    }
+}
+loadTrainerDefaults();
+refresh(); setInterval(refresh, 5000);
+</script>
+</body></html>
