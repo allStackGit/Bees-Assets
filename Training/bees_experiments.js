@@ -325,7 +325,7 @@ async function monitor() {
     let configurationError = '';
     if (item.trainer_config) {
         try { await verifyEffectiveConfiguration(item); }
-        catch (error) { configurationError = error.message; item.error = error.message; }
+        catch (error) { configurationError = error.message; item.error = error.message; state.armed = false; }
     }
     const elapsed = Date.now() - Date.parse(item.started_at);
     const stagnant = Date.now() - Date.parse(item.last_progress);
