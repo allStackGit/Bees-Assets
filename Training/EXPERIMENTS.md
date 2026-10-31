@@ -65,13 +65,58 @@ relative policy quality.
 **Do not set up automatic post-run evaluation without a valid frozen opponent.**
 Manual safe stop of a successful baseline does not trigger the manager's
 automatic evaluation; evaluate the finished checkpoint explicitly afterward.
-The queue always starts a **fresh** policy/optimizer for each item: a second
-queued experiment will **not** continue this network. Advancing to movement or
-longer ranges will require preserving this same training lineage through the
-existing operator workflow, and should be planned only after this stage learns.
+The queue starts a **fresh** policy/optimizer for each item: a second
+queued experiment will **not** continue this network. To introduce movement
+and longer ranges **within the same experiment/run**, use the generic curriculum
+stages below. Only configure those transitions after checking that the proposed
+scenario is physically and scientifically meaningful.
 The current checkpoint-finalization fix is not live-qualified: deploy a new
 immutable release and pass a short save/export/evaluation check on Exeter
 before committing expensive training.
+
+## Multi-stage training (same optimizer lineage)
+
+The experiment manager now accepts optional **curriculum stages** in the queue
+form. The existing initial environment arguments and first-stage step budget
+define stage 1. Expand **Curriculum stages** to name that stage and add further
+stages. Each later stage defines a name, **additional** learner steps and
+optional `--rl-*` overrides. Overrides inherit the preceding stage's effective
+arguments (including removal of mutually exclusive fixed/ranged map flags).
+All stage definitions are frozen on queue creation. For example, a hypothetical
+first-stage budget of 30 million steps followed by 20 million additional steps
+would change environments near 30 million cumulative learner steps and end the
+run around 50 million; actual transition steps may overshoot published learner
+summaries and graceful-stop latency.
+
+Unlike the queue between **experiments**, a stage transition does **not**
+request a new run. The coordinator persists its transition intent, requests
+the operator's normal graceful stop, requires an existing optimizer checkpoint,
+then starts the next environment with the **same run ID, trainer YAML, policy
+and optimizer lineage**. The regular ML-Agents checkpoint resume path restores
+learning; checkpoint compatibility and correct resumption must still be
+qualified on Exeter. Repeated manager cycles or a restart during a transition
+reconcile the control-plane run ID/environment against the saved stages; an
+ambiguous identity disarms the queue. A manual stop during a transition halts
+the run rather than advancing it. The manager does not clone or duplicate a
+checkpoint to create competing branches.
+
+An optional stage **timeout target** is *observational only*: the first step
+at which three consecutive timestamped training samples meet that threshold
+is recorded as a provisional milestone. These overlapping worker windows are
+not independent fixed-seed evaluations. **Stage transitions occur only at
+fixed cumulative step boundaries**, not when a timeout target is reached.
+Review timeouts, both factions' shots/hits, and independent fixed-seed results
+before concluding a capability was mastered or deciding the next stage's
+difficulty. Preserve the same curriculum and trainer settings except beta
+when screening multiple independent beta runs.
+
+The step budget is a safety/experimental boundary, not a declaration of
+competence. Keep the manager running: while it is offline, it cannot enforce
+boundaries; an unexpected state may require operator intervention. The
+existing maximum wall time and no-progress stop limits apply to the **entire
+run**, not to each curriculum stage. Automatic benchmark evaluation, when
+configured, happens only after the final budget-completed stage and still
+requires a frozen reference model.
 
 ## Fixed-seed checkpoint evaluation (first independent benchmark)
 
