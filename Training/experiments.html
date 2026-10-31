@@ -223,7 +223,8 @@ function benchmarkKey(r) {
 }
 function benchmarkComparisonKey(r) {
     return [r.benchmark.sha256, r.opponent_sha256, r.build_id,
-        r.environment_executable_sha256].join('|');
+        r.environment_executable_sha256, r.evaluation_code_sha256,
+        r.evaluation_protocol_version].join('|');
 }
 function renderBenchmarks() {
     const filter = $('benchmark-filter');
@@ -256,6 +257,7 @@ function renderBenchmarks() {
             '\nUnity build: ' + report.build_id +
             '\nExecutable SHA256: ' + report.environment_executable_sha256 +
             '\nProtocol: ' + report.evaluation_protocol_version +
+            '\nEvaluator SHA256: ' + (report.evaluation_code_sha256 || 'unrecorded') +
             '\nSeed: ' + report.benchmark.seed +
             '\nArgs: ' + report.benchmark.env_args.join(' ') +
             '\nEvaluated: ' + report.evaluated_at);
