@@ -100,8 +100,10 @@ and optimizer lineage**. The regular ML-Agents checkpoint resume path restores
 learning; checkpoint compatibility and correct resumption must still be
 qualified on Exeter. Repeated manager cycles or a restart during a transition
 reconcile the control-plane run ID/environment against the saved stages; an
-ambiguous identity disarms the queue. A manual stop during a transition halts
-the run rather than advancing it. The manager does not clone or duplicate a
+ambiguous identity disarms the queue. A stop that occurred before its completion
+could be durably recorded is also treated as ambiguous, rather than silently
+restarting a possibly externally stopped run. A manual stop during a transition
+halts the run rather than advancing it. The manager does not clone or duplicate a
 checkpoint to create competing branches.
 
 An optional stage **timeout target** is *observational only*: the first step
