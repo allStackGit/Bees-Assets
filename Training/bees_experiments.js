@@ -162,6 +162,9 @@ async function launch() {
     const item = state.items.find(x => x.status === 'queued');
     if (!item) { state.armed = false; save(); return; }
     const status = await control();
+    // A Stop click may arrive while the control request is in flight, before
+    // this experiment has an active_id. Never start after the queue is disarmed.
+    if (!state.armed || state.stop_requested) return;
     if (!status.desired || status.desired.training_enabled || status.desired.pending_release) {
         state.armed = false;
         state.message = 'Another training run or release is active. Queue not started.';
