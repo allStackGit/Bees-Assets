@@ -1196,7 +1196,7 @@ def _install_model_snapshot_requests():
     return original
 
 
-def _install_threaded_trainer_failure_propagation():
+def _install_threaded_trainer_failure_propagation(managed_stop_event=None, managed_stop_watcher=None):
     """Fail the learner process when ML-Agents' daemon trainer thread crashes.
 
     ML-Agents 1.1.0 otherwise prints an exception from trainer_update_func and leaves the
@@ -1235,6 +1235,13 @@ def _install_threaded_trainer_failure_propagation():
             return None
 
     def guarded_save_models(controller):
+        # Zero-local WAN waits can observe the stop file before the background
+        # watcher. Retire that interrupt source before entering finalization so
+        # a second KeyboardInterrupt cannot truncate checkpoint serialization.
+        if managed_stop_event is not None:
+            managed_stop_event.set()
+        if managed_stop_watcher is not None:
+            managed_stop_watcher.join()
         # ML-Agents 1.1.0 join_threads() joins each updater for only one second
         # before start_learning() calls _save_models() in its finally block.
         # A Bees PPO update can run much longer. Never serialize mutable policy
@@ -1459,7 +1466,9 @@ def main() -> None:
     previous_argv = sys.argv
     previous_sigbreak_handler = _install_windows_break_interrupt()
     managed_stop_event, managed_stop_watcher = _start_managed_stop_watcher()
-    threaded_failure_state = _install_threaded_trainer_failure_propagation()
+    threaded_failure_state = _install_threaded_trainer_failure_propagation(
+        managed_stop_event, managed_stop_watcher
+    )
     original_maybe_save_model = _install_model_snapshot_requests()
     original_trainer_advance = _install_managed_learner_progress_marker()
     torch_utils.torch.load = device_safe_torch_load
