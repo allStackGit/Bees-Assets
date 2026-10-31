@@ -70,15 +70,37 @@ def read_benchmark(path: Path) -> tuple[dict, str]:
     return value, hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
-def evaluate(recipe: Path, candidate: Path, opponent: Path, environment: Path,
+def evaluate(recipe: Path, candidate: Path, opponent: str | Path, environment: Path,
              build_id: str, run_id: str, output_root: Path, *,
              candidate_sha256: str = "", experiment: dict | None = None) -> Path:
     benchmark, recipe_hash = read_benchmark(recipe)
-    artifacts = {"candidate": candidate, "opponent": opponent, "environment": environment}
-    for name, source in artifacts.items():
+    for name, source in {"candidate": candidate, "environment": environment}.items():
         if not source.is_file():
             raise ValueError(f"{name} file does not exist: {source}")
-    hashes = {key: sha256_file(value) for key, value in artifacts.items()}
+    hashes = {
+        "candidate": sha256_file(candidate),
+        "environment": sha256_file(environment),
+    }
+    opponent_spec = str(opponent)
+    scripted_name = None
+    opponent_model = None
+    opponent_script_sha256 = None
+    opponent_version = None
+    if opponent_spec.startswith("scripted:"):
+        from bees_experiment_scripted import MODES, SCRIPT_VERSION
+        scripted_name = opponent_spec.split(":", 1)[1]
+        if scripted_name not in MODES:
+            raise ValueError(f"Unknown scripted opponent {scripted_name!r}; choose {MODES}.")
+        opponent_script_sha256 = sha256_file(Path(__file__).with_name("bees_experiment_scripted.py"))
+        opponent_version = SCRIPT_VERSION
+        hashes["opponent"] = hashlib.sha256(
+            (opponent_spec + ":" + opponent_script_sha256).encode("utf-8")
+        ).hexdigest()
+    else:
+        opponent_model = Path(opponent_spec).resolve()
+        if not opponent_model.is_file():
+            raise ValueError(f"opponent file does not exist: {opponent_model}")
+        hashes["opponent"] = sha256_file(opponent_model)
     if candidate_sha256 and hashes["candidate"] != candidate_sha256:
         raise ValueError("Selected candidate changed after its registry hash was pinned.")
 
@@ -89,7 +111,8 @@ def evaluate(recipe: Path, candidate: Path, opponent: Path, environment: Path,
     result = run_match_group(
         environment_path=environment,
         candidate_model_path=candidate,
-        opponent_model_path=opponent,
+        opponent_model_path=opponent_model,
+        opponent_script=scripted_name,
         matches=benchmark["matches"],
         behavior_name=benchmark["behavior_name"],
         env_args=benchmark["env_args"],
@@ -118,13 +141,18 @@ def evaluate(recipe: Path, candidate: Path, opponent: Path, environment: Path,
         "run_id": run_id,
         "candidate_path": str(candidate),
         "candidate_sha256": hashes["candidate"],
-        "opponent_path": str(opponent),
+        "opponent_path": opponent_spec if scripted_name is not None else str(opponent_model),
         "opponent_sha256": hashes["opponent"],
+        "opponent_kind": "scripted" if scripted_name is not None else "onnx",
         "build_id": build_id,
         "environment_path": str(environment),
         "environment_executable_sha256": hashes["environment"],
         "metrics": result.to_dict(),
     }
+    if scripted_name is not None:
+        record["opponent_script_name"] = scripted_name
+        record["opponent_script_version"] = opponent_version
+        record["opponent_script_sha256"] = opponent_script_sha256
     if experiment is not None:
         record["experiment"] = experiment
     output_root.mkdir(parents=True, exist_ok=True)
@@ -170,7 +198,7 @@ def main() -> int:
     selection.add_argument("--candidate-run", help="Use the latest registered export from this stopped run.")
     selection.add_argument("--resolve-candidate-run", help="Return a read-only JSON record of the latest registered export.")
     parser.add_argument("--registry", type=Path, default=DEFAULT_REPORT_DIR.parents[1] / "registry.sqlite3")
-    parser.add_argument("--opponent", type=Path, help="Fixed reference ONNX model.")
+    parser.add_argument("--opponent", help="Frozen ONNX path or scripted:stationary, scripted:strafe, scripted:pursuit.")
     parser.add_argument("--env", type=Path, help="Matching Unity evaluation executable.")
     parser.add_argument("--build-id", default="", help="Unity build identity; keeps results comparable.")
     parser.add_argument("--candidate-sha256", default="", help="Require this immutable candidate hash.")
@@ -215,7 +243,7 @@ def main() -> int:
     }
     candidate = candidate_for_run(args.registry, args.candidate_run) if args.candidate_run else args.candidate.resolve()
     result = evaluate(
-        args.benchmark.resolve(), candidate, args.opponent.resolve(),
+        args.benchmark.resolve(), candidate, args.opponent,
         args.env.resolve(), args.build_id.strip(), (args.candidate_run or args.run_id).strip(),
         args.output_root.resolve(), candidate_sha256=args.candidate_sha256, experiment=experiment,
     )
