@@ -5,7 +5,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { invokeStart, invokeStop } = require('./operator/commands');
 const { getStatus } = require('./operator/control');
-const { getLocalLearnerStats } = require('./operator/status');
+const { getAuthoritativeLearnerStats } = require('./operator/status');
 const { paths, readJson, writeJsonAtomic, ensureDir, loadConfig } = require('./operator/common');
 
 // The existing Bees operator owns safe run transitions. This module owns only
@@ -34,7 +34,7 @@ async function control() {
 }
 
 function measure(item, status, force = false) {
-    const learner = getLocalLearnerStats(item.run_id);
+    const learner = getAuthoritativeLearnerStats(item.run_id) || {};
     const workers = (status.trainers || []).filter(x =>
         !x.stale && x.metrics && Number(x.metrics.window_episodes) > 0);
     const mean = key => {
@@ -56,12 +56,16 @@ function measure(item, status, force = false) {
     const samples = item.samples;
     if (force || !samples.length ||
         Date.now() - Date.parse(samples[samples.length - 1].at) >= 60000) {
+        const prior = samples.length ? samples[samples.length - 1] : null;
+        // Preserve the last observed live worker metrics at finalization, when
+        // workers may already be stopped and their rolling windows unavailable.
+        const last = key => mean(key) ?? (prior ? prior[key] : null);
         samples.push({
             at: now(), step, reward: Number.isFinite(learner.MeanReward) ? learner.MeanReward : null,
             steps_per_second: Number.isFinite(learner.LiveStepsPerSecond) ?
                 learner.LiveStepsPerSecond : null,
-            timeout_pct: mean('timeout_pct'), bee_win_pct: mean('bee_win_pct'),
-            bee_hits_per_shot: mean('bee_hits_per_shot'),
+            timeout_pct: last('timeout_pct'), bee_win_pct: last('bee_win_pct'),
+            bee_hits_per_shot: last('bee_hits_per_shot'),
         });
         if (samples.length > 2000) item.samples = samples.filter((_, i) =>
             i === 0 || i === samples.length - 1 || i % 2 === 0);
