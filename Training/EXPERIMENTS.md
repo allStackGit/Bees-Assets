@@ -16,6 +16,63 @@ Summaries are written to `Training/Experiments/experiments-v1.json` **outside As
 
 A running experiment depends on the coordinator continuing to execute; if its process or host stops, it cannot enforce the step/time limit until restarted. For expensive unattended runs, keep the host and coordinator monitored. Do not treat this release as a crash-proof unattended training service until that behavior has been validated in the actual cluster.
 
+## First baseline: stationary 1v1 aiming
+
+This is the **first pretraining stage**, not a beta comparison or a new curriculum
+implementation. Use the existing **Queue an experiment** form; keep the trainer
+configuration at the current release defaults (the frozen YAML records the
+actual beta, lambda and network settings). Set the name to
+`Baseline / stationary Wasp-Gunship` and use these environment overrides,
+one per line:
+
+```text
+--rl-ships-per-side=1
+--rl-bee-ship-types=Wasp
+--rl-human-ship-types=Gunship
+--rl-matchup-mode=fixed
+--rl-map-size=32
+--rl-episode-timeout=30
+--rl-health-ratio=0.00001
+--rl-disable-movement=true
+--rl-static-obstacles=false
+--rl-mining-asteroids=false
+--rl-collision-asteroid-spawn-seconds=0
+--rl-decision-period=5
+```
+
+Both ships have a single weapon with nominal range 40 and 6-by-6-unit hulls.
+The placement code randomizes both positions and facings with collision/border
+clearance. On a 32-unit square, the two centers can be at most about 30.4 units
+apart, hence they start within sight and weapon range. The very small health
+ratio gives each ship one hit point, so the first landed hit wins. The purpose
+is to isolate **aim and fire decisions**, without movement or long-range search.
+It does not establish mobile combat competence. Preserve random facing and
+position; do not add spawn-handling code for this scenario.
+
+The experiment manager requires numerical step and wall-time ceilings. Treat
+them as **operational stop limits, not predicted learning times**: do not stop
+at 5 million steps or claim convergence from the budget. Watch the existing
+100-episode timeout window, shots and hits from **both** factions and the aim
+telemetry. A useful *candidate* pretraining checkpoint has a sustained timeout
+rate below 5% across successive windows, with both sides firing and actually
+hitting (not merely declining to fire). Before calling it reusable, verify
+that a full optimizer checkpoint loads and an ONNX export is registered, then
+run the independent fixed-seed `experiment_benchmark.aiming.json` (100
+matches) against an explicitly recorded, unchanged opponent. An initial
+same-model-on-both-sides check only validates combat/evaluation mechanics, not
+relative policy quality.
+
+**Do not set up automatic post-run evaluation without a valid frozen opponent.**
+Manual safe stop of a successful baseline does not trigger the manager's
+automatic evaluation; evaluate the finished checkpoint explicitly afterward.
+The queue always starts a **fresh** policy/optimizer for each item: a second
+queued experiment will **not** continue this network. Advancing to movement or
+longer ranges will require preserving this same training lineage through the
+existing operator workflow, and should be planned only after this stage learns.
+The current checkpoint-finalization fix is not live-qualified: deploy a new
+immutable release and pass a short save/export/evaluation check on Exeter
+before committing expensive training.
+
 ## Fixed-seed checkpoint evaluation (first independent benchmark)
 
 After a training run has exported an ONNX policy, select that file and an
