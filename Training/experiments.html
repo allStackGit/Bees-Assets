@@ -83,6 +83,20 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; max-width: 850px; }
 <div id="aggregate" class="summary" style="margin:14px 0"></div>
 <div class="tablewrap"><table><thead><tr><th>Plot</th><th>Experiment</th><th>Status</th><th>Steps</th><th>Timeout</th><th>Hit/shot</th><th>Run</th></tr></thead><tbody id="rows"></tbody></table></div>
 </section>
+<section>
+<details id="benchmark-panel" class="worker-details">
+<summary class="worker-summary">Checkpoint benchmarks <small>· Independent fixed-seed evaluations</small></summary>
+<p class="muted">These results come from the existing Unity/ONNX evaluator, not the training-telemetry graph. Only identical benchmark definitions, reference models, and environment builds are directly comparable.</p>
+<div class="bar">
+<label>Benchmark <select id="benchmark-filter"><option value="">All benchmarks</option></select></label>
+<button id="benchmark-refresh">Refresh results</button>
+</div>
+<div id="benchmark-summary" class="summary" style="margin:12px 0"></div>
+<div class="tablewrap"><table><thead><tr>
+<th>Benchmark</th><th>Candidate run</th><th>Reference SHA</th><th>Matches</th><th>Win %</th><th>Timeout %</th><th>Hit/shot</th><th>Build</th><th>Details</th>
+</tr></thead><tbody id="benchmark-rows"></tbody></table></div>
+</details>
+</section>
 <script>
 'use strict';
 const $ = id => document.getElementById(id);
@@ -201,6 +215,80 @@ function render(data) {
     );
     chart(visible);
 }
+
+let benchmarkData = [];
+function benchmarkKey(r) {
+    return r.benchmark.id + ' v' + r.benchmark.revision +
+        ' · ' + r.benchmark.sha256.slice(0, 8);
+}
+function benchmarkComparisonKey(r) {
+    return [r.benchmark.sha256, r.opponent_sha256, r.build_id,
+        r.environment_executable_sha256].join('|');
+}
+function renderBenchmarks() {
+    const filter = $('benchmark-filter');
+    const options = [...new Set(benchmarkData.map(benchmarkKey))].sort();
+    const previous = filter.value;
+    filter.replaceChildren(new Option('All benchmarks', ''), ...options.map(x => new Option(x, x)));
+    filter.value = options.includes(previous) ? previous : '';
+    const visible = benchmarkData.filter(r => !filter.value || benchmarkKey(r) === filter.value);
+    $('benchmark-rows').replaceChildren();
+    const grouped = new Map();
+    for (const report of visible) {
+        const key = benchmarkComparisonKey(report);
+        grouped.set(key, (grouped.get(key) || 0) + 1);
+        const m = report.metrics || {};
+        const tr = document.createElement('tr');
+        cell(tr, benchmarkKey(report));
+        cell(tr, report.run_id || (report.candidate_sha256 || '').slice(0, 12));
+        cell(tr, (report.opponent_sha256 || '').slice(0, 12));
+        cell(tr, fmt(m.matches));
+        cell(tr, m.win_rate == null ? '—' : fmt(m.win_rate * 100, 1) + '%');
+        cell(tr, m.timeout_rate == null ? '—' : fmt(m.timeout_rate * 100, 1) + '%');
+        cell(tr, m.candidate_shots ?
+            fmt(m.candidate_hits / m.candidate_shots, 3) : '—');
+        cell(tr, report.build_id || '—');
+        const td = document.createElement('td'), details = document.createElement('details');
+        const summary = txt('summary', 'Provenance');
+        const pre = txt('pre',
+            'Candidate: ' + report.candidate_path + '\nSHA256: ' + report.candidate_sha256 +
+            '\nOpponent: ' + report.opponent_path + '\nSHA256: ' + report.opponent_sha256 +
+            '\nUnity build: ' + report.build_id +
+            '\nExecutable SHA256: ' + report.environment_executable_sha256 +
+            '\nProtocol: ' + report.evaluation_protocol_version +
+            '\nSeed: ' + report.benchmark.seed +
+            '\nArgs: ' + report.benchmark.env_args.join(' ') +
+            '\nEvaluated: ' + report.evaluated_at);
+        details.append(summary, pre); td.append(details); tr.append(td);
+        $('benchmark-rows').append(tr);
+    }
+    $('benchmark-summary').replaceChildren(
+        txt('span', visible.length + ' stored evaluations'),
+        txt('span', [...grouped.values()].filter(n => n > 1).length +
+            ' directly comparable groups (2+ evaluations)')
+    );
+    if (!visible.length) {
+        const row = document.createElement('tr'), c = document.createElement('td');
+        c.colSpan = 9; c.textContent = 'No benchmark results recorded yet.';
+        row.append(c); $('benchmark-rows').append(row);
+    }
+}
+async function refreshBenchmarks() {
+    if (!$('benchmark-panel').open) return;
+    try {
+        const response = await fetch('/api/benchmarks', {cache:'no-store'});
+        const value = await response.json();
+        if (!response.ok) throw Error(value.error || 'Could not load benchmark results.');
+        benchmarkData = value.reports || [];
+        renderBenchmarks();
+    } catch (error) {
+        $('benchmark-summary').replaceChildren(txt('span', 'Benchmark results unavailable: ' + error.message));
+    }
+}
+$('benchmark-panel').addEventListener('toggle', refreshBenchmarks);
+$('benchmark-refresh').addEventListener('click', refreshBenchmarks);
+$('benchmark-filter').addEventListener('change', renderBenchmarks);
+
 let workerRefreshPending = false;
 async function refreshWorkers() {
     if (!$('worker-panel').open || workerRefreshPending) return;
