@@ -278,21 +278,50 @@ function cell(tr, text, className) {
     const td = txt('td', String(text)); if (className) td.className = className;
     tr.append(td); return td;
 }
+function performanceMean(perf, key) {
+    const count = perf?.counts?.[key];
+    return count > 0 ? perf.totals[key] / count : null;
+}
+function stagePerformanceThrough(item, index) {
+    if (!item || !Number.isInteger(index) || index < 0) return null;
+    const stages = (item.stage_history || []).slice(0, index + 1);
+    if (stages.length !== index + 1 || stages.some(record => !record?.performance)) return null;
+    const seconds = stages.reduce((n, record) => n + record.performance.training_s, 0);
+    const steps = stages.reduce((n, record) => n + record.performance.steps, 0);
+    return { hours: seconds / 3600, steps_per_second: seconds > 0 ? steps / seconds : null };
+}
+function metricValue(sample, field) {
+    if (field.startsWith('ppo_') && field !== 'ppo_busy_pct')
+        return sample.ppo?.[field.slice(4)] ?? null;
+    if (field.startsWith('pipeline_')) return sample.pipeline?.[field.slice(9)] ?? null;
+    return sample[field] ?? null;
+}
 function chart(items) {
     const svg = $('graph'); svg.replaceChildren(); $('legend').replaceChildren();
-    const metric = $('metric').value;
+    const metric = $('metric').value, axis = $('axis').value;
     const all = items.filter(x => chosen.has(x.id));
-    const points = all.flatMap(x => x.samples.filter(p => p.step != null && Number.isFinite(p[metric]) ));
+    const xValue = sample => axis === 'time'
+        ? (Number.isFinite(sample.training_s) ? sample.training_s / 3600 : null)
+        : sample.step;
+    const seriesFor = item => (item.samples || [])
+        .map(sample => ({ x: xValue(sample), y: metricValue(sample, metric) }))
+        .filter(point => point.x != null && Number.isFinite(point.x) &&
+            point.y != null && Number.isFinite(point.y));
+    const series = all.map(seriesFor);
+    const points = series.flat();
     if (!points.length) {
         const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-        label.setAttribute('x', '280'); label.setAttribute('y', '125');
+        label.setAttribute('x', '120');
+        label.setAttribute('y', '125');
         label.setAttribute('fill', 'currentColor');
-        label.textContent = 'Select runs with training samples to compare';
+        label.textContent = axis === 'time'
+            ? 'No observed training-time data for the selected runs'
+            : 'Select runs with compatible training samples';
         svg.append(label); return;
     }
-    const xmax = Math.max(1, ...points.map(p => p.step));
-    let ymin = Math.min(...points.map(p => p[metric]));
-    let ymax = Math.max(...points.map(p => p[metric]));
+    const xmax = Math.max(0.000001, ...points.map(p => p.x));
+    let ymin = Math.min(...points.map(p => p.y));
+    let ymax = Math.max(...points.map(p => p.y));
     if (ymin === ymax) { ymin -= 1; ymax += 1; }
     const xx = x => 55 + x / xmax * 710;
     const yy = y => 210 - (y - ymin) / (ymax - ymin) * 175;
@@ -302,10 +331,8 @@ function chart(items) {
         p.setAttribute('stroke', color); svg.append(p);
     }
     line(55, 20, 55, 210, '#000000'); line(55, 210, 765, 210, '#000000');
-    // Show stage boundaries only when every selected lineage shares the same
-    // step schedule. Otherwise a single marker would misrepresent other runs.
     const boundaries = all[0]?.stages?.slice(0, -1).map(stage => stage.end_step);
-    if (boundaries && all.every(item => item.stages &&
+    if (axis === 'steps' && boundaries && all.every(item => item.stages &&
         JSON.stringify(item.stages.slice(0, -1).map(stage => stage.end_step)) ===
             JSON.stringify(boundaries))) {
         for (const boundary of boundaries) {
@@ -320,11 +347,13 @@ function chart(items) {
             marker.setAttribute('opacity', '0.6');
             svg.append(marker);
         }
-        if (boundaries.length) $('legend').append(txt('span', 'Dashed black lines: curriculum stage boundaries'));
+        if (boundaries.length) $('legend').append(txt('span', 'Dashed lines: curriculum boundaries'));
     }
     const xLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-    xLabel.setAttribute('x','660'); xLabel.setAttribute('y','237'); xLabel.setAttribute('fill','currentColor');
-    xLabel.textContent = fmt(xmax) + ' steps'; svg.append(xLabel);
+    xLabel.setAttribute('x','640'); xLabel.setAttribute('y','237');
+    xLabel.setAttribute('fill','currentColor');
+    xLabel.textContent = fmt(xmax, axis === 'time' ? 2 : 0) +
+        (axis === 'time' ? ' training h' : ' steps'); svg.append(xLabel);
     for (const [y, val] of [[204,ymin],[24,ymax]]) {
         const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
         t.setAttribute('x','4');t.setAttribute('y',String(y));
@@ -332,11 +361,11 @@ function chart(items) {
         t.textContent = fmt(val, 3);svg.append(t);
     }
     all.forEach((item, index) => {
-        const series = item.samples.filter(p => p.step != null && Number.isFinite(p[metric]));
-        if (!series.length) return;
+        const values = series[index];
+        if (!values.length) return;
         const color = colors[index % colors.length];
         const path = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
-        path.setAttribute('points', series.map(p => xx(p.step) + ',' + yy(p[metric])).join(' '));
+        path.setAttribute('points', values.map(p => xx(p.x) + ',' + yy(p.y)).join(' '));
         path.setAttribute('stroke', color); path.setAttribute('stroke-width','2.5');
         path.setAttribute('fill','none'); svg.append(path);
         const label = txt('span', item.name + ' (' + item.status + ')');
@@ -344,6 +373,56 @@ function chart(items) {
         label.prepend(dot);$('legend').append(label);
     });
 }
+function renderPerformance(items) {
+    const tbody = $('performance-rows');
+    tbody.replaceChildren();
+    for (const item of items) {
+        const records = item.stage_history || [];
+        const epochs = item.trainer_config?.resolved?.hyperparameters?.num_epoch;
+        for (const [index, record] of records.entries()) {
+            const perf = record?.performance;
+            if (!perf) continue;
+            const stage = item.stages?.[index];
+            const tr = document.createElement('tr');
+            cell(tr, item.name, 'name');
+            cell(tr, (index + 1) + '. ' + (stage?.name || 'Initial'));
+            cell(tr, fmt(epochs));
+            cell(tr, fmt(perf.training_s / 3600, 2));
+            cell(tr, fmt(perf.training_s > 0 ? perf.steps / perf.training_s : null, 1));
+            cell(tr, fmt(performanceMean(perf, 'ppo_update_s'), 2));
+            cell(tr, fmt(performanceMean(perf, 'ppo_minibatches_s'), 2));
+            cell(tr, fmt(perf.busy_observed_s > 0
+                ? 100 * perf.optimizer_busy_s / perf.busy_observed_s : null, 1));
+            cell(tr, fmt(performanceMean(perf, 'ppo_cpu_pct'), 1));
+            cell(tr, fmt(performanceMean(perf, 'ppo_gpu_pct'), 1));
+            cell(tr, fmt(performanceMean(perf, 'workers'), 1));
+            cell(tr, fmt(performanceMean(perf, 'staged_s'), 1));
+            cell(tr, fmt(performanceMean(perf, 'accepted_s'), 1));
+            cell(tr, fmt(performanceMean(perf, 'consumed_s'), 1));
+            cell(tr, fmt(performanceMean(perf, 'broker_ratio') == null
+                ? null : 100 * performanceMean(perf, 'broker_ratio'), 1));
+            cell(tr, fmt(performanceMean(perf, 'upload_q'), 1));
+            const pressure = perf.pressure || {};
+            const signals = [];
+            if (pressure.broker_samples >= 3 &&
+                pressure.broker_high / pressure.broker_samples >= 0.5)
+                signals.push('Frequent broker pressure');
+            if (pressure.upload_samples >= 3 &&
+                pressure.upload_high / pressure.upload_samples >= 0.5)
+                signals.push('Frequent upload backlog');
+            if (perf.busy_observed_s >= 60 &&
+                perf.optimizer_busy_s / perf.busy_observed_s >= 0.75)
+                signals.push('PPO occupied ≥75%');
+            cell(tr, signals.join('; ') || 'No sustained signal established');
+            tbody.append(tr);
+        }
+    }
+    if (!tbody.childNodes.length) {
+        const tr = document.createElement('tr'), td = txt('td', 'No measured stage performance yet.');
+        td.colSpan = 17; tr.append(td); tbody.append(tr);
+    }
+}
+
 function render(data) {
     latest = data;
     const items = data.items;
@@ -455,6 +534,9 @@ function render(data) {
             item.status + ' · evaluating' : item.status + stageLabel);
         if (item.status === 'interrupted' || item.benchmark_status === 'failed') runState.classList.add('error');
         cell(tr, fmt(item.step));
+        const perf = stagePerformanceThrough(item, item.stage_index || 0);
+        cell(tr, fmt(perf?.hours, 2));
+        cell(tr, fmt(perf?.steps_per_second, 1));
         cell(tr, fmt(last.timeout_pct,1) + (last.timeout_pct == null ? '' : '%'));
         cell(tr, fmt(last.bee_hits_per_shot,3));
         cell(tr, item.run_id ? item.run_id.slice(0,24) : '—');
@@ -473,6 +555,7 @@ function render(data) {
         txt('span', 'Mean final timeout: ' + fmt(avg('timeout_pct'),1) + '%')
     );
     chart(visible);
+    renderPerformance(visible);
 }
 
 let benchmarkData = [];
@@ -788,6 +871,8 @@ $('stop').addEventListener('click', async () => {
 });
 $('filter').addEventListener('change', () => latest && render(latest));
 $('metric').addEventListener('change', () => latest && chart(
+    latest.items.filter(x => !$('filter').value || x.group === $('filter').value)));
+$('axis').addEventListener('change', () => latest && chart(
     latest.items.filter(x => !$('filter').value || x.group === $('filter').value)));
 async function loadTrainerDefaults() {
     const button = $('create').querySelector('button[type=submit]');
