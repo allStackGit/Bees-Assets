@@ -171,6 +171,9 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
 .benchmark-controls { display:flex; align-items:flex-end; justify-content:flex-start; gap:12px; flex-wrap:wrap; }
 .benchmark-controls label { min-width:170px; }
 .benchmark-controls button { align-self:flex-end; margin:0; }
+.env-control { display:inline-flex; gap:5px; align-items:center; }
+.env-control button { padding:3px 7px; min-width:28px; line-height:1.1; font-size:13px; }
+.env-control .env-count { min-width:60px; text-align:center; }
 @media (min-width:1200px) { .graph-wrap { max-width:100%; } }
 #legend { display: flex; gap: 15px; flex-wrap: wrap; padding: 8px 0; font-size: 12px; font-weight: 800; }
 .dot { display: inline-block; width: 10px; height: 10px; border: 1px solid var(--ink); border-radius: 0; margin-right: 6px; }
@@ -199,7 +202,7 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
 <th>Worker</th><th>State</th><th>Envs</th><th>CPU</th><th>RAM</th>
 <th>LiveExp/s</th><th>Staged/s</th><th>Accept/s</th><th>Accepted total</th><th>Consumed total</th><th>UploadQ</th><th>BrokerQ</th><th>Age</th><th>Error / diagnostic</th>
 </tr></thead><tbody id="worker-rows"></tbody></table></div>
-<p class="muted">Live training-control information (same source as <code>bees.ps1 status</code>). Cumulative accepted/consumed counts are reported by each worker process and may reset when a worker restarts; compare only workers reporting for the current run. Updates while this panel is open; nothing is written to experiment history.</p>
+<p class="muted">Live training-control information (same source as <code>bees.ps1 status</code>). Cumulative accepted/consumed counts are reported by each worker process and may reset when a worker restarts; compare only workers reporting for the current run. Use +/- to set a persistent per-worker environment target. A live change may affect learning throughput and invalidate before/after speed comparisons; active-training changes require confirmation. Workers must be online to change their targets. Worker status refreshes without duplicating history.</p>
 </details>
 </section>
 <section>
@@ -621,6 +624,10 @@ function render(data) {
                     stage.env_args.join('\n');
             }).join('\n\n');
             details.append(txt('pre', 'CURRICULUM · SAME POLICY / OPTIMIZER\n' + description));
+            if (item.capacity_changes?.length) details.append(
+                txt('p', 'Worker environment changes during training: ' +
+                    item.capacity_changes.length +
+                    '. Compare speed before and after separately; worker capacity changed.'));
         }
         if (item.trainer_config) details.append(txt('pre', 'Initialization: fresh\nFrozen configuration SHA: ' + item.trainer_config.sha256 + '\nSettings:\n' + JSON.stringify(item.trainer_config.resolved, null, 2) + '\nVerified generated configurations: ' + (item.applied_configurations || []).length));
         if (item.stage_evaluation_error) {
@@ -876,8 +883,53 @@ async function refreshWorkers() {
             cell(tr, w.trainer_id || '—');
             const stateCell = cell(tr, w.state);
             if (w.state === 'STALE' || w.state === 'failed') stateCell.className = 'worker-issue';
-            cell(tr, w.desired_envs == null || w.desired_envs === w.envs ?
-                fmt(w.envs) : fmt(w.envs) + ' → ' + fmt(w.desired_envs));
+            const envCell = document.createElement('td');
+            const controls = document.createElement('div');
+            controls.className = 'env-control';
+            const count = w.worker_env_override ?? w.desired_envs ?? w.envs;
+            const number = txt('span',
+                (w.desired_envs == null || w.desired_envs === w.envs
+                    ? fmt(w.envs) : fmt(w.envs) + ' → ' + fmt(w.desired_envs)) +
+                (w.worker_env_override != null ? ' fixed' : w.auto_envs ? ' auto' : ''));
+            number.className = 'env-count';
+            const change = async (delta, button) => {
+                const target = count + delta;
+                if (data.training_enabled && !confirm(
+                    'Changing ' + w.trainer_id + ' to ' + target +
+                    ' environments during training may change learning speed and ' +
+                    'make the before/after speed measurements non-comparable. Continue?')) return;
+                button.disabled = true;
+                try {
+                    await request('/api/worker-envs', {
+                        trainer_id: w.trainer_id, envs: target,
+                        expected_revision: data.revision,
+                        expected_run_id: data.run_id,
+                        confirm_active: data.training_enabled,
+                    });
+                    $('message').textContent = 'Saved ' + target +
+                        ' environments for ' + w.trainer_id +
+                        (data.training_enabled ? ' · active-run performance affected' : ' · applies to future training');
+                    await refreshWorkers();
+                } catch (error) {
+                    $('message').textContent = error.message;
+                    $('message').classList.add('error');
+                } finally {
+                    button.disabled = false;
+                }
+            };
+            const editable = w.role === 'dedicated' && w.state !== 'STALE' &&
+                Number.isInteger(count) && Number.isInteger(w.min_envs) &&
+                Number.isInteger(w.max_envs) && !data.pending_release;
+            const decrease = txt('button', '−'), increase = txt('button', '+');
+            decrease.type = increase.type = 'button';
+            decrease.title = 'Decrease worker environments by 1';
+            increase.title = 'Increase worker environments by 1';
+            decrease.disabled = !editable || count <= w.min_envs;
+            increase.disabled = !editable || count >= w.max_envs;
+            decrease.addEventListener('click', () => change(-1, decrease));
+            increase.addEventListener('click', () => change(1, increase));
+            controls.append(decrease, number, increase);
+            envCell.append(controls); tr.append(envCell);
             cell(tr, w.cpu_pct == null ? '—' : fmt(w.cpu_pct, 0) + '%');
             cell(tr, w.ram_pct == null ? '—' : fmt(w.ram_pct, 0) + '%');
             cell(tr, fmt(w.live_exp_s, 0));
