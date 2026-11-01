@@ -938,7 +938,7 @@ async function refreshWorkers() {
             increase.addEventListener('click', () => change(1, increase));
             controls.append(decrease, number, increase);
             if (w.worker_env_override != null) {
-                const reset = txt('button', 'Auto');
+                const reset = txt('button', w.auto_envs ? 'Auto' : 'Reset');
                 reset.type = 'button';
                 reset.title = 'Restore worker automatic tuning or its local manual target';
                 reset.disabled = !editable;
