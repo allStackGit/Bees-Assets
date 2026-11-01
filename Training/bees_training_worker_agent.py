@@ -3134,6 +3134,21 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                                 "server requested worker env count outside advertised capacity"
                             )
                         worker_env_count = requested_worker_envs
+                # An authenticated, centrally persisted operator override takes
+                # precedence over local manual files and automatic tuning.
+                # Both modes retain their live-resize path; rollout ownership,
+                # policy and optimizer state are unchanged.
+                dashboard_env_target = desired.get("worker_env_override")
+                if dashboard_env_target is not None:
+                    if (
+                        not isinstance(dashboard_env_target, int)
+                        or isinstance(dashboard_env_target, bool)
+                        or not args.worker_envs_min <= dashboard_env_target <= args.worker_envs_max
+                    ):
+                        raise RuntimeError(
+                            "server requested manual worker env count outside advertised capacity"
+                        )
+                    worker_env_count = dashboard_env_target
                 descriptor = desired.get("build")
                 preparer.request(desired.get("prepare_build"))
                 if args.role == "dedicated":
