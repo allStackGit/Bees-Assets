@@ -343,15 +343,23 @@ collected at that time; new PPO timing and Human combat values are **not
 backfilled** when upgrading the manager. Restart the experiment coordinator
 with the new source to begin recording newly added fields.
 
-**Checkpoint benchmarks** are independent, fixed-seed Unity matches versus
-versioned scripted opponents. Compare candidate win rates, timeout rates,
-hits/shots and firing activity **within the same frozen recipe, opponent,
-build and curriculum stage**. A low hit/shot ratio with no shots is not a
-useful measure of aim. The 95% Wilson intervals describe the fixed-match
-sample, not across-seed training uncertainty. A result of nearly 100% wins
-or timeouts may be saturated and unable to distinguish policies. The count
-of directly comparable groups is a count of matching benchmark/stage
-identities with at least two results, **not a quality score**.
+**Checkpoint evaluations** default to the active beta run's latest
+evaluated checkpoint, with three readable results: **Stationary aiming**
+(24×24, 5s), **Moving combat** (32–64, 15s), and **Long-range pursuit**
+(96–128, 30s). Each test plays 100 independent fixed-seed Unity matches
+against its unchanged scripted opponent. The **Whose results?** selector
+opens any saved experiment, a beta-run comparison, or the full archive
+including earlier qualification and legacy tests. **Which checkpoint?**
+selects a particular stage checkpoint or the full history; **Which test?**
+narrows the three scenarios. The optional comparison table shows results
+side by side; full hashes, seeds, and build details are available only
+under **Technical details**. There are three tests **per checkpoint**, not
+three lifetime reports; no old reports are deleted or re-evaluated by the
+dashboard. Compare wins, losses, timeouts, and hits/shots against the same
+recipe, opponent, build and stage; hit accuracy alone does not establish
+winning combat ability. The 95% Wilson intervals in the detailed view
+summarize uncertainty within the 100-match sample, not variation across
+independently trained networks.
 
 The Worker Status table shows each remote worker's cumulative accepted and
 consumed experiences reported by its current process; those raw counters
