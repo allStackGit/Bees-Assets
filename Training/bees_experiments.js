@@ -176,17 +176,12 @@ function livePipeline(status) {
             finite(record.metrics?.throughput?.[field])).filter(x => x != null);
         return values.length ? values.reduce((a, b) => a + b, 0) : null;
     };
-    const queue = field => {
-        const values = current.map(record =>
-            finite(record.metrics?.throughput?.[field])).filter(x => x != null);
-        return values.length ? values.reduce((a, b) => a + b, 0) : null;
-    };
     return {
         workers: current.filter(record => record.trainer_id !== 'central-learner').length,
         staged_s: sum('staged_steps_per_sec'),
         accepted_s: sum('accepted_steps_per_sec'),
         consumed_s: sum('learner_consumed_steps_per_sec'),
-        upload_q: queue('upload_queue_depth'),
+        upload_q: sum('upload_queue_depth'),
         broker_q: finite(broker.broker_queue_depth),
         broker_capacity: finite(broker.broker_queue_capacity),
         optimizer_busy_total: finite(broker.optimizer_busy_seconds_total),
@@ -335,6 +330,8 @@ function measure(item, status, force = false) {
             stage_training_s: perf.training_s,
             effective_steps_per_second: perf.training_s > 0
                 ? perf.steps / perf.training_s : null,
+            ppo_busy_pct: perf.busy_observed_s > 0
+                ? 100 * perf.optimizer_busy_s / perf.busy_observed_s : null,
             reward: Number.isFinite(learner.MeanReward) ? learner.MeanReward : null,
             steps_per_second: Number.isFinite(learner.LiveStepsPerSecond) ?
                 learner.LiveStepsPerSecond : null,
