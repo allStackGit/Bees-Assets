@@ -1924,7 +1924,9 @@ class TrainingControlStore {
             buildId: this.state.canonical_build_id,
             enabled: this.state.training_enabled &&
                 !this.state.pending_release &&
-                Boolean(canonicalBuild),
+                Boolean(canonicalBuild) &&
+                !Object.prototype.hasOwnProperty.call(
+                    this.state.worker_env_overrides, trainerId),
         });
         const measuredProvenEnvCount = (
             record.worker_capacity?.auto === true &&
