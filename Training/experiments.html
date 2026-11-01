@@ -171,6 +171,23 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
 .benchmark-controls { display:flex; align-items:flex-end; justify-content:flex-start; gap:12px; flex-wrap:wrap; }
 .benchmark-controls label { min-width:170px; }
 .benchmark-controls button { align-self:flex-end; margin:0; }
+.benchmark-controls label { flex:1 1 190px; max-width:360px; }
+.benchmark-note { padding:10px 0; font-size:13px; font-weight:700; border-bottom:2px solid var(--ink); }
+.benchmark-results { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; margin:14px 0; }
+.benchmark-card { border:2px solid var(--ink); padding:14px; min-width:0; }
+.benchmark-card h3 { font-size:18px; margin:0 0 4px; }
+.benchmark-card p { margin:3px 0 10px; font-size:12px; }
+.benchmark-stats { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; padding:10px 0; border-top:1px solid var(--ink); border-bottom:1px solid var(--ink); }
+.benchmark-stats strong { display:block; font-size:24px; font-weight:900; font-variant-numeric:tabular-nums; }
+.benchmark-stats span { font-size:11px; font-weight:700; }
+.benchmark-card .muted { margin:10px 0 0; }
+.benchmark-subsection { padding:12px 0; border-top:2px solid var(--ink); margin-top:10px; }
+.benchmark-subsection > summary { font-size:16px; }
+.benchmark-subsection[open] > summary { margin-bottom:12px; }
+#benchmark-compare-panel td { white-space:normal; min-width:120px; }
+#benchmark-history-panel th, #benchmark-history-panel td { white-space:normal; }
+#benchmark-history-panel .tablewrap { overflow-x:auto; }
+@media (max-width:1000px) { .benchmark-results { grid-template-columns:1fr; } }
 .env-control { display:inline-flex; gap:5px; align-items:center; }
 .env-control button { padding:3px 7px; min-width:28px; line-height:1.1; font-size:13px; }
 .env-control .env-count { min-width:60px; text-align:center; }
@@ -257,22 +274,34 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
 </section>
 <section>
 <details id="benchmark-panel" class="worker-details">
-<summary class="worker-summary">Checkpoint benchmarks <small>· Independent fixed-seed evaluations</small></summary>
-<p class="muted"><strong>How to read these:</strong> Each row is 100 fixed-seed Unity matches against the same unchanged scripted opponent for that benchmark. Higher candidate win % and hit/shot are generally better; lower timeout % generally means more matches finished. Check the number of shots as well as accuracy: no shots means accuracy is not meaningful. The aiming, moving and pursuit benchmarks test distinct difficulties, so compare candidates <strong>within the same benchmark and curriculum stage</strong>, not across different scenarios. The 95% intervals describe uncertainty within that match sample, not variation across training seeds. Results with nearly all wins or timeouts may not distinguish policies well. The group count reports compatible benchmark/stage identities with at least two evaluations, not a ranking or proof of improvement.</p>
-<p class="muted">These results come from the existing Unity/ONNX evaluator, not the training-telemetry graph. Only identical benchmark definitions, scripted/ONNX opponent identities, and environment builds are directly comparable. Win and timeout intervals use the 95% Wilson method. Fixed-seed results are screening evidence; these intervals do not measure training-seed variability. Accuracy is descriptive because shots within a match are correlated.</p>
+<summary class="worker-summary">Checkpoint evaluations <small>· What can this network do?</small></summary>
+<p class="muted">At each curriculum checkpoint, the saved network fights <strong>three fixed opponents</strong>, 100 matches each. The opponents and test conditions stay the same across beta runs. These matches measure ability; they do not train the network.</p>
 <div class="bar benchmark-controls">
-<label>Benchmark <select id="benchmark-filter"><option value="">All benchmarks</option></select></label>
-<label>Curriculum stage <select id="benchmark-stage-filter"><option value="">All stages</option></select></label>
-<button id="benchmark-refresh">Refresh results</button>
+<label>Whose results?
+<select id="benchmark-run-filter"><option value="current">Current beta run</option></select></label>
+<label>Which checkpoint?
+<select id="benchmark-checkpoint-filter"><option value="latest">Most recent checkpoint</option></select></label>
+<label>Which test?
+<select id="benchmark-scenario-filter"><option value="">All three tests</option></select></label>
+<button id="benchmark-refresh" type="button">Refresh results</button>
 </div>
-<div id="benchmark-summary" class="summary" style="margin:12px 0"></div>
-<h2>Stage × scenario comparison</h2>
-<p class="muted">Each row is one frozen candidate at a curriculum boundary. Each column uses one benchmark/reference/build identity. Cells show win rate and timeout rate; separate columns never pool incompatible references.</p>
-<div class="tablewrap"><table><thead id="benchmark-matrix-head"></thead><tbody id="benchmark-matrix-rows"></tbody></table></div>
-<h2 style="margin-top:16px">Evaluation details</h2>
+<div id="benchmark-summary" class="benchmark-note" role="status"></div>
+<div id="benchmark-results" class="benchmark-results"></div>
+<details id="benchmark-compare-panel" class="benchmark-subsection">
+<summary>Compare checkpoints and beta runs</summary>
+<p class="muted">Compare the same test and stage across beta runs. Compare one network's earlier and later checkpoints to check learning and retention. A changed Unity build, opponent or benchmark recipe is a different test, even if the name is the same.</p>
+<div class="tablewrap"><table>
+<thead id="benchmark-matrix-head"></thead>
+<tbody id="benchmark-matrix-rows"></tbody>
+</table></div>
+</details>
+<details id="benchmark-history-panel" class="benchmark-subsection">
+<summary>Detailed results and older reports</summary>
+<p class="muted">Older qualification runs and legacy benchmarks remain saved. Choose “All reports, including tests” in the run selector to see them here. Expand “Technical details” for hashes, paths, versions and fixed seeds.</p>
 <div class="tablewrap"><table><thead><tr>
-<th>Benchmark</th><th>Experiment</th><th>Stage</th><th>Training h</th><th>Candidate step</th><th>Candidate run</th><th>Opponent identity</th><th>Matches</th><th>Win % · 95% interval</th><th>Timeout % · 95% interval</th><th>Hits / shots</th><th>Damage</th><th>Mean seconds</th><th>Build</th><th>Details</th>
+<th>Test</th><th>Run / checkpoint</th><th>Stage</th><th>Wins</th><th>Losses</th><th>Timeouts</th><th>Hits / shots</th><th>Mean seconds</th><th>Technical details</th>
 </tr></thead><tbody id="benchmark-rows"></tbody></table></div>
+</details>
 </details>
 </section>
 <script>
