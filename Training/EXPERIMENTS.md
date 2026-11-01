@@ -360,8 +360,9 @@ environment target while its authenticated worker supervisor is online.
 The remote must advertise support from the current runtime and an admissible
 min/max capacity. Changing a running worker prompts a warning and records
 a capacity-change marker on the active experiment: compare throughput
-before and after separately. The **Auto** button clears the override and
-restores the worker's automatic tuning or locally configured manual target.
+before and after separately. The **Auto** (automatically tuned workers) or **Reset** (locally configured
+manual workers) button clears the dashboard override and restores the worker's
+previous tuning or fixed target.
 A fixed UI target pauses the automatic optimizer for that worker. Changes
 made while training is stopped persist in authenticated training control
 and take effect when that worker next runs; offline/unsupported workers
