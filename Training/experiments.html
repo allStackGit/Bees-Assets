@@ -714,22 +714,100 @@ function render(data) {
     );
     chart(visible);
     renderPerformance(visible);
+    if ($('benchmark-panel').open && benchmarkDataLoaded) renderBenchmarks();
 }
 
 let benchmarkData = [];
-function benchmarkKey(r) {
-    return r.benchmark.id + ' v' + r.benchmark.revision +
-        ' · ' + r.benchmark.sha256.slice(0, 8);
+let benchmarkDataLoaded = false;
+const BENCHMARK_TYPES = [
+    { key:'aiming', name:'Stationary aiming', description:'24×24 map · 5 seconds. The opponent stays still, aims and fires. Tests close-range accuracy and survival.' },
+    { key:'moving', name:'Moving combat', description:'32–64 map · 15 seconds. The opponent strafes, tracks and fires. Tests fighting moving targets.' },
+    { key:'pursuit', name:'Long-range pursuit', description:'96–128 map · 30 seconds. The opponent approaches visible enemies and searches otherwise. Tests finding and engaging targets.' },
+];
+function benchmarkType(report) {
+    const id = String(report?.benchmark?.id || '').toLowerCase();
+    if (id.startsWith('scripted-') && (id.includes('stationary') || id.includes('aiming'))) return 'aiming';
+    if (id.startsWith('scripted-') && (id.includes('moving') || id.includes('strafe'))) return 'moving';
+    if (id.startsWith('scripted-') && (id.includes('pursuit') || id.includes('range'))) return 'pursuit';
+    return 'legacy';
 }
-function scenarioIdentityKey(r) {
-    return [r.benchmark.sha256, r.opponent_sha256, r.build_id,
-        r.environment_executable_sha256, r.evaluation_code_sha256, r.opponent_kind || 'onnx',
-        r.evaluation_protocol_version].join('|');
+function benchmarkInfo(report) {
+    return BENCHMARK_TYPES.find(type => type.key === benchmarkType(report)) || {
+        key:'legacy', name:'Older / custom benchmark',
+        description:'Uses a different recipe or older opponent. Inspect technical details before comparing it.',
+    };
 }
-function benchmarkComparisonKey(r) {
-    return [scenarioIdentityKey(r), r.experiment?.stage_index ?? 'legacy'].join('|');
+function stageLabel(report) {
+    const index = report.experiment?.stage_index;
+    if (!Number.isInteger(index)) return 'Final checkpoint';
+    return 'Stage ' + (index + 1) + (report.experiment.stage_name
+        ? ' · ' + report.experiment.stage_name : '');
 }
-
+function stepsLabel(step) {
+    if (!Number.isFinite(step)) return 'unknown steps';
+    return step >= 1000000
+        ? fmt(step / 1000000, 2) + 'M steps'
+        : step >= 1000 ? fmt(step / 1000, 0) + 'k steps' : fmt(step) + ' steps';
+}
+function reportStep(report) {
+    return report.experiment?.candidate_training_step ?? null;
+}
+function reportCheckpoint(report) {
+    return String(report.run_id || '') + ':' +
+        (report.candidate_sha256 || report.candidate_path || report.evaluated_at) + ':' +
+        (report.experiment?.stage_index ?? 'final');
+}
+function orderedCheckpoints(reports) {
+    const map = new Map();
+    for (const report of reports) {
+        const key = reportCheckpoint(report);
+        if (!map.has(key)) map.set(key, report);
+    }
+    return [...map.entries()].sort((a,b) =>
+        (reportStep(b[1]) ?? -1) - (reportStep(a[1]) ?? -1) ||
+        String(b[1].evaluated_at || '').localeCompare(String(a[1].evaluated_at || '')));
+}
+function reportExperiment(report) {
+    const items = latest?.items || [];
+    return items.find(item => item.id === report.experiment?.id ||
+        (item.run_id && item.run_id === report.run_id)) || null;
+}
+function runName(item) {
+    if (!item) return 'Unlinked run';
+    const beta = item.trainer_config?.resolved?.hyperparameters?.beta;
+    const prefix = beta == null || /\bbeta\b|β/i.test(item.name)
+        ? '' : 'β=' + fmt(beta, 4) + ' · ';
+    return prefix + item.name;
+}
+function currentBenchmarkRun() {
+    const items = latest?.items || [];
+    const active = items.find(item => item.id === latest?.active_id);
+    if (active?.run_id) return active;
+    const withReports = items.filter(item => item.run_id &&
+        benchmarkData.some(report => report.run_id === item.run_id));
+    const betaRuns = withReports.filter(item => /\bbeta\b|β/i.test(item.name));
+    return (betaRuns.length ? betaRuns : withReports).slice().sort((a,b) =>
+        String(b.started_at || b.created_at || '').localeCompare(
+            String(a.started_at || a.created_at || '')))[0] || null;
+}
+function availableRuns() {
+    const map = new Map();
+    for (const report of benchmarkData) {
+        const item = reportExperiment(report);
+        if (item && !map.has(item.id)) map.set(item.id, item);
+    }
+    return [...map.values()].sort((a,b) =>
+        String(b.started_at || b.created_at || '').localeCompare(
+            String(a.started_at || a.created_at || '')));
+}
+function benchmarkKey(report) {
+    return report.benchmark.id + ' v' + report.benchmark.revision;
+}
+function scenarioIdentityKey(report) {
+    return [report.benchmark.sha256, report.opponent_sha256, report.build_id,
+        report.environment_executable_sha256, report.evaluation_code_sha256,
+        report.opponent_kind || 'onnx', report.evaluation_protocol_version].join('|');
+}
 function outcomeInterval(count, total) {
     if (!Number.isFinite(count) || !Number.isFinite(total) || total <= 0) return '—';
     const z = 1.959963984540054, p = count / total, d = 1 + z*z/total;
@@ -738,153 +816,277 @@ function outcomeInterval(count, total) {
     return fmt(100*p,1) + '% [' + fmt(100*Math.max(0,center-radius),1) + '–' +
         fmt(100*Math.min(1,center+radius),1) + ']';
 }
-
-function renderBenchmarks() {
-    const filter = $('benchmark-filter');
-    const options = [...new Set(benchmarkData.map(benchmarkKey))].sort();
-    const previous = filter.value;
-    filter.replaceChildren(new Option('All benchmarks', ''), ...options.map(x => new Option(x, x)));
-    filter.value = options.includes(previous) ? previous : '';
-    const stageFilter = $('benchmark-stage-filter');
-    const stages = [...new Set(benchmarkData.map(r => r.experiment?.stage_index)
-        .filter(x => Number.isInteger(x)))].sort((a,b) => a-b);
-    const previousStage = stageFilter.value;
-    stageFilter.replaceChildren(new Option('All stages', ''),
-        ...stages.map(x => new Option('Stage ' + (x + 1), String(x))));
-    stageFilter.value = stages.some(x => String(x) === previousStage) ? previousStage : '';
-    const visible = benchmarkData.filter(r =>
-        (!filter.value || benchmarkKey(r) === filter.value) &&
-        (!stageFilter.value || String(r.experiment?.stage_index) === stageFilter.value));
-    $('benchmark-rows').replaceChildren();
-    const grouped = new Map();
-    for (const report of visible) {
-        const key = benchmarkComparisonKey(report);
-        grouped.set(key, (grouped.get(key) || 0) + 1);
-        const m = report.metrics || {};
+function reportProvenance(report) {
+    const box = document.createElement('details');
+    box.append(txt('summary', 'Technical details'));
+    const lines = [
+        'Checkpoint: ' + (report.candidate_path || 'unrecorded'),
+        'Candidate SHA-256: ' + (report.candidate_sha256 || 'unrecorded'),
+        'Run ID: ' + (report.run_id || 'unrecorded'),
+        'Opponent: ' + (report.opponent_path || 'unrecorded'),
+        'Opponent SHA-256: ' + (report.opponent_sha256 || 'unrecorded'),
+        'Benchmark ID: ' + benchmarkKey(report),
+        'Benchmark SHA-256: ' + (report.benchmark.sha256 || 'unrecorded'),
+        'Unity build: ' + (report.build_id || 'unrecorded'),
+        'Evaluator SHA-256: ' + (report.evaluation_code_sha256 || 'unrecorded'),
+        'Seed: ' + report.benchmark.seed,
+        'Environment args: ' + (report.benchmark.env_args || []).join(' '),
+        'Evaluated: ' + (report.evaluated_at || 'unrecorded'),
+    ];
+    box.append(txt('pre', lines.join('\n')));
+    return box;
+}
+function statBlock(name, value) {
+    const box = document.createElement('div');
+    box.append(txt('strong', value), txt('span', name));
+    return box;
+}
+function renderBenchmarkCard(type, report) {
+    const card = document.createElement('article');
+    card.className = 'benchmark-card';
+    const heading = document.createElement('h3');
+    heading.textContent = type.name;
+    card.append(heading, txt('p', type.description));
+    if (!report) {
+        card.append(txt('p', 'No saved result for this test at the selected checkpoint.'));
+        return card;
+    }
+    const metrics = report.metrics || {};
+    const matches = metrics.matches || 0, shots = metrics.candidate_shots || 0;
+    const summary = document.createElement('div');
+    summary.className = 'benchmark-stats';
+    summary.append(
+        statBlock('Candidate wins', matches ? fmt(100*metrics.wins/matches, 0) + '%' : '—'),
+        statBlock('Timeouts', matches ? fmt(100*metrics.timeouts/matches, 0) + '%' : '—'),
+        statBlock('Shot accuracy', shots ? fmt(100*metrics.candidate_hits/shots, 1) + '%' : '—'),
+    );
+    const losses = metrics.losses ?? null;
+    const otherDraws = metrics.draws == null ? null :
+        Math.max(0, metrics.draws - (metrics.timeouts || 0));
+    card.append(summary, txt('p',
+        fmt(metrics.wins) + ' wins · ' + fmt(losses) + ' losses · ' +
+        fmt(metrics.timeouts) + ' timeouts' +
+        (otherDraws ? ' · ' + fmt(otherDraws) + ' other draws' : '') +
+        ' in ' + fmt(matches) + ' matches.'));
+    card.append(txt('p', 'Hits: ' + fmt(metrics.candidate_hits) + '/' +
+        fmt(metrics.candidate_shots) + ' shots · mean match ' +
+        fmt(metrics.average_duration_seconds, 1) + ' seconds.'));
+    card.append(reportProvenance(report));
+    return card;
+}
+function selectedBenchmarkReports() {
+    const mode = $('benchmark-run-filter').value;
+    if (mode === 'archive') return benchmarkData;
+    if (mode === 'compare') {
+        const runs = availableRuns();
+        const beta = runs.filter(item => /\bbeta\b|β/i.test(item.name));
+        const allowed = new Set((beta.length ? beta : runs).map(item => item.id));
+        return benchmarkData.filter(report => allowed.has(reportExperiment(report)?.id));
+    }
+    const item = mode === 'current' ? currentBenchmarkRun()
+        : (latest?.items || []).find(run => 'run:' + run.id === mode);
+    if (!item) return [];
+    return benchmarkData.filter(report =>
+        report.experiment?.id === item.id ||
+        (item.run_id && report.run_id === item.run_id));
+}
+function renderBenchmarkComparison(reports) {
+    const head = $('benchmark-matrix-head'), body = $('benchmark-matrix-rows');
+    head.replaceChildren(); body.replaceChildren();
+    const known = reports.filter(report => Number.isInteger(report.experiment?.stage_index) &&
+        reportExperiment(report));
+    const variants = new Map();
+    const counts = new Map();
+    for (const report of known) {
+        const key = scenarioIdentityKey(report), type = benchmarkInfo(report);
+        if (!variants.has(key)) {
+            const n = (counts.get(type.key) || 0) + 1;
+            counts.set(type.key, n);
+            variants.set(key, { name:type.name, type:type.key, version:n,
+                identity:'Recipe: ' + report.benchmark.sha256 +
+                    ' · opponent: ' + report.opponent_sha256 +
+                    ' · Unity build: ' + report.build_id });
+        }
+    }
+    const ordered = [...variants.entries()].sort((a,b) => {
+        const at = BENCHMARK_TYPES.findIndex(x=>x.key===a[1].type);
+        const bt = BENCHMARK_TYPES.findIndex(x=>x.key===b[1].type);
+        return (at === -1 ? 10 : at) - (bt === -1 ? 10 : bt);
+    });
+    const hr = document.createElement('tr');
+    for (const title of ['Network', 'Checkpoint', ...ordered.map(([key,info]) =>
+        info.name + (counts.get(info.type)>1 ? ' · setup '+info.version : ''))]) {
+        hr.append(txt('th', title));
+    }
+    ordered.forEach(([key,info],i)=>{ hr.childNodes[i+2].title=info.identity; });
+    head.append(hr);
+    const rows = new Map();
+    for (const report of known) {
+        const experiment = reportExperiment(report);
+        const key = experiment.id + ':' + reportCheckpoint(report);
+        if (!rows.has(key)) rows.set(key, { experiment, report, entries:new Map() });
+        const entry = rows.get(key);
+        if (!entry.entries.has(scenarioIdentityKey(report)))
+            entry.entries.set(scenarioIdentityKey(report), report);
+    }
+    const list = [...rows.values()].sort((a,b) =>
+        runName(a.experiment).localeCompare(runName(b.experiment)) ||
+        (reportStep(a.report) ?? -1) - (reportStep(b.report) ?? -1));
+    for (const entry of list) {
         const tr = document.createElement('tr');
-        cell(tr, benchmarkKey(report));
-        cell(tr, report.experiment?.id ? report.experiment.id.slice(0, 8) : '—');
-        cell(tr, report.experiment?.stage_index == null ? 'Final only' :
-            (report.experiment.stage_index + 1) + '. ' + report.experiment.stage_name);
-        const experiment = (latest?.items || []).find(item => item.id === report.experiment?.id);
-        const stagePerf = stagePerformanceThrough(experiment, report.experiment?.stage_index);
-        cell(tr, fmt(stagePerf?.hours, 2));
-        cell(tr, fmt(report.experiment?.candidate_training_step));
-        cell(tr, report.run_id || (report.candidate_sha256 || '').slice(0, 12));
-        cell(tr, (report.opponent_kind === 'scripted' ? report.opponent_script_name + ' v' + report.opponent_script_version + ' · ' : '') + (report.opponent_sha256 || '').slice(0, 12));
-        cell(tr, fmt(m.matches));
+        cell(tr, runName(entry.experiment), 'name');
+        cell(tr, stageLabel(entry.report) + ' · ' + stepsLabel(reportStep(entry.report)));
+        for (const [key] of ordered) {
+            const report = entry.entries.get(key), m = report?.metrics || {};
+            cell(tr, !report ? 'Not tested' :
+                fmt(m.matches ? 100*m.wins/m.matches : null,0) + '% wins · ' +
+                fmt(m.matches ? 100*m.timeouts/m.matches : null,0) + '% timeouts · ' +
+                fmt(m.candidate_hits) + '/' + fmt(m.candidate_shots) + ' hits');
+        }
+        body.append(tr);
+    }
+    if (!list.length) {
+        const tr = document.createElement('tr'), td = txt('td', 'No comparable saved checkpoint reports.');
+        td.colSpan = ordered.length + 2; tr.append(td); body.append(tr);
+    }
+}
+function renderBenchmarkHistory(reports) {
+    const body = $('benchmark-rows');
+    body.replaceChildren();
+    for (const report of reports) {
+        const m = report.metrics || {}, item = reportExperiment(report), tr = document.createElement('tr');
+        cell(tr, benchmarkInfo(report).name);
+        cell(tr, (item ? runName(item) : 'Earlier / unlinked run') +
+            ' · ' + stepsLabel(reportStep(report)), 'name');
+        cell(tr, stageLabel(report));
         cell(tr, outcomeInterval(m.wins, m.matches));
+        cell(tr, fmt(m.losses));
         cell(tr, outcomeInterval(m.timeouts, m.matches));
         cell(tr, fmt(m.candidate_hits) + '/' + fmt(m.candidate_shots) +
             (m.candidate_shots ? ' (' + fmt(100*m.candidate_hits/m.candidate_shots,1) + '%)' : ''));
-        cell(tr, fmt(m.candidate_damage));
-        cell(tr, fmt(m.average_duration_seconds,2));
-        cell(tr, report.build_id || '—');
-        const td = document.createElement('td'), details = document.createElement('details');
-        const summary = txt('summary', 'Provenance');
-        const pre = txt('pre',
-            'Candidate: ' + report.candidate_path + '\nSHA256: ' + report.candidate_sha256 +
-            '\nOpponent: ' + report.opponent_path + '\nSHA256: ' + report.opponent_sha256 +
-            '\nUnity build: ' + report.build_id +
-            '\nExecutable SHA256: ' + report.environment_executable_sha256 +
-            '\nProtocol: ' + report.evaluation_protocol_version +
-            '\nEvaluator SHA256: ' + (report.evaluation_code_sha256 || 'unrecorded') +
-            '\nSeed: ' + report.benchmark.seed +
-            '\nTime scale: ' + (report.benchmark.time_scale ?? 'Unity default') +
-            '\nArgs: ' + report.benchmark.env_args.join(' ') +
-            '\nEvaluated: ' + report.evaluated_at +
-            '\nExperiment: ' + (report.experiment?.id || '—') +
-            '\nStage: ' + (report.experiment?.stage_name || '—') +
-            '\nStage boundary step: ' + fmt(report.experiment?.stage_step) +
-            '\nPinned candidate step: ' + fmt(report.experiment?.candidate_training_step));
-        details.append(summary, pre); td.append(details); tr.append(td);
-        $('benchmark-rows').append(tr);
+        cell(tr, fmt(m.average_duration_seconds,1));
+        const td = document.createElement('td');
+        td.append(reportProvenance(report));
+        tr.append(td);
+        body.append(tr);
     }
-    const stageReports = visible.filter(r => Number.isInteger(r.experiment?.stage_index));
-    const columns = new Map();
-    const stageRows = new Map();
-    for (const report of stageReports) {
-        const scenarioKey = scenarioIdentityKey(report);
-        if (!columns.has(scenarioKey)) columns.set(scenarioKey,
-            benchmarkKey(report) + ' · ref ' +
-            (report.opponent_sha256 || '').slice(0, 8) + ' · build ' + report.build_id);
-        const key = report.experiment.id + '|' + report.experiment.stage_index;
-        if (!stageRows.has(key)) stageRows.set(key, {
-            experimentId: report.experiment.id,
-            stageIndex: report.experiment.stage_index,
-            stageName: report.experiment.stage_name,
-            reports: new Map(),
-        });
-        const target = stageRows.get(key).reports;
-        // Newest report first; never combine repeated attempts or their samples.
-        if (!target.has(scenarioKey)) target.set(scenarioKey, report);
+    if (!reports.length) {
+        const tr = document.createElement('tr'), td = txt('td','No saved reports match this selection.');
+        td.colSpan=9;tr.append(td);body.append(tr);
     }
-    const head = document.createElement('tr');
-    for (const name of ['Experiment / PPO settings', 'Stage', 'Training h', 'Effective steps/s', ...columns.values()]) {
-        head.append(txt('th', name));
-    }
-    $('benchmark-matrix-head').replaceChildren(head);
-    $('benchmark-matrix-rows').replaceChildren();
-    const experimentItems = new Map((latest?.items || []).map(item => [item.id, item]));
-    const experimentNames = new Map((latest?.items || []).map(item => {
-        const hp = item.trainer_config?.resolved?.hyperparameters;
-        return [item.id, item.name + (hp
-            ? ' · epochs=' + fmt(hp.num_epoch) +
-                ' · β=' + fmt(hp.beta, 6) + ' · λ=' + fmt(hp.lambd, 4) +
-                ' · LR=' + fmt(hp.learning_rate, 6)
-            : '')];
-    }));
-    for (const entry of [...stageRows.values()].sort((a,b) =>
-        a.experimentId.localeCompare(b.experimentId) || a.stageIndex-b.stageIndex)) {
-        const tr = document.createElement('tr');
-        cell(tr, experimentNames.get(entry.experimentId) || entry.experimentId.slice(0, 12), 'name');
-        cell(tr, (entry.stageIndex + 1) + '. ' + (entry.stageName || 'Unnamed'));
-        const speed = stagePerformanceThrough(experimentItems.get(entry.experimentId), entry.stageIndex);
-        cell(tr, fmt(speed?.hours, 2));
-        cell(tr, fmt(speed?.steps_per_second, 1));
-        for (const key of columns.keys()) {
-            const report = entry.reports.get(key);
-            const metrics = report?.metrics || {};
-            cell(tr, !report ? '—' : 'Win ' + fmt(metrics.matches ?
-                100*metrics.wins/metrics.matches : null, 1) + '% · TO ' +
-                fmt(metrics.matches ? 100*metrics.timeouts/metrics.matches : null, 1) +
-                '% · Hits ' + fmt(metrics.candidate_hits) + '/' + fmt(metrics.candidate_shots));
+}
+function renderBenchmarks() {
+    const runSelect = $('benchmark-run-filter'), previousRun = runSelect.value;
+    const current = currentBenchmarkRun();
+    const runOptions = [
+        new Option(current ? 'Current run · ' + runName(current) : 'Current run', 'current'),
+        new Option('Compare beta runs', 'compare'),
+        new Option('All reports, including qualification / older tests', 'archive'),
+        ...availableRuns().map(item => new Option('Run · ' + runName(item), 'run:'+item.id)),
+    ];
+    runSelect.replaceChildren(...runOptions);
+    runSelect.value = runOptions.some(option => option.value === previousRun)
+        ? previousRun : 'current';
+    const mode = runSelect.value, reports = selectedBenchmarkReports();
+    const scenarioSelect = $('benchmark-scenario-filter'), previousScenario = scenarioSelect.value;
+    const relevant = mode === 'archive' ? reports : reports.filter(r => benchmarkType(r) !== 'legacy');
+    const scenarios = BENCHMARK_TYPES.filter(type =>
+        relevant.some(report => benchmarkType(report)===type.key));
+    const scenarioOptions = [new Option('All three tests',''),
+        ...scenarios.map(type => new Option(type.name,type.key))];
+    if (mode === 'archive' && reports.some(report => benchmarkType(report)==='legacy'))
+        scenarioOptions.push(new Option('Older / custom benchmarks','legacy'));
+    scenarioSelect.replaceChildren(...scenarioOptions);
+    scenarioSelect.value = scenarioOptions.some(x=>x.value===previousScenario)
+        ? previousScenario : '';
+    const scenarioFiltered = reports.filter(report =>
+        !scenarioSelect.value || benchmarkType(report)===scenarioSelect.value);
+    const checkpointSelect = $('benchmark-checkpoint-filter'), previousCheckpoint = checkpointSelect.value;
+    const manyRuns = mode === 'compare' || mode === 'archive';
+    const checkpoints = orderedCheckpoints(reports);
+    const checkpointOptions = manyRuns ? [new Option('All checkpoints','all')] : [
+        new Option('Latest evaluated checkpoint','latest'),
+        ...checkpoints.map(([key,report]) => new Option(
+            stageLabel(report) + ' · ' + stepsLabel(reportStep(report)),key)),
+        new Option('All checkpoints','all'),
+    ];
+    checkpointSelect.replaceChildren(...checkpointOptions);
+    checkpointSelect.value = checkpointOptions.some(x=>x.value===previousCheckpoint)
+        ? previousCheckpoint : manyRuns?'all':'latest';
+    checkpointSelect.disabled = manyRuns || !checkpoints.length;
+    const selection = checkpointSelect.value;
+    const checkpointKey = selection==='latest' ? checkpoints[0]?.[0] : selection;
+    const selected = checkpointKey==='all' ? scenarioFiltered : scenarioFiltered.filter(report =>
+        reportCheckpoint(report)===checkpointKey);
+    const container = $('benchmark-results');
+    container.replaceChildren();
+    if (manyRuns) {
+        container.append(txt('p', mode === 'compare'
+            ? 'Comparing beta runs. Open “Compare checkpoints and beta runs” below to see matched tests.'
+            : 'Showing the full report archive. Older test results are in “Detailed results and older reports” below.'));
+    } else if (!checkpoints.length) {
+        container.append(txt('p','No checkpoint evaluation for this run yet. Results are created when a curriculum stage finishes.'));
+    } else if (checkpointKey==='all') {
+        container.append(txt('p','All checkpoints selected. Open the comparison table below to see how the three tests changed over time.'));
+    } else {
+        for (const type of BENCHMARK_TYPES) {
+            if (scenarioSelect.value && scenarioSelect.value !== type.key) continue;
+            container.append(renderBenchmarkCard(type,selected.find(report=>benchmarkType(report)===type.key)));
         }
-        $('benchmark-matrix-rows').append(tr);
     }
-    if (!stageRows.size) {
-        const tr = document.createElement('tr'), td = txt('td', 'No per-stage evaluations recorded yet.');
-        td.colSpan = columns.size + 4; tr.append(td); $('benchmark-matrix-rows').append(tr);
-    }
-    $('benchmark-summary').replaceChildren(
-        txt('span', visible.length + ' stored evaluations'),
-        txt('span', [...grouped.values()].filter(n => n > 1).length +
-            ' directly comparable groups (2+ evaluations)')
-    );
-    if (!visible.length) {
-        const row = document.createElement('tr'), c = document.createElement('td');
-        c.colSpan = 15; c.textContent = 'No benchmark results recorded yet.';
-        row.append(c); $('benchmark-rows').append(row);
-    }
+    const selectedCheckpoint = checkpoints.find(([key])=>key===checkpointKey)?.[1];
+    const owner = mode==='current' ? current : (latest?.items||[])
+        .find(item=>'run:'+item.id===mode);
+    $('benchmark-summary').textContent = manyRuns
+        ? (mode==='compare' ? 'Beta comparison' : 'Historical archive') +
+            ': ' + scenarioFiltered.length + ' matching reports · ' +
+            benchmarkData.length + ' reports saved overall, including older qualification runs.'
+        : owner ? runName(owner) + ' · ' +
+            (selectedCheckpoint ? stageLabel(selectedCheckpoint) + ' · ' +
+                stepsLabel(reportStep(selectedCheckpoint)) : 'no completed evaluation yet') +
+            ' · ' + checkpoints.length + ' evaluated checkpoint(s). ' +
+            benchmarkData.length + ' total saved reports, including older tests.'
+            : 'No active or saved experiment selected.';
+    const comparative = mode === 'archive' ? scenarioFiltered :
+        mode === 'compare' ? scenarioFiltered :
+            benchmarkData.filter(report => {
+                const item = reportExperiment(report);
+                return item && /\bbeta\b|β/i.test(item.name) &&
+                    (!scenarioSelect.value || benchmarkType(report)===scenarioSelect.value);
+            });
+    renderBenchmarkComparison(comparative.length ? comparative : scenarioFiltered);
+    renderBenchmarkHistory(scenarioFiltered);
 }
 async function refreshBenchmarks() {
     if (!$('benchmark-panel').open) return;
     try {
-        const response = await fetch('/api/benchmarks', {cache:'no-store'});
+        const response = await fetch('/api/benchmarks',{cache:'no-store'});
         const value = await response.json();
-        if (!response.ok) throw Error(value.error || 'Could not load benchmark results.');
+        if (!response.ok) throw Error(value.error || 'Could not load checkpoint results.');
         benchmarkData = value.reports || [];
+        benchmarkDataLoaded = true;
         $('benchmark-summary').classList.remove('error');
         renderBenchmarks();
     } catch (error) {
         $('benchmark-summary').classList.add('error');
-        $('benchmark-summary').replaceChildren(txt('span', 'Benchmark results unavailable: ' + error.message));
+        $('benchmark-summary').textContent = 'Evaluation results unavailable: ' + error.message;
     }
 }
 $('benchmark-panel').addEventListener('toggle', refreshBenchmarks);
 $('benchmark-refresh').addEventListener('click', refreshBenchmarks);
-$('benchmark-filter').addEventListener('change', renderBenchmarks);
-$('benchmark-stage-filter').addEventListener('change', renderBenchmarks);
+$('benchmark-run-filter').addEventListener('change', () => {
+    $('benchmark-checkpoint-filter').value = 'latest';
+    const mode = $('benchmark-run-filter').value;
+    if (mode==='compare') $('benchmark-compare-panel').open = true;
+    if (mode==='archive') $('benchmark-history-panel').open = true;
+    renderBenchmarks();
+});
+$('benchmark-checkpoint-filter').addEventListener('change', () => {
+    if ($('benchmark-checkpoint-filter').value==='all')
+        $('benchmark-compare-panel').open = true;
+    renderBenchmarks();
+});
+$('benchmark-scenario-filter').addEventListener('change', renderBenchmarks);
 
 let workerRefreshPending = false;
 async function refreshWorkers() {
