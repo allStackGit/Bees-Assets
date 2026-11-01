@@ -332,6 +332,49 @@ changes require a separate versioned policy implementation and are rejected here
 Illustrative settings are not recommendations; short validation runs do not
 establish which PPO configuration learns best.
 
+## Quality and training-efficiency comparisons
+
+The experiment manager can compare PPO epoch counts or any other supported
+trainer configuration on two independent axes: **learner steps** and **observed
+training hours**. Choose a graph metric (timeout, hit rate, win rate, reward,
+learner throughput, PPO update seconds, minibatches/s, optimizer busy %, or
+worker pipeline rate) and change **Horizontal axis** between steps and training
+hours. Fixed-seed stage evaluations remain the primary quality checks; the
+benchmark stage matrix now also shows training hours and effective steps/s
+at each checkpoint.
+
+Expand **Training efficiency** for stage-by-stage rates, epochs, mean completed
+PPO update duration, optimizer minibatches/s, PPO busy share, worker
+production/admission/consumption, broker occupancy and upload queues. Its
+details show available PPO preparation, backward and optimizer-step timings.
+The coordinator reuses the existing status/worker/PPO telemetry and saves only
+bounded minute-resolution samples plus small per-stage aggregates; it does
+not duplicate learner trajectories, record raw profiles, or enable diagnostics.
+
+**Effective steps/s** = observed increase in authoritative learner steps /
+observed active-training wall time, not worker OptStep/s (the environment
+auto-tuner probe), nor GPU gradient updates/s. Time is accumulated only while
+the manager observes training enabled with the experiment's run ID and active
+stage; planned evaluation/checkpoint stops are excluded. The first interval
+after startup/resume and intervals when the manager is unavailable are
+unobserved, so this is not exact end-to-end elapsed time. PPO busy share uses
+the central learner's cumulative optimizer-busy counter, tolerates completed
+updates that span status polls, and rebases on learner restarts. Unavailable
+metrics remain blank, not zero. CPU/GPU and detailed PPO timing readings
+require the existing PPO diagnostics option; enabling it can change throughput,
+so keep it **consistent across all compared configurations**.
+
+For an epochs comparison, queue independent runs with identical Unity release,
+training curriculum, beta, seeds, runtime flags, worker topology and hardware,
+changing only `num_epoch` (for example **1, 3 and 6**). The v26 base PPO
+buffer is 65,536 steps and batch size is 4,096: these settings nominally give
+16, 48 and 96 actor **and** critic minibatches per PPO update, respectively.
+Compare fixed-seed benchmark outcomes at equal learner steps and at the same
+observed training hours. A queue/upstream backlog or high PPO busy fraction is
+a **pressure signal**, not proof of the limiting system component; confirm
+from sustained worker/broker trends and PPO timing. Cross-host throughput
+comparisons (such as Exeter versus Halifax) are not controlled epochs experiments.
+
 ## Combat screening suite
 
 Separate `experiment_benchmark.short.json`, `.medium.json` and `.long.json`
