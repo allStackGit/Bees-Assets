@@ -2889,6 +2889,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     def current_metrics(run_id: str) -> dict[str, object]:
         snapshot = episode_metrics.snapshot(run_id)
+        # Capability acknowledgment: an older deployed worker must not silently
+        # ignore a dashboard env override that the control plane accepted.
+        snapshot["worker_env_override_supported"] = True
         # Read actor settings first: a runtime-wide diagnostics toggle must also
         # suppress the supervisor's optional host CPU sampling.
         process = managed.process
