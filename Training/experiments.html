@@ -608,6 +608,9 @@ function renderBenchmarks() {
         cell(tr, report.experiment?.id ? report.experiment.id.slice(0, 8) : '—');
         cell(tr, report.experiment?.stage_index == null ? 'Final only' :
             (report.experiment.stage_index + 1) + '. ' + report.experiment.stage_name);
+        const experiment = (latest?.items || []).find(item => item.id === report.experiment?.id);
+        const stagePerf = stagePerformanceThrough(experiment, report.experiment?.stage_index);
+        cell(tr, fmt(stagePerf?.hours, 2));
         cell(tr, fmt(report.experiment?.candidate_training_step));
         cell(tr, report.run_id || (report.candidate_sha256 || '').slice(0, 12));
         cell(tr, (report.opponent_kind === 'scripted' ? report.opponent_script_name + ' v' + report.opponent_script_version + ' · ' : '') + (report.opponent_sha256 || '').slice(0, 12));
@@ -664,10 +667,12 @@ function renderBenchmarks() {
     }
     $('benchmark-matrix-head').replaceChildren(head);
     $('benchmark-matrix-rows').replaceChildren();
+    const experimentItems = new Map((latest?.items || []).map(item => [item.id, item]));
     const experimentNames = new Map((latest?.items || []).map(item => {
         const hp = item.trainer_config?.resolved?.hyperparameters;
         return [item.id, item.name + (hp
-            ? ' · β=' + fmt(hp.beta, 6) + ' · λ=' + fmt(hp.lambd, 4) +
+            ? ' · epochs=' + fmt(hp.num_epoch) +
+                ' · β=' + fmt(hp.beta, 6) + ' · λ=' + fmt(hp.lambd, 4) +
                 ' · LR=' + fmt(hp.learning_rate, 6)
             : '')];
     }));
@@ -676,6 +681,9 @@ function renderBenchmarks() {
         const tr = document.createElement('tr');
         cell(tr, experimentNames.get(entry.experimentId) || entry.experimentId.slice(0, 12), 'name');
         cell(tr, (entry.stageIndex + 1) + '. ' + (entry.stageName || 'Unnamed'));
+        const speed = stagePerformanceThrough(experimentItems.get(entry.experimentId), entry.stageIndex);
+        cell(tr, fmt(speed?.hours, 2));
+        cell(tr, fmt(speed?.steps_per_second, 1));
         for (const key of columns.keys()) {
             const report = entry.reports.get(key);
             const metrics = report?.metrics || {};
