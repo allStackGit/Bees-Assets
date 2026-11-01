@@ -239,10 +239,13 @@ function observeTrainingTime(item, status, step, atMs, pipeline) {
         if (total != null && previous.optimizer_busy_total != null &&
             total >= previous.optimizer_busy_total) {
             const delta = total - previous.optimizer_busy_total;
-            // Cumulative busy time is learner-process-local and can reset at
-            // restarts. Ignore impossible increments rather than report >100%.
-            if (delta <= seconds * 1.05) {
-                perf.optimizer_busy_s += Math.min(seconds, delta);
+            // An optimizer update can span several control polls. Its busy
+            // counter increments on completion, not once per polling window;
+            // compare against the whole observed training interval, not this
+            // single poll. Reset/stale counters are rebased, never subtracted.
+            if (delta <= perf.training_s + 1) {
+                perf.optimizer_busy_s += Math.min(delta,
+                    Math.max(0, perf.training_s - perf.optimizer_busy_s));
                 perf.busy_observed_s += seconds;
             }
         }
