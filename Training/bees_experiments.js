@@ -1208,7 +1208,7 @@ const server = http.createServer(async (req, res) => {
             const trainerId = String(value.trainer_id || '');
             if (!/^[A-Za-z0-9._-]{1,128}$/.test(trainerId) ||
                 trainerId === 'central-learner' ||
-                !Number.isInteger(target) || target < 1 || target > 64) {
+                (target !== null && (!Number.isInteger(target) || target < 1 || target > 64))) {
                 return json(res, 400, { error: 'Select a remote worker and a valid environment count.' });
             }
             const before = await control();
