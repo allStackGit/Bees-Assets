@@ -921,12 +921,17 @@ async function refreshWorkers() {
                 }
             };
             const editable = w.role === 'dedicated' && w.state !== 'STALE' &&
+                w.can_override_envs === true &&
                 Number.isInteger(count) && Number.isInteger(w.min_envs) &&
                 Number.isInteger(w.max_envs) && !data.pending_release;
             const decrease = txt('button', '−'), increase = txt('button', '+');
             decrease.type = increase.type = 'button';
-            decrease.title = 'Decrease worker environments by 1';
-            increase.title = 'Increase worker environments by 1';
+            decrease.title = w.can_override_envs
+                ? 'Decrease worker environments by 1'
+                : 'Deploy updated remote-worker runtime to enable resizing';
+            increase.title = w.can_override_envs
+                ? 'Increase worker environments by 1'
+                : 'Deploy updated remote-worker runtime to enable resizing';
             decrease.disabled = !editable || count <= w.min_envs;
             increase.disabled = !editable || count >= w.max_envs;
             decrease.addEventListener('click', () => change(-1, decrease));
