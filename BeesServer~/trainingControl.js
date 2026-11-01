@@ -506,6 +506,7 @@ class TrainingControlStore {
             Object.keys(parsed.worker_env_overrides).length > 64 ||
             Object.entries(parsed.worker_env_overrides).some(([id, count]) =>
                 !/^[A-Za-z0-9._-]+$/.test(id) ||
+                ['__proto__', 'constructor', 'prototype'].includes(id) ||
                 !Number.isInteger(count) || count < 1 || count > 64)) {
             throw new Error('training-control worker environment overrides are invalid');
         }
@@ -1544,12 +1545,13 @@ class TrainingControlStore {
             throw Object.assign(new Error('invalid worker environment request'), { statusCode: 400 });
         }
         const trainerId = requireString(request.trainer_id, 'trainer_id', 128);
-        if (!/^[A-Za-z0-9._-]+$/.test(trainerId) || trainerId === 'central-learner') {
+        if (!/^[A-Za-z0-9._-]+$/.test(trainerId) ||
+            ['central-learner', '__proto__', 'constructor', 'prototype'].includes(trainerId)) {
             throw Object.assign(new Error('select a dedicated remote worker'), { statusCode: 400 });
         }
         const count = request.envs;
-        if (!Number.isInteger(count) || count < 1 || count > 64) {
-            throw Object.assign(new Error('worker environments must be an integer from 1 to 64'), { statusCode: 400 });
+        if (count !== null && (!Number.isInteger(count) || count < 1 || count > 64)) {
+            throw Object.assign(new Error('worker environments must be 1–64 or null to restore automatic/local settings'), { statusCode: 400 });
         }
         if (!Number.isInteger(request.expected_revision) ||
             request.expected_revision !== this.state.revision ||
@@ -1568,13 +1570,17 @@ class TrainingControlStore {
             throw Object.assign(new Error('remote worker must have a current control lease'), { statusCode: 409 });
         }
         const capacity = normalizeCapacity(record.worker_capacity);
-        if (!capacity || count < capacity.min_envs || count > capacity.max_envs) {
+        if (!capacity || (count !== null &&
+            (count < capacity.min_envs || count > capacity.max_envs))) {
             throw Object.assign(new Error('requested environments exceed the worker advertised capacity'), { statusCode: 409 });
         }
-        const previous = this.state.worker_env_overrides[trainerId] ?? null;
+        const previous = Object.prototype.hasOwnProperty.call(
+            this.state.worker_env_overrides, trainerId)
+            ? this.state.worker_env_overrides[trainerId] : null;
         if (previous !== count) {
             const snapshot = this._snapshotState();
-            this.state.worker_env_overrides[trainerId] = count;
+            if (count === null) delete this.state.worker_env_overrides[trainerId];
+            else this.state.worker_env_overrides[trainerId] = count;
             this.state.revision++;
             this._persistWithRollback(snapshot);
         }
@@ -1784,9 +1790,9 @@ class TrainingControlStore {
         const workerEnvCount = envOptimizer && Number.isInteger(envOptimizer.desired_envs)
             ? envOptimizer.desired_envs
             : null;
-        const workerOverride = role === 'dedicated'
-            ? this.state.worker_env_overrides[trainerId] ?? null
-            : null;
+        const workerOverride = role === 'dedicated' &&
+            Object.prototype.hasOwnProperty.call(this.state.worker_env_overrides, trainerId)
+            ? this.state.worker_env_overrides[trainerId] : null;
         return {
             schema_version: CONTROL_SCHEMA_VERSION,
             trainer_id: trainerId,
@@ -1959,9 +1965,10 @@ class TrainingControlStore {
         const trainers = [...this.trainers.values()]
             .map(record => ({
                 ...record,
-                worker_env_override: record.role === 'dedicated'
-                    ? this.state.worker_env_overrides[record.trainer_id] ?? null
-                    : null,
+                worker_env_override: record.role === 'dedicated' &&
+                    Object.prototype.hasOwnProperty.call(
+                        this.state.worker_env_overrides, record.trainer_id)
+                    ? this.state.worker_env_overrides[record.trainer_id] : null,
                 stale: now - record.last_seen_ms > staleAfter,
                 age_seconds: Math.max(0, (now - record.last_seen_ms) / 1000),
             }))
