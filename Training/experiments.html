@@ -276,6 +276,7 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
 'use strict';
 const $ = id => document.getElementById(id);
 const chosen = new Set();
+let chosenInitialized = false;
 let latest = null;
 // Series colors are confined to the chart and its legend; red is reserved for errors.
 const colors = ['#2469aa','#946100','#347857','#7952a3','#087c9b','#64711a','#8b4d83','#465f9a'];
@@ -307,28 +308,52 @@ function metricValue(sample, field) {
     if (field.startsWith('pipeline_')) return sample.pipeline?.[field.slice(9)] ?? null;
     return sample[field] ?? null;
 }
+let chartHover = null;
 function chart(items) {
     const svg = $('graph'); svg.replaceChildren(); $('legend').replaceChildren();
+    const tooltip = $('graph-tooltip');
+    tooltip.style.display = 'none';
     const metric = $('metric').value, axis = $('axis').value;
+    const smooth = Number($('smoothing').value) || 1;
     const all = items.filter(x => chosen.has(x.id));
     const xValue = sample => axis === 'time'
         ? (Number.isFinite(sample.training_s) ? sample.training_s / 3600 : null)
         : sample.step;
-    const seriesFor = item => (item.samples || [])
-        .map(sample => ({ x: xValue(sample), y: metricValue(sample, metric) }))
-        .filter(point => point.x != null && Number.isFinite(point.x) &&
-            point.y != null && Number.isFinite(point.y));
-    const series = all.map(seriesFor);
-    const points = series.flat();
+    const seriesFor = item => {
+        const inputs = (item.samples || [])
+            .map(sample => ({ x: xValue(sample), raw: metricValue(sample, metric) }))
+            .filter(point => Number.isFinite(point.x) &&
+                point.raw != null && Number.isFinite(Number(point.raw)));
+        let total = 0;
+        return inputs.map((point, index) => {
+            total += Number(point.raw);
+            const range = inputs.slice(Math.max(0, index - smooth + 1), index + 1);
+            return {
+                ...point, y: range.reduce((n, p) => n + Number(p.raw), 0) / range.length,
+                mean: total / (index + 1),
+            };
+        });
+    };
+    const datasets = all.map((item, index) => ({
+        item, color: colors[index % colors.length], points: seriesFor(item),
+    }));
+    const points = datasets.flatMap(series => series.points);
+    chartHover = null;
     if (!points.length) {
         const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-        label.setAttribute('x', '120');
+        label.setAttribute('x', '85');
         label.setAttribute('y', '125');
         label.setAttribute('fill', 'currentColor');
-        label.textContent = axis === 'time'
-            ? 'No observed training-time data for the selected runs'
-            : 'Select runs with compatible training samples';
-        svg.append(label); return;
+        label.textContent = !all.length
+            ? 'Select a run using the Plot checkbox in the table below'
+            : axis === 'time'
+                ? 'Training-time samples were not recorded for these runs or this metric'
+                : 'This metric has no recorded samples for the selected runs';
+        svg.append(label);
+        $('graph-inspect').textContent = !all.length
+            ? 'Select a run in the Plot column.'
+            : 'Existing runs retain available metrics; newly added measurements cannot be reconstructed retroactively.';
+        return;
     }
     const xmax = Math.max(0.000001, ...points.map(p => p.x));
     let ymin = Math.min(...points.map(p => p.y));
@@ -337,9 +362,11 @@ function chart(items) {
     const xx = x => 55 + x / xmax * 710;
     const yy = y => 210 - (y - ymin) / (ymax - ymin) * 175;
     function line(x1, y1, x2, y2, color) {
-        const p = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-        for (const [key, val] of Object.entries({ x1, y1, x2, y2 })) p.setAttribute(key, String(val));
-        p.setAttribute('stroke', color); svg.append(p);
+        const element = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        for (const [key, val] of Object.entries({ x1, y1, x2, y2 }))
+            element.setAttribute(key, String(val));
+        element.setAttribute('stroke', color);
+        svg.append(element);
     }
     line(55, 20, 55, 210, '#000000'); line(55, 210, 765, 210, '#000000');
     const boundaries = all[0]?.stages?.slice(0, -1).map(stage => stage.end_step);
@@ -358,32 +385,92 @@ function chart(items) {
             marker.setAttribute('opacity', '0.6');
             svg.append(marker);
         }
-        if (boundaries.length) $('legend').append(txt('span', 'Dashed lines: curriculum boundaries'));
+        if (boundaries.length)
+            $('legend').append(txt('span', 'Dashed lines: curriculum boundaries'));
     }
     const xLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-    xLabel.setAttribute('x','640'); xLabel.setAttribute('y','237');
-    xLabel.setAttribute('fill','currentColor');
+    xLabel.setAttribute('x', '640'); xLabel.setAttribute('y', '237');
+    xLabel.setAttribute('fill', 'currentColor');
     xLabel.textContent = fmt(xmax, axis === 'time' ? 2 : 0) +
-        (axis === 'time' ? ' training h' : ' steps'); svg.append(xLabel);
-    for (const [y, val] of [[204,ymin],[24,ymax]]) {
-        const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-        t.setAttribute('x','4');t.setAttribute('y',String(y));
-        t.setAttribute('font-size','12');t.setAttribute('fill','currentColor');
-        t.textContent = fmt(val, 3);svg.append(t);
+        (axis === 'time' ? ' training h' : ' steps');
+    svg.append(xLabel);
+    for (const [y, val] of [[204, ymin], [24, ymax]]) {
+        const marker = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        marker.setAttribute('x', '4'); marker.setAttribute('y', String(y));
+        marker.setAttribute('font-size', '12'); marker.setAttribute('fill', 'currentColor');
+        marker.textContent = fmt(val, 3); svg.append(marker);
     }
-    all.forEach((item, index) => {
-        const values = series[index];
-        if (!values.length) return;
-        const color = colors[index % colors.length];
+    for (const dataset of datasets) {
+        if (!dataset.points.length) continue;
         const path = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
-        path.setAttribute('points', values.map(p => xx(p.x) + ',' + yy(p.y)).join(' '));
-        path.setAttribute('stroke', color); path.setAttribute('stroke-width','2.5');
-        path.setAttribute('fill','none'); svg.append(path);
-        const label = txt('span', item.name + ' (' + item.status + ')');
-        const dot = document.createElement('span');dot.className = 'dot';dot.style.background = color;
-        label.prepend(dot);$('legend').append(label);
-    });
+        path.setAttribute('points', dataset.points.map(p =>
+            xx(p.x) + ',' + yy(p.y)).join(' '));
+        path.setAttribute('stroke', dataset.color); path.setAttribute('stroke-width', '2.5');
+        path.setAttribute('fill', 'none'); svg.append(path);
+        const latestPoint = dataset.points[dataset.points.length - 1];
+        const label = txt('span', dataset.item.name +
+            ' · latest ' + fmt(latestPoint.raw, 3) +
+            ' · rolling ' + fmt(latestPoint.y, 3) +
+            ' · running mean ' + fmt(latestPoint.mean, 3));
+        const dot = document.createElement('span');
+        dot.className = 'dot'; dot.style.background = dataset.color;
+        label.prepend(dot); $('legend').append(label);
+    }
+    const hoverLayer = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    svg.append(hoverLayer);
+    chartHover = { datasets, hoverLayer, xmax, xx, yy, metric, axis, smooth };
+    $('graph-inspect').textContent =
+        'Hover for raw, rolling and running-mean values. Rolling averages use the last ' +
+        smooth + ' recorded sample(s), not an independent evaluation.';
 }
+function inspectChart(event) {
+    if (!chartHover) return;
+    const svg = $('graph'), rect = svg.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+    const sx = (event.clientX - rect.left) * 800 / rect.width;
+    const x = (Math.max(55, Math.min(765, sx)) - 55) *
+        chartHover.xmax / 710;
+    const nearest = [];
+    for (const dataset of chartHover.datasets) {
+        if (!dataset.points.length) continue;
+        const closest = dataset.points.reduce((best, point) =>
+            Math.abs(point.x - x) < Math.abs(best.x - x) ? point : best);
+        nearest.push({ ...dataset, point: closest });
+    }
+    chartHover.hoverLayer.replaceChildren();
+    if (!nearest.length) return;
+    const cross = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    const pixelX = chartHover.xx(x);
+    for (const [key, val] of Object.entries({
+        x1: pixelX, x2: pixelX, y1: 20, y2: 210,
+    })) cross.setAttribute(key, String(val));
+    cross.setAttribute('stroke', '#555');
+    cross.setAttribute('stroke-dasharray', '3 4');
+    chartHover.hoverLayer.append(cross);
+    for (const dataset of nearest) {
+        const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        dot.setAttribute('cx', String(chartHover.xx(dataset.point.x)));
+        dot.setAttribute('cy', String(chartHover.yy(dataset.point.y)));
+        dot.setAttribute('r', '4');
+        dot.setAttribute('fill', dataset.color);
+        chartHover.hoverLayer.append(dot);
+    }
+    const text = nearest.map(({ item, point }) =>
+        item.name + ' · ' + (chartHover.axis === 'time'
+            ? fmt(point.x, 2) + ' training h' : fmt(point.x) + ' steps') +
+        '\n  raw ' + fmt(point.raw, 3) +
+        ' · rolling ' + fmt(point.y, 3) +
+        ' · running mean ' + fmt(point.mean, 3)).join('\n');
+    $('graph-inspect').textContent = text.replaceAll('\n', ' ');
+    const tooltip = $('graph-tooltip');
+    tooltip.textContent = text;
+    tooltip.style.display = 'block';
+    tooltip.style.left = Math.max(8, Math.min(rect.width - 240,
+        event.clientX - rect.left + 12)) + 'px';
+    tooltip.style.top = Math.max(5, Math.min(rect.height - 110,
+        event.clientY - rect.top - 35)) + 'px';
+}
+
 function renderPerformance(items) {
     const tbody = $('performance-rows');
     tbody.replaceChildren();
@@ -452,6 +539,16 @@ function render(data) {
     latest = data;
     const items = data.items;
     const active = items.find(x => x.id === data.active_id);
+    if (!chosenInitialized) {
+        const withSamples = items.filter(item => (item.samples || []).some(s =>
+            Number.isFinite(s.step)));
+        if (withSamples.length) {
+            // Show useful curves immediately, without overriding later manual selections.
+            for (const item of withSamples.slice(-4)) chosen.add(item.id);
+            if (active && withSamples.some(item => item.id === active.id)) chosen.add(active.id);
+            chosenInitialized = true;
+        }
+    }
     $('overview').replaceChildren(
         txt('span', items.filter(x => x.status === 'completed').length + ' completed'),
         txt('span', items.filter(x => x.status === 'queued').length + ' queued'),
@@ -907,6 +1004,13 @@ $('stop').addEventListener('click', async () => {
 $('filter').addEventListener('change', () => latest && render(latest));
 $('metric').addEventListener('change', () => latest && chart(
     latest.items.filter(x => !$('filter').value || x.group === $('filter').value)));
+$('smoothing').addEventListener('change', () => latest && chart(
+    latest.items.filter(x => !$('filter').value || x.group === $('filter').value)));
+$('graph').addEventListener('mousemove', inspectChart);
+$('graph').addEventListener('mouseleave', () => {
+    $('graph-tooltip').style.display = 'none';
+    if (chartHover) chartHover.hoverLayer.replaceChildren();
+});
 $('axis').addEventListener('change', () => latest && chart(
     latest.items.filter(x => !$('filter').value || x.group === $('filter').value)));
 async function loadTrainerDefaults() {
