@@ -1569,6 +1569,9 @@ class TrainingControlStore {
             this.now() - record.last_seen_ms > this.leaseSeconds * 1000) {
             throw Object.assign(new Error('remote worker must have a current control lease'), { statusCode: 409 });
         }
+        if (record.metrics?.worker_env_override_supported !== true) {
+            throw Object.assign(new Error('worker runtime does not support dashboard environment overrides'), { statusCode: 409 });
+        }
         const capacity = normalizeCapacity(record.worker_capacity);
         if (!capacity || (count !== null &&
             (count < capacity.min_envs || count > capacity.max_envs))) {
@@ -1578,6 +1581,10 @@ class TrainingControlStore {
             this.state.worker_env_overrides, trainerId)
             ? this.state.worker_env_overrides[trainerId] : null;
         if (previous !== count) {
+            if (count !== null && previous === null &&
+                Object.keys(this.state.worker_env_overrides).length >= 64) {
+                throw Object.assign(new Error('too many worker environment overrides'), { statusCode: 409 });
+            }
             const snapshot = this._snapshotState();
             if (count === null) delete this.state.worker_env_overrides[trainerId];
             else this.state.worker_env_overrides[trainerId] = count;
