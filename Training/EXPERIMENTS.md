@@ -332,6 +332,43 @@ changes require a separate versioned policy implementation and are rejected here
 Illustrative settings are not recommendations; short validation runs do not
 establish which PPO configuration learns best.
 
+## Dashboard use and worker controls
+
+The experiment dashboard automatically selects recent runs with saved learner
+samples. The chart supports raw values, rolling means of the last 5/15/30
+recorded samples, hover readouts (raw/rolling/running mean), and horizontal
+axes of learner steps or observed training hours. Select additional runs
+using their **Plot** checkboxes. Historical samples only contain fields
+collected at that time; new PPO timing and Human combat values are **not
+backfilled** when upgrading the manager. Restart the experiment coordinator
+with the new source to begin recording newly added fields.
+
+**Checkpoint benchmarks** are independent, fixed-seed Unity matches versus
+versioned scripted opponents. Compare candidate win rates, timeout rates,
+hits/shots and firing activity **within the same frozen recipe, opponent,
+build and curriculum stage**. A low hit/shot ratio with no shots is not a
+useful measure of aim. The 95% Wilson intervals describe the fixed-match
+sample, not across-seed training uncertainty. A result of nearly 100% wins
+or timeouts may be saturated and unable to distinguish policies. The count
+of directly comparable groups is a count of matching benchmark/stage
+identities with at least two results, **not a quality score**.
+
+The Worker Status table shows each remote worker's cumulative accepted and
+consumed experiences reported by its current process; those raw counters
+can reset on restart. The +/- controls set a **persistent** remote-worker
+environment target while its authenticated worker supervisor is online.
+The remote must advertise support from the current runtime and an admissible
+min/max capacity. Changing a running worker prompts a warning and records
+a capacity-change marker on the active experiment: compare throughput
+before and after separately. The **Auto** button clears the override and
+restores the worker's automatic tuning or locally configured manual target.
+A fixed UI target pauses the automatic optimizer for that worker. Changes
+made while training is stopped persist in authenticated training control
+and take effect when that worker next runs; offline/unsupported workers
+cannot accept changes. The control server, experiment dashboard, and
+remote worker runtime must all be deployed together before using these
+controls.
+
 ## Quality and training-efficiency comparisons
 
 The experiment manager can compare PPO epoch counts or any other supported
