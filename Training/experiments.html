@@ -225,11 +225,22 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
 </section>
 <section>
 <div class="bar"><h2>Runs and comparisons</h2><label>Show group <select id="filter"><option value="">All</option></select></label>
-<label>Graph <select id="metric"><option value="timeout_pct">Timeout %</option><option value="bee_hits_per_shot">Bee hits per shot</option><option value="bee_win_pct">Bee win %</option><option value="reward">Mean reward</option><option value="steps_per_second">Learner steps/s</option></select></label></div>
+<label>Graph <select id="metric"><option value="timeout_pct">Timeout %</option><option value="bee_hits_per_shot">Bee hits per shot</option><option value="bee_win_pct">Bee win %</option><option value="reward">Mean reward</option><option value="steps_per_second">Reported learner steps/s</option><option value="effective_steps_per_second">Effective learner steps/s</option><option value="ppo_busy_pct">PPO busy %</option><option value="ppo_update_s">PPO seconds/update</option><option value="ppo_minibatches_s">PPO minibatches/s</option><option value="ppo_gpu_pct">PPO GPU utilization %</option><option value="pipeline_staged_s">Worker staged/s</option><option value="pipeline_accepted_s">Worker accepted/s</option><option value="pipeline_consumed_s">Worker consumed/s</option><option value="pipeline_broker_q">Broker queue depth</option></select></label>
+<label>Horizontal axis <select id="axis"><option value="steps">Learner steps</option><option value="time">Observed training hours</option></select></label></div>
 <svg id="graph" class="graph" viewBox="0 0 800 250" role="img" aria-label="Selected training curves"></svg>
 <div id="legend"></div>
 <div id="aggregate" class="summary" style="margin:14px 0"></div>
-<div class="tablewrap"><table><thead><tr><th>Plot</th><th>Experiment</th><th>Status</th><th>Steps</th><th>Timeout</th><th>Hit/shot</th><th>Run</th></tr></thead><tbody id="rows"></tbody></table></div>
+<div class="tablewrap"><table><thead><tr><th>Plot</th><th>Experiment</th><th>Status</th><th>Steps</th><th>Training hours</th><th>Effective steps/s</th><th>Timeout</th><th>Hit/shot</th><th>Run</th></tr></thead><tbody id="rows"></tbody></table></div>
+</section>
+<section>
+<details id="performance-panel" class="worker-details">
+<summary class="worker-summary">Training efficiency <small>· Speed and bottleneck signals by curriculum stage</small></summary>
+<p class="muted">Effective steps/s = observed learner-step increase divided by observed training time. Paused evaluations and checkpoint transitions are excluded; the first partial interval after a restart is not counted. PPO busy uses the learner's cumulative optimizer clock. The PPO update, CPU and GPU columns sample the latest completed update; CPU/GPU and detailed timing require existing PPO diagnostics. Missing readings remain blank. These are screening signals, not definitive bottleneck diagnoses.</p>
+<div class="tablewrap"><table><thead><tr>
+<th>Experiment</th><th>Stage</th><th>Epochs</th><th>Training h</th><th>Effective steps/s</th><th>PPO s/update</th><th>Minibatches/s</th><th>PPO busy %</th><th>PPO CPU %</th><th>PPO GPU %</th><th>Workers</th><th>Staged/s</th><th>Accepted/s</th><th>Consumed/s</th><th>Broker %</th><th>Upload Q</th><th>Pressure signals</th>
+</tr></thead><tbody id="performance-rows"></tbody></table></div>
+<p class="muted">Keep hardware, worker capacity, execution flags, and diagnostics settings identical when comparing runs. Quality at the same learner step is not the same as quality after the same number of training hours. The experiment manager does not automatically enable profiling.</p>
+</details>
 </section>
 <section>
 <details id="benchmark-panel" class="worker-details">
@@ -246,7 +257,7 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
 <div class="tablewrap"><table><thead id="benchmark-matrix-head"></thead><tbody id="benchmark-matrix-rows"></tbody></table></div>
 <h2 style="margin-top:16px">Evaluation details</h2>
 <div class="tablewrap"><table><thead><tr>
-<th>Benchmark</th><th>Experiment</th><th>Stage</th><th>Candidate step</th><th>Candidate run</th><th>Opponent identity</th><th>Matches</th><th>Win % · 95% interval</th><th>Timeout % · 95% interval</th><th>Hits / shots</th><th>Damage</th><th>Mean seconds</th><th>Build</th><th>Details</th>
+<th>Benchmark</th><th>Experiment</th><th>Stage</th><th>Training h</th><th>Candidate step</th><th>Candidate run</th><th>Opponent identity</th><th>Matches</th><th>Win % · 95% interval</th><th>Timeout % · 95% interval</th><th>Hits / shots</th><th>Damage</th><th>Mean seconds</th><th>Build</th><th>Details</th>
 </tr></thead><tbody id="benchmark-rows"></tbody></table></div>
 </details>
 </section>
@@ -565,7 +576,7 @@ function renderBenchmarks() {
         if (!target.has(scenarioKey)) target.set(scenarioKey, report);
     }
     const head = document.createElement('tr');
-    for (const name of ['Experiment / PPO settings', 'Stage', ...columns.values()]) {
+    for (const name of ['Experiment / PPO settings', 'Stage', 'Training h', 'Effective steps/s', ...columns.values()]) {
         head.append(txt('th', name));
     }
     $('benchmark-matrix-head').replaceChildren(head);
@@ -594,7 +605,7 @@ function renderBenchmarks() {
     }
     if (!stageRows.size) {
         const tr = document.createElement('tr'), td = txt('td', 'No per-stage evaluations recorded yet.');
-        td.colSpan = columns.size + 2; tr.append(td); $('benchmark-matrix-rows').append(tr);
+        td.colSpan = columns.size + 4; tr.append(td); $('benchmark-matrix-rows').append(tr);
     }
     $('benchmark-summary').replaceChildren(
         txt('span', visible.length + ' stored evaluations'),
@@ -603,7 +614,7 @@ function renderBenchmarks() {
     );
     if (!visible.length) {
         const row = document.createElement('tr'), c = document.createElement('td');
-        c.colSpan = 14; c.textContent = 'No benchmark results recorded yet.';
+        c.colSpan = 15; c.textContent = 'No benchmark results recorded yet.';
         row.append(c); $('benchmark-rows').append(row);
     }
 }
