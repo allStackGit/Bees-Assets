@@ -9,7 +9,7 @@ const { getStatus } = require('./operator/control');
 const { getPendingForcedNewRunPlan } = require('./operator/runtime');
 const { assertRlEnvironmentArgsValid } = require('./operator/validation');
 const { getAuthoritativeLearnerStats, getLatestPpoUpdate, statusError } = require('./operator/status');
-const { paths, readJson, writeJsonAtomic, ensureDir, loadConfig, resolvePython } = require('./operator/common');
+const { paths, readJson, writeJsonAtomic, ensureDir, loadConfig, resolvePython, requestJson } = require('./operator/common');
 
 // The existing Bees operator owns safe run transitions. This module owns only
 // an unattended queue, bounded metric summaries, and a loopback-only UI.
@@ -146,7 +146,11 @@ function workerSnapshot(status) {
                 platform: String(record.platform || ''),
                 state: record.stale ? 'STALE' : String(record.process_state || 'unknown'),
                 envs: capacity.current_envs ?? null,
-                desired_envs: optimizer.desired_envs ?? null,
+                desired_envs: record.worker_env_override ?? optimizer.desired_envs ?? null,
+                worker_env_override: record.worker_env_override ?? null,
+                min_envs: capacity.min_envs ?? null,
+                max_envs: capacity.max_envs ?? null,
+                auto_envs: capacity.auto === true,
                 cpu_pct: host.cpu_percent ?? null,
                 ram_pct: host.ram_percent ?? null,
                 live_exp_s: throughput.learner_consumed_steps_per_sec ?? null,
@@ -1199,6 +1203,50 @@ const server = http.createServer(async (req, res) => {
         }
         if (req.method !== 'POST') return json(res, 404, { error: 'Not found.' });
         const value = await body(req);
+        if (route === '/api/worker-envs') {
+            const target = value.envs;
+            const trainerId = String(value.trainer_id || '');
+            if (!/^[A-Za-z0-9._-]{1,128}$/.test(trainerId) ||
+                trainerId === 'central-learner' ||
+                !Number.isInteger(target) || target < 1 || target > 64) {
+                return json(res, 400, { error: 'Select a remote worker and a valid environment count.' });
+            }
+            const before = await control();
+            const desired = before.desired || {};
+            if (value.expected_revision !== desired.revision ||
+                value.expected_run_id !== desired.run_id) {
+                return json(res, 409, { error: 'Training control changed. Refresh worker status first.' });
+            }
+            if (desired.training_enabled && value.confirm_active !== true) {
+                return json(res, 409, { error: 'Confirm the performance impact before resizing active workers.' });
+            }
+            const record = (before.trainers || []).find(w =>
+                w.trainer_id === trainerId && w.role === 'dedicated' && !w.stale);
+            if (!record || desired.pending_release) {
+                return json(res, 409, { error: 'Remote worker is unavailable or a release is pending.' });
+            }
+            const token = fs.readFileSync(paths.adminTokenPath, 'utf8').trim();
+            const response = await requestJson(loadConfig().controlUrl, token,
+                'POST', '/v1/admin/worker-envs', {
+                    trainer_id: trainerId, envs: target,
+                    expected_revision: desired.revision,
+                    expected_run_id: String(desired.run_id || ''),
+                    allow_during_training: value.confirm_active === true,
+                });
+            if (desired.training_enabled && state.active_id) {
+                const item = active();
+                if (item && item.run_id === desired.run_id) {
+                    item.capacity_changes = item.capacity_changes || [];
+                    item.capacity_changes.push({
+                        at: now(), trainer_id: trainerId, envs: target,
+                        stage_index: item.stage_index || 0,
+                    });
+                    if (item.capacity_changes.length > 128) item.capacity_changes.shift();
+                    save();
+                }
+            }
+            return json(res, 200, response);
+        }
         if (route === '/api/queue') {
             const item = await definition(value);
             state.items.push(item); save();
