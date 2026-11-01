@@ -151,6 +151,7 @@ function workerSnapshot(status) {
                 min_envs: capacity.min_envs ?? null,
                 max_envs: capacity.max_envs ?? null,
                 auto_envs: capacity.auto === true,
+                can_override_envs: metrics.worker_env_override_supported === true,
                 cpu_pct: host.cpu_percent ?? null,
                 ram_pct: host.ram_percent ?? null,
                 live_exp_s: throughput.learner_consumed_steps_per_sec ?? null,
