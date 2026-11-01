@@ -152,6 +152,8 @@ function workerSnapshot(status) {
                 live_exp_s: throughput.learner_consumed_steps_per_sec ?? null,
                 staged_s: throughput.staged_steps_per_sec ?? null,
                 accepted_s: throughput.accepted_steps_per_sec ?? null,
+                accepted_total: throughput.accepted_steps_total ?? null,
+                consumed_total: throughput.learner_consumed_steps_total ?? null,
                 upload_queue: throughput.upload_queue_depth ?? null,
                 broker_queue: throughput.broker_queue_depth ?? null,
                 broker_capacity: throughput.broker_queue_capacity ?? null,
@@ -343,7 +345,13 @@ function measure(item, status, force = false) {
             steps_per_second: Number.isFinite(learner.LiveStepsPerSecond) ?
                 learner.LiveStepsPerSecond : null,
             timeout_pct: last('timeout_pct'), bee_win_pct: last('bee_win_pct'),
+            human_win_pct: last('human_win_pct'),
             bee_hits_per_shot: last('bee_hits_per_shot'),
+            human_hits_per_shot: last('human_hits_per_shot'),
+            bee_aim_error_deg: last('bee_aim_error_deg'),
+            human_aim_error_deg: last('human_aim_error_deg'),
+            bee_near_miss_pct: last('bee_near_miss_pct'),
+            human_near_miss_pct: last('human_near_miss_pct'),
             ...(running ? { pipeline, ppo } : {}),
         };
         samples.push(observation);
