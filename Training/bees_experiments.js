@@ -25,6 +25,10 @@ if (!state || state.version !== 1 || !Array.isArray(state.items) || typeof state
     throw Error('Invalid experiment data; no training started: ' + DB);
 }
 if (typeof state.stop_requested !== 'boolean') state.stop_requested = false;
+// Poll-to-poll training time is observable only while this coordinator runs.
+// After process restart, discard persisted interval baselines so downtime is
+// never incorrectly charged as training or PPO idle time.
+for (const item of state.items) delete item.performance_clock;
 let busy = false;
 const save = () => { ensureDir(path.dirname(DB)); writeJsonAtomic(DB, state); };
 const active = () => state.items.find(x => x.id === state.active_id);
