@@ -413,7 +413,21 @@ function renderPerformance(items) {
             if (perf.busy_observed_s >= 60 &&
                 perf.optimizer_busy_s / perf.busy_observed_s >= 0.75)
                 signals.push('PPO occupied ≥75%');
-            cell(tr, signals.join('; ') || 'No sustained signal established');
+            const signalCell = cell(tr, '');
+            const details = document.createElement('details');
+            details.append(txt('summary', signals.join('; ') || 'No sustained signal established'));
+            const timing = [
+                ['PPO materialize (s/update)', 'ppo_materialize_s'],
+                ['PPO backward (s/minibatch)', 'ppo_backward_s'],
+                ['PPO optimizer step (s/minibatch)', 'ppo_optimizer_step_s'],
+                ['CPU preparation wait (s/minibatch)', 'ppo_cpu_prepare_wait_s'],
+            ].map(([label, key]) => label + ': ' + fmt(performanceMean(perf, key), 4));
+            details.append(txt('pre', timing.join('\n') +
+                '\nBroker pressure samples: ' + fmt(pressure.broker_high || 0) +
+                '/' + fmt(pressure.broker_samples || 0) +
+                '\nUpload backlog samples: ' + fmt(pressure.upload_high || 0) +
+                '/' + fmt(pressure.upload_samples || 0)));
+            signalCell.append(details);
             tbody.append(tr);
         }
     }
