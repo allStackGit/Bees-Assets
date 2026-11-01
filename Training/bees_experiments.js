@@ -8,7 +8,7 @@ const { invokeStart, invokeStop } = require('./operator/commands');
 const { getStatus } = require('./operator/control');
 const { getPendingForcedNewRunPlan } = require('./operator/runtime');
 const { assertRlEnvironmentArgsValid } = require('./operator/validation');
-const { getAuthoritativeLearnerStats, statusError } = require('./operator/status');
+const { getAuthoritativeLearnerStats, getLatestPpoUpdate, statusError } = require('./operator/status');
 const { paths, readJson, writeJsonAtomic, ensureDir, loadConfig, resolvePython } = require('./operator/common');
 
 // The existing Bees operator owns safe run transitions. This module owns only
@@ -158,6 +158,137 @@ function workerSnapshot(status) {
     };
 }
 
+// Compact samples of existing learner, PPO and broker telemetry. No new
+// profiling or raw log storage: the PPO parser is shared with "bees status".
+const finite = value => value == null || !Number.isFinite(Number(value))
+    ? null : Number(value);
+
+function livePipeline(status) {
+    const desired = status.desired || {};
+    const current = (status.trainers || []).filter(record =>
+        !record.stale && record.process_state === 'running' &&
+        Number(record.applied_revision) >= Number(desired.revision) &&
+        record.build_id === desired.canonical_build_id && record.metrics);
+    const central = current.find(record => record.trainer_id === 'central-learner');
+    const broker = central?.metrics?.throughput || {};
+    const sum = field => {
+        const values = current.map(record =>
+            finite(record.metrics?.throughput?.[field])).filter(x => x != null);
+        return values.length ? values.reduce((a, b) => a + b, 0) : null;
+    };
+    const queue = field => {
+        const values = current.map(record =>
+            finite(record.metrics?.throughput?.[field])).filter(x => x != null);
+        return values.length ? values.reduce((a, b) => a + b, 0) : null;
+    };
+    return {
+        workers: current.filter(record => record.trainer_id !== 'central-learner').length,
+        staged_s: sum('staged_steps_per_sec'),
+        accepted_s: sum('accepted_steps_per_sec'),
+        consumed_s: sum('learner_consumed_steps_per_sec'),
+        upload_q: queue('upload_queue_depth'),
+        broker_q: finite(broker.broker_queue_depth),
+        broker_capacity: finite(broker.broker_queue_capacity),
+        optimizer_busy_total: finite(broker.optimizer_busy_seconds_total),
+    };
+}
+
+function latestPpoMetrics(runId) {
+    const record = getLatestPpoUpdate(runId);
+    if (!record) return null;
+    const update = record.update || {}, hardware = record.hardware || {};
+    const minibatches = Number(String(update.minibatches || '').split('/')[0]);
+    const seconds = finite(update.seconds);
+    if (seconds == null || seconds <= 0) return null;
+    return {
+        update_s: seconds,
+        minibatches: Number.isFinite(minibatches) && minibatches > 0 ? minibatches : null,
+        minibatches_s: Number.isFinite(minibatches) && minibatches > 0
+            ? minibatches / seconds : null,
+        // Breakdown exists only when the operator's PPO diagnostics are enabled.
+        materialize_s: finite(update.materialize),
+        backward_s: finite(update.backward),
+        optimizer_step_s: finite(update.optimizer_step),
+        cpu_prepare_wait_s: finite(update.cpu_prepare_wait),
+        cpu_pct: finite(hardware.process_cpu_avg),
+        gpu_pct: finite(hardware.gpu_util_avg),
+    };
+}
+
+function performanceFor(item, index = item.stage_index || 0) {
+    const stage = stageRecord(item, index);
+    if (!stage.performance) {
+        stage.performance = { training_s: 0, steps: 0, optimizer_busy_s: 0,
+            busy_observed_s: 0, totals: {}, counts: {}, pressure: {} };
+    }
+    return stage.performance;
+}
+
+function observeTrainingTime(item, status, step, atMs, pipeline) {
+    const desired = status.desired || {};
+    if (item.status !== 'running' || !desired.training_enabled ||
+        desired.run_id !== item.run_id) {
+        delete item.performance_clock;
+        return;
+    }
+    const index = item.stage_index || 0;
+    const previous = item.performance_clock;
+    const perf = performanceFor(item, index);
+    if (previous && previous.stage_index === index &&
+        Number.isFinite(previous.at_ms) && atMs > previous.at_ms) {
+        const seconds = (atMs - previous.at_ms) / 1000;
+        perf.training_s += seconds;
+        if (step != null && Number.isSafeInteger(previous.step) &&
+            step >= previous.step) perf.steps += step - previous.step;
+        const total = pipeline.optimizer_busy_total;
+        if (total != null && previous.optimizer_busy_total != null &&
+            total >= previous.optimizer_busy_total) {
+            const delta = total - previous.optimizer_busy_total;
+            // Cumulative busy time is learner-process-local and can reset at
+            // restarts. Ignore impossible increments rather than report >100%.
+            if (delta <= seconds * 1.05) {
+                perf.optimizer_busy_s += Math.min(seconds, delta);
+                perf.busy_observed_s += seconds;
+            }
+        }
+    }
+    item.performance_clock = {
+        stage_index: index, at_ms: atMs, step,
+        optimizer_busy_total: pipeline.optimizer_busy_total,
+    };
+}
+
+function performanceReading(item, pipeline, ppo) {
+    const perf = performanceFor(item);
+    const push = (key, value) => {
+        if (value == null || !Number.isFinite(value)) return;
+        perf.totals[key] = (perf.totals[key] || 0) + value;
+        perf.counts[key] = (perf.counts[key] || 0) + 1;
+    };
+    for (const key of ['workers', 'staged_s', 'accepted_s', 'consumed_s', 'upload_q', 'broker_q']) {
+        push(key, pipeline[key]);
+    }
+    const ratio = pipeline.broker_capacity > 0 && pipeline.broker_q != null
+        ? pipeline.broker_q / pipeline.broker_capacity : null;
+    push('broker_ratio', ratio);
+    if (ratio != null) {
+        perf.pressure.broker_samples = (perf.pressure.broker_samples || 0) + 1;
+        if (ratio >= 0.75) perf.pressure.broker_high = (perf.pressure.broker_high || 0) + 1;
+    }
+    if (pipeline.upload_q != null) {
+        perf.pressure.upload_samples = (perf.pressure.upload_samples || 0) + 1;
+        if (pipeline.upload_q > 0) perf.pressure.upload_high = (perf.pressure.upload_high || 0) + 1;
+    }
+    if (ppo) {
+        for (const [key, value] of Object.entries(ppo)) push('ppo_' + key, value);
+    }
+}
+
+function trainingSeconds(item) {
+    return (item.stage_history || []).reduce((total, record) =>
+        total + (finite(record?.performance?.training_s) || 0), 0);
+}
+
 function measure(item, status, force = false) {
     const learner = getAuthoritativeLearnerStats(item.run_id) || {};
     // Only score workers that have applied the current run revision. Heartbeats
@@ -178,12 +309,15 @@ function measure(item, status, force = false) {
         }
         return count ? Math.round(total / count * 10000) / 10000 : null;
     };
+    const measuredAt = Date.now();
+    const pipeline = livePipeline(status);
     const step = Number.isSafeInteger(learner.Step) && learner.Step >= 0 ? learner.Step : null;
     if (step != null) {
         if (item.step != null && step < item.step) throw Error('Learner step regressed.');
         if (item.step == null || step > item.step) item.last_progress = now();
         item.step = step;
     }
+    observeTrainingTime(item, status, step, measuredAt, pipeline);
     const samples = item.samples;
     if (force || !samples.length ||
         Date.now() - Date.parse(samples[samples.length - 1].at) >= 60000) {
@@ -191,13 +325,22 @@ function measure(item, status, force = false) {
         // Preserve the last observed live worker metrics at finalization, when
         // workers may already be stopped and their rolling windows unavailable.
         const last = key => mean(key) ?? (prior ? prior[key] : null);
+        const running = item.status === 'running' && Boolean(status.desired?.training_enabled);
+        const ppo = running ? latestPpoMetrics(item.run_id) : null;
+        if (running) performanceReading(item, pipeline, ppo);
+        const perf = performanceFor(item);
         const observation = {
             at: now(), step, stage_index: item.stage_index || 0,
+            training_s: trainingSeconds(item),
+            stage_training_s: perf.training_s,
+            effective_steps_per_second: perf.training_s > 0
+                ? perf.steps / perf.training_s : null,
             reward: Number.isFinite(learner.MeanReward) ? learner.MeanReward : null,
             steps_per_second: Number.isFinite(learner.LiveStepsPerSecond) ?
                 learner.LiveStepsPerSecond : null,
             timeout_pct: last('timeout_pct'), bee_win_pct: last('bee_win_pct'),
             bee_hits_per_shot: last('bee_hits_per_shot'),
+            ...(running ? { pipeline, ppo } : {}),
         };
         samples.push(observation);
         const stage = stageFor(item);
