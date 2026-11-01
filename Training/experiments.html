@@ -893,11 +893,14 @@ async function refreshWorkers() {
                 (w.worker_env_override != null ? ' fixed' : w.auto_envs ? ' auto' : ''));
             number.className = 'env-count';
             const change = async (delta, button) => {
-                const target = count + delta;
+                const target = delta === null ? null : count + delta;
+                const description = target === null
+                    ? 'restore the worker default/automatic environment policy'
+                    : 'set ' + target + ' environments';
                 if (data.training_enabled && !confirm(
-                    'Changing ' + w.trainer_id + ' to ' + target +
-                    ' environments during training may change learning speed and ' +
-                    'make the before/after speed measurements non-comparable. Continue?')) return;
+                    'Changing ' + w.trainer_id + ' to ' + description +
+                    ' during training may change learning speed and make ' +
+                    'before/after speed measurements non-comparable. Continue?')) return;
                 button.disabled = true;
                 try {
                     await request('/api/worker-envs', {
@@ -906,8 +909,8 @@ async function refreshWorkers() {
                         expected_run_id: data.run_id,
                         confirm_active: data.training_enabled,
                     });
-                    $('message').textContent = 'Saved ' + target +
-                        ' environments for ' + w.trainer_id +
+                    $('message').textContent = 'Saved ' + description +
+                        ' for ' + w.trainer_id +
                         (data.training_enabled ? ' · active-run performance affected' : ' · applies to future training');
                     await refreshWorkers();
                 } catch (error) {
@@ -929,6 +932,14 @@ async function refreshWorkers() {
             decrease.addEventListener('click', () => change(-1, decrease));
             increase.addEventListener('click', () => change(1, increase));
             controls.append(decrease, number, increase);
+            if (w.worker_env_override != null) {
+                const reset = txt('button', 'Auto');
+                reset.type = 'button';
+                reset.title = 'Restore worker automatic tuning or its local manual target';
+                reset.disabled = !editable;
+                reset.addEventListener('click', () => change(null, reset));
+                controls.append(reset);
+            }
             envCell.append(controls); tr.append(envCell);
             cell(tr, w.cpu_pct == null ? '—' : fmt(w.cpu_pct, 0) + '%');
             cell(tr, w.ram_pct == null ? '—' : fmt(w.ram_pct, 0) + '%');
