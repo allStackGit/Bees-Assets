@@ -714,11 +714,14 @@ function render(data) {
     );
     chart(visible);
     renderPerformance(visible);
-    if ($('benchmark-panel').open && benchmarkDataLoaded) renderBenchmarks();
+    if ($('benchmark-panel').open && benchmarkDataLoaded &&
+        $('benchmark-run-filter').value === 'current' &&
+        (currentBenchmarkRun()?.id || null) !== benchmarkDisplayedRunId) renderBenchmarks();
 }
 
 let benchmarkData = [];
 let benchmarkDataLoaded = false;
+let benchmarkDisplayedRunId = null;
 const BENCHMARK_TYPES = [
     { key:'aiming', name:'Stationary aiming', description:'24×24 map · 5 seconds. The opponent stays still, aims and fires. Tests close-range accuracy and survival.' },
     { key:'moving', name:'Moving combat', description:'32–64 map · 15 seconds. The opponent strafes, tracks and fires. Tests fighting moving targets.' },
@@ -978,6 +981,7 @@ function renderBenchmarkHistory(reports) {
 function renderBenchmarks() {
     const runSelect = $('benchmark-run-filter'), previousRun = runSelect.value;
     const current = currentBenchmarkRun();
+    benchmarkDisplayedRunId = current?.id || null;
     const runOptions = [
         new Option(current ? 'Current run · ' + runName(current) : 'Current run', 'current'),
         new Option('Compare beta runs', 'compare'),
