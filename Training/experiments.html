@@ -343,6 +343,50 @@ function metricValue(sample, field) {
     if (field.startsWith('pipeline_')) return sample.pipeline?.[field.slice(9)] ?? null;
     return sample[field] ?? null;
 }
+// Applied count changes use worker status; older manual requests remain
+// approximate because the historical record does not prove when they applied.
+function isTrainingSpeedMetric(metric) {
+    return metric === 'steps_per_second' || metric === 'effective_steps_per_second' ||
+        metric.startsWith('ppo_') || metric.startsWith('pipeline_');
+}
+function environmentMarkers(item, axis) {
+    const samples = (item.samples || []).map(sample => ({
+        at: Date.parse(sample.at),
+        x: axis === 'time'
+            ? (sample.training_s == null ? null : sample.training_s / 3600)
+            : sample.step,
+    })).filter(point => Number.isFinite(point.at) && Number.isFinite(point.x))
+        .sort((a, b) => a.at - b.at);
+    const approximatePosition = at => {
+        const time = Date.parse(at);
+        if (!Number.isFinite(time) || !samples.length) return null;
+        const afterIndex = samples.findIndex(sample => sample.at >= time);
+        if (afterIndex === 0) return samples[0].x;
+        if (afterIndex === -1) return samples[samples.length - 1].x;
+        const before = samples[afterIndex - 1], after = samples[afterIndex];
+        return after.at === before.at ? after.x :
+            before.x + (after.x - before.x) * (time - before.at) / (after.at - before.at);
+    };
+    const since = Date.parse(item.env_observation_started_at);
+    const olderRequests = (item.capacity_changes || [])
+        .filter(change => !Number.isFinite(since) || Date.parse(change.at) < since)
+        .filter(change => Number.isInteger(change.envs) && change.envs > 0)
+        .map(change => ({
+            ...change, label: change.trainer_id + ' · requested ' +
+                fmt(change.envs) + ' envs (historical, unconfirmed)',
+        }));
+    const observed = (item.env_count_changes || []).map(change => ({
+        ...change, label: change.trainer_id + ' · ' + fmt(change.from) +
+            ' → ' + fmt(change.to) + ' envs (observed)',
+    }));
+    return [...olderRequests, ...observed].map(change => {
+        const recordedX = axis === 'time' ? (change.training_s == null
+            ? null : Number(change.training_s) / 3600) : change.step;
+        const x = Number.isFinite(recordedX) ? recordedX :
+            approximatePosition(change.at);
+        return { ...change, x, run: item.name };
+    }).filter(change => Number.isFinite(change.x) && change.x >= 0);
+}
 let chartHover = null;
 function chart(items) {
     const svg = $('graph'); svg.replaceChildren(); $('legend').replaceChildren();
@@ -435,6 +479,37 @@ function chart(items) {
         marker.setAttribute('font-size', '12'); marker.setAttribute('fill', 'currentColor');
         marker.textContent = fmt(val, 3); svg.append(marker);
     }
+    const envMarkers = [];
+    if (isTrainingSpeedMetric(metric)) {
+        for (const dataset of datasets) {
+            if (!dataset.points.length) continue;
+            for (const change of environmentMarkers(dataset.item, axis)) {
+                if (change.x > xmax) continue;
+                const position = xx(change.x);
+                const marker = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+                const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                for (const [key, value] of Object.entries({
+                    x1: position, x2: position, y1: 20, y2: 210,
+                })) line.setAttribute(key, String(value));
+                line.setAttribute('stroke', dataset.color);
+                line.setAttribute('stroke-opacity', '.38');
+                line.setAttribute('stroke-dasharray', '2 5');
+                const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                dot.setAttribute('cx', String(position));
+                dot.setAttribute('cy', '16');
+                dot.setAttribute('r', '4');
+                dot.setAttribute('fill', '#fff');
+                dot.setAttribute('stroke', dataset.color);
+                dot.setAttribute('stroke-width', '2');
+                const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+                title.textContent = change.run + ' · ' + change.label +
+                    ' · ' + new Date(change.at).toLocaleString();
+                marker.append(line, dot, title);
+                svg.append(marker);
+                envMarkers.push(change);
+            }
+        }
+    }
     for (const dataset of datasets) {
         if (!dataset.points.length) continue;
         const path = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
@@ -451,11 +526,15 @@ function chart(items) {
         dot.className = 'dot'; dot.style.background = dataset.color;
         label.prepend(dot); $('legend').append(label);
     }
+    if (envMarkers.length) $('legend').append(txt('span',
+        '○ Vertical ticks: ' + envMarkers.length + ' environment-count changes · hover for worker details'));
     const hoverLayer = document.createElementNS('http://www.w3.org/2000/svg', 'g');
     svg.append(hoverLayer);
-    chartHover = { datasets, hoverLayer, xmax, xx, yy, metric, axis, smooth };
+    chartHover = { datasets, hoverLayer, xmax, xx, yy, metric, axis, smooth, envMarkers };
     $('graph-inspect').textContent =
-        'Hover for raw, rolling and running-mean values. Rolling averages use the last ' +
+        'Hover for raw, rolling and running-mean values.' +
+        (envMarkers.length ? ' Vertical ticks mark observed worker environment-count changes; historical requests are approximate.' : '') +
+        ' Rolling averages use the last ' +
         smooth + ' recorded sample(s), not an independent evaluation.';
 }
 function inspectChart(event) {
@@ -490,12 +569,19 @@ function inspectChart(event) {
         dot.setAttribute('fill', dataset.color);
         chartHover.hoverLayer.append(dot);
     }
-    const text = nearest.map(({ item, point }) =>
-        item.name + ' · ' + (chartHover.axis === 'time'
-            ? fmt(point.x, 2) + ' training h' : fmt(point.x) + ' steps') +
-        '\n  raw ' + fmt(point.raw, 3) +
-        ' · rolling ' + fmt(point.y, 3) +
-        ' · running mean ' + fmt(point.mean, 3)).join('\n');
+    const nearbyChanges = chartHover.envMarkers.filter(change =>
+        Math.abs(chartHover.xx(change.x) - pixelX) <= 7);
+    const text = [
+        ...nearest.map(({ item, point }) =>
+            item.name + ' · ' + (chartHover.axis === 'time'
+                ? fmt(point.x, 2) + ' training h' : fmt(point.x) + ' steps') +
+            '\n  raw ' + fmt(point.raw, 3) +
+            ' · rolling ' + fmt(point.y, 3) +
+            ' · running mean ' + fmt(point.mean, 3)),
+        ...nearbyChanges.map(change =>
+            'ENV COUNT · ' + change.run + ' · ' + change.label +
+            ' · ' + new Date(change.at).toLocaleString()),
+    ].join('\n');
     $('graph-inspect').textContent = text.replaceAll('\n', ' ');
     const tooltip = $('graph-tooltip');
     tooltip.textContent = text;
