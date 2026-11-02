@@ -823,9 +823,8 @@ function assertSameLineageCheckpoint(item) {
 
 // Maintenance pause preserves the active experiment, run, checkpoint, and queue
 // position. Unlike a manual stop, it never finalizes a stage or advances a run.
-function assertMaintenanceOwnership(item, status) {
+function assertMaintenanceOwnership(item, status, allowOffline = false) {
     const release = readJson(paths.latestReleasePath);
-    const d = status.desired || {};
     verifyTrainerSnapshot(item);
     if (!release || release.run_id !== item.run_id ||
         release.build_id !== item.release_build ||
@@ -834,6 +833,19 @@ function assertMaintenanceOwnership(item, status) {
             release.training_runtime?.runtime_version !== item.trainer_config.runtime_version)) {
         throw Error('Paused experiment does not match its frozen run, release, or trainer configuration.');
     }
+    // Preserve the original execution contract even if operator defaults were
+    // edited while the manager was stopped.
+    const currentOptions = executionOptions(loadConfig());
+    if (item.execution_options && Object.entries(item.execution_options).some(
+        ([key, value]) => JSON.stringify(currentOptions[key]) !== JSON.stringify(value)
+    )) {
+        throw Error('Training execution options changed during maintenance. Restore the frozen settings before resuming.');
+    }
+    if (!status) {
+        if (allowOffline) return; // Operator start can boot its own control server.
+        throw Error('Training control is unavailable; cannot verify maintenance ownership.');
+    }
+    const d = status.desired || {};
     if (d.run_id !== item.run_id ||
         d.canonical_build_id !== item.release_build ||
         !matches(d.environment_args, item.env_args) || d.pending_release) {
@@ -880,7 +892,7 @@ function completeMaintenanceResume(item) {
 }
 
 async function resumeActiveRun(item, status) {
-    assertMaintenanceOwnership(item, status);
+    assertMaintenanceOwnership(item, status, !item.resume_attempted);
     assertSameLineageCheckpoint(item);
     await verifyEffectiveConfiguration(item);
     if (item.resume_attempted) {
@@ -897,7 +909,7 @@ async function resumeActiveRun(item, status) {
         completeMaintenanceResume(item);
         return;
     }
-    if (status.desired.training_enabled) {
+    if (status?.desired?.training_enabled) {
         throw Error('Training was started outside the manager; refusing maintenance resume.');
     }
     item.resume_attempted = true;
@@ -1046,7 +1058,18 @@ async function monitor() {
         await evaluateItem(item);
         return;
     }
-    const status = await control(), d = status.desired || {};
+    let status;
+    try {
+        status = await control();
+    } catch (error) {
+        // A fully stopped host can have no BeesServer process. The ordinary
+        // same-run operator start brings it online, but only on a fresh,
+        // explicitly requested resume and only for connection refusal.
+        if (!(item.status === 'resuming' && !item.resume_attempted &&
+            /ECONNREFUSED/.test(String(error.code || error.message)))) throw error;
+        status = null;
+    }
+    const d = status?.desired || {};
     if (item.status === 'pausing') {
         await pauseActiveRun(item, status);
         return;
