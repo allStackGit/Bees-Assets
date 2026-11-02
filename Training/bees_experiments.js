@@ -487,13 +487,13 @@ async function configTool(args) {
     });
 }
 
-async function trainerConfiguration(overrides) {
+async function trainerConfiguration(overrides, basePath = null) {
     const runtime = readJson(paths.centralRuntimePointerPath);
     const release = readJson(paths.latestReleasePath);
     if (runtime.runtime_version !== release.training_runtime.runtime_version) {
         throw Error('Prepared training runtime differs from the current release.');
     }
-    const snapshot = await configTool(['prepare', '--base', path.join(runtime.runtime_root, 'rl_1v1_config.yaml'),
+    const snapshot = await configTool(['prepare', '--base', basePath || path.join(runtime.runtime_root, 'rl_1v1_config.yaml'),
         '--overrides', JSON.stringify(overrides),
         '--output', path.join(paths.trainingRoot, 'Experiments', 'Configurations')]);
     return { ...snapshot, runtime_version: runtime.runtime_version };
@@ -1108,7 +1108,7 @@ async function cycle() {
     }
 }
 
-async function definition(input) {
+async function definition(input, original = null) {
     const name = String(input.name || '').trim(), group = String(input.group || 'General').trim();
     const max_steps = Number(input.max_steps), max_minutes = Number(input.max_minutes);
     const stall_minutes = Number(input.stall_minutes);
@@ -1120,7 +1120,10 @@ async function definition(input) {
     if (!Number.isInteger(stall_minutes) || stall_minutes < 10 || stall_minutes > max_minutes)
         throw Error('No-progress limit must be between 10 minutes and the time limit.');
     const config = loadConfig();
-    const defaults = Array.isArray(config.environmentArgs) ? config.environmentArgs.map(String) : [];
+    // Edits retain the exact environment baseline frozen when the item was queued.
+    // Re-reading mutable operator defaults could silently change unrelated stages.
+    const defaults = original?.queue_defaults ||
+        (Array.isArray(config.environmentArgs) ? config.environmentArgs.map(String) : []);
     const stages = stagesForDefinition(input, defaults, max_steps);
     if (input.benchmark === true && input.evaluate_stages === true) {
         throw Error('Choose stage-suite evaluations or final-only evaluation, not both.');
@@ -1128,16 +1131,92 @@ async function definition(input) {
     const env_args = stages[0].env_args;
     const release = readJson(paths.latestReleasePath);
     if (!release || !release.build_id) throw Error('Build a training release before queuing experiments.');
+    if (original) {
+        verifyTrainerSnapshot(original);
+        if (original.release_build !== String(release.build_id) ||
+            original.trainer_config?.runtime_version !== release.training_runtime?.runtime_version) {
+            throw Error('Queued release or training runtime changed; cannot safely edit this definition.');
+        }
+    }
+    const pinnedBenchmarks = original?.stage_benchmarks || original?.benchmark || null;
     return {
         id: crypto.randomUUID(), name, group, status: 'queued', created_at: now(),
         max_steps: stages[stages.length - 1].end_step,
         max_minutes, stall_minutes, env_args, stages, stage_index: 0, stage_history: [],
         release_build: String(release.build_id), samples: [], step: null, run_id: null,
-        benchmark: input.benchmark === true ? benchmarkPlan() : null,
-        stage_benchmarks: input.evaluate_stages === true ? benchmarkPlan() : null,
-        trainer_config: await trainerConfiguration(input.trainer || {}),
-        execution_options: executionOptions(config),
+        benchmark: input.benchmark === true ? (pinnedBenchmarks || benchmarkPlan()) : null,
+        stage_benchmarks: input.evaluate_stages === true ? (pinnedBenchmarks || benchmarkPlan()) : null,
+        trainer_config: await trainerConfiguration(input.trainer || {}, original?.trainer_config?.path),
+        execution_options: original?.execution_options || executionOptions(config),
+        queue_defaults: defaults,
     };
+}
+
+// Editable definitions are reconstructed from frozen effective stages, not from
+// today's operator defaults. Legacy queued items can be edited only if their
+// effective stage arguments can be round-tripped without changing any settings.
+function savedStageOverrides(previous, effective) {
+    if (!Array.isArray(previous) || !Array.isArray(effective)) {
+        throw Error('Queued experiment has invalid frozen environment arguments.');
+    }
+    for (let prefix = effective.length; prefix >= 0; prefix--) {
+        const overrides = effective.slice(prefix);
+        if (overrides.length > 64) continue;
+        try {
+            if (matches(mergeEnvironmentArgs(previous, overrides), effective)) {
+                return overrides;
+            }
+        } catch (_) { /* A suffix containing incompatible map options cannot be an override. */ }
+    }
+    throw Error('Cannot reconstruct the queued environment overrides without changing the frozen stages.');
+}
+
+function canEditQueued(item) {
+    return Boolean(item && item.status === 'queued' &&
+        !item.run_id && !item.started_at && item.id !== state.active_id);
+}
+
+function editableDefinition(item) {
+    if (!canEditQueued(item) || !item.trainer_config?.resolved ||
+        !Array.isArray(item.stages) || !item.stages.length) {
+        throw Error('Only unstarted queued experiments with frozen trainer settings can be edited.');
+    }
+    const defaults = item.queue_defaults ||
+        (Array.isArray(loadConfig().environmentArgs) ? loadConfig().environmentArgs.map(String) : []);
+    const stages = item.stages;
+    const trainer = item.trainer_config.resolved;
+    const input = {
+        name: item.name, group: item.group,
+        max_steps: stages[0].end_step, max_minutes: item.max_minutes,
+        stall_minutes: item.stall_minutes,
+        env_args: savedStageOverrides(defaults, stages[0].env_args),
+        stage_name: stages[0].name,
+        target_timeout_pct: stages[0].timeout_target_pct,
+        stages: stages.slice(1).map((stage, index) => ({
+            name: stage.name,
+            steps: stage.end_step - stages[index].end_step,
+            target_timeout_pct: stage.timeout_target_pct,
+            env_args: savedStageOverrides(stages[index].env_args, stage.env_args),
+        })),
+        benchmark: Boolean(item.benchmark),
+        evaluate_stages: Boolean(item.stage_benchmarks),
+        trainer: {
+            hyperparameters: Object.fromEntries(
+                ['beta', 'lambd', 'learning_rate', 'batch_size', 'buffer_size', 'num_epoch']
+                    .map(key => [key, trainer.hyperparameters[key]])),
+            network_settings: {
+                num_layers: trainer.network_settings.num_layers,
+                normalize: trainer.network_settings.normalize,
+            },
+            seed: trainer.seed,
+        },
+    };
+    // Refuse legacy edits if the currently available defaults differ from the
+    // original implicit baseline. A no-op form submission must be a no-op.
+    if (!matches(stagesForDefinition(input, defaults, input.max_steps), stages)) {
+        throw Error('Queued stages cannot be reconstructed exactly; editing would change their settings.');
+    }
+    return input;
 }
 
 function benchmarkReports() {
@@ -1180,7 +1259,8 @@ const server = http.createServer(async (req, res) => {
         return json(res, 403, { error: 'Loopback-only web interface.' });
     }
     try {
-        const route = new URL(req.url, 'http://localhost').pathname;
+        const url = new URL(req.url, 'http://localhost');
+        const route = url.pathname;
         if (req.method === 'GET' && route === '/') {
             const page = fs.readFileSync(HTML);
             res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8',
@@ -1201,6 +1281,16 @@ const server = http.createServer(async (req, res) => {
         }
         if (req.method === 'GET' && route === '/api/benchmarks') {
             return json(res, 200, { reports: benchmarkReports() });
+        }
+        if (req.method === 'GET' && route === '/api/queued') {
+            const item = state.items.find(x => x.id === url.searchParams.get('id'));
+            if (!canEditQueued(item)) {
+                return json(res, 409, { error: 'This experiment is no longer queued and editable.' });
+            }
+            return json(res, 200, {
+                id: item.id, revision: item.edit_revision || 0,
+                definition: editableDefinition(item),
+            });
         }
         if (req.method !== 'POST') return json(res, 404, { error: 'Not found.' });
         const value = await body(req);
@@ -1252,6 +1342,35 @@ const server = http.createServer(async (req, res) => {
             const item = await definition(value);
             state.items.push(item); save();
             return json(res, 201, item);
+        }
+        if (route === '/api/edit-queued') {
+            if (busy) return json(res, 409, { error: 'Queue manager is busy; retry after refresh.' });
+            const original = state.items.find(x => x.id === value.id);
+            if (!canEditQueued(original)) {
+                return json(res, 409, { error: 'Only experiments that have not started can be edited.' });
+            }
+            if (value.revision !== (original.edit_revision || 0)) {
+                return json(res, 409, { error: 'This queued definition changed. Reopen it before saving.' });
+            }
+            busy = true; // Excludes the asynchronous launch/preflight cycle while we freeze new settings.
+            try {
+                const prepared = await definition(value.definition || {}, original);
+                if (!canEditQueued(original)) throw Error('The selected experiment started during editing.');
+                const index = state.items.indexOf(original);
+                if (index < 0) throw Error('Queued experiment changed during editing.');
+                const revised = {
+                    ...prepared, id: original.id, created_at: original.created_at,
+                    edit_revision: (original.edit_revision || 0) + 1,
+                    edited_at: now(),
+                };
+                state.items[index] = revised; // Preserve queue position and identity.
+                try { save(); }
+                catch (error) { state.items[index] = original; throw error; }
+                return json(res, 200, { id: revised.id, revision: revised.edit_revision });
+            } finally {
+                busy = false;
+                if (state.armed && !state.active_id && !state.stop_requested) setImmediate(cycle);
+            }
         }
         if (route === '/api/evaluate') {
             if (busy || state.active_id || state.armed) return json(res, 409, { error: 'Wait for the queue to be idle.' });
