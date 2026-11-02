@@ -223,7 +223,7 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
 </details>
 </section>
 <section>
-<h2>Queue an experiment</h2>
+<h2 id="create-title">Queue an experiment</h2>
 <form id="create">
 <div class="formgrid">
 <label>Experiment name<input id="name" maxlength="100" required placeholder="Long-range baseline"></label>
@@ -248,7 +248,7 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
 <label><input id="evaluate-after" type="checkbox" style="width:auto" disabled> Evaluate final checkpoint only (first benchmark recipe)</label>
 <small id="benchmark-config">Loading evaluation settings…</small></p>
 <p class="muted">Stage evaluations stop the learner, pin its exported checkpoint, run each configured scenario, and resume the same optimizer only after all reports are verified. All scenarios run at every stage, including earlier ones to measure retention. An evaluation failure disarms the queue.</p>
-<button class="primary" type="submit">Add to queue</button>
+<button class="primary" type="submit">Add to queue</button> <button id="cancel-edit" type="button" hidden>Cancel editing</button>
 </form>
 </section>
 <section>
@@ -310,6 +310,8 @@ const $ = id => document.getElementById(id);
 const chosen = new Set();
 let chosenInitialized = false;
 let latest = null;
+let editingId = null;
+let editingRevision = null;
 // Series colors are confined to the chart and its legend; red is reserved for errors.
 const colors = ['#2469aa','#946100','#347857','#7952a3','#087c9b','#64711a','#8b4d83','#465f9a'];
 const fmt = (n, d = 0) => n == null || !Number.isFinite(Number(n)) ? '—' : Number(n).toLocaleString(undefined, { maximumFractionDigits: d });
@@ -682,6 +684,14 @@ function render(data) {
             details.append(evaluate);
         }
         name.append(details);
+        if (item.status === 'queued' && !item.run_id) {
+            const edit = txt('button', 'Edit queued');
+            edit.type = 'button';
+            edit.title = 'Edit an experiment that has not started';
+            edit.disabled = data.busy;
+            edit.addEventListener('click', () => openQueuedEditor(item.id));
+            name.append(edit);
+        }
         const last = item.samples[item.samples.length - 1] || {};
         const stageLabel = item.stages && item.stages.length > 1 &&
             ['running', 'transitioning'].includes(item.status)
@@ -1267,10 +1277,70 @@ $('evaluate-stages').addEventListener('change', () => {
 $('evaluate-after').addEventListener('change', () => {
     if ($('evaluate-after').checked) $('evaluate-stages').checked = false;
 });
+function closeQueuedEditor() {
+    editingId = null;
+    editingRevision = null;
+    $('create-title').textContent = 'Queue an experiment';
+    $('create').querySelector('button[type=submit]').textContent = 'Add to queue';
+    $('cancel-edit').hidden = true;
+    $('create').reset();
+    $('stage-rows').replaceChildren();
+    loadTrainerDefaults();
+}
+$('cancel-edit').addEventListener('click', closeQueuedEditor);
+
+async function openQueuedEditor(id) {
+    try {
+        const r = await fetch('/api/queued?id=' + encodeURIComponent(id), { cache: 'no-store' });
+        const data = await r.json();
+        if (!r.ok) throw Error(data.error || 'Cannot edit queued experiment.');
+        const def = data.definition, trainer = def.trainer;
+        if (!trainer?.hyperparameters || !trainer?.network_settings) {
+            throw Error('Queued trainer configuration is unavailable.');
+        }
+        editingId = data.id;
+        editingRevision = data.revision;
+        $('name').value = def.name;
+        $('group').value = def.group;
+        $('steps').value = def.max_steps;
+        $('minutes').value = def.max_minutes;
+        $('stall').value = def.stall_minutes;
+        $('args').value = (def.env_args || []).join('\n');
+        $('stage-name').value = def.stage_name;
+        $('stage-target').value = def.target_timeout_pct ?? '';
+        $('stage-rows').replaceChildren();
+        for (const stage of def.stages || []) {
+            addCurriculumStage();
+            const row = $('stage-rows').lastElementChild;
+            row.querySelector('.stage-name').value = stage.name;
+            row.querySelector('.stage-steps').value = stage.steps;
+            row.querySelector('.stage-target').value = stage.target_timeout_pct ?? '';
+            row.querySelector('.stage-args').value = (stage.env_args || []).join('\n');
+        }
+        $('evaluate-after').checked = def.benchmark === true;
+        $('evaluate-stages').checked = def.evaluate_stages === true;
+        for (const [key, value] of Object.entries(trainer.hyperparameters)) {
+            const input = $('trainer-' + key);
+            if (input) input.value = String(value);
+        }
+        $('trainer-num_layers').value = trainer.network_settings.num_layers;
+        $('trainer-normalize').value = String(trainer.network_settings.normalize);
+        $('trainer-seed').value = trainer.seed;
+        $('trainer-config-status').textContent = 'Editing the frozen settings of an unstarted experiment.';
+        $('create-title').textContent = 'Edit queued experiment';
+        $('create').querySelector('button[type=submit]').textContent = 'Save queued changes';
+        $('cancel-edit').hidden = false;
+        $('create').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } catch (error) {
+        $('message').textContent = error.message;
+        $('message').classList.add('error');
+    }
+}
+
 $('create').addEventListener('submit', async e => {
     e.preventDefault();
     try {
-        await request('/api/queue', {
+        const payload = {
             name: $('name').value, group: $('group').value,
             max_steps: Number($('steps').value), max_minutes: Number($('minutes').value),
             stall_minutes: Number($('stall').value),
@@ -1291,8 +1361,17 @@ $('create').addEventListener('submit', async e => {
                 network_settings: { num_layers: Number($('trainer-num_layers').value), normalize: $('trainer-normalize').value === 'true' },
                 seed: Number($('trainer-seed').value),
             },
-        });
-        $('name').value = ''; await refresh();
+        };
+        if (editingId) {
+            await request('/api/edit-queued', {
+                id: editingId, revision: editingRevision, definition: payload,
+            });
+            closeQueuedEditor();
+        } else {
+            await request('/api/queue', payload);
+            $('name').value = '';
+        }
+        await refresh();
     } catch(err) { $('message').textContent = err.message; $('message').classList.add('error'); }
 });
 $('start').addEventListener('click', async () => {
@@ -1326,9 +1405,10 @@ async function loadTrainerDefaults() {
         const settings = data.resolved;
         for (const [k,v] of Object.entries({...settings.hyperparameters, ...settings.network_settings, seed: settings.seed})) {
             const input = $('trainer-' + k);
-            if (input) input.value = String(v);
+            if (input && !editingId) input.value = String(v);
         }
-        $('trainer-config-status').textContent = 'Defaults from the pinned release. Settings are frozen when added to the queue.';
+        if (!editingId) $('trainer-config-status').textContent =
+            'Defaults from the pinned release. Settings are frozen when added to the queue.';
         button.disabled = false;
     } catch (error) {
         $('trainer-config-status').textContent = error.message;
