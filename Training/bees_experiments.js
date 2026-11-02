@@ -298,6 +298,47 @@ function trainingSeconds(item) {
         total + (finite(record?.performance?.training_s) || 0), 0);
 }
 
+// Record applied worker environment counts rather than inferred requests.
+// Auto-tuning and manual overrides take the same path; the first observation
+// establishes a baseline instead of inventing a change.
+function observeWorkerEnvironmentCounts(item, status, step, trainingS, atMs = Date.now()) {
+    const desired = status.desired || {};
+    if (item.status !== 'running' || !desired.training_enabled ||
+        desired.run_id !== item.run_id) return false;
+    const counts = item.worker_env_counts || {};
+    let changed = false;
+    for (const worker of status.trainers || []) {
+        if (worker.role !== 'dedicated' || worker.stale ||
+            worker.process_state !== 'running' ||
+            worker.build_id !== desired.canonical_build_id ||
+            Number(worker.applied_revision) < Number(desired.revision)) continue;
+        const count = worker.worker_capacity?.current_envs;
+        const id = String(worker.trainer_id || '');
+        if (!id || !Number.isSafeInteger(count) || count < 1) continue;
+        if (!item.env_observation_started_at) {
+            item.env_observation_started_at = new Date(atMs).toISOString();
+            changed = true;
+        }
+        if (!Object.prototype.hasOwnProperty.call(counts, id)) {
+            counts[id] = count;
+            changed = true;
+        } else if (counts[id] !== count) {
+            item.env_count_changes = item.env_count_changes || [];
+            item.env_count_changes.push({
+                at: new Date(atMs).toISOString(), trainer_id: id,
+                from: counts[id], to: count,
+                step: Number.isSafeInteger(step) ? step : null,
+                training_s: Number.isFinite(trainingS) ? trainingS : null,
+            });
+            if (item.env_count_changes.length > 512) item.env_count_changes.shift();
+            counts[id] = count;
+            changed = true;
+        }
+    }
+    if (changed) item.worker_env_counts = counts;
+    return changed;
+}
+
 function measure(item, status, force = false) {
     const learner = getAuthoritativeLearnerStats(item.run_id) || {};
     // Only score workers that have applied the current run revision. Heartbeats
@@ -327,6 +368,7 @@ function measure(item, status, force = false) {
         item.step = step;
     }
     observeTrainingTime(item, status, step, measuredAt, pipeline);
+    observeWorkerEnvironmentCounts(item, status, step, trainingSeconds(item), measuredAt);
     const samples = item.samples;
     if (force || !samples.length ||
         Date.now() - Date.parse(samples[samples.length - 1].at) >= 60000) {
@@ -1414,6 +1456,17 @@ const server = http.createServer(async (req, res) => {
         }
         if (req.method === 'GET' && route === '/api/workers') {
             const status = await control();
+            const item = active();
+            if (item?.status === 'running') {
+                const measuredAt = Date.now();
+                const learner = getAuthoritativeLearnerStats(item.run_id) || {};
+                const step = Number.isSafeInteger(learner.Step) ? learner.Step : item.step;
+                const clock = item.performance_clock;
+                const trainingS = trainingSeconds(item) +
+                    (clock && Number.isFinite(clock.at_ms) && measuredAt >= clock.at_ms
+                        ? (measuredAt - clock.at_ms) / 1000 : 0);
+                if (observeWorkerEnvironmentCounts(item, status, step, trainingS, measuredAt)) save();
+            }
             return json(res, 200, workerSnapshot(status));
         }
         if (req.method === 'GET' && route === '/api/benchmarks') {
