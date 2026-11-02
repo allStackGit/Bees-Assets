@@ -1176,6 +1176,12 @@ function canEditQueued(item) {
         !item.run_id && !item.started_at && item.id !== state.active_id);
 }
 
+function queuedDefaultsHash(item) {
+    const defaults = item.queue_defaults ||
+        (Array.isArray(loadConfig().environmentArgs) ? loadConfig().environmentArgs.map(String) : []);
+    return crypto.createHash('sha256').update(JSON.stringify(defaults)).digest('hex');
+}
+
 function editableDefinition(item) {
     if (!canEditQueued(item) || !item.trainer_config?.resolved ||
         !Array.isArray(item.stages) || !item.stages.length) {
@@ -1289,6 +1295,7 @@ const server = http.createServer(async (req, res) => {
             }
             return json(res, 200, {
                 id: item.id, revision: item.edit_revision || 0,
+                defaults_sha256: queuedDefaultsHash(item),
                 definition: editableDefinition(item),
             });
         }
@@ -1351,6 +1358,9 @@ const server = http.createServer(async (req, res) => {
             }
             if (value.revision !== (original.edit_revision || 0)) {
                 return json(res, 409, { error: 'This queued definition changed. Reopen it before saving.' });
+            }
+            if (value.defaults_sha256 !== queuedDefaultsHash(original)) {
+                return json(res, 409, { error: 'Operator environment defaults changed. Reopen this queued experiment before saving.' });
             }
             busy = true; // Excludes the asynchronous launch/preflight cycle while we freeze new settings.
             try {
