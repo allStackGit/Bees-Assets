@@ -397,6 +397,16 @@ winning combat ability. The 95% Wilson intervals in the detailed view
 summarize uncertainty within the 100-match sample, not variation across
 independently trained networks.
 
+On the training-speed graphs (learner steps/s, PPO utilization/timings,
+and worker pipeline metrics), small vertical markers identify observed changes
+to each remote worker's active environment count. Hover a marker for the worker
+and before/after count; markers follow either learner steps or observed training
+hours. Changes are sampled from the existing worker status while the manager is
+running (at each manager cycle, and more frequently while Worker Status is
+open), so changes made between observations cannot be reconstructed. The first
+observed worker count is a baseline, not a change. Older manual capacity
+requests may appear as approximate, explicitly unconfirmed historical markers.
+
 The Worker Status table shows each remote worker's cumulative accepted and
 consumed experiences reported by its current process; those raw counters
 can reset on restart. The +/- controls set a **persistent** remote-worker
