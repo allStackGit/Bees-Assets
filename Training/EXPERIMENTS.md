@@ -22,7 +22,9 @@ maintenance.
 
 After updating and restarting the Experiment Manager, select **Resume training**.
 It verifies the frozen run/release/configuration, existing checkpoint, and
-training-control ownership, then calls the ordinary same-run start. It does not
+training-control ownership, then calls the ordinary same-run start. If
+BeesServer was shut down during maintenance, this start can bring it back
+online after verifying the pinned release and checkpoint. It does not
 create a fresh policy, change beta, or advance the curriculum. The recorded
 maintenance interval is excluded from the run's wall-time limit and the
 no-progress clock resets on confirmed resume. The manager also excludes the
