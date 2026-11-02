@@ -820,6 +820,99 @@ function assertSameLineageCheckpoint(item) {
     // prevents silently initializing from scratch when no checkpoint exists.
 }
 
+
+// Maintenance pause preserves the active experiment, run, checkpoint, and queue
+// position. Unlike a manual stop, it never finalizes a stage or advances a run.
+function assertMaintenanceOwnership(item, status) {
+    const release = readJson(paths.latestReleasePath);
+    const d = status.desired || {};
+    verifyTrainerSnapshot(item);
+    if (!release || release.run_id !== item.run_id ||
+        release.build_id !== item.release_build ||
+        release.experiment_config?.sha256 !== item.trainer_config?.sha256 ||
+        (item.trainer_config?.runtime_version &&
+            release.training_runtime?.runtime_version !== item.trainer_config.runtime_version)) {
+        throw Error('Paused experiment does not match its frozen run, release, or trainer configuration.');
+    }
+    if (d.run_id !== item.run_id ||
+        d.canonical_build_id !== item.release_build ||
+        !matches(d.environment_args, item.env_args) || d.pending_release) {
+        throw Error('Training control no longer owns the paused experiment run/build/environment.');
+    }
+}
+
+async function pauseActiveRun(item, status) {
+    assertMaintenanceOwnership(item, status);
+    // Operator stop owns distributed shutdown and checkpoint finalization.
+    await invokeStop({});
+    const stopped = await control();
+    assertMaintenanceOwnership(item, stopped);
+    if (stopped.desired.training_enabled) {
+        throw Error('Training remains enabled after maintenance stop; not marking experiment paused.');
+    }
+    assertSameLineageCheckpoint(item);
+    measure(item, stopped, true);
+    delete item.performance_clock;
+    item.status = 'paused';
+    item.paused_at = now();
+    delete item.error;
+    state.message = 'Paused ' + item.name +
+        ' with a verified optimizer checkpoint. The manager can now be updated or restarted.';
+    save();
+}
+
+function completeMaintenanceResume(item) {
+    const pauseStart = Date.parse(item.pause_started_at);
+    if (!Number.isFinite(pauseStart) || pauseStart > Date.now()) {
+        throw Error('Paused experiment is missing a valid maintenance start timestamp.');
+    }
+    item.paused_ms = (item.paused_ms || 0) + Math.max(0, Date.now() - pauseStart);
+    delete item.pause_started_at;
+    delete item.paused_at;
+    delete item.resume_attempted;
+    delete item.performance_clock;
+    delete item.error;
+    item.status = 'running';
+    item.last_progress = now();
+    state.armed = true;
+    state.message = 'Resumed ' + item.name + ' with the same run ID and optimizer checkpoint.';
+    save();
+}
+
+async function resumeActiveRun(item, status) {
+    assertMaintenanceOwnership(item, status);
+    assertSameLineageCheckpoint(item);
+    await verifyEffectiveConfiguration(item);
+    if (item.resume_attempted) {
+        // A coordinator restart during resume never blindly launches another
+        // trainer. Reconcile the exact run or return to a deliberate pause.
+        if (!status.desired.training_enabled) {
+            item.status = 'paused';
+            delete item.resume_attempted;
+            state.armed = false;
+            state.message = 'Resume was interrupted before training was enabled. Select Resume again.';
+            save();
+            return;
+        }
+        completeMaintenanceResume(item);
+        return;
+    }
+    if (status.desired.training_enabled) {
+        throw Error('Training was started outside the manager; refusing maintenance resume.');
+    }
+    item.resume_attempted = true;
+    save();
+    // Ordinary same-run start uses the existing immutable release and
+    // ML-Agents resume path; it does not build or create a new experiment.
+    await invokeStart({ envArgs: item.env_args });
+    const running = await control();
+    assertMaintenanceOwnership(item, running);
+    if (!running.desired.training_enabled) {
+        throw Error('Same-run resume did not enable training.');
+    }
+    completeMaintenanceResume(item);
+}
+
 async function transitionStage(item, status) {
     const index = item.stage_index || 0;
     const previous = item.stages[index];
@@ -948,11 +1041,20 @@ async function transitionStage(item, status) {
 async function monitor() {
     const item = active();
     if (!item) { blocked(null, 'Active experiment record is missing.'); return; }
+    if (item.status === 'paused') return;
     if (['pending', 'running'].includes(item.benchmark_status)) {
         await evaluateItem(item);
         return;
     }
     const status = await control(), d = status.desired || {};
+    if (item.status === 'pausing') {
+        await pauseActiveRun(item, status);
+        return;
+    }
+    if (item.status === 'resuming') {
+        await resumeActiveRun(item, status);
+        return;
+    }
     if (item.status === 'transitioning') {
         await transitionStage(item, status);
         return;
@@ -996,7 +1098,7 @@ async function monitor() {
         try { await verifyEffectiveConfiguration(item); }
         catch (error) { configurationError = error.message; item.error = error.message; state.armed = false; }
     }
-    const elapsed = Date.now() - Date.parse(item.started_at);
+    const elapsed = Date.now() - Date.parse(item.started_at) - (item.paused_ms || 0);
     const stagnant = Date.now() - Date.parse(item.last_progress);
     const reason = configurationError ? 'configuration_mismatch' : state.stop_requested ? 'manual' :
         item.step != null && item.step >= item.max_steps ? 'budget' :
@@ -1397,7 +1499,36 @@ const server = http.createServer(async (req, res) => {
             setImmediate(cycle);
             return json(res, 202, { ok: true });
         }
+        if (route === '/api/pause') {
+            const item = active();
+            if (busy || !item || item.status !== 'running' || state.stop_requested) {
+                return json(res, 409, { error: 'Only a stable running experiment can be paused.' });
+            }
+            item.pause_started_at = now();
+            item.status = 'pausing';
+            state.armed = false; // Never launch the next queued run during maintenance.
+            state.message = 'Gracefully stopping ' + item.name + ' for maintenance…';
+            save();
+            setImmediate(cycle);
+            return json(res, 202, { ok: true });
+        }
+        if (route === '/api/resume') {
+            const item = active();
+            if (busy || !item || item.status !== 'paused' || state.stop_requested ||
+                state.armed) {
+                return json(res, 409, { error: 'Only a confirmed paused experiment can be resumed.' });
+            }
+            item.status = 'resuming';
+            item.resume_attempted = false;
+            state.message = 'Verifying saved run and resuming ' + item.name + '…';
+            save();
+            setImmediate(cycle);
+            return json(res, 202, { ok: true });
+        }
         if (route === '/api/start') {
+            if (['paused', 'pausing', 'resuming'].includes(active()?.status)) {
+                return json(res, 409, { error: 'Maintenance pause owns the queue. Use Resume.' });
+            }
             if (!state.active_id) {
                 const snapshot = await control();
                 if (!snapshot.desired || snapshot.desired.training_enabled ||
@@ -1417,6 +1548,9 @@ const server = http.createServer(async (req, res) => {
             return json(res, 200, { ok: true });
         }
         if (route === '/api/stop') {
+            if (['paused', 'pausing', 'resuming'].includes(active()?.status)) {
+                return json(res, 409, { error: 'Finish maintenance resume before ending this experiment.' });
+            }
             state.armed = false;
             state.stop_requested = Boolean(state.active_id);
             state.message = state.active_id ? 'Graceful stop requested.' : 'Queue disarmed.';
