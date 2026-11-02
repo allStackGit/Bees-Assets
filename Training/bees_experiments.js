@@ -1459,13 +1459,27 @@ const server = http.createServer(async (req, res) => {
             const item = active();
             if (item?.status === 'running') {
                 const measuredAt = Date.now();
-                const learner = getAuthoritativeLearnerStats(item.run_id) || {};
-                const step = Number.isSafeInteger(learner.Step) ? learner.Step : item.step;
                 const clock = item.performance_clock;
                 const trainingS = trainingSeconds(item) +
                     (clock && Number.isFinite(clock.at_ms) && measuredAt >= clock.at_ms
                         ? (measuredAt - clock.at_ms) / 1000 : 0);
-                if (observeWorkerEnvironmentCounts(item, status, step, trainingS, measuredAt)) save();
+                const events = item.env_count_changes || [];
+                const previousEvent = events[events.length - 1];
+                if (observeWorkerEnvironmentCounts(item, status, item.step, trainingS, measuredAt)) {
+                    // Worker-panel refreshes are frequent; read the learner log
+                    // for a precise step only when an applied count actually changed.
+                    const changes = item.env_count_changes || [];
+                    if (changes[changes.length - 1] !== previousEvent) {
+                        const learner = getAuthoritativeLearnerStats(item.run_id) || {};
+                        if (Number.isSafeInteger(learner.Step)) {
+                            const at = new Date(measuredAt).toISOString();
+                            for (let i = changes.length - 1; i >= 0 && changes[i].at === at; i--) {
+                                changes[i].step = learner.Step;
+                            }
+                        }
+                    }
+                    save();
+                }
             }
             return json(res, 200, workerSnapshot(status));
         }
