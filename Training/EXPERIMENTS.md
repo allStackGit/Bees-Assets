@@ -10,6 +10,35 @@ Open **http://127.0.0.1:7148** on the same machine. Keep the process running whi
 
 Queue one or more experiments. Each creates a **new run** from the current built release, using the cluster environment arguments with explicitly entered `--rl-*` overrides. Specify a learner step budget, maximum wall time, and no-progress timeout. Step budgets use the existing published learner summaries, so stopping can overshoot by the summary interval and graceful-stop latency. Press **Run queue** to start. The manager requires the existing Bees operator to confirm its full graceful stop (including worker finalization) before starting the next run; disabling training alone is insufficient. **Stop safely** disarms the queue and requests coordinated stop of the active experiment.
 
+## Maintenance pause and resume
+
+For temporary updates, select **Pause for maintenance** while an experiment is
+running. Wait until the interface reports **Paused** before closing the manager
+or updating code. The coordinator requests the normal graceful distributed
+stop, verifies the stopped run and existing optimizer checkpoint, and retains
+the same active experiment, stage, run ID, remaining queue, and trainer settings.
+**Stop safely** instead permanently finalizes the experiment; do not use it for
+maintenance.
+
+After updating and restarting the Experiment Manager, select **Resume training**.
+It verifies the frozen run/release/configuration, existing checkpoint, and
+training-control ownership, then calls the ordinary same-run start. It does not
+create a fresh policy, change beta, or advance the curriculum. The recorded
+maintenance interval is excluded from the run's wall-time limit and the
+no-progress clock resets on confirmed resume. The manager also excludes the
+maintenance period from effective-training-time measurements.
+
+**Paused** is only reported after a completed, verified stop. If checkpoint
+finalization fails, the manager keeps the experiment in **Pausing** and reports
+the error rather than claiming it is safe to update. Pausing and resuming are
+not supported during curriculum transition or benchmark evaluation. If training
+control, the pinned runtime/release, or checkpoint identity has changed,
+resume fails closed; restore the original compatible release or inspect the
+operator state instead of starting a different run. This workflow updates the
+manager UI without rebuilding the pinned Unity/trainer release. It does not
+replace the normal release-compatibility and checkpoint requirements for a
+training-runtime change.
+
 Existing training must be stopped before starting a queue, and the latest release must match the release recorded when experiments were queued. If the operator or another process changes training ownership, the queue pauses rather than taking over an unrelated run. Stop requests are persisted, so restarting the coordinator does not silently cancel a requested graceful stop. After a crash during startup, the coordinator can resume monitoring a new run when the control-plane run identity and environment arguments match; ambiguous states pause the queue for operator inspection.
 
 Summaries are written to `Training/Experiments/experiments-v1.json` **outside Assets**, not to the Git repository. It contains experiment definitions, run IDs, bounded sampled learner/worker metrics and outcomes. No raw trajectories or checkpoint copies are created; standard Bees checkpoint lifecycle is unchanged. Every sample is from training telemetry, **not an independent fixed-seed benchmark**; run-to-run results remain stochastic. Live worker summaries are included only after their training-control revision matches the active run; older worker windows are excluded. The UI supports per-run inspection, learning-curve comparisons and group aggregates. Expand **Worker Status** to see live remote-worker state, errors, throughput and queue depths from the existing training control; it is read-only, refreshes while expanded and stores no additional history. Trainer settings are frozen per queued experiment as described below. Automatic parameter sweeps and scheduler boot persistence are not implemented.
