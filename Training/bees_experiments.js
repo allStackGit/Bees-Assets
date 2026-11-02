@@ -1196,6 +1196,12 @@ async function cycle() {
         } else if (state.armed && !state.stop_requested) await launch();
     } catch (err) {
         state.armed = false; // fail closed; do not start another experiment
+        // A failed preflight must return to an explicit Paused state. Do not
+        // silently resume later just because the release/control issue clears.
+        if (active()?.status === 'resuming' && !active().resume_attempted) {
+            active().status = 'paused';
+            delete active().resume_attempted;
+        }
         if (active()?.status === 'transitioning') state.stop_requested = true;
         state.message = 'Operator attention required: ' + err.message;
         if (active()) active().error = err.message;
@@ -1501,7 +1507,7 @@ const server = http.createServer(async (req, res) => {
         }
         if (route === '/api/pause') {
             const item = active();
-            if (busy || !item || item.status !== 'running' || state.stop_requested) {
+            if (busy || !item || item.status !== 'running' || !state.armed || state.stop_requested) {
                 return json(res, 409, { error: 'Only a stable running experiment can be paused.' });
             }
             item.pause_started_at = now();
