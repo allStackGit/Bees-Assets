@@ -312,6 +312,7 @@ let chosenInitialized = false;
 let latest = null;
 let editingId = null;
 let editingRevision = null;
+let editingDefaultsSha = null;
 // Series colors are confined to the chart and its legend; red is reserved for errors.
 const colors = ['#2469aa','#946100','#347857','#7952a3','#087c9b','#64711a','#8b4d83','#465f9a'];
 const fmt = (n, d = 0) => n == null || !Number.isFinite(Number(n)) ? '—' : Number(n).toLocaleString(undefined, { maximumFractionDigits: d });
@@ -1280,6 +1281,7 @@ $('evaluate-after').addEventListener('change', () => {
 function closeQueuedEditor() {
     editingId = null;
     editingRevision = null;
+    editingDefaultsSha = null;
     $('create-title').textContent = 'Queue an experiment';
     $('create').querySelector('button[type=submit]').textContent = 'Add to queue';
     $('cancel-edit').hidden = true;
@@ -1300,6 +1302,7 @@ async function openQueuedEditor(id) {
         }
         editingId = data.id;
         editingRevision = data.revision;
+        editingDefaultsSha = data.defaults_sha256;
         $('name').value = def.name;
         $('group').value = def.group;
         $('steps').value = def.max_steps;
@@ -1364,7 +1367,8 @@ $('create').addEventListener('submit', async e => {
         };
         if (editingId) {
             await request('/api/edit-queued', {
-                id: editingId, revision: editingRevision, definition: payload,
+                id: editingId, revision: editingRevision,
+                defaults_sha256: editingDefaultsSha, definition: payload,
             });
             closeQueuedEditor();
         } else {
