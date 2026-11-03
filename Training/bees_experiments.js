@@ -391,7 +391,8 @@ function measure(item, status, force = false, boundary = '') {
         const observation = {
             at: now(), step, stage_index: item.stage_index || 0,
             ...(boundary || resumeBoundary != null
-                ? { sample_context: boundary || 'post-evaluation' } : {}),
+                ? { sample_context: boundary ||
+                    (item.stage_benchmarks ? 'post-evaluation' : 'post-transition') } : {}),
             training_s: trainingSeconds(item),
             stage_training_s: perf.training_s,
             effective_steps_per_second: perf.training_s > 0
@@ -433,8 +434,8 @@ function measure(item, status, force = false, boundary = '') {
         }
         if (samples.length > 500) item.samples = samples.filter((sample, i) =>
             i === 0 || i === samples.length - 1 || i % 2 === 0 ||
-            sample.sample_context === 'pre-evaluation' ||
-            sample.sample_context === 'post-evaluation');
+            ['pre-evaluation', 'post-evaluation',
+                'pre-transition', 'post-transition'].includes(sample.sample_context));
     }
 }
 
@@ -1200,7 +1201,8 @@ async function monitor() {
         // The ordinary minute cadence often misses the last training window
         // when a long benchmark evaluation begins. Capture it while the
         // learner is still running, before changing the item to transitioning.
-        measure(item, status, true, 'pre-evaluation');
+        measure(item, status, true, item.stage_benchmarks
+            ? 'pre-evaluation' : 'pre-transition');
         item.status = 'transitioning';
         item.stage_transition_at = now();
         state.message = 'Switching ' + item.name + ' to ' + item.stages[item.stage_index + 1].name;
