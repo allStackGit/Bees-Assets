@@ -459,6 +459,13 @@ function chart(items) {
         zero.setAttribute('stroke', '#888');
         zero.setAttribute('stroke-dasharray', '3 5');
         svg.append(zero);
+        const zeroLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        zeroLabel.setAttribute('x', '4');
+        zeroLabel.setAttribute('y', String(yy(0) + 4));
+        zeroLabel.setAttribute('font-size', '12');
+        zeroLabel.setAttribute('fill', 'currentColor');
+        zeroLabel.textContent = '0';
+        svg.append(zeroLabel);
     }
     const boundaries = all[0]?.stages?.slice(0, -1).map(stage => stage.end_step);
     if (axis === 'steps' && boundaries && all.every(item => item.stages &&
