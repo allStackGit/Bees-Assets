@@ -1050,6 +1050,14 @@ async function transitionStage(item, status) {
             !matches(status.desired.environment_args, previous.env_args)) {
             throw Error('Safe curriculum stop not confirmed; refusing to switch environments.');
         }
+        // The learner may emit one final summary during graceful shutdown.
+        // Keep it if it proves real progress beyond the pre-stop snapshot.
+        const finalized = getAuthoritativeLearnerStats(item.run_id);
+        if (Number.isSafeInteger(finalized?.Step) &&
+            (item.step == null || finalized.Step > item.step)) {
+            measure(item, status, true, item.stage_benchmarks
+                ? 'pre-evaluation' : 'pre-transition');
+        }
         item.stage_stop_confirmed = true;
         const finished = stageRecord(item, index);
         if (!finished.finished_at) {
