@@ -370,8 +370,16 @@ function measure(item, status, force = false) {
     observeTrainingTime(item, status, step, measuredAt, pipeline);
     observeWorkerEnvironmentCounts(item, status, step, trainingSeconds(item), measuredAt);
     const samples = item.samples;
-    if (force || !samples.length ||
-        Date.now() - Date.parse(samples[samples.length - 1].at) >= 60000) {
+    // A resumed learner can take time to emit its first fresh ML-Agents
+    // summary. Never store a null/stale point that consumes the one-minute
+    // sample slot just as the stage resumes.
+    const resumeBoundary = item.awaiting_resume_sample_step;
+    const resumed = resumeBoundary == null ||
+        (step != null && step > resumeBoundary);
+    const due = force || !samples.length ||
+        Date.now() - Date.parse(samples[samples.length - 1].at) >= 60000 ||
+        (resumeBoundary != null && resumed);
+    if (due && step != null && resumed) {
         const prior = samples.length ? samples[samples.length - 1] : null;
         // Preserve the last observed live worker metrics at finalization, when
         // workers may already be stopped and their rolling windows unavailable.
@@ -389,6 +397,7 @@ function measure(item, status, force = false) {
             ppo_busy_pct: perf.busy_observed_s > 0
                 ? 100 * perf.optimizer_busy_s / perf.busy_observed_s : null,
             reward: Number.isFinite(learner.MeanReward) ? learner.MeanReward : null,
+            group_reward: Number.isFinite(learner.MeanGroupReward) ? learner.MeanGroupReward : null,
             steps_per_second: Number.isFinite(learner.LiveStepsPerSecond) ?
                 learner.LiveStepsPerSecond : null,
             timeout_pct: last('timeout_pct'), bee_win_pct: last('bee_win_pct'),
@@ -402,6 +411,7 @@ function measure(item, status, force = false) {
             ...(running ? { pipeline, ppo } : {}),
         };
         samples.push(observation);
+        delete item.awaiting_resume_sample_step;
         const stage = stageFor(item);
         const windowTimeout = mean('timeout_pct');
         if (!force && stage && stage.timeout_target_pct != null &&
@@ -1030,6 +1040,7 @@ async function transitionStage(item, status) {
         if (!finished.finished_at) {
             finished.finished_at = now();
             finished.finished_step = item.step;
+            finished.finished_training_s = trainingSeconds(item);
         }
         save();
     }
@@ -1061,6 +1072,11 @@ async function transitionStage(item, status) {
             return;
         }
         assertSameLineageCheckpoint(item);
+        // After evaluation/restart the previous live log can still contain
+        // the outgoing learner's last summary. Require genuine new progress
+        // before adding the first point of the resumed stage.
+        item.awaiting_resume_sample_step = item.step ?? 0;
+        save();
         await invokeStart({ envArgs: next.env_args });
         status = await control();
     }
@@ -1177,6 +1193,10 @@ async function monitor() {
         await finalize(item, status);
     } else if (item.stages && item.stage_index + 1 < item.stages.length &&
         item.step != null && item.step >= item.stages[item.stage_index].end_step) {
+        // The ordinary minute cadence often misses the last training window
+        // when a long benchmark evaluation begins. Capture it while the
+        // learner is still running, before changing the item to transitioning.
+        measure(item, status, true);
         item.status = 'transitioning';
         item.stage_transition_at = now();
         state.message = 'Switching ' + item.name + ' to ' + item.stages[item.stage_index + 1].name;
