@@ -604,6 +604,14 @@ async function saveChartPng() {
     button.disabled = true;
     let svgUrl = null;
     try {
+        const metric = $('metric').value;
+        const metricName = $('metric').selectedOptions[0]?.textContent || 'Training metric';
+        const axisName = $('axis').selectedOptions[0]?.textContent || 'Learner steps';
+        const labels = [...$('legend').querySelectorAll('span')]
+            .map(el => el.textContent);
+        const seriesColors = (chartHover?.datasets || []).map(dataset => ({
+            name: dataset.item.name, color: dataset.color,
+        }));
         const source = $('graph').cloneNode(true);
         source.querySelector('#chart-hover-overlay')?.remove();
         source.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
@@ -623,8 +631,6 @@ async function saveChartPng() {
         });
         image.src = svgUrl;
         await loaded;
-        const labels = [...$('legend').querySelectorAll('span')]
-            .map(el => el.textContent);
         const canvas = document.createElement('canvas');
         canvas.width = 1600;
         canvas.height = 600 + Math.max(1, labels.length) * 44;
@@ -634,15 +640,13 @@ async function saveChartPng() {
         context.fillRect(0, 0, canvas.width, canvas.height);
         context.fillStyle = '#111';
         context.font = 'bold 26px Arial, sans-serif';
-        const metricName = $('metric').selectedOptions[0]?.textContent || 'Training metric';
-        const axisName = $('axis').selectedOptions[0]?.textContent || 'Learner steps';
         context.fillText(metricName + ' · ' + axisName, 55, 41);
         context.drawImage(image, 0, 60, 1600, 500);
         context.font = '21px Arial, sans-serif';
         for (let i = 0; i < labels.length; i++) {
             const y = 585 + i * 44;
-            const series = chartHover?.datasets?.find(dataset =>
-                labels[i].startsWith(dataset.item.name + ' ·'));
+            const series = seriesColors.find(dataset =>
+                labels[i].startsWith(dataset.name + ' ·'));
             context.fillStyle = series ? series.color : '#111';
             context.fillRect(55, y - 15, 17, 17);
             context.fillStyle = '#111';
@@ -653,7 +657,7 @@ async function saveChartPng() {
                 reject(Error('Browser could not encode the PNG.')), 'image/png'));
         const downloadUrl = URL.createObjectURL(png);
         const anchor = document.createElement('a');
-        anchor.download = 'bees-' + $('metric').value + '-chart.png';
+        anchor.download = 'bees-' + metric + '-chart.png';
         anchor.href = downloadUrl;
         anchor.click();
         // The download is initiated synchronously. Revoke the object URL after
