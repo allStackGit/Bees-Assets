@@ -370,6 +370,16 @@ function measure(item, status, force = false, boundary = '') {
     observeTrainingTime(item, status, step, measuredAt, pipeline);
     observeWorkerEnvironmentCounts(item, status, step, trainingSeconds(item), measuredAt);
     const samples = item.samples;
+    if (boundary && samples.length) {
+        const latest = samples[samples.length - 1];
+        // The regular minute sample can occur on this exact same control poll.
+        // Label it instead of duplicating a reward in rolling averages.
+        if (latest.step === step && step != null &&
+            Date.now() - Date.parse(latest.at) < 1000) {
+            latest.sample_context = boundary;
+            return;
+        }
+    }
     // A resumed learner can take time to emit its first fresh ML-Agents
     // summary. Never store a null/stale point that consumes the one-minute
     // sample slot just as the stage resumes.
