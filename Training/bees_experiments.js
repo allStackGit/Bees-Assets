@@ -1,6 +1,7 @@
 'use strict';
 const fs = require('node:fs');
 const http = require('node:http');
+const os = require('node:os');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { execFile } = require('node:child_process');
@@ -18,6 +19,7 @@ const HOST = '127.0.0.1';
 const PORT = 7148;
 const DB = path.join(paths.trainingRoot, 'Experiments', 'experiments-v1.json');
 const HTML = path.join(__dirname, 'experiments.html');
+const LOG_EXPORTER = path.join(__dirname, 'bees_experiment_logs.py');
 const BENCHMARK_REPORTS = path.join(paths.trainingRoot, 'Experiments', 'Benchmarks');
 const empty = () => ({ version: 1, armed: false, stop_requested: false, active_id: null, message: '', items: [] });
 const state = fs.existsSync(DB) ? readJson(DB) : empty();
@@ -30,6 +32,7 @@ if (typeof state.stop_requested !== 'boolean') state.stop_requested = false;
 // never incorrectly charged as training or PPO idle time.
 for (const item of state.items) delete item.performance_clock;
 let busy = false;
+let logExportBusy = false;
 const save = () => { ensureDir(path.dirname(DB)); writeJsonAtomic(DB, state); };
 const active = () => state.items.find(x => x.id === state.active_id);
 const matches = (a, b) => JSON.stringify(a || []) === JSON.stringify(b || []);
@@ -1474,6 +1477,48 @@ async function body(req) {
     return JSON.parse(raw || '{}');
 }
 
+
+// One archive at a time; files are streamed from an on-disk temporary ZIP,
+// never loaded into the manager's heap or mixed with training state.
+async function exportExperimentLogs(item, res) {
+    if (logExportBusy) return json(res, 409, {
+        error: 'Another experiment log archive is being prepared or downloaded.',
+    });
+    logExportBusy = true;
+    let folder = null;
+    try {
+        folder = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bees-experiment-logs-'));
+        const archive = path.join(folder, 'logs.zip');
+        const python = resolvePython(loadConfig());
+        await new Promise((resolve, reject) => {
+            const child = execFile(python, [
+                LOG_EXPORTER, '--bees-root', paths.beesRoot,
+                '--assets-root', paths.assetsRoot,
+                '--run-id', item.run_id, '--output', archive,
+            ], { windowsHide: true, maxBuffer: 262144 }, (error, stdout, stderr) => {
+                error ? reject(Error(String(stderr || error.message).trim())) : resolve(stdout);
+            });
+            res.once('close', () => child.kill());
+        });
+        if (res.destroyed) return;
+        const size = fs.statSync(archive).size;
+        res.writeHead(200, {
+            'Content-Type': 'application/zip',
+            'Content-Disposition': 'attachment; filename="bees-' + item.run_id + '-logs.zip"',
+            'Content-Length': size,
+            'Cache-Control': 'no-store',
+            'X-Content-Type-Options': 'nosniff',
+        });
+        const stream = fs.createReadStream(archive);
+        stream.on('error', () => res.destroy());
+        stream.pipe(res);
+        await new Promise(resolve => res.once('close', resolve));
+    } finally {
+        if (folder) await fs.promises.rm(folder, { recursive: true, force: true });
+        logExportBusy = false;
+    }
+}
+
 const server = http.createServer(async (req, res) => {
     const host = req.headers.host, origin = req.headers.origin;
     if (!((host === HOST + ':' + PORT || host === 'localhost:' + PORT) &&
@@ -1491,6 +1536,15 @@ const server = http.createServer(async (req, res) => {
                 'X-Content-Type-Options': 'nosniff',
                 'Content-Security-Policy': "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' blob:; object-src 'none'; base-uri 'none'" });
             return res.end(page);
+        }
+        if (req.method === 'GET' && route === '/api/experiment-logs') {
+            const id = url.searchParams.get('experiment_id');
+            const item = state.items.find(entry => entry.id === id);
+            if (!item || !item.run_id ||
+                !/^[A-Za-z0-9._-]{1,128}$/.test(item.run_id)) {
+                return json(res, 404, { error: 'A started experiment with a valid run ID is required.' });
+            }
+            return await exportExperimentLogs(item, res);
         }
         if (req.method === 'GET' && route === '/api/state') {
             return json(res, 200, { ...state, busy, benchmark_configured: fs.existsSync(BENCHMARK_SETTINGS) });
