@@ -107,6 +107,7 @@ function parseLearnerLogFiles(files) {
             if ((match = line.match(new RegExp('Mean Reward\\s*[:=]\\s*' + rewardNumber, 'i')))) {
                 reward = Number(match[1]);
             }
+            groupReward = null; // Do not carry a previous summary's group reward forward.
             if ((match = line.match(new RegExp('Mean Group Reward\\s*[:=]\\s*' + rewardNumber, 'i')))) {
                 groupReward = Number(match[1]);
             }
