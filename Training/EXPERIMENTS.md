@@ -374,10 +374,22 @@ The experiment dashboard automatically selects recent runs with saved learner
 samples. The chart supports raw values, rolling means of the last 5/15/30
 recorded samples, hover readouts (raw/rolling/running mean), and horizontal
 axes of learner steps or observed training hours. Select additional runs
-using their **Plot** checkboxes. Historical samples only contain fields
-collected at that time; new PPO timing and Human combat values are **not
-backfilled** when upgrading the manager. Restart the experiment coordinator
-with the new source to begin recording newly added fields.
+using their **Plot** checkboxes. **Mean Group Reward** is the default reward
+curve, parsed from ML-Agents learner summaries; individual Mean Reward remains
+selectable. The PNG button exports the displayed graph and its legend without
+sending data to a separate service. Charts use a zero baseline for nonnegative
+metrics; signed group rewards retain negative values rather than clipping them.
+
+During a stage evaluation the learner is intentionally stopped, so no
+training-reward/throughput samples exist during that interval. The coordinator
+now captures the real last pre-stop sample and first fresh post-resume summary,
+and retains these boundary samples when old chart history is compacted.
+An **E** marker identifies benchmark boundaries on either horizontal axis;
+the time axis counts observed training time, not benchmark downtime.
+Historical samples only contain fields collected at that time; new group
+rewards, PPO timing and Human combat values are **not backfilled** when
+upgrading the manager. Restart the experiment coordinator with the new source
+to begin recording newly added fields.
 
 **Checkpoint evaluations** default to the active beta run's latest
 evaluated checkpoint, with three readable results: **Stationary aiming**
