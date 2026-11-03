@@ -934,7 +934,11 @@ function render(data) {
                 const link = document.createElement('a');
                 link.href = '/api/experiment-logs?experiment_id=' +
                     encodeURIComponent(item.id);
-                link.download = 'bees-' + item.run_id + '-logs.zip';
+                // Let the server choose the ZIP filename. If it cannot
+                // export logs, show its error in a new tab instead of saving
+                // a JSON error response under a misleading .zip extension.
+                link.target = '_blank';
+                link.rel = 'noopener';
                 document.body.append(link);
                 link.click();
                 link.remove();
