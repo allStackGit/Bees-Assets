@@ -254,9 +254,9 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
 </section>
 <section>
 <div class="bar"><h2>Runs and comparisons</h2><label>Show group <select id="filter"><option value="">All</option></select></label>
-<label>Graph <select id="metric"><option value="timeout_pct">Timeout %</option><option value="bee_hits_per_shot">Bee hits per shot</option><option value="human_hits_per_shot">Human hits per shot</option><option value="bee_aim_error_deg">Bee aim error °</option><option value="human_aim_error_deg">Human aim error °</option><option value="bee_near_miss_pct">Bee near-miss %</option><option value="human_near_miss_pct">Human near-miss %</option><option value="bee_win_pct">Bee win %</option><option value="human_win_pct">Human win %</option><option value="reward">Mean reward</option><option value="steps_per_second">Reported learner steps/s</option><option value="effective_steps_per_second">Effective learner steps/s</option><option value="ppo_busy_pct">PPO busy %</option><option value="ppo_update_s">PPO seconds/update</option><option value="ppo_minibatches_s">PPO minibatches/s</option><option value="ppo_gpu_pct">PPO GPU utilization %</option><option value="pipeline_staged_s">Worker staged/s</option><option value="pipeline_accepted_s">Worker accepted/s</option><option value="pipeline_consumed_s">Worker consumed/s</option><option value="pipeline_broker_q">Broker queue depth</option></select></label>
+<label>Graph <select id="metric"><option value="timeout_pct">Timeout %</option><option value="bee_hits_per_shot">Bee hits per shot</option><option value="human_hits_per_shot">Human hits per shot</option><option value="bee_aim_error_deg">Bee aim error °</option><option value="human_aim_error_deg">Human aim error °</option><option value="bee_near_miss_pct">Bee near-miss %</option><option value="human_near_miss_pct">Human near-miss %</option><option value="bee_win_pct">Bee win %</option><option value="human_win_pct">Human win %</option><option value="group_reward" selected>Mean Group Reward</option><option value="reward">Mean Reward (individual)</option><option value="steps_per_second">Reported learner steps/s</option><option value="effective_steps_per_second">Effective learner steps/s</option><option value="ppo_busy_pct">PPO busy %</option><option value="ppo_update_s">PPO seconds/update</option><option value="ppo_minibatches_s">PPO minibatches/s</option><option value="ppo_gpu_pct">PPO GPU utilization %</option><option value="pipeline_staged_s">Worker staged/s</option><option value="pipeline_accepted_s">Worker accepted/s</option><option value="pipeline_consumed_s">Worker consumed/s</option><option value="pipeline_broker_q">Broker queue depth</option></select></label>
 <label>Horizontal axis <select id="axis"><option value="steps">Learner steps</option><option value="time">Observed training hours</option></select></label>
-<label>Smoothing <select id="smoothing"><option value="1">Raw samples</option><option value="5">Last 5 samples</option><option value="15">Last 15 samples</option><option value="30">Last 30 samples</option></select></label></div>
+<label>Smoothing <select id="smoothing"><option value="1">Raw samples</option><option value="5">Last 5 samples</option><option value="15">Last 15 samples</option><option value="30">Last 30 samples</option></select></label><button id="chart-png" type="button">Save chart PNG</button></div>
 <div class="graph-wrap"><svg id="graph" class="graph" viewBox="0 0 800 250" role="img" aria-label="Interactive training curves"></svg><div id="graph-tooltip" role="status"></div></div>
 <div id="graph-inspect">Hover over the graph for sample values. Latest and average values appear in the legend.</div>
 <div id="legend"></div>
@@ -436,9 +436,11 @@ function chart(items) {
         return;
     }
     const xmax = Math.max(0.000001, ...points.map(p => p.x));
-    let ymin = Math.min(...points.map(p => p.y));
-    let ymax = Math.max(...points.map(p => p.y));
-    if (ymin === ymax) { ymin -= 1; ymax += 1; }
+    // Always include zero. For signed rewards retain negative readings;
+    // clipping them at zero would misrepresent how the policy is learning.
+    const ymin = Math.min(0, ...points.map(p => p.y));
+    let ymax = Math.max(0, ...points.map(p => p.y));
+    if (ymin === ymax) ymax = ymin + 1;
     const xx = x => 55 + x / xmax * 710;
     const yy = y => 210 - (y - ymin) / (ymax - ymin) * 175;
     function line(x1, y1, x2, y2, color) {
@@ -449,6 +451,15 @@ function chart(items) {
         svg.append(element);
     }
     line(55, 20, 55, 210, '#000000'); line(55, 210, 765, 210, '#000000');
+    if (ymin < 0 && ymax > 0) {
+        const zero = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        for (const [key, value] of Object.entries({
+            x1: 55, x2: 765, y1: yy(0), y2: yy(0),
+        })) zero.setAttribute(key, String(value));
+        zero.setAttribute('stroke', '#888');
+        zero.setAttribute('stroke-dasharray', '3 5');
+        svg.append(zero);
+    }
     const boundaries = all[0]?.stages?.slice(0, -1).map(stage => stage.end_step);
     if (axis === 'steps' && boundaries && all.every(item => item.stages &&
         JSON.stringify(item.stages.slice(0, -1).map(stage => stage.end_step)) ===
@@ -516,7 +527,7 @@ function chart(items) {
         const path = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
         path.setAttribute('points', dataset.points.map(p =>
             xx(p.x) + ',' + yy(p.y)).join(' '));
-        path.setAttribute('stroke', dataset.color); path.setAttribute('stroke-width', '2.5');
+        path.setAttribute('stroke', dataset.color); path.setAttribute('stroke-width', '1.2');
         path.setAttribute('fill', 'none'); svg.append(path);
         const latestPoint = dataset.points[dataset.points.length - 1];
         const label = txt('span', dataset.item.name +
@@ -530,6 +541,7 @@ function chart(items) {
     if (envMarkers.length) $('legend').append(txt('span',
         '○ Vertical ticks: ' + envMarkers.length + ' environment-count changes · hover for worker details'));
     const hoverLayer = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    hoverLayer.setAttribute('id', 'chart-hover-overlay');
     svg.append(hoverLayer);
     chartHover = { datasets, hoverLayer, xmax, xx, yy, metric, axis, smooth, envMarkers };
     $('graph-inspect').textContent =
@@ -538,6 +550,78 @@ function chart(items) {
         ' Rolling averages use the last ' +
         smooth + ' recorded sample(s), not an independent evaluation.';
 }
+// Export the exact displayed SVG and its series legend; no chart-data
+// rerendering or external image service is needed.
+async function saveChartPng() {
+    const button = $('chart-png');
+    if (button.disabled) return;
+    button.disabled = true;
+    let svgUrl = null;
+    try {
+        const source = $('graph').cloneNode(true);
+        source.querySelector('#chart-hover-overlay')?.remove();
+        source.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+        source.setAttribute('width', '1600');
+        source.setAttribute('height', '500');
+        source.style.color = '#111';
+        source.style.fontFamily = 'Arial, Helvetica, sans-serif';
+        for (const node of source.querySelectorAll('[fill="currentColor"]'))
+            node.setAttribute('fill', '#111');
+        const encoded = new XMLSerializer().serializeToString(source);
+        svgUrl = URL.createObjectURL(new Blob([encoded],
+            { type: 'image/svg+xml;charset=utf-8' }));
+        const image = new Image();
+        const loaded = new Promise((resolve, reject) => {
+            image.onload = resolve;
+            image.onerror = () => reject(Error('Browser could not render the chart as an image.'));
+        });
+        image.src = svgUrl;
+        await loaded;
+        const labels = [...$('legend').querySelectorAll('span')]
+            .map(el => el.textContent);
+        const canvas = document.createElement('canvas');
+        canvas.width = 1600;
+        canvas.height = 600 + Math.max(1, labels.length) * 44;
+        const context = canvas.getContext('2d');
+        if (!context) throw Error('PNG export requires canvas support.');
+        context.fillStyle = '#fff';
+        context.fillRect(0, 0, canvas.width, canvas.height);
+        context.fillStyle = '#111';
+        context.font = 'bold 26px Arial, sans-serif';
+        const metricName = $('metric').selectedOptions[0]?.textContent || 'Training metric';
+        const axisName = $('axis').selectedOptions[0]?.textContent || 'Learner steps';
+        context.fillText(metricName + ' · ' + axisName, 55, 41);
+        context.drawImage(image, 0, 60, 1600, 500);
+        context.font = '21px Arial, sans-serif';
+        for (let i = 0; i < labels.length; i++) {
+            const y = 585 + i * 44;
+            const series = chartHover?.datasets?.find(dataset =>
+                labels[i].startsWith(dataset.item.name + ' ·'));
+            context.fillStyle = series ? series.color : '#111';
+            context.fillRect(55, y - 15, 17, 17);
+            context.fillStyle = '#111';
+            context.fillText(labels[i], 88, y, 1480);
+        }
+        const png = await new Promise((resolve, reject) =>
+            canvas.toBlob(blob => blob ? resolve(blob) :
+                reject(Error('Browser could not encode the PNG.')), 'image/png'));
+        const downloadUrl = URL.createObjectURL(png);
+        const anchor = document.createElement('a');
+        anchor.download = 'bees-' + $('metric').value + '-chart.png';
+        anchor.href = downloadUrl;
+        anchor.click();
+        // The download is initiated synchronously. Revoke the object URL after
+        // the next task to allow the browser to open it.
+        setTimeout(() => URL.revokeObjectURL(downloadUrl), 1000);
+    } catch (error) {
+        $('message').textContent = 'Chart PNG export failed: ' + error.message;
+        $('message').classList.add('error');
+    } finally {
+        if (svgUrl) URL.revokeObjectURL(svgUrl);
+        button.disabled = false;
+    }
+}
+$('chart-png').addEventListener('click', saveChartPng);
 function inspectChart(event) {
     if (!chartHover) return;
     const svg = $('graph'), rect = svg.getBoundingClientRect();
