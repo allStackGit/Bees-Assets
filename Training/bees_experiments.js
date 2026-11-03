@@ -1465,7 +1465,7 @@ const server = http.createServer(async (req, res) => {
             res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8',
                 'Content-Length': page.length, 'Cache-Control': 'no-store',
                 'X-Content-Type-Options': 'nosniff',
-                'Content-Security-Policy': "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'none'" });
+                'Content-Security-Policy': "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' blob:; object-src 'none'; base-uri 'none'" });
             return res.end(page);
         }
         if (req.method === 'GET' && route === '/api/state') {
