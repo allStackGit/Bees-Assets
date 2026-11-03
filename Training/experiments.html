@@ -926,6 +926,24 @@ function render(data) {
             details.append(evaluate);
         }
         name.append(details);
+        if (item.run_id) {
+            const download = txt('button', 'Download logs ZIP');
+            download.type = 'button';
+            download.title = 'Download full available learner and uploaded-worker logs for this run (no checkpoints)';
+            download.addEventListener('click', () => {
+                const link = document.createElement('a');
+                link.href = '/api/experiment-logs?experiment_id=' +
+                    encodeURIComponent(item.id);
+                link.download = 'bees-' + item.run_id + '-logs.zip';
+                document.body.append(link);
+                link.click();
+                link.remove();
+                $('message').classList.remove('error');
+                $('message').textContent = 'Preparing complete available logs for ' +
+                    item.name + '. The browser download begins when the ZIP is ready.';
+            });
+            name.append(download);
+        }
         if (item.status === 'queued' && !item.run_id) {
             const edit = txt('button', 'Edit queued');
             edit.type = 'button';
