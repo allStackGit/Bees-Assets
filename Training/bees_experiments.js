@@ -339,7 +339,7 @@ function observeWorkerEnvironmentCounts(item, status, step, trainingS, atMs = Da
     return changed;
 }
 
-function measure(item, status, force = false) {
+function measure(item, status, force = false, boundary = '') {
     const learner = getAuthoritativeLearnerStats(item.run_id) || {};
     // Only score workers that have applied the current run revision. Heartbeats
     // from the outgoing run may remain live briefly during a release cutover.
@@ -390,6 +390,8 @@ function measure(item, status, force = false) {
         const perf = performanceFor(item);
         const observation = {
             at: now(), step, stage_index: item.stage_index || 0,
+            ...(boundary || resumeBoundary != null
+                ? { sample_context: boundary || 'post-evaluation' } : {}),
             training_s: trainingSeconds(item),
             stage_training_s: perf.training_s,
             effective_steps_per_second: perf.training_s > 0
@@ -429,8 +431,10 @@ function measure(item, status, force = false) {
                 record.first_target_at = observation.at;
             }
         }
-        if (samples.length > 500) item.samples = samples.filter((_, i) =>
-            i === 0 || i === samples.length - 1 || i % 2 === 0);
+        if (samples.length > 500) item.samples = samples.filter((sample, i) =>
+            i === 0 || i === samples.length - 1 || i % 2 === 0 ||
+            sample.sample_context === 'pre-evaluation' ||
+            sample.sample_context === 'post-evaluation');
     }
 }
 
@@ -1196,7 +1200,7 @@ async function monitor() {
         // The ordinary minute cadence often misses the last training window
         // when a long benchmark evaluation begins. Capture it while the
         // learner is still running, before changing the item to transitioning.
-        measure(item, status, true);
+        measure(item, status, true, 'pre-evaluation');
         item.status = 'transitioning';
         item.stage_transition_at = now();
         state.message = 'Switching ' + item.name + ' to ' + item.stages[item.stage_index + 1].name;
