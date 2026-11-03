@@ -192,6 +192,7 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
 .env-control button { padding:3px 7px; min-width:28px; line-height:1.1; font-size:13px; }
 .env-control .env-count { min-width:60px; text-align:center; }
 .env-feedback { margin-top: 4px; font-size: 11px; font-weight: 700; }
+#chart-png { align-self: flex-end; }
 @media (min-width:1200px) { .graph-wrap { max-width:100%; } }
 #legend { display: flex; gap: 15px; flex-wrap: wrap; padding: 8px 0; font-size: 12px; font-weight: 800; }
 .dot { display: inline-block; width: 10px; height: 10px; border: 1px solid var(--ink); border-radius: 0; margin-right: 6px; }
@@ -481,10 +482,21 @@ function chart(items) {
             marker.setAttribute('stroke', '#000000');
             marker.setAttribute('stroke-dasharray', '4 5');
             marker.setAttribute('opacity', '0.6');
-            svg.append(marker);
+            const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+            const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+            label.setAttribute('x', String(xx(boundary) - 4));
+            label.setAttribute('y', '15');
+            label.setAttribute('font-size', '10');
+            label.setAttribute('fill', '#000');
+            label.textContent = 'S';
+            const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+            title.textContent = 'Curriculum stage threshold · ' + fmt(boundary) +
+                ' learner steps (evaluation may follow at a later finalized step)';
+            group.append(marker, label, title);
+            svg.append(group);
         }
         if (boundaries.length)
-            $('legend').append(txt('span', 'Dashed lines: curriculum boundaries'));
+            $('legend').append(txt('span', 'S: scheduled curriculum stage threshold · E: actual checkpoint evaluation'));
     }
     const xLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
     xLabel.setAttribute('x', '640'); xLabel.setAttribute('y', '237');
@@ -1449,18 +1461,27 @@ async function refreshWorkers() {
                     await refreshWorkers();
                 }
             };
-            const editable = w.role === 'dedicated' && w.state !== 'STALE' &&
-                w.can_override_envs === true &&
-                Number.isInteger(count) && Number.isInteger(w.min_envs) &&
-                Number.isInteger(w.max_envs) && !data.pending_release;
+            const reason = w.role !== 'dedicated'
+                ? 'Central learner is not a resizable remote worker'
+                : w.state === 'STALE'
+                    ? 'Worker is offline or its lease is stale'
+                    : w.can_override_envs !== true
+                        ? 'Worker runtime does not advertise live resizing; update its deployed runtime'
+                        : !Number.isInteger(count) ||
+                            !Number.isInteger(w.min_envs) || !Number.isInteger(w.max_envs)
+                            ? 'Worker has not reported a valid environment count and safe limits'
+                            : data.pending_release
+                                ? 'Resize unavailable until the release rollout finishes'
+                                : '';
+            const editable = !reason;
             const decrease = txt('button', '−'), increase = txt('button', '+');
             decrease.type = increase.type = 'button';
-            decrease.title = w.can_override_envs
-                ? 'Decrease worker environments by 1'
-                : 'Deploy updated remote-worker runtime to enable resizing';
-            increase.title = w.can_override_envs
-                ? 'Increase worker environments by 1'
-                : 'Deploy updated remote-worker runtime to enable resizing';
+            decrease.title = reason || (count <= w.min_envs
+                ? 'At worker minimum of ' + w.min_envs + ' environments'
+                : 'Decrease worker environments by 1');
+            increase.title = reason || (count >= w.max_envs
+                ? 'At worker maximum of ' + w.max_envs + ' environments'
+                : 'Increase worker environments by 1');
             decrease.dataset.baseDisabled = String(!editable || count <= w.min_envs);
             increase.dataset.baseDisabled = String(!editable || count >= w.max_envs);
             decrease.disabled = Boolean(resizingWorker) || decrease.dataset.baseDisabled === 'true';
@@ -1477,7 +1498,14 @@ async function refreshWorkers() {
                 reset.addEventListener('click', () => change(null));
                 controls.append(reset);
             }
-            envCell.append(controls, feedback); tr.append(envCell);
+            if (reason) {
+                const unavailable = txt('div', reason);
+                unavailable.className = 'env-feedback';
+                envCell.append(controls, feedback, unavailable);
+            } else {
+                envCell.append(controls, feedback);
+            }
+            tr.append(envCell);
             cell(tr, w.cpu_pct == null ? '—' : fmt(w.cpu_pct, 0) + '%');
             cell(tr, w.ram_pct == null ? '—' : fmt(w.ram_pct, 0) + '%');
             cell(tr, fmt(w.live_exp_s, 0));
