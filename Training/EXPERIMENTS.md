@@ -374,7 +374,14 @@ The experiment dashboard automatically selects recent runs with saved learner
 samples. The chart supports raw values, rolling means of the last 5/15/30
 recorded samples, hover readouts (raw/rolling/running mean), and horizontal
 axes of learner steps or observed training hours. Select additional runs
-using their **Plot** checkboxes. **Mean Group Reward** is the default reward
+using their **Plot** checkboxes. A **Download logs ZIP** button on each
+started experiment collects complete available run-scoped uploaded worker
+logs and central-learner logs, plus applicable per-run text diagnostics and
+a manifest. It does not bundle checkpoints, raw trajectories, or shared
+multi-run logs, and it cannot retrieve log bytes not yet uploaded by a remote
+worker. It does not stop or modify training.
+
+**Mean Group Reward** is the default reward
 curve, parsed from ML-Agents learner summaries; individual Mean Reward remains
 selectable. The PNG button exports the displayed graph and its legend without
 sending data to a separate service. Charts use a zero baseline for nonnegative
@@ -384,7 +391,9 @@ During a stage evaluation the learner is intentionally stopped, so no
 training-reward/throughput samples exist during that interval. The coordinator
 now captures the real last pre-stop sample and first fresh post-resume summary,
 and retains these boundary samples when old chart history is compacted.
-An **E** marker identifies benchmark boundaries on either horizontal axis;
+An **S** marker indicates the configured curriculum step threshold,
+which may precede the checkpoint's actual finalized step. An **E** marker
+identifies benchmark boundaries on either horizontal axis;
 the time axis counts observed training time, not benchmark downtime.
 Historical samples only contain fields collected at that time; new group
 rewards, PPO timing and Human combat values are **not backfilled** when
@@ -424,7 +433,11 @@ consumed experiences reported by its current process; those raw counters
 can reset on restart. The +/- controls set a **persistent** remote-worker
 environment target while its authenticated worker supervisor is online.
 The remote must advertise support from the current runtime and an admissible
-min/max capacity. Changing a running worker prompts a warning and records
+min/max capacity. Disabled +/- controls now show the specific reason inline
+(stale/offline worker, unsupported deployed runtime, missing safe limits,
+or release rollout). Updating only the dashboard does not add that
+capability to an older pinned worker runtime.
+Changing a running worker prompts a warning and records
 a capacity-change marker on the active experiment: compare throughput
 before and after separately. The **Auto** (automatically tuned workers) or **Reset** (locally configured
 manual workers) button clears the dashboard override and restores the worker's
