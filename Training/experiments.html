@@ -491,6 +491,44 @@ function chart(items) {
         marker.setAttribute('font-size', '12'); marker.setAttribute('fill', 'currentColor');
         marker.textContent = fmt(val, 3); svg.append(marker);
     }
+    const evaluationMarkers = [];
+    for (const dataset of datasets) {
+        if (!dataset.points.length) continue;
+        for (const [index, record] of (dataset.item.stage_history || []).entries()) {
+            if (!record?.evaluation) continue;
+            const x = axis === 'time'
+                ? (record.finished_training_s != null
+                    ? record.finished_training_s / 3600
+                    : stagePerformanceThrough(dataset.item, index)?.hours)
+                : (record.evaluation.boundary_step ?? record.finished_step);
+            if (!Number.isFinite(x) || x < 0 || x > xmax) continue;
+            const position = xx(x);
+            const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+            const marker = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            for (const [key, value] of Object.entries({
+                x1: position, x2: position, y1: 20, y2: 210,
+            })) marker.setAttribute(key, String(value));
+            marker.setAttribute('stroke', '#555');
+            marker.setAttribute('stroke-opacity', '0.5');
+            marker.setAttribute('stroke-dasharray', '5 4');
+            const tag = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+            tag.setAttribute('x', String(position - 4));
+            tag.setAttribute('y', '15');
+            tag.setAttribute('fill', '#111');
+            tag.setAttribute('font-size', '10');
+            tag.textContent = 'E';
+            const stageName = dataset.item.stages?.[index]?.name || 'Stage ' + (index + 1);
+            const label = dataset.item.name + ' · ' + stageName +
+                ' checkpoint evaluation (learner stopped)';
+            const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+            title.textContent = label;
+            group.append(marker, tag, title);
+            svg.append(group);
+            evaluationMarkers.push({ x, label });
+        }
+    }
+    if (evaluationMarkers.length)
+        $('legend').append(txt('span', 'E: benchmark evaluation · no training samples while stopped'));
     const envMarkers = [];
     if (isTrainingSpeedMetric(metric)) {
         for (const dataset of datasets) {
@@ -543,7 +581,8 @@ function chart(items) {
     const hoverLayer = document.createElementNS('http://www.w3.org/2000/svg', 'g');
     hoverLayer.setAttribute('id', 'chart-hover-overlay');
     svg.append(hoverLayer);
-    chartHover = { datasets, hoverLayer, xmax, xx, yy, metric, axis, smooth, envMarkers };
+    chartHover = { datasets, hoverLayer, xmax, xx, yy, metric, axis, smooth,
+        envMarkers, evaluationMarkers };
     $('graph-inspect').textContent =
         'Hover for raw, rolling and running-mean values.' +
         (envMarkers.length ? ' Vertical ticks mark observed worker environment-count changes; historical requests are approximate.' : '') +
@@ -656,6 +695,8 @@ function inspectChart(event) {
     }
     const nearbyChanges = chartHover.envMarkers.filter(change =>
         Math.abs(chartHover.xx(change.x) - pixelX) <= 7);
+    const nearbyEvaluations = chartHover.evaluationMarkers.filter(event =>
+        Math.abs(chartHover.xx(event.x) - pixelX) <= 7);
     const text = [
         ...nearest.map(({ item, point }) =>
             item.name + ' · ' + (chartHover.axis === 'time'
@@ -666,6 +707,7 @@ function inspectChart(event) {
         ...nearbyChanges.map(change =>
             'ENV COUNT · ' + change.run + ' · ' + change.label +
             ' · ' + new Date(change.at).toLocaleString()),
+        ...nearbyEvaluations.map(event => 'EVALUATION · ' + event.label),
     ].join('\n');
     $('graph-inspect').textContent = text.replaceAll('\n', ' ');
     const tooltip = $('graph-tooltip');
