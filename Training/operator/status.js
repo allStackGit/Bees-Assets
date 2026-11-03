@@ -70,6 +70,7 @@ function parseLearnerLogFiles(files) {
     let elo = null;
     let step = null;
     let reward = null;
+    let groupReward = null;
     let averageStepsPerSecond = null;
     let liveStepsPerSecond = null;
     let restartAverageStepsPerSecond = null;
@@ -102,8 +103,12 @@ function parseLearnerLogFiles(files) {
             lastSummaryElapsedSeconds = lineElapsed;
 
             let match;
-            if ((match = line.match(/Mean Reward\s*[:=]\s*(-?\d+(?:\.\d+)?)/i))) {
+            const rewardNumber = '([-+]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)(?:[eE][-+]?\\d+)?)';
+            if ((match = line.match(new RegExp('Mean Reward\\s*[:=]\\s*' + rewardNumber, 'i')))) {
                 reward = Number(match[1]);
+            }
+            if ((match = line.match(new RegExp('Mean Group Reward\\s*[:=]\\s*' + rewardNumber, 'i')))) {
+                groupReward = Number(match[1]);
             }
             if ((match = line.match(/\bELO\b[^-0-9]*(-?\d+(?:\.\d+)?)/i))) {
                 elo = Number(match[1]);
@@ -149,6 +154,7 @@ function parseLearnerLogFiles(files) {
         ELO: elo,
         Step: step,
         MeanReward: reward,
+        MeanGroupReward: groupReward,
         AverageStepsPerSecond: averageStepsPerSecond,
         LiveStepsPerSecond: liveStepsPerSecond,
         RestartAverageStepsPerSecond: restartAverageStepsPerSecond,
