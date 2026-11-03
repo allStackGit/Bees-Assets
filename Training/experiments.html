@@ -1206,6 +1206,9 @@ async function refreshWorkers() {
         const data = await response.json();
         if (!response.ok) throw Error(data.error || 'Training control unavailable');
         const workers = data.workers || [];
+        for (const [workerId, operation] of workerResizeFeedback) {
+            if (operation.runId !== data.run_id) workerResizeFeedback.delete(workerId);
+        }
         $('worker-indicator').classList.remove('error');
         $('worker-summary').classList.remove('error');
         const troubled = workers.filter(w => w.state === 'STALE' || Boolean(w.error));
@@ -1273,7 +1276,7 @@ async function refreshWorkers() {
                     ' during training may change learning speed and make ' +
                     'before/after speed measurements non-comparable. Continue?')) return;
                 resizingWorker = w.trainer_id;
-                const operation = { target, phase: 'sending' };
+                const operation = { target, phase: 'sending', runId: data.run_id };
                 workerResizeFeedback.set(w.trainer_id, operation);
                 feedback.textContent = 'Sending ' +
                     (target === null ? 'automatic/default mode' : fmt(target) + ' envs') + '…';
@@ -1301,6 +1304,11 @@ async function refreshWorkers() {
                     $('message').classList.add('error');
                 } finally {
                     resizingWorker = null;
+                    // Restore the table's original min/max/capability-disabled
+                    // states even if the next worker-status fetch fails.
+                    for (const control of document.querySelectorAll('.env-control button')) {
+                        control.disabled = control.dataset.baseDisabled === 'true';
+                    }
                     await refreshWorkers();
                 }
             };
@@ -1316,8 +1324,10 @@ async function refreshWorkers() {
             increase.title = w.can_override_envs
                 ? 'Increase worker environments by 1'
                 : 'Deploy updated remote-worker runtime to enable resizing';
-            decrease.disabled = Boolean(resizingWorker) || !editable || count <= w.min_envs;
-            increase.disabled = Boolean(resizingWorker) || !editable || count >= w.max_envs;
+            decrease.dataset.baseDisabled = String(!editable || count <= w.min_envs);
+            increase.dataset.baseDisabled = String(!editable || count >= w.max_envs);
+            decrease.disabled = Boolean(resizingWorker) || decrease.dataset.baseDisabled === 'true';
+            increase.disabled = Boolean(resizingWorker) || increase.dataset.baseDisabled === 'true';
             decrease.addEventListener('click', () => change(-1));
             increase.addEventListener('click', () => change(1));
             controls.append(decrease, number, increase);
@@ -1325,7 +1335,8 @@ async function refreshWorkers() {
                 const reset = txt('button', w.auto_envs ? 'Auto' : 'Reset');
                 reset.type = 'button';
                 reset.title = 'Restore worker automatic tuning or its local manual target';
-                reset.disabled = Boolean(resizingWorker) || !editable;
+                reset.dataset.baseDisabled = String(!editable);
+                reset.disabled = Boolean(resizingWorker) || reset.dataset.baseDisabled === 'true';
                 reset.addEventListener('click', () => change(null));
                 controls.append(reset);
             }
