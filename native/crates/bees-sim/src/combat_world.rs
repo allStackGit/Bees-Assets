@@ -900,6 +900,7 @@ impl CombatWorld {
         let mut ends_projectile = false;
         let mut accepted_power = None;
         let mut rocket_explodes = false;
+        let mut split_on_contact = false;
 
         match &mut shot.behavior {
             ImpactBehavior::StrikerBomb(_) => {},
@@ -920,6 +921,18 @@ impl CombatWorld {
                     // Rocket.ShipCollision calls ContactTarget -> AddExplosion
                     // -> Kill, but never deals direct rocket damage.
                     rocket_explodes = true;
+                }
+            }
+            ImpactBehavior::Splitter { .. } => {
+                if can_basic_projectile_damage(
+                    owner.shooter_side, owner.shooter_is_fire_barge,
+                    target.side, shot.ignored_ships.contains(&target.entity_id),
+                ) {
+                    // SplitterShot.ContactTarget calls KillSequence(target)
+                    // before the original shot's damage is recorded.
+                    accepted_power = Some(shot.power);
+                    ends_projectile = true;
+                    split_on_contact = true;
                 }
             }
             ImpactBehavior::Direct => {
@@ -951,6 +964,9 @@ impl CombatWorld {
             self.spawn_rocket_explosion(shot_index)?;
             self.end_projectile(shot_index);
             return Ok(());
+        }
+        if split_on_contact {
+            self.spawn_split_children(shot_index, Some(contact.ship_id))?;
         }
         if ends_projectile {
             self.end_projectile(shot_index);
@@ -1048,6 +1064,11 @@ impl CombatWorld {
                     });
                 }
                 ObstacleKind::MiningAsteroid | ObstacleKind::AsteroidPiece => {}
+            }
+            if kind != ObstacleKind::MapBorder &&
+                matches!(&self.projectiles[shot_index].behavior, ImpactBehavior::Splitter { .. })
+            {
+                self.spawn_split_children(shot_index, None)?;
             }
             self.end_projectile(shot_index);
         }
