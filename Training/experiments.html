@@ -467,11 +467,15 @@ function chart(items) {
             : 'Existing runs retain available metrics; newly added measurements cannot be reconstructed retroactively.';
         return;
     }
-    const xmax = Math.max(0.000001, ...points.map(p => p.x));
-    // Always include zero. For signed rewards retain negative readings;
-    // clipping them at zero would misrepresent how the policy is learning.
-    const ymin = Math.min(0, ...points.map(p => p.y));
-    let ymax = Math.max(0, ...points.map(p => p.y));
+    // Avoid spreading tens of thousands of points into Math.max/min:
+    // long experiments retain full minute-resolution history.
+    let xmax = 0.000001, ymin = 0, ymax = 0;
+    for (const point of points) {
+        xmax = Math.max(xmax, point.x);
+        ymin = Math.min(ymin, point.y);
+        ymax = Math.max(ymax, point.y);
+    }
+    // Signed rewards keep their negative range; nonnegative metrics start at zero.
     if (ymin === ymax) ymax = ymin + 1;
     const xx = x => 55 + x / xmax * 710;
     const yy = y => 210 - (y - ymin) / (ymax - ymin) * 175;
