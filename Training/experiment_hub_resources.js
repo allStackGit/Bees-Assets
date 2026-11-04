@@ -1,17 +1,30 @@
 'use strict';
 
-// Pure resource accounting: admission is not execution or OS-level isolation.
+// Project-neutral resource admission. Never mistake capacity planning for
+// OS-level process isolation or ownership of a live physical device.
 function int(value) { return Number.isSafeInteger(value) && value >= 0; }
+
 function request(input) {
-    if (!input || typeof input !== 'object') throw Error('Invalid resource request.');
-    const cpus = input.cpus, ram_mb = input.ram_mb;
+    if (!input || typeof input !== 'object' || Array.isArray(input))
+        throw Error('Invalid resource request.');
+    const {cpus, ram_mb} = input;
     if (!int(cpus) || !int(ram_mb) || cpus < 1 || ram_mb < 1)
         throw Error('CPU and memory requests must be positive integers.');
-    const gpu = Array.isArray(input.gpus) ? input.gpus : [];
-    if (gpu.some(v=>typeof v !== 'string' || !/^[a-z][a-z0-9_-]{0,47}$/.test(v)) ||
-        new Set(gpu).size !== gpu.length) throw Error('GPU IDs must be unique.');
-    return {cpus, ram_mb, gpus:gpu};
+    const gpus = input.gpus == null ? [] : input.gpus;
+    if (!Array.isArray(gpus) || gpus.some(v=>typeof v !== 'string' ||
+        !/^[a-z][a-z0-9_-]{0,47}$/.test(v)) ||
+        new Set(gpus).size !== gpus.length)
+        throw Error('GPU IDs must be unique valid device names.');
+    const gpu_count = input.gpu_count == null ? gpus.length : input.gpu_count;
+    const min_gpu_vram_mb = input.min_gpu_vram_mb == null ? 0 : input.min_gpu_vram_mb;
+    if (!int(gpu_count) || gpu_count > 32 ||
+        (gpus.length && gpu_count !== gpus.length) ||
+        !int(min_gpu_vram_mb) || min_gpu_vram_mb > 1000000 ||
+        (!gpu_count && min_gpu_vram_mb))
+        throw Error('GPU count and minimum VRAM must be valid; exact device IDs must match the requested count.');
+    return {cpus, ram_mb, gpus, gpu_count, min_gpu_vram_mb};
 }
+
 function remaining(machine, reservations) {
     const claimed = reservations.filter(r=>r.machine_id===machine.id && r.status==='active');
     const usedCpus = claimed.reduce((sum,r)=>sum+r.resources.cpus,0);
@@ -23,21 +36,30 @@ function remaining(machine, reservations) {
         gpus:machine.gpus.filter(g=>!usedGpu.has(g.id)).map(g=>g.id),
     };
 }
+
 function placements(machines, reservations, input) {
     const wanted = request(input);
     return machines.map(machine=>{
         const available = remaining(machine,reservations);
-        const ready = machine.status === 'online';
-        const fits = ready && wanted.cpus<=available.cpus &&
-            wanted.ram_mb<=available.ram_mb &&
-            wanted.gpus.every(id=>available.gpus.includes(id));
+        const eligibleGpus = machine.gpus.filter(g=>available.gpus.includes(g.id) &&
+            g.vram_mb>=wanted.min_gpu_vram_mb &&
+            (!wanted.gpus.length || wanted.gpus.includes(g.id)))
+            .sort((a,b)=>a.vram_mb-b.vram_mb);
+        const gpuFits = eligibleGpus.length >= wanted.gpu_count &&
+            (!wanted.gpus.length || wanted.gpus.every(id=>
+                eligibleGpus.some(g=>g.id===id)));
+        const capacityFits = wanted.cpus<=available.cpus &&
+            wanted.ram_mb<=available.ram_mb && gpuFits;
+        const online = machine.status === 'online';
+        const fits = online && capacityFits;
         return {
-            machine_id:machine.id, machine_name:machine.name, online:ready,
-            available, fits,
-            reason:!ready?'No authenticated healthy agent'
-                :fits?'Resources available (reservation only; isolation not verified)'
-                :'Insufficient unreserved capacity',
+            machine_id:machine.id, machine_name:machine.name, online,
+            available, fits, capacity_fits:capacityFits,
+            suggested_gpus:capacityFits?eligibleGpus.slice(0,wanted.gpu_count).map(g=>g.id):[],
+            reason:!online?'No authenticated healthy agent; capacity preview only'
+                :fits?'Resources available (isolation must still be enforced)'
+                :'Insufficient unreserved capacity or GPU VRAM',
         };
     });
 }
-module.exports = {request, remaining, placements};
+module.exports = {request,remaining,placements};
