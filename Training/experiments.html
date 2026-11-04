@@ -192,6 +192,10 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
 .env-control button { padding:3px 7px; min-width:28px; line-height:1.1; font-size:13px; }
 .env-control .env-count { min-width:60px; text-align:center; }
 .env-feedback { margin-top: 4px; font-size: 11px; font-weight: 700; }
+.log-export { display: inline-flex; align-items: end; gap: 6px; flex-wrap: wrap; margin: 5px 0; }
+.log-export label { font-size: 11px; }
+.log-export select { min-width: 94px; padding: 6px; }
+.log-export button { padding: 7px 9px; font-size: 11px; }
 #chart-png { align-self: flex-end; }
 @media (min-width:1200px) { .graph-wrap { max-width:100%; } }
 #legend { display: flex; gap: 15px; flex-wrap: wrap; padding: 8px 0; font-size: 12px; font-weight: 800; }
@@ -936,26 +940,39 @@ function render(data) {
         }
         name.append(details);
         if (item.run_id) {
+            const exportBar = document.createElement('div');
+            exportBar.className = 'log-export';
+            const label = txt('label', 'Newest log portion');
+            const percent = document.createElement('select');
+            percent.setAttribute('aria-label', 'Log portion for ' + item.name);
+            for (const value of [1, 5, 10, 25, 50, 100]) {
+                const option = document.createElement('option');
+                option.value = String(value);
+                option.textContent = value + '%';
+                percent.append(option);
+            }
+            percent.value = '5';
+            label.append(percent);
             const download = txt('button', 'Download logs ZIP');
             download.type = 'button';
-            download.title = 'Download full available learner and uploaded-worker logs for this run (no checkpoints)';
+            download.title = 'Export the newest selected portion of each available run log, preserving complete lines; no checkpoints';
             download.addEventListener('click', () => {
                 const link = document.createElement('a');
                 link.href = '/api/experiment-logs?experiment_id=' +
-                    encodeURIComponent(item.id);
-                // Let the server choose the ZIP filename. If it cannot
-                // export logs, show its error in a new tab instead of saving
-                // a JSON error response under a misleading .zip extension.
+                    encodeURIComponent(item.id) + '&percent=' + percent.value;
+                // The server chooses the filename. HTTP errors open visibly
+                // rather than being saved as a misleading ZIP.
                 link.target = '_blank';
                 link.rel = 'noopener';
                 document.body.append(link);
                 link.click();
                 link.remove();
                 $('message').classList.remove('error');
-                $('message').textContent = 'Preparing complete available logs for ' +
-                    item.name + '. The browser download begins when the ZIP is ready.';
+                $('message').textContent = 'Preparing newest ' + percent.value +
+                    '% of available logs for ' + item.name + '. The download begins when ready.';
             });
-            name.append(download);
+            exportBar.append(label, download);
+            name.append(exportBar);
         }
         if (item.status === 'queued' && !item.run_id) {
             const edit = txt('button', 'Edit queued');
