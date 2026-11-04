@@ -9,6 +9,7 @@
 
 pub mod asteroid_assets;
 pub mod bomb;
+pub mod box_obstacle_assets;
 mod collider_asset_shape;
 pub mod collision;
 pub mod combat;
