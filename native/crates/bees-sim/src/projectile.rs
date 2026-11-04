@@ -12,10 +12,10 @@ use crate::geometry::{projectile_velocity, Vec2};
 pub struct ShotAttribution {
     /// The original shot identifier also belongs to explosion and split
     /// continuations, allowing correct hit/near-miss and terminal accounting.
-    pub root_shot_id: u64,
+    pub root_shot_id: i64,
     /// Snapshot of Hive Mind command identity at firing, not the command
     /// currently held by the shooter's squad when a delayed shot lands.
-    pub command_outcome_id: u64,
+    pub command_outcome_id: i64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -33,8 +33,8 @@ impl ProjectileMotion {
         speed: f64,
         angle_radians: f32,
         range: f32,
-        root_shot_id: u64,
-        command_outcome_id: u64,
+        root_shot_id: i64,
+        command_outcome_id: i64,
     ) -> Self {
         Self {
             position,
