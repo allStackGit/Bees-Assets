@@ -28,6 +28,9 @@ pub struct ProjectileMotion {
     pub position: Vec2,
     pub starting_position: Vec2,
     pub velocity: Vec2,
+    /// Original Projectile.Angle in radians. Splitter shots and weapon
+    /// continuations must not reconstruct it from float velocity components.
+    pub angle_radians: f32,
     pub range: f32,
     pub attribution: ShotAttribution,
 }
@@ -45,6 +48,7 @@ impl ProjectileMotion {
             position,
             starting_position: position,
             velocity: projectile_velocity(speed, angle_radians),
+            angle_radians,
             range,
             attribution: ShotAttribution { root_shot_id, command_outcome_id },
         }
