@@ -63,6 +63,30 @@ impl ObstacleVitals {
     }
 }
 
+/// Exact spawn counts from CollisionAsteroid.SpawnBreakAwayAsteroids.
+/// The consuming world must still supply pool-specific prefab geometry,
+/// inherited angular velocity, random velocity/heading, sibling exclusion,
+/// and piece fade/expiry before fragmentation is functionally complete.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct AsteroidBreakup {
+    pub collision_asteroid_shards: u8,
+    pub asteroid_pieces: u16,
+}
+
+impl AsteroidBreakup {
+    pub fn for_size_class(size_class: u8) -> Self {
+        let collision_asteroid_shards = if size_class < 6 {
+            0
+        } else if size_class == 6 {
+            2
+        } else {
+            3
+        };
+        let asteroid_pieces = (u16::from(size_class) * 3) / 2;
+        Self { collision_asteroid_shards, asteroid_pieces }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct CombatObstacle {
     pub entity_id: i64,
@@ -81,6 +105,18 @@ impl CombatObstacle {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shard_and_piece_counts_match_unity_size_classes() {
+        assert_eq!(AsteroidBreakup::for_size_class(2),
+            AsteroidBreakup { collision_asteroid_shards: 0, asteroid_pieces: 3 });
+        assert_eq!(AsteroidBreakup::for_size_class(3),
+            AsteroidBreakup { collision_asteroid_shards: 0, asteroid_pieces: 4 });
+        assert_eq!(AsteroidBreakup::for_size_class(6),
+            AsteroidBreakup { collision_asteroid_shards: 2, asteroid_pieces: 9 });
+        assert_eq!(AsteroidBreakup::for_size_class(8),
+            AsteroidBreakup { collision_asteroid_shards: 3, asteroid_pieces: 12 });
+    }
 
     #[test]
     fn collision_asteroid_damage_death_and_cracked_threshold() {
