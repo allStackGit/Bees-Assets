@@ -297,16 +297,72 @@ class ExperimentHub {
         return copy(item);
     }
     queueConfiguration(value) {
-        if (!object(value)) throw Error('Invalid job request.');
+        if (!object(value) || typeof value.configuration_id !== 'string')
+            throw Error('Select a saved configuration to queue.');
         const selected = this.state.configurations.find(x=>x.id===value.configuration_id);
         if (!selected) throw Error('Saved configuration not found.');
         const project = this.project(selected.project_id);
-        if (project.adapter === 'unconfigured')
-            throw Error('This project has no installed execution adapter. It can be designed but not scheduled.');
         if (project.adapter === 'bees')
-            throw Error('Bees jobs still use the verified Bees queue. Queue this definition through the Bees training form.');
-        // Explicit adapter registration is required before enabling generic execution.
-        throw Error('No trusted execution adapter has been registered for this project.');
+            throw Error('Bees jobs use the existing validated Bees experiment queue.');
+        if (project.adapter !== 'unconfigured')
+            throw Error('Unknown execution adapter; refusing to schedule.');
+        if (value.expected_revision !== selected.revision)
+            throw Error('Draft changed since selection; reload before queueing.');
+        // Freeze the exact input and resources. No executable, shell snippet,
+        // directory, or process arguments can be supplied in the job request.
+        const frozen = config(selected.parameters);
+        const resources = resourceRequest(value.resources);
+        if (this.state.jobs.filter(j=>j.status==='waiting_adapter').length >= 100)
+            throw Error('Too many pending jobs; cancel unused jobs first.');
+        if (this.state.jobs.length >= 1000)
+            throw Error('Job history limit reached. Export or archive older jobs before queueing more.');
+        const job = {
+            id:crypto.randomUUID(),
+            project_id:project.id, adapter:project.adapter,
+            configuration_id:selected.id,
+            configuration_revision:selected.revision,
+            configuration_name:selected.name,
+            configuration_sha256:crypto.createHash('sha256')
+                .update(JSON.stringify(frozen)).digest('hex'),
+            frozen_parameters:frozen, resources,
+            status:'waiting_adapter',
+            status_reason:'No trusted execution adapter or OS-enforced allocation is installed.',
+            created_at:now(), cancelled_at:null,
+        };
+        const next=copy(this.state);
+        next.jobs.push(job);
+        this.commit(next);
+        return copy(job);
+    }
+    cancelJob(value) {
+        if (!object(value) || typeof value.job_id!=='string' ||
+            value.confirm_cancel!==true)
+            throw Error('Select a queued job and explicitly confirm cancellation.');
+        const next=copy(this.state);
+        const job=next.jobs.find(j=>j.id===value.job_id);
+        if (!job) throw Error('Job not found.');
+        if (job.status==='cancelled') return copy(job);
+        if (job.status!=='waiting_adapter')
+            throw Error('Only unstarted jobs can be cancelled without an execution adapter.');
+        job.status='cancelled';
+        job.status_reason='Cancelled before any execution was permitted.';
+        job.cancelled_at=now();
+        this.commit(next);
+        return copy(job);
+    }
+    plannedJobs() {
+        const {plan}=require('./experiment_hub_resources');
+        const jobs=this.state.jobs.filter(j=>j.status==='waiting_adapter');
+        const snapshot=this.snapshot();
+        // This does not run a scheduler: the planner may place an unconfigured
+        // job purely hypothetically, and even connected hosts are not executable.
+        return {jobs:plan(snapshot.machines,snapshot.reservations,
+            jobs.map(j=>({id:j.id,resources:j.resources}))).map(row=>{
+                const job=jobs.find(j=>j.id===row.id);
+                return {...row,project_id:job.project_id,
+                    configuration_name:job.configuration_name,
+                    status:job.status,executable:false};
+            }),note:'Advisory what-if only. No adapter, worker launch, or OS limits are enabled.'};
     }
     addMachine(value) {
         if (!object(value) || !ID.test(String(value.id||''))) throw Error('Use a lowercase machine ID.');
