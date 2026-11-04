@@ -22,6 +22,9 @@ pub struct ObstacleVitals {
     /// CollisionAsteroid.EffectiveMaxHealth, not OriginalHealth when
     /// training durability adjustments are active.
     pub effective_max_health: i32,
+    /// Unity collision damage uses authored OriginalHealth even when the
+    /// training durability guard reduces the live/effective health.
+    pub original_health: i32,
     pub is_dead: bool,
 }
 
@@ -35,10 +38,20 @@ pub struct AsteroidDamage {
 
 impl ObstacleVitals {
     pub fn new(health: i32, effective_max_health: i32) -> Option<Self> {
-        if health <= 0 || effective_max_health <= 0 {
+        Self::with_original_health(health, effective_max_health, effective_max_health)
+    }
+
+    pub fn with_original_health(
+        health: i32,
+        effective_max_health: i32,
+        original_health: i32,
+    ) -> Option<Self> {
+        if health <= 0 || effective_max_health <= 0 || original_health <= 0 {
             return None;
         }
-        Some(Self { health, effective_max_health, is_dead: false })
+        Some(Self {
+            health, effective_max_health, original_health, is_dead: false,
+        })
     }
 
     /// Projectile.DamageObstacle only damages CollisionAsteroid. Its power
