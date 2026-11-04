@@ -887,7 +887,13 @@ mod tests {
         assert!(world.reservations.held_by(100).is_none());
 
         let mask = CollisionMatrix::from_rows([0; 32]);
+        world.physics.ships_mut()[1].motion.position =
+            Vec2::new(2.0, 3.0);
         world.step_fixed(1.51, &mask).unwrap();
+        assert_eq!(
+            world.physics.projectiles()[0].motion.position,
+            Vec2::new(2.0, 3.0),
+        );
         assert!(matches!(
             world.events()[0],
             CombatEvent::BombDetonated { projectile_id: 10, target_id: 2 }
