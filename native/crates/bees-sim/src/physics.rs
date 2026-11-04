@@ -352,6 +352,8 @@ pub enum PhysicsError {
     DuplicateEntityId,
     ActiveProjectileSlot,
     MissingProjectileSlot,
+    ActiveObstacleSlot,
+    MissingObstacleSlot,
     InvalidStep,
     UnsupportedPolicyActions,
 }
@@ -554,6 +556,22 @@ impl KinematicPhysics {
             return Err(PhysicsError::ActiveProjectileSlot);
         }
         *slot = projectile;
+        Ok(())
+    }
+
+    /// Reuse a destroyed obstacle's physical slot. Entity IDs are never
+    /// reused; trigger pairs refer to IDs, not to array indices.
+    pub fn replace_ended_obstacle(
+        &mut self,
+        index: usize,
+        obstacle: ObstacleBody,
+    ) -> Result<(), PhysicsError> {
+        let slot = self.obstacles.get_mut(index)
+            .ok_or(PhysicsError::MissingObstacleSlot)?;
+        if slot.active {
+            return Err(PhysicsError::ActiveObstacleSlot);
+        }
+        *slot = obstacle;
         Ok(())
     }
 
