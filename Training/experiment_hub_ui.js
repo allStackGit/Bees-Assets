@@ -166,6 +166,11 @@ document.addEventListener('DOMContentLoaded', () => {
             cell(tr,'No queued jobs for this project.').colSpan=5;
             $('hub-job-rows').append(tr);
         }
+        const waiting=records.filter(j=>j.status==='waiting_adapter').length;
+        const cancelled=records.filter(j=>j.status==='cancelled').length;
+        feedback('hub-other-monitor',
+            waiting+' waiting for trusted adapter · '+cancelled+' cancelled · '+
+            'No managed process running for this project.');
         $('hub-machine-rows').replaceChildren();
         for(const m of state.machines) {
             const tr=document.createElement('tr');
