@@ -283,10 +283,15 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
   <h2>Ordinary Bees training</h2>
   <p class="muted">Start a new run or continue the current optimizer lineage without entering the experiment queue. These controls use the same Bees operator as the CLI. Existing experiment-owned runs must be managed through their own controls.</p>
   <p id="hub-bees-control-status" class="hub-notice">Loading Bees training control…</p>
+  <label>Unity environment arguments for this ordinary run (one --rl-... argument per line)
+    <textarea id="hub-bees-env-args" rows="4" placeholder="Current release defaults"></textarea>
+  </label>
+  <p class="muted">Existing-run starts use these arguments. Changing the environment within the same run requires confirmation and can affect comparability. Actual argument validation is performed against the built Unity release before training starts.</p>
   <div class="hub-controls">
     <button type="button" id="hub-bees-resume" class="primary">Start / resume existing run</button>
     <button type="button" id="hub-bees-new">Start fresh run</button>
     <button type="button" id="hub-bees-build">Build Windows + Linux RL</button>
+    <button type="button" id="hub-bees-update-workers">Update remote workers</button>
     <button type="button" id="hub-bees-stop" class="danger">Stop gracefully</button>
   </div>
   <p id="hub-operator-message" class="hub-notice" role="status"></p>
@@ -305,6 +310,16 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
 </section>
 <section data-hub-tab="machines">
   <h2>Machine inventory and resource admission</h2>
+  <div class="hub-standalone">
+    <h3>Live Bees training workers</h3>
+    <p class="muted">Read-only data from the existing Bees control plane. Worker IDs are not necessarily distinct physical machines. These reports are not registered as verified generic compute agents.</p>
+    <button type="button" id="hub-live-bees-refresh">Refresh worker status</button>
+    <div class="tablewrap hub-table"><table>
+      <thead><tr><th>Trainer</th><th>Role</th><th>Platform</th><th>State</th><th>Environments</th><th>CPU %</th><th>RAM %</th><th>Accepted/s</th><th>Diagnostic</th></tr></thead>
+      <tbody id="hub-live-bees-rows"></tbody>
+    </table></div>
+    <p id="hub-live-bees-note" class="hub-notice"></p>
+  </div>
   <p class="muted">Register capacities and inspect potential CPU, RAM and exclusive-GPU placements. Manually registered machines remain unverified and cannot be scheduled until an authenticated agent confirms health and isolation.</p>
   <div class="hub-standalone">
     <h3>Register machine</h3>
