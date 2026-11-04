@@ -79,21 +79,36 @@ function validateLocalInput(job,lease,machineId,adapters,hostOs=os) {
             (typeof adapter.cwd!=='string'||!path.isAbsolute(adapter.cwd)||
              !SAFE_ARG.test(adapter.cwd))))
         throw Error('No valid locally installed trusted adapter for this project.');
-    const args=adapter.args(JSON.parse(JSON.stringify(job.frozen_parameters)));
+    const stopPolicy=adapter.stop_policy||'terminate-group';
+    if(!['terminate-group','interrupt-main'].includes(stopPolicy))
+        throw Error('Unknown locally installed native stop policy.');
+    const args=adapter.args(JSON.parse(JSON.stringify(job.frozen_parameters)),
+        Object.freeze({job_id:job.id,project_id:job.project_id}));
     if(!Array.isArray(args)||args.length>64||
         args.some(a=>typeof a!=='string'||a.length>1024||
             !SAFE_ARG.test(a)))
         throw Error('Trusted adapter returned an unsafe invocation.');
     return {executable:adapter.executable,args,cwd:adapter.cwd||null,
-        cpus:r.cpus,ram_mb:r.ram_mb};
+        cpus:r.cpus,ram_mb:r.ram_mb,stop_policy:stopPolicy};
 }
 function launchArguments(record,invocation) {
     const args=['--user','--quiet','--service-type=exec',
         '--unit='+record.unit,'--description='+descriptionFor(record.job_id),
         '--property=CPUQuota='+(invocation.cpus*100)+'%',
         '--property=MemoryMax='+(invocation.ram_mb*1048576),
-        '--property=KillMode=control-group','--property=TimeoutStopSec=20s',
-        '--property=CPUAccounting=yes','--property=MemoryAccounting=yes'];
+        '--property=KillMode='+
+            (invocation.stop_policy==='interrupt-main'?'mixed':'control-group'),
+        '--property=KillSignal='+
+            (invocation.stop_policy==='interrupt-main'?'SIGINT':'SIGTERM'),
+        '--property=TimeoutStopSec='+
+            (invocation.stop_policy==='interrupt-main'?'600s':'20s'),
+        '--property=CPUAccounting=yes','--property=MemoryAccounting=yes',
+        // These masks keep default CUDA/ROCm selectors from using a GPU
+        // inside CPU-budgeted jobs; they do NOT create GPU device isolation.
+        '--setenv=CUDA_VISIBLE_DEVICES=',
+        '--setenv=HIP_VISIBLE_DEVICES=',
+        '--setenv=ROCR_VISIBLE_DEVICES=',
+        '--setenv=GPU_DEVICE_ORDINAL='];
     if(invocation.cwd)args.push('--working-directory='+invocation.cwd);
     // This is a systemd-run option boundary, not a shell.
     return args.concat('--',invocation.executable,...invocation.args);
@@ -155,7 +170,7 @@ class LinuxSupervisor {
     async inspectUnit(record) {
         const out=await this.runner(SYSTEMCTL,
             ['--user','show',record.unit,'--no-pager',
-                '--property=Id,Description,LoadState,ActiveState,SubState,Result,MainPID,MemoryMax,CPUQuotaPerSecUSec,MemoryCurrent,CPUUsageNSec,TasksCurrent'],
+                '--property=Id,Description,LoadState,ActiveState,SubState,Result,MainPID,MemoryMax,CPUQuotaPerSecUSec,MemoryCurrent,CPUUsageNSec,TasksCurrent,KillMode,KillSignal'],
             {timeout:12000,maxBuffer:16384,windowsHide:true});
         const p=parseShow(out.stdout);
         if(p.LoadState!=='loaded')
@@ -167,6 +182,10 @@ class LinuxSupervisor {
         if(!Number.isSafeInteger(memory)||memory!==expectedMemory||
             cpu!==record.cpus*1000000)
             throw Error('Systemd did not confirm the exact CPU and memory limits.');
+        if(record.stop_policy==='interrupt-main'&&
+            (p.KillMode!=='mixed'||
+                !['SIGINT','2'].includes(p.KillSignal)))
+            throw Error('Systemd did not confirm checkpoint-aware interrupt semantics.');
         if(p.ActiveState==='active') {
             const numeric=value=>/^[0-9]+$/.test(value||'')&&
                 Number.isSafeInteger(Number(value))?Number(value):null;
@@ -192,8 +211,10 @@ class LinuxSupervisor {
         try{result=await this.inspectUnit(record);}
         catch(error){result={state:'unverified',active:false,
             diagnostic:String(error.message||error).slice(0,220)};}
-        const state=record.stop_requested_at && !result.active &&
-            result.state==='finished'?'stopped':result.state;
+        const state=record.stop_requested_at&&result.active
+            ?'stop_requested'
+            :record.stop_requested_at&&!result.active&&
+                result.state==='finished'?'stopped':result.state;
         const updated={...record,state,
             observed_at:new Date().toISOString(),
             diagnostic:result.diagnostic||null};
@@ -229,6 +250,7 @@ class LinuxSupervisor {
             job_id:job.id,lease_id:lease.id,project_id:job.project_id,
             unit:unitFor(job.id),state:'launch_requested',
             cpus:invocation.cpus,ram_mb:invocation.ram_mb,
+            stop_policy:invocation.stop_policy,
             requested_at:new Date().toISOString(),observed_at:null,diagnostic:null,
         };
         this.commit(this.state.records.concat(record));
@@ -253,13 +275,15 @@ class LinuxSupervisor {
         // Re-check exact unit identity AND quota properties before stopping.
         const existing=await this.inspectUnit(record);
         if(!existing.active)return this.reconcile(jobId);
-        if(!record.stop_requested_at) {
-            const updated={...record,state:'stop_requested',
-                stop_requested_at:new Date().toISOString()};
-            this.commit(this.state.records.map(r=>r.job_id===jobId?updated:r));
-        }
-        await this.runner(SYSTEMCTL,['--user','stop',record.unit],
-            {timeout:30000,maxBuffer:16384,windowsHide:true});
+        if(record.stop_requested_at)
+            return this.reconcile(jobId);
+        // Persist the stop intent first. No automatic retry is safe if the
+        // service-manager call or agent crashes while signal delivery is unknown.
+        const updated={...record,state:'stop_requested',
+            stop_requested_at:new Date().toISOString()};
+        this.commit(this.state.records.map(r=>r.job_id===jobId?updated:r));
+        await this.runner(SYSTEMCTL,['--user','stop','--no-block',record.unit],
+            {timeout:12000,maxBuffer:16384,windowsHide:true});
         return this.reconcile(jobId);
     }
 }
