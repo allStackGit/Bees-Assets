@@ -150,6 +150,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const records=(state.jobs||[]).filter(j=>j.project_id===project);
         $('hub-job-allocate-all').disabled=project==='bees'||
             !records.some(j=>j.status==='waiting_adapter'&&!j.lease_id);
+        $('hub-global-allocate').disabled=!(state.jobs||[]).some(j=>
+            j.adapter==='unconfigured'&&j.status==='waiting_adapter'&&!j.lease_id);
         $('hub-job-rows').replaceChildren();
         for(const j of records.slice(-50).reverse()) {
             const tr=document.createElement('tr');
@@ -462,6 +464,28 @@ document.addEventListener('DOMContentLoaded', () => {
         }catch(e){feedback('hub-placements',e.message);}
     });
 
+    $('hub-global-allocate').addEventListener('click',async()=>{
+        const projects=new Set((state.jobs||[]).filter(j=>
+            j.adapter==='unconfigured'&&j.status==='waiting_adapter'&&!j.lease_id)
+            .map(j=>j.project_id));
+        if(!projects.size){
+            feedback('hub-global-allocate-result','No unclaimed pending jobs.');
+            return;
+        }
+        if(!confirm('Coordinate remaining Hub capacity across '+projects.size+
+            ' non-Bees project(s)? This makes durable bookkeeping claims only; no workloads launch and no OS resource isolation is provided.'))return;
+        try{
+            const result=await action('hub/jobs/allocate',{
+                project_id:'all',confirm_allocate:true,
+            });
+            const allocated=result.results.filter(x=>x.status==='claimed').length;
+            const blocked=result.results.filter(x=>x.status==='insufficient_capacity').length;
+            feedback('hub-global-allocate-result',
+                allocated+' new advisory claims across projects · '+blocked+
+                ' without available Hub budget · No processes started.');
+            await reload();
+        }catch(e){feedback('hub-global-allocate-result',e.message);}
+    });
     $('hub-plan').addEventListener('click',async()=>{
         try {
             const jobs=JSON.parse($('hub-plan-json').value);
