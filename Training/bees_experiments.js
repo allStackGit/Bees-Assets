@@ -41,7 +41,10 @@ const save = () => { ensureDir(path.dirname(DB)); writeJsonAtomic(DB, state); };
 const active = () => state.items.find(x => x.id === state.active_id);
 const matches = (a, b) => JSON.stringify(a || []) === JSON.stringify(b || []);
 const now = () => new Date().toISOString();
-const MAX_STEPS = 5000000000000;
+// Step counts are JSON numbers; reject unsafe integers instead of silently
+// rounding learner-step boundaries. No arbitrary experiment-duration cap.
+const CURRICULUM_BUILTIN = path.join(__dirname, 'experiment-curriculum.json');
+const CURRICULUM_SAVED = path.join(paths.trainingRoot, 'Experiments', 'curriculum-default.json');
 
 function overridesForStage(raw, label) {
     if (!Array.isArray(raw) || raw.length > 64) throw Error(label + ': invalid environment arguments.');
@@ -86,8 +89,8 @@ function stagesForDefinition(input, defaults, firstSteps) {
         timeout_target_pct: timeoutTarget(input.target_timeout_pct, firstName),
     }];
     const additions = input.stages == null ? [] : input.stages;
-    if (!Array.isArray(additions) || additions.length > 11) {
-        throw Error('At most 11 additional curriculum stages are supported.');
+    if (!Array.isArray(additions)) {
+        throw Error('Curriculum stages must be an array.');
     }
     let end = firstSteps;
     for (const [index, stage] of additions.entries()) {
@@ -97,7 +100,7 @@ function stagesForDefinition(input, defaults, firstSteps) {
         const name = String(stage.name || '').trim();
         const steps = Number(stage.steps);
         if (!name || name.length > 100 || !Number.isSafeInteger(steps) || steps < 1000 ||
-            end + steps > MAX_STEPS) {
+            !Number.isSafeInteger(end + steps)) {
             throw Error('Each stage requires a name and a positive step budget within the run limit.');
         }
         args = mergeEnvironmentArgs(args, overridesForStage(stage.env_args || [], name));
@@ -108,6 +111,27 @@ function stagesForDefinition(input, defaults, firstSteps) {
         });
     }
     return stages;
+}
+
+function curriculumDefault() {
+    const template = readJson(fs.existsSync(CURRICULUM_SAVED)
+        ? CURRICULUM_SAVED : CURRICULUM_BUILTIN);
+    validateCurriculumTemplate(template);
+    return template;
+}
+
+function validateCurriculumTemplate(template) {
+    if (!template || template.schema_version !== 1 ||
+        typeof template.name !== 'string' || !template.name.trim() ||
+        template.name.length > 100 ||
+        !Number.isSafeInteger(template.first_steps) || template.first_steps < 1000) {
+        throw Error('Curriculum default is invalid.');
+    }
+    stagesForDefinition({
+        stage_name: template.stage_name, env_args: template.env_args,
+        target_timeout_pct: template.target_timeout_pct,
+        stages: template.stages,
+    }, [], template.first_steps);
 }
 
 function stageFor(item) {
@@ -1394,24 +1418,29 @@ async function cycle() {
 
 async function definition(input, original = null) {
     const name = String(input.name || '').trim(), group = String(input.group || 'General').trim();
-    const max_steps = Number(input.max_steps), max_minutes = Number(input.max_minutes);
-    const stall_minutes = Number(input.stall_minutes);
-    if (!name || name.length > 100 || !group || group.length > 80) throw Error('Invalid name or group.');
-    if (!Number.isSafeInteger(max_steps) || max_steps < 1000 || max_steps > 5000000000000)
-        throw Error('Invalid step budget.');
-    if (!Number.isInteger(max_minutes) || max_minutes < 10 || max_minutes > 43200)
-        throw Error('Time limit must be 10-43200 minutes.');
-    if (!Number.isInteger(stall_minutes) || stall_minutes < 10 || stall_minutes > max_minutes)
-        throw Error('No-progress limit must be between 10 minutes and the time limit.');
+    const firstSteps = Number(input.max_steps);
+    const maxMinutes = input.max_minutes == null || input.max_minutes === ''
+        ? null : Number(input.max_minutes);
+    const stallMinutes = input.stall_minutes == null || input.stall_minutes === ''
+        ? null : Number(input.stall_minutes);
+    if (!Number.isSafeInteger(firstSteps) || firstSteps < 1000)
+        throw Error('First-stage steps must be a positive safe integer.');
+    if (maxMinutes !== null && (!Number.isSafeInteger(maxMinutes) || maxMinutes < 1))
+        throw Error('Time limit must be a positive integer in minutes or blank for unlimited.');
+    if (stallMinutes !== null && (!Number.isSafeInteger(stallMinutes) || stallMinutes < 1))
+        throw Error('No-progress limit must be a positive integer in minutes or blank.');
+    const legacyMode = input.evaluate_stages === true ? 'each_stage'
+        : input.benchmark === true ? 'final' : 'none';
+    const evaluationMode = input.evaluation_mode || legacyMode;
+    if (!['periodic', 'each_stage', 'final', 'none'].includes(evaluationMode))
+        throw Error('Unknown evaluation schedule.');
     const config = loadConfig();
     // Edits retain the exact environment baseline frozen when the item was queued.
     // Re-reading mutable operator defaults could silently change unrelated stages.
     const defaults = original?.queue_defaults ||
         (Array.isArray(config.environmentArgs) ? config.environmentArgs.map(String) : []);
-    const stages = stagesForDefinition(input, defaults, max_steps);
-    if (input.benchmark === true && input.evaluate_stages === true) {
-        throw Error('Choose stage-suite evaluations or final-only evaluation, not both.');
-    }
+    const stages = stagesForDefinition(input, defaults, firstSteps);
+
     const env_args = stages[0].env_args;
     const release = readJson(paths.latestReleasePath);
     if (!release || !release.build_id) throw Error('Build a training release before queuing experiments.');
@@ -1423,13 +1452,19 @@ async function definition(input, original = null) {
         }
     }
     const pinnedBenchmarks = original?.stage_benchmarks || original?.benchmark || null;
+    const benchmark = evaluationMode === 'none'
+        ? null : (pinnedBenchmarks || benchmarkPlan());
     return {
         id: crypto.randomUUID(), name, group, status: 'queued', created_at: now(),
-        max_steps: stages[stages.length - 1].end_step,
-        max_minutes, stall_minutes, env_args, stages, stage_index: 0, stage_history: [],
+        max_steps: input.unlimited_steps === true ? null : stages[stages.length - 1].end_step,
+        first_stage_steps: firstSteps, unlimited_steps: input.unlimited_steps === true,
+        max_minutes: maxMinutes, stall_minutes: stallMinutes,
+        evaluation_mode: evaluationMode,
+        checkpoint_history: [], checkpoint_next_index: 1,
+        env_args, stages, stage_index: 0, stage_history: [],
         release_build: String(release.build_id), samples: [], step: null, run_id: null,
-        benchmark: input.benchmark === true ? (pinnedBenchmarks || benchmarkPlan()) : null,
-        stage_benchmarks: input.evaluate_stages === true ? (pinnedBenchmarks || benchmarkPlan()) : null,
+        benchmark: evaluationMode === 'final' ? benchmark : null,
+        stage_benchmarks: ['periodic', 'each_stage'].includes(evaluationMode) ? benchmark : null,
         trainer_config: await trainerConfiguration(input.trainer || {}, original?.trainer_config?.path),
         execution_options: original?.execution_options || executionOptions(config),
         queue_defaults: defaults,
@@ -1477,8 +1512,9 @@ function editableDefinition(item) {
     const trainer = item.trainer_config.resolved;
     const input = {
         name: item.name, group: item.group,
-        max_steps: stages[0].end_step, max_minutes: item.max_minutes,
-        stall_minutes: item.stall_minutes,
+        max_steps: item.first_stage_steps ?? stages[0].end_step,
+        unlimited_steps: item.unlimited_steps === true,
+        max_minutes: item.max_minutes, stall_minutes: item.stall_minutes,
         env_args: savedStageOverrides(defaults, stages[0].env_args),
         stage_name: stages[0].name,
         target_timeout_pct: stages[0].timeout_target_pct,
@@ -1488,8 +1524,8 @@ function editableDefinition(item) {
             target_timeout_pct: stage.timeout_target_pct,
             env_args: savedStageOverrides(stages[index].env_args, stage.env_args),
         })),
-        benchmark: Boolean(item.benchmark),
-        evaluate_stages: Boolean(item.stage_benchmarks),
+        evaluation_mode: item.evaluation_mode ||
+            (item.stage_benchmarks ? 'each_stage' : item.benchmark ? 'final' : 'none'),
         trainer: {
             hyperparameters: Object.fromEntries(
                 ['beta', 'lambd', 'learning_rate', 'batch_size', 'buffer_size', 'num_epoch']
@@ -1536,7 +1572,7 @@ async function body(req) {
     let raw = '';
     for await (const chunk of req) {
         raw += chunk.toString('utf8');
-        if (raw.length > 32768) throw Error('Request exceeds 32 KB.');
+        if (raw.length > 5_000_000) throw Error('Request exceeds 5 MB.');
     }
     return JSON.parse(raw || '{}');
 }
@@ -1714,6 +1750,9 @@ const server = http.createServer(async (req, res) => {
             return json(res, 200, { ...state, busy, rebuild_progress: rebuildProgress,
                 benchmark_configured: fs.existsSync(BENCHMARK_SETTINGS) });
         }
+        if (req.method === 'GET' && route === '/api/curriculum-default') {
+            return json(res, 200, { curriculum: curriculumDefault() });
+        }
         if (req.method === 'GET' && route === '/api/configuration') {
             return json(res, 200, await trainerConfiguration({}));
         }
@@ -1805,6 +1844,17 @@ const server = http.createServer(async (req, res) => {
                 }
             }
             return json(res, 200, response);
+        }
+        if (route === '/api/curriculum-default') {
+            const template = { schema_version: 1,
+                name: String(value.name || 'Custom experiment curriculum').trim(),
+                first_steps: value.first_steps, stage_name: value.stage_name,
+                env_args: value.env_args, target_timeout_pct: value.target_timeout_pct,
+                stages: value.stages };
+            validateCurriculumTemplate(template);
+            ensureDir(path.dirname(CURRICULUM_SAVED));
+            writeJsonAtomic(CURRICULUM_SAVED, template);
+            return json(res, 200, { ok: true, curriculum: template });
         }
         if (route === '/api/queue') {
             const item = await definition(value);
