@@ -749,7 +749,8 @@ function verifyStageCandidate(candidate, minimumStep) {
     }
 }
 
-function stageEvaluationKey(item, index, scenario, scenarioIndex, candidate, plan, checkpointTarget = null) {
+function stageEvaluationKey(item, index, scenario, scenarioIndex, candidate, plan,
+    checkpointTarget = null, purpose = 'development') {
     const identity = [
         item.id, item.run_id, index, scenario.id,
         plan.hashes['recipe_' + scenarioIndex],
@@ -758,11 +759,14 @@ function stageEvaluationKey(item, index, scenario, scenarioIndex, candidate, pla
         plan.build_id, candidate.sha256, candidate.training_step,
     ];
     if (checkpointTarget != null) identity.push(checkpointTarget);
+    if (purpose !== 'development') identity.push(purpose);
     return crypto.createHash('sha256').update(JSON.stringify(identity)).digest('hex');
 }
 
-function stageReportMatches(report, item, index, scenario, candidate, plan, evaluationId) {
+function stageReportMatches(report, item, index, scenario, candidate, plan,
+    evaluationId, purpose = 'development') {
     return report && report.schema_version === 1 &&
+        (report.evaluation_purpose || 'development') === purpose &&
         report.run_id === item.run_id &&
         report.candidate_sha256 === candidate.sha256 &&
         report.opponent_sha256 === (scenario.opponent_sha256 || plan.hashes.opponent) &&
@@ -782,7 +786,8 @@ function stageReportMatches(report, item, index, scenario, candidate, plan, eval
         report.metrics?.telemetry_validated === true;
 }
 
-function findStageReport(item, index, scenario, candidate, plan, evaluationId, savedName) {
+function findStageReport(item, index, scenario, candidate, plan, evaluationId, savedName,
+    purpose = 'development') {
     // A process can exit after the evaluator atomically creates its report but
     // before the coordinator stores the filename. Re-link that immutable result
     // instead of launching the same benchmark a second time.
@@ -797,7 +802,8 @@ function findStageReport(item, index, scenario, candidate, plan, evaluationId, s
         const target = path.join(BENCHMARK_REPORTS, name);
         if (!fs.existsSync(target)) continue;
         const report = readJson(target);
-        if (stageReportMatches(report, item, index, scenario, candidate, plan, evaluationId)) {
+        if (stageReportMatches(report, item, index, scenario, candidate, plan, evaluationId,
+            purpose)) {
             return name;
         }
         if (name === savedName) {
@@ -807,8 +813,9 @@ function findStageReport(item, index, scenario, candidate, plan, evaluationId, s
     return null;
 }
 
-async function evaluateStageSuite(item, index, status, checkpointRecord = null) {
-    const plan = item.stage_benchmarks;
+async function evaluateStageSuite(item, index, status, checkpointRecord = null,
+    planOverride = null, purpose = 'development') {
+    const plan = planOverride || item.stage_benchmarks;
     if (!plan) return true;
     const record = checkpointRecord || stageRecord(item, index);
     try {
@@ -841,9 +848,9 @@ async function evaluateStageSuite(item, index, status, checkpointRecord = null) 
             verifyBenchmarkPlan(plan);
             const evaluationId = stageEvaluationKey(
                 item, index, scenario, scenarioIndex, evaluation.candidate, plan,
-                checkpointRecord?.target_step ?? null);
+                checkpointRecord?.target_step ?? null, purpose);
             let reportName = findStageReport(item, index, scenario, evaluation.candidate,
-                plan, evaluationId, evaluation.reports[scenario.id]);
+                plan, evaluationId, evaluation.reports[scenario.id], purpose);
             if (!reportName) {
                 state.message = (checkpointRecord
                     ? 'Checkpoint ' + checkpointRecord.ordinal + ' (' +
@@ -860,12 +867,13 @@ async function evaluateStageSuite(item, index, status, checkpointRecord = null) 
                     '--stage-index', String(index), '--stage-name', item.stages[index].name,
                     '--stage-step', String(evaluation.boundary_step),
                     '--evaluation-id', evaluationId,
+                    '--evaluation-purpose', purpose,
                     '--opponent', scenario.opponent || plan.files.opponent, '--env', plan.files.environment,
                     '--build-id', plan.build_id, '--output-root', BENCHMARK_REPORTS,
                 ]);
                 reportName = path.basename(output.split(/\r?\n/).pop());
                 if (!findStageReport(item, index, scenario, evaluation.candidate,
-                    plan, evaluationId, reportName)) {
+                    plan, evaluationId, reportName, purpose)) {
                     throw Error('Evaluator did not return a matching immutable stage report.');
                 }
             }
