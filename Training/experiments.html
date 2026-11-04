@@ -316,9 +316,17 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
 <details id="research-panel" class="worker-details">
 <summary class="worker-summary">Research comparisons <small>· independent training seeds and uncertainty</small></summary>
 <p class="muted">Results are grouped only when the study, frozen training settings, checkpoint target, Unity build, evaluator, opponent, and benchmark recipe agree. The unit of analysis is the independently trained network, not individual matches or shots. Confidence intervals across seeds use a Student-t calculation and do not establish causality. Development and held-out suites remain separate.</p>
-<div class="bar"><button id="research-refresh" type="button">Refresh comparisons</button><button id="research-csv" type="button">Save research CSV</button></div>
+<div class="bar"><button id="research-refresh" type="button">Refresh comparisons</button><button id="research-csv" type="button">Save research CSV</button><label>Win-rate threshold %<input id="research-threshold" type="number" min="0" max="100" step="1" value="50"></label></div>
 <p id="research-message" class="muted">Expand to load research comparisons.</p>
 <div class="tablewrap"><table><thead><tr><th>Comparison</th><th>Configuration</th><th>Checkpoint</th><th>Benchmark</th><th>Runs</th><th>Mean win %</th><th>Win SD</th><th>95% interval (across seeds)</th><th>Mean timeout %</th><th>Validation</th></tr></thead><tbody id="research-rows"></tbody></table></div>
+<h3>Between-configuration comparisons</h3>
+<p class="muted">Win-rate difference (A − B) at the same evaluated step and benchmark. Intervals use independent trained-network replicates (Welch approximation). With only one seed per condition, the difference is descriptive only.</p>
+<div class="bar"><button id="research-diff-csv" type="button">Save differences CSV</button></div>
+<div class="tablewrap"><table><thead><tr><th>Campaign</th><th>Benchmark</th><th>Steps</th><th>Beta A</th><th>Beta B</th><th>Runs A/B</th><th>A − B win %</th><th>95% interval</th></tr></thead><tbody id="research-difference-rows"></tbody></table></div>
+<h3>Sample efficiency</h3>
+<p class="muted">First recorded evaluation meeting the chosen win-rate threshold; intervening steps are unknown. Runs not observed meeting the threshold are treated as censored, not zero. Held-out results are excluded from sample-efficiency screening.</p>
+<div class="bar"><button id="research-efficiency-csv" type="button">Save efficiency CSV</button></div>
+<div class="tablewrap"><table><thead><tr><th>Campaign</th><th>Beta</th><th>Benchmark</th><th>Reached</th><th>Median first observed steps</th><th>Threshold</th></tr></thead><tbody id="research-efficiency-rows"></tbody></table></div>
 </details>
 </section>
 <section>
@@ -2319,15 +2327,21 @@ $('storage-save').addEventListener('click', async () => {
     }
 });
 readStorage();
-let researchGroups = [];
+let researchGroups = [], researchComparisons = [], researchEfficiency = [];
 async function loadResearchSummary() {
     const button = $('research-refresh');
     button.disabled = true;
     try {
-        const response = await fetch('/api/research-summary', {cache:'no-store'});
+        const threshold = Number($('research-threshold').value);
+        if (!Number.isFinite(threshold) || threshold < 0 || threshold > 100)
+            throw Error('Select a threshold between 0 and 100%.');
+        const response = await fetch('/api/research-summary?threshold=' +
+            encodeURIComponent(String(threshold / 100)), {cache:'no-store'});
         const data = await response.json();
         if (!response.ok) throw Error(data.error || 'Research statistics unavailable.');
         researchGroups = data.groups || [];
+        researchComparisons = data.comparisons || [];
+        researchEfficiency = data.efficiency || [];
         const rows = $('research-rows');
         rows.replaceChildren();
         const percentage = number => number == null ? '—' : fmt(100 * number, 2) + '%';
@@ -2347,6 +2361,35 @@ async function loadResearchSummary() {
             cell(row, percentage(group.timeout_rate.mean));
             cell(row, group.purpose === 'heldout' ? 'Held-out' : 'Development');
             rows.append(row);
+        }
+        const differenceRows = $('research-difference-rows');
+        differenceRows.replaceChildren();
+        for (const comparison of researchComparisons) {
+            const row = document.createElement('tr');
+            cell(row, comparison.comparison_group);
+            cell(row, comparison.scenario);
+            cell(row, fmt(comparison.target_step));
+            cell(row, String(comparison.beta_a));
+            cell(row, String(comparison.beta_b));
+            cell(row, comparison.independent_runs_a + '/' + comparison.independent_runs_b);
+            cell(row, percentage(comparison.win_rate_difference));
+            cell(row, comparison.win_difference_ci95
+                ? comparison.win_difference_ci95.map(percentage).join(' to ')
+                : '— (insufficient seeds)');
+            differenceRows.append(row);
+        }
+        const efficiencyRows = $('research-efficiency-rows');
+        efficiencyRows.replaceChildren();
+        for (const result of researchEfficiency) {
+            const row = document.createElement('tr');
+            cell(row, result.comparison_group);
+            cell(row, String(result.beta ?? '—'));
+            cell(row, result.scenario);
+            cell(row, result.reached_runs + '/' + result.expected_replicates);
+            cell(row, result.median_first_observed_step == null
+                ? 'Not observed' : fmt(result.median_first_observed_step));
+            cell(row, percentage(result.threshold));
+            efficiencyRows.append(row);
         }
         $('research-message').textContent = researchGroups.length
             ? researchGroups.length + ' comparable condition/benchmark/checkpoint groups. ' +
@@ -2401,6 +2444,49 @@ function saveResearchCsv() {
 }
 $('research-refresh').addEventListener('click', loadResearchSummary);
 $('research-csv').addEventListener('click', saveResearchCsv);
+function downloadResearchRows(name, columns, rows) {
+    if (!rows.length) {
+        $('research-message').textContent = 'Refresh and select completed comparisons before exporting.';
+        return;
+    }
+    const cellText = value => {
+        if (value == null) return '';
+        let text = String(value);
+        if (typeof value === 'string' && /^\s*[=+@-]/.test(text))
+            text = "'" + text;
+        return '"' + text.replace(/"/g, '""') + '"';
+    };
+    const csv = '\uFEFF' + [columns, ...rows.map(row => columns.map(key => row[key]))]
+        .map(row => row.map(cellText).join(',')).join('\r\n') + '\r\n';
+    const url = URL.createObjectURL(new Blob([csv], {type:'text/csv;charset=utf-8'}));
+    const a = document.createElement('a');
+    a.download = 'bees-' + name + '-' + new Date().toISOString()
+        .replace(/[-:]/g,'').replace(/\.\d{3}Z$/, 'Z') + '.csv';
+    a.href = url; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+$('research-diff-csv').addEventListener('click', () => {
+    const columns = ['comparison_group','scenario','purpose','target_step',
+        'beta_a','beta_b','study_a','study_b','independent_runs_a',
+        'independent_runs_b','win_rate_difference','standard_error',
+        'ci95_lower','ci95_upper','comparability_id','benchmark_identity'];
+    downloadResearchRows('beta-differences', columns, researchComparisons.map(g => ({
+        ...g, ci95_lower:g.win_difference_ci95?.[0],
+        ci95_upper:g.win_difference_ci95?.[1],
+    })));
+});
+$('research-efficiency-csv').addEventListener('click', () => {
+    const columns = ['comparison_group','study_id','study_label','beta','scenario',
+        'threshold','expected_replicates','reached_runs','median_first_observed_step',
+        'earliest_evaluated_steps','condition_id','benchmark_identity'];
+    downloadResearchRows('sample-efficiency', columns, researchEfficiency.map(g => ({
+        ...g, earliest_evaluated_steps:g.earliest_evaluated_steps.join(';'),
+    })));
+});
+$('research-threshold').addEventListener('change', () => {
+    if ($('research-panel').open) loadResearchSummary();
+});
+
 $('research-panel').addEventListener('toggle', () => {
     if ($('research-panel').open) loadResearchSummary();
 });
