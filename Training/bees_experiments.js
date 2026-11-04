@@ -2145,6 +2145,17 @@ const server = http.createServer(async (req, res) => {
             return json(res, 200, workerSnapshot(await control()));
         }
         if (req.method === 'GET' && route === '/api/hub/bees/control') {
+            // The first RL build precedes the existence of a release/control
+            // server. Do not make the browser dependent on CLI bootstrap.
+            if (!fs.existsSync(paths.latestReleasePath)) {
+                return json(res, 200, {
+                    run_id:null, training_enabled:false, pending_release:false,
+                    env_args:[], experiment_owned:Boolean(state.active_id),
+                    queue_armed:state.armed,
+                    operator_operation:hubOperatorOperation,
+                    initial_build_required:true,
+                });
+            }
             const status = await control();
             const d = status.desired || {};
             return json(res, 200, {
@@ -2155,6 +2166,7 @@ const server = http.createServer(async (req, res) => {
                 experiment_owned:Boolean(state.active_id),
                 queue_armed:state.armed,
                 operator_operation:hubOperatorOperation,
+                initial_build_required:false,
                 // The CLI and UI share the same Bees control plane.
             });
         }
