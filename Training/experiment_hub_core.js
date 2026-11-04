@@ -77,6 +77,11 @@ class ExperimentHub {
     commit(next) {
         writeAtomic(this.file, next);
         this.state = next;
+        // A released/pruned claim cannot retain an in-memory receipt.
+        const outstanding=new Set(next.reservations.filter(r=>
+            ['offered','acknowledged'].includes(r.status)).map(r=>r.id));
+        for(const id of this.leaseReceipts.keys())
+            if(!outstanding.has(id))this.leaseReceipts.delete(id);
     }
     snapshot() {
         const snapshot = copy(this.state);
