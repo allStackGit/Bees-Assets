@@ -1758,7 +1758,7 @@ $('pause').addEventListener('click', async () => {
     catch (err) { $('message').textContent = err.message; $('message').classList.add('error'); }
 });
 $('update-workers').addEventListener('click', async () => {
-    if (!confirm('Publish updated worker software for the paused experiment? The Unity build, learner runtime and optimizer checkpoint will not change. Remote supervisors will adopt the update, then you can resume the same run.')) return;
+    if (!confirm('Publish updated worker software to all remote workers for this paused experiment? Each worker supervisor may restart when it adopts the package, but the learner runtime, Unity build, optimizer checkpoint and experiment run will not change. Continue?')) return;
     $('update-workers').disabled = true;
     $('resume').disabled = true;
     $('message').classList.remove('error');
