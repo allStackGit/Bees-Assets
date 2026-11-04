@@ -60,8 +60,10 @@ function validateLocalInput(job,lease,machineId,adapters,hostOs=os) {
             .digest('hex')!==job.configuration_sha256)
         throw Error('Frozen configuration fingerprint mismatch.');
     const r=job.resources,lr=lease.resources;
+    const cpuLimit=typeof hostOs.availableParallelism==='function'
+        ?hostOs.availableParallelism():hostOs.cpus().length;
     if(!r||!lr||!Number.isSafeInteger(r.cpus)||r.cpus<1||
-        r.cpus>hostOs.availableParallelism()||
+        r.cpus>cpuLimit||
         !Number.isSafeInteger(r.ram_mb)||r.ram_mb<128||
         r.ram_mb>Math.floor(hostOs.totalmem()/1048576)||
         r.gpu_count!==0||lr.gpu_count!==0||
