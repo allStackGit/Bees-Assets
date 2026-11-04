@@ -215,12 +215,19 @@ class ExperimentHub {
             throw Error('Only an outstanding Hub coordination lease can be released.');
         if(lease.job_id) {
             const job=next.jobs.find(j=>j.id===lease.job_id);
-            if(!job || job.lease_id!==lease.id || job.status!=='waiting_adapter')
-                throw Error('Cannot release a lease linked to an unknown or non-pending job.');
-            job.lease_id=null;
-            job.assigned_machine_id=null;
-            job.assigned_at=null;
-            job.status_reason='No allocation or trusted execution adapter is installed.';
+            if(!job || job.lease_id!==lease.id||
+                !['waiting_adapter','finished','failed','stopped'].includes(job.status))
+                throw Error('Cannot release an unknown, active, or unverified managed job.');
+            if(job.status==='waiting_adapter') {
+                job.lease_id=null;
+                job.assigned_machine_id=null;
+                job.assigned_at=null;
+                job.status_reason='No allocation or trusted execution adapter is installed.';
+            }else {
+                // Retain historical machine and lease IDs for provenance after
+                // a native terminal report has been received and reviewed.
+                job.capacity_released_at=now();
+            }
         }
         lease.status='released';
         lease.released_at=now();
