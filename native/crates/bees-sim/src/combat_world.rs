@@ -1021,6 +1021,89 @@ mod tests {
     }
 
     #[test]
+    fn frigate_animation_disables_damage_then_returns_explosion_to_pool() {
+        let assets = Arc::new(ProjectileAssetCatalog::embedded().unwrap());
+        let mut world = CombatWorld::new(
+            Aabb { min: Vec2::new(-20.0, -20.0), max: Vec2::new(20.0, 20.0) },
+            4.0, assets.clone(),
+        ).unwrap();
+        world.spawn_projectile(
+            assets.by_type(13).unwrap(), 5,
+            ShotOwner {
+                shooter_id: 2, shooter_side: 2,
+                shooter_is_fire_barge: false, self_detonation: false,
+            },
+            20, ProjectileMotion::new(Vec2::ZERO, 0.0, 0.0, 0.0, 5, 77),
+            0.0,
+        ).unwrap();
+        let layers = CollisionMatrix::from_rows([0; 32]);
+        world.step_fixed(0.51, &layers).unwrap();
+        assert!(world.physics.projectiles()[0].active);
+        let ImpactBehavior::Explosion { contacts, .. } = &world.projectiles[0].behavior else {
+            panic!("expected explosion");
+        };
+        assert!(contacts.harmless);
+
+        world.step_fixed(0.3, &layers).unwrap();
+        assert!(!world.physics.projectiles()[0].active);
+        assert!(matches!(
+            world.events()[0], CombatEvent::ProjectileEnded { projectile_id: 5 }
+        ));
+        assert_eq!(world.free_projectile_slots, [0]);
+    }
+
+    #[test]
+    fn fire_barge_animation_grows_live_physics_collider_then_ends() {
+        let assets = Arc::new(ProjectileAssetCatalog::embedded().unwrap());
+        let ships = ShipAssetCatalog::embedded().unwrap();
+        let mut world = CombatWorld::new(
+            Aabb { min: Vec2::new(-80.0, -80.0), max: Vec2::new(80.0, 80.0) },
+            8.0, assets.clone(),
+        ).unwrap();
+        world.spawn_ship(
+            ships.by_type(13).unwrap(), 5, 2,
+            ShipVitals::new(100, 100, 1000, 0).unwrap(),
+            ShipMotion::new(Vec2::new(30.0, 0.0), 0.0, 0.0, 0.0, 3.0),
+        ).unwrap();
+        world.spawn_projectile(
+            assets.by_type(14).unwrap(), 10,
+            ShotOwner {
+                shooter_id: 1, shooter_side: 1,
+                shooter_is_fire_barge: true, self_detonation: false,
+            },
+            20, ProjectileMotion::new(Vec2::ZERO, 0.0, 0.0, 0.0, 10, 99),
+            0.0,
+        ).unwrap();
+        world.reserve_projectile_damage(10, 5).unwrap();
+        let mut rows = [0u32; 32];
+        rows[20] = 1u32 << 12;
+        let layers = CollisionMatrix::from_rows(rows);
+        world.step_fixed(1.42, &layers).unwrap();
+        assert!(matches!(
+            world.physics.projectiles()[0].shape(),
+            Some(ShipShape::Circle { radius: 34.0, .. })
+        ));
+        // Contacts generated during physics are consumed on the following
+        // game tick; the projectile is still within its damaging interval.
+        world.step_fixed(0.02, &layers).unwrap();
+        assert_eq!(world.ships()[0].vitals.health(), 80);
+
+        world.step_fixed(0.7, &layers).unwrap();
+        let ImpactBehavior::Explosion { contacts, .. } = &world.projectiles[0].behavior else {
+            panic!("expected explosion");
+        };
+        assert!(contacts.harmless);
+        assert!(matches!(
+            world.physics.projectiles()[0].shape(),
+            Some(ShipShape::Circle { radius: 56.0, .. })
+        ));
+        world.step_fixed(0.8, &layers).unwrap();
+        assert!(!world.physics.projectiles()[0].active);
+        assert!(world.reservations.held_by(10).is_none());
+        assert_eq!(world.target_damage_status(1, 5).unwrap().total_reserved, 0);
+    }
+
+    #[test]
     fn rocket_impact_transfers_one_damage_reservation_to_its_explosion() {
         let assets = Arc::new(ProjectileAssetCatalog::embedded().unwrap());
         let ships = ShipAssetCatalog::embedded().unwrap();
