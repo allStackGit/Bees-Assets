@@ -301,6 +301,15 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
 <div class="tablewrap"><table><thead><tr><th>Plot</th><th>Experiment</th><th>Status</th><th>Steps</th><th>Training hours</th><th>Effective steps/s</th><th>Timeout</th><th>Hit/shot</th><th>Run</th></tr></thead><tbody id="rows"></tbody></table></div>
 </section>
 <section>
+<details id="research-panel" class="worker-details">
+<summary class="worker-summary">Research comparisons <small>· independent training seeds and uncertainty</small></summary>
+<p class="muted">Results are grouped only when the study, frozen training settings, checkpoint target, Unity build, evaluator, opponent, and benchmark recipe agree. The unit of analysis is the independently trained network, not individual matches or shots. Confidence intervals across seeds use a Student-t calculation and do not establish causality. Development and held-out suites remain separate.</p>
+<div class="bar"><button id="research-refresh" type="button">Refresh comparisons</button><button id="research-csv" type="button">Save research CSV</button></div>
+<p id="research-message" class="muted">Expand to load research comparisons.</p>
+<div class="tablewrap"><table><thead><tr><th>Comparison</th><th>Configuration</th><th>Checkpoint</th><th>Benchmark</th><th>Runs</th><th>Mean win %</th><th>Win SD</th><th>95% interval (across seeds)</th><th>Mean timeout %</th><th>Validation</th></tr></thead><tbody id="research-rows"></tbody></table></div>
+</details>
+</section>
+<section>
 <details id="performance-panel" class="worker-details">
 <summary class="worker-summary">Training efficiency <small>· Speed and bottleneck signals by curriculum stage</small></summary>
 <p class="muted">Effective steps/s = observed learner-step increase divided by observed training time. Paused evaluations and checkpoint transitions are excluded; the first partial interval after a restart is not counted. PPO busy uses the learner's cumulative optimizer clock. The PPO update, CPU and GPU columns sample the latest completed update; CPU/GPU and detailed timing require existing PPO diagnostics. Missing readings remain blank. These are screening signals, not definitive bottleneck diagnoses.</p>
