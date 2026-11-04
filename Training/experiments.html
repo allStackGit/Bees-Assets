@@ -1425,11 +1425,19 @@ async function refreshWorkers() {
         const troubled = workers.filter(w => w.state === 'STALE' || Boolean(w.error));
         $('worker-indicator').textContent = '· ' + workers.length + ' reported, ' +
             troubled.length + ' with warnings';
+        const activeRun = latest?.items?.find(x => x.id === latest.active_id);
+        const publishedUpdate = activeRun?.run_id === data.run_id &&
+            activeRun.worker_software_updates?.length > 0;
+        const remoteWorkers = workers.filter(w => w.role === 'dedicated');
+        const resizeCapable = remoteWorkers.filter(w =>
+            w.state !== 'STALE' && w.can_override_envs).length;
         $('worker-summary').textContent =
             'Training: ' + (data.training_enabled ? 'enabled' : 'stopped') +
             ' · Run: ' + (data.run_id || '—') +
             ' · Revision: ' + data.revision +
             (data.pending_release ? ' · Release: ' + data.pending_release : '') +
+            (publishedUpdate ? ' · After worker update: ' + resizeCapable + '/' +
+                remoteWorkers.length + ' reporting live-resize support' : '') +
             ' · Updated: ' + new Date().toLocaleTimeString();
         $('worker-rows').replaceChildren();
         for (const w of workers) {
