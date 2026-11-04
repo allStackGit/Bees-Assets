@@ -121,6 +121,7 @@ pub enum PhysicsError {
     InvalidCollider,
     DuplicateEntityId,
     InvalidStep,
+    UnsupportedPolicyActions,
 }
 
 /// A dense, world-local uniform spatial grid. Ship hulls span all their
@@ -348,6 +349,37 @@ impl KinematicPhysics {
     }
 }
 
+
+/// Minimal physics-only entrypoint for the existing multi-world scheduler.
+/// This is not a gameplay or training rules implementation: actions are
+/// explicitly rejected until the complete shared game controller is ported.
+pub struct KinematicPhysicsRules {
+    pub collision_matrix: CollisionMatrix,
+}
+
+impl crate::simulation::GameRules<KinematicPhysics> for KinematicPhysicsRules {
+    type Error = PhysicsError;
+
+    fn step(
+        &self,
+        world: &mut crate::simulation::World<KinematicPhysics>,
+        decisions: &[crate::policy::Decision],
+        dt_seconds: f32,
+    ) -> Result<crate::telemetry::StepCounts, Self::Error> {
+        if !decisions.is_empty() {
+            return Err(PhysicsError::UnsupportedPolicyActions);
+        }
+        world.state.step(dt_seconds, &self.collision_matrix)?;
+        let counts = world.state.counts();
+        Ok(crate::telemetry::StepCounts {
+            decisions: 0,
+            active_ships: world.state.ships().iter().filter(|ship| ship.active).count() as u32,
+            active_projectiles: world.state.projectiles().iter().filter(|shot| shot.active).count() as u32,
+            events: counts.trigger_enters,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -388,6 +420,36 @@ mod tests {
 
         let blocked = CollisionMatrix::from_rows([0; 32]);
         assert!(physics.step(0.02, &blocked).unwrap().is_empty());
+    }
+
+    #[test]
+    fn shared_simulation_scheduler_executes_real_collision_step() {
+        use crate::simulation::{Simulation, World, WorldId};
+
+        let mut physics = KinematicPhysics::new(
+            Aabb { min: Vec2::new(-16.0, -16.0), max: Vec2::new(16.0, 16.0) },
+            8.0,
+        ).unwrap();
+        physics.add_ship(ShipBody::new(
+            1, ShipMotion::new(Vec2::ZERO, 0.0, 0.0, 0.0, 4.0),
+            12, Arc::from(GUNSHIP),
+        ).unwrap()).unwrap();
+        physics.add_projectile(ProjectileBody::new(
+            2, ProjectileMotion::new(Vec2::ZERO, 0.0, 0.0, 10.0, 2, 0),
+            10, SMALL_LASER_SHOT_RADIUS,
+        ).unwrap()).unwrap();
+
+        let mut scheduler = Simulation::new(
+            KinematicPhysicsRules { collision_matrix: matrix_for_test() },
+            0.02,
+        ).unwrap();
+        scheduler.add_world(World::new(WorldId(5), 123, physics)).unwrap();
+        let first = scheduler.step_world(0, &[]).unwrap();
+        assert_eq!(first.events, 1);
+        let second = scheduler.step_world(0, &[]).unwrap();
+        assert_eq!(second.events, 0);
+        assert_eq!(scheduler.measurements().ticks, 2);
+        assert_eq!(scheduler.measurements().events, 1);
     }
 
     #[test]
