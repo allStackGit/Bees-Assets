@@ -25,6 +25,7 @@ const {
     runSync,
     sleep,
     testControl,
+    writeJsonAtomic,
 } = require('./common');
 const {
     commitTrainingRunPlan,
@@ -538,9 +539,9 @@ async function invokeMaintenanceUnityRebuild(options = {}) {
     let bootstrapPublished = false;
     try {
         if (!config.localOnly && exists(paths.tailnetAddressPath)) {
-            prepareRemoteBootstrap(config, python, candidate,
-                workerOverride ? { workerOverride } : {});
             bootstrapPublished = true;
+            prepareRemoteBootstrap(config, python, candidate,
+                workerOverride ? { workerOverride, persistWorkerOverride: false } : {});
             await startTailnetGatewayIfNeeded(config);
         }
         await publishRelease(config, admin, candidate);
@@ -551,6 +552,7 @@ async function invokeMaintenanceUnityRebuild(options = {}) {
         }
         // Persist only when the coordinated control-plane release is canonical.
         saveLatestRelease(candidate);
+        if (workerOverride) writeJsonAtomic(overridePath, workerOverride);
         const centralRuntime = await prepareCentralReleaseRuntime(config, python, unity, candidate);
         await startCentralAgentIfNeeded(config, python, unity, candidate, centralRuntime);
         prepareLocalActorReleaseRuntime(config, candidate, centralRuntime);
@@ -565,16 +567,9 @@ async function invokeMaintenanceUnityRebuild(options = {}) {
                     after.desired?.canonical_build_id === release.build_id &&
                     after.desired?.run_id === release.run_id &&
                     getLatestRelease().build_id === release.build_id) {
-                    const oldOverride = exists(overridePath)
-                        ? readJson(overridePath) : null;
-                    // The rebased overlay has already replaced the pointer.
-                    // Recover the originally verified worker archive from the
-                    // old release's package only when the previous pointer
-                    // was not published; otherwise refuse an unsafe guess.
-                    if (workerOverride && oldOverride?.build_id === buildId) {
-                        throw Error('Worker-only overlay was switched before publication; ' +
-                            'the original worker overlay must be restored explicitly.');
-                    }
+                    // The original worker-runtime pointer was retained until
+                    // canonical promotion, so ordinary bootstrap publication
+                    // restores the original pinned runtime or worker overlay.
                     prepareRemoteBootstrap(config, python, release);
                 }
             } catch (rollbackError) {
