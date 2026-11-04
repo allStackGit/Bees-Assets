@@ -193,10 +193,10 @@ class LinuxSupervisor {
         if(!host.cgroup_v2_detected||
             !['cpu','memory'].every(c=>host.cgroup_controllers.includes(c)))
             throw Error('Linux cgroup v2 CPU and memory controllers are not available.');
+        if(job&&this.state.records.some(r=>r.job_id===job.id))
+            throw Error('Job already has a local launch record; reconcile rather than restart.');
         const invocation=validateLocalInput(job,lease,this.machineId,
             this.adapters,this.hostOs);
-        if(this.state.records.some(r=>r.job_id===job.id))
-            throw Error('Job already has a local launch record; reconcile rather than restart.');
         if(this.state.records.length>=MAX_RECORDS)
             throw Error('Supervisor history capacity reached; no launch permitted.');
         const record={
