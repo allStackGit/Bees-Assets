@@ -20,8 +20,9 @@ remain authoritative.
   These invoke existing operator code. Actions are refused while the experiment
   manager owns a run or has an armed queue. Ordinary runs are observed via the
   existing control plane, not inserted into the experiment database.
-  Non-Bees projects can queue immutable jobs and explicitly cancel unstarted
-  jobs, but cannot start training.
+  Non-Bees projects can queue immutable jobs, cancel unstarted jobs,
+  explicitly authorize locally approved CPU-only Linux execution, request
+  native stops, and inspect signed agent lifecycle reports.
 - **Monitor and Compare:** Existing Bees live status, performance, benchmark
   reports and research charts remain intact. Non-experiment training is shown
   as distinct from experiment-owned training.
@@ -234,11 +235,14 @@ are isolated. The detection does not create or modify cgroups, job
 objects, running processes or OS settings.
 
 The agent includes protocol version 1 read-only discovery in its
-authenticated heartbeat. The manager accepts reports only as
-`backend:"none"` with all native limit/enforcement flags false; a
-machine's Native controls column distinguishes available OS facilities
-from an actually installed supervisor. Older agents without a report
-remain observable, but are likewise ineligible for execution.
+authenticated heartbeat. The manager accepts discovery only as
+`backend:"none"` with native enforcement flags false; that report
+describes the host **before any job is launched** and is not a service
+attestation. Separately, the agent may explicitly advertise a locally
+configured Linux adapter. The resulting systemd unit's exact CPU and
+RAM limits are checked for each job before the manager records it as
+running. Older agents without the installed execution bridge remain
+observation-only.
 
 A heartbeat, detected cgroup or coordination lease alone **never**
 permits execution. A locally opted-in installed project adapter, explicit
