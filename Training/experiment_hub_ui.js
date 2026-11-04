@@ -141,16 +141,44 @@ document.addEventListener('DOMContentLoaded', () => {
             c.name+' · revision '+c.revision,c.id)));
         if(configs.some(c=>c.id===former)) jobSelect.value=former;
         $('hub-job-queue').disabled=project==='bees'||!configs.length;
+        const previousMachine=$('hub-job-machine').value;
+        $('hub-job-machine').replaceChildren(new Option('Automatic best fit',''),
+            ...state.machines.filter(m=>m.status==='connected')
+                .map(m=>new Option(m.name+' ('+m.id+')',m.id)));
+        if(state.machines.some(m=>m.id===previousMachine&&m.status==='connected'))
+            $('hub-job-machine').value=previousMachine;
         const records=(state.jobs||[]).filter(j=>j.project_id===project);
+        $('hub-job-allocate-all').disabled=project==='bees'||
+            !records.some(j=>j.status==='waiting_adapter'&&!j.lease_id);
         $('hub-job-rows').replaceChildren();
         for(const j of records.slice(-50).reverse()) {
             const tr=document.createElement('tr');
             cell(tr,j.configuration_name||j.configuration_id);
             cell(tr,j.configuration_revision);
-            cell(tr,j.status==='waiting_adapter'?'Waiting for trusted adapter':j.status);
+            const linked=state.reservations.find(l=>l.id===j.lease_id &&
+                ['offered','acknowledged'].includes(l.status));
+            cell(tr,j.status==='waiting_adapter'
+                ?linked?('Hub budget claim on '+linked.machine_id+' · '+
+                    (linked.receipt_fresh?'Receipt fresh':linked.status)+
+                    ' · No execution')
+                    :'Waiting for trusted adapter · No claim'
+                :j.status);
             cell(tr,j.resources.cpus+' CPU / '+j.resources.ram_mb+' MiB / '+
                 j.resources.gpu_count+' GPUs');
             const actions=cell(tr,'');
+            if(j.status==='waiting_adapter'&&!j.lease_id)
+                actions.append(button('Coordinate capacity',()=>allocateJob([j.id])));
+            if(j.status==='waiting_adapter'&&j.lease_id)
+                actions.append(button('Release claim',async()=>{
+                    if(!confirm('Release this advisory budget claim? No process is stopped.'))return;
+                    try{
+                        await action('hub/leases/release',{
+                            lease_id:j.lease_id,confirm_release:true,
+                        });
+                        feedback('hub-job-allocate-message','Claim released; job remains queued.');
+                        await reload();
+                    }catch(e){feedback('hub-job-allocate-message',e.message);}
+                }));
             if(j.status==='waiting_adapter')actions.append(button('Cancel',async()=>{
                 if(!confirm('Cancel this unstarted '+j.project_id+' job? No process is running.'))return;
                 try{
@@ -168,9 +196,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         const waiting=records.filter(j=>j.status==='waiting_adapter').length;
         const cancelled=records.filter(j=>j.status==='cancelled').length;
+        const allocated=records.filter(j=>j.status==='waiting_adapter'&&j.lease_id).length;
         feedback('hub-other-monitor',
-            waiting+' waiting for trusted adapter · '+cancelled+' cancelled · '+
-            'No managed process running for this project.');
+            waiting+' waiting for trusted adapter · '+allocated+' with advisory capacity claims · '+
+            cancelled+' cancelled · No managed process running for this project.');
         $('hub-machine-rows').replaceChildren();
         for(const m of state.machines) {
             const tr=document.createElement('tr');
@@ -465,6 +494,31 @@ document.addEventListener('DOMContentLoaded', () => {
             await reload();
         }catch(e){feedback('hub-job-message',e.message);}
     });
+    async function allocateJob(jobIds=null) {
+        const count=jobIds?.length||state.jobs.filter(j=>
+            j.project_id===project&&j.status==='waiting_adapter'&&!j.lease_id).length;
+        if(!count){
+            feedback('hub-job-allocate-message','No unclaimed queued jobs.');
+            return;
+        }
+        if(!confirm('Coordinate Hub capacity for '+count+' queued '+project+
+            ' job(s)? This will create durable advisory claims, NOT enforce resource limits or start work.'))return;
+        try{
+            const chosen=jobIds?.length===1 ?$('hub-job-machine').value:'';
+            const result=await action('hub/jobs/allocate',{
+                project_id:project,
+                ...(jobIds?{job_ids:jobIds}:{}),
+                ...(chosen?{machine_id:chosen}:{}),
+                confirm_allocate:true,
+            });
+            const allocated=result.results.filter(x=>x.status==='claimed').length;
+            const blocked=result.results.filter(x=>x.status==='insufficient_capacity').length;
+            feedback('hub-job-allocate-message',allocated+' coordination claims created · '+
+                blocked+' jobs without capacity · No execution.');
+            await reload();
+        }catch(e){feedback('hub-job-allocate-message',e.message);}
+    }
+    $('hub-job-allocate-all').addEventListener('click',()=>allocateJob());
     $('hub-job-preview').addEventListener('click',async()=>{
         try{
             const r=await fetch('/api/hub/jobs/plan',{cache:'no-store'});
@@ -473,7 +527,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const selected=(data.jobs||[]).filter(j=>j.project_id===project);
             feedback('hub-job-plan',selected.map(j=>
                 j.configuration_name+': '+
-                (j.capacity_fits?(j.machine_name+' (advisory only)'):'No capacity fit')+
+                (j.claimed
+                    ?('Hub claim on '+(j.machine_name||j.machine_id)+
+                        ' · '+(j.receipt_fresh?'agent receipt fresh':'receipt unverified'))
+                    :j.capacity_fits?(j.machine_name+' (hypothetical placement)'):'No capacity fit')+
                 ' · Waiting for trusted adapter; no execution'
             ).join('\n')||'No pending jobs for this project.');
         }catch(e){feedback('hub-job-plan',e.message);}
