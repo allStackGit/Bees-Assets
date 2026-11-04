@@ -55,6 +55,10 @@ namespace Assets.Scripts.Entities.Ships
         public void LogDamage(int damage, string rlDamageSource = "unattributed", bool rlSelfInflicted = false)
         {
             if (Health <= 0) return;
+            // Once a dedicated RL side is eliminated, its result is final even
+            // if another projectile or collision arrives before Level.Update.
+            if (Level != null && Level.State != null && Level.State.GameOver &&
+                global::RlOneVsOneTrainingBootstrap.IsActiveFor(Level.Stage)) return;
             _oldTsv = Tsv;
             int appliedDamage = math.min(damage, Health);
             Health -= appliedDamage;
@@ -81,6 +85,8 @@ namespace Assets.Scripts.Entities.Ships
             bool rlSelfInflicted = false)
         {
             if (target.Health <= 0) return;
+            if (target.Level != null && target.Level.State != null && target.Level.State.GameOver &&
+                global::RlOneVsOneTrainingBootstrap.IsActiveFor(target.Level.Stage)) return;
             if (target.Level.Stage.MakeShotsHarmless) power = 0;
             attacker.ShipsHit.Add(target);
             int appliedDamage = math.min(power, target.Health);
