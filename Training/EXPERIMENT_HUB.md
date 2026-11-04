@@ -247,10 +247,63 @@ visibility/isolation, and trusted installed per-project adapters must
 be implemented before enabling real execution. Merely installing
 systemd or recognizing a Windows OS is insufficient.
 
+## Local Linux systemd process supervisor (not connected to dispatch)
+
+`experiment_hub_linux_supervisor.js` now provides a **locally invoked**
+`LinuxSupervisor` API for executing a trusted adapter inside a transient
+**user systemd service**, not in an unmanaged Node child process. This module
+is not wired into the Hub's HTTP routes, agent heartbeat offers, or job state
+transitions. No queued job automatically starts because the module exists.
+
+The caller must install a **trusted adapter in local code** for a specific
+project. Only that adapter specifies an absolute executable path, optional
+working directory, and a function that derives a bounded argv array from
+the frozen configuration. Saved JSON cannot supply a shell command,
+executable, environment override, or adapter implementation. The
+supervisor also verifies the frozen configuration SHA-256 fingerprint,
+matching job/lease/machine/project identities, a fresh acknowledged lease,
+local CPU and memory budgets, and Linux cgroup v2 availability. The Bees
+project is explicitly excluded to preserve the existing training operator.
+
+The opt-in Linux backend uses `systemd-run --user` transient services with
+`Type=exec`, `CPUQuota`, `MemoryMax`, group termination and a finite
+stop timeout. CPU quota is total CPU time (100% per CPU), **not dedicated
+cores**. Only **CPU/RAM-only jobs** are supported: any GPU request is rejected,
+including jobs with advisory GPU VRAM or compute budgets. It uses no
+privileged shell, no `sudo` and no Windows process fallback.
+
+Before dispatch, the supervisor atomically writes a local launch-intent
+record to a separate restricted-permission `supervisor-v1.json` ledger.
+After dispatch it checks the exact unit name, description and reported
+CPU/memory properties using `systemctl --user show`. A service is not
+reported as running until those controls have been inspected. A launch
+timeout, missing unit, insufficient privileges, or mismatched limit is
+**unverified**, not automatically retried. On restart, existing records
+may be reconciled with systemd; the module never relaunches them
+implicitly. Stopping targets only a recorded and verified service,
+persists stop intent before requesting service termination, and uses
+systemd group termination rather than killing a guessed PID.
+
+The local ledger uses atomic writes, a short exclusive file lock and
+revision checks. If a crash leaves the lock file behind, do **not**
+remove it automatically: inspect the recorded units and host before
+manually recovering local supervision. No logs, command arguments or
+secrets are stored in that ledger. The trusted adapter must not put
+secrets in command-line arguments because systemd unit metadata and
+process listings can expose them.
+
+This is **not yet a dashboard-controlled execution feature**. An explicit,
+durable dispatch authorization and lifecycle handshake between the
+Hub's job registry, the authenticated agent, and this local supervisor
+must be developed before any pending job is allowed to run. Windows Job
+Objects, Linux physical GPU mapping, ROCm/CUDA GPU isolation, workload
+priority/rebalancing and cross-project production throughput are still
+unimplemented.
+
 ## Not yet implemented
 
-Generic project execution adapters, authenticated execution-lease enforcement,
-machine-level process ownership and OS-enforced CPU/RAM controls,
+Hub-to-agent dispatch authorization, trusted installed project adapters,
+Windows Job Objects, production qualification of local Linux systemd control,
 GPU device verification and isolation, the multi-project job scheduler,
 cross-project run history and metrics ingestion, safe live rebalancing, and
 comprehensive CLI parity for all runtime configuration controls remain
