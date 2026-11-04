@@ -11,6 +11,9 @@ const {promisify}=require('node:util');
 const {execFile}=require('node:child_process');
 const {inspectHost}=require('./experiment_hub_host');
 const runDefault=promisify(execFile);
+// Use known system binaries, not the agent's PATH.
+const SYSTEMD_RUN='/usr/bin/systemd-run';
+const SYSTEMCTL='/usr/bin/systemctl';
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const SAFE_ARG=/^[A-Za-z0-9_./:@=+\-,]+$/;
 const MAX_RECORDS=1000;
@@ -148,7 +151,7 @@ class LinuxSupervisor {
     }
     snapshot(){return JSON.parse(JSON.stringify(this.state.records));}
     async inspectUnit(record) {
-        const out=await this.runner('systemctl',
+        const out=await this.runner(SYSTEMCTL,
             ['--user','show',record.unit,'--no-pager',
                 '--property=Id,Description,LoadState,ActiveState,SubState,Result,MainPID,MemoryMax,CPUQuotaPerSecUSec'],
             {timeout:12000,maxBuffer:16384,windowsHide:true});
@@ -204,7 +207,7 @@ class LinuxSupervisor {
         };
         this.commit(this.state.records.concat(record));
         try{
-            await this.runner('systemd-run',launchArguments(record,invocation),
+            await this.runner(SYSTEMD_RUN,launchArguments(record,invocation),
                 {timeout:30000,maxBuffer:16384,windowsHide:true});
         }catch(error){
             // A systemd command timeout is ambiguous: the service could have
@@ -229,7 +232,7 @@ class LinuxSupervisor {
                 stop_requested_at:new Date().toISOString()};
             this.commit(this.state.records.map(r=>r.job_id===jobId?updated:r));
         }
-        await this.runner('systemctl',['--user','stop',record.unit],
+        await this.runner(SYSTEMCTL,['--user','stop',record.unit],
             {timeout:30000,maxBuffer:16384,windowsHide:true});
         return this.reconcile(jobId);
     }
