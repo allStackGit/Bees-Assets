@@ -32,7 +32,8 @@ impl Vec2 {
         if squared <= 1.0e-10 {
             return Self::ZERO;
         }
-        self * squared.sqrt().recip()
+        let magnitude = squared.sqrt();
+        Self::new(self.x / magnitude, self.y / magnitude)
     }
 
     #[inline]
