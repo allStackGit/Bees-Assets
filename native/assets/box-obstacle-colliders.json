@@ -241,6 +241,54 @@
           280
         ]
       }
+    },
+    {
+      "name": "Slanted Variant",
+      "obstacle_type": 0,
+      "layer": 19,
+      "authored_health": 1000,
+      "default_pose": {
+        "position": [
+          130,
+          -20
+        ],
+        "rotation_degrees": 52.38163861454181
+      },
+      "shape": {
+        "kind": "box",
+        "offset": [
+          0,
+          0
+        ],
+        "half_extents": [
+          128.5,
+          5
+        ]
+      }
+    },
+    {
+      "name": "Box",
+      "obstacle_type": 0,
+      "layer": 19,
+      "authored_health": 1000,
+      "default_pose": {
+        "position": [
+          -6.5,
+          -90.3
+        ],
+        "rotation_degrees": 0
+      },
+      "shape": {
+        "kind": "box",
+        "offset": [
+          0,
+          0
+        ],
+        "half_extents": [
+          25,
+          25
+        ]
+      }
     }
   ]
 }
