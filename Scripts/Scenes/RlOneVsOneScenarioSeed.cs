@@ -32,23 +32,8 @@ internal static class RlOneVsOneScenarioSeed
             // selects a process root. Separate per-arena streams still derive
             // deterministically from this root; distributed execution order
             // need not become deterministic.
-            const string prefix = RlOneVsOneTrainingOptions.ScenarioSeedFlag + "=";
-            if (args != null)
-            {
-                foreach (string argument in args)
-                {
-                    if (argument != null &&
-                        argument.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
-                    {
-                        if (!int.TryParse(argument.Substring(prefix.Length), out int seed) || seed < 0)
-                        {
-                            throw new ArgumentException("Invalid " + prefix + " value.");
-                        }
-                        return seed;
-                    }
-                }
-            }
-            return Guid.NewGuid().GetHashCode();
+            int? requestedSeed = RlOneVsOneTrainingOptions.Parse(args).ScenarioSeed;
+            return requestedSeed ?? Guid.NewGuid().GetHashCode();
         }
 
         return UnityEngine.Random.Range(0, int.MaxValue);
