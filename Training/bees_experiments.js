@@ -2177,6 +2177,10 @@ const server = http.createServer(async (req, res) => {
                 placements:hubPlacements(data.machines, data.reservations, {
                     cpus:Number(url.searchParams.get('cpus')),
                     ram_mb:Number(url.searchParams.get('ram_mb')), gpus,
+                    gpu_count:url.searchParams.has('gpu_count')
+                        ?Number(url.searchParams.get('gpu_count')):undefined,
+                    min_gpu_vram_mb:url.searchParams.has('min_gpu_vram_mb')
+                        ?Number(url.searchParams.get('min_gpu_vram_mb')):undefined,
                 }),
                 note:'Inventory and reservations are advisory until authenticated agents enforce isolation.',
             });
