@@ -282,6 +282,7 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
 </select></label>
 <small id="benchmark-config">Loading evaluation settings…</small></p>
 <p class="muted">Evaluations pin an ONNX checkpoint, run the unchanged benchmark suite, and resume the same optimizer. Periodic evaluations can occur within a stage. For unlimited runs, evaluations occur every 100M steps. Evaluations require a configured frozen benchmark suite; failures disarm the queue.</p>
+<fieldset id="replication-controls"><legend>Optional scientific replication</legend><label><input id="replicate-enabled" type="checkbox" style="width:auto"> Queue fresh independent-seed runs</label><label>Run count <input id="replicate-count" type="number" min="2" max="32" step="1" value="3" disabled></label><p class="muted">Off by default. When enabled, queues fresh sequential training runs with consecutive ML-Agents initialization seeds. Unity's training scenario randomness is independently randomized.</p></fieldset>
 <button class="primary" type="submit">Add to queue</button> <button id="cancel-edit" type="button" hidden>Cancel editing</button>
 </form>
 </section>
