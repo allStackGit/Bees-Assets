@@ -541,13 +541,14 @@ function measure(item, status, force = false, boundary = '') {
 }
 
 const BENCHMARK_SETTINGS = path.join(paths.trainingRoot, 'Experiments', 'benchmark-settings.json');
+const HELDOUT_BENCHMARK_SETTINGS = path.join(paths.trainingRoot, 'Experiments', 'heldout-benchmark-settings.json');
 const BENCHMARK_RUNNER = path.join(__dirname, 'bees_experiment_benchmark.py');
 const SCRIPTED_OPPONENTS = path.join(__dirname, 'bees_experiment_scripted.py');
 const SCRIPTED_NAMES = new Set(['stationary', 'strafe', 'pursuit']);
 const hashFile = file => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 
-function benchmarkPlan() {
-    const settings = readJson(BENCHMARK_SETTINGS);
+function benchmarkPlan(settingsPath = BENCHMARK_SETTINGS) {
+    const settings = readJson(settingsPath);
     for (const key of ['python', 'environment', 'build_id']) {
         if (typeof settings[key] !== 'string' || !settings[key].trim()) {
             throw Error('Benchmark settings require ' + key + '.');
@@ -1505,6 +1506,7 @@ async function launch() {
     }
     if (item.benchmark) verifyBenchmarkPlan(item.benchmark);
     if (item.stage_benchmarks) verifyBenchmarkPlan(item.stage_benchmarks);
+    if (item.heldout_benchmarks) verifyBenchmarkPlan(item.heldout_benchmarks);
     if (item.trainer_config) {
         verifyTrainerSnapshot(item);
         if (item.trainer_config.runtime_version && item.trainer_config.runtime_version !== latest.training_runtime.runtime_version) {
@@ -1619,6 +1621,15 @@ async function definition(input, original = null) {
     const pinnedBenchmarks = original?.stage_benchmarks || original?.benchmark || null;
     const benchmark = evaluationMode === 'none'
         ? null : (pinnedBenchmarks || benchmarkPlan());
+    const heldoutPlan = input.reserve_heldout === true
+        ? (original?.heldout_benchmarks || benchmarkPlan(HELDOUT_BENCHMARK_SETTINGS))
+        : null;
+    if (heldoutPlan && benchmark &&
+        heldoutPlan.scenarios.some(hold => benchmark.scenarios.some(dev =>
+            heldoutPlan.hashes['recipe_' + heldoutPlan.scenarios.indexOf(hold)] ===
+                benchmark.hashes['recipe_' + benchmark.scenarios.indexOf(dev)]))) {
+        throw Error('Held-out recipes must be different from development evaluation recipes.');
+    }
     return {
         id: crypto.randomUUID(), name, group, status: 'queued', created_at: now(),
         max_steps: input.unlimited_steps === true ? null : stages[stages.length - 1].end_step,
@@ -1630,6 +1641,7 @@ async function definition(input, original = null) {
         release_build: String(release.build_id), samples: [], step: null, run_id: null,
         benchmark: evaluationMode === 'final' ? benchmark : null,
         stage_benchmarks: ['periodic', 'each_stage'].includes(evaluationMode) ? benchmark : null,
+        heldout_benchmarks: heldoutPlan,
         trainer_config: await trainerConfiguration(input.trainer || {}, original?.trainer_config?.path),
         execution_options: original?.execution_options || executionOptions(config),
         queue_defaults: defaults,
@@ -1691,6 +1703,7 @@ function editableDefinition(item) {
         })),
         evaluation_mode: item.evaluation_mode ||
             (item.stage_benchmarks ? 'each_stage' : item.benchmark ? 'final' : 'none'),
+        reserve_heldout: Boolean(item.heldout_benchmarks),
         trainer: {
             hyperparameters: Object.fromEntries(
                 ['beta', 'lambd', 'learning_rate', 'batch_size', 'buffer_size', 'num_epoch']
@@ -1916,7 +1929,8 @@ const server = http.createServer(async (req, res) => {
         }
         if (req.method === 'GET' && route === '/api/state') {
             return json(res, 200, { ...state, busy, rebuild_progress: rebuildProgress,
-                benchmark_configured: fs.existsSync(BENCHMARK_SETTINGS) });
+                benchmark_configured: fs.existsSync(BENCHMARK_SETTINGS),
+                heldout_configured: fs.existsSync(HELDOUT_BENCHMARK_SETTINGS) });
         }
         if (req.method === 'GET' && route === '/api/curriculum-default') {
             return json(res, 200, { curriculum: curriculumDefault() });
