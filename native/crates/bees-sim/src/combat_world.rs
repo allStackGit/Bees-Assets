@@ -17,6 +17,11 @@ use std::sync::Arc;
 
 use crate::collision::{Aabb, Pose};
 use crate::asteroid_assets::CollisionAsteroidCatalog;
+use crate::asteroid_fragments::{
+    AsteroidFragmentPalette, AsteroidPieceState, FragmentPrototype,
+    FragmentSpawnSettings, new_piece_prototype, new_shard_prototype,
+    spawn_fragment_motion,
+};
 use crate::box_obstacle_assets::BoxObstacleCatalog;
 use crate::polygon_obstacle_assets::PolygonObstacleCatalog;
 use crate::explosion_lifecycle::{ExplosionAction, ExplosionEvent, ExplosionTimeline};
@@ -42,7 +47,7 @@ use crate::projectile_assets::ProjectileAsset;
 use crate::projectile_rules::{rocket_accelerated_velocity, split_fragments, ExplosionContacts, PiercingShot, PiercingType};
 use crate::projectile_assets::ProjectileAssetCatalog;
 use crate::timer::ScaledTimer;
-use crate::simulation::{GameRules, World};
+use crate::simulation::{GameRules, RandomStream, World};
 use crate::telemetry::StepCounts;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -56,6 +61,8 @@ pub enum CombatWorldError {
     InvalidObstacle,
     MissingShipCollisionProfile,
     InvalidShipCollisionProfile,
+    InvalidFragmentationConfiguration,
+    FragmentRandomRequired,
     EntityIdExhausted,
     MissingRocketStats,
     InvalidFleetIdentity,
@@ -150,6 +157,17 @@ pub enum CombatEvent {
         ship_id: i64,
         asteroid_damage: AsteroidDamage,
     },
+    AsteroidShardSpawned {
+        parent_id: i64,
+        shard_id: i64,
+        prefab_number: u8,
+    },
+    AsteroidPieceSpawned {
+        parent_id: i64,
+        piece_id: i64,
+        prefab_number: u8,
+    },
+    AsteroidPieceEnded { piece_id: i64 },
     ShipDied {
         victim_id: i64,
         killer_id: i64,
@@ -308,6 +326,23 @@ pub struct AsteroidBorderState {
     pub has_entered_map: bool,
 }
 
+/// Fragment settings are explicitly owned by the game Level/Stage, while
+/// the prefab/geometry catalog is immutable and shared across worlds.
+#[derive(Clone, Debug)]
+pub struct AsteroidFragmentationConfig {
+    pub catalog: Arc<CollisionAsteroidCatalog>,
+    pub palette: AsteroidFragmentPalette,
+    pub settings: FragmentSpawnSettings,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct PendingAsteroidBreakup {
+    parent_id: i64,
+    size_class: u8,
+    position: Vec2,
+    angular_velocity_degrees: f32,
+}
+
 /// State and scratch are owned per arena. No process globals, no cross-world
 /// static dictionaries. Dense arrays use identical indices to physics bodies;
 /// ID maps are only used when routing collision results.
@@ -333,6 +368,13 @@ pub struct CombatWorld {
     /// Every shard spawned by one asteroid destruction shares the parent's
     /// immutable entity ID as its family key. Non-shard asteroids are absent.
     asteroid_shard_family: HashMap<i64, i64>,
+    fragmentation: Option<AsteroidFragmentationConfig>,
+    pending_asteroid_breakups: Vec<PendingAsteroidBreakup>,
+    active_shard_prototypes: HashMap<i64, FragmentPrototype>,
+    pooled_shard_prototypes: Vec<FragmentPrototype>,
+    pieces: Vec<AsteroidPieceState>,
+    free_piece_slots: Vec<usize>,
+    pooled_piece_prototypes: Vec<FragmentPrototype>,
     asteroid_delayed_kills: HashMap<i64, ScaledTimer>,
     expired_asteroid_ids: Vec<i64>,
     fleet_id_by_ship: HashMap<i64, i64>,
@@ -374,6 +416,13 @@ impl CombatWorld {
             asteroid_border_states: HashMap::new(),
             nearby_asteroid_pairs: HashSet::new(),
             asteroid_shard_family: HashMap::new(),
+            fragmentation: None,
+            pending_asteroid_breakups: Vec::new(),
+            active_shard_prototypes: HashMap::new(),
+            pooled_shard_prototypes: Vec::new(),
+            pieces: Vec::new(),
+            free_piece_slots: Vec::new(),
+            pooled_piece_prototypes: Vec::new(),
             asteroid_delayed_kills: HashMap::new(),
             expired_asteroid_ids: Vec::new(),
             fleet_id_by_ship: HashMap::new(),
@@ -397,6 +446,23 @@ impl CombatWorld {
     pub fn projectiles(&self) -> &[CombatProjectile] { &self.projectiles }
     pub fn reservations(&self) -> &DamageReservations { &self.reservations }
     pub fn obstacles(&self) -> &[CombatObstacle] { &self.obstacles }
+    pub fn asteroid_pieces(&self) -> &[AsteroidPieceState] { &self.pieces }
+
+    /// A game stage enables authored breakup behavior once, before its
+    /// simulation starts. Explicit configuration avoids accidentally using
+    /// the RL scene's shard selection for unrelated game modes.
+    pub fn configure_asteroid_fragments(
+        &mut self,
+        config: AsteroidFragmentationConfig,
+    ) -> Result<(), CombatWorldError> {
+        if !config.settings.valid() ||
+            self.fragmentation.is_some() ||
+            config.palette.shard_prefabs().iter().any(|&n| config.catalog.by_number(n).is_none()) {
+            return Err(CombatWorldError::InvalidFragmentationConfiguration);
+        }
+        self.fragmentation = Some(config);
+        Ok(())
+    }
     pub fn asteroid_border_state(&self, entity_id: i64) -> Option<AsteroidBorderState> {
         self.asteroid_border_states.get(&entity_id).copied()
     }
@@ -1494,6 +1560,9 @@ impl CombatWorld {
         self.obstacle_by_id.remove(&entity_id);
         self.asteroid_border_states.remove(&entity_id);
         self.asteroid_shard_family.remove(&entity_id);
+        if let Some(prototype) = self.active_shard_prototypes.remove(&entity_id) {
+            self.pooled_shard_prototypes.push(prototype);
+        }
         self.asteroid_delayed_kills.remove(&entity_id);
         self.nearby_asteroid_pairs.retain(|&(source, target)| {
             source != entity_id && target != entity_id
@@ -1503,6 +1572,14 @@ impl CombatWorld {
         });
         self.free_obstacle_slots.push(index);
         if with_breakup {
+            if self.fragmentation.is_some() {
+                let body = &self.physics.obstacles()[index];
+                self.pending_asteroid_breakups.push(PendingAsteroidBreakup {
+                    parent_id: entity_id, size_class,
+                    position: body.pose.position,
+                    angular_velocity_degrees: body.angular_velocity_degrees,
+                });
+            }
             self.events.push(CombatEvent::AsteroidDestroyed {
                 obstacle_id: entity_id,
                 size_class,
