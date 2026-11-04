@@ -32,7 +32,8 @@ use crate::policy::Decision;
 use crate::geometry::Vec2;
 use crate::movement::ShipMotion;
 use crate::obstacle::{
-    resolve_asteroid_pair_damage, AsteroidBreakup, AsteroidDamage,
+    resolve_asteroid_pair_damage, resolve_asteroid_ship_damage,
+    AsteroidBreakup, AsteroidDamage,
     CombatObstacle, ObstacleKind,
 };
 use crate::projectile::ProjectileMotion;
@@ -53,6 +54,8 @@ pub enum CombatWorldError {
     UnknownShip,
     UnknownObstacle,
     InvalidObstacle,
+    MissingShipCollisionProfile,
+    InvalidShipCollisionProfile,
     EntityIdExhausted,
     MissingRocketStats,
     InvalidFleetIdentity,
@@ -82,6 +85,22 @@ pub struct CombatShip {
     pub side: i32,
     pub ship_type: u8,
     pub vitals: ShipVitals,
+}
+
+/// The original Unity ship SizeClass is a float (unlike asteroid SizeClass).
+/// OriginalHealth comes from ConfigData.GetShipInfo and survives reductions
+/// of MaxHealth in training; it cannot be inferred from current ShipVitals.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ShipCollisionProfile {
+    pub size_class: f32,
+    pub original_health: i32,
+}
+
+impl ShipCollisionProfile {
+    pub fn valid(self) -> bool {
+        self.size_class.is_finite() && self.size_class > 0.0 &&
+            self.original_health > 0
+    }
 }
 
 /// Per-projectile immutable owner information follows the shot after its
@@ -125,6 +144,11 @@ pub enum CombatEvent {
         second_obstacle_id: i64,
         first_damage: AsteroidDamage,
         second_damage: AsteroidDamage,
+    },
+    AsteroidHitShip {
+        obstacle_id: i64,
+        ship_id: i64,
+        asteroid_damage: AsteroidDamage,
     },
     ShipDied {
         victim_id: i64,
@@ -299,6 +323,8 @@ pub struct CombatWorld {
     free_obstacle_slots: Vec<usize>,
     obstacle_slot_reuses: u64,
     ship_by_id: HashMap<i64, usize>,
+    ship_collision_profiles: HashMap<i64, ShipCollisionProfile>,
+    nearby_asteroid_ships: HashSet<(i64, i64)>,
     obstacle_by_id: HashMap<i64, usize>,
     asteroid_border_states: HashMap<i64, AsteroidBorderState>,
     /// Directional child-proximity contacts; a primary collider entry only
@@ -339,6 +365,8 @@ impl CombatWorld {
             free_obstacle_slots: Vec::new(),
             obstacle_slot_reuses: 0,
             ship_by_id: HashMap::new(),
+            ship_collision_profiles: HashMap::new(),
+            nearby_asteroid_ships: HashSet::new(),
             obstacle_by_id: HashMap::new(),
             asteroid_border_states: HashMap::new(),
             nearby_asteroid_pairs: HashSet::new(),
@@ -1333,6 +1361,9 @@ impl CombatWorld {
         self.asteroid_delayed_kills.remove(&entity_id);
         self.nearby_asteroid_pairs.retain(|&(source, target)| {
             source != entity_id && target != entity_id
+        });
+        self.nearby_asteroid_ships.retain(|&(asteroid_id, _)| {
+            asteroid_id != entity_id
         });
         self.free_obstacle_slots.push(index);
         if with_breakup {
