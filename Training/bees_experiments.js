@@ -923,6 +923,24 @@ function recordUnityMaintenanceBuild(item, release, status) {
     return true;
 }
 
+// If compilation failed before the new release was staged, the old release
+// remains canonical. Allow an operator retry or same-run resume; never clear
+// an ambiguous attempt after partial promotion.
+function clearUnpublishedUnityRebuild(item, release, status) {
+    const attempt = item.unity_rebuild_attempt;
+    if (!attempt || !release || !status?.desired) return false;
+    if (release.build_id !== attempt.old_build ||
+        release.run_id !== item.run_id ||
+        release.training_runtime?.runtime_version !== item.trainer_config?.runtime_version ||
+        release.experiment_config?.sha256 !== item.trainer_config?.sha256 ||
+        status.desired.training_enabled || status.desired.pending_release ||
+        status.desired.run_id !== item.run_id ||
+        status.desired.canonical_build_id !== attempt.old_build) return false;
+    delete item.unity_rebuild_attempt;
+    save();
+    return true;
+}
+
 // Maintenance pause preserves the active experiment, run, checkpoint, and queue
 // position. Unlike a manual stop, it never finalizes a stage or advances a run.
 function assertMaintenanceOwnership(item, status, allowOffline = false) {
@@ -996,7 +1014,8 @@ function completeMaintenanceResume(item) {
 async function resumeActiveRun(item, status) {
     if (item.unity_rebuild_attempt) {
         const candidate = readJson(paths.latestReleasePath);
-        if (!recordUnityMaintenanceBuild(item, candidate, status)) {
+        if (!recordUnityMaintenanceBuild(item, candidate, status) &&
+            !clearUnpublishedUnityRebuild(item, candidate, status)) {
             throw Error('An interrupted Unity maintenance rebuild has not reached a verified canonical release. Remain paused and inspect the rebuild.');
         }
     }
@@ -1761,11 +1780,14 @@ const server = http.createServer(async (req, res) => {
                 return json(res, 409, { error: 'Pause the active experiment before rebuilding Unity.' });
             }
             const before = await control();
-            if (item.unity_rebuild_attempt &&
-                !recordUnityMaintenanceBuild(item, readJson(paths.latestReleasePath), before)) {
-                return json(res, 409, {
-                    error: 'An earlier Unity rebuild has not been reconciled. Do not overwrite it.',
-                });
+            if (item.unity_rebuild_attempt) {
+                const release = readJson(paths.latestReleasePath);
+                if (!recordUnityMaintenanceBuild(item, release, before) &&
+                    !clearUnpublishedUnityRebuild(item, release, before)) {
+                    return json(res, 409, {
+                        error: 'An earlier Unity rebuild has not been reconciled. Do not overwrite it.',
+                    });
+                }
             }
             assertMaintenanceOwnership(item, before);
             if (before.desired.training_enabled) {
@@ -1799,15 +1821,20 @@ const server = http.createServer(async (req, res) => {
                 save();
                 return json(res, 200, { ok: true, ...rebuilt });
             } catch (error) {
-                let reconciled = false;
+                let reconciled = false, cleanOldRelease = false;
                 try {
-                    reconciled = recordUnityMaintenanceBuild(
-                        item, readJson(paths.latestReleasePath), await control());
+                    const current = readJson(paths.latestReleasePath);
+                    const controlState = await control();
+                    reconciled = recordUnityMaintenanceBuild(item, current, controlState);
+                    if (!reconciled) cleanOldRelease =
+                        clearUnpublishedUnityRebuild(item, current, controlState);
                 } catch (_) {}
                 state.message = 'Unity rebuild failed: ' + error.message +
                     (reconciled
                         ? ' A compatible new build became canonical; experiment remains paused.'
-                        : ' Experiment remains paused; inspect the build before resuming.');
+                        : cleanOldRelease
+                            ? ' Original build remains canonical; experiment is safe to resume.'
+                            : ' Experiment remains paused; inspect the incomplete release before resuming.');
                 save();
                 return json(res, 409, { error: state.message });
             } finally {
@@ -1862,9 +1889,13 @@ const server = http.createServer(async (req, res) => {
                 state.armed) {
                 return json(res, 409, { error: 'Only a confirmed paused experiment can be resumed.' });
             }
-            if (item.unity_rebuild_attempt &&
-                !recordUnityMaintenanceBuild(item, readJson(paths.latestReleasePath), await control())) {
-                return json(res, 409, { error: 'Unity rebuild is incomplete or unreconciled. Remain paused.' });
+            if (item.unity_rebuild_attempt) {
+                const current = readJson(paths.latestReleasePath);
+                const status = await control();
+                if (!recordUnityMaintenanceBuild(item, current, status) &&
+                    !clearUnpublishedUnityRebuild(item, current, status)) {
+                    return json(res, 409, { error: 'Unity rebuild is incomplete or unreconciled. Remain paused.' });
+                }
             }
             item.status = 'resuming';
             item.resume_attempted = false;
