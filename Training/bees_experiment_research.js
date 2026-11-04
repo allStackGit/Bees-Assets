@@ -83,6 +83,7 @@ function summarize(items, reports) {
             if (!groups.has(key)) groups.set(key, {
                 study_id: item.study_id || null,
                 study_label: item.study_label || item.name,
+                expected_replicates: item.replicate_count || 1,
                 comparison_group: item.group,
                 condition_id: condition,
                 beta: item.trainer_config.resolved?.hyperparameters?.beta ?? null,
