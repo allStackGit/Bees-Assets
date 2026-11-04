@@ -108,6 +108,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 $('hub-config-save').textContent='Save revision';
                 feedback('hub-config-message','Editing revision '+c.revision);
             }));
+            actions.append(button('Duplicate',()=>{
+                resetEditor();
+                $('hub-config-name').value=(c.name+' copy').slice(0,100);
+                $('hub-config-json').value=JSON.stringify(c.parameters,null,2);
+                feedback('hub-config-message','Duplicated into a new unsaved draft. Select Save draft to retain it.');
+            }));
             if(project==='bees') {
                 actions.append(button('Queue for Bees',async()=>{
                     if(!confirm('Freeze and queue "'+c.name+'"? Training will not start until the queue is armed.'))return;
@@ -209,6 +215,22 @@ document.addEventListener('DOMContentLoaded', () => {
             feedback('hub-config-message','Saved revision '+saved.revision+'. No training scheduled.');
             await reload();
         }catch(err){feedback('hub-config-message',err.message);}
+    });
+    $('hub-save-bees-draft').addEventListener('click',async()=>{
+        if (typeof editingId!=='undefined' && editingId) {
+            feedback('message','Finish editing the queued experiment before saving a new draft.');
+            return;
+        }
+        try {
+            const params=trainingFormPayload();
+            const title=params.name?.trim();
+            if(!title)throw Error('Enter a training name before saving a draft.');
+            const result=await action('hub/configurations',{
+                project_id:'bees',name:title,parameters:params,
+            });
+            feedback('message','Saved '+result.name+' as an editable draft in Design. No job queued.');
+            await reload();
+        }catch(err){feedback('message',err.message);}
     });
     $('hub-project-form').addEventListener('submit',async e=>{
         e.preventDefault();
