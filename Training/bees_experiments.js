@@ -179,6 +179,7 @@ async function evaluateDuePeriodic(item, status) {
     if (!(await evaluateStageSuite(item, record.stage_index, status, record))) return false;
     record.finished_at = record.finished_at || now();
     record.actual_step = record.evaluation?.boundary_step ?? item.step;
+    record.training_s = trainingSeconds(item);
     item.checkpoint_next_index = record.ordinal + 1;
     // Avoid running multiple evaluations of the same network if a learner
     // status update overshot several intended checkpoint thresholds.
@@ -2235,7 +2236,7 @@ const server = http.createServer(async (req, res) => {
                 }
             }
             if (!state.items.some(x => x.status === 'queued') &&
-                !['transitioning', 'evaluating_final_stage'].includes(active()?.status)) {
+                !['transitioning', 'checkpointing', 'evaluating_final_stage'].includes(active()?.status)) {
                 return json(res, 409, { error: 'Queue is empty.' });
             }
             state.armed = true;
