@@ -224,6 +224,17 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
 <div class="bar"><button id="start" class="primary">Run queue</button><button id="pause">Pause for maintenance</button><button id="update-workers" hidden>Update worker software</button><button id="rebuild-unity" hidden>Rebuild Unity (experimental)</button><button id="resume" class="primary" hidden>Resume training</button><button id="stop" class="danger">Stop safely</button></div></header>
 <div id="message" role="status"></div>
 <section>
+<details id="storage-panel">
+<summary>Experiment data storage</summary>
+<div class="formgrid">
+<label class="wide">Data directory (absolute path)<input id="storage-root" type="text" placeholder="Loading current experiment data path…"></label>
+<button id="storage-save" type="button">Copy data and change directory</button>
+</div>
+<p id="storage-status" class="muted">Current directory will be loaded from the manager.</p>
+<p class="muted">Default: the existing Training/Experiments directory. Changing this copies experiment definitions, evaluator snapshots, benchmark reports, and full metric history to a new empty directory. Original data is retained as a backup. Only available while the manager is idle. Restart the manager to activate the new location. Unity builds, model checkpoints and the learner registry remain in their existing Bees locations.</p>
+</details>
+</section>
+<section>
 <h2>Overview</h2><div id="overview" class="summary"></div>
 <p class="muted">Progress is measured from the active run's ML-Agents learner summaries. Combat metrics are sampled from live worker windows, <strong>not</strong> a frozen evaluation benchmark.</p>
 </section>
@@ -2208,6 +2219,36 @@ $('graph').addEventListener('mouseleave', () => {
 });
 $('axis').addEventListener('change', () => latest && chart(
     latest.items.filter(x => !$('filter').value || x.group === $('filter').value)));
+async function readStorage() {
+    try {
+        const response = await fetch('/api/storage', {cache:'no-store'});
+        const data = await response.json();
+        if (!response.ok) throw Error(data.error || 'Cannot read experiment data location.');
+        $('storage-root').value = data.root;
+        $('storage-status').textContent = data.restart_required
+            ? 'Data copy complete; restart the Experiment Manager to use this path.'
+            : 'Currently storing experiment data at ' + data.root;
+    } catch (error) {
+        $('storage-status').textContent = error.message;
+    }
+}
+$('storage-save').addEventListener('click', async () => {
+    const root = $('storage-root').value.trim();
+    if (!root || !confirm('Copy existing experiment data to ' + root +
+        '? This is only allowed when the queue is idle. The original directory remains as a backup; you must restart the manager before using the new directory.')) return;
+    $('storage-save').disabled = true;
+    try {
+        const response = await request('/api/storage', {root});
+        $('storage-status').textContent = response.message ||
+            'Data directory unchanged.';
+        await readStorage();
+    } catch (error) {
+        $('storage-status').textContent = 'Cannot change data directory: ' + error.message;
+    } finally {
+        $('storage-save').disabled = false;
+    }
+});
+readStorage();
 let researchGroups = [];
 async function loadResearchSummary() {
     const button = $('research-refresh');
