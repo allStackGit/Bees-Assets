@@ -119,6 +119,97 @@
           0.5
         ]
       }
+    },
+    {
+      "name": "Leafcutter Laser Shot",
+      "projectile_type": 9,
+      "layer": 10,
+      "has_body": true,
+      "shape": {
+        "kind": "circle",
+        "offset": [
+          0,
+          0
+        ],
+        "radius": 0.5
+      }
+    },
+    {
+      "name": "Queen Small Laser Shot",
+      "projectile_type": 10,
+      "layer": 10,
+      "has_body": true,
+      "shape": {
+        "kind": "circle",
+        "offset": [
+          0,
+          0
+        ],
+        "radius": 0.5
+      }
+    },
+    {
+      "name": "Queen Stinger Laser Shot",
+      "projectile_type": 11,
+      "layer": 10,
+      "has_body": true,
+      "shape": {
+        "kind": "circle",
+        "offset": [
+          0,
+          0
+        ],
+        "radius": 1.3
+      }
+    },
+    {
+      "name": "Striker Bomb",
+      "projectile_type": 12,
+      "layer": 0,
+      "has_body": false,
+      "shape": null
+    },
+    {
+      "name": "Frigate Rocket Explosion",
+      "projectile_type": 13,
+      "layer": 18,
+      "has_body": false,
+      "shape": {
+        "kind": "circle",
+        "offset": [
+          0,
+          0
+        ],
+        "radius": 2.5
+      }
+    },
+    {
+      "name": "Fire Barge Explosion",
+      "projectile_type": 14,
+      "layer": 20,
+      "has_body": false,
+      "shape": {
+        "kind": "circle",
+        "offset": [
+          0,
+          0
+        ],
+        "radius": 1
+      }
+    },
+    {
+      "name": "Fire Tank Explosion",
+      "projectile_type": 15,
+      "layer": 20,
+      "has_body": false,
+      "shape": {
+        "kind": "circle",
+        "offset": [
+          0,
+          0
+        ],
+        "radius": 3
+      }
     }
   ]
 }
