@@ -39,23 +39,24 @@ pub struct ShipMotion {
 }
 
 impl ShipMotion {
-    /// The caller supplies authored ship stats, including current speed
-    /// (which may differ temporarily from the prefab's base speed).
+    /// The caller supplies authored ship base speed. Like Unity's Setup,
+    /// mobility is fixed from base speed; mutable current_speed may later
+    /// change through charging, slowing or other gameplay effects.
     pub fn new(
         position: Vec2,
         rotation_degrees: f32,
         rotation_speed_degrees_per_second: f32,
-        current_speed: f32,
+        base_speed: f32,
         height: f32,
     ) -> Self {
         Self {
             position,
             rotation_degrees,
             rotation_speed_degrees_per_second,
-            current_speed,
+            current_speed: base_speed,
             body_velocity: Vec2::ZERO,
             height,
-            mobile: current_speed > 0.0,
+            mobile: base_speed > 0.0,
             cannot_change_movement_orders: false,
             user_controlled: false,
             has_target_coordinates: false,
