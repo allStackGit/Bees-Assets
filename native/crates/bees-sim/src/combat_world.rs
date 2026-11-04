@@ -269,6 +269,16 @@ impl CombatWorld {
             }
         }
 
+        // Unity calls ContactTarget() before Ship.LogAttackingDamage().
+        // Ordinary shots and spent piercing shots therefore return to their
+        // pool before the health, TSV, and kill callbacks run.
+        if ends_projectile {
+            self.physics.projectiles_mut()[shot_index].active = false;
+            self.events.push(CombatEvent::ProjectileEnded {
+                projectile_id: contact.projectile_id,
+            });
+        }
+
         if let Some(power) = accepted_power {
             let attribution = self.physics.projectiles()[shot_index].motion.attribution;
             if let Some(delta) = ship.vitals.apply_damage(power, self.shots_harmless)? {
@@ -296,12 +306,6 @@ impl CombatWorld {
             }
         }
 
-        if ends_projectile {
-            self.physics.projectiles_mut()[shot_index].active = false;
-            self.events.push(CombatEvent::ProjectileEnded {
-                projectile_id: contact.projectile_id,
-            });
-        }
         Ok(())
     }
 
@@ -440,12 +444,12 @@ mod tests {
         world.step_fixed(0.02, &matrix).unwrap();
         let events = world.events();
         assert_eq!(events.len(), 2);
-        let CombatEvent::Hit(hit) = &events[0] else { panic!("expected hit") };
+        assert!(matches!(events[0], CombatEvent::ProjectileEnded { projectile_id: 9 }));
+        let CombatEvent::Hit(hit) = &events[1] else { panic!("expected hit") };
         assert_eq!(hit.delta.applied_damage, 20);
         assert_eq!(hit.delta.tsv_loss, 100);
         assert_eq!(hit.command_outcome_id, 77);
         assert_eq!(hit.root_shot_id, 9);
-        assert!(matches!(events[1], CombatEvent::ProjectileEnded { projectile_id: 9 }));
         assert_eq!(world.ships()[0].vitals.health(), 80);
     }
 }
