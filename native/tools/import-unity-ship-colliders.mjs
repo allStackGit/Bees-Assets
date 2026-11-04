@@ -151,6 +151,17 @@ const manifest = {
     source: 'Unity Prefabs/Entities/Ships primary Entity.Collider',
     ships,
 };
-fs.mkdirSync(path.dirname(target), { recursive: true });
-fs.writeFileSync(target, JSON.stringify(manifest, null, 2) + '\n');
-process.stdout.write(`Imported ${ships.length} primary ship colliders to ${target}\n`);
+const generated = JSON.stringify(manifest, null, 2) + '\n';
+if (process.argv.includes('--check')) {
+    const current = fs.existsSync(target) ? fs.readFileSync(target, 'utf8') : '';
+    if (current !== generated) {
+        process.stderr.write(`Ship collider manifest is not synchronized: ${target}\n`);
+        process.exitCode = 1;
+    } else {
+        process.stdout.write(`Verified ${ships.length} primary ship colliders.\n`);
+    }
+} else {
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, generated);
+    process.stdout.write(`Imported ${ships.length} primary ship colliders to ${target}\n`);
+}
