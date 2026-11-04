@@ -1141,6 +1141,85 @@ async function resumeActiveRun(item, status) {
     completeMaintenanceResume(item);
 }
 
+// Pause the learner at a fixed periodic checkpoint without advancing the
+// curriculum. The durable status, pinned ONNX candidate and immutable reports
+// allow a coordinator restart to resume the same operation safely.
+async function checkpointPeriodic(item, status) {
+    const d = status?.desired || {};
+    if (d.run_id !== item.run_id || d.pending_release ||
+        String(d.canonical_build_id || '') !== item.release_build ||
+        !matches(d.environment_args, item.env_args)) {
+        blocked(item, 'Periodic checkpoint lost run, build or environment ownership.');
+        return;
+    }
+    if (!state.armed && !state.stop_requested) return;
+    if (state.stop_requested || !state.armed) {
+        item.end_reason = 'manual';
+        item.status = 'stopping';
+        save();
+        await finalize(item, status);
+        return;
+    }
+    verifyTrainerSnapshot(item);
+    const latest = (item.checkpoint_history || []).slice(-1)[0];
+    const completed = latest?.evaluation?.status === 'completed' &&
+        latest.ordinal < (item.checkpoint_next_index || 1);
+    if (d.training_enabled && !item.checkpoint_resume_pending) {
+        if (completed) {
+            blocked(item, 'Training restarted after checkpoint evaluation without a verified manager resume.');
+            return;
+        }
+        await invokeStop({});
+        status = await control();
+        if (status.desired?.training_enabled || status.desired?.run_id !== item.run_id ||
+            status.desired?.pending_release ||
+            !matches(status.desired?.environment_args, item.env_args)) {
+            throw Error('Safe periodic checkpoint stop was not confirmed.');
+        }
+        measure(item, status, true, 'pre-evaluation');
+        save();
+    }
+    if (!status.desired || status.desired.run_id !== item.run_id ||
+        status.desired.pending_release ||
+        String(status.desired.canonical_build_id || '') !== item.release_build ||
+        !matches(status.desired.environment_args, item.env_args)) {
+        throw Error('Periodic checkpoint control ownership changed.');
+    }
+    if (!status.desired.training_enabled) {
+        assertSameLineageCheckpoint(item);
+        if (!completed && !(await evaluateDuePeriodic(item, status))) return;
+        if (state.stop_requested || !state.armed) {
+            item.end_reason = 'manual';
+            item.status = 'stopping';
+            save();
+            await finalize(item, status);
+            return;
+        }
+        assertSameLineageCheckpoint(item);
+        item.awaiting_resume_sample_step = item.step ?? 0;
+        item.checkpoint_resume_pending = true;
+        save();
+        await invokeStart({ envArgs: item.env_args });
+        status = await control();
+    } else if (!item.checkpoint_resume_pending || !completed) {
+        blocked(item, 'Periodic checkpoint resumed before its evaluation was verified.');
+        return;
+    }
+    if (!status.desired || !status.desired.training_enabled ||
+        status.desired.run_id !== item.run_id ||
+        status.desired.pending_release ||
+        String(status.desired.canonical_build_id || '') !== item.release_build ||
+        !matches(status.desired.environment_args, item.env_args)) {
+        throw Error('Same-run resume after periodic checkpoint was not confirmed.');
+    }
+    delete item.checkpoint_resume_pending;
+    item.status = 'running';
+    item.last_progress = now();
+    state.message = 'Completed periodic checkpoint and resumed ' + item.name +
+        ' on the same curriculum stage and optimizer.';
+    save();
+}
+
 async function transitionStage(item, status) {
     const index = item.stage_index || 0;
     const previous = item.stages[index];
