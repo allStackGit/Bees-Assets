@@ -347,6 +347,9 @@ class ExperimentHub {
         if(!lease||!lease.receipt_fresh||!machine||
             machine.status!=='connected'||machine.agent_platform!=='linux'||
             machine.local_executor_enabled!==true||
+            machine.execution_capabilities?.cgroup_v2_detected!==true||
+            !['cpu','memory'].every(c=>
+                machine.execution_capabilities?.cgroup_controllers.includes(c))||
             !machine.installed_projects?.includes(job.project_id)||
             !r||r.gpu_count!==0||(r.gpus||[]).length||
             lease.resources.gpu_count!==0||
