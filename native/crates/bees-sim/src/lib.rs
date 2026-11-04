@@ -9,13 +9,14 @@
 
 pub mod collision;
 pub mod control;
+pub mod damage;
 pub mod geometry;
-pub mod hulls;
 pub mod movement;
 pub mod physics;
 pub mod policy;
 pub mod projectile;
 pub mod simulation;
+pub mod ship_assets;
 pub mod telemetry;
 pub mod timer;
 pub mod turret;
