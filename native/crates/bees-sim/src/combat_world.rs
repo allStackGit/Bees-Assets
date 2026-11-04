@@ -31,7 +31,10 @@ use crate::physics::{
 use crate::policy::Decision;
 use crate::geometry::Vec2;
 use crate::movement::ShipMotion;
-use crate::obstacle::{AsteroidBreakup, AsteroidDamage, CombatObstacle, ObstacleKind};
+use crate::obstacle::{
+    resolve_asteroid_pair_damage, AsteroidBreakup, AsteroidDamage,
+    CombatObstacle, ObstacleKind,
+};
 use crate::projectile::ProjectileMotion;
 use crate::ship_assets::ShipAsset;
 use crate::projectile_assets::ProjectileAsset;
@@ -115,6 +118,14 @@ pub enum CombatEvent {
     /// MapBorder.OnTriggerExit2D calls Kill(true) on a previously entered
     /// asteroid, without generating shards.
     AsteroidExitedMap { obstacle_id: i64 },
+    /// An asteroid/asteroid hull collision applies damage immediately but
+    /// leaves any newly zero-health bodies active for their delayed kill.
+    AsteroidsCollided {
+        first_obstacle_id: i64,
+        second_obstacle_id: i64,
+        first_damage: AsteroidDamage,
+        second_damage: AsteroidDamage,
+    },
     ShipDied {
         victim_id: i64,
         killer_id: i64,
@@ -290,6 +301,11 @@ pub struct CombatWorld {
     ship_by_id: HashMap<i64, usize>,
     obstacle_by_id: HashMap<i64, usize>,
     asteroid_border_states: HashMap<i64, AsteroidBorderState>,
+    /// Directional child-proximity contacts; a primary collider entry only
+    /// becomes a collision after the owning asteroid detects its neighbor.
+    nearby_asteroid_pairs: HashSet<(i64, i64)>,
+    asteroid_delayed_kills: HashMap<i64, ScaledTimer>,
+    expired_asteroid_ids: Vec<i64>,
     fleet_id_by_ship: HashMap<i64, i64>,
     projectile_by_id: HashMap<i64, usize>,
     reservations: DamageReservations,
@@ -325,6 +341,9 @@ impl CombatWorld {
             ship_by_id: HashMap::new(),
             obstacle_by_id: HashMap::new(),
             asteroid_border_states: HashMap::new(),
+            nearby_asteroid_pairs: HashSet::new(),
+            asteroid_delayed_kills: HashMap::new(),
+            expired_asteroid_ids: Vec::new(),
             fleet_id_by_ship: HashMap::new(),
             projectile_by_id: HashMap::new(),
             reservations: DamageReservations::new(),
@@ -1197,6 +1216,10 @@ impl CombatWorld {
         self.physics.obstacles_mut()[index].active = false;
         self.obstacle_by_id.remove(&entity_id);
         self.asteroid_border_states.remove(&entity_id);
+        self.asteroid_delayed_kills.remove(&entity_id);
+        self.nearby_asteroid_pairs.retain(|&(source, target)| {
+            source != entity_id && target != entity_id
+        });
         self.free_obstacle_slots.push(index);
         if with_breakup {
             self.events.push(CombatEvent::AsteroidDestroyed {
