@@ -311,7 +311,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const data=await r.json();
             if(!r.ok)throw Error(data.error||'No placement result.');
             feedback('hub-placements',(data.placements||[]).map(p=>
-                p.machine_name+': '+(p.fits?'Eligible':p.capacity_fits?'Capacity fits (unverified)':'Unavailable')+
+                p.machine_name+': '+(p.capacity_fits?'Advisory capacity fits':'Unavailable')+
                 (p.suggested_gpus?.length?' · GPUs '+p.suggested_gpus.join(', '):'')+' — '+p.reason
             ).join('\n')||'No registered machines.');
         }catch(e){feedback('hub-placements',e.message);}
