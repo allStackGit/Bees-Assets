@@ -104,9 +104,17 @@ The portable `bees-sim` crate currently contains:
   authored SizeClass and OriginalHealth (never inferred from adjusted
   training durability); original health comes from server-loaded ship stats
   and SizeClass can legitimately be zero (Beacon and Human Target).
-  Missing profiles fail instead of applying guessed damage. Trigger ordering still requires comparison with Unity.
-  Actual shard/piece spawning, sibling exclusions, pathfinder invalidation,
-  observer cleanup and rendering remain unimplemented.
+  Missing profiles fail instead of applying guessed damage. Trigger ordering
+  still requires comparison with Unity. Configured arenas now use the exact
+  RL scene's 13 shard-prefab and 18 debris-prefab palettes. Destroyed
+  asteroids spawn real shared-physics shard entities with original size/
+  collider shapes, per-prefab training health, inherited angular velocity,
+  movement, authored border-entry flags and sibling collision exclusions.
+  The dedicated shard pool retains prefab/speed across reuse; cosmetic pieces
+  have pooled, non-colliding motion and timed fade/expiry state. All fragment
+  draws use the scheduler's seeded world-local RNG. Map/pathfinder invalidation,
+  Unity-exact random sequences/callback ordering, renderer integration and
+  complete observer cleanup remain unimplemented.
 - An optional tactical reward consumer using the current RL team's shared
   positive/negative asymptotic shaping budgets, with mined cargo excluded
   from persistent-fleet damage reward on death.
@@ -115,8 +123,8 @@ The portable `bees-sim` crate currently contains:
 weapon-specific targeting and projectile spawning, remaining authored
 static/border/mining obstacle prefabs and the full collision-layer matrix,
 moving-asteroid AI, final ship collision-profile wiring from game assets,
-shard-family collision exclusions, asteroid fragmentation, full registry/
-observer cleanup,
+other level-specific fragment palettes, complete map/pathfinder/observer
+registry cleanup,
 Unity-equivalent Animator/FixedUpdate/Physics2D ordering, native Hive Mind
 command updates and persistence, squad/formation removal and full ship-death
 lifecycle, complete RL reward delivery and episode termination, visibility
@@ -220,6 +228,27 @@ layer, rather than scaling the primary hull by a guessed radius. The catalog
 stores normal `SizeClass × CollisionAsteroidHealthIncrement` durability;
 training must still pass its effective-health override when spawning, while
 collision rules retain the original authored health.
+
+## Fragment prefab palettes
+
+The RL training scene's serialized `BreakawayAsteroids` and
+`AsteroidPieces` GUID lists are imported to
+`native/assets/asteroid-fragments.json`. To verify or regenerate them:
+
+```sh
+node native/tools/import-unity-asteroid-fragments.mjs --check
+```
+
+The shared `AsteroidFragmentPalette` preserves the scene's exact selection
+list rather than choosing arbitrary small asteroid shapes. Set
+`CombatWorld.configure_asteroid_fragments` with the game Level's map bounds,
+half-extents, Stage maximum asteroid speed, and optional RL health ratio.
+The scheduler automatically passes its world-local RNG through
+`CombatWorldRules`; direct `step_fixed` deliberately rejects a configured
+fragment world unless the caller uses `step_fixed_with_random`. Debris-piece
+fade indexes are available to the future renderer; no independent training
+fragment simulation exists. Reproducing historical Unity `.NET Random`
+draw sequences and cross-episode pool persistence remains outstanding.
 
 ## Static boxes and map borders
 
