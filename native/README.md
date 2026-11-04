@@ -72,19 +72,27 @@ The portable `bees-sim` crate currently contains:
   from their Unity clips. Their radius changes modify the actual physics
   collider; harmlessness disables new damage; Kill releases the reservation
   and returns the projectile slot to the pool.
+- Obstacle bodies now participate in the same kinematic physics as ships
+  and projectiles, with a separate, layer-filtered obstacle trigger queue.
+  Ordinary projectile impacts can damage collision asteroids, terminate
+  against borders or record static-obstacle hits; rockets explode on
+  non-border obstacles and explosion projectiles deduplicate asteroid hits.
+  Asteroid destruction emits a lifecycle event for future shard, registry
+  and pathfinder handling. Obstacle colliders must currently be supplied
+  explicitly; their complete authored prefab catalog is not yet imported.
 - An optional tactical reward consumer using the current RL team's shared
   positive/negative asymptotic shaping budgets, with mined cargo excluded
   from persistent-fleet damage reward on death.
 
 **Not yet implemented:** complete normal user/Hive Mind movement,
-weapon-specific targeting and projectile spawning, Unity-equivalent
-Animator/FixedUpdate ordering and obstacle impacts, native Hive Mind command
-updates and persistence,
-squad/formation removal and full ship-death lifecycle, complete RL reward
-delivery and episode termination, Unity-equivalent physics callback ordering,
-obstacle contacts and the full collision-layer matrix, visibility and
-observations, game modes, presentation, server/persistence, distributed PPO
-and experiment orchestration.
+weapon-specific targeting and projectile spawning, authored obstacle
+prefabs and the full collision-layer matrix, moving-asteroid AI, obstacle/ship
+and asteroid/asteroid collisions, asteroid fragmentation and registry cleanup,
+Unity-equivalent Animator/FixedUpdate/Physics2D ordering, native Hive Mind
+command updates and persistence, squad/formation removal and full ship-death
+lifecycle, complete RL reward delivery and episode termination, visibility
+and observations, game modes, presentation, server/persistence, distributed
+PPO and experiment orchestration.
 
 The current native physics is a **partial implementation**, not a valid
 standalone Bees battle. It must not produce training or evaluation samples
