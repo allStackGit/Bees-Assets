@@ -910,7 +910,7 @@ function recordUnityMaintenanceBuild(item, release, status) {
     item.unity_rebuilds = item.unity_rebuilds || [];
     if (!item.unity_rebuilds.some(record => record.build_id === release.build_id)) {
         item.unity_rebuilds.push({
-            at: now(), step: item.step,
+            at: now(), step: item.step, training_s: trainingSeconds(item),
             old_build_id: attempt.old_build, build_id: release.build_id,
             compatibility_key: release.compatibility_key,
             warning_acknowledged: true,
