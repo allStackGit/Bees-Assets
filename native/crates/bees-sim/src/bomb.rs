@@ -11,6 +11,7 @@
 //! The world controls whether these identities are still valid.
 
 use crate::timer::ScaledTimer;
+use crate::geometry::Vec2;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BombStage {
@@ -30,6 +31,7 @@ pub enum BombAction {
 pub struct StrikerBombFuse {
     contacted_ship_id: i64,
     shooter_fleet_ship_id: i64,
+    local_attachment_offset: Vec2,
     timer: ScaledTimer,
     stage: BombStage,
 }
@@ -39,6 +41,7 @@ impl StrikerBombFuse {
         Self {
             contacted_ship_id,
             shooter_fleet_ship_id,
+            local_attachment_offset: Vec2::ZERO,
             timer: ScaledTimer::new(1.5, false, false),
             stage: BombStage::Fuse,
         }
@@ -54,6 +57,17 @@ impl StrikerBombFuse {
 
     pub fn stage(&self) -> BombStage {
         self.stage
+    }
+
+    /// StrikerBomb.Setup reparents the bomb transform to the contacted ship.
+    /// The offset is computed in that target's local frame at launch, then
+    /// transformed with its current heading every subsequent game tick.
+    pub fn set_attachment_offset(&mut self, local_offset: Vec2) {
+        self.local_attachment_offset = local_offset;
+    }
+
+    pub fn local_attachment_offset(&self) -> Vec2 {
+        self.local_attachment_offset
     }
 
     pub fn advance(&mut self, dt: f32, original_target_alive: bool) -> BombAction {
