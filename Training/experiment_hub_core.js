@@ -546,6 +546,19 @@ class ExperimentHub {
         }
         const report = boundedReport(value);
         const received = Date.now();
+        const instance=value.agent_instance_id;
+        if(report.local_executor &&
+            (typeof instance!=='string'||
+             !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(instance)))
+            throw Error('Native execution agent requires a process instance identity.');
+        const previous=this.agentReports.get(machine.id);
+        if(previous&&previous.local_executor&&
+            received>=previous.received_ms&&
+            received-previous.received_ms<AGENT_HEARTBEAT_TTL_MS&&
+            instance!==previous.instance_id) {
+            const error=Error('Another authenticated native agent instance is still active.');
+            error.status=409;throw error;
+        }
         const ids=value.observed_lease_ids==null?[]:value.observed_lease_ids;
         if (!Array.isArray(ids) || ids.length>100 ||
             ids.some(id=>typeof id!=='string'||!/^[0-9a-f-]{36}$/.test(id)) ||
@@ -574,7 +587,9 @@ class ExperimentHub {
         if (changed) this.commit(next);
         // Do not mark receipt or liveness until the durable acknowledgement
         // succeeds. A disk failure leaves the previous lease available.
-        this.agentReports.set(machine.id,{...report,received_ms:received});
+        this.agentReports.set(machine.id,{
+            ...report,instance_id:instance||null,received_ms:received,
+        });
         for (const id of ids) {
             const lease=this.state.reservations.find(x=>x.id===id &&
                 x.machine_id===machine.id && x.status==='acknowledged' &&
