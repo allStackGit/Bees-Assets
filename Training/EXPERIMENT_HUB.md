@@ -364,6 +364,92 @@ delegation/permissions, real process termination and limits,
 Windows Job Objects, GPU device mapping/isolation, and cross-project
 throughput/rebalancing remain outstanding.
 
+## Ants-v2 production adapter (locally installed, CPU-only)
+
+`Training/experiment_hub_ants_adapter.js` exports
+`createAntsProductionAdapter(...)`, a locally configured trusted adapter
+for the real `python -m antsim train` entry point. It is a factory, **not**
+an automatically installed runner. No Ants-v2 source, qualification
+gate, reward, observation, PPO, checkpoint, or production curriculum
+semantics are modified.
+
+The machine administrator must supply absolute paths for the qualified
+Ants checkout, Python 3.12 environment, production YAML, schema-5 final
+qualification report, and a dedicated artifact parent directory. The
+adapter requires pinned SHA-256 digests of both the YAML and report at
+startup **and again before each launch**; it refuses changed files.
+It passes the report unchanged into Ants' own production training
+authorization. That authorization independently requires the exact
+current source, configuration and resolved runtime/device lineage
+used by the passing qualification report. This adapter cannot authorize
+training on its own. A clean and properly qualified **CPU runtime**
+is necessary because the Hub's current execution backend does not
+allocate GPU resources.
+
+Example local module at `/etc/experiment-hub/approved-adapters.js`
+(paths are illustrative and must be changed to installed locations):
+
+```javascript
+const {createAntsProductionAdapter} =
+    require('/opt/bees/Training/experiment_hub_ants_adapter');
+module.exports = {
+    ants: createAntsProductionAdapter({
+        python:'/opt/ants/.venv/bin/python',
+        projectRoot:'/opt/ants',
+        configPath:'/opt/ants/configs/qualified-cpu.yaml',
+        qualificationReport:'/opt/ants/analysis/qualification-final.json',
+        artifactRoot:'/srv/ants/hub-runs',
+        configSha256:'<64-hex-digit SHA-256 of the YAML>',
+        qualificationSha256:'<64-hex-digit SHA-256 of the final report>',
+    }),
+};
+```
+
+Compute pins locally with `sha256sum` after qualification. The example
+placeholder digests intentionally cannot start any work. Save this
+module outside the checkout and set the three local execution opt-in
+environment variables described above, including
+`EXPERIMENT_HUB_LOCAL_ADAPTERS` pointing to it. Register project ID
+`ants` in the Hub, then save an immutable non-Bees configuration with
+`{"mode":"new","episodes":1000}`. Request CPU/RAM capacity with
+`gpu_count:0`, coordinate a connected Linux machine, wait for the
+fresh lease receipt and explicitly authorize **Start on Linux**.
+
+The adapter permits only `mode:"new"` (or omitted mode) and
+an integer `episodes` between 1 and 100,000,000. It intentionally
+does **not** implement checkpoint resume, policy initialization or
+optimizer-regime continuation: those have distinct provenance,
+artifact lineage and rollback semantics and must not be silently
+interchangeable. Each new job receives its own
+`--artifact-root <configured-parent>/<job-uuid>`, preventing different
+jobs from writing the same experiment files. The CLI uses the pinned
+config, original qualification report and `--checkpoint-on-exit`.
+
+For Ants the trusted adapter selects `stop_policy:'interrupt-main'`:
+the Linux supervisor configures `KillSignal=SIGINT`,
+`KillMode=mixed`, and a 600-second stop grace window. A requested
+stop is persisted before systemd is asked to stop the service
+asynchronously. The supervisor does not send repeated interrupts after
+an ambiguous stop request. This lets Ants' existing `KeyboardInterrupt`
+path make its own checkpoint decision. **An interruption during an
+active mutation cycle may deliberately skip an exit checkpoint to
+protect integrity**, retaining the previous durable checkpoint; if
+the grace period expires, systemd may forcibly end the process.
+
+CPU-budgeted services mask CUDA/HIP/ROCm GPU selection environment
+variables, but this is not kernel-enforced GPU device isolation.
+Other GPU-aware code may ignore those variables. Ants' runtime/device
+qualification must match what actually launches; a GPU-qualified
+runtime should fail Ants' own authorization when the actual execution
+environment resolves to CPU. CPU quotas do not grant dedicated cores
+or automatically adjust Ants' rollout/evaluation worker counts.
+Size the CPU/RAM request for the qualified production configuration
+to avoid oversubscribed on-policy training and throughput collapse.
+
+The adapter/native lifecycle has been exercised only with bounded
+simulations of filesystem, qualification pinning and systemd status.
+**No real Ants training or Linux service qualification has run here.**
+
 ## Not yet implemented
 
 Preinstalled trusted project adapters, Windows Job Objects, production
