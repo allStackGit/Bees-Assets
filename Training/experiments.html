@@ -341,7 +341,7 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
   </table></div>
   <div class="hub-standalone">
     <h3>Machine agent enrollment</h3>
-    <p class="muted">Enroll a registered machine once, then configure its agent with its machine ID and enrollment token. Rotate invalidates the previous token. Revoke disables access. Only the issued response shows the token; routine dashboard refreshes cannot retrieve it. Run Training/experiment_hub_agent.js on the machine with a trusted local or SSH-forwarded connection to the manager. Agent heartbeats report CPU, memory, and operating system, not physical GPU isolation.</p>
+    <p class="muted">Enroll a registered machine once, then configure its agent with its machine ID and enrollment token. Rotate invalidates the previous token. Revoke disables access. Only the issued response shows the token; routine dashboard refreshes cannot retrieve it. Run Training/experiment_hub_agent.js on the machine using the restricted agent-only localhost port 7149 (or a trusted SSH tunnel forwarding that port). Never forward the privileged dashboard port 7148 to workers. Agent heartbeats report CPU, memory, and operating system, not physical GPU isolation.</p>
     <p id="hub-enrollment-message" class="hub-notice" role="status">No enrollment token issued in this session.</p>
     <label>One-time machine token<textarea id="hub-enrollment-token" readonly rows="2" spellcheck="false"></textarea></label>
     <button id="hub-enrollment-clear" type="button">Clear token display</button>
