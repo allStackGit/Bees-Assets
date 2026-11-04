@@ -79,8 +79,10 @@ The portable `bees-sim` crate currently contains:
   non-border obstacles and explosion projectiles deduplicate asteroid hits.
   All **28 authored collision asteroid variants** are imported with their
   active primary polygons, inherited overrides, size class and layer. A
-  second catalog provides **six static box obstacles and four map borders**
-  with authored dimensions and prefab-default poses. Destruction events
+  second catalog provides **eight static box variants and four map borders**
+  with authored dimensions and prefab-default poses, while a third imports the
+  standalone **208-vertex Polygon Obstacle** gameplay collider (excluding its
+  separate proximity sensor). Destruction events
   include Unity's size-class-dependent shard and piece counts; actually
   spawning fragments and updating registries is still unimplemented.
 - An optional tactical reward consumer using the current RL team's shared
@@ -169,7 +171,7 @@ From the repository root, with Node.js and a Rust/Cargo toolchain installed:
 node native/tools/verify-native.mjs
 ```
 
-This checks the four authored asset catalogs against the current Unity
+This checks the five authored asset catalogs against the current Unity
 prefabs **without rewriting them**, then compiles and runs the native Rust
 tests. An optional `--assets-only` skips Cargo explicitly and does **not**
 establish native compilation. These checks establish neither Unity
@@ -195,7 +197,8 @@ must still pass its effective-health override when spawning.
 ## Static boxes and map borders
 
 `native/assets/box-obstacle-colliders.json` records the directly inherited
-`_Obstacle` box variants and all four authored map-border variants. To verify
+`_Obstacle` box variants, the two second-level `Slanted Variant` and `Box`
+prefabs, and all four authored map-border variants. To verify
 against the exact prefab source revisions:
 
 ```sh
@@ -206,9 +209,22 @@ Omit `--check` to regenerate. Static/border boxes can be spawned by name
 through `BoxObstacleCatalog` and `CombatWorld.spawn_box_obstacle`, with an
 optional map-specific pose. The imported box dimensions reflect prefab
 scaling; **runtime map-dependent resizing is not yet integrated**. Other
-obstacle layouts, nested prefab variants and the standalone polygon obstacle
-remain outside this catalog until their inheritance and placement paths are
-ported.
+obstacle layouts and unrecognized prefab inheritance chains remain outside
+this catalog until their relevant gameplay colliders are traced.
+
+## Standalone polygon obstacle
+
+`native/assets/polygon-obstacle-colliders.json` is generated from the
+standalone `Polygon Obstacle.prefab`:
+
+```sh
+node native/tools/import-unity-polygon-obstacle.mjs --check
+```
+
+The import follows `Obstacle.Collider`, not `ProximityCollider`, and
+retains the entire concave primary polygon and the authored root scaling.
+`PolygonObstacleCatalog` and `CombatWorld.spawn_polygon_obstacle`
+share that geometry between rendering and training.
 
 ## Projectile collider migration
 
