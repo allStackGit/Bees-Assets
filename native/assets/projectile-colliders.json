@@ -1,0 +1,124 @@
+{
+  "schema_version": 1,
+  "source": "Unity Prefabs/Entities/Projectiles, Entity.Collider and ConfigData.ProjectileTypes",
+  "projectiles": [
+    {
+      "name": "Bee Small Laser Shot",
+      "projectile_type": 1,
+      "layer": 10,
+      "has_body": true,
+      "shape": {
+        "kind": "circle",
+        "offset": [
+          0,
+          0
+        ],
+        "radius": 0.5
+      }
+    },
+    {
+      "name": "Bee Medium Laser Shot",
+      "projectile_type": 2,
+      "layer": 10,
+      "has_body": true,
+      "shape": {
+        "kind": "circle",
+        "offset": [
+          0,
+          0
+        ],
+        "radius": 0.5
+      }
+    },
+    {
+      "name": "Bumblebee Laser Shot",
+      "projectile_type": 3,
+      "layer": 10,
+      "has_body": true,
+      "shape": {
+        "kind": "circle",
+        "offset": [
+          0,
+          0
+        ],
+        "radius": 1.25
+      }
+    },
+    {
+      "name": "Flagship Laser Shot",
+      "projectile_type": 4,
+      "layer": 18,
+      "has_body": true,
+      "shape": {
+        "kind": "box",
+        "offset": [
+          0.1,
+          0.4
+        ],
+        "half_extents": [
+          0.75,
+          3
+        ]
+      }
+    },
+    {
+      "name": "Frigate Missle Release",
+      "projectile_type": 5,
+      "layer": 18,
+      "has_body": true,
+      "shape": {
+        "kind": "circle",
+        "offset": [
+          0,
+          0
+        ],
+        "radius": 2.5
+      }
+    },
+    {
+      "name": "Human Small Laser Shot",
+      "projectile_type": 6,
+      "layer": 18,
+      "has_body": true,
+      "shape": {
+        "kind": "circle",
+        "offset": [
+          0,
+          0
+        ],
+        "radius": 0.5
+      }
+    },
+    {
+      "name": "Medium Human Laser Shot",
+      "projectile_type": 7,
+      "layer": 18,
+      "has_body": true,
+      "shape": {
+        "kind": "circle",
+        "offset": [
+          0,
+          0
+        ],
+        "radius": 0.5
+      }
+    },
+    {
+      "name": "Laser Beam",
+      "projectile_type": 8,
+      "layer": 18,
+      "has_body": true,
+      "shape": {
+        "kind": "box",
+        "offset": [
+          0,
+          0
+        ],
+        "half_extents": [
+          1,
+          0.5
+        ]
+      }
+    }
+  ]
+}
