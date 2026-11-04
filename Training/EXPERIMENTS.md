@@ -375,11 +375,12 @@ samples. The chart supports raw values, rolling means of the last 5/15/30
 recorded samples, hover readouts (raw/rolling/running mean), and horizontal
 axes of learner steps or observed training hours. Select additional runs
 using their **Plot** checkboxes. A **Download logs ZIP** button on each
-started experiment collects complete available run-scoped uploaded worker
-logs and central-learner logs, plus applicable per-run text diagnostics and
-a manifest. It does not bundle checkpoints, raw trajectories, or shared
-multi-run logs, and it cannot retrieve log bytes not yet uploaded by a remote
-worker. It does not stop or modify training.
+started experiment exports the newest **1%, 5%, 10%, 25%, 50%, or 100%**
+of each available run-scoped uploaded worker or learner log. The default is
+5%; 100% exports all available lines. The manifest records each source's
+original and exported byte counts. This does not alter source logs, interrupt
+training, include checkpoints or shared multi-run logs, or retrieve remote
+bytes not yet uploaded.
 
 **Mean Group Reward** is the default reward
 curve, parsed from ML-Agents learner summaries; individual Mean Reward remains
@@ -389,12 +390,18 @@ metrics; signed group rewards retain negative values rather than clipping them.
 
 During a stage evaluation the learner is intentionally stopped, so no
 training-reward/throughput samples exist during that interval. The coordinator
-now captures the real last pre-stop sample and first fresh post-resume summary,
-and retains these boundary samples when old chart history is compacted.
-An **S** marker indicates the configured curriculum step threshold,
-which may precede the checkpoint's actual finalized step. An **E** marker
-identifies benchmark boundaries on either horizontal axis;
-the time axis counts observed training time, not benchmark downtime.
+captures the last actual pre-stop sample and first fresh post-resume summary.
+Only the **actual event** is marked on the chart: **E** for checkpoint
+evaluation or **T** for a curriculum transition without evaluation. Hovering
+shows the configured threshold and actual reached step. The time axis counts
+observed training time, not benchmark downtime. Transition detection polls
+every ten seconds and uses the most recent reported learner step (reported in
+50,000-step training summaries), so it cannot promise an exact-step stop.
+Unlike earlier versions, the manager retains up to 20,000 original minute
+samples per experiment without repeatedly halving old data; historical
+samples previously discarded cannot be reconstructed from manager state.
+Old sparse points are connected rather than artificially broken based on
+an arbitrary one-million-step spacing rule.
 Historical samples only contain fields collected at that time; new group
 rewards, PPO timing and Human combat values are **not backfilled** when
 upgrading the manager. Restart the experiment coordinator with the new source
