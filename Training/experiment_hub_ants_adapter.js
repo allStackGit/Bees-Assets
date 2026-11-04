@@ -37,9 +37,10 @@ function createAntsProductionAdapter(options={}) {
     if(!HASH.test(String(configSha256||''))||
         !HASH.test(String(qualificationSha256||'')))
         throw Error('Pinned Ants config and qualification report digests are required.');
+    const sourceRoot=projectRoot.replace(/\/+$/,'');
     if(projectRoot==='/'||artifactRoot==='/'||
-        artifactRoot===projectRoot||artifactRoot===configPath)
-        throw Error('Use a dedicated, separate Ants artifact parent directory.');
+        artifactRoot===sourceRoot||artifactRoot.startsWith(sourceRoot+'/'))
+        throw Error('Ants artifact parent must be outside the source checkout to preserve clean source identity.');
     const fsApi=options.fsApi||fs;
     const check=()=>{
         verifiedFile(configPath,configSha256,fsApi);
