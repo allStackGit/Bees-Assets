@@ -178,6 +178,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     ' · Not started')
                     :'Waiting for trusted adapter · No claim'
                 :(labels[j.status]||j.status)+usage+
+                    (j.capacity_released_at?' · Capacity released':'')+
                     (machine?.status==='offline'?' · Agent offline':'');
             const detail=j.execution_diagnostic?' · '+j.execution_diagnostic:'';
             const statusCell=cell(tr,status);
@@ -216,6 +217,17 @@ document.addEventListener('DOMContentLoaded', () => {
                         });
                         feedback('hub-job-message',
                             'Stop recorded. Awaiting machine-local service confirmation.');
+                        await reload();
+                    }catch(e){feedback('hub-job-message',e.message);}
+                }));
+            if(['finished','failed','stopped'].includes(j.status)&&linked)
+                actions.append(button('Release completed capacity',async()=>{
+                    if(!confirm('Release the native job’s Hub capacity after its terminal service report? The job history is preserved. This does not stop a process.'))return;
+                    try{
+                        await action('hub/leases/release',{
+                            lease_id:j.lease_id,confirm_release:true,
+                        });
+                        feedback('hub-job-message','Completed job capacity released; history preserved.');
                         await reload();
                     }catch(e){feedback('hub-job-message',e.message);}
                 }));
@@ -329,7 +341,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 :lease.receipt_fresh?'Agent receipt fresh'
                 :'Acknowledged previously; receipt not fresh');
             const actions=cell(tr,'');
-            actions.append(button('Release',async()=>{
+            const owner=(state.jobs||[]).find(j=>j.id===lease.job_id);
+            if(owner&&!['waiting_adapter','finished','failed','stopped']
+                .includes(owner.status)) {
+                actions.textContent='Stop or verify managed job before release';
+            }else actions.append(button('Release',async()=>{
                 if(!confirm('Release the coordination lease for '+lease.project_id+
                     ' on '+lease.machine_id+
                     '? This only frees Hub scheduling capacity; it does not stop any process.'))return;
