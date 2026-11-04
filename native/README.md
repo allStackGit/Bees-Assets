@@ -52,18 +52,28 @@ The portable `bees-sim` crate currently contains:
   including polygon-to-box and box-to-box trigger checks.
 - A physics-only world adapter wired into the shared scheduler. It explicitly
   rejects PPO actions until the complete gameplay rules are migrated.
-- A partial shared combat-world impact path for direct, piercing and explosion
-  projectiles: queued trigger processing, health and TSV recalculation, shooter
-  and Hive Mind command attribution, death events, strict shot expiry, and
-  source-consistent projectile-end callback ordering. Ships and shots spawn
-  through the same authored collider catalogs in rendered/headless contexts.
+- A partial shared combat-world impact path with projectile trigger queues,
+  health and TSV recalculation, shooter/Hive Mind attribution, death events,
+  and source-consistent shot expiry and cleanup. Frigate rockets now accelerate
+  with their authored speed cap and create untargeted explosions that inherit
+  root-shot/command attribution and ownership without applying direct damage.
+- Outgoing target-damage reservations use a single owner per reservation:
+  weapon targeting/firing reserves once, projectile expiry releases once, and
+  a rocket transfers its reservation to the resulting explosion before dying.
+  Reservation totals continue to update with target health.
+- Ended projectile physical/metadata storage is reused, so its capacity tracks
+  peak concurrent shots instead of increasing across the entire run. World
+  entity IDs remain monotonically increasing independently of pooled slots.
+  Ships and shots spawn through the same authored collider catalogs in
+  rendered/headless contexts.
 - An optional tactical reward consumer using the current RL team's shared
   positive/negative asymptotic shaping budgets, with mined cargo excluded
   from persistent-fleet damage reward on death.
 
 **Not yet implemented:** complete normal user/Hive Mind movement,
 weapon-specific targeting and projectile spawning, Striker Bomb delayed damage,
-rocket explosion creation, native Hive Mind command updates and persistence,
+rocket explosion lifetime/animation completion and obstacle impacts,
+native Hive Mind command updates and persistence,
 squad/formation removal and full ship-death lifecycle, complete RL reward
 delivery and episode termination, Unity-equivalent physics callback ordering,
 obstacle contacts and the full collision-layer matrix, visibility and
@@ -145,6 +155,13 @@ node native/tools/import-unity-projectile-colliders.mjs --check
 Omit `--check` to regenerate from Unity prefabs. Both importers use an explicit
 serialized collider reference and reject shape assumptions. These are transition
 tools, not production runtime dependencies.
+
+Frigate Rocket speed is exported from the prefab's `MaxSpeed` (160);
+the explosion's authored collider is loaded from projectile type 13. During
+migration, the native combat world requires one shared immutable
+`Arc<ProjectileAssetCatalog>` at construction. Its explosion-end callback
+must be connected to the native animation/timer lifecycle before full parity
+can be claimed.
 
 The runtime shares one transformed-collider implementation between ships and
 projectiles. Source-based shape geometry is necessary but **does not establish
