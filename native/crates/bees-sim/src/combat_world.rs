@@ -867,6 +867,99 @@ impl CombatWorld {
         Ok(())
     }
 
+    /// Projectile.ContactObstacle is distinct from ship contact. Ordinary
+    /// projectiles process at most one obstacle per fixed step; explosions
+    /// drain the full queue and damage each asteroid only once.
+    fn resolve_obstacle_contact(
+        &mut self,
+        contact: ObstacleTriggerEnter,
+    ) -> Result<(), CombatWorldError> {
+        let Some(&shot_index) = self.projectile_by_id.get(&contact.projectile_id) else {
+            return Ok(());
+        };
+        let Some(&obstacle_index) = self.obstacle_by_id.get(&contact.obstacle_id) else {
+            return Ok(());
+        };
+        if !self.physics.projectiles()[shot_index].active ||
+            !self.physics.obstacles()[obstacle_index].active {
+            return Ok(());
+        }
+        let kind = self.obstacles[obstacle_index].kind;
+        let power = self.projectiles[shot_index].power;
+        let behavior = &mut self.projectiles[shot_index].behavior;
+        match behavior {
+            ImpactBehavior::Explosion { contacts, .. } => {
+                // RocketExplosion.ContactObstacle skips dead/border obstacles,
+                // remembers the rest, and only damages collision asteroids.
+                let accepted = contacts.accept_obstacle(
+                    contact.obstacle_id,
+                    !self.obstacles[obstacle_index].live(),
+                    kind == ObstacleKind::MapBorder,
+                );
+                if accepted && kind == ObstacleKind::CollisionAsteroid {
+                    self.damage_collision_asteroid(contact, obstacle_index, power);
+                }
+            }
+            ImpactBehavior::Rocket { .. } => {
+                // Rocket.ContactObstacle always ends the rocket. It creates
+                // the explosion on all obstacle kinds EXCEPT MapBorder and
+                // never directly damages the asteroid.
+                if kind != ObstacleKind::MapBorder {
+                    self.spawn_rocket_explosion(shot_index)?;
+                }
+                self.end_projectile(shot_index);
+            }
+            _ => {
+                // Projectile.ContactObstacle skips already dead obstacles.
+                if !self.obstacles[obstacle_index].live() {
+                    return Ok(());
+                }
+                match kind {
+                    ObstacleKind::MapBorder => {}
+                    ObstacleKind::CollisionAsteroid => {
+                        self.damage_collision_asteroid(contact, obstacle_index, power);
+                    }
+                    ObstacleKind::StaticObstacle => {
+                        self.events.push(CombatEvent::StaticObstacleImpact {
+                            projectile_id: contact.projectile_id,
+                            obstacle_id: contact.obstacle_id,
+                        });
+                    }
+                    ObstacleKind::MiningAsteroid | ObstacleKind::AsteroidPiece => {}
+                }
+                self.end_projectile(shot_index);
+            }
+        }
+        Ok(())
+    }
+
+    fn damage_collision_asteroid(
+        &mut self,
+        contact: ObstacleTriggerEnter,
+        obstacle_index: usize,
+        power: i32,
+    ) {
+        let obstacle = &mut self.obstacles[obstacle_index];
+        let Some(vitals) = &mut obstacle.vitals else { return; };
+        let Some(damage) = vitals.apply_asteroid_projectile_damage(power) else {
+            return;
+        };
+        self.events.push(CombatEvent::AsteroidDamaged {
+            projectile_id: contact.projectile_id,
+            obstacle_id: contact.obstacle_id,
+            damage,
+        });
+        if damage.killed {
+            // Unity calls CollisionAsteroid.Kill(false), which removes the
+            // obstacle and schedules its authored shard consequences.
+            self.physics.obstacles_mut()[obstacle_index].active = false;
+            self.events.push(CombatEvent::AsteroidDestroyed {
+                obstacle_id: contact.obstacle_id,
+                size_class: obstacle.size_class,
+            });
+        }
+    }
+
     /// This is a real collision -> health -> event path for direct, piercing
     /// and explosion projectiles. It is NOT a complete game/episode step.
     /// Contacts generated during physics are queued for the following step.
@@ -892,6 +985,12 @@ impl CombatWorld {
         std::mem::swap(&mut self.processing_contacts, &mut self.pending_contacts);
         self.pending_contacts.clear();
         self.processed_this_tick.clear();
+        std::mem::swap(
+            &mut self.processing_obstacle_contacts,
+            &mut self.pending_obstacle_contacts,
+        );
+        self.pending_obstacle_contacts.clear();
+        self.processed_obstacles_this_tick.clear();
 
         for index in 0..self.processing_contacts.len() {
             let contact = self.processing_contacts[index];
@@ -909,6 +1008,24 @@ impl CombatWorld {
             self.resolve_contact(contact)?;
         }
         self.processing_contacts.clear();
+
+        // A base Projectile.FixedUpdate handles its queued ship contact
+        // before its queued obstacle contact, then checks range.
+        // Dedicated RocketExplosion.FixedUpdate drains both kinds.
+        for index in 0..self.processing_obstacle_contacts.len() {
+            let contact = self.processing_obstacle_contacts[index];
+            let Some(&shot_index) = self.projectile_by_id.get(&contact.projectile_id) else {
+                continue;
+            };
+            if !self.projectiles[shot_index].is_explosion() &&
+                !self.processed_obstacles_this_tick.insert(contact.projectile_id)
+            {
+                self.pending_obstacle_contacts.push(contact);
+                continue;
+            }
+            self.resolve_obstacle_contact(contact)?;
+        }
+        self.processing_obstacle_contacts.clear();
 
         // Base Projectile.FixedUpdate checks strict distance > Range after
         // contact processing, not on a newly fired shot or as a swept ray.
@@ -934,6 +1051,8 @@ impl CombatWorld {
         self.update_explosion_timelines(dt)?;
         let new_contacts = self.physics.step(dt, collision_matrix)?;
         self.pending_contacts.extend_from_slice(new_contacts);
+        self.pending_obstacle_contacts
+            .extend_from_slice(self.physics.obstacle_trigger_entries());
 
         Ok(StepCounts {
             active_ships: self.physics.ships().iter().filter(|ship| ship.active).count() as u32,
