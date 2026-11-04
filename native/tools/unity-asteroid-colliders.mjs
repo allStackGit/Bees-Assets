@@ -198,7 +198,7 @@ export function createAsteroidBatch(baseContent, baseGuid, otherPrefabs) {
     })];
     const seen = new Set([1]);
     for (const [name, text] of otherPrefabs) {
-        const match = /^Asteroid (\\d+)$/.exec(name);
+        const match = /^Asteroid (\d+)$/.exec(name);
         if (!match) fail(name, 'unrecognized asteroid prefab name');
         const index = Number(match[1]);
         if (index < 2 || index > 28 || seen.has(index)) {
