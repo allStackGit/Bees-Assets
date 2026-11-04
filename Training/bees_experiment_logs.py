@@ -8,7 +8,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import re
+import shutil
 import stat
 import sys
 import zipfile
@@ -19,7 +21,12 @@ RUN_RE = re.compile(r"[A-Za-z0-9._-]{1,128}")
 TEXT_LOG_SUFFIXES = {".log", ".txt", ".jsonl", ".csv"}
 
 
-def export_logs(bees_root: Path, assets_root: Path, run_id: str, output: Path) -> dict:
+def export_logs(
+    bees_root: Path, assets_root: Path, run_id: str, output: Path,
+    log_percent: int = 5,
+) -> dict:
+    if log_percent not in {1, 5, 10, 25, 50, 100}:
+        raise ValueError("Log percentage must be 1, 5, 10, 25, 50 or 100")
     if not RUN_RE.fullmatch(run_id) or run_id in {".", ".."}:
         raise ValueError("Invalid run ID")
     bees_root = bees_root.resolve(strict=True)
@@ -59,7 +66,9 @@ def export_logs(bees_root: Path, assets_root: Path, run_id: str, output: Path) -
     manifest = {
         "run_id": run_id,
         "generated_utc": datetime.now(timezone.utc).isoformat(),
-        "complete_files_not_tails": True,
+        "complete_files_not_tails": log_percent == 100,
+        "log_percent_per_file": log_percent,
+        "selection": "Last specified percent of each available log by bytes, rounded to full line boundaries; small logs retained in full",
         "sources_checked": searched,
         "files": [],
         "excluded": [
@@ -72,10 +81,28 @@ def export_logs(bees_root: Path, assets_root: Path, run_id: str, output: Path) -
                          compresslevel=1, allowZip64=True) as archive:
         for label, file, relative in selected:
             name = f"{label}/{relative}"
-            archive.write(file, name)
+            total = file.stat().st_size
+            start = 0 if log_percent == 100 else max(
+                0, total - max(4096, math.ceil(total * log_percent / 100)),
+            )
+            with file.open("rb") as incoming, archive.open(name, "w", force_zip64=True) as target:
+                if start:
+                    incoming.seek(start - 1)
+                    if incoming.read(1) != b"\\n":
+                        incoming.readline()  # skip only the incomplete first record/line
+                else:
+                    incoming.seek(0)
+                exported = 0
+                while True:
+                    chunk = incoming.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    target.write(chunk)
+                    exported += len(chunk)
             manifest["files"].append({
                 "path": name,
-                "bytes": file.stat().st_size,
+                "source_bytes": total,
+                "exported_bytes": exported,
             })
         archive.writestr("manifest.json", json.dumps(manifest, indent=2) + "\n")
     return manifest
@@ -87,9 +114,14 @@ def main() -> int:
     parser.add_argument("--assets-root", required=True, type=Path)
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--log-percent", type=int, default=5,
+                        choices=[1, 5, 10, 25, 50, 100])
     args = parser.parse_args()
     try:
-        info = export_logs(args.bees_root, args.assets_root, args.run_id, args.output)
+        info = export_logs(
+            args.bees_root, args.assets_root, args.run_id, args.output,
+            args.log_percent,
+        )
         print(json.dumps({"run_id": info["run_id"], "files": len(info["files"])}))
         return 0
     except (OSError, ValueError, zipfile.BadZipFile) as exc:
