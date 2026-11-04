@@ -1,0 +1,246 @@
+{
+  "schema_version": 1,
+  "source": "Prefabs/Entities/Obstacles root and Map Borders",
+  "obstacles": [
+    {
+      "name": "_Obstacle",
+      "obstacle_type": 0,
+      "layer": 19,
+      "authored_health": 1000,
+      "default_pose": {
+        "position": [
+          -50,
+          -70
+        ],
+        "rotation_degrees": 0
+      },
+      "shape": {
+        "kind": "box",
+        "offset": [
+          0,
+          0
+        ],
+        "half_extents": [
+          25,
+          25
+        ]
+      }
+    },
+    {
+      "name": "1x1",
+      "obstacle_type": 0,
+      "layer": 19,
+      "authored_health": 1000,
+      "default_pose": {
+        "position": [
+          0,
+          0
+        ],
+        "rotation_degrees": 0
+      },
+      "shape": {
+        "kind": "box",
+        "offset": [
+          0,
+          0
+        ],
+        "half_extents": [
+          0.5,
+          0.5
+        ]
+      }
+    },
+    {
+      "name": "1x1 1",
+      "obstacle_type": 0,
+      "layer": 19,
+      "authored_health": 1000,
+      "default_pose": {
+        "position": [
+          -8,
+          -155
+        ],
+        "rotation_degrees": 0
+      },
+      "shape": {
+        "kind": "box",
+        "offset": [
+          0,
+          0
+        ],
+        "half_extents": [
+          0.5,
+          0.5
+        ]
+      }
+    },
+    {
+      "name": "Big Wall",
+      "obstacle_type": 0,
+      "layer": 19,
+      "authored_health": 1000,
+      "default_pose": {
+        "position": [
+          -21,
+          121.4
+        ],
+        "rotation_degrees": 0
+      },
+      "shape": {
+        "kind": "box",
+        "offset": [
+          0,
+          0
+        ],
+        "half_extents": [
+          200,
+          15
+        ]
+      }
+    },
+    {
+      "name": "Corner Obstacle",
+      "obstacle_type": 0,
+      "layer": 19,
+      "authored_health": 1000,
+      "default_pose": {
+        "position": [
+          -232,
+          230
+        ],
+        "rotation_degrees": 0
+      },
+      "shape": {
+        "kind": "box",
+        "offset": [
+          0,
+          0
+        ],
+        "half_extents": [
+          25,
+          25
+        ]
+      }
+    },
+    {
+      "name": "Slanted",
+      "obstacle_type": 0,
+      "layer": 19,
+      "authored_health": 1000,
+      "default_pose": {
+        "position": [
+          -115,
+          -20
+        ],
+        "rotation_degrees": 122.99999749274214
+      },
+      "shape": {
+        "kind": "box",
+        "offset": [
+          0,
+          0
+        ],
+        "half_extents": [
+          128.5,
+          5
+        ]
+      }
+    },
+    {
+      "name": "Top Border",
+      "obstacle_type": 1,
+      "layer": 19,
+      "authored_health": 0,
+      "default_pose": {
+        "position": [
+          0,
+          268
+        ],
+        "rotation_degrees": 0
+      },
+      "shape": {
+        "kind": "box",
+        "offset": [
+          0,
+          0
+        ],
+        "half_extents": [
+          280,
+          12
+        ]
+      }
+    },
+    {
+      "name": "Bottom Border Variant",
+      "obstacle_type": 1,
+      "layer": 19,
+      "authored_health": 0,
+      "default_pose": {
+        "position": [
+          0,
+          -268
+        ],
+        "rotation_degrees": 0
+      },
+      "shape": {
+        "kind": "box",
+        "offset": [
+          0,
+          0
+        ],
+        "half_extents": [
+          280,
+          12
+        ]
+      }
+    },
+    {
+      "name": "Left Border Variant",
+      "obstacle_type": 1,
+      "layer": 19,
+      "authored_health": 0,
+      "default_pose": {
+        "position": [
+          -268,
+          0
+        ],
+        "rotation_degrees": 0
+      },
+      "shape": {
+        "kind": "box",
+        "offset": [
+          0,
+          0
+        ],
+        "half_extents": [
+          12,
+          280
+        ]
+      }
+    },
+    {
+      "name": "Right Border Variant",
+      "obstacle_type": 1,
+      "layer": 19,
+      "authored_health": 0,
+      "default_pose": {
+        "position": [
+          268,
+          0
+        ],
+        "rotation_degrees": 0
+      },
+      "shape": {
+        "kind": "box",
+        "offset": [
+          0,
+          0
+        ],
+        "half_extents": [
+          12,
+          280
+        ]
+      }
+    }
+  ]
+}
