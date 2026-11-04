@@ -66,6 +66,48 @@ and platform-specific adapters must prove isolation and live capacity before
 any reservation becomes executable. The UI requires explicit confirmation
 before operating the Bees learner.
 
+## Coordinated resource leases (not process isolation)
+
+The Machines tab can issue a **coordination lease** for a selected project and
+a currently connected machine using the CPU, RAM and GPU fields in **Placement
+preview**. Issuing requires explicit confirmation. The requested budget is
+admitted using the same planner as the multi-workload preview; a new offer
+counts against available capacity immediately so concurrent Hub requests cannot
+overbook the same registered resources. Leases are persisted in `hub-v1.json`,
+not in Bees' `experiments-v1.json`.
+
+A lease goes from `offered` to `acknowledged` when the authenticated agent
+reports its ID in a subsequent heartbeat. The agent checks that the sum of
+offered CPU and RAM requests does not exceed its reported host capacity
+before reporting observation. It does **not** reserve physical cores, cap
+memory consumption, measure GPU availability, or start a workload.
+Acknowledgement means **received and accounted for**, not *resources enforced*.
+`receipt_fresh` is true only when an acknowledgement has been seen recently
+during the current coordinator process and that machine's heartbeat is fresh.
+
+Leases are **not released automatically** when agents disconnect, tokens are
+rotated/revoked, or the coordinator restarts: those conditions cannot establish
+that an independent process has stopped. The ledger survives restart and
+continues blocking Hub capacity until an operator explicitly selects
+**Release**. Release does not stop processes; it only returns planning budget.
+Old `active` reservations stay protected, and only records issued by the Hub
+can be released through this endpoint. A bounded number of released records
+is retained; no per-heartbeat record duplication occurs.
+
+The relevant loopback API calls are `POST /api/hub/leases` with
+`{project_id,machine_id,resources,confirm_request:true}` and
+`POST /api/hub/leases/release` with
+`{lease_id,confirm_release:true}`. The authenticated
+`POST /api/hub/agent/heartbeat` optionally includes
+`observed_lease_ids` and returns inert `lease_offers`. These are
+data records, never commands, executable paths, scripts, or model inputs.
+
+This is a scheduler-coordination foundation, **not an executable job
+scheduler**. Other processes on the same machine, including existing Bees
+workers and interactive LLMs, may consume untracked resources. Treat all
+GPU VRAM and compute percentages as estimated budgets until trustworthy
+per-device measurement and platform-level isolation are implemented.
+
 ## Read-only machine agent enrollment
 
 1. Register a machine with declared CPU slots, memory and GPU inventory in
@@ -95,12 +137,13 @@ before operating the Bees learner.
 
 The agent has **no remote command interface** and does not start or stop
 Bees, Ants, or any third-party training process. Enrolled machines are still
-ineligible for Hub execution. The Hub does not yet enforce resource leases;
-even a successful placement may interfere with an existing untracked job.
+ineligible for Hub execution. It acknowledges coordination offers, but does not
+enforce CPU, RAM, or GPU limits; even a claimed placement may interfere
+with an existing untracked job.
 
 ## Not yet implemented
 
-Generic project execution adapters, authenticated resource-lease acknowledgments,
+Generic project execution adapters, authenticated execution-lease enforcement,
 machine-level process ownership and OS-enforced CPU/RAM controls,
 GPU device verification and isolation, the multi-project job scheduler,
 cross-project run history and metrics ingestion, safe live rebalancing, and
