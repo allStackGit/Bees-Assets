@@ -135,6 +135,37 @@ document.addEventListener('DOMContentLoaded', () => {
             cell(tr,'No saved configurations.').colSpan=5;
             $('hub-config-rows').append(tr);
         }
+        const jobSelect=$('hub-job-configuration');
+        const former=jobSelect.value;
+        jobSelect.replaceChildren(...configs.map(c=>new Option(
+            c.name+' · revision '+c.revision,c.id)));
+        if(configs.some(c=>c.id===former)) jobSelect.value=former;
+        $('hub-job-queue').disabled=project==='bees'||!configs.length;
+        const records=(state.jobs||[]).filter(j=>j.project_id===project);
+        $('hub-job-rows').replaceChildren();
+        for(const j of records.slice(-50).reverse()) {
+            const tr=document.createElement('tr');
+            cell(tr,j.configuration_name||j.configuration_id);
+            cell(tr,j.configuration_revision);
+            cell(tr,j.status==='waiting_adapter'?'Waiting for trusted adapter':j.status);
+            cell(tr,j.resources.cpus+' CPU / '+j.resources.ram_mb+' MiB / '+
+                j.resources.gpu_count+' GPUs');
+            const actions=cell(tr,'');
+            if(j.status==='waiting_adapter')actions.append(button('Cancel',async()=>{
+                if(!confirm('Cancel this unstarted '+j.project_id+' job? No process is running.'))return;
+                try{
+                    await action('hub/jobs/cancel',{job_id:j.id,confirm_cancel:true});
+                    feedback('hub-job-message','Cancelled job before execution.');
+                    await reload();
+                }catch(e){feedback('hub-job-message',e.message);}
+            }));
+            $('hub-job-rows').append(tr);
+        }
+        if(!records.length) {
+            const tr=document.createElement('tr');
+            cell(tr,'No queued jobs for this project.').colSpan=5;
+            $('hub-job-rows').append(tr);
+        }
         $('hub-machine-rows').replaceChildren();
         for(const m of state.machines) {
             const tr=document.createElement('tr');
@@ -408,6 +439,39 @@ document.addEventListener('DOMContentLoaded', () => {
                     :'No fit')+' — '+p.reason
             ).join('\n')||'No workloads entered. No changes made.');
         }catch(e){feedback('hub-plan-result',e.message);}
+    });
+
+    $('hub-job-queue').addEventListener('click',async()=>{
+        const selected=state?.configurations.find(c=>
+            c.project_id===project&&c.id===$('hub-job-configuration').value);
+        if(!selected){
+            feedback('hub-job-message','Save a configuration in Design first.');
+            return;
+        }
+        if(!confirm('Freeze '+selected.name+' revision '+selected.revision+
+            ' as a pending '+project+' job? This cannot start training or reserve hardware.'))return;
+        try{
+            const job=await action('hub/jobs',{
+                configuration_id:selected.id,expected_revision:selected.revision,
+                resources:JSON.parse($('hub-job-resources').value),
+            });
+            feedback('hub-job-message',
+                'Saved immutable job '+job.id+'. Waiting for a trusted execution adapter.');
+            await reload();
+        }catch(e){feedback('hub-job-message',e.message);}
+    });
+    $('hub-job-preview').addEventListener('click',async()=>{
+        try{
+            const r=await fetch('/api/hub/jobs/plan',{cache:'no-store'});
+            const data=await r.json();
+            if(!r.ok)throw Error(data.error||'Job preview unavailable.');
+            const selected=(data.jobs||[]).filter(j=>j.project_id===project);
+            feedback('hub-job-plan',selected.map(j=>
+                j.configuration_name+': '+
+                (j.capacity_fits?(j.machine_name+' (advisory only)'):'No capacity fit')+
+                ' · Waiting for trusted adapter; no execution'
+            ).join('\n')||'No pending jobs for this project.');
+        }catch(e){feedback('hub-job-plan',e.message);}
     });
 
     async function loadMonitorBees() {
