@@ -702,7 +702,7 @@ impl crate::simulation::GameRules<KinematicPhysics> for KinematicPhysicsRules {
             decisions: 0,
             active_ships: world.state.ships().iter().filter(|ship| ship.active).count() as u32,
             active_projectiles: world.state.projectiles().iter().filter(|shot| shot.active).count() as u32,
-            events: counts.trigger_enters,
+            events: counts.trigger_enters + counts.obstacle_trigger_enters,
         })
     }
 }
