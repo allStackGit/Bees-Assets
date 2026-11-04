@@ -18,6 +18,7 @@ pub mod damage_reservations;
 pub mod explosion_lifecycle;
 pub mod geometry;
 pub mod movement;
+pub mod obstacle;
 pub mod physics;
 pub mod policy;
 pub mod projectile;
