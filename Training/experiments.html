@@ -421,20 +421,29 @@ function chart(items) {
     const datasets = all.map((item, index) => ({
         item, color: colors[index % colors.length], points: seriesFor(item),
     }));
-    if (metric === 'group_reward') {
-        for (const { item } of datasets) {
-            const samples = item.samples || [];
-            const withReward = samples.filter(sample =>
-                sample.group_reward != null && Number.isFinite(Number(sample.group_reward)));
-            if (!samples.length || withReward.length === samples.length) continue;
-            const first = withReward[0];
-            const coverage = withReward.length + '/' + samples.length;
-            $('legend').append(txt('span', item.name + ': Mean Group Reward available for ' +
-                coverage + ' recorded samples' +
-                (first?.step != null ? ' (first at ' + fmt(first.step) + ' steps)' : '') +
-                '. Older chart samples were saved before this metric was collected. ' +
-                'Choose Mean Reward (individual) to view the older reward history.'));
+    for (const dataset of datasets) {
+        const samples = dataset.item.samples || [];
+        const covered = samples.filter(sample =>
+            Number.isFinite(xValue(sample)) && metricValue(sample, metric) != null &&
+            Number.isFinite(Number(metricValue(sample, metric))));
+        if (!samples.length) continue;
+        const firstSaved = samples[0];
+        const firstPlotted = covered[0];
+        const notices = [];
+        if (covered.length !== samples.length) {
+            notices.push('available for ' + covered.length + '/' + samples.length +
+                ' stored samples' + (firstPlotted?.step != null
+                    ? ', first plotted at ' + fmt(firstPlotted.step) + ' steps' : ''));
         }
+        if (Number.isFinite(firstSaved.step) && firstSaved.step > 1000000) {
+            notices.push('earliest saved sample at ' +
+                fmt(firstSaved.step) + ' steps; no earlier samples in manager state');
+        }
+        if (notices.length) $('legend').append(txt('span',
+            dataset.item.name + ' · ' +
+            ($('metric').selectedOptions[0]?.textContent || metric) + ': ' +
+            notices.join(' · ') +
+            '. The chart cannot reconstruct omitted historical readings.'));
     }
     const points = datasets.flatMap(series => series.points);
     chartHover = null;
