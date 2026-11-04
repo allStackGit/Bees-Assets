@@ -77,6 +77,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         $('bees-controls').hidden=project!=='bees' || !['train','monitor'].includes(tab);
         if(tab==='train'&&project==='bees') loadBeesControl();
+        if(tab==='monitor'&&project==='bees') loadMonitorBees();
         if(tab==='machines') loadLiveBeesWorkers();
     }
     function resetEditor() {
@@ -189,6 +190,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if(project!=='bees')return;
         try {
             const payload=trainingFormPayload();
+            resetEditor();
             $('hub-config-name').value=payload.name||'Bees draft';
             $('hub-config-json').value=JSON.stringify(payload,null,2);
             feedback('hub-config-message','Copied current Bees training form. Save draft to retain it.');
@@ -249,6 +251,20 @@ document.addEventListener('DOMContentLoaded', () => {
         }catch(e){feedback('hub-placements',e.message);}
     });
 
+    async function loadMonitorBees() {
+        try {
+            const r=await fetch('/api/hub/bees/control',{cache:'no-store'});
+            const data=await r.json();
+            if(!r.ok)throw Error(data.error||'Bees control unavailable.');
+            const kind=data.experiment_owned?'Experiment-managed':
+                data.training_enabled?'Ordinary Bees training':'No training active';
+            feedback('hub-monitor-training',kind+
+                ' · Run '+(data.run_id||'not yet built')+
+                (data.pending_release?' · Release pending':'')+
+                (data.operator_operation?.status==='running'
+                    ?' · '+data.operator_operation.kind+' in progress':''));
+        }catch(err){feedback('hub-monitor-training',err.message);}
+    }
     async function loadLiveBeesWorkers() {
         try {
             const r=await fetch('/api/hub/bees/workers',{cache:'no-store'});
@@ -286,8 +302,10 @@ document.addEventListener('DOMContentLoaded', () => {
             feedback('hub-operator-message',op?op.kind+' · '+op.status+' · '+op.message:'');
             const blocked=data.experiment_owned||data.queue_armed||
                 data.pending_release||op?.status==='running';
-            $('hub-bees-resume').disabled=blocked||data.training_enabled;
-            $('hub-bees-new').disabled=blocked||data.training_enabled;
+            $('hub-bees-resume').disabled=blocked||data.training_enabled||
+                data.initial_build_required;
+            $('hub-bees-new').disabled=blocked||data.training_enabled||
+                data.initial_build_required;
             $('hub-bees-build').disabled=blocked||data.training_enabled;
             $('hub-bees-update-workers').disabled=blocked||data.training_enabled||
                 !data.run_id;
@@ -325,6 +343,7 @@ document.addEventListener('DOMContentLoaded', () => {
     setInterval(()=>{
         reload();
         if(tab==='train')loadBeesControl();
+        if(tab==='monitor'&&project==='bees')loadMonitorBees();
         if(tab==='machines')loadLiveBeesWorkers();
     },10000);
 });
