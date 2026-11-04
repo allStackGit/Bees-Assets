@@ -12,6 +12,14 @@ use crate::geometry::{heading_towards, ship_velocity, timed_ship_rotation, Vec2}
 /// Unity's `RlMovementDirection == 360` means halt, not a heading of zero.
 pub const STOP_MOVEMENT: u16 = 360;
 
+/// The turn amount must also be applied to every attached turret rotation.
+/// Unity does so in Utilities.TimedRotationDifference(Ship,...).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum MotionUpdate {
+    NotPolicyControlled,
+    Applied { rotation_delta_degrees: f32 },
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct ShipMotion {
     pub position: Vec2,
@@ -105,16 +113,17 @@ impl ShipMotion {
     /// Applies the same three-degree turning dead band, timed turn rate,
     /// target-coordinate suppression, and current-speed velocity as Unity.
     /// Position integration deliberately remains the physics engine's job.
-    pub fn fixed_step_rl(&mut self, dt_seconds: f32) -> bool {
+    pub fn fixed_step_rl(&mut self, dt_seconds: f32) -> MotionUpdate {
         if !self.is_policy_controlled || self.user_controlled {
-            return false;
+            return MotionUpdate::NotPolicyControlled;
         }
         if self.movement_direction == STOP_MOVEMENT {
             self.body_velocity = Vec2::ZERO;
             self.is_moving = false;
-            return true;
+            return MotionUpdate::Applied { rotation_delta_degrees: 0.0 };
         }
 
+        let initial_rotation = self.rotation_degrees;
         let difference = self.target_coordinates - self.position;
         if !self.has_target_coordinates || difference.length_squared().sqrt() > self.height {
             self.rotation_degrees = timed_ship_rotation(
@@ -127,7 +136,9 @@ impl ShipMotion {
 
         self.body_velocity = ship_velocity(self.current_speed, self.rotation_degrees);
         self.is_moving = true;
-        true
+        MotionUpdate::Applied {
+            rotation_delta_degrees: self.rotation_degrees - initial_rotation,
+        }
     }
 }
 
@@ -140,7 +151,10 @@ mod tests {
         let mut motion = ShipMotion::new(Vec2::ZERO, 0.0, 90.0, 6.0, 1.0);
         motion.accept_policy_movement(Vec2::new(1.0, 0.0));
         assert_eq!(motion.movement_direction, 270);
-        assert!(motion.fixed_step_rl(0.02));
+        assert_eq!(
+            motion.fixed_step_rl(0.02),
+            MotionUpdate::Applied { rotation_delta_degrees: -1.8 }
+        );
         assert!((motion.rotation_degrees + 1.8).abs() < 0.00001);
     }
 
@@ -150,7 +164,10 @@ mod tests {
         motion.accept_policy_movement(Vec2::new(1.0, 0.0));
         motion.accept_policy_movement(Vec2::new(0.1, 0.1));
         assert_eq!(motion.movement_direction, STOP_MOVEMENT);
-        assert!(motion.fixed_step_rl(0.02));
+        assert_eq!(
+            motion.fixed_step_rl(0.02),
+            MotionUpdate::Applied { rotation_delta_degrees: 0.0 }
+        );
         assert_eq!(motion.body_velocity, Vec2::ZERO);
         assert!(!motion.is_moving);
         assert!(motion.is_policy_controlled);
