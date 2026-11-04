@@ -122,8 +122,9 @@ impl EpisodeShaping {
         has_persistent_fleet_value: bool,
     ) -> i32 {
         if !has_persistent_fleet_value { return 0; }
-        (damage_tsv_loss - if killed { mined_cargo_before.max(0) } else { 0 })
-            .max(0)
+        damage_tsv_loss.saturating_sub(
+            if killed { mined_cargo_before.max(0) } else { 0 }
+        ).max(0)
     }
 
     /// Reproduces RecordHitWithSource: enemy damage rewards the attacker
@@ -136,6 +137,12 @@ impl EpisodeShaping {
         has_persistent_fleet_value: bool,
         target_mined_cargo_before: i32,
     ) -> HitShaping {
+        // RecordHitWithSource returns without shaping unless BOTH ships
+        // belong to the current two-sided training matchup.
+        if !self.sides.contains(&hit.attacker_side) ||
+            !self.sides.contains(&hit.target_side) {
+            return HitShaping::default();
+        }
         let tsv = self.persistent_tsv_loss(
             hit.delta.tsv_loss,
             target_mined_cargo_before,
