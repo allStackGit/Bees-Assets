@@ -295,6 +295,8 @@ pub enum PhysicsError {
     InvalidBounds,
     InvalidCollider,
     DuplicateEntityId,
+    ActiveProjectileSlot,
+    MissingProjectileSlot,
     InvalidStep,
     UnsupportedPolicyActions,
 }
@@ -462,6 +464,23 @@ impl KinematicPhysics {
         let index = self.projectiles.len();
         self.projectiles.push(projectile);
         Ok(index)
+    }
+
+    /// Recycle the physical storage of an ended projectile without allowing
+    /// a new shot to inherit its old contact cache. Projectile IDs remain
+    /// unique; the trigger pair set is keyed by ID, never by the array slot.
+    pub fn replace_ended_projectile(
+        &mut self,
+        index: usize,
+        projectile: ProjectileBody,
+    ) -> Result<(), PhysicsError> {
+        let slot = self.projectiles.get_mut(index)
+            .ok_or(PhysicsError::MissingProjectileSlot)?;
+        if slot.active {
+            return Err(PhysicsError::ActiveProjectileSlot);
+        }
+        *slot = projectile;
+        Ok(())
     }
 
     /// Advance kinematic positions once. Set body velocities/headings from
