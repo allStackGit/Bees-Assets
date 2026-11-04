@@ -172,6 +172,7 @@ pub struct CombatWorld {
     next_entity_id: i64,
     ships: Vec<CombatShip>,
     projectiles: Vec<CombatProjectile>,
+    free_projectile_slots: Vec<usize>,
     ship_by_id: HashMap<i64, usize>,
     projectile_by_id: HashMap<i64, usize>,
     reservations: DamageReservations,
@@ -196,6 +197,7 @@ impl CombatWorld {
             next_entity_id: 1,
             ships: Vec::new(),
             projectiles: Vec::new(),
+            free_projectile_slots: Vec::new(),
             ship_by_id: HashMap::new(),
             projectile_by_id: HashMap::new(),
             reservations: DamageReservations::new(),
@@ -254,7 +256,7 @@ impl CombatWorld {
         body: ShipBody,
     ) -> Result<(), CombatWorldError> {
         if ship.side <= 0 { return Err(CombatWorldError::InvalidSide); }
-        if body.id != ship.entity_id ||
+        if body.id != ship.entity_id || body.id < self.next_entity_id ||
             self.ship_by_id.contains_key(&ship.entity_id) ||
             self.projectile_by_id.contains_key(&ship.entity_id)
         {
@@ -274,18 +276,29 @@ impl CombatWorld {
         projectile: CombatProjectile,
         body: ProjectileBody,
     ) -> Result<(), CombatWorldError> {
-        if body.id != projectile.entity_id ||
+        if body.id != projectile.entity_id || body.id < self.next_entity_id ||
             self.ship_by_id.contains_key(&projectile.entity_id) ||
             self.projectile_by_id.contains_key(&projectile.entity_id)
         {
             return Err(CombatWorldError::DuplicateEntity);
         }
         let next_id = body.id.checked_add(1).ok_or(CombatWorldError::EntityIdExhausted)?;
-        let index = self.physics.add_projectile(body)?;
-        self.next_entity_id = self.next_entity_id.max(next_id);
-        debug_assert_eq!(index, self.projectiles.len());
-        self.projectile_by_id.insert(projectile.entity_id, index);
-        self.projectiles.push(projectile);
+        // The longest combat run must use memory proportional to maximum
+        // concurrent shots, not to every shot ever fired. World IDs remain
+        // monotonic even when a dormant physical/metadata slot is recycled.
+        if let Some(&index) = self.free_projectile_slots.last() {
+            self.physics.replace_ended_projectile(index, body)?;
+            self.free_projectile_slots.pop();
+            self.projectile_by_id.remove(&self.projectiles[index].entity_id);
+            self.projectile_by_id.insert(projectile.entity_id, index);
+            self.projectiles[index] = projectile;
+        } else {
+            let index = self.physics.add_projectile(body)?;
+            debug_assert_eq!(index, self.projectiles.len());
+            self.projectile_by_id.insert(projectile.entity_id, index);
+            self.projectiles.push(projectile);
+        }
+        self.next_entity_id = next_id;
         Ok(())
     }
 
@@ -335,6 +348,7 @@ impl CombatWorld {
         projectile.active = false;
         let id = projectile.id;
         self.reservations.release(id);
+        self.free_projectile_slots.push(index);
         self.events.push(CombatEvent::ProjectileEnded { projectile_id: id });
     }
 
