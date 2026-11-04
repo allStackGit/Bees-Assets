@@ -1,7 +1,8 @@
 // Pure, auditable Unity Asteroid prefab-variant decoder.
 //
-// This intentionally reads ONLY the primary Collider referenced by the
-// CollisionAsteroid MonoBehaviour, not the child proximity/clearance sensors.
+// Read the primary and proximity colliders explicitly from the
+// CollisionAsteroid component. The separate clearance-mapping sensor is not
+// a gameplay collision or proximity trigger and must remain excluded.
 // Unity can retain serialized overrides for array elements that are OUTSIDE
 // the declared Array.size. Those must never become runtime collider vertices.
 //
@@ -80,6 +81,7 @@ function baseAsteroid(name, content) {
     if (entities.length !== 1) fail(name, 'expected one CollisionAsteroid component');
     const entity = entities[0][1];
     const colliderId = fileId(field(entity.body, 'Collider'), name);
+    const proximityId = fileId(field(entity.body, 'ProximityCollider'), name);
     const collider = docs.get(colliderId);
     if (!collider || collider.kind !== 'PolygonCollider2D' ||
         field(collider.body, 'm_IsTrigger') !== '1') {
@@ -98,14 +100,40 @@ function baseAsteroid(name, content) {
     const scale = xy(field(transformEntry[1].body, 'm_LocalScale'), name);
     const offset = xy(field(collider.body, 'm_Offset'), name);
     const paths = polygonPaths(name, collider.body);
+    const proximity = docs.get(proximityId);
+    if (!proximity || proximity.kind !== 'PolygonCollider2D' ||
+        field(proximity.body, 'm_IsTrigger') !== '1') {
+        fail(name, 'ProximityCollider must be a trigger PolygonCollider2D');
+    }
+    const proximityGameId = fileId(field(proximity.body, 'm_GameObject'), name);
+    const proximityGame = docs.get(proximityGameId);
+    const proximityTransform = [...docs.entries()].find(([, doc]) =>
+        doc.kind === 'Transform' &&
+        fileId(field(doc.body, 'm_GameObject'), name) === proximityGameId);
+    if (!proximityGame || proximityGame.kind !== 'GameObject' ||
+        !proximityTransform ||
+        fileId(field(proximityTransform[1].body, 'm_Father'), name) !== transformEntry[0] ||
+        !/\{x: -?0, y: -?0, z: -?0, w: 1\}/.test(
+            field(proximityTransform[1].body, 'm_LocalRotation') ?? '')) {
+        fail(name, 'unsupported proximity child transform or parent');
+    }
     return {
         ids: {
             entity: entities[0][0], game: gameId, collider: colliderId,
             transform: transformEntry[0],
+            proximity: proximityId, proximityGame: proximityGameId,
+            proximityTransform: proximityTransform[0],
         },
         size_class: finiteNumber(field(entity.body, 'SizeClass'), name),
         layer: finiteNumber(field(game.body, 'm_Layer'), name),
         scale, offset, paths,
+        proximity: {
+            layer: finiteNumber(field(proximityGame.body, 'm_Layer'), name),
+            scale: xy(field(proximityTransform[1].body, 'm_LocalScale'), name),
+            position: xy(field(proximityTransform[1].body, 'm_LocalPosition'), name),
+            offset: xy(field(proximity.body, 'm_Offset'), name),
+            paths: polygonPaths(name, proximity.body),
+        },
     };
 }
 
@@ -160,11 +188,59 @@ function asteroidFromVariant(name, content, base, baseGuid) {
     }
     const trigger = number(base.ids.collider, 'm_IsTrigger', 1);
     if (trigger !== 1) fail(name, 'primary collider no longer a trigger');
-    return {sizeClass, layer, scale, offset, vertices};
+
+    const proximity = base.proximity;
+    const proximityId = base.ids.proximity;
+    const proximityLayer = number(base.ids.proximityGame, 'm_Layer', proximity.layer);
+    const proximityScale = [
+        number(base.ids.proximityTransform, 'm_LocalScale.x', proximity.scale[0]),
+        number(base.ids.proximityTransform, 'm_LocalScale.y', proximity.scale[1]),
+    ];
+    const proximityPosition = [
+        number(base.ids.proximityTransform, 'm_LocalPosition.x', proximity.position[0]),
+        number(base.ids.proximityTransform, 'm_LocalPosition.y', proximity.position[1]),
+    ];
+    const proximityOffset = [
+        number(proximityId, 'm_Offset.x', proximity.offset[0]),
+        number(proximityId, 'm_Offset.y', proximity.offset[1]),
+    ];
+    const proximityPathCount = number(proximityId, 'm_Points.m_Paths.Array.size',
+        proximity.paths.length);
+    if (proximityPathCount !== 1) {
+        fail(name, 'multiple active proximity paths require compound physics');
+    }
+    const proximityKey = 'm_Points.m_Paths.Array.data[0].Array.';
+    const proximityCount = number(proximityId, proximityKey + 'size',
+        proximity.paths[0].length);
+    if (!Number.isInteger(proximityCount) || proximityCount < 3 ||
+        proximityCount > 4096) {
+        fail(name, 'invalid proximity polygon vertex count');
+    }
+    const proximityVertices = [];
+    for (let i = 0; i < proximityCount; i++) {
+        const point = proximity.paths[0][i];
+        const x = get(proximityId, proximityKey + `data[${i}].x`, point?.[0]);
+        const y = get(proximityId, proximityKey + `data[${i}].y`, point?.[1]);
+        proximityVertices.push([
+            finiteNumber(x, name + ' proximity vertex x ' + i),
+            finiteNumber(y, name + ' proximity vertex y ' + i),
+        ]);
+    }
+    if (number(proximityId, 'm_IsTrigger', 1) !== 1) {
+        fail(name, 'proximity collider no longer a trigger');
+    }
+    return {
+        sizeClass, layer, scale, offset, vertices,
+        proximity: {
+            layer: proximityLayer, scale: proximityScale,
+            position: proximityPosition, offset: proximityOffset,
+            vertices: proximityVertices,
+        },
+    };
 }
 
 function toAsset(name, value) {
-    const {sizeClass, layer, scale, offset, vertices} = value;
+    const {sizeClass, layer, scale, offset, vertices, proximity} = value;
     if (!Number.isInteger(sizeClass) || sizeClass < 1 || sizeClass > 255 ||
         !Number.isInteger(layer) || layer < 0 || layer >= 32 ||
         scale.some(x => x === 0)) {
@@ -177,9 +253,25 @@ function toAsset(name, value) {
     if (local.some(v => v.some(c => !Number.isFinite(c)))) {
         fail(name, 'nonfinite transformed polygon vertex');
     }
+    if (!Number.isInteger(proximity.layer) || proximity.layer < 0 ||
+        proximity.layer >= 32 ||
+        proximity.scale.some(n => !Number.isFinite(n) || n === 0)) {
+        fail(name, 'invalid proximity layer or scale');
+    }
+    const proximityVertices = proximity.vertices.map(([x,y]) => [
+        ((x + proximity.offset[0]) * proximity.scale[0] +
+            proximity.position[0]) * scale[0],
+        ((y + proximity.offset[1]) * proximity.scale[1] +
+            proximity.position[1]) * scale[1],
+    ]);
+    if (proximityVertices.some(v => v.some(c => !Number.isFinite(c)))) {
+        fail(name, 'nonfinite proximity polygon vertex');
+    }
     return {
         name, size_class: sizeClass, layer,
-        shape: {kind:'polygon', vertices:local}
+        shape: {kind:'polygon', vertices:local},
+        proximity_layer: proximity.layer,
+        proximity_shape: {kind:'polygon', vertices:proximityVertices},
     };
 }
 
@@ -195,6 +287,11 @@ export function createAsteroidBatch(baseContent, baseGuid, otherPrefabs) {
     const outputs = [toAsset('Asteroid 1', {
         sizeClass: base.size_class, layer: base.layer,
         scale: base.scale, offset: base.offset, vertices: base.paths[0],
+        proximity: {
+            layer: base.proximity.layer, scale: base.proximity.scale,
+            position: base.proximity.position, offset: base.proximity.offset,
+            vertices: base.proximity.paths[0],
+        },
     })];
     const seen = new Set([1]);
     for (const [name, text] of otherPrefabs) {
@@ -216,6 +313,13 @@ export function createAsteroidBatch(baseContent, baseGuid, otherPrefabs) {
                     sizeClass: standalone.size_class, layer: standalone.layer,
                     scale: standalone.scale, offset: standalone.offset,
                     vertices: standalone.paths[0],
+                    proximity: {
+                        layer: standalone.proximity.layer,
+                        scale: standalone.proximity.scale,
+                        position: standalone.proximity.position,
+                        offset: standalone.proximity.offset,
+                        vertices: standalone.proximity.paths[0],
+                    },
                 };
             })();
         outputs.push(toAsset(name, variant));
