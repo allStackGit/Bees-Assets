@@ -35,6 +35,7 @@ for (const item of state.items) delete item.performance_clock;
 let busy = false;
 let rebuildProgress = null;
 let logExportBusy = false;
+const logExportSessions = new Map();
 let lastRoutineSaveMs = 0;
 const save = () => { ensureDir(path.dirname(DB)); writeJsonAtomic(DB, state); };
 const active = () => state.items.find(x => x.id === state.active_id);
@@ -1541,8 +1542,80 @@ async function body(req) {
 }
 
 
-// One archive at a time; files are streamed from an on-disk temporary ZIP,
-// never loaded into the manager's heap or mixed with training state.
+// ZIP parts are prepared off the event loop and served independently. A
+// temporary download session retains them for one hour so browser download
+// restrictions cannot cause silent data loss or require recompression.
+const LOG_PART_SESSION_MS = 60 * 60 * 1000;
+function registerLogExport(folder, parts, item, percent) {
+    const id = crypto.randomBytes(16).toString('hex');
+    const session = { folder, parts, runId: item.run_id, percent };
+    logExportSessions.set(id, session);
+    const timer = setTimeout(() => {
+        if (logExportSessions.get(id) !== session) return;
+        logExportSessions.delete(id);
+        fs.promises.rm(folder, { recursive: true, force: true }).catch(() => {});
+    }, LOG_PART_SESSION_MS);
+    timer.unref();
+    return id;
+}
+
+function sendLogExportPart(res, id, number) {
+    const session = /^[a-f0-9]{32}$/.test(id) && logExportSessions.get(id);
+    const index = Number(number);
+    if (!session || !Number.isSafeInteger(index) || index < 1 ||
+        index > session.parts.length) {
+        return json(res, 404, { error: 'Log export expired or part not found. Export logs again.' });
+    }
+    const part = session.parts[index - 1];
+    const archive = path.join(session.folder, part.file);
+    const size = fs.statSync(archive).size;
+    if (size > 500_000_000) throw Error('Log archive exceeds the 500 MB limit.');
+    const filename = 'bees-' + session.runId + '-logs-last-' +
+        session.percent + 'pct-part-' + String(index).padStart(4, '0') +
+        '-of-' + String(session.parts.length).padStart(4, '0') + '.zip';
+    res.writeHead(200, {
+        'Content-Type': 'application/zip',
+        'Content-Disposition': 'attachment; filename="' + filename + '"',
+        'Content-Length': size,
+        'Cache-Control': 'no-store',
+        'X-Content-Type-Options': 'nosniff',
+    });
+    const stream = fs.createReadStream(archive);
+    stream.on('error', () => res.destroy());
+    stream.pipe(res);
+}
+
+function sendLogExportIndex(res, sessionId, parts) {
+    const links = parts.map((part, i) => {
+        const number = i + 1;
+        const href = '/api/experiment-log-part?id=' + sessionId + '&part=' + number;
+        return '<li><a href="' + href + '" download>Part ' + number +
+            ' of ' + parts.length + ' (' + Math.ceil(part.bytes / 1_000_000) +
+            ' MB)</a></li>';
+    }).join('\n');
+    const page = '<!doctype html><html lang="en"><meta charset="utf-8">' +
+        '<title>Bees log export</title><style>body{font:16px Arial,sans-serif;' +
+        'max-width:720px;margin:40px auto;padding:20px;color:#000;background:#fff}' +
+        'a{color:#000}li{padding:8px}h1{border-bottom:5px solid #000}</style>' +
+        '<h1>Bees log export</h1><p>Export split into ' + parts.length +
+        ' independent ZIP files, each no larger than 500 MB. Downloads will ' +
+        'start automatically if your browser permits multiple downloads. ' +
+        'Otherwise use the links below. Links expire in one hour.</p><ol>' +
+        links + '</ol><script>window.addEventListener("load",()=>{' +
+        'document.querySelectorAll("a[download]").forEach((a,i)=>' +
+        'setTimeout(()=>a.click(),i*1000));});</script></html>';
+    res.writeHead(200, {
+        'Content-Type': 'text/html; charset=utf-8',
+        'Content-Length': Buffer.byteLength(page),
+        'Cache-Control': 'no-store',
+        'X-Content-Type-Options': 'nosniff',
+        'Content-Security-Policy': "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; base-uri 'none'",
+    });
+    res.end(page);
+}
+
+// One export at a time. All parts remain standalone ZIPs, not multi-volume ZIP
+// pieces; files spanning ZIPs have numbered, lossless line-aligned segments.
 async function exportExperimentLogs(item, res, percent) {
     if (logExportBusy) return json(res, 409, {
         error: 'Another experiment log archive is being prepared or downloaded.',
@@ -1553,27 +1626,44 @@ async function exportExperimentLogs(item, res, percent) {
         folder = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bees-experiment-logs-'));
         const archive = path.join(folder, 'logs.zip');
         const python = resolvePython(loadConfig());
-        await new Promise((resolve, reject) => {
+        const generated = await new Promise((resolve, reject) => {
             const child = execFile(python, [
                 LOG_EXPORTER, '--bees-root', paths.beesRoot,
                 '--assets-root', paths.assetsRoot,
                 '--run-id', item.run_id, '--output', archive,
                 '--log-percent', String(percent),
             ], { windowsHide: true, maxBuffer: 262144 }, (error, stdout, stderr) => {
-                error ? reject(Error(String(stderr || error.message).trim())) : resolve(stdout);
+                if (error) return reject(Error(String(stderr || error.message).trim()));
+                try { resolve(JSON.parse(stdout)); }
+                catch (_) { reject(Error('Log packager did not return a valid parts index.')); }
             });
             res.once('close', () => child.kill());
         });
         if (res.destroyed) return;
-        const size = fs.statSync(archive).size;
+        if (!Array.isArray(generated.parts) || !generated.parts.length ||
+            generated.parts.some(part =>
+                !/^logs(?:-part-\d{4})?\.zip$/.test(part.file) ||
+                !Number.isSafeInteger(part.bytes) || part.bytes <= 0 ||
+                part.bytes > 500_000_000 ||
+                fs.statSync(path.join(folder, part.file)).size !== part.bytes)) {
+            throw Error('Log packager returned invalid or oversized ZIP parts.');
+        }
+        if (generated.parts.length > 1) {
+            const id = registerLogExport(folder, generated.parts, item, percent);
+            folder = null; // Session owns temporary files until expiry.
+            return sendLogExportIndex(res, id, generated.parts);
+        }
+        const single = path.join(folder, generated.parts[0].file);
+        const size = generated.parts[0].bytes;
         res.writeHead(200, {
             'Content-Type': 'application/zip',
-            'Content-Disposition': 'attachment; filename="bees-' + item.run_id + '-logs-last-' + percent + 'pct.zip"',
+            'Content-Disposition': 'attachment; filename="bees-' +
+                item.run_id + '-logs-last-' + percent + 'pct.zip"',
             'Content-Length': size,
             'Cache-Control': 'no-store',
             'X-Content-Type-Options': 'nosniff',
         });
-        const stream = fs.createReadStream(archive);
+        const stream = fs.createReadStream(single);
         stream.on('error', () => res.destroy());
         stream.pipe(res);
         await new Promise(resolve => res.once('close', resolve));
@@ -1600,6 +1690,9 @@ const server = http.createServer(async (req, res) => {
                 'X-Content-Type-Options': 'nosniff',
                 'Content-Security-Policy': "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' blob:; object-src 'none'; base-uri 'none'" });
             return res.end(page);
+        }
+        if (req.method === 'GET' && route === '/api/experiment-log-part') {
+            return sendLogExportPart(res, url.searchParams.get('id'), url.searchParams.get('part'));
         }
         if (req.method === 'GET' && route === '/api/experiment-logs') {
             const id = url.searchParams.get('experiment_id');
