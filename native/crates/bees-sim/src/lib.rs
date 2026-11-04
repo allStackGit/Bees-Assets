@@ -14,4 +14,5 @@ pub mod policy;
 pub mod projectile;
 pub mod simulation;
 pub mod telemetry;
+pub mod timer;
 pub mod turret;
