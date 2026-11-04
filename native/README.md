@@ -72,6 +72,10 @@ The portable `bees-sim` crate currently contains:
   from their Unity clips. Their radius changes modify the actual physics
   collider; harmlessness disables new damage; Kill releases the reservation
   and returns the projectile slot to the pool.
+- Leafcutter SplitterShot now uses its authored four-way split, BeeSmall
+  child speed, original shot/command attribution and untargeted child
+  reservation semantics. Children spawn before a valid parent impact
+  finishes; map-border contacts and ordinary range expiry do not split.
 - Obstacle bodies now participate in the same kinematic physics as ships
   and projectiles, with a separate, layer-filtered obstacle trigger queue.
   Ordinary projectile impacts can damage collision asteroids, terminate
