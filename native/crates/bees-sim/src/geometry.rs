@@ -28,7 +28,8 @@ impl Vec2 {
     #[inline]
     pub fn normalized_or_zero(self) -> Self {
         let squared = self.length_squared();
-        if squared <= f32::EPSILON {
+        // Unity Vector2.normalized returns zero at magnitude <= 1e-5.
+        if squared <= 1.0e-10 {
             return Self::ZERO;
         }
         self * squared.sqrt().recip()
