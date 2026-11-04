@@ -8,6 +8,7 @@
 #![forbid(unsafe_code)]
 
 pub mod asteroid_assets;
+pub mod asteroid_fragments;
 pub mod bomb;
 pub mod box_obstacle_assets;
 mod collider_asset_shape;
