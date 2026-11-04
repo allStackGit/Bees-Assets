@@ -104,6 +104,8 @@ class ExperimentHub {
         // Receipt freshness is process-local, never inferred after restart.
         // Persisted leases remain capacity-blocking until explicitly released.
         this.leaseReceipts = new Map();
+        // Native process usage observations are ephemeral, not registry history.
+        this.executionTelemetry = new Map();
         const s = this.state;
         if (!object(s) || s.version !== 1 ||
             !['projects','configurations','jobs','machines','reservations'].every(key=>Array.isArray(s[key])))
@@ -147,6 +149,9 @@ class ExperimentHub {
             }
             return machine;
         });
+        snapshot.jobs = snapshot.jobs.map(job=>({
+            ...job,live_execution:this.executionTelemetry.get(job.id)||null,
+        }));
         snapshot.reservations = snapshot.reservations.map(lease => ({
             ...lease,
             receipt_fresh:lease.status==='acknowledged' &&
@@ -394,7 +399,8 @@ class ExperimentHub {
                 ?'stop_requested':report.state;
             if(state==='launch_requested'&&job.status!=='start_requested')continue;
             if(job.status==='stop_requested'&&report.state==='launch_requested')continue;
-            if(job.status!==state||job.execution_diagnostic!==report.diagnostic) {
+            if(job.status!==state||
+                (job.execution_diagnostic||null)!==(report.diagnostic||null)) {
                 job.status=state;
                 job.status_reason=state==='unverified'
                     ?'Native service state requires inspection; no automatic retry.'
@@ -465,6 +471,9 @@ class ExperimentHub {
         this.agentReports.delete(machine.id);
         for (const lease of this.state.reservations)
             if (lease.machine_id===machine.id) this.leaseReceipts.delete(lease.id);
+        for(const job of this.state.jobs)
+            if(job.assigned_machine_id===machine.id)
+                this.executionTelemetry.delete(job.id);
         return {machine_id:machine.id, agent_token:token};
     }
     revokeMachine(value) {
@@ -479,6 +488,9 @@ class ExperimentHub {
         this.agentReports.delete(machine.id);
         for (const lease of this.state.reservations)
             if (lease.machine_id===machine.id) this.leaseReceipts.delete(lease.id);
+        for(const job of this.state.jobs)
+            if(job.assigned_machine_id===machine.id)
+                this.executionTelemetry.delete(job.id);
         return {machine_id:machine.id, revoked:true};
     }
     heartbeat(value, token) {
@@ -519,6 +531,8 @@ class ExperimentHub {
                 changed=true;
             }
         }
+        const reports=value.execution_reports==null?[]:value.execution_reports;
+        if(this.recordExecution(next,machine,reports))changed=true;
         if (changed) this.commit(next);
         // Do not mark receipt or liveness until the durable acknowledgement
         // succeeds. A disk failure leaves the previous lease available.
@@ -529,13 +543,25 @@ class ExperimentHub {
                 x.issued_by==='experiment-hub');
             if (lease) this.leaseReceipts.set(id,received);
         }
+        for(const item of reports) {
+            const fields=['memory_current_mb','cpu_time_ns','process_tasks'];
+            if(fields.some(k=>item[k]!=null&&
+                (!Number.isSafeInteger(item[k])||item[k]<0)))
+                throw Error('Invalid native process metrics.');
+            this.executionTelemetry.set(item.job_id,{
+                at:new Date(received).toISOString(),state:item.state,
+                memory_current_mb:item.memory_current_mb??null,
+                cpu_time_ns:item.cpu_time_ns??null,
+                process_tasks:item.process_tasks??null,
+            });
+        }
         return {machine_id:machine.id,status:'connected',
             heartbeat_ttl_seconds:Math.floor(AGENT_HEARTBEAT_TTL_MS/1000),
-            // Offers are inert data: never include a command, script or path.
             lease_offers:this.state.reservations.filter(x=>
                 x.machine_id===machine.id && x.issued_by==='experiment-hub' &&
                 ['offered','acknowledged'].includes(x.status)
-            ).map(x=>({id:x.id,status:x.status,resources:copy(x.resources)}))};
+            ).map(x=>({id:x.id,status:x.status,resources:copy(x.resources)})),
+            execution_orders:this.executionOrders(machine.id)};
     }
     project(id) {
         const project = this.state.projects.find(p=>p.id===id);
