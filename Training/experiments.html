@@ -344,7 +344,7 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
     </table></div>
     <p id="hub-live-bees-note" class="hub-notice"></p>
   </div>
-  <p class="muted">Register capacities and preview concurrent CPU, RAM, and GPU placement. Choose exclusive GPUs or shared VRAM and compute admission budgets. GPU percentages are only planning estimates, not enforced compute quotas or guarantees against slowdown. Registered machines remain unverified until authenticated agents establish hardware ownership.</p>
+  <p class="muted">Register capacities and preview concurrent CPU, RAM, and GPU placement. Agents authenticate their own process, but do not establish exclusive host ownership. Detected native OS facilities are shown for planning only; no process supervisor or CPU/RAM/GPU limits are installed. GPU compute percentages are estimated budgets, not enforceable performance guarantees.</p>
   <div class="hub-standalone">
     <h3>Register machine</h3>
     <form id="hub-machine-form">
@@ -359,7 +359,7 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
     </form>
   </div>
   <div class="tablewrap hub-table"><table>
-    <thead><tr><th>Machine</th><th>Agent</th><th>CPU slots</th><th>RAM MiB</th><th>GPUs</th><th>Last seen</th><th>Credentials</th></tr></thead>
+    <thead><tr><th>Machine</th><th>Agent</th><th>CPU slots</th><th>RAM MiB</th><th>GPUs</th><th>Native controls</th><th>Last seen</th><th>Credentials</th></tr></thead>
     <tbody id="hub-machine-rows"></tbody>
   </table></div>
   <div class="hub-standalone">
