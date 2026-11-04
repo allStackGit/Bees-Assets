@@ -174,6 +174,51 @@ document.addEventListener('DOMContentLoaded', () => {
             cell(tr,'No registered machines.').colSpan=7;
             $('hub-machine-rows').append(tr);
         }
+        const selectedProject=$('hub-lease-project').value;
+        $('hub-lease-project').replaceChildren(...state.projects.map(p=>
+            new Option(p.name,p.id)));
+        $('hub-lease-project').value=state.projects.some(p=>p.id===selectedProject)
+            ?selectedProject:project;
+        const selectedMachine=$('hub-lease-machine').value;
+        const machines=state.machines.filter(m=>m.status==='connected');
+        $('hub-lease-machine').replaceChildren(...machines.map(m=>
+            new Option(m.name+' ('+m.id+')',m.id)));
+        if(machines.some(m=>m.id===selectedMachine))
+            $('hub-lease-machine').value=selectedMachine;
+        $('hub-lease-request').disabled=!machines.length;
+        $('hub-lease-rows').replaceChildren();
+        const leases=state.reservations.filter(l=>
+            l.issued_by==='experiment-hub' && l.status!=='released');
+        for(const lease of leases.slice().reverse()) {
+            const tr=document.createElement('tr');
+            cell(tr,lease.project_id);
+            cell(tr,lease.machine_id);
+            cell(tr,lease.resources.cpus+' / '+lease.resources.ram_mb+' MiB');
+            cell(tr,(lease.resources.gpus||[]).join(', ')||'None');
+            cell(tr,lease.status==='offered'?'Awaiting agent receipt'
+                :lease.receipt_fresh?'Agent receipt fresh'
+                :'Acknowledged previously; receipt not fresh');
+            const actions=cell(tr,'');
+            actions.append(button('Release',async()=>{
+                if(!confirm('Release the coordination lease for '+lease.project_id+
+                    ' on '+lease.machine_id+
+                    '? This only frees Hub scheduling capacity; it does not stop any process.'))return;
+                try{
+                    await action('hub/leases/release',{
+                        lease_id:lease.id,confirm_release:true,
+                    });
+                    feedback('hub-lease-message',
+                        'Lease released. Existing processes were not affected.');
+                    await reload();
+                }catch(e){feedback('hub-lease-message',e.message);}
+            }));
+            $('hub-lease-rows').append(tr);
+        }
+        if(!leases.length){
+            const tr=document.createElement('tr');
+            cell(tr,'No outstanding coordination leases.').colSpan=6;
+            $('hub-lease-rows').append(tr);
+        }
     }
     async function reload() {
         try {
@@ -292,6 +337,41 @@ document.addEventListener('DOMContentLoaded', () => {
         const shared=shareMode.value==='shared';
         $('hub-request-share-vram').disabled=!shared;
         $('hub-request-share-compute').disabled=!shared;
+    });
+    function selectedResourceRequest(){
+        const mode=shareMode.value;
+        return {
+            cpus:Number($('hub-request-cpus').value),
+            ram_mb:Number($('hub-request-ram').value),
+            gpus:$('hub-request-gpus').value.split(',').map(s=>s.trim()).filter(Boolean),
+            gpu_count:Number($('hub-request-gpu-count').value),
+            min_gpu_vram_mb:Number($('hub-request-gpu-vram').value),
+            gpu_mode:mode,
+            gpu_vram_mb:mode==='shared'
+                ?Number($('hub-request-share-vram').value):0,
+            gpu_compute_pct:mode==='shared'
+                ?Number($('hub-request-share-compute').value):100,
+        };
+    }
+    $('hub-lease-request').addEventListener('click',async()=>{
+        const projectId=$('hub-lease-project').value;
+        const machineId=$('hub-lease-machine').value;
+        if(!machineId){
+            feedback('hub-lease-message','Connect an authenticated machine first.');
+            return;
+        }
+        if(!confirm('Create a persistent, advisory coordination lease for '+
+            projectId+' on '+machineId+
+            '? The agent will acknowledge receipt, but no hardware isolation or training execution is provided.'))return;
+        try{
+            const created=await action('hub/leases',{
+                project_id:projectId,machine_id:machineId,
+                resources:selectedResourceRequest(),confirm_request:true,
+            });
+            feedback('hub-lease-message',
+                'Coordination lease issued: '+created.id+'. Awaiting agent receipt.');
+            await reload();
+        }catch(e){feedback('hub-lease-message',e.message);}
     });
     $('hub-preview').addEventListener('click',async()=>{
         try {
