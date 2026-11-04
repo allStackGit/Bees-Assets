@@ -1277,6 +1277,138 @@ mod tests {
         assert_eq!(world.target_damage_status(1, 5).unwrap().total_reserved, 0);
     }
 
+    /// Synthetic collision shapes isolate event dispatch; the real obstacle
+    /// prefabs must be imported before claiming Unity geometry parity.
+    fn obstacle_for_test(id: i64, radius: f32) -> ObstacleBody {
+        ObstacleBody::new(
+            id,
+            Pose { position: Vec2::ZERO, rotation_degrees: 0.0 },
+            13,
+            ShipShape::Circle { offset: Vec2::ZERO, radius },
+            Vec2::ZERO, 0.0,
+        ).unwrap()
+    }
+
+    #[test]
+    fn direct_projectile_destroys_collision_asteroid_and_emits_lifecycle_events() {
+        use crate::obstacle::ObstacleVitals;
+        let assets = Arc::new(ProjectileAssetCatalog::embedded().unwrap());
+        let mut world = CombatWorld::new(
+            Aabb { min: Vec2::new(-16.0, -16.0), max: Vec2::new(16.0, 16.0) },
+            4.0, assets.clone(),
+        ).unwrap();
+        world.add_obstacle(CombatObstacle {
+            entity_id: 1, kind: ObstacleKind::CollisionAsteroid,
+            vitals: Some(ObstacleVitals::new(15, 15).unwrap()),
+            size_class: 6,
+        }, obstacle_for_test(1, 2.0)).unwrap();
+        world.spawn_projectile(
+            assets.by_type(1).unwrap(), 2,
+            ShotOwner {
+                shooter_id: 3, shooter_side: 1,
+                shooter_is_fire_barge: false, self_detonation: false,
+            },
+            20,
+            ProjectileMotion::new(Vec2::ZERO, 0.0, 0.0, 20.0, 2, 44),
+            0.0,
+        ).unwrap();
+        let mut rows = [0u32; 32];
+        rows[10] = 1u32 << 13;
+        let matrix = CollisionMatrix::from_rows(rows);
+        world.step_fixed(0.02, &matrix).unwrap();
+        assert!(world.events().is_empty());
+        world.step_fixed(0.02, &matrix).unwrap();
+        assert_eq!(world.events().len(), 3);
+        assert!(matches!(world.events()[0], CombatEvent::AsteroidDamaged {
+            projectile_id: 2,
+            obstacle_id: 1,
+            damage: AsteroidDamage { killed: true, health_after: -5, .. },
+        }));
+        assert!(matches!(world.events()[1], CombatEvent::AsteroidDestroyed {
+            obstacle_id: 1, size_class: 6,
+        }));
+        assert!(matches!(world.events()[2], CombatEvent::ProjectileEnded {
+            projectile_id: 2,
+        }));
+        assert!(!world.physics.obstacles()[0].active);
+    }
+
+    #[test]
+    fn rocket_ignores_border_but_continues_into_explosion_on_static_obstacle() {
+        let assets = Arc::new(ProjectileAssetCatalog::embedded().unwrap());
+        for (kind, should_explode) in [
+            (ObstacleKind::MapBorder, false),
+            (ObstacleKind::StaticObstacle, true),
+        ] {
+            let mut world = CombatWorld::new(
+                Aabb { min: Vec2::new(-16.0, -16.0), max: Vec2::new(16.0, 16.0) },
+                4.0, assets.clone(),
+            ).unwrap();
+            world.add_obstacle(CombatObstacle {
+                entity_id: 1, kind, vitals: None, size_class: 0,
+            }, obstacle_for_test(1, 2.0)).unwrap();
+            world.spawn_projectile(
+                assets.by_type(5).unwrap(), 2,
+                ShotOwner {
+                    shooter_id: 4, shooter_side: 1,
+                    shooter_is_fire_barge: false, self_detonation: false,
+                }, 20,
+                ProjectileMotion::new(Vec2::ZERO, 0.0, 0.0, 20.0, 2, 77),
+                0.0,
+            ).unwrap();
+            let mut rows = [0u32; 32];
+            rows[18] = 1u32 << 13;
+            let matrix = CollisionMatrix::from_rows(rows);
+            world.step_fixed(0.02, &matrix).unwrap();
+            world.step_fixed(0.02, &matrix).unwrap();
+            assert!(matches!(
+                world.events().last(),
+                Some(CombatEvent::ProjectileEnded { projectile_id: 2 })
+            ));
+            assert_eq!(
+                world.events().iter().any(|event| matches!(
+                    event, CombatEvent::ProjectileContinued { parent_id: 2, .. }
+                )),
+                should_explode
+            );
+        }
+    }
+
+    #[test]
+    fn explosion_obstacle_contacts_do_not_double_damage_asteroids() {
+        use crate::obstacle::ObstacleVitals;
+        let assets = Arc::new(ProjectileAssetCatalog::embedded().unwrap());
+        let mut world = CombatWorld::new(
+            Aabb { min: Vec2::new(-16.0, -16.0), max: Vec2::new(16.0, 16.0) },
+            4.0, assets.clone(),
+        ).unwrap();
+        world.add_obstacle(CombatObstacle {
+            entity_id: 1, kind: ObstacleKind::CollisionAsteroid,
+            vitals: Some(ObstacleVitals::new(50, 50).unwrap()), size_class: 4,
+        }, obstacle_for_test(1, 2.0)).unwrap();
+        world.spawn_projectile(
+            assets.by_type(13).unwrap(), 2,
+            ShotOwner {
+                shooter_id: 3, shooter_side: 1,
+                shooter_is_fire_barge: false, self_detonation: false,
+            }, 10,
+            ProjectileMotion::new(Vec2::ZERO, 0.0, 0.0, 0.0, 2, 77),
+            0.0,
+        ).unwrap();
+        let mut rows = [0u32; 32];
+        rows[18] = 1u32 << 13;
+        let matrix = CollisionMatrix::from_rows(rows);
+        world.step_fixed(0.02, &matrix).unwrap();
+        world.step_fixed(0.02, &matrix).unwrap();
+        assert_eq!(world.obstacles()[0].vitals.unwrap().health, 40);
+        world.physics.projectiles_mut()[0].motion.position = Vec2::new(12.0, 12.0);
+        world.step_fixed(0.02, &matrix).unwrap();
+        world.physics.projectiles_mut()[0].motion.position = Vec2::ZERO;
+        world.step_fixed(0.02, &matrix).unwrap();
+        world.step_fixed(0.02, &matrix).unwrap();
+        assert_eq!(world.obstacles()[0].vitals.unwrap().health, 40);
+    }
+
     #[test]
     fn rocket_impact_transfers_one_damage_reservation_to_its_explosion() {
         let assets = Arc::new(ProjectileAssetCatalog::embedded().unwrap());
