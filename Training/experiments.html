@@ -256,6 +256,7 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
 <label>Experiment name<input id="name" maxlength="100" required placeholder="Long-range baseline"></label>
 <label>Campaign / comparison group<input id="group" maxlength="80" value="Turret combat"></label>
 <label>First-stage step budget<input id="steps" type="number" min="1000" step="1000" value="20000000" required></label>
+<label>Scenario root seed (optional)<input id="scenario-seed" type="number" min="0" max="2147483647" step="1" placeholder="Fresh random seed (default)"></label>
 <label>Time limit (minutes; blank = unlimited)<input id="minutes" type="number" min="1" placeholder="Unlimited"></label>
 <label>No-progress limit (minutes; blank = unlimited)<input id="stall" type="number" min="1" value="45" placeholder="Unlimited"></label>
 <label class="wide"><input id="unlimited-steps" type="checkbox" style="width:auto"> Continue indefinitely on the final curriculum stage (no total step cap)</label>
@@ -2070,6 +2071,7 @@ async function openQueuedEditor(id) {
         $('name').value = def.name;
         $('group').value = def.group;
         $('steps').value = def.max_steps;
+        $('scenario-seed').value = def.scenario_seed ?? '';
         $('unlimited-steps').checked = def.unlimited_steps === true;
         $('minutes').value = def.max_minutes ?? '';
         $('stall').value = def.stall_minutes ?? '';
@@ -2106,6 +2108,8 @@ $('create').addEventListener('submit', async e => {
         const payload = {
             name: $('name').value, group: $('group').value,
             max_steps: Number($('steps').value),
+            scenario_seed: $('scenario-seed').value.trim() === ''
+                ? null : Number($('scenario-seed').value),
             unlimited_steps: $('unlimited-steps').checked,
             max_minutes: $('minutes').value.trim() === '' ? null : Number($('minutes').value),
             stall_minutes: $('stall').value.trim() === '' ? null : Number($('stall').value),
