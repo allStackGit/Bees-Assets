@@ -7,6 +7,7 @@ const crypto = require('node:crypto');
 const { execFile } = require('node:child_process');
 const { invokeStart, invokeStop, invokeWorkerRuntime } = require('./operator/commands');
 const { invokeMaintenanceUnityRebuild } = require('./operator/build');
+const { summarize: summarizeResearch } = require('./bees_experiment_research');
 const { getStatus } = require('./operator/control');
 const { getPendingForcedNewRunPlan } = require('./operator/runtime');
 const { assertRlEnvironmentArgsValid } = require('./operator/validation');
@@ -1718,7 +1719,10 @@ function benchmarkReports() {
             /^\d{8}T\d{6}-[a-f0-9]{32}\.json$/.test(entry.name))
         .map(entry => entry.name)
         .sort().reverse().slice(0, 1000)
-        .map(name => readJson(path.join(BENCHMARK_REPORTS, name)))
+        .map(name => {
+            const report = readJson(path.join(BENCHMARK_REPORTS, name));
+            return report ? { ...report, _file: name } : null;
+        })
         .filter(report => report && report.schema_version === 1 && report.benchmark &&
             report.metrics);
 }
@@ -1951,6 +1955,9 @@ const server = http.createServer(async (req, res) => {
         }
         if (req.method === 'GET' && route === '/api/benchmarks') {
             return json(res, 200, { reports: benchmarkReports() });
+        }
+        if (req.method === 'GET' && route === '/api/research-summary') {
+            return json(res, 200, { groups: summarizeResearch(state.items, benchmarkReports()) });
         }
         if (req.method === 'GET' && route === '/api/queued') {
             const item = state.items.find(x => x.id === url.searchParams.get('id'));
