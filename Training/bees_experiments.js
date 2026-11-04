@@ -12,6 +12,8 @@ const { summarize: summarizeResearch, differences: compareResearch,
 const { freezePlan: freezeEvaluator, supportsPurpose: evaluatorSupportsPurpose } =
     require('./bees_experiment_evaluator_versions');
 const { selectedRoot, copyAndSelect } = require('./bees_experiment_storage');
+const { ExperimentHub } = require('./experiment_hub_core');
+const { placements: hubPlacements } = require('./experiment_hub_resources');
 const { append: appendMetricSample, plot: archivedMetricsChart,
     filename: metricArchivePath } = require('./bees_experiment_metrics');
 const { getStatus } = require('./operator/control');
@@ -33,6 +35,19 @@ const RESEARCH_EXPORTER = path.join(__dirname, 'bees_experiment_research_export.
 const BENCHMARK_REPORTS = path.join(DATA_ROOT, 'Benchmarks');
 const empty = () => ({ version: 1, armed: false, stop_requested: false, active_id: null, message: '', items: [] });
 const state = fs.existsSync(DB) ? readJson(DB) : empty();
+// The Hub's own registry must never prevent the existing Bees coordinator from
+// recovering an active experiment if its optional registry becomes invalid.
+let hub = null, hubInitializationError = null;
+try { hub = new ExperimentHub(DATA_ROOT); }
+catch (error) {
+    hubInitializationError = error.message;
+    console.error('[hub] separate project registry unavailable:', error.message);
+}
+function requireHub() {
+    if (!hub) throw Error('Experiment Hub unavailable: ' + hubInitializationError);
+    return hub;
+}
+
 if (!state || state.version !== 1 || !Array.isArray(state.items) || typeof state.armed !== 'boolean') {
     throw Error('Invalid experiment data; no training started: ' + DB);
 }
@@ -2077,6 +2092,30 @@ const server = http.createServer(async (req, res) => {
             }
             return await exportExperimentLogs(item, res, percent);
         }
+        if (req.method === 'GET' && route === '/api/hub/state') {
+            const data = requireHub().snapshot();
+            // Existing Bees state is exposed, not imported or rewritten. The Hub
+            // never assumes ownership of these live runs.
+            return json(res, 200, {
+                ...data, bees: {
+                    active_id:state.active_id,
+                    queue_armed:state.armed,
+                    runs:state.items.map(x=>({id:x.id, name:x.name, status:x.status,
+                        run_id:x.run_id, step:x.step, group:x.group})),
+                },
+            });
+        }
+        if (req.method === 'GET' && route === '/api/hub/placements') {
+            const data = requireHub().snapshot();
+            const gpus = (url.searchParams.get('gpus') || '').split(',').filter(Boolean);
+            return json(res, 200, {
+                placements:hubPlacements(data.machines, data.reservations, {
+                    cpus:Number(url.searchParams.get('cpus')),
+                    ram_mb:Number(url.searchParams.get('ram_mb')), gpus,
+                }),
+                note:'Inventory and reservations are advisory until authenticated agents enforce isolation.',
+            });
+        }
         if (req.method === 'GET' && route === '/api/state') {
             return json(res, 200, { ...state, busy, rebuild_progress: rebuildProgress,
                 benchmark_configured: fs.existsSync(BENCHMARK_SETTINGS),
@@ -2174,6 +2213,18 @@ const server = http.createServer(async (req, res) => {
         const value = await body(req);
         if (storageMigrationPending) {
             return json(res, 409, { error: 'Data-location switch prepared. Restart this manager before making other changes.' });
+        }
+        if (route === '/api/hub/projects') {
+            return json(res, 201, requireHub().addProject(value));
+        }
+        if (route === '/api/hub/configurations') {
+            return json(res, 200, requireHub().saveConfiguration(value));
+        }
+        if (route === '/api/hub/machines') {
+            return json(res, 201, requireHub().addMachine(value));
+        }
+        if (route === '/api/hub/jobs') {
+            return json(res, 201, requireHub().queueConfiguration(value));
         }
         if (route === '/api/storage') {
             if (busy || state.active_id || state.armed || state.stop_requested) {
