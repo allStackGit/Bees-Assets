@@ -820,8 +820,10 @@ async function evaluateStageSuite(item, index, status, checkpointRecord = null,
     const record = checkpointRecord || stageRecord(item, index);
     try {
         if (!status.desired || status.desired.training_enabled ||
-            status.desired.pending_release || status.desired.run_id !== item.run_id ||
-            status.desired.canonical_build_id !== item.release_build) {
+            status.desired.pending_release ||
+            (purpose !== 'heldout' &&
+                (status.desired.run_id !== item.run_id ||
+                 status.desired.canonical_build_id !== item.release_build))) {
             throw Error('Stage benchmark requires a stopped, unchanged training run.');
         }
         verifyTrainerSnapshot(item);
@@ -897,6 +899,43 @@ async function evaluateStageSuite(item, index, status, checkpointRecord = null,
             ' evaluation failed; queue disarmed: ' + error.message;
         save();
         return false;
+    }
+}
+
+// Opt-in final validation never runs during training or while the queue is
+// armed. Reports remain immutable and use a separately frozen benchmark plan.
+// An interrupted run reuses its exact pinned candidate and finished reports.
+async function evaluateHeldout(item) {
+    const record = item.heldout_validation;
+    if (!record || !['pending', 'running'].includes(record.status)) return;
+    try {
+        const status = await control();
+        if (!status.desired || status.desired.training_enabled ||
+            status.desired.pending_release || state.armed) {
+            throw Error('Held-out evaluation requires idle training with no pending release.');
+        }
+        verifyBenchmarkPlan(item.heldout_benchmarks);
+        record.status = 'running';
+        save();
+        const done = await evaluateStageSuite(item, record.stage_index, status,
+            record, item.heldout_benchmarks, 'heldout');
+        if (done) {
+            record.status = 'completed';
+            record.finished_at = now();
+            delete record.error;
+            state.message = 'Held-out validation completed for ' + item.name;
+        } else {
+            record.status = 'failed';
+            record.error = item.stage_evaluation_error || 'Held-out evaluation failed.';
+        }
+    } catch (error) {
+        record.status = 'failed';
+        record.error = error.message;
+        state.message = 'Held-out validation failed: ' + error.message;
+    } finally {
+        state.active_id = null;
+        state.stop_requested = false;
+        save();
     }
 }
 
@@ -1382,6 +1421,10 @@ async function monitor() {
     const item = active();
     if (!item) { blocked(null, 'Active experiment record is missing.'); return; }
     if (item.status === 'paused') return;
+    if (['pending', 'running'].includes(item.heldout_validation?.status)) {
+        await evaluateHeldout(item);
+        return;
+    }
     if (['pending', 'running'].includes(item.benchmark_status)) {
         await evaluateItem(item);
         return;
@@ -2118,6 +2161,37 @@ const server = http.createServer(async (req, res) => {
                 busy = false;
                 if (state.armed && !state.active_id && !state.stop_requested) setImmediate(cycle);
             }
+        }
+        if (route === '/api/research-heldout') {
+            if (busy || state.active_id || state.armed || state.stop_requested) {
+                return json(res, 409, { error: 'Wait until the experiment queue and trainer are idle.' });
+            }
+            const item = state.items.find(entry => entry.id === value.id);
+            if (!item || !item.heldout_benchmarks ||
+                !item.run_id || !['completed', 'stopped', 'ended_early'].includes(item.status)) {
+                return json(res, 409, { error: 'Choose a finished run with a frozen held-out suite.' });
+            }
+            if (item.heldout_validation?.status === 'completed') {
+                return json(res, 409, { error: 'Held-out validation is already complete. Its results cannot be rerun or replaced.' });
+            }
+            const desired = await control();
+            if (!desired.desired || desired.desired.training_enabled ||
+                desired.desired.pending_release) {
+                return json(res, 409, { error: 'Training and pending releases must be stopped.' });
+            }
+            verifyBenchmarkPlan(item.heldout_benchmarks);
+            const record = item.heldout_validation || {
+                stage_index: item.stage_index || 0,
+                target_step: item.step,
+                started_at: now(),
+            };
+            record.status = 'pending';
+            item.heldout_validation = record;
+            state.active_id = item.id;
+            state.message = 'Starting held-out validation for ' + item.name;
+            save();
+            setImmediate(cycle);
+            return json(res, 202, { ok: true });
         }
         if (route === '/api/evaluate') {
             if (busy || state.active_id || state.armed) return json(res, 409, { error: 'Wait for the queue to be idle.' });
