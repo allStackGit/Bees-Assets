@@ -13,6 +13,7 @@
     --ink: #000000;
     --paper: #ffffff;
     --error: #c40000;
+    --control-height: 36px;
 }
 * { box-sizing: border-box; }
 html { background: var(--paper); }
@@ -67,7 +68,8 @@ section > .bar { justify-content: space-between; }
 section > .bar h2 { margin: 0; }
 button {
     cursor: pointer;
-    padding: 9px 13px;
+    height: var(--control-height);
+    padding: 0 10px;
     border: 2px solid var(--ink);
     border-radius: 0;
     background: var(--paper);
@@ -79,7 +81,7 @@ button {
 button.primary { border-width: 3px; font-weight: 900; }
 button:hover:not(:disabled) { text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 3px; }
 button:active:not(:disabled) { outline: 2px solid var(--ink); outline-offset: -5px; }
-button:disabled { cursor: default; border-style: dotted; }
+button:disabled { cursor: not-allowed; border-style: dotted; }
 input, textarea, select {
     width: 100%;
     padding: 8px;
@@ -88,6 +90,10 @@ input, textarea, select {
     background: var(--paper);
     color: var(--ink);
     font: inherit;
+}
+input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]), select {
+    height: var(--control-height);
+    padding: 0 8px;
 }
 input::placeholder, textarea::placeholder { color: var(--ink); opacity: 1; font-style: italic; }
 input:disabled, textarea:disabled, select:disabled { background: var(--paper); color: var(--ink); border-style: dotted; }
@@ -102,7 +108,7 @@ label {
     font-weight: 800;
     color: var(--ink);
 }
-label input, label textarea { margin-top: 5px; }
+label input, label select, label textarea { margin-top: 5px; }
 .formgrid { align-items: start; gap: 14px; }
 .formgrid > label { flex: 1 1 170px; }
 .formgrid > label.wide { flex: 2 1 350px; }
@@ -189,13 +195,15 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
 #benchmark-history-panel .tablewrap { overflow-x:auto; }
 @media (max-width:1000px) { .benchmark-results { grid-template-columns:1fr; } }
 .env-control { display:inline-flex; gap:5px; align-items:center; }
-.env-control button { padding:3px 7px; min-width:28px; line-height:1.1; font-size:13px; }
+.env-control button { padding:0 8px; min-width:32px; font-size:14px; }
+.env-control button:hover:not(:disabled) { background:var(--ink); color:var(--paper); }
+.env-control button:not(:disabled) { cursor:pointer; }
 .env-control .env-count { min-width:60px; text-align:center; }
 .env-feedback { margin-top: 4px; font-size: 11px; font-weight: 700; }
 .log-export { display: inline-flex; align-items: end; gap: 6px; flex-wrap: wrap; margin: 5px 0; }
 .log-export label { font-size: 11px; }
-.log-export select { min-width: 94px; padding: 6px; }
-.log-export button { padding: 7px 9px; font-size: 11px; }
+.log-export select { min-width: 94px; }
+.log-export button { padding: 0 9px; font-size: 11px; }
 #chart-png { align-self: flex-end; }
 @media (min-width:1200px) { .graph-wrap { max-width:100%; } }
 #legend { display: flex; gap: 15px; flex-wrap: wrap; padding: 8px 0; font-size: 12px; font-weight: 800; }
@@ -225,7 +233,7 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
 <th>Worker</th><th>State</th><th>Envs</th><th>CPU</th><th>RAM</th>
 <th>LiveExp/s</th><th>Staged/s</th><th>Accept/s</th><th>Accepted total</th><th>Consumed total</th><th>UploadQ</th><th>BrokerQ</th><th>Age</th><th>Error / diagnostic</th>
 </tr></thead><tbody id="worker-rows"></tbody></table></div>
-<p class="muted">Live training-control information (same source as <code>bees.ps1 status</code>). Cumulative accepted/consumed counts are reported by each worker process and may reset when a worker restarts; compare only workers reporting for the current run. Use +/- to set a persistent per-worker environment target. A live change may affect learning throughput and invalidate before/after speed comparisons; active-training changes require confirmation. Workers must be online to change their targets. Worker status refreshes without duplicating history.</p>
+<p class="muted">Live training-control information (same source as <code>bees.ps1 status</code>). Cumulative accepted/consumed counts are reported by each worker process and may reset when a worker restarts; compare only workers reporting for the current run. Use +/- to set a persistent per-worker environment target. Clicking a button explicitly authorizes that live adjustment; changing capacity can affect throughput and before/after performance comparisons. The row confirms when the request was accepted and when the worker actually applied it. Disabled controls explain why the worker cannot resize. Other workers and the learner are not restarted by a live environment-count change. Workers must be online to change their targets. Worker status refreshes without duplicating history.</p>
 </details>
 </section>
 <section>
@@ -1472,11 +1480,7 @@ async function refreshWorkers() {
                 const description = target === null
                     ? 'restore the worker default/automatic environment policy'
                     : 'set ' + target + ' environments';
-                if (data.training_enabled && !confirm(
-                    'Changing ' + w.trainer_id + ' to ' + description +
-                    ' during training may change learning speed and make ' +
-                    'before/after speed measurements non-comparable. Continue?')) return;
-                resizingWorker = w.trainer_id;
+                            resizingWorker = w.trainer_id;
                 const operation = { target, phase: 'sending', runId: data.run_id };
                 workerResizeFeedback.set(w.trainer_id, operation);
                 feedback.textContent = 'Sending ' +
