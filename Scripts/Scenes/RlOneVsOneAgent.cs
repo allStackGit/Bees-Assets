@@ -475,10 +475,14 @@ internal sealed class RlOneVsOneAgent : Agent
         }
     }
 
+    private bool IsEpisodeConcluding =>
+        _level != null && _level.State != null && _level.State.GameOver;
+
     private void FixedUpdate()
     {
         ProvisionAgentsForSpawnedShips(_stage);
-        if (_stage == null || !_stage.IsTrainingNueralNetwork || !IsCurrentController() || !TryBindShip())
+        if (_stage == null || !_stage.IsTrainingNueralNetwork || IsEpisodeConcluding ||
+            !IsCurrentController() || !TryBindShip())
         {
             return;
         }
@@ -493,7 +497,7 @@ internal sealed class RlOneVsOneAgent : Agent
 
     public override void CollectObservations(VectorSensor sensor)
     {
-        if (_endingShipTrajectory || !IsCurrentController() || !TryBindShip())
+        if (_endingShipTrajectory || IsEpisodeConcluding || !IsCurrentController() || !TryBindShip())
         {
             AddInactivePolicyObservations(sensor);
             return;
@@ -520,7 +524,7 @@ internal sealed class RlOneVsOneAgent : Agent
 
     public override void WriteDiscreteActionMask(IDiscreteActionMask actionMask)
     {
-        bool canControl = IsCurrentController() && TryBindShip();
+        bool canControl = !IsEpisodeConcluding && IsCurrentController() && TryBindShip();
         for (int slot = 0; slot < MaxWeaponSlots; slot++)
         {
             bool enabled = canControl && HasTurretForSlot(slot);
@@ -540,7 +544,7 @@ internal sealed class RlOneVsOneAgent : Agent
 
     public override void OnActionReceived(ActionBuffers actions)
     {
-        if (!IsCurrentController() || !TryBindShip())
+        if (IsEpisodeConcluding || !IsCurrentController() || !TryBindShip())
         {
             return;
         }
