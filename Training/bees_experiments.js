@@ -7,7 +7,8 @@ const crypto = require('node:crypto');
 const { execFile } = require('node:child_process');
 const { invokeStart, invokeStop, invokeWorkerRuntime } = require('./operator/commands');
 const { invokeMaintenanceUnityRebuild } = require('./operator/build');
-const { summarize: summarizeResearch } = require('./bees_experiment_research');
+const { summarize: summarizeResearch, differences: compareResearch,
+    sampleEfficiency: researchEfficiency } = require('./bees_experiment_research');
 const { freezePlan: freezeEvaluator, supportsPurpose: evaluatorSupportsPurpose } =
     require('./bees_experiment_evaluator_versions');
 const { selectedRoot, copyAndSelect } = require('./bees_experiment_storage');
@@ -2149,7 +2150,14 @@ const server = http.createServer(async (req, res) => {
             return;
         }
         if (req.method === 'GET' && route === '/api/research-summary') {
-            return json(res, 200, { groups: summarizeResearch(state.items, benchmarkReports(Infinity)) });
+            const threshold = Number(url.searchParams.get('threshold') || 0.5);
+            if (!Number.isFinite(threshold) || threshold < 0 || threshold > 1)
+                return json(res, 400, { error: 'Win-rate threshold must be 0–100%.' });
+            const groups = summarizeResearch(state.items, benchmarkReports(Infinity));
+            return json(res, 200, {
+                groups, comparisons: compareResearch(groups),
+                efficiency: researchEfficiency(groups, threshold),
+            });
         }
         if (req.method === 'GET' && route === '/api/queued') {
             const item = state.items.find(x => x.id === url.searchParams.get('id'));
