@@ -264,6 +264,12 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
 </div>
 <div id="stage-rows" class="curriculum-stages"></div>
 <button id="add-stage" type="button">Add curriculum stage</button>
+<div class="bar">
+<label>Keep first N stages<input id="prefix-stages" type="number" min="1" step="1" value="19"></label>
+<button id="keep-prefix" type="button">Keep first N</button>
+<label>Set all stage durations (steps)<input id="bulk-stage-steps" type="number" min="1000" step="1000" value="20000000"></label>
+<button id="apply-stage-steps" type="button">Apply to every stage</button>
+</div>
 <p id="curriculum-preview" class="muted"></p>
 </details>
 <p class="muted">Arguments override the cluster defaults. Each experiment starts a fresh policy and optimizer using its frozen trainer configuration. v26 supports width 128 and feedforward networks; layer count and normalization can vary.</p><details style="margin:12px 0"><summary>Trainer configuration · fresh initialization</summary><p id="trainer-config-status">Loading release defaults…</p><div class="formgrid"><label>Entropy beta<input id="trainer-beta" type="number" min="0" step="any" required></label><label>Lambda<input id="trainer-lambd" type="number" min="0" step="any" required></label><label>Learning rate<input id="trainer-learning_rate" type="number" min="0" step="any" required></label><label>Batch size<input id="trainer-batch_size" type="number" min="1" step="1" required></label><label>Buffer size<input id="trainer-buffer_size" type="number" min="1" step="1" required></label><label>PPO epochs<input id="trainer-num_epoch" type="number" min="1" step="1" required></label><label>Network layers (width 128)<input id="trainer-num_layers" type="number" min="1" step="1" required></label><label>ML-Agents initialization seed<input id="trainer-seed" type="number" min="0" step="1" required></label><label>Observation normalization<select id="trainer-normalize"><option value="true">Enabled</option><option value="false">Disabled</option></select></label></div></details>
@@ -1840,6 +1846,8 @@ function applyCurriculum(template) {
     $('args').value = (template.env_args || []).join('\n');
     $('stage-rows').replaceChildren();
     for (const stage of template.stages || []) addCurriculumStage(stage);
+    $('prefix-stages').value = 1 + (template.stages || []).length;
+    $('bulk-stage-steps').value = template.first_steps;
     updateStageLabels();
     $('curriculum-status').textContent = 'Loaded ' + template.name +
         ' · edit stages before queuing or save a revised default.';
@@ -1868,6 +1876,31 @@ $('save-curriculum').addEventListener('click', async () => {
         defaultCurriculum = saved.curriculum;
         $('curriculum-status').textContent = 'Saved default: ' + defaultCurriculum.name;
     } catch (error) { $('curriculum-status').textContent = error.message; }
+});
+$('keep-prefix').addEventListener('click', () => {
+    const count = Number($('prefix-stages').value);
+    if (!Number.isSafeInteger(count) || count < 1 ||
+        count > $('stage-rows').children.length + 1) {
+        $('curriculum-status').textContent = 'Choose a valid number of leading stages.';
+        return;
+    }
+    if (!confirm('Remove every stage after stage ' + count + ' from this form?')) return;
+    while ($('stage-rows').children.length > count - 1)
+        $('stage-rows').lastElementChild.remove();
+    updateStageLabels();
+});
+$('apply-stage-steps').addEventListener('click', () => {
+    const steps = Number($('bulk-stage-steps').value);
+    if (!Number.isSafeInteger(steps) || steps < 1000) {
+        $('curriculum-status').textContent = 'Enter a valid integer step budget.';
+        return;
+    }
+    if (!confirm('Change the duration of all current curriculum stages to ' +
+        fmt(steps) + ' learner steps?')) return;
+    $('steps').value = String(steps);
+    for (const row of $('stage-rows').children)
+        row.querySelector('.stage-steps').value = String(steps);
+    updateStageLabels();
 });
 $('steps').addEventListener('input', updateCurriculumPreview);
 $('unlimited-steps').addEventListener('change', updateCurriculumPreview);
@@ -1907,6 +1940,7 @@ async function openQueuedEditor(id) {
         $('stage-target').value = def.target_timeout_pct ?? '';
         $('stage-rows').replaceChildren();
         for (const stage of def.stages || []) addCurriculumStage(stage);
+        $('prefix-stages').value = 1 + (def.stages || []).length;
         $('evaluation-mode').value = def.evaluation_mode || 'none';
         updateStageLabels();
         for (const [key, value] of Object.entries(trainer.hyperparameters)) {
