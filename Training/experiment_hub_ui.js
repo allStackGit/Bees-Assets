@@ -241,12 +241,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 cpus:$('hub-request-cpus').value,
                 ram_mb:$('hub-request-ram').value,
                 gpus:$('hub-request-gpus').value.trim(),
+                gpu_count:$('hub-request-gpu-count').value,
+                min_gpu_vram_mb:$('hub-request-gpu-vram').value,
             });
             const r=await fetch('/api/hub/placements?'+query,{cache:'no-store'});
             const data=await r.json();
             if(!r.ok)throw Error(data.error||'No placement result.');
             feedback('hub-placements',(data.placements||[]).map(p=>
-                p.machine_name+': '+(p.fits?'Available':'Unavailable')+' — '+p.reason
+                p.machine_name+': '+(p.fits?'Eligible':p.capacity_fits?'Capacity fits (unverified)':'Unavailable')+
+                (p.suggested_gpus?.length?' · GPUs '+p.suggested_gpus.join(', '):'')+' — '+p.reason
             ).join('\n')||'No registered machines.');
         }catch(e){feedback('hub-placements',e.message);}
     });
