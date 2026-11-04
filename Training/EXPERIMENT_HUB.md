@@ -122,11 +122,17 @@ per-device measurement and platform-level isolation are implemented.
    15 seconds and reports available CPU parallelism, total RAM, and OS.
    Set `EXPERIMENT_HUB_AGENT_TOKEN` from the enrollment output. Do not
    commit it or include it in logs or an unprotected shell history.
-4. The Hub listens only on `127.0.0.1:7148`. A different computer needs
-   a **trusted encrypted tunnel**, for example SSH local forwarding from
-   a worker's port 17148 to the coordinator's `127.0.0.1:7148`.
-   Set `EXPERIMENT_HUB_URL=http://127.0.0.1:17148` on that worker. The
-   agent only accepts localhost HTTP targets; do not expose the manager
+4. The Hub administrator dashboard listens at `127.0.0.1:7148` but
+   **machine agents connect only to the separate `127.0.0.1:7149` listener**.
+   This agent-only port accepts authenticated heartbeat/lease-receipt POSTs
+   and cannot access any administrator or training route. A remote worker
+   needs a trusted SSH local forwarding tunnel, for example mapping its
+   local port 17149 to the coordinator's `127.0.0.1:7149`. Set
+   `EXPERIMENT_HUB_URL=http://127.0.0.1:17149` on the worker. The agent
+   defaults to `127.0.0.1:7149` when running alongside the coordinator.
+   **Never forward port 7148 to worker machines**: it controls Bees
+   training and the Hub's registration/credentials. The agent accepts
+   only loopback HTTP destinations, and neither port should be exposed
    directly on the LAN or Internet.
 5. **Connected** means a correctly authenticated process reported recently,
    not that the process has exclusive control of the host. After 45 seconds
@@ -134,6 +140,10 @@ per-device measurement and platform-level isolation are implemented.
    memory until coordinator restart. CPU and RAM observations are capped
    by registered limits. GPU memory and compute budgets are unverified
    estimates until native isolation/monitoring exists.
+
+An agent-port bind failure leaves the existing Bees coordinator operational;
+the Hub agent service reports the listener failure and machines remain
+unavailable until the port conflict is resolved.
 
 The agent has **no remote command interface** and does not start or stop
 Bees, Ants, or any third-party training process. Enrolled machines are still
