@@ -855,10 +855,13 @@ async function evaluateStageSuite(item, index, status, checkpointRecord = null,
             let reportName = findStageReport(item, index, scenario, evaluation.candidate,
                 plan, evaluationId, evaluation.reports[scenario.id], purpose);
             if (!reportName) {
-                state.message = (checkpointRecord
-                    ? 'Checkpoint ' + checkpointRecord.ordinal + ' (' +
-                        checkpointRecord.target_step.toLocaleString() + ' steps)'
-                    : 'Stage ' + (index + 1)) + ' evaluation: ' + scenario.id +
+                const label = purpose === 'heldout'
+                    ? 'Held-out validation'
+                    : checkpointRecord
+                        ? 'Checkpoint ' + checkpointRecord.ordinal + ' (' +
+                            checkpointRecord.target_step.toLocaleString() + ' steps)'
+                        : 'Stage ' + (index + 1);
+                state.message = label + ' evaluation: ' + scenario.id +
                     ' for ' + item.name;
                 save();
                 const output = await execBenchmark(plan.python, [
@@ -1676,10 +1679,10 @@ async function definition(input, original = null) {
     const heldoutPlan = input.reserve_heldout === true
         ? (original?.heldout_benchmarks || benchmarkPlan(HELDOUT_BENCHMARK_SETTINGS))
         : null;
-    if (heldoutPlan && benchmark &&
-        heldoutPlan.scenarios.some(hold => benchmark.scenarios.some(dev =>
-            heldoutPlan.hashes['recipe_' + heldoutPlan.scenarios.indexOf(hold)] ===
-                benchmark.hashes['recipe_' + benchmark.scenarios.indexOf(dev)]))) {
+    const developmentRecipes = new Set((benchmark?.scenarios || []).map((scenario, i) =>
+        benchmark.hashes['recipe_' + i]));
+    if (heldoutPlan && heldoutPlan.scenarios.some((scenario, i) =>
+        developmentRecipes.has(heldoutPlan.hashes['recipe_' + i]))) {
         throw Error('Held-out recipes must be different from development evaluation recipes.');
     }
     return {
