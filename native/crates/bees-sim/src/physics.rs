@@ -473,7 +473,6 @@ pub struct KinematicPhysics {
     projectiles: Vec<ProjectileBody>,
     obstacles: Vec<ObstacleBody>,
     grid: SpatialGrid,
-    obstacle_grid: SpatialGrid,
     candidates: Vec<usize>,
     overlaps_previous: Vec<TriggerEnter>,
     overlaps_current: Vec<TriggerEnter>,
@@ -491,7 +490,6 @@ impl KinematicPhysics {
             projectiles: Vec::new(),
             obstacles: Vec::new(),
             grid: SpatialGrid::new(area, cell_size)?,
-            obstacle_grid: SpatialGrid::new(area, cell_size)?,
             candidates: Vec::new(),
             overlaps_previous: Vec::new(),
             overlaps_current: Vec::new(),
@@ -592,10 +590,6 @@ impl KinematicPhysics {
             let ship = &self.ships[index];
             if ship.active { ship.collider.bounds } else { None }
         });
-        self.obstacle_grid.rebuild_with(self.obstacles.len(), |index| {
-            let obstacle = &self.obstacles[index];
-            if obstacle.active { obstacle.collider.bounds } else { None }
-        });
         self.overlaps_current.clear();
         for projectile in &self.projectiles {
             if !projectile.active { continue; }
@@ -621,6 +615,13 @@ impl KinematicPhysics {
                 }
             }
         }
+        // Rebuild the SAME uniform grid for obstacle queries after all
+        // ship queries finish. Two grids double the per-world cell-array
+        // footprint and buy nothing when these phases are serial.
+        self.grid.rebuild_with(self.obstacles.len(), |index| {
+            let obstacle = &self.obstacles[index];
+            if obstacle.active { obstacle.collider.bounds } else { None }
+        });
         // Obstacle contacts retain their own overlap history and queue.
         // A shot can contact a ship and an obstacle in the same physics tick.
         self.obstacle_overlaps_current.clear();
@@ -628,7 +629,7 @@ impl KinematicPhysics {
             if !projectile.active { continue; }
             let Some(projectile_collider) = &projectile.collider else { continue };
             let Some(area) = projectile_collider.bounds else { continue };
-            self.obstacle_grid.candidates(area, &mut self.candidates);
+            self.grid.candidates(area, &mut self.candidates);
             self.counts.broadphase_candidates += self.candidates.len() as u64;
             for &index in &self.candidates {
                 let obstacle = &self.obstacles[index];
