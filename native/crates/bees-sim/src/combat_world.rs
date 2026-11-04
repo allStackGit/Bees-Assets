@@ -1186,6 +1186,120 @@ impl CombatWorld {
         }
     }
 
+    /// The child ProximityCollider (layer 20 in the authored prefabs)
+    /// establishes nearby membership before the primary hull (layer 19)
+    /// makes contact. The old Unity callbacks can arrive in either order;
+    /// this uses a stable, deterministic order pending live parity checking.
+    fn process_asteroid_hull_contacts(&mut self) {
+        for index in 0..self.physics.proximity_obstacle_exits().len() {
+            let contact = self.physics.proximity_obstacle_exits()[index];
+            self.nearby_asteroid_pairs.remove(&(
+                contact.source_obstacle_id, contact.other_obstacle_id,
+            ));
+        }
+        for index in 0..self.physics.proximity_obstacle_entries().len() {
+            let contact = self.physics.proximity_obstacle_entries()[index];
+            let Some(&first) = self.obstacle_by_id.get(&contact.source_obstacle_id) else {
+                continue;
+            };
+            let Some(&second) = self.obstacle_by_id.get(&contact.other_obstacle_id) else {
+                continue;
+            };
+            if self.obstacles[first].kind == ObstacleKind::CollisionAsteroid &&
+                self.obstacles[second].kind == ObstacleKind::CollisionAsteroid {
+                self.nearby_asteroid_pairs.insert((
+                    contact.source_obstacle_id, contact.other_obstacle_id,
+                ));
+            }
+        }
+
+        // Each collision destroys at least one asteroid's health. Later
+        // contacts cannot damage that zero-health body a second time.
+        for index in 0..self.physics.obstacle_pair_entries().len() {
+            let contact = self.physics.obstacle_pair_entries()[index];
+            self.resolve_asteroid_hull_contact(contact);
+        }
+    }
+
+    fn resolve_asteroid_hull_contact(&mut self, contact: ObstaclePairContact) {
+        let first_id = contact.first_obstacle_id;
+        let second_id = contact.second_obstacle_id;
+        let (Some(&first_index), Some(&second_index)) = (
+            self.obstacle_by_id.get(&first_id),
+            self.obstacle_by_id.get(&second_id),
+        ) else { return };
+        if first_index == second_index ||
+            !self.physics.obstacles()[first_index].active ||
+            !self.physics.obstacles()[second_index].active ||
+            self.obstacles[first_index].kind != ObstacleKind::CollisionAsteroid ||
+            self.obstacles[second_index].kind != ObstacleKind::CollisionAsteroid {
+            return;
+        }
+        // Unity only resolves an asteroid's ObstacleCollision after that
+        // asteroid has entered the map, and only against a partner which
+        // has already touched a map border. Both orientations are eligible.
+        let first_eligible = self.nearby_asteroid_pairs.contains(&(first_id, second_id)) &&
+            self.asteroid_border_states.get(&first_id)
+                .is_some_and(|state| state.has_entered_map) &&
+            self.asteroid_border_states.get(&second_id)
+                .is_some_and(|state| state.has_touched_map_border);
+        let second_eligible = self.nearby_asteroid_pairs.contains(&(second_id, first_id)) &&
+            self.asteroid_border_states.get(&second_id)
+                .is_some_and(|state| state.has_entered_map) &&
+            self.asteroid_border_states.get(&first_id)
+                .is_some_and(|state| state.has_touched_map_border);
+        if !first_eligible && !second_eligible {
+            return;
+        }
+
+        let (first, second) = if first_index < second_index {
+            let (left, right) = self.obstacles.split_at_mut(second_index);
+            (&mut left[first_index], &mut right[0])
+        } else {
+            let (left, right) = self.obstacles.split_at_mut(first_index);
+            (&mut right[0], &mut left[second_index])
+        };
+        let (Some(first_vitals), Some(second_vitals)) =
+            (first.vitals.as_mut(), second.vitals.as_mut()) else { return };
+        let Some((first_damage, second_damage)) = resolve_asteroid_pair_damage(
+            first_vitals, first.size_class, second_vitals, second.size_class,
+        ) else { return };
+        self.events.push(CombatEvent::AsteroidsCollided {
+            first_obstacle_id: first_id,
+            second_obstacle_id: second_id,
+            first_damage, second_damage,
+        });
+        if first_damage.killed {
+            self.asteroid_delayed_kills.entry(first_id)
+                .or_insert_with(|| ScaledTimer::new(0.35, false, false));
+        }
+        if second_damage.killed {
+            self.asteroid_delayed_kills.entry(second_id)
+                .or_insert_with(|| ScaledTimer::new(0.35, false, false));
+        }
+    }
+
+    /// CollisionAsteroid.GotKilledInCollision schedules DelayKill after 0.35s,
+    /// unlike projectile damage which removes the asteroid immediately.
+    /// Sort due IDs because HashMap iteration order must never change the
+    /// simulation's observable destruction/fragment event order.
+    fn advance_asteroid_deaths(&mut self, dt: f32) {
+        self.expired_asteroid_ids.clear();
+        for (&entity_id, timer) in &mut self.asteroid_delayed_kills {
+            if let Some(due) = timer.begin_update(dt) {
+                timer.finish_update(due);
+                self.expired_asteroid_ids.push(entity_id);
+            }
+        }
+        self.expired_asteroid_ids.sort_unstable();
+        for index in 0..self.expired_asteroid_ids.len() {
+            let entity_id = self.expired_asteroid_ids[index];
+            if let Some(&slot) = self.obstacle_by_id.get(&entity_id) {
+                self.retire_collision_asteroid(slot, true);
+            }
+        }
+    }
+
     /// Unity's CollisionAsteroid.Kill(true) (teardown/map border) removes
     /// the body without spawning children. A normal kill emits the authored
     /// breakup request. Callers must not reuse a retired entity ID.
@@ -1275,6 +1389,7 @@ impl CombatWorld {
                 ..StepCounts::default()
             });
         }
+        self.advance_asteroid_deaths(dt);
         // Swap buffers instead of allocating a queue for every frame.
         std::mem::swap(&mut self.processing_contacts, &mut self.pending_contacts);
         self.pending_contacts.clear();
@@ -1348,6 +1463,7 @@ impl CombatWorld {
         self.pending_obstacle_contacts
             .extend_from_slice(self.physics.obstacle_trigger_entries());
         self.process_map_border_contacts();
+        self.process_asteroid_hull_contacts();
 
         Ok(StepCounts {
             active_ships: self.physics.ships().iter().filter(|ship| ship.active).count() as u32,
