@@ -535,22 +535,56 @@ async function invokeMaintenanceUnityRebuild(options = {}) {
         throw Error('Training control changed while compiling. The candidate was not published.');
     }
 
-    if (!config.localOnly && exists(paths.tailnetAddressPath)) {
-        prepareRemoteBootstrap(config, python, candidate,
-            workerOverride ? { workerOverride } : {});
-        await startTailnetGatewayIfNeeded(config);
+    let bootstrapPublished = false;
+    try {
+        if (!config.localOnly && exists(paths.tailnetAddressPath)) {
+            prepareRemoteBootstrap(config, python, candidate,
+                workerOverride ? { workerOverride } : {});
+            bootstrapPublished = true;
+            await startTailnetGatewayIfNeeded(config);
+        }
+        await publishRelease(config, admin, candidate);
+        const staged = await stageRelease(config, admin, candidate, envArgs, validationKey);
+        if (staged.pending_release) {
+            await waitReleaseRollout(config, admin, buildId,
+                release.run_id, release.compatibility_key);
+        }
+        // Persist only when the coordinated control-plane release is canonical.
+        saveLatestRelease(candidate);
+        const centralRuntime = await prepareCentralReleaseRuntime(config, python, unity, candidate);
+        await startCentralAgentIfNeeded(config, python, unity, candidate, centralRuntime);
+        prepareLocalActorReleaseRuntime(config, candidate, centralRuntime);
+    } catch (error) {
+        // If the control-plane remained on the original build, undo the
+        // published candidate bootstrap. Otherwise a resumed old worker can
+        // wait forever for a candidate build that never became canonical.
+        if (bootstrapPublished) {
+            try {
+                const after = await getStatus(config, admin);
+                if (!after.desired?.pending_release &&
+                    after.desired?.canonical_build_id === release.build_id &&
+                    after.desired?.run_id === release.run_id &&
+                    getLatestRelease().build_id === release.build_id) {
+                    const oldOverride = exists(overridePath)
+                        ? readJson(overridePath) : null;
+                    // The rebased overlay has already replaced the pointer.
+                    // Recover the originally verified worker archive from the
+                    // old release's package only when the previous pointer
+                    // was not published; otherwise refuse an unsafe guess.
+                    if (workerOverride && oldOverride?.build_id === buildId) {
+                        throw Error('Worker-only overlay was switched before publication; ' +
+                            'the original worker overlay must be restored explicitly.');
+                    }
+                    prepareRemoteBootstrap(config, python, release);
+                }
+            } catch (rollbackError) {
+                throw Error('Unity rebuild failed: ' + error.message +
+                    '; worker bootstrap rollback failed: ' + rollbackError.message +
+                    '. Leave the experiment paused and inspect the package.');
+            }
+        }
+        throw error;
     }
-    await publishRelease(config, admin, candidate);
-    const staged = await stageRelease(config, admin, candidate, envArgs, validationKey);
-    if (staged.pending_release) {
-        await waitReleaseRollout(config, admin, buildId,
-            release.run_id, release.compatibility_key);
-    }
-    // Persist only when the coordinated control-plane release is canonical.
-    saveLatestRelease(candidate);
-    const centralRuntime = await prepareCentralReleaseRuntime(config, python, unity, candidate);
-    await startCentralAgentIfNeeded(config, python, unity, candidate, centralRuntime);
-    prepareLocalActorReleaseRuntime(config, candidate, centralRuntime);
     return {
         run_id: release.run_id,
         old_build_id: release.build_id,
