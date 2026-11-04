@@ -1,26 +1,59 @@
 # Experiment Hub foundation
 
-The existing `bees_experiments.js` remains the authoritative active Bees experiment
-coordinator, with its existing queue, checkpoints, release barriers, and evaluations.
-`experiment_hub_core.js` stores separate project definitions, reusable configuration
-drafts, and machine inventory in `Training/Experiments/hub-v1.json` (or the selected
-experiment-data directory). Existing `experiments-v1.json` is not migrated or rewritten.
+The dashboard remains at `http://127.0.0.1:7148` and now has Design, Train,
+Monitor, Compare, and Machines tabs. The existing Bees experiment coordinator,
+operator, queue, checkpoint history, release compatibility checks, and evaluations
+remain authoritative.
 
-New projects start as *unconfigured*: saving a definition is supported, but starting
-it is explicitly prohibited until a trusted project execution adapter is installed.
-Bees runs continue through the existing verified Bees queue and operator. No code
-entered through the web UI is executed.
+## Currently available
 
-Machine records start *unverified*. `experiment_hub_resources.js` computes
-conservative CPU, RAM and exclusively assigned GPU reservations from verified
-inventory; its calculations are admission guidance, not OS-level enforcement.
-No reservation or remote-work launch is claimed on an unverified machine.
+- **Design:** Save, revise, and duplicate project configurations without scheduling
+  them. Copy the current Bees editor into a draft, or select **Save as draft**
+  directly from the Bees form. Saved Bees configurations can be queued using
+  the existing validated experiment queue. Other projects can store JSON
+  configurations but cannot yet execute.
+- **Train:** Preserve existing experiment queue, stage transitions, paused-run
+  worker updates, and Unity maintenance rebuilds. For ordinary (non-experiment)
+  Bees runs, the browser can start/resume the current run, request a fresh run,
+  build an RL release, gracefully stop training, publish worker-only updates
+  while stopped, and specify Unity environment arguments. These invoke existing
+  operator code. Actions are refused while the experiment manager owns a run
+  or has an armed queue. Ordinary runs are observed via the existing control
+  plane; they are not retroactively inserted into the experiment database.
+- **Monitor and Compare:** Existing Bees live status, performance, benchmark
+  reports and research charts remain intact. Non-experiment training is shown
+  as distinct from experiment-owned training.
+- **Machines:** Show read-only Bees worker reports from the existing control
+  plane. Manually register project-independent machines (CPU, RAM, GPU capacity)
+  and preview CPU/RAM, GPU count, and per-GPU VRAM requirements. Manually
+  registered machines remain *unverified*. Candidate placements do not claim
+  or allocate actual hardware.
 
-Next implementation boundaries are authenticated machine agents, OS resource isolation
-(cgroups or Windows equivalents), a durable job lifecycle with crash recovery, and a
-Bees adapter that reconciles already active runs before accepting control. These
-must use the same centralized ownership authority, not a second Bees worker scheduler.
+## Data ownership
 
-The platform intentionally favors fail-closed behavior while existing production
-Bees training is running. Generic cross-project execution is **not enabled** by this
-foundation alone.
+`experiment_hub_core.js` persists project definitions, drafts, and machine
+inventory in `hub-v1.json` in the selected experiment-data directory. The
+legacy `experiments-v1.json` is not migrated, rewritten, or replaced. New Hub
+registry writes are atomic and only published in memory after they succeed.
+If the optional Hub registry cannot be loaded, Bees experiment management
+continues to run independently.
+
+`experiment_hub_resources.js` performs pure admission calculations; it
+does not execute jobs or enforce isolation. A verified GPU may be reserved
+exclusively in the eventual scheduler, but this preview **is not** a physical
+reservation. The UI requires explicit confirmation before operating the
+Bees learner.
+
+## Not yet implemented
+
+Generic project execution adapters, authenticated machine agents, OS-enforced
+CPU/GPU reservations, the multi-project job scheduler, cross-project run
+history and metrics ingestion, safe live rebalancing, and comprehensive CLI
+parity for all runtime configuration controls remain future work. These
+must not create a second owner of the Bees training lifecycle or treat
+reporting a worker as proof of exclusive host ownership.
+
+No arbitrary commands from saved project configurations are executed. The
+dashboard remains loopback-only; remote access requires a separate trusted
+transport. Production multi-machine / Unity behavior has not been validated
+by the development environment.
