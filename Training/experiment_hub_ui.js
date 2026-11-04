@@ -139,13 +139,39 @@ document.addEventListener('DOMContentLoaded', () => {
         for(const m of state.machines) {
             const tr=document.createElement('tr');
             cell(tr,m.name+' ('+m.id+')');cell(tr,m.status);
-            cell(tr,m.cpus);cell(tr,m.ram_mb);
+            cell(tr,m.cpus+(m.reported_cpus!=null?' / agent '+m.reported_cpus:''));
+            cell(tr,m.ram_mb+(m.reported_ram_mb!=null?' / agent '+m.reported_ram_mb:''));
             cell(tr,(m.gpus||[]).map(g=>g.id+' ('+g.vram_mb+' MiB)').join(', ')||'None');
+            cell(tr,m.last_seen_at?.replace('T',' ').slice(0,19)||'—');
+            const actions=cell(tr,'');
+            actions.append(button(m.agent_enrolled?'Rotate':'Enroll',async()=>{
+                const rotate=m.agent_enrolled;
+                if(!confirm((rotate?'Rotate':'Enroll')+' machine credential for '+m.id+
+                    '? Rotation invalidates the old credential.'))return;
+                try{
+                    const result=await action('hub/machines/enroll',{
+                        machine_id:m.id,confirm_enroll:true,confirm_rotate:rotate,
+                    });
+                    $('hub-enrollment-token').value=result.agent_token;
+                    feedback('hub-enrollment-message',
+                        'Credential issued for '+m.id+'. Copy it now; it cannot be retrieved later.');
+                    await reload();
+                }catch(e){feedback('hub-enrollment-message',e.message);}
+            }));
+            if(m.agent_enrolled)actions.append(button('Revoke',async()=>{
+                if(!confirm('Disable machine agent access for '+m.id+'?'))return;
+                try{
+                    await action('hub/machines/revoke',{machine_id:m.id,confirm_revoke:true});
+                    $('hub-enrollment-token').value='';
+                    feedback('hub-enrollment-message','Revoked machine credential for '+m.id);
+                    await reload();
+                }catch(e){feedback('hub-enrollment-message',e.message);}
+            }));
             $('hub-machine-rows').append(tr);
         }
         if(!state.machines.length) {
             const tr=document.createElement('tr');
-            cell(tr,'No registered machines.').colSpan=5;
+            cell(tr,'No registered machines.').colSpan=7;
             $('hub-machine-rows').append(tr);
         }
     }
@@ -242,6 +268,10 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             project=saved.id;resetEditor();await reload();
         }catch(err){feedback('hub-config-message',err.message);}
+    });
+    $('hub-enrollment-clear').addEventListener('click',()=>{
+        $('hub-enrollment-token').value='';
+        feedback('hub-enrollment-message','Token display cleared. Rotate it if the token was lost.');
     });
     $('hub-machine-form').addEventListener('submit',async e=>{
         e.preventDefault();
