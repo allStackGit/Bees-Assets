@@ -33,6 +33,7 @@ if (typeof state.stop_requested !== 'boolean') state.stop_requested = false;
 for (const item of state.items) delete item.performance_clock;
 let busy = false;
 let logExportBusy = false;
+let lastRoutineSaveMs = 0;
 const save = () => { ensureDir(path.dirname(DB)); writeJsonAtomic(DB, state); };
 const active = () => state.items.find(x => x.id === state.active_id);
 const matches = (a, b) => JSON.stringify(a || []) === JSON.stringify(b || []);
@@ -1231,7 +1232,12 @@ async function monitor() {
         state.message = 'Switching ' + item.name + ' to ' + item.stages[item.stage_index + 1].name;
         save();
         await transitionStage(item, status);
-    } else save();
+    } else if (Date.now() - lastRoutineSaveMs >= 30000) {
+        // A 10-second threshold observation should not triple full-history
+        // JSON rewrites. Retain the previous ~30-second durable snapshot cadence.
+        save();
+        lastRoutineSaveMs = Date.now();
+    }
 }
 
 async function launch() {
