@@ -191,6 +191,11 @@ function asteroidFromVariant(name, content, base, baseGuid) {
 
     const proximity = base.proximity;
     const proximityId = base.ids.proximity;
+    if ([...mods.keys()].some(key =>
+        key.startsWith(base.ids.proximityTransform + '/m_LocalRotation.') ||
+        key === base.ids.proximityTransform + '/m_Father')) {
+        fail(name, 'unsupported proximity child rotation or reparenting');
+    }
     const proximityLayer = number(base.ids.proximityGame, 'm_Layer', proximity.layer);
     const proximityScale = [
         number(base.ids.proximityTransform, 'm_LocalScale.x', proximity.scale[0]),
@@ -306,7 +311,8 @@ export function createAsteroidBatch(baseContent, baseGuid, otherPrefabs) {
             ? asteroidFromVariant(name, text, base, baseGuid)
             : (() => {
                 const standalone = baseAsteroid(name, text);
-                if (standalone.paths.length !== 1) {
+                if (standalone.paths.length !== 1 ||
+                    standalone.proximity.paths.length !== 1) {
                     fail(name, 'multiple active polygon paths need compound physics');
                 }
                 return {
