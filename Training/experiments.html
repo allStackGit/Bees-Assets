@@ -561,11 +561,14 @@ function chart(items) {
             title.textContent = label;
             group.append(marker, tag, title);
             svg.append(group);
-            evaluationMarkers.push({ x, label });
+            evaluationMarkers.push({ x, label, type: record.evaluation ? 'E' : 'T' });
         }
     }
     if (evaluationMarkers.length)
-        chartNotes.push('E = checkpoint evaluation · T = stage transition');
+        chartNotes.push([
+            evaluationMarkers.some(marker => marker.type === 'E') && 'E = checkpoint evaluation',
+            evaluationMarkers.some(marker => marker.type === 'T') && 'T = stage transition',
+        ].filter(Boolean).join(' · '));
     const unityRebuildMarkers = [];
     for (const dataset of datasets) {
         for (const change of (dataset.item.unity_rebuilds || [])) {
@@ -643,7 +646,7 @@ function chart(items) {
         const label = txt('span', dataset.item.name +
             ' · latest ' + fmt(latestPoint.raw, 3) +
             (smooth > 1 ? ' · ' + smooth + '-sample avg ' + fmt(latestPoint.y, 3) : '') +
-            ' · overall avg ' + fmt(latestPoint.mean, 3));
+            ' · recorded avg ' + fmt(latestPoint.mean, 3));
         label.className = 'legend-series';
         label.dataset.chartColor = dataset.color;
         const dot = document.createElement('span');
