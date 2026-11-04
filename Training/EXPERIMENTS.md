@@ -418,9 +418,15 @@ set **Scenario root seed** when queuing an experiment to pin the process-root
 scenario RNG stream across runs; it is recorded in the frozen stage arguments
 as `--rl-scenario-seed=<int>`. This requires a Unity build containing the new
 flag. Without a value, new Unity processes retain a fresh random seed.
-Asynchronous distributed scheduling and external samplers still prevent
-bit-for-bit deterministic training; sharing a scenario root is not proof of
-identical experiences.
+The Unity process combines a specified seed with its machine identity
+and ML-Agents worker port before deriving per-arena streams, so multiple
+parallel workers do not replay identical scenarios. Hold the machine/worker
+topology fixed for comparable controlled-seed studies; a changed host or port
+changes its scenario stream. Launches without a worker port fall back to a
+non-reproducible process identity and report a warning. Asynchronous
+distributed scheduling and external samplers still prevent bit-for-bit
+deterministic training; matching seeds alone are not proof of identical
+experiences.
 
 Each independent benchmark saves its existing immutable summary report **plus
 a compact per-match CSV** containing the authoritative Unity side-channel
