@@ -161,6 +161,20 @@ The physics layer accepts a required collision-layer matrix, but no verified
 export of the existing Unity Physics2D matrix is yet available. Do not replace
 this missing contract with an allow-all default in gameplay or training.
 
+## Local native verification
+
+From the repository root, with Node.js and a Rust/Cargo toolchain installed:
+
+```sh
+node native/tools/verify-native.mjs
+```
+
+This checks the four authored asset catalogs against the current Unity
+prefabs **without rewriting them**, then compiles and runs the native Rust
+tests. An optional `--assets-only` skips Cargo explicitly and does **not**
+establish native compilation. These checks establish neither Unity
+Physics2D parity nor complete battle readiness.
+
 ## Collision asteroid prefab migration
 
 `native/assets/asteroid-colliders.json` contains the primary colliders for
