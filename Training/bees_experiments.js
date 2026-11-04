@@ -33,6 +33,7 @@ if (typeof state.stop_requested !== 'boolean') state.stop_requested = false;
 // never incorrectly charged as training or PPO idle time.
 for (const item of state.items) delete item.performance_clock;
 let busy = false;
+let rebuildProgress = null;
 let logExportBusy = false;
 let lastRoutineSaveMs = 0;
 const save = () => { ensureDir(path.dirname(DB)); writeJsonAtomic(DB, state); };
@@ -1614,7 +1615,8 @@ const server = http.createServer(async (req, res) => {
             return await exportExperimentLogs(item, res, percent);
         }
         if (req.method === 'GET' && route === '/api/state') {
-            return json(res, 200, { ...state, busy, benchmark_configured: fs.existsSync(BENCHMARK_SETTINGS) });
+            return json(res, 200, { ...state, busy, rebuild_progress: rebuildProgress,
+                benchmark_configured: fs.existsSync(BENCHMARK_SETTINGS) });
         }
         if (req.method === 'GET' && route === '/api/configuration') {
             return json(res, 200, await trainerConfiguration({}));
@@ -1796,18 +1798,23 @@ const server = http.createServer(async (req, res) => {
             assertSameLineageCheckpoint(item);
             const release = readJson(paths.latestReleasePath);
             busy = true;
+            const startedAt = now();
+            const reportRebuildProgress = message => {
+                rebuildProgress = { started_at: startedAt, updated_at: now(), message };
+            };
             item.unity_rebuild_attempt = {
-                started_at: now(), old_build: item.release_build,
+                started_at: startedAt, old_build: item.release_build,
                 compatibility_key: release.compatibility_key,
             };
-            state.message = 'Compiling and validating Windows/Linux RL Unity builds. ' +
-                'Experiment paused; optimizer and frozen learner runtime unchanged.';
+            state.message = 'Preparing Unity rebuild; experiment remains paused and its learner is unchanged.';
+            reportRebuildProgress('Checking paused experiment before Unity compilation');
             save();
             try {
                 const rebuilt = await invokeMaintenanceUnityRebuild({
                     expectedRunId: item.run_id,
                     expectedBuildId: item.unity_rebuild_attempt.old_build,
                     expectedConfigSha: item.trainer_config.sha256,
+                    onProgress: reportRebuildProgress,
                 });
                 const updatedRelease = readJson(paths.latestReleasePath);
                 const after = await control();
@@ -1821,6 +1828,7 @@ const server = http.createServer(async (req, res) => {
                 save();
                 return json(res, 200, { ok: true, ...rebuilt });
             } catch (error) {
+                reportRebuildProgress('Build failed; reconciling the original release before reporting recovery');
                 let reconciled = false, cleanOldRelease = false;
                 if (/bootstrap rollback failed/i.test(error.message) &&
                     item.unity_rebuild_attempt) {
@@ -1843,6 +1851,7 @@ const server = http.createServer(async (req, res) => {
                 return json(res, 409, { error: state.message });
             } finally {
                 busy = false;
+                rebuildProgress = null;
             }
         }
         if (route === '/api/update-workers') {
