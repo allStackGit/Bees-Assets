@@ -9,17 +9,19 @@ remain authoritative.
 
 - **Design:** Save, revise, and duplicate project configurations without scheduling
   them. Copy the current Bees editor into a draft, or select **Save as draft**
-  directly from the Bees form. Saved Bees configurations can be queued using
-  the existing validated experiment queue. Other projects can store JSON
-  configurations but cannot yet execute.
-- **Train:** Preserve existing experiment queue, stage transitions, paused-run
-  worker updates, and Unity maintenance rebuilds. For ordinary (non-experiment)
-  Bees runs, the browser can start/resume the current run, request a fresh run,
-  build an RL release, gracefully stop training, publish worker-only updates
-  while stopped, and specify Unity environment arguments. These invoke existing
-  operator code. Actions are refused while the experiment manager owns a run
-  or has an armed queue. Ordinary runs are observed via the existing control
-  plane; they are not retroactively inserted into the experiment database.
+  directly from the Bees form. Saved Bees configurations use the existing
+  validated Bees experiment queue. Other projects can save JSON configurations,
+  freeze immutable pending jobs, and inspect future placement without execution.
+- **Train:** Preserve existing Bees experiment queue, stage transitions,
+  paused-run worker updates, and Unity maintenance rebuilds. For ordinary
+  (non-experiment) Bees runs, the browser can start/resume the current run,
+  request a fresh run, build an RL release, gracefully stop training, publish
+  worker-only updates while stopped, and specify Unity environment arguments.
+  These invoke existing operator code. Actions are refused while the experiment
+  manager owns a run or has an armed queue. Ordinary runs are observed via the
+  existing control plane, not inserted into the experiment database.
+  Non-Bees projects can queue immutable jobs and explicitly cancel unstarted
+  jobs, but cannot start training.
 - **Monitor and Compare:** Existing Bees live status, performance, benchmark
   reports and research charts remain intact. Non-experiment training is shown
   as distinct from experiment-owned training.
@@ -65,6 +67,39 @@ processes nor grants hardware ownership. The future authenticated agent
 and platform-specific adapters must prove isolation and live capacity before
 any reservation becomes executable. The UI requires explicit confirmation
 before operating the Bees learner.
+
+## Immutable, non-executable project jobs
+
+The Train tab for a non-Bees project offers **Queue for future adapter**.
+This freezes a selected saved configuration at its expected revision, its
+project and name, a SHA-256 configuration fingerprint, and a validated
+CPU/RAM/GPU resource request into `hub-v1.json`. A new job has
+`status: "waiting_adapter"` and a reason explaining that no trusted executor
+or OS-enforced isolation exists. Later edits to a saved configuration do not
+change jobs that already reference it. The queue will reject a stale selected
+revision rather than silently freezing a newer draft.
+
+The UI can explicitly cancel a waiting job; its status and cancellation time
+are retained. It cannot cancel running or unknown jobs through this route.
+Read-only placement previews use the existing planner but never create leases
+or launch programs. These are *possible* capacity assignments, not scheduling
+decisions. Jobs with UUIDs use short ephemeral planner labels internally and
+return their original UUIDs to the UI. The Bees project is deliberately
+rejected by this generic queue and continues to use its existing coordinator.
+
+The API is `POST /api/hub/jobs` with
+`{configuration_id, expected_revision, resources}`,
+`POST /api/hub/jobs/cancel` with `{job_id,confirm_cancel:true}`, and
+`GET /api/hub/jobs/plan` for a read-only view. Pending jobs do not
+reserve machine capacity. The registry limits outstanding non-Bees jobs to
+100 and stored job records to 1,000; it refuses to silently delete old
+experiment definitions.
+
+No saved project configuration may supply a program path, executable
+argument list, shell command or privileged adapter name to this API. An
+independently installed, trusted server/agent adapter and a verified native
+resource-control backend are required before a future implementation can
+safely transition any job out of `waiting_adapter`.
 
 ## Coordinated resource leases (not process isolation)
 
