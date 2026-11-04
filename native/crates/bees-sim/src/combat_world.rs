@@ -1738,10 +1738,34 @@ impl CombatWorld {
         dt: f32,
         collision_matrix: &CollisionMatrix,
     ) -> Result<StepCounts, CombatWorldError> {
+        self.step_fixed_inner(dt, collision_matrix, None)
+    }
+
+    /// The shared multi-world scheduler owns the deterministic RNG. Fragment
+    /// selection and movement consume that world stream, not a process-global
+    /// or separate simulation-only random source.
+    pub fn step_fixed_with_random(
+        &mut self,
+        dt: f32,
+        collision_matrix: &CollisionMatrix,
+        random: &mut RandomStream,
+    ) -> Result<StepCounts, CombatWorldError> {
+        self.step_fixed_inner(dt, collision_matrix, Some(random))
+    }
+
+    fn step_fixed_inner(
+        &mut self,
+        dt: f32,
+        collision_matrix: &CollisionMatrix,
+        random: Option<&mut RandomStream>,
+    ) -> Result<StepCounts, CombatWorldError> {
         // Reject bad deltas before advancing delayed timers or modifying
         // health. Physics validates dt too, but that is too late here.
         if !dt.is_finite() || dt <= 0.0 {
             return Err(CombatWorldError::Physics(PhysicsError::InvalidStep));
+        }
+        if self.fragmentation.is_some() && random.is_none() {
+            return Err(CombatWorldError::FragmentRandomRequired);
         }
         self.events.clear();
         if self.frozen_after_elimination {
@@ -1752,6 +1776,7 @@ impl CombatWorld {
             });
         }
         self.advance_asteroid_deaths(dt);
+        self.advance_asteroid_pieces(dt);
         // Swap buffers instead of allocating a queue for every frame.
         std::mem::swap(&mut self.processing_contacts, &mut self.pending_contacts);
         self.pending_contacts.clear();
@@ -1827,6 +1852,9 @@ impl CombatWorld {
         self.process_map_border_contacts();
         self.process_asteroid_ship_contacts()?;
         self.process_asteroid_hull_contacts();
+        if let Some(random) = random {
+            self.spawn_pending_asteroid_fragments(random)?;
+        }
 
         Ok(StepCounts {
             active_ships: self.physics.ships().iter().filter(|ship| ship.active).count() as u32,
@@ -1856,7 +1884,9 @@ impl GameRules<CombatWorld> for CombatWorldRules {
         if !decisions.is_empty() {
             return Err(CombatWorldError::UnsupportedPolicyActions);
         }
-        world.state.step_fixed(dt_seconds, &self.collision_matrix)
+        world.state.step_fixed_with_random(
+            dt_seconds, &self.collision_matrix, &mut world.random,
+        )
     }
 }
 
