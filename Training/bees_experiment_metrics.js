@@ -50,7 +50,9 @@ function plot(root, item, metric, axis, smooth = 1, max = 10000) {
     const valid = [];
     for (const sample of original) {
         const raw = reading(sample, metric);
-        const x = axis === 'time' ? sample.training_s / 3600 : sample.step;
+        const x = axis === 'time'
+            ? (Number.isFinite(sample.training_s) ? sample.training_s / 3600 : null)
+            : sample.step;
         if (!Number.isFinite(x) || raw == null || !Number.isFinite(Number(raw))) continue;
         const value = Number(raw);
         n++;
