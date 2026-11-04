@@ -2865,7 +2865,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         if args.worker_envs is None:
             return {}
         current = managed.worker_env_count if managed.worker_env_count is not None else args.worker_envs
-        if (args.auto_worker_envs or manual_env_request_file is not None) and managed.alive():
+        if managed.worker_env_target_file is not None and managed.alive():
             throughput = read_throughput_metrics(
                 managed.throughput_metrics_file,
                 expected_pid=managed.throughput_expected_pid(),
@@ -2900,7 +2900,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 managed.throughput_metrics_file,
                 expected_pid=managed.throughput_expected_pid(),
                 expected_env_count=(
-                    None if (args.auto_worker_envs or manual_env_request_file is not None)
+                    None if managed.worker_env_target_file is not None
                     else managed.worker_env_count
                 ),
             )
@@ -3164,7 +3164,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         environment_args=environment_args,
                         worker_env_count=worker_env_count,
                         allow_live_worker_env_resize=bool(
-                            args.auto_worker_envs or manual_env_request_file is not None
+                            args.role == "dedicated"
+                            and args.trainer_id != "central-learner"
+                            and managed.worker_env_target_file is not None
                         ),
                     )
 
@@ -3299,8 +3301,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         )
                         launch_worker_env_count = worker_env_count
                         if (
-                            (args.auto_worker_envs or manual_env_request_file is not None)
+                            args.role == "dedicated"
+                            and args.trainer_id != "central-learner"
                             and managed.alive()
+                            and managed.worker_env_target_file is not None
                             and managed.worker_env_count is not None
                         ):
                             launch_worker_env_count = managed.worker_env_count
@@ -3321,7 +3325,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                             run_id,
                             launch_worker_env_count,
                         )
-                        if (args.auto_worker_envs or manual_env_request_file is not None) and managed.alive() and not rollout_stalled:
+                        if (
+                            args.role == "dedicated"
+                            and args.trainer_id != "central-learner"
+                            and managed.alive()
+                            and managed.worker_env_target_file is not None
+                            and not rollout_stalled
+                        ):
                             managed.set_worker_env_target(worker_env_count)
                         needs_restart = (
                             not managed.alive()
@@ -3397,7 +3407,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                                 environment_args=environment_args,
                                 worker_env_count=worker_env_count,
                                 allow_live_worker_env_resize=bool(
-                                    args.auto_worker_envs or manual_env_request_file is not None
+                                    args.role == "dedicated"
+                                    and args.trainer_id != "central-learner"
+                                    and managed.worker_env_target_file is not None
                                 ),
                             )
                         _write_runtime_state(
