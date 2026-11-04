@@ -163,6 +163,13 @@ impl CombatProjectile {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ProjectileStorageMetrics {
+    pub allocated_slots: usize,
+    pub active_projectiles: usize,
+    pub slots_reused: u64,
+}
+
 /// State and scratch are owned per arena. No process globals, no cross-world
 /// static dictionaries. Dense arrays use identical indices to physics bodies;
 /// ID maps are only used when routing collision results.
@@ -173,6 +180,7 @@ pub struct CombatWorld {
     ships: Vec<CombatShip>,
     projectiles: Vec<CombatProjectile>,
     free_projectile_slots: Vec<usize>,
+    projectile_slot_reuses: u64,
     ship_by_id: HashMap<i64, usize>,
     projectile_by_id: HashMap<i64, usize>,
     reservations: DamageReservations,
@@ -198,6 +206,7 @@ impl CombatWorld {
             ships: Vec::new(),
             projectiles: Vec::new(),
             free_projectile_slots: Vec::new(),
+            projectile_slot_reuses: 0,
             ship_by_id: HashMap::new(),
             projectile_by_id: HashMap::new(),
             reservations: DamageReservations::new(),
@@ -215,6 +224,18 @@ impl CombatWorld {
     pub fn ships(&self) -> &[CombatShip] { &self.ships }
     pub fn projectiles(&self) -> &[CombatProjectile] { &self.projectiles }
     pub fn reservations(&self) -> &DamageReservations { &self.reservations }
+
+    /// Includes both dormant slots and live shots. This is measured per
+    /// world, so stress runs can distinguish peak concurrency from lifetime
+    /// shot count without allocating additional instrumentation buffers.
+    pub fn projectile_storage_metrics(&self) -> ProjectileStorageMetrics {
+        ProjectileStorageMetrics {
+            allocated_slots: self.projectiles.len(),
+            active_projectiles: self.physics.projectiles().iter()
+                .filter(|body| body.active).count(),
+            slots_reused: self.projectile_slot_reuses,
+        }
+    }
 
     /// The canonical spawn path for game and training. Asset collider
     /// geometry is shared, not reconstructed per world or per spawn.
@@ -289,6 +310,7 @@ impl CombatWorld {
         if let Some(&index) = self.free_projectile_slots.last() {
             self.physics.replace_ended_projectile(index, body)?;
             self.free_projectile_slots.pop();
+            self.projectile_slot_reuses += 1;
             self.projectile_by_id.remove(&self.projectiles[index].entity_id);
             self.projectile_by_id.insert(projectile.entity_id, index);
             self.projectiles[index] = projectile;
@@ -688,6 +710,7 @@ mod tests {
             0.0,
         ).unwrap();
         assert_eq!(world.physics().projectiles().len(), total_slots);
+        assert_eq!(world.projectile_storage_metrics().slots_reused, 1);
     }
 
     #[test]
