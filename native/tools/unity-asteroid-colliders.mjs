@@ -185,23 +185,20 @@ function toAsset(name, value) {
 
 /// Inputs are literal Unity source files from the same revision as the manifest.
 /// The public variant input is intentionally explicit for reproducible checks.
-export function createAsteroidManifest(baseContent, baseGuid, otherPrefabs,
-    healthIncrement)
-{
+/// Supports source validation in bounded batches when repository APIs
+/// cannot fetch the entire prefab directory in one operation.
+export function createAsteroidBatch(baseContent, baseGuid, otherPrefabs) {
     const base = baseAsteroid('Asteroid 1', baseContent);
     if (!/^[0-9a-f]{32}$/.test(baseGuid)) {
         fail('Asteroid 1', 'invalid source .meta GUID');
     }
-    if (!Number.isInteger(healthIncrement) || healthIncrement <= 0) {
-        fail('ConfigData', 'invalid CollisionAsteroidHealthIncrement');
-    }
-    const asteroidTypes = [toAsset('Asteroid 1', {
+    const outputs = [toAsset('Asteroid 1', {
         sizeClass: base.size_class, layer: base.layer,
         scale: base.scale, offset: base.offset, vertices: base.paths[0],
     })];
     const seen = new Set([1]);
     for (const [name, text] of otherPrefabs) {
-        const match = /^Asteroid (\d+)$/.exec(name);
+        const match = /^Asteroid (\\d+)$/.exec(name);
         if (!match) fail(name, 'unrecognized asteroid prefab name');
         const index = Number(match[1]);
         if (index < 2 || index > 28 || seen.has(index)) {
@@ -221,8 +218,15 @@ export function createAsteroidManifest(baseContent, baseGuid, otherPrefabs,
                     vertices: standalone.paths[0],
                 };
             })();
-        asteroidTypes.push(toAsset(name, variant));
+        outputs.push(toAsset(name, variant));
     }
+    return outputs;
+}
+
+export function createAsteroidManifest(baseContent, baseGuid, otherPrefabs,
+    healthIncrement)
+{
+    const asteroidTypes = createAsteroidBatch(baseContent, baseGuid, otherPrefabs);
     asteroidTypes.sort((a,b) =>
         Number(a.name.split(' ')[1]) - Number(b.name.split(' ')[1]));
     if (asteroidTypes.length !== 28 ||
