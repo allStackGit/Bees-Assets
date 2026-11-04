@@ -13,7 +13,14 @@ function selectedRoot(trainingRoot) {
         !path.isAbsolute(value.root)) {
         throw Error('Experiment storage-location.json is invalid; refusing to start.');
     }
-    return path.resolve(value.root);
+    const selected = path.resolve(value.root);
+    // Never silently create a fresh empty experiment registry if an external
+    // drive or mounted data directory is unavailable at startup.
+    if (!fs.existsSync(path.join(selected, 'experiments-v1.json'))) {
+        throw Error('Configured experiment data directory is unavailable or incomplete: ' +
+            selected + '. Restore the storage volume or location before starting.');
+    }
+    return selected;
 }
 function remapPaths(value, oldRoot, newRoot) {
     if (typeof value === 'string') {
