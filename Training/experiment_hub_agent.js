@@ -6,6 +6,7 @@
 // It never runs commands, launches jobs, or enforces hardware quotas.
 const http = require('node:http');
 const os = require('node:os');
+const {inspectHost}=require('./experiment_hub_host');
 
 const ID = /^[a-z][a-z0-9_-]{0,47}$/;
 const TOKEN = /^[0-9a-f]{64}$/;
@@ -32,6 +33,7 @@ function observations(machineId) {
             ?os.availableParallelism():os.cpus().length),
         ram_mb:Math.max(128,Math.floor(os.totalmem()/1048576)),
         platform:os.platform(),
+        execution:inspectHost(),
     };
 }
 
