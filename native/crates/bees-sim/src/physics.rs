@@ -14,7 +14,7 @@
 
 use std::sync::Arc;
 
-use crate::collision::{circle_overlaps_polygon, circles_overlap, Aabb, Pose};
+use crate::collision::{circle_overlaps_polygon, circles_overlap, polygons_overlap, Aabb, Pose};
 use crate::geometry::Vec2;
 use crate::movement::ShipMotion;
 use crate::projectile::ProjectileMotion;
@@ -80,17 +80,99 @@ impl ShipShape {
     }
 }
 
+/// A transformed collision shape with cached geometry. Ships, rockets,
+/// explosions and beam projectiles all use exactly this implementation.
+#[derive(Clone, Debug)]
+struct WorldCollider {
+    shape: ShipShape,
+    polygon_world: Vec<Vec2>,
+    circle_world: Vec2,
+    bounds: Option<Aabb>,
+    cached_pose: Option<Pose>,
+}
+
+impl WorldCollider {
+    fn new(shape: ShipShape) -> Result<Self, PhysicsError> {
+        if !shape.valid() {
+            return Err(PhysicsError::InvalidCollider);
+        }
+        Ok(Self {
+            shape,
+            polygon_world: Vec::new(),
+            circle_world: Vec2::ZERO,
+            bounds: None,
+            cached_pose: None,
+        })
+    }
+
+    fn replace_shape(&mut self, shape: ShipShape) -> Result<(), PhysicsError> {
+        if !shape.valid() {
+            return Err(PhysicsError::InvalidCollider);
+        }
+        self.shape = shape;
+        self.cached_pose = None;
+        Ok(())
+    }
+
+    #[inline]
+    fn update(&mut self, pose: Pose) {
+        if self.cached_pose == Some(pose) {
+            return;
+        }
+        match &self.shape {
+            ShipShape::Polygon(vertices) => {
+                pose.transform_into(vertices, &mut self.polygon_world);
+                self.bounds = Aabb::from_points(&self.polygon_world);
+            }
+            ShipShape::Box { offset, half_extents } => {
+                let x = half_extents.x;
+                let y = half_extents.y;
+                let corners = [
+                    Vec2::new(offset.x - x, offset.y - y),
+                    Vec2::new(offset.x + x, offset.y - y),
+                    Vec2::new(offset.x + x, offset.y + y),
+                    Vec2::new(offset.x - x, offset.y + y),
+                ];
+                pose.transform_into(&corners, &mut self.polygon_world);
+                self.bounds = Aabb::from_points(&self.polygon_world);
+            }
+            ShipShape::Circle { offset, radius } => {
+                self.polygon_world.clear();
+                self.circle_world = pose.transform_point(*offset);
+                self.bounds = Some(Aabb::circle(self.circle_world, *radius));
+            }
+        }
+        self.cached_pose = Some(pose);
+    }
+
+    #[inline]
+    fn overlaps(&self, other: &Self) -> bool {
+        if !self.bounds.zip(other.bounds)
+            .is_some_and(|(a, b)| a.overlaps(b)) {
+            return false;
+        }
+        match (&self.shape, &other.shape) {
+            (ShipShape::Circle { radius: r1, .. }, ShipShape::Circle { radius: r2, .. }) => {
+                circles_overlap(self.circle_world, *r1, other.circle_world, *r2)
+            }
+            (ShipShape::Circle { radius, .. }, _) => {
+                circle_overlaps_polygon(self.circle_world, *radius, &other.polygon_world)
+            }
+            (_, ShipShape::Circle { radius, .. }) => {
+                circle_overlaps_polygon(other.circle_world, *radius, &self.polygon_world)
+            }
+            _ => polygons_overlap(&self.polygon_world, &other.polygon_world),
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct ShipBody {
     pub id: i64,
     pub motion: ShipMotion,
     pub layer: u8,
     pub active: bool,
-    shape: ShipShape,
-    hull_world: Vec<Vec2>,
-    circle_world: Vec2,
-    bounds: Option<Aabb>,
-    cached_pose: Option<Pose>,
+    collider: WorldCollider,
 }
 
 impl ShipBody {
@@ -100,93 +182,103 @@ impl ShipBody {
         layer: u8,
         shape: impl Into<ShipShape>,
     ) -> Result<Self, PhysicsError> {
-        let shape = shape.into();
-        if layer >= 32 || !shape.valid() {
+        if layer >= 32 || !motion.position.is_finite() ||
+            !motion.rotation_degrees.is_finite() {
             return Err(PhysicsError::InvalidCollider);
         }
         Ok(Self {
-            id, motion, layer, active: true, shape,
-            hull_world: Vec::new(), circle_world: Vec2::ZERO,
-            bounds: None, cached_pose: None,
+            id,
+            motion,
+            layer,
+            active: true,
+            collider: WorldCollider::new(shape.into())?,
         })
     }
 
     pub fn shape(&self) -> &ShipShape {
-        &self.shape
+        &self.collider.shape
     }
 
-    /// Changing a collision shape invalidates its transformed geometry cache.
+    /// Invalidates cached geometry before the next fixed step.
     pub fn replace_shape(&mut self, shape: ShipShape) -> Result<(), PhysicsError> {
-        if !shape.valid() {
-            return Err(PhysicsError::InvalidCollider);
-        }
-        self.shape = shape;
-        self.cached_pose = None;
-        Ok(())
+        self.collider.replace_shape(shape)
     }
 
     fn update_hull(&mut self) {
-        let pose = Pose {
+        self.collider.update(Pose {
             position: self.motion.position,
             rotation_degrees: self.motion.rotation_degrees,
-        };
-        if self.cached_pose == Some(pose) {
-            return;
-        }
-        match &self.shape {
-            ShipShape::Polygon(vertices) => {
-                pose.transform_into(vertices, &mut self.hull_world);
-                self.bounds = Aabb::from_points(&self.hull_world);
-            }
-            ShipShape::Box { offset, half_extents } => {
-                let x = half_extents.x;
-                let y = half_extents.y;
-                let points = [
-                    Vec2::new(offset.x - x, offset.y - y),
-                    Vec2::new(offset.x + x, offset.y - y),
-                    Vec2::new(offset.x + x, offset.y + y),
-                    Vec2::new(offset.x - x, offset.y + y),
-                ];
-                pose.transform_into(&points, &mut self.hull_world);
-                self.bounds = Aabb::from_points(&self.hull_world);
-            }
-            ShipShape::Circle { offset, radius } => {
-                self.hull_world.clear();
-                self.circle_world = pose.transform_point(*offset);
-                self.bounds = Some(Aabb::circle(self.circle_world, *radius));
-            }
-        }
-        self.cached_pose = Some(pose);
-    }
-
-    #[inline]
-    fn overlaps_projectile(&self, center: Vec2, radius: f32) -> bool {
-        match &self.shape {
-            ShipShape::Circle { radius: hull_radius, .. } => {
-                circles_overlap(self.circle_world, *hull_radius, center, radius)
-            }
-            ShipShape::Polygon(_) | ShipShape::Box { .. } => {
-                circle_overlaps_polygon(center, radius, &self.hull_world)
-            }
-        }
+        });
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct ProjectileBody {
     pub id: i64,
     pub motion: ProjectileMotion,
     pub layer: u8,
-    pub radius: f32,
     pub active: bool,
+    /// A projectile may be a stationary explosion or script-driven bomb.
+    pub has_body: bool,
+    /// Unity's logical projectile rotation, not the ballistic aim angle.
+    pub rotation_degrees: f32,
+    collider: Option<WorldCollider>,
 }
 
 impl ProjectileBody {
-    pub fn new(id: i64, motion: ProjectileMotion, layer: u8, radius: f32) -> Result<Self, PhysicsError> {
-        if layer >= 32 || !radius.is_finite() || radius < 0.0 {
+    /// Convenience for a circular, velocity-driven laser projectile.
+    /// General projectiles are instantiated through ProjectileAssetCatalog.
+    pub fn new(
+        id: i64,
+        motion: ProjectileMotion,
+        layer: u8,
+        radius: f32,
+    ) -> Result<Self, PhysicsError> {
+        Self::from_shape(
+            id, motion, layer,
+            Some(ShipShape::Circle { offset: Vec2::ZERO, radius }),
+            true, 0.0,
+        )
+    }
+
+    /// Shared projectile initializer, including box projectiles and
+    /// invisible script-driven entities with no physical collider.
+    pub fn from_shape(
+        id: i64,
+        motion: ProjectileMotion,
+        layer: u8,
+        shape: Option<ShipShape>,
+        has_body: bool,
+        rotation_degrees: f32,
+    ) -> Result<Self, PhysicsError> {
+        if layer >= 32 || !rotation_degrees.is_finite() ||
+            !motion.position.is_finite() {
             return Err(PhysicsError::InvalidCollider);
         }
-        Ok(Self { id, motion, layer, radius, active: true })
+        let collider = shape.map(WorldCollider::new).transpose()?;
+        Ok(Self {
+            id, motion, layer, active: true, has_body,
+            rotation_degrees, collider,
+        })
+    }
+
+    pub fn shape(&self) -> Option<&ShipShape> {
+        self.collider.as_ref().map(|collider| &collider.shape)
+    }
+
+    /// Shapes can change at runtime: LaserBeam stretches, explosions grow.
+    pub fn replace_shape(&mut self, shape: Option<ShipShape>) -> Result<(), PhysicsError> {
+        self.collider = shape.map(WorldCollider::new).transpose()?;
+        Ok(())
+    }
+
+    fn update_hull(&mut self) {
+        if let Some(collider) = &mut self.collider {
+            collider.update(Pose {
+                position: self.motion.position,
+                rotation_degrees: self.rotation_degrees,
+            });
+        }
     }
 }
 
@@ -270,7 +362,7 @@ impl SpatialGrid {
             if !ship.active {
                 continue;
             }
-            let Some(bounds) = ship.bounds else { continue };
+            let Some(bounds) = ship.collider.bounds else { continue };
             // If a hull protrudes beyond the grid, it must remain queryable
             // even by a projectile entirely outside the grid.
             if bounds.min.x < self.area.min.x || bounds.min.y < self.area.min.y
@@ -388,14 +480,18 @@ impl KinematicPhysics {
         }
         for projectile in &mut self.projectiles {
             if !projectile.active { continue; }
-            projectile.motion.position += projectile.motion.velocity * dt;
-            self.counts.moved_bodies += 1;
+            if projectile.has_body {
+                projectile.motion.position += projectile.motion.velocity * dt;
+                self.counts.moved_bodies += 1;
+            }
+            projectile.update_hull();
         }
         self.grid.rebuild(&self.ships);
         self.overlaps_current.clear();
         for projectile in &self.projectiles {
             if !projectile.active { continue; }
-            let area = Aabb::circle(projectile.motion.position, projectile.radius);
+            let Some(projectile_collider) = &projectile.collider else { continue };
+            let Some(area) = projectile_collider.bounds else { continue };
             self.grid.candidates(area, &mut self.candidates);
             self.counts.broadphase_candidates += self.candidates.len() as u64;
             for &index in &self.candidates {
@@ -403,12 +499,12 @@ impl KinematicPhysics {
                 if !ship.active || !collision_matrix.allows(projectile.layer, ship.layer) {
                     continue;
                 }
-                let Some(bounds) = ship.bounds else { continue };
+                let Some(bounds) = ship.collider.bounds else { continue };
                 if !area.overlaps(bounds) {
                     continue;
                 }
                 self.counts.narrowphase_tests += 1;
-                if ship.overlaps_projectile(projectile.motion.position, projectile.radius) {
+                if ship.collider.overlaps(projectile_collider) {
                     self.overlaps_current.push(TriggerEnter {
                         projectile_id: projectile.id,
                         ship_id: ship.id,
