@@ -335,6 +335,27 @@ pub struct AsteroidFragmentationConfig {
     pub settings: FragmentSpawnSettings,
 }
 
+impl AsteroidFragmentationConfig {
+    fn effective_shard_health(
+        &self,
+        prefab_number: u8,
+    ) -> Result<Option<i32>, CombatWorldError> {
+        let Some(ratio) = self.settings.training_health_ratio else {
+            return Ok(None);
+        };
+        let asset = self.catalog.by_number(prefab_number)
+            .ok_or(CombatWorldError::InvalidFragmentationConfiguration)?;
+        let original_health = i32::from(asset.size_class)
+            .checked_mul(self.catalog.health_increment())
+            .ok_or(CombatWorldError::InvalidFragmentationConfiguration)?;
+        let result = (original_health as f32 * ratio).ceil();
+        if !result.is_finite() || result > i32::MAX as f32 {
+            return Err(CombatWorldError::InvalidFragmentationConfiguration);
+        }
+        Ok(Some(result.max(1.0) as i32))
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 struct PendingAsteroidBreakup {
     parent_id: i64,
@@ -457,7 +478,8 @@ impl CombatWorld {
     ) -> Result<(), CombatWorldError> {
         if !config.settings.valid() ||
             self.fragmentation.is_some() ||
-            config.palette.shard_prefabs().iter().any(|&n| config.catalog.by_number(n).is_none()) {
+            config.palette.shard_prefabs().iter().any(|&n|
+                config.effective_shard_health(n).is_err()) {
             return Err(CombatWorldError::InvalidFragmentationConfiguration);
         }
         self.fragmentation = Some(config);
@@ -1678,9 +1700,12 @@ impl CombatWorld {
                     parent.angular_velocity_degrees, profile.speed,
                 );
                 let shard_id = self.next_entity_id;
+                let effective_health = self.fragmentation.as_ref()
+                    .expect("validated fragmentation config")
+                    .effective_shard_health(profile.prefab_number)?;
                 self.spawn_collision_asteroid(
                     &catalog, profile.prefab_number, shard_id,
-                    pose, velocity, angular_velocity, settings.effective_max_health,
+                    pose, velocity, angular_velocity, effective_health,
                 )?;
                 self.register_asteroid_shard(shard_id, parent.parent_id)?;
                 // Unity's Split BreakAwayAsteroids marks both flags true even
