@@ -761,9 +761,9 @@ exit "$BEES_EXIT"
     atomicReplace(windowsCandidate, path.join(paths.remoteRoot, 'bees-remote-worker.cmd'));
     atomicReplace(linuxCandidate, path.join(paths.remoteRoot, 'bees-remote-worker.sh'));
     atomicReplace(bundleCandidate, paths.bootstrapBundlePath);
-    if (options.workerOverride) {
-        // Persist only after the complete bootstrap package has been published.
-        // Normal same-run restarts preserve this selected worker runtime.
+    if (options.workerOverride && options.persistWorkerOverride !== false) {
+        // A Unity maintenance build stages its package first and persists
+        // the new pointer only after the compatible Unity build is canonical.
         writeJsonAtomic(workerRuntimeOverridePath, options.workerOverride);
     }
 
