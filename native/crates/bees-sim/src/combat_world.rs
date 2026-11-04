@@ -84,11 +84,11 @@ enum ImpactBehavior {
 }
 
 impl ImpactBehavior {
-    fn for_type(projectile_type: u8) -> Result<Self, CombatWorldError> {
+    fn for_type(projectile_type: u8, power: i32) -> Result<Self, CombatWorldError> {
         match projectile_type {
             1 | 2 | 3 | 6 | 7 | 10 | 11 => Ok(Self::Direct),
-            4 => Ok(Self::Penetrating(PiercingShot::new(PiercingType::PowerShot, 0))),
-            8 => Ok(Self::Penetrating(PiercingShot::new(PiercingType::LaserBeam, 0))),
+            4 => Ok(Self::Penetrating(PiercingShot::new(PiercingType::PowerShot, power))),
+            8 => Ok(Self::Penetrating(PiercingShot::new(PiercingType::LaserBeam, power))),
             13..=15 => Ok(Self::Explosion(ExplosionContacts::new())),
             5 | 9 | 12 => Err(CombatWorldError::UnportedProjectileType(projectile_type)),
             _ => Err(CombatWorldError::InvalidProjectileType(projectile_type)),
@@ -119,13 +119,7 @@ impl CombatProjectile {
         power: i32,
     ) -> Result<Self, CombatWorldError> {
         if power < 0 { return Err(CombatWorldError::InvalidProjectilePower); }
-        let behavior = match ImpactBehavior::for_type(projectile_type)? {
-            ImpactBehavior::Penetrating(_) if projectile_type == 4 =>
-                ImpactBehavior::Penetrating(PiercingShot::new(PiercingType::PowerShot, power)),
-            ImpactBehavior::Penetrating(_) =>
-                ImpactBehavior::Penetrating(PiercingShot::new(PiercingType::LaserBeam, power)),
-            other => other,
-        };
+        let behavior = ImpactBehavior::for_type(projectile_type, power)?;
         Ok(Self {
             entity_id, projectile_type, owner, power,
             ignored_ships: HashSet::new(), behavior,
@@ -233,8 +227,7 @@ impl CombatWorld {
         }
         let ship = &mut self.ships[ship_index];
         let shot = &mut self.projectiles[shot_index];
-        let is_friendly = ship.side == shot.owner.shooter_side;
-        let is_ignored = shot.ignored_ships.contains(&ship.entity_id);
+         let is_ignored = shot.ignored_ships.contains(&ship.entity_id);
         let shot_type = shot.projectile_type;
         let mut ends_projectile = false;
         let mut accepted_power = None;
@@ -309,8 +302,6 @@ impl CombatWorld {
                 projectile_id: contact.projectile_id,
             });
         }
-        // `is_friendly` is currently consumed by HitEvent's side comparison.
-        let _ = is_friendly;
         Ok(())
     }
 
@@ -351,6 +342,22 @@ impl CombatWorld {
             self.resolve_contact(contact)?;
         }
         self.processing_contacts.clear();
+
+        // Base Projectile.FixedUpdate checks strict distance > Range after
+        // contact processing, not on a newly fired shot or as a swept ray.
+        // Rocket explosions override FixedUpdate and never range-expire here.
+        for index in 0..self.projectiles.len() {
+            if self.projectiles[index].is_explosion() {
+                continue;
+            }
+            let projectile = &mut self.physics.projectiles_mut()[index];
+            if projectile.active && projectile.motion.has_exceeded_range() {
+                projectile.active = false;
+                self.events.push(CombatEvent::ProjectileEnded {
+                    projectile_id: projectile.id,
+                });
+            }
+        }
 
         for ship in self.physics.ships_mut() {
             if ship.active {
