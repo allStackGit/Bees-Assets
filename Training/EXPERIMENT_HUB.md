@@ -25,9 +25,11 @@ remain authoritative.
   as distinct from experiment-owned training.
 - **Machines:** Show read-only Bees worker reports from the existing control
   plane. Manually register project-independent machines (CPU, RAM, GPU capacity)
-  and preview CPU/RAM, GPU count, and per-GPU VRAM requirements. Manually
-  registered machines remain *unverified*. Candidate placements do not claim
-  or allocate actual hardware.
+  and preview CPU/RAM, GPU count, and per-GPU VRAM requirements. A machine
+  can be enrolled with a one-time credential and run a read-only heartbeat
+  agent on Windows or Linux. Fresh heartbeats cap CPU/RAM placement previews
+  to observed values. GPU inventory remains manually declared; no agent
+  reserves or isolates resources yet.
 
 ## Data ownership
 
@@ -64,12 +66,46 @@ and platform-specific adapters must prove isolation and live capacity before
 any reservation becomes executable. The UI requires explicit confirmation
 before operating the Bees learner.
 
+## Read-only machine agent enrollment
+
+1. Register a machine with declared CPU slots, memory and GPU inventory in
+   **Machines**. These values are planning ceilings, not discovered facts.
+2. Select **Enroll**. Copy the one-time 256-bit token into a protected agent
+   environment, together with `EXPERIMENT_HUB_MACHINE_ID`. The token is
+   never returned in state refreshes, stored in cleartext by the Hub, or
+   displayed again. **Rotate** invalidates the previous token; **Revoke**
+   disables the agent until a new enrollment.
+3. Start `node Training/experiment_hub_agent.js` on that machine using
+   Node.js 18 or later. It sends read-only authenticated heartbeats every
+   15 seconds and reports available CPU parallelism, total RAM, and OS.
+   Set `EXPERIMENT_HUB_AGENT_TOKEN` from the enrollment output. Do not
+   commit it or include it in logs or an unprotected shell history.
+4. The Hub listens only on `127.0.0.1:7148`. A different computer needs
+   a **trusted encrypted tunnel**, for example SSH local forwarding from
+   a worker's port 17148 to the coordinator's `127.0.0.1:7148`.
+   Set `EXPERIMENT_HUB_URL=http://127.0.0.1:17148` on that worker. The
+   agent only accepts localhost HTTP targets; do not expose the manager
+   directly on the LAN or Internet.
+5. **Connected** means a correctly authenticated process reported recently,
+   not that the process has exclusive control of the host. After 45 seconds
+   without a heartbeat, it is **offline**. Last-seen time is retained in
+   memory until coordinator restart. CPU and RAM observations are capped
+   by registered limits. GPU memory and compute budgets are unverified
+   estimates until native isolation/monitoring exists.
+
+The agent has **no remote command interface** and does not start or stop
+Bees, Ants, or any third-party training process. Enrolled machines are still
+ineligible for Hub execution. The Hub does not yet enforce resource leases;
+even a successful placement may interfere with an existing untracked job.
+
 ## Not yet implemented
 
-Generic project execution adapters, authenticated machine agents, OS-enforced
-CPU/GPU reservations, the multi-project job scheduler, cross-project run
-history and metrics ingestion, safe live rebalancing, and comprehensive CLI
-parity for all runtime configuration controls remain future work. These
+Generic project execution adapters, authenticated resource-lease acknowledgments,
+machine-level process ownership and OS-enforced CPU/RAM controls,
+GPU device verification and isolation, the multi-project job scheduler,
+cross-project run history and metrics ingestion, safe live rebalancing, and
+comprehensive CLI parity for all runtime configuration controls remain
+future work. These
 must not create a second owner of the Bees training lifecycle or treat
 reporting a worker as proof of exclusive host ownership.
 
