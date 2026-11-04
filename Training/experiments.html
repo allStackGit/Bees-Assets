@@ -1438,7 +1438,10 @@ async function refreshWorkers() {
             const envCell = document.createElement('td');
             const controls = document.createElement('div');
             controls.className = 'env-control';
-            const count = w.worker_env_override ?? w.desired_envs ?? w.envs;
+            // +/- adjusts the worker's observed count, not the auto optimizer's
+            // speculative desired count. An explicit pending override remains
+            // the base for the next +/- press.
+            const count = w.worker_env_override ?? w.envs ?? w.desired_envs;
             const number = txt('span',
                 (w.desired_envs == null || w.desired_envs === w.envs
                     ? fmt(w.envs) : fmt(w.envs) + ' → ' + fmt(w.desired_envs)) +
