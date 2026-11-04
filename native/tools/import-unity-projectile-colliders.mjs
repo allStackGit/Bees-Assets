@@ -105,6 +105,16 @@ function importProjectile(name, content) {
     } else if (colliderId !== '0') {
         fail(source, 'non-collidable projectile unexpectedly has a collider');
     }
+    // Frigate Rocket has a prefab-specific maximum acceleration speed.
+    // Read it from the same authoritative projectile component rather than
+    // embedding a second magic constant in Rust or the worker.
+    if (type === 5) {
+        const rocket_max_speed = Number(property(entity.body, 'MaxSpeed'));
+        if (!Number.isFinite(rocket_max_speed) || rocket_max_speed <= 0) {
+            fail(source, 'Frigate Rocket requires a positive authored MaxSpeed');
+        }
+        return { name, projectile_type: type, layer, has_body, rocket_max_speed, shape };
+    }
     return { name, projectile_type: type, layer, has_body, shape };
 }
 
