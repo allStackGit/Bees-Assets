@@ -22,7 +22,7 @@ function trainingFormPayload() {
         })),
         evaluation_mode:$('evaluation-mode').value,
         reserve_heldout:$('reserve-heldout').checked,
-        replicates:!window.editingId && $('replicate-enabled').checked
+        replicates:(typeof editingId === 'undefined' || !editingId) && $('replicate-enabled').checked
             ?Number($('replicate-count').value):1,
         trainer:{
             hyperparameters:Object.fromEntries(
