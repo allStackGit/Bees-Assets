@@ -74,7 +74,10 @@ def read_benchmark(path: Path) -> tuple[dict, str]:
 
 def evaluate(recipe: Path, candidate: Path, opponent: str | Path, environment: Path,
              build_id: str, run_id: str, output_root: Path, *,
-             candidate_sha256: str = "", experiment: dict | None = None) -> Path:
+             candidate_sha256: str = "", experiment: dict | None = None,
+             purpose: str = "development") -> Path:
+    if purpose not in {"development", "heldout"}:
+        raise ValueError("Unknown benchmark evaluation purpose.")
     benchmark, recipe_hash = read_benchmark(recipe)
     for name, source in {"candidate": candidate, "environment": environment}.items():
         if not source.is_file():
@@ -132,6 +135,7 @@ def evaluate(recipe: Path, candidate: Path, opponent: str | Path, environment: P
     stamp = datetime.now(timezone.utc)
     record = {
         "schema_version": RESULT_SCHEMA,
+        "evaluation_purpose": purpose,
         "evaluated_at": stamp.isoformat(),
         "benchmark": {
             "id": benchmark["id"], "revision": benchmark["revision"],
@@ -248,6 +252,7 @@ def main() -> int:
     parser.add_argument("--candidate-sha256", default="", help="Require this immutable candidate hash.")
     parser.add_argument("--candidate-training-step", type=int, help="Pinned candidate registry step.")
     parser.add_argument("--evaluation-id", default="", help="Stable 64-character report identity for interrupted suite reconciliation.")
+    parser.add_argument("--evaluation-purpose", choices=("development", "heldout"), default="development")
     parser.add_argument("--experiment-id", default="", help="Experiment ID for stage provenance.")
     parser.add_argument("--stage-index", type=int, help="Zero-based curriculum stage for stage provenance.")
     parser.add_argument("--stage-name", default="", help="Curriculum stage name for report presentation.")
@@ -290,6 +295,7 @@ def main() -> int:
         args.benchmark.resolve(), candidate, args.opponent,
         args.env.resolve(), args.build_id.strip(), (args.candidate_run or args.run_id).strip(),
         args.output_root.resolve(), candidate_sha256=args.candidate_sha256, experiment=experiment,
+        purpose=args.evaluation_purpose,
     )
     print(result)
     return 0
