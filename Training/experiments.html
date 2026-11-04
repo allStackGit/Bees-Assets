@@ -252,7 +252,7 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
 </div>
 <details style="margin:14px 0">
 <summary>Curriculum stages · saved defaults, fully editable</summary>
-<p class="muted">The reusable 19-stage combat curriculum loads by default. All stages start with 20 million learner steps. Expand any stage to edit its duration, name or environment overrides; reorder or remove it as needed. Changes are frozen per queued experiment and retain the same network and optimizer. Advancing remains step-based.</p>
+<p class="muted">The saved curriculum loads by default (initially 19 combat stages at 20 million steps each). Expand any stage to edit its duration, name or environment overrides; reorder or remove it as needed. Changes are frozen per queued experiment and retain the same network and optimizer. Advancing remains step-based.</p>
 <div class="bar">
 <button id="load-curriculum" type="button">Reload saved default curriculum</button>
 <button id="save-curriculum" type="button">Save current curriculum as default</button>
@@ -1027,7 +1027,10 @@ function render(data) {
                         (evaluations.error ? ' · ' + evaluations.error : '')
                     : '';
                 return (current ? 'CURRENT ' : '') + (index + 1) + '/' + item.stages.length +
-                    ' ' + stage.name + ' · through ' + fmt(stage.end_step) + ' cumulative steps' +
+                    ' ' + stage.name +
+                    (item.unlimited_steps && index === item.stages.length - 1
+                        ? ' · final stage continues indefinitely'
+                        : ' · through ' + fmt(stage.end_step) + ' cumulative steps') +
                     (stage.timeout_target_pct == null ? '' :
                         ' · timeout target ' + fmt(stage.timeout_target_pct, 1) + '%') +
                     completion + milestone + assessment + '\nArguments:\n' +
