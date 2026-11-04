@@ -180,6 +180,23 @@ function importProjectile(name, content) {
         }
         return { name, projectile_type: type, layer, has_body, rocket_max_speed, shape };
     }
+    if (type === 1) {
+        // SplitterShot children use BeeSmall prefab speed, NOT the speed
+        // of their parent or a training-only approximation.
+        const shot_speed = Number(property(entity.body, 'Speed'));
+        if (!Number.isFinite(shot_speed) || shot_speed <= 0) {
+            fail(source, 'Bee Small child shot requires a positive authored Speed');
+        }
+        return { name, projectile_type: type, layer, has_body, shot_speed, shape };
+    }
+    if (type === 9) {
+        const split_count = Number(property(entity.body, 'SplitCount'));
+        if (!Number.isInteger(split_count) || split_count <= 0 ||
+            split_count > 32) {
+            fail(source, 'Leafcutter SplitCount must be a positive authored integer');
+        }
+        return { name, projectile_type: type, layer, has_body, split_count, shape };
+    }
     const animation_events = projectileAnimationEvents(source, content, type);
     if (animation_events) {
         return { name, projectile_type: type, layer, has_body, animation_events, shape };
