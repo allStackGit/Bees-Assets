@@ -119,6 +119,35 @@ crash-proof host supervision. Evidence is retained outside Assets under
 
 ## Multi-stage training (same optimizer lineage)
 
+New experiments load a **reusable, editable 19-stage combat curriculum** from
+`Training/experiment-curriculum.json`. Each stage initially receives **20 million
+learner steps** (380 million total), and the first stage supplies the starting
+Wasp/Gunship environment flags. In the dashboard, expand individual stages to
+edit their name, step budget, timeout observation target or `--rl-*` overrides,
+reorder/remove stages, keep only the first N stages, or change all stage budgets
+at once. **Save current curriculum as default** persists a reusable override to
+`Training/Experiments/curriculum-default.json` outside Assets. **Reload saved
+default curriculum** restores it to the form. Editing this default never changes
+already queued or running experiments, whose effective stages are frozen.
+
+There is no fixed number-of-stages cap or arbitrary experiment step/time ceiling.
+Leave the time limit blank to disable it; the optional no-progress limit is an
+independent safety control. **Continue indefinitely on the final stage** disables
+the total step budget while preserving all earlier scheduled stage changes.
+Learner steps must still be accurately representable as JavaScript safe integers.
+
+The default **periodic evaluation** cadence is whichever produces more
+checkpoints: every 100 million learner steps or at each 25% of a finite
+experiment's cumulative step budget. For the 380M-step default, the planned
+checkpoints are **95M, 190M, 285M and 380M**. Unlimited runs use 100M
+intervals. Checkpoints may fall *within* a curriculum stage; the manager safely
+stops, pins the ONNX checkpoint and its fixed benchmark suite, then resumes the
+same run, optimizer and environment. A checkpoint coincident with a stage change
+reuses its graceful stop. Actual stop steps can overshoot planned thresholds
+because learner summaries and distributed checkpoint shutdown are asynchronous.
+The other evaluation modes (each stage, final only, none) remain available.
+Automatic evaluations require a frozen benchmark suite.
+
 The experiment manager now accepts optional **curriculum stages** in the queue
 form. The existing initial environment arguments and first-stage step budget
 define stage 1. Expand **Curriculum stages** to name that stage and add further
@@ -170,7 +199,9 @@ difficulty. Preserve the same curriculum and trainer settings except beta
 when screening multiple independent beta runs.
 
 The step budget is a safety/experimental boundary, not a declaration of
-competence. Keep the manager running: while it is offline, it cannot enforce
+competence. Periodic checkpoints are separate from stage boundaries and use
+the same candidate pinning, provenance and recovery rules described below.
+Keep the manager running: while it is offline, it cannot enforce
 boundaries; an unexpected state may require operator intervention. The
 existing maximum wall time and no-progress stop limits apply to the **entire
 run**, not to each curriculum stage. Optional **per-stage fixed-seed evaluation**
@@ -229,8 +260,9 @@ benchmarks** until a live evaluation confirms useful discriminating behavior.
 Verify the actual physical arena dimensions on 24-unit maps before treating
 the nominal recipe size as effective.
 
-Select **Evaluate every curriculum stage** in the manager's queue form.
-Stage transitions remain controlled by **cumulative learner steps**, never
+The default is periodic evaluation; choose **Every curriculum stage** in the
+queue form to retain the earlier per-stage evaluation behavior. Stage
+transitions remain controlled by **cumulative learner steps**, never
 benchmark results. At each boundary (including the last), the manager:
 
 1. Coordinates the existing graceful distributed stop; training and worker
