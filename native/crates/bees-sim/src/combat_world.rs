@@ -159,6 +159,31 @@ impl CombatProjectile {
         })
     }
 
+    pub fn new_striker_bomb(
+        entity_id: i64,
+        owner: ShotOwner,
+        power: i32,
+        contacted_ship_id: i64,
+        shooter_fleet_id: i64,
+    ) -> Result<Self, CombatWorldError> {
+        if power < 0 {
+            return Err(CombatWorldError::InvalidProjectilePower);
+        }
+        if shooter_fleet_id <= 0 {
+            return Err(CombatWorldError::InvalidFleetIdentity);
+        }
+        Ok(Self {
+            entity_id,
+            projectile_type: 12,
+            owner,
+            power,
+            ignored_ships: HashSet::new(),
+            behavior: ImpactBehavior::StrikerBomb(
+                StrikerBombFuse::new(contacted_ship_id, shooter_fleet_id),
+            ),
+        })
+    }
+
     pub fn set_explosion_harmless(&mut self, harmless: bool) {
         if let ImpactBehavior::Explosion(explosion) = &mut self.behavior {
             explosion.harmless = harmless;
@@ -320,11 +345,9 @@ impl CombatWorld {
         let asset = self.projectile_assets.by_type(12)
             .ok_or(CombatWorldError::InvalidProjectileType(12))?;
         let body = asset.spawn_physics_body(entity_id, motion, 0.0)?;
-        let mut shot = CombatProjectile::new(entity_id, 1, owner, power, None)?;
-        shot.projectile_type = 12;
-        shot.behavior = ImpactBehavior::StrikerBomb(
-            StrikerBombFuse::new(target_id, shooter_fleet_id),
-        );
+        let shot = CombatProjectile::new_striker_bomb(
+            entity_id, owner, power, target_id, shooter_fleet_id,
+        )?;
         self.add_projectile(shot, body)
     }
 
@@ -500,12 +523,11 @@ impl CombatWorld {
     fn update_striker_bombs(&mut self, dt: f32) -> Result<(), CombatWorldError> {
         for index in 0..self.projectiles.len() {
             if !self.physics.projectiles()[index].active { continue; }
-            let (action, target_id, shooter_fleet_id) = {
+            let (target_id, shooter_fleet_id) = {
                 let ImpactBehavior::StrikerBomb(fuse) =
                     &self.projectiles[index].behavior else { continue };
-                (BombAction::None, fuse.contacted_ship_id(), fuse.shooter_fleet_ship_id())
+                (fuse.contacted_ship_id(), fuse.shooter_fleet_ship_id())
             };
-            let _ = action;
             let target_alive = self.ship_by_id.get(&target_id).copied()
                 .is_some_and(|target_index| {
                     self.physics.ships()[target_index].active &&
