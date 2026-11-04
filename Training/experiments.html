@@ -1722,28 +1722,67 @@ async function refresh() {
         render(await r.json());
     } catch(e) { $('message').textContent = e.message; $('message').classList.add('error'); }
 }
-function addCurriculumStage() {
-    const row = document.createElement('fieldset');
-    const legend = document.createElement('legend');
-    legend.textContent = 'Next stage';
+function updateCurriculumPreview() {
+    const budgets = [Number($('steps').value),
+        ...[...$('stage-rows').children].map(row => Number(row.querySelector('.stage-steps').value))];
+    const total = budgets.reduce((sum, value) => sum + value, 0);
+    if (budgets.some(value => !Number.isSafeInteger(value) || value < 1000) ||
+        !Number.isSafeInteger(total)) {
+        $('curriculum-preview').textContent = 'Enter valid, safely representable learner step budgets.';
+        return;
+    }
+    if ($('unlimited-steps').checked) {
+        $('curriculum-preview').textContent = budgets.length +
+            ' stages · final stage continues indefinitely · evaluations every 100M steps.';
+        return;
+    }
+    const interval = Math.min(100_000_000, total / 4);
+    const count = interval === 100_000_000 ? Math.ceil(total / interval) : 4;
+    const checkpoints = Array.from({ length: Math.min(count, 8) }, (_, i) =>
+        fmt(interval === 100_000_000
+            ? Math.min((i + 1) * 100_000_000, total)
+            : Math.ceil(total / 4 * (i + 1))));
+    $('curriculum-preview').textContent = budgets.length + ' stages · ' + fmt(total) +
+        ' learner steps · ' + count + ' planned evaluations at ' +
+        checkpoints.join(', ') + (count > 8 ? ', …' : '') +
+        ' steps (when periodic evaluations are selected).';
+}
+function updateStageLabels() {
+    [...$('stage-rows').children].forEach((row, i) => {
+        const name = row.querySelector('.stage-name').value || 'Unnamed stage';
+        const budget = row.querySelector('.stage-steps').value;
+        row.querySelector('summary').textContent = (i + 2) + '. ' + name +
+            ' · ' + (budget ? fmt(budget) : '—') + ' steps';
+    });
+    updateCurriculumPreview();
+}
+function addCurriculumStage(stage = {}) {
+    const row = document.createElement('details');
+    row.className = 'stage-row';
+    const heading = document.createElement('summary');
     const grid = document.createElement('div');
     grid.className = 'formgrid';
     const name = document.createElement('label');
     name.textContent = 'Stage name';
-    name.append(Object.assign(document.createElement('input'), {
-        className: 'stage-name', maxLength: 100, placeholder: 'Moving combat', required: true,
-    }));
+    const nameInput = document.createElement('input');
+    Object.assign(nameInput, {
+        className: 'stage-name', maxLength: 100, placeholder: 'Moving combat',
+        required: true, value: stage.name || '',
+    });
+    name.append(nameInput);
     const steps = document.createElement('label');
     steps.textContent = 'Additional learner steps';
     const stepInput = document.createElement('input');
     Object.assign(stepInput, { className: 'stage-steps', type: 'number',
-        min: '1000', step: '1000', required: true, placeholder: '30000000' });
+        min: '1000', step: '1000', required: true,
+        value: stage.steps == null ? '20000000' : String(stage.steps) });
     steps.append(stepInput);
     const target = document.createElement('label');
     target.textContent = 'Timeout target % (optional)';
     const targetInput = document.createElement('input');
     Object.assign(targetInput, { className: 'stage-target', type: 'number',
-        min: '0', max: '100', step: 'any', placeholder: '5' });
+        min: '0', max: '100', step: 'any',
+        value: stage.target_timeout_pct == null ? '' : String(stage.target_timeout_pct) });
     target.append(targetInput);
     const args = document.createElement('label');
     args.className = 'wide';
@@ -1751,25 +1790,87 @@ function addCurriculumStage() {
     const area = document.createElement('textarea');
     area.className = 'stage-args';
     area.placeholder = '--rl-disable-movement=false';
+    area.value = (stage.env_args || []).join('\n');
     args.append(area);
     grid.append(name, steps, target, args);
-    const remove = document.createElement('button');
-    remove.type = 'button';
-    remove.textContent = 'Remove stage';
-    remove.addEventListener('click', () => row.remove());
     const actions = document.createElement('div');
     actions.className = 'bar';
-    actions.append(remove);
-    row.append(legend, grid, actions);
+    for (const [text, action] of [
+        ['Move up', () => { const above = row.previousElementSibling;
+            if (above) $('stage-rows').insertBefore(row, above); }],
+        ['Move down', () => { const below = row.nextElementSibling;
+            if (below) $('stage-rows').insertBefore(below, row); }],
+        ['Remove stage', () => row.remove()],
+    ]) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.textContent = text;
+        button.addEventListener('click', () => { action(); updateStageLabels(); });
+        actions.append(button);
+    }
+    row.append(heading, grid, actions);
     $('stage-rows').append(row);
+    nameInput.addEventListener('input', updateStageLabels);
+    stepInput.addEventListener('input', updateStageLabels);
+    updateStageLabels();
+    return row;
 }
-$('add-stage').addEventListener('click', addCurriculumStage);
-$('evaluate-stages').addEventListener('change', () => {
-    if ($('evaluate-stages').checked) $('evaluate-after').checked = false;
+function captureCurriculum() {
+    return {
+        schema_version: 1,
+        name: defaultCurriculum?.name || 'Bees experiment curriculum',
+        first_steps: Number($('steps').value),
+        stage_name: $('stage-name').value,
+        target_timeout_pct: $('stage-target').value.trim() || null,
+        env_args: $('args').value.split('\n').map(x => x.trim()).filter(Boolean),
+        stages: [...$('stage-rows').children].map(row => ({
+            name: row.querySelector('.stage-name').value,
+            steps: Number(row.querySelector('.stage-steps').value),
+            target_timeout_pct: row.querySelector('.stage-target').value.trim() || null,
+            env_args: row.querySelector('.stage-args').value.split('\n')
+                .map(x => x.trim()).filter(Boolean),
+        })),
+    };
+}
+function applyCurriculum(template) {
+    if (!template) return;
+    $('steps').value = template.first_steps;
+    $('stage-name').value = template.stage_name;
+    $('stage-target').value = template.target_timeout_pct ?? '';
+    $('args').value = (template.env_args || []).join('\n');
+    $('stage-rows').replaceChildren();
+    for (const stage of template.stages || []) addCurriculumStage(stage);
+    updateStageLabels();
+    $('curriculum-status').textContent = 'Loaded ' + template.name +
+        ' · edit stages before queuing or save a revised default.';
+}
+async function loadCurriculumDefault() {
+    const response = await fetch('/api/curriculum-default', {cache:'no-store'});
+    const data = await response.json();
+    if (!response.ok) throw Error(data.error || 'Curriculum default unavailable.');
+    defaultCurriculum = data.curriculum;
+    if (!editingId) applyCurriculum(defaultCurriculum);
+}
+$('add-stage').addEventListener('click', () => {
+    const row = addCurriculumStage();
+    row.open = true;
+    row.scrollIntoView({block:'nearest'});
 });
-$('evaluate-after').addEventListener('change', () => {
-    if ($('evaluate-after').checked) $('evaluate-stages').checked = false;
+$('load-curriculum').addEventListener('click', async () => {
+    if (!confirm('Replace the curriculum fields in this form with the saved default?')) return;
+    try { await loadCurriculumDefault(); applyCurriculum(defaultCurriculum); }
+    catch (error) { $('curriculum-status').textContent = error.message; }
 });
+$('save-curriculum').addEventListener('click', async () => {
+    if (!confirm('Save the current stages as the default for future experiments? Existing queued and running experiments will not change.')) return;
+    try {
+        const saved = await request('/api/curriculum-default', captureCurriculum());
+        defaultCurriculum = saved.curriculum;
+        $('curriculum-status').textContent = 'Saved default: ' + defaultCurriculum.name;
+    } catch (error) { $('curriculum-status').textContent = error.message; }
+});
+$('steps').addEventListener('input', updateCurriculumPreview);
+$('unlimited-steps').addEventListener('change', updateCurriculumPreview);
 function closeQueuedEditor() {
     editingId = null;
     editingRevision = null;
@@ -1778,7 +1879,7 @@ function closeQueuedEditor() {
     $('create').querySelector('button[type=submit]').textContent = 'Add to queue';
     $('cancel-edit').hidden = true;
     $('create').reset();
-    $('stage-rows').replaceChildren();
+    applyCurriculum(defaultCurriculum);
     loadTrainerDefaults();
 }
 $('cancel-edit').addEventListener('click', closeQueuedEditor);
@@ -1798,22 +1899,16 @@ async function openQueuedEditor(id) {
         $('name').value = def.name;
         $('group').value = def.group;
         $('steps').value = def.max_steps;
-        $('minutes').value = def.max_minutes;
-        $('stall').value = def.stall_minutes;
+        $('unlimited-steps').checked = def.unlimited_steps === true;
+        $('minutes').value = def.max_minutes ?? '';
+        $('stall').value = def.stall_minutes ?? '';
         $('args').value = (def.env_args || []).join('\n');
         $('stage-name').value = def.stage_name;
         $('stage-target').value = def.target_timeout_pct ?? '';
         $('stage-rows').replaceChildren();
-        for (const stage of def.stages || []) {
-            addCurriculumStage();
-            const row = $('stage-rows').lastElementChild;
-            row.querySelector('.stage-name').value = stage.name;
-            row.querySelector('.stage-steps').value = stage.steps;
-            row.querySelector('.stage-target').value = stage.target_timeout_pct ?? '';
-            row.querySelector('.stage-args').value = (stage.env_args || []).join('\n');
-        }
-        $('evaluate-after').checked = def.benchmark === true;
-        $('evaluate-stages').checked = def.evaluate_stages === true;
+        for (const stage of def.stages || []) addCurriculumStage(stage);
+        $('evaluation-mode').value = def.evaluation_mode || 'none';
+        updateStageLabels();
         for (const [key, value] of Object.entries(trainer.hyperparameters)) {
             const input = $('trainer-' + key);
             if (input) input.value = String(value);
@@ -1837,8 +1932,10 @@ $('create').addEventListener('submit', async e => {
     try {
         const payload = {
             name: $('name').value, group: $('group').value,
-            max_steps: Number($('steps').value), max_minutes: Number($('minutes').value),
-            stall_minutes: Number($('stall').value),
+            max_steps: Number($('steps').value),
+            unlimited_steps: $('unlimited-steps').checked,
+            max_minutes: $('minutes').value.trim() === '' ? null : Number($('minutes').value),
+            stall_minutes: $('stall').value.trim() === '' ? null : Number($('stall').value),
             env_args: $('args').value.split('\n').map(s => s.trim()).filter(Boolean),
             stage_name: $('stage-name').value,
             target_timeout_pct: $('stage-target').value.trim() || null,
@@ -1849,8 +1946,7 @@ $('create').addEventListener('submit', async e => {
                 env_args: row.querySelector('.stage-args').value.split('\n')
                     .map(x => x.trim()).filter(Boolean),
             })),
-            benchmark: $('evaluate-after').checked,
-            evaluate_stages: $('evaluate-stages').checked,
+            evaluation_mode: $('evaluation-mode').value,
             trainer: {
                 hyperparameters: Object.fromEntries(['beta','lambd','learning_rate','batch_size','buffer_size','num_epoch'].map(k => [k, Number($('trainer-' + k).value)])),
                 network_settings: { num_layers: Number($('trainer-num_layers').value), normalize: $('trainer-normalize').value === 'true' },
@@ -1968,6 +2064,9 @@ async function loadTrainerDefaults() {
     }
 }
 loadTrainerDefaults();
+loadCurriculumDefault().catch(error => {
+    $('curriculum-status').textContent = 'Cannot load default: ' + error.message;
+});
 refresh(); setInterval(refresh, 5000);
 </script>
 </body></html>
