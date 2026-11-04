@@ -1,4 +1,4 @@
-//! Immutable source-authored static box and map-border prefab catalog.
+//! Immutable source-authored box, nested box and map-border prefab catalog.
 //!
 //! Only primary Obstacle.Collider BoxCollider2D triggers are imported.
 //! Prefab-default positions and orientations are retained, but level/map
@@ -17,7 +17,7 @@ const ASSET_JSON: &str = include_str!(concat!(
     "/../../assets/box-obstacle-colliders.json"
 ));
 
-pub const BOX_OBSTACLE_COUNT: usize = 10;
+pub const BOX_OBSTACLE_COUNT: usize = 12;
 
 #[derive(Clone, Debug)]
 pub struct BoxObstacleAsset {
@@ -158,7 +158,7 @@ mod tests {
     #[test]
     fn authored_obstacle_geometry_is_shared_by_native_spawns() {
         let catalog = BoxObstacleCatalog::embedded().unwrap();
-        assert_eq!(catalog.assets().len(), 10);
+        assert_eq!(catalog.assets().len(), BOX_OBSTACLE_COUNT);
         let slanted = catalog.by_name("Slanted").unwrap();
         assert!(slanted.default_pose.rotation_degrees > 122.99);
         assert!(slanted.default_pose.rotation_degrees < 123.01);
