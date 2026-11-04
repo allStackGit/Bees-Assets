@@ -113,6 +113,44 @@ pub fn resolve_asteroid_pair_damage(
     Some((status(first_before, first), status(second_before, second)))
 }
 
+/// CollisionAsteroid.ShipCollision first resolves asteroid health using the
+/// ship's authored SizeClass and OriginalHealth, then calls Ship.LogDamage.
+/// The caller must apply that requested ship damage to the SAME ShipVitals
+/// state used by projectile combat, and schedule delayed asteroid removal
+/// if health reaches zero. No separate training collision rules are needed.
+pub fn resolve_asteroid_ship_damage(
+    asteroid: &mut ObstacleVitals,
+    asteroid_size_class: u8,
+    ship_size_class: f32,
+    ship_original_health: i32,
+    ship_current_health: i32,
+) -> Option<(AsteroidDamage, i32)> {
+    if asteroid.is_dead || asteroid.health <= 0 || asteroid_size_class == 0 ||
+        !ship_size_class.is_finite() || ship_size_class <= 0.0 ||
+        ship_original_health <= 0 || ship_current_health <= 0 {
+        return None;
+    }
+    let before = asteroid.health;
+    let requested_ship_damage = if ship_size_class < f32::from(asteroid_size_class) {
+        asteroid.health -= ship_original_health.min(asteroid.health);
+        ship_current_health
+    } else if ship_size_class == f32::from(asteroid_size_class) {
+        asteroid.health = 0;
+        ship_current_health
+    } else {
+        asteroid.health = 0;
+        asteroid.original_health
+    };
+    let damage = AsteroidDamage {
+        health_before: before,
+        health_after: asteroid.health,
+        killed: asteroid.health == 0,
+        cracked: asteroid.health > 0 &&
+            (asteroid.health as f32 / asteroid.effective_max_health as f32) < 0.5,
+    };
+    Some((damage, requested_ship_damage))
+}
+
 /// Exact spawn counts from CollisionAsteroid.SpawnBreakAwayAsteroids.
 /// The consuming world must still supply pool-specific prefab geometry,
 /// inherited angular velocity, random velocity/heading, sibling exclusion,
