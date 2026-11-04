@@ -160,12 +160,19 @@ export function createBoxObstacleBatch(rootSources) {
 export function appendNestedBoxVariants(assets, nested) {
     const result = [...assets];
     for (const spec of nested) {
-        const {name, parentName, parentGuid, rootTransformId, source} = spec;
+        const {name, parentName, parentGuid, source} = spec;
         const parent = result.find(item => item.name === parentName);
         if (!parent) fail(name, 'missing intermediate prefab ' + parentName);
         if (!/^[0-9a-f]{32}$/.test(parentGuid))
             fail(name, 'missing intermediate prefab GUID');
         const mods = overrides(name, source, parentGuid);
+        const rootCandidates = [...mods.keys()]
+            .filter(key => key.endsWith('/m_LocalPosition.x'))
+            .map(key => key.split('/')[0])
+            .filter(id => mods.has(id + '/m_LocalRotation.w'));
+        if (rootCandidates.length !== 1)
+            fail(name, 'cannot uniquely identify root transform overrides');
+        const rootTransformId = rootCandidates[0];
         for (const [key] of mods) {
             const split = key.indexOf('/');
             const id = key.slice(0, split);
