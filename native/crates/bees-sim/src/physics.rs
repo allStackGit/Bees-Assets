@@ -564,6 +564,7 @@ mod tests {
     use super::*;
     use crate::projectile::SMALL_LASER_SHOT_RADIUS;
     use crate::ship_assets::ShipAssetCatalog;
+    use crate::projectile_assets::ProjectileAssetCatalog;
 
     fn gunship_shape() -> ShipShape {
         ShipAssetCatalog::embedded().unwrap().by_type(13).unwrap().shape.clone()
@@ -661,6 +662,68 @@ mod tests {
         assert_eq!(physics.step(0.02, &matrix_for_test()).unwrap()[0].ship_id, 1);
         physics.projectiles_mut()[0].motion.position = Vec2::new(6.5, 0.0);
         assert_eq!(physics.step(0.02, &matrix_for_test()).unwrap()[0].ship_id, 2);
+    }
+
+    #[test]
+    fn flagship_box_shot_hits_polygon_with_real_asset_dimensions() {
+        let catalog = ProjectileAssetCatalog::embedded().unwrap();
+        let mut physics = KinematicPhysics::new(
+            Aabb { min: Vec2::new(-20.0, -20.0), max: Vec2::new(20.0, 20.0) },
+            8.0,
+        ).unwrap();
+        physics.add_ship(ShipBody::new(
+            1, ShipMotion::new(Vec2::ZERO, 0.0, 0.0, 0.0, 2.0),
+            12, gunship_shape(),
+        ).unwrap()).unwrap();
+        let flagship = catalog.by_type(4).unwrap();
+        assert!(matches!(&flagship.shape, Some(ShipShape::Box { .. })));
+        physics.add_projectile(flagship.spawn_physics_body(
+            2, ProjectileMotion::new(Vec2::ZERO, 0.0, 0.0, 30.0, 2, 0),
+            45.0,
+        ).unwrap()).unwrap();
+
+        let mut rows = [0u32; 32];
+        rows[18] = 1u32 << 12;
+        let mask = CollisionMatrix::from_rows(rows);
+        assert_eq!(physics.step(0.02, &mask).unwrap(), &[TriggerEnter {
+            projectile_id: 2, ship_id: 1,
+        }]);
+    }
+
+    #[test]
+    fn stationary_explosion_contacts_once_and_scripted_bomb_has_no_contact() {
+        let catalog = ProjectileAssetCatalog::embedded().unwrap();
+        let mut physics = KinematicPhysics::new(
+            Aabb { min: Vec2::new(-20.0, -20.0), max: Vec2::new(20.0, 20.0) },
+            8.0,
+        ).unwrap();
+        physics.add_ship(ShipBody::new(
+            1, ShipMotion::new(Vec2::ZERO, 0.0, 0.0, 0.0, 2.0),
+            12, gunship_shape(),
+        ).unwrap()).unwrap();
+
+        let explosion = catalog.by_type(13).unwrap();
+        assert!(!explosion.has_body);
+        let moving_motion = ProjectileMotion::new(Vec2::ZERO, 100.0, 0.0, 30.0, 2, 0);
+        physics.add_projectile(explosion.spawn_physics_body(
+            2, moving_motion, 0.0,
+        ).unwrap()).unwrap();
+
+        let bomb = catalog.by_type(12).unwrap();
+        assert!(bomb.shape.is_none());
+        physics.add_projectile(bomb.spawn_physics_body(
+            3, ProjectileMotion::new(Vec2::ZERO, 0.0, 0.0, 0.0, 3, 0),
+            0.0,
+        ).unwrap()).unwrap();
+
+        let mut rows = [0u32; 32];
+        rows[18] = 1u32 << 12;
+        rows[0] = 1u32 << 12;
+        let mask = CollisionMatrix::from_rows(rows);
+        assert_eq!(physics.step(0.02, &mask).unwrap(),
+            &[TriggerEnter { projectile_id: 2, ship_id: 1 }]);
+        assert_eq!(physics.projectiles()[0].motion.position, Vec2::ZERO);
+        assert!(physics.step(0.02, &mask).unwrap().is_empty());
     }
 
     #[test]
