@@ -403,6 +403,12 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
     </table></div>
   </div>
   <div class="hub-standalone">
+    <h3>Cross-project capacity coordination</h3>
+    <p class="muted">Coordinate available Hub budgets across all queued non-Bees projects in round-robin order. Each project gets an opportunity before its next waiting job. This changes only the Hub's advisory lease ledger. No machine process starts and no OS resource limit is enforced.</p>
+    <button type="button" id="hub-global-allocate">Coordinate pending jobs across projects</button>
+    <p id="hub-global-allocate-result" class="hub-notice" role="status">No cross-project claims made.</p>
+  </div>
+  <div class="hub-standalone">
     <h3>Simultaneous workload preview</h3>
     <p class="muted">Enter a JSON array of workloads, each with a unique ID and resource request. CPU and RAM are required; GPU fields are optional. Shared GPUs additionally require gpu_mode = shared, gpu_count, gpu_vram_mb, and gpu_compute_pct. This is greedy capacity planning, not scheduling, process isolation, or a performance promise.</p>
     <label class="wide">Workloads (JSON)
