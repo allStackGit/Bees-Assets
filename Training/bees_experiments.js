@@ -13,7 +13,7 @@ const { freezePlan: freezeEvaluator, supportsPurpose: evaluatorSupportsPurpose }
     require('./bees_experiment_evaluator_versions');
 const { selectedRoot, copyAndSelect } = require('./bees_experiment_storage');
 const { ExperimentHub } = require('./experiment_hub_core');
-const { placements: hubPlacements } = require('./experiment_hub_resources');
+const { placements: hubPlacements, plan: hubPlan } = require('./experiment_hub_resources');
 const { append: appendMetricSample, plot: archivedMetricsChart,
     filename: metricArchivePath } = require('./bees_experiment_metrics');
 const { getStatus } = require('./operator/control');
@@ -2181,6 +2181,11 @@ const server = http.createServer(async (req, res) => {
                         ?Number(url.searchParams.get('gpu_count')):undefined,
                     min_gpu_vram_mb:url.searchParams.has('min_gpu_vram_mb')
                         ?Number(url.searchParams.get('min_gpu_vram_mb')):undefined,
+                    gpu_mode:url.searchParams.get('gpu_mode') || 'exclusive',
+                    gpu_vram_mb:url.searchParams.has('gpu_vram_mb')
+                        ?Number(url.searchParams.get('gpu_vram_mb')):undefined,
+                    gpu_compute_pct:url.searchParams.has('gpu_compute_pct')
+                        ?Number(url.searchParams.get('gpu_compute_pct')):undefined,
                 }),
                 note:'Inventory and reservations are advisory until authenticated agents enforce isolation.',
             });
@@ -2282,6 +2287,15 @@ const server = http.createServer(async (req, res) => {
         const value = await body(req);
         if (storageMigrationPending) {
             return json(res, 409, { error: 'Data-location switch prepared. Restart this manager before making other changes.' });
+        }
+        if (route === '/api/hub/plan') {
+            // Planning is a read-only what-if calculation. It cannot create
+            // reservations, infer physical ownership, or execute a job.
+            const registry = requireHub().snapshot();
+            return json(res, 200, {
+                placements:hubPlan(registry.machines, registry.reservations, value.jobs),
+                note:'Advisory only: neither scheduling nor GPU compute isolation is enforced.',
+            });
         }
         if (route === '/api/hub/bees/start' ||
             route === '/api/hub/bees/stop' ||
