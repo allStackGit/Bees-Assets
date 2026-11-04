@@ -2139,6 +2139,11 @@ const server = http.createServer(async (req, res) => {
                 },
             });
         }
+        if (req.method === 'GET' && route === '/api/hub/bees/workers') {
+            // This is a view of Bees' authoritative control plane, not a second
+            // machine registry. Trainer IDs are not assumed to identify hosts.
+            return json(res, 200, workerSnapshot(await control()));
+        }
         if (req.method === 'GET' && route === '/api/hub/bees/control') {
             const status = await control();
             const d = status.desired || {};
@@ -2148,6 +2153,7 @@ const server = http.createServer(async (req, res) => {
                 pending_release:Boolean(d.pending_release),
                 env_args:Array.isArray(d.environment_args) ? d.environment_args : [],
                 experiment_owned:Boolean(state.active_id),
+                queue_armed:state.armed,
                 operator_operation:hubOperatorOperation,
                 // The CLI and UI share the same Bees control plane.
             });
@@ -2263,17 +2269,28 @@ const server = http.createServer(async (req, res) => {
         }
         if (route === '/api/hub/bees/start' ||
             route === '/api/hub/bees/stop' ||
-            route === '/api/hub/bees/build') {
+            route === '/api/hub/bees/build' ||
+            route === '/api/hub/bees/update-workers') {
             if (state.active_id || state.armed || state.stop_requested || busy) {
                 return json(res, 409, {
-                    error:'An experiment or another operator action owns training. Use the existing experiment controls.',
+                    error:'An experiment or another operator action owns training. Use experiment controls.',
+                });
+            }
+            const action = route.slice('/api/hub/bees/'.length);
+            // Initial build must be possible before any Bees release or control
+            // server exists. The operator itself owns bootstrap validation.
+            if (action === 'build' && !fs.existsSync(paths.latestReleasePath)) {
+                if (value.confirm_build !== true)
+                    return json(res, 409, {error:'Confirm the initial training release build.'});
+                return json(res, 202, {
+                    operation:runHubOperatorOperation('Initial Bees RL build', async()=>invokeBuild({})),
                 });
             }
             const before = await control();
             if (!before.desired || before.desired.pending_release) {
-                return json(res, 409, {error:'Training control is unavailable or a release is pending.'});
+                return json(res, 409, {error:'Training control unavailable or a release pending.'});
             }
-            if (route === '/api/hub/bees/stop') {
+            if (action === 'stop') {
                 if (!before.desired.training_enabled)
                     return json(res, 409, {error:'Bees training is already stopped.'});
                 if (value.confirm_stop !== true)
@@ -2285,22 +2302,45 @@ const server = http.createServer(async (req, res) => {
             if (before.desired.training_enabled) {
                 return json(res, 409, {error:'Stop the current training run safely first.'});
             }
-            if (route === '/api/hub/bees/build') {
+            if (action === 'build') {
                 if (value.confirm_build !== true)
                     return json(res, 409, {error:'Confirm the training release build.'});
                 return json(res, 202, {
                     operation:runHubOperatorOperation('Bees RL build', async()=>invokeBuild({})),
                 });
             }
+            if (action === 'update-workers') {
+                if (value.confirm_update !== true)
+                    return json(res, 409, {error:'Confirm publishing the worker-only runtime.'});
+                return json(res, 202, {
+                    operation:runHubOperatorOperation('Bees worker software update',
+                        async()=>invokeWorkerRuntime({expectedRunId:before.desired.run_id})),
+                });
+            }
             if (!['resume','new'].includes(value.mode))
                 return json(res, 400, {error:'Use resume or new run mode.'});
             if (value.mode === 'new' && value.confirm_new_run !== true)
                 return json(res, 409, {error:'Confirm starting a fresh optimizer and run identity.'});
-            const args = before.desired.environment_args || [];
+            const currentArgs = Array.isArray(before.desired.environment_args)
+                ? before.desired.environment_args : [];
+            // Validation of the actual Unity release arguments remains in
+            // invokeStart -> assertRlEnvironmentArgsValid. Never execute input.
+            const args = value.env_args === undefined ? currentArgs : value.env_args;
+            if (!Array.isArray(args) || args.length > 64 ||
+                args.some(arg=>typeof arg !== 'string' || arg.length > 512 ||
+                    !/^--rl-[a-z0-9-]+(?:=.*)?$/i.test(arg))) {
+                return json(res, 400, {error:'Enter up to 64 valid --rl-... environment arguments.'});
+            }
+            if (value.mode === 'resume' && !matches(args, currentArgs) &&
+                value.confirm_environment_change !== true) {
+                return json(res, 409, {
+                    error:'Confirm changing the environment for this existing run; training comparisons may be affected.',
+                });
+            }
             return json(res, 202, {
                 operation:runHubOperatorOperation(
                     value.mode === 'new' ? 'New Bees run' : 'Resume Bees run',
-                    async()=>invokeStart({newRun:value.mode==='new', envArgs:args}),
+                    async()=>invokeStart({newRun:value.mode==='new',envArgs:args}),
                 ),
             });
         }
