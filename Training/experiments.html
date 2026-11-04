@@ -1480,9 +1480,6 @@ async function refreshWorkers() {
             const change = async delta => {
                 if (resizingWorker) return;
                 const target = delta === null ? null : count + delta;
-                const description = target === null
-                    ? 'restore the worker default/automatic environment policy'
-                    : 'set ' + target + ' environments';
                             resizingWorker = w.trainer_id;
                 const operation = { target, phase: 'sending', runId: data.run_id };
                 workerResizeFeedback.set(w.trainer_id, operation);
@@ -1535,6 +1532,8 @@ async function refreshWorkers() {
             const editable = !reason;
             const decrease = txt('button', '−'), increase = txt('button', '+');
             decrease.type = increase.type = 'button';
+            decrease.setAttribute('aria-label', 'Decrease environments on ' + w.trainer_id);
+            increase.setAttribute('aria-label', 'Increase environments on ' + w.trainer_id);
             decrease.title = reason || (count <= w.min_envs
                 ? 'At worker minimum of ' + w.min_envs + ' environments'
                 : 'Decrease worker environments by 1');
