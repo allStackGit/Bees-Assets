@@ -21,6 +21,10 @@ use crate::physics::{
     CollisionMatrix, KinematicPhysics, PhysicsError, ProjectileBody, ShipBody, TriggerEnter,
 };
 use crate::policy::Decision;
+use crate::movement::ShipMotion;
+use crate::projectile::ProjectileMotion;
+use crate::ship_assets::ShipAsset;
+use crate::projectile_assets::ProjectileAsset;
 use crate::projectile_rules::{ExplosionContacts, PiercingShot, PiercingType};
 use crate::simulation::{GameRules, World};
 use crate::telemetry::StepCounts;
@@ -176,6 +180,40 @@ impl CombatWorld {
     pub fn events(&self) -> &[CombatEvent] { &self.events }
     pub fn ships(&self) -> &[CombatShip] { &self.ships }
     pub fn projectiles(&self) -> &[CombatProjectile] { &self.projectiles }
+
+    /// The canonical spawn path for game and training. Asset collider
+    /// geometry is shared, not reconstructed per world or per spawn.
+    pub fn spawn_ship(
+        &mut self,
+        asset: &ShipAsset,
+        entity_id: i64,
+        side: i32,
+        vitals: ShipVitals,
+        motion: ShipMotion,
+    ) -> Result<(), CombatWorldError> {
+        let body = asset.spawn_physics_body(entity_id, motion)?;
+        self.add_ship(CombatShip {
+            entity_id, side, ship_type: asset.ship_type, vitals,
+        }, body)
+    }
+
+    /// Projectile kind and shape are supplied by the SAME authored prefab
+    /// catalog that the rendered client uses for spawning.
+    pub fn spawn_projectile(
+        &mut self,
+        asset: &ProjectileAsset,
+        entity_id: i64,
+        owner: ShotOwner,
+        power: i32,
+        motion: ProjectileMotion,
+        rotation_degrees: f32,
+    ) -> Result<(), CombatWorldError> {
+        let metadata = CombatProjectile::new(
+            entity_id, asset.projectile_type, owner, power,
+        )?;
+        let body = asset.spawn_physics_body(entity_id, motion, rotation_degrees)?;
+        self.add_projectile(metadata, body)
+    }
 
     pub fn add_ship(
         &mut self,
@@ -410,6 +448,7 @@ mod tests {
     use crate::movement::ShipMotion;
     use crate::projectile::ProjectileMotion;
     use crate::ship_assets::ShipAssetCatalog;
+    use crate::projectile_assets::ProjectileAssetCatalog;
 
     #[test]
     fn live_collision_debits_tsv_and_keeps_original_command_owner() {
@@ -418,25 +457,24 @@ mod tests {
             Aabb { min: Vec2::new(-20.0, -20.0), max: Vec2::new(20.0, 20.0) },
             4.0,
         ).unwrap();
-        let gunship = ships.by_type(13).unwrap();
-        let body = gunship.spawn_physics_body(
-            5, ShipMotion::new(Vec2::ZERO, 0.0, 0.0, 0.0, 3.0),
+        world.spawn_ship(
+            ships.by_type(13).unwrap(), 5, 2,
+            ShipVitals::new(100, 100, 1000, 0).unwrap(),
+            ShipMotion::new(Vec2::ZERO, 0.0, 0.0, 0.0, 3.0),
         ).unwrap();
-        world.add_ship(CombatShip {
-            entity_id: 5, side: 2, ship_type: 13,
-            vitals: ShipVitals::new(100, 100, 1000, 0).unwrap(),
-        }, body).unwrap();
 
         let mut rows = [0u32; 32];
         rows[10] |= 1u32 << 12;
         let matrix = CollisionMatrix::from_rows(rows);
         let motion = ProjectileMotion::new(Vec2::ZERO, 0.0, 0.0, 40.0, 9, 77);
-        world.add_projectile(
-            CombatProjectile::new(9, 1, ShotOwner {
+        world.spawn_projectile(
+            ProjectileAssetCatalog::embedded().unwrap().by_type(1).unwrap(),
+            9,
+            ShotOwner {
                 shooter_id: 3, shooter_side: 1,
                 shooter_is_fire_barge: false, self_detonation: false,
-            }, 20).unwrap(),
-            ProjectileBody::new(9, motion, 10, 0.5).unwrap(),
+            },
+            20, motion, 0.0,
         ).unwrap();
 
         // Physics dispatch first, then Unity-style queued impact resolution.
