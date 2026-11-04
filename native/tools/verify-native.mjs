@@ -18,6 +18,7 @@ const checks = [
     'import-unity-projectile-colliders.mjs',
     'import-unity-asteroid-colliders.mjs',
     'import-unity-box-obstacle-colliders.mjs',
+    'import-unity-polygon-obstacle.mjs',
 ];
 const flags = process.argv.slice(2);
 if (flags.some(flag => flag !== '--assets-only')) {
