@@ -209,6 +209,11 @@ document.addEventListener('DOMContentLoaded', () => {
             cell(tr,m.cpus+(m.reported_cpus!=null?' / agent '+m.reported_cpus:''));
             cell(tr,m.ram_mb+(m.reported_ram_mb!=null?' / agent '+m.reported_ram_mb:''));
             cell(tr,(m.gpus||[]).map(g=>g.id+' ('+g.vram_mb+' MiB)').join(', ')||'None');
+            const capability=m.execution_capabilities;
+            const control=cell(tr,m.status==='connected'
+                ?'Not installed'+(capability?.cgroup_v2_detected?' · Linux cgroup v2 detected':'')
+                :'Not verified');
+            control.title=capability?.reason||'No authenticated native capability report.';
             cell(tr,m.last_seen_at?.replace('T',' ').slice(0,19)||'—');
             const actions=cell(tr,'');
             actions.append(button(m.agent_enrolled?'Rotate':'Enroll',async()=>{
@@ -238,7 +243,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if(!state.machines.length) {
             const tr=document.createElement('tr');
-            cell(tr,'No registered machines.').colSpan=7;
+            cell(tr,'No registered machines.').colSpan=8;
             $('hub-machine-rows').append(tr);
         }
         const selectedProject=$('hub-lease-project').value;
