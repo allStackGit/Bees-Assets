@@ -10,6 +10,39 @@ Open **http://127.0.0.1:7148** on the same machine. Keep the process running whi
 
 Queue one or more experiments. Each creates a **new run** from the current built release, using the cluster environment arguments with explicitly entered `--rl-*` overrides. Specify a learner step budget, maximum wall time, and no-progress timeout. Step budgets use the existing published learner summaries, so stopping can overshoot by the summary interval and graceful-stop latency. Press **Run queue** to start. The manager requires the existing Bees operator to confirm its full graceful stop (including worker finalization) before starting the next run; disabling training alone is insufficient. **Stop safely** disarms the queue and requests coordinated stop of the active experiment.
 
+## Experiment data location and offline durability
+
+The **Experiment data storage** panel controls only Experiment Manager data:
+the queue database, frozen trainer configurations, evaluator snapshots,
+benchmark reports, per-match CSVs, and full metric history. Its default is the
+existing `Training/Experiments` directory alongside the learner installation,
+**not** an Assets repository directory. Enter an absolute local or mounted
+path and choose **Copy data and change directory** while the manager is fully
+idle (not merely paused). The destination must be empty. The source is copied,
+not deleted, and absolute references to copied files in the experiment
+database are rebased. **Restart the Experiment Manager** after a successful
+copy; it refuses further mutations until restart. When the configured drive
+is absent on restart, startup fails rather than silently using an empty
+database. Model/optimizer checkpoints, Unity binaries, the training registry,
+and Bees' runtime paths are deliberately unaffected.
+
+Evaluator and benchmark runner Python sources are copied into immutable,
+content-addressed snapshots at experiment queue time. Previously frozen
+experiments can recover the original pre-research evaluator from bundled
+legacy source files; if their recorded code hash is unavailable, evaluation
+**fails closed** rather than substituting a changed evaluator. Each snapshot
+executes with the original project Python dependencies available from the
+training installation; snapshot hashes alone do not freeze installed packages.
+
+The manager continues to send bounded samples to the live dashboard, but
+also appends every newly recorded minute sample to
+`Training/Experiments/Metrics/<experiment-id>.jsonl` (under the configured
+data directory). **Load full chart history** loads recorded samples on demand,
+calculates rolling smoothing across the full sequence, then retains extrema
+for bounded chart rendering. **Save complete metrics JSONL** downloads the
+unreduced archive, and evidence ZIPs include it. Older data already discarded
+by earlier versions cannot be reconstructed.
+
 ## Maintenance pause and resume
 
 For temporary updates, select **Pause for maintenance** while an experiment is
@@ -380,9 +413,14 @@ overhead. Check **Queue fresh independent-seed runs** to prepare 2–32 sequenti
 fresh runs of the same frozen curriculum, settings and release with consecutive
 ML-Agents initialization seeds. All runs are linked by a study ID and execute
 through the ordinary queue, so no separate trainer service is introduced.
-These seeds do **not** make distributed training bit-for-bit deterministic:
-Unity's ordinary training scenario root is independently randomized and
-asynchronous scheduling can change experience order.
+Normally the Unity scenario root is independently randomized. Optionally
+set **Scenario root seed** when queuing an experiment to pin the process-root
+scenario RNG stream across runs; it is recorded in the frozen stage arguments
+as `--rl-scenario-seed=<int>`. This requires a Unity build containing the new
+flag. Without a value, new Unity processes retain a fresh random seed.
+Asynchronous distributed scheduling and external samplers still prevent
+bit-for-bit deterministic training; sharing a scenario root is not proof of
+identical experiences.
 
 Each independent benchmark saves its existing immutable summary report **plus
 a compact per-match CSV** containing the authoritative Unity side-channel
@@ -398,7 +436,14 @@ win/timeout means, between-seed SD and (for at least two independent runs)
 approximate Student-t intervals **across trained networks**, not across
 correlated matches. One-run results have no between-seed interval. The summary
 is calculated on demand from immutable reports. **Save research CSV** exports
-the analysis-ready table and its provenance keys.
+the analysis-ready table and its provenance keys. **Between-configuration
+comparisons** use an approximate Welch interval for the difference in win
+rates when both conditions have at least two independent trained networks;
+only matching curriculum, benchmark, release and execution settings can be
+compared. **Sample efficiency** reports the earliest *evaluated checkpoint*
+where each model's win rate meets a configurable threshold; models not
+observed meeting it remain censored. These are descriptive analyses and
+do not replace a preregistered hypothesis or held-out confirmation.
 
 A separately configured
 \`Training/Experiments/heldout-benchmark-settings.json\` can be **reserved**
@@ -411,9 +456,9 @@ from the development curves. Do not inspect and optimize against these final
 results repeatedly, or they cease to be genuinely held out.
 
 Use **Export study evidence ZIP** (or the single-run equivalent) for a compact
-snapshot of the frozen experiment definitions, sampled time-series, YAML
-configuration snapshots, available hashed benchmark source/recipes, result
-reports and individual-match CSVs. The archive manifest records file hashes.
+snapshot of the frozen experiment definitions, full preserved JSONL metrics,
+YAML configuration snapshots, available hashed benchmark source/recipes,
+result reports and individual-match CSVs. The archive manifest records file hashes.
 The ZIP intentionally excludes raw training trajectories and large ONNX/Unity
 binaries; it is **not a self-contained executable replication environment**.
 Preserve the separately identified model weights, Unity build, runtime and
@@ -523,9 +568,10 @@ shows the configured threshold and actual reached step. The time axis counts
 observed training time, not benchmark downtime. Transition detection polls
 every ten seconds and uses the most recent reported learner step (reported in
 50,000-step training summaries), so it cannot promise an exact-step stop.
-Unlike earlier versions, the manager retains up to 20,000 original minute
-samples per experiment without repeatedly halving old data; historical
-samples previously discarded cannot be reconstructed from manager state.
+The manager retains up to 20,000 original minute samples **in its live
+database** without repeatedly halving old data; an append-only JSONL
+archive retains all newly recorded samples beyond that window. Historical
+samples already discarded before archiving cannot be reconstructed.
 Old sparse points are connected rather than artificially broken based on
 an arbitrary one-million-step spacing rule.
 Historical samples only contain fields collected at that time; new group
