@@ -1600,7 +1600,10 @@ function sendLogExportIndex(res, sessionId, parts) {
         '<h1>Bees log export</h1><p>Export split into ' + parts.length +
         ' independent ZIP files, each no larger than 500 MB. Downloads will ' +
         'start automatically if your browser permits multiple downloads. ' +
-        'Otherwise use the links below. Links expire in one hour.</p><ol>' +
+        'Otherwise use the links below. Links expire in one hour. ' +
+        'Each ZIP extracts separately; when a large source log has numbered ' +
+        '.part00001 segments, concatenate those segments in numeric order to ' +
+        'recover the complete selected log excerpt.</p><ol>' +
         links + '</ol><script>window.addEventListener("load",()=>{' +
         'document.querySelectorAll("a[download]").forEach((a,i)=>' +
         'setTimeout(()=>a.click(),i*1000));});</script></html>';
