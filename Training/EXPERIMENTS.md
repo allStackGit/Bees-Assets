@@ -368,6 +368,28 @@ changes require a separate versioned policy implementation and are rejected here
 Illustrative settings are not recommendations; short validation runs do not
 establish which PPO configuration learns best.
 
+### Update remote worker software without ending an experiment
+
+From the Experiment Manager, choose **Pause for maintenance** and wait for
+**Paused**. Select **Update worker software**, then **Resume training**.
+The dashboard does not create a new run, advance the curriculum, rebuild
+Unity, or replace the frozen optimizer/checkpoint/trainer configuration.
+
+This action builds an authenticated worker-only package from the **currently
+pinned learner release**, substituting only
+`bees_managed_remote_worker.py` and `bees_training_worker_agent.py`.
+The regular remote bootstrap updater distributes it to all connected remote
+supervisors. The central learner continues using its original pinned runtime;
+ordinary same-run starts preserve the worker-only package selection. Workers
+may adopt the new runtime during the pause or on reconnect. After resuming,
+check Worker Status for the live-resize capability flag; a worker still
+missing it may require examining its bootstrap/connection health.
+
+This deliberately updates the remote worker supervisor/agent only. Changes
+to Unity, the model, WAN transport protocol, trainer configuration, or the
+central learner are **not** silently distributed this way. A failed
+publication leaves the experiment paused; do not use New Run to recover.
+
 ## Dashboard use and worker controls
 
 The experiment dashboard automatically selects recent runs with saved learner
