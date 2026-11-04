@@ -219,7 +219,7 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
 </head>
 <body>
 <header><div><h1>Bees Experiments</h1><small>Local experiment queue and training comparisons · Version 1</small></div>
-<div class="bar"><button id="start" class="primary">Run queue</button><button id="pause">Pause for maintenance</button><button id="update-workers" hidden>Update worker software</button><button id="resume" class="primary" hidden>Resume training</button><button id="stop" class="danger">Stop safely</button></div></header>
+<div class="bar"><button id="start" class="primary">Run queue</button><button id="pause">Pause for maintenance</button><button id="update-workers" hidden>Update worker software</button><button id="rebuild-unity" hidden>Rebuild Unity (experimental)</button><button id="resume" class="primary" hidden>Resume training</button><button id="stop" class="danger">Stop safely</button></div></header>
 <div id="message" role="status"></div>
 <section>
 <h2>Overview</h2><div id="overview" class="summary"></div>
@@ -861,6 +861,8 @@ function render(data) {
     $('resume').disabled = data.busy;
     $('update-workers').hidden = active?.status !== 'paused';
     $('update-workers').disabled = data.busy;
+    $('rebuild-unity').hidden = active?.status !== 'paused';
+    $('rebuild-unity').disabled = data.busy;
     $('stop').disabled = maintaining || (!data.active_id && !data.armed);
     $('message').textContent = data.message || '';
     $('message').classList.toggle('error', /failed|error|attention|paused|interrupted|refusing|changed|not started/i.test(data.message || ''));
@@ -1764,6 +1766,31 @@ $('pause').addEventListener('click', async () => {
     if (!confirm('Pause the active experiment for maintenance? The trainer will save its checkpoint, the queue will stay stopped, and Resume will continue this same run. Wait for Paused before closing or updating the manager.')) return;
     try { await request('/api/pause', {}); await refresh(); }
     catch (err) { $('message').textContent = err.message; $('message').classList.add('error'); }
+});
+$('rebuild-unity').addEventListener('click', async () => {
+    const explanation = 'Rebuild both Windows and Linux RL Unity players for this paused experiment?\n\n' +
+        'WARNING: Even with an unchanged observation/action interface, changes to simulation ' +
+        'physics, weapons, rewards, spawning, or timing can invalidate comparisons between ' +
+        'earlier and later training results. The chart will record this rebuild boundary.\n\n' +
+        'The current run, optimizer checkpoint, curriculum stage and pinned learner runtime ' +
+        'will be retained. Builds whose RL compatibility fingerprint changed will be rejected. ' +
+        'A failed build leaves the experiment paused. Continue?';
+    if (!confirm(explanation)) return;
+    $('rebuild-unity').disabled = true;
+    $('resume').disabled = true;
+    $('message').classList.remove('error');
+    $('message').textContent = 'Compiling Unity Windows and Linux players; experiment remains paused…';
+    try {
+        await request('/api/rebuild-unity', {});
+        await refresh();
+    } catch (error) {
+        await refresh();
+        $('message').textContent = error.message;
+        $('message').classList.add('error');
+    } finally {
+        $('rebuild-unity').disabled = false;
+        $('resume').disabled = false;
+    }
 });
 $('update-workers').addEventListener('click', async () => {
     if (!confirm('Publish updated worker software to all remote workers for this paused experiment? Each worker supervisor may restart when it adopts the package, but the learner runtime, Unity build, optimizer checkpoint and experiment run will not change. Continue?')) return;
