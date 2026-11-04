@@ -2080,6 +2080,16 @@ const server = http.createServer(async (req, res) => {
     try {
         const url = new URL(req.url, 'http://localhost');
         const route = url.pathname;
+        if (req.method === 'GET' && route === '/experiment-hub-ui.js') {
+            const script = fs.readFileSync(path.join(__dirname, 'experiment_hub_ui.js'));
+            res.writeHead(200, {
+                'Content-Type':'text/javascript; charset=utf-8',
+                'Content-Length':script.length,
+                'Cache-Control':'no-store',
+                'X-Content-Type-Options':'nosniff',
+            });
+            return res.end(script);
+        }
         if (req.method === 'GET' && route === '/') {
             const page = fs.readFileSync(HTML);
             res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8',
