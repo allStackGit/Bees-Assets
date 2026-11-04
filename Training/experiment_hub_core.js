@@ -393,7 +393,7 @@ class ExperimentHub {
             if(!object(report)||typeof report.job_id!=='string'||
                 typeof report.lease_id!=='string'||
                 typeof report.dispatch_id!=='string'||
-                !['launch_requested','running','finished','failed','stopped','unverified']
+                !['launch_requested','running','stop_requested','finished','failed','stopped','unverified']
                     .includes(report.state)||
                 seen.has(report.job_id)||
                 (report.diagnostic!=null&&
