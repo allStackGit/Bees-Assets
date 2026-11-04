@@ -106,6 +106,7 @@ class ExperimentHub {
         this.leaseReceipts = new Map();
         // Native process usage observations are ephemeral, not registry history.
         this.executionTelemetry = new Map();
+        this.executionOrderCursor = new Map();
         const s = this.state;
         if (!object(s) || s.version !== 1 ||
             !['projects','configurations','jobs','machines','reservations'].every(key=>Array.isArray(s[key])))
@@ -149,9 +150,14 @@ class ExperimentHub {
             }
             return machine;
         });
-        snapshot.jobs = snapshot.jobs.map(job=>({
-            ...job,live_execution:this.executionTelemetry.get(job.id)||null,
-        }));
+        snapshot.jobs = snapshot.jobs.map(job=>{
+            const observed=this.executionTelemetry.get(job.id);
+            const machine=snapshot.machines.find(m=>m.id===job.assigned_machine_id);
+            const live=observed&&machine?.status==='connected'&&
+                observedAt-new Date(observed.at).getTime()<AGENT_HEARTBEAT_TTL_MS
+                ?observed:null;
+            return {...job,live_execution:live};
+        });
         snapshot.reservations = snapshot.reservations.map(lease => ({
             ...lease,
             receipt_fresh:lease.status==='acknowledged' &&
@@ -427,16 +433,30 @@ class ExperimentHub {
         const jobs=snapshot.jobs.filter(j=>j.assigned_machine_id===machineId &&
             j.dispatch_id&&['start_requested','launch_requested','running',
                 'stop_requested','unverified'].includes(j.status));
-        // Prioritize pending stops, then preserve queue order. One instruction
-        // per heartbeat bounds response size and avoids concurrent launches.
-        jobs.sort((a,b)=>Number(b.status==='stop_requested')-
-            Number(a.status==='stop_requested'));
-        for(const job of jobs) {
+        // Stops have priority over starts, which have priority over
+        // inspections. Round-robin within each priority tier so long-running
+        // services cannot starve other services of fresh observations.
+        const priority=j=>j.status==='stop_requested'?0:
+            j.status==='start_requested'?1:2;
+        jobs.sort((a,b)=>priority(a)-priority(b));
+        const last=this.executionOrderCursor.get(machineId);
+        const ordered=[];
+        for(const level of [0,1,2]) {
+            const group=jobs.filter(j=>priority(j)===level);
+            if(level===2&&group.length>1) {
+                const position=group.findIndex(j=>j.id===last);
+                if(position>=0)
+                    group.push(...group.splice(0,position+1));
+            }
+            ordered.push(...group);
+        }
+        for(const job of ordered) {
             const lease=snapshot.reservations.find(l=>l.id===job.lease_id &&
                 l.job_id===job.id&&l.status==='acknowledged'&&l.receipt_fresh);
             if(!lease||!machine.installed_projects.includes(job.project_id))continue;
             const action=job.status==='stop_requested'?'stop':
                 job.status==='start_requested'?'start':'inspect';
+            this.executionOrderCursor.set(machineId,job.id);
             return [{
                 action,dispatch_id:job.dispatch_id,
                 job:{
