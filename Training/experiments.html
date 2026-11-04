@@ -343,7 +343,9 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
     <div class="formgrid">
       <label>Requested CPU slots<input id="hub-request-cpus" type="number" value="2" min="1"></label>
       <label>Requested RAM MiB<input id="hub-request-ram" type="number" value="2048" min="1"></label>
-      <label class="wide">GPU device IDs, comma separated<input id="hub-request-gpus" placeholder="gpu0"></label>
+      <label>GPU count<input id="hub-request-gpu-count" type="number" value="0" min="0" max="32"></label>
+      <label>Minimum VRAM per GPU (MiB)<input id="hub-request-gpu-vram" type="number" value="0" min="0"></label>
+      <label class="wide">Exact GPU device IDs (optional, comma separated)<input id="hub-request-gpus" placeholder="Leave empty to choose any suitable GPU"></label>
     </div>
     <button type="button" id="hub-preview">Check capacity</button>
     <div id="hub-placements" class="hub-notice" role="status">Resource placement does not start a workload.</div>
