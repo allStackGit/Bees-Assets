@@ -1761,19 +1761,17 @@ const server = http.createServer(async (req, res) => {
                 return json(res, 409, { error: 'Pause the active experiment before rebuilding Unity.' });
             }
             const before = await control();
+            if (item.unity_rebuild_attempt &&
+                !recordUnityMaintenanceBuild(item, readJson(paths.latestReleasePath), before)) {
+                return json(res, 409, {
+                    error: 'An earlier Unity rebuild has not been reconciled. Do not overwrite it.',
+                });
+            }
             assertMaintenanceOwnership(item, before);
             if (before.desired.training_enabled) {
                 return json(res, 409, { error: 'Training is still enabled; Unity rebuild refused.' });
             }
             assertSameLineageCheckpoint(item);
-            if (item.unity_rebuild_attempt) {
-                const candidate = readJson(paths.latestReleasePath);
-                if (!recordUnityMaintenanceBuild(item, candidate, before)) {
-                    return json(res, 409, {
-                        error: 'An earlier Unity rebuild has not been reconciled. Do not overwrite it.',
-                    });
-                }
-            }
             const release = readJson(paths.latestReleasePath);
             busy = true;
             item.unity_rebuild_attempt = {
