@@ -797,6 +797,7 @@ def run_match_group(
     max_environment_steps_per_match: int = DEFAULT_MAX_ENVIRONMENT_STEPS_PER_MATCH,
     time_scale: Optional[float] = None,
     opponent_script: Optional[str] = None,
+    episode_results_out: Optional[List[EpisodeResult]] = None,
 ) -> MatchSummary:
     if (opponent_model_path is None) == (opponent_script is None):
         raise EvaluationError("Select exactly one opponent ONNX model or scripted controller.")
@@ -889,7 +890,10 @@ def run_match_group(
         opponent_inference_total_seconds=opponent.inference_total_seconds,
         opponent_inference_max_seconds=opponent.inference_max_seconds,
     )
-    return _validate_match_summary(summary, expected_matches=matches)
+    validated = _validate_match_summary(summary, expected_matches=matches)
+    if episode_results_out is not None:
+        episode_results_out.extend(completed)
+    return validated
 
 
 def _validate_env_args(values: Sequence[str]) -> Tuple[str, ...]:
