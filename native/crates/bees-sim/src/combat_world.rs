@@ -828,6 +828,99 @@ mod tests {
     use crate::projectile_assets::ProjectileAssetCatalog;
 
     #[test]
+    fn striker_bomb_resolves_delayed_damage_and_releases_weapon_lease() {
+        let assets = Arc::new(ProjectileAssetCatalog::embedded().unwrap());
+        let ships = ShipAssetCatalog::embedded().unwrap();
+        let mut world = CombatWorld::new(
+            Aabb { min: Vec2::new(-20.0, -20.0), max: Vec2::new(20.0, 20.0) },
+            4.0, assets,
+        ).unwrap();
+        world.spawn_ship(
+            ships.by_type(13).unwrap(), 1, 1,
+            ShipVitals::new(100, 100, 1000, 0).unwrap(),
+            ShipMotion::new(Vec2::new(-8.0, 0.0), 0.0, 0.0, 0.0, 3.0),
+        ).unwrap();
+        world.spawn_ship(
+            ships.by_type(13).unwrap(), 2, 2,
+            ShipVitals::new(100, 100, 1000, 0).unwrap(),
+            ShipMotion::new(Vec2::ZERO, 0.0, 0.0, 0.0, 3.0),
+        ).unwrap();
+        world.set_ship_fleet_identity(1, 501).unwrap();
+        // Target selection already reserved 20 damage under weapon ID 100.
+        world.reservations.reserve(100, 1, 2, 100, 20).unwrap();
+        world.spawn_striker_bomb(
+            10,
+            ShotOwner {
+                shooter_id: 1, shooter_side: 1,
+                shooter_is_fire_barge: false, self_detonation: false,
+            },
+            2, 501, 20,
+            ProjectileMotion::new(Vec2::ZERO, 0.0, 0.0, 0.0, 10, 77),
+        ).unwrap();
+        assert_eq!(world.transfer_damage_reservation(100, 10), Ok(true));
+        assert!(world.reservations.held_by(100).is_none());
+
+        let mask = CollisionMatrix::from_rows([0; 32]);
+        world.step_fixed(1.51, &mask).unwrap();
+        assert!(matches!(
+            world.events()[0],
+            CombatEvent::BombDetonated { projectile_id: 10, target_id: 2 }
+        ));
+        assert_eq!(world.ships()[1].vitals.health(), 100);
+        world.step_fixed(0.51, &mask).unwrap();
+        let CombatEvent::Hit(hit) = &world.events()[0] else {
+            panic!("expected bomb hit");
+        };
+        assert_eq!(hit.delta.applied_damage, 20);
+        assert_eq!(hit.root_shot_id, 10);
+        assert_eq!(hit.command_outcome_id, 77);
+        assert_eq!(hit.source, DamageSource::Bomb);
+        assert!(matches!(
+            world.events()[1],
+            CombatEvent::ProjectileEnded { projectile_id: 10 }
+        ));
+        assert!(world.reservations.held_by(10).is_none());
+    }
+
+    #[test]
+    fn striker_bomb_shooter_reuse_does_not_reassign_damage_credit() {
+        let assets = Arc::new(ProjectileAssetCatalog::embedded().unwrap());
+        let ships = ShipAssetCatalog::embedded().unwrap();
+        let mut world = CombatWorld::new(
+            Aabb { min: Vec2::new(-20.0, -20.0), max: Vec2::new(20.0, 20.0) },
+            4.0, assets,
+        ).unwrap();
+        for (id, side) in [(1, 1), (2, 2)] {
+            world.spawn_ship(
+                ships.by_type(13).unwrap(), id, side,
+                ShipVitals::new(100, 100, 1000, 0).unwrap(),
+                ShipMotion::new(Vec2::ZERO, 0.0, 0.0, 0.0, 3.0),
+            ).unwrap();
+        }
+        world.set_ship_fleet_identity(1, 501).unwrap();
+        world.spawn_striker_bomb(
+            3,
+            ShotOwner {
+                shooter_id: 1, shooter_side: 1,
+                shooter_is_fire_barge: false, self_detonation: false,
+            },
+            2, 501, 15,
+            ProjectileMotion::new(Vec2::ZERO, 0.0, 0.0, 0.0, 3, 88),
+        ).unwrap();
+
+        // A pooled source wrapper now represents another persistent ship.
+        world.set_ship_fleet_identity(1, 999).unwrap();
+        let mask = CollisionMatrix::from_rows([0; 32]);
+        world.step_fixed(1.51, &mask).unwrap();
+        world.step_fixed(0.51, &mask).unwrap();
+        assert!(matches!(
+            world.events()[0],
+            CombatEvent::UnattributedDamage { target_id: 2, .. }
+        ));
+        assert_eq!(world.ships()[1].vitals.health(), 85);
+    }
+
+    #[test]
     fn rocket_impact_transfers_one_damage_reservation_to_its_explosion() {
         let assets = Arc::new(ProjectileAssetCatalog::embedded().unwrap());
         let ships = ShipAssetCatalog::embedded().unwrap();
