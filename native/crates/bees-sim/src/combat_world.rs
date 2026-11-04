@@ -15,7 +15,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use crate::collision::Aabb;
+use crate::collision::{Aabb, Pose};
 use crate::bomb::{BombAction, StrikerBombFuse};
 use crate::combat::{CombatError, DamageSource, HitEvent, ShipVitals};
 use crate::damage::can_basic_projectile_damage;
@@ -351,9 +351,19 @@ impl CombatWorld {
         let asset = self.projectile_assets.by_type(12)
             .ok_or(CombatWorldError::InvalidProjectileType(12))?;
         let body = asset.spawn_physics_body(entity_id, motion, 0.0)?;
-        let shot = CombatProjectile::new_striker_bomb(
+        let mut shot = CombatProjectile::new_striker_bomb(
             entity_id, owner, power, target_id, shooter_fleet_id,
         )?;
+        let target_pose = &self.physics.ships()[target_index].motion;
+        let displacement = body.motion.position - target_pose.position;
+        let (sin, cos) = target_pose.rotation_degrees.to_radians().sin_cos();
+        let local_offset = crate::geometry::Vec2::new(
+            displacement.x * cos + displacement.y * sin,
+            -displacement.x * sin + displacement.y * cos,
+        );
+        if let ImpactBehavior::StrikerBomb(fuse) = &mut shot.behavior {
+            fuse.set_attachment_offset(local_offset);
+        }
         self.add_projectile(shot, body)
     }
 
@@ -546,16 +556,27 @@ impl CombatWorld {
     fn update_striker_bombs(&mut self, dt: f32) -> Result<(), CombatWorldError> {
         for index in 0..self.projectiles.len() {
             if !self.physics.projectiles()[index].active { continue; }
-            let (target_id, shooter_fleet_id) = {
+            let (target_id, shooter_fleet_id, attachment_offset) = {
                 let ImpactBehavior::StrikerBomb(fuse) =
                     &self.projectiles[index].behavior else { continue };
-                (fuse.contacted_ship_id(), fuse.shooter_fleet_ship_id())
+                (fuse.contacted_ship_id(), fuse.shooter_fleet_ship_id(),
+                    fuse.local_attachment_offset())
             };
             let target_alive = self.ship_by_id.get(&target_id).copied()
                 .is_some_and(|target_index| {
                     self.physics.ships()[target_index].active &&
                     !self.ships[target_index].vitals.is_dead()
                 });
+            if target_alive {
+                let target_index = *self.ship_by_id.get(&target_id)
+                    .ok_or(CombatWorldError::UnknownShip)?;
+                let target_motion = &self.physics.ships()[target_index].motion;
+                self.physics.projectiles_mut()[index].motion.position =
+                    Pose {
+                        position: target_motion.position,
+                        rotation_degrees: target_motion.rotation_degrees,
+                    }.transform_point(attachment_offset);
+            }
             let action = {
                 let ImpactBehavior::StrikerBomb(fuse) =
                     &mut self.projectiles[index].behavior else { continue };
