@@ -10,7 +10,6 @@ import argparse
 import json
 import math
 import re
-import shutil
 import stat
 import sys
 import zipfile
@@ -88,7 +87,7 @@ def export_logs(
             with file.open("rb") as incoming, archive.open(name, "w", force_zip64=True) as target:
                 if start:
                     incoming.seek(start - 1)
-                    if incoming.read(1) != b"\\n":
+                    if incoming.read(1) != b"\n":
                         incoming.readline()  # skip only the incomplete first record/line
                 else:
                     incoming.seek(0)
