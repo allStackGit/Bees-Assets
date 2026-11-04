@@ -386,7 +386,7 @@ asynchronous scheduling can change experience order.
 
 Each independent benchmark saves its existing immutable summary report **plus
 a compact per-match CSV** containing the authoritative Unity side-channel
-outcome, timestamps/duration, shots, hits, damage and starting/final team
+outcome, episode number/duration, shots, hits, damage and starting/final team
 strength. The report records the CSV filename, SHA-256 and row count.
 The benchmark seed initializes a scenario *stream*; per-match independent
 seeds and initial coordinates are not emitted and must not be inferred.

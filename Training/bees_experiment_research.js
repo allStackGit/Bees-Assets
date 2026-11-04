@@ -14,7 +14,12 @@ function statistics(values) {
     const mean = values.reduce((total, x) => total + x, 0) / n;
     if (n === 1) return { n, mean, sd: null, ci95: null };
     const sd = Math.sqrt(values.reduce((total, x) => total + (x - mean) ** 2, 0) / (n - 1));
-    const t = T95[n - 1] || 1.96;
+    const df = n - 1;
+    const z = 1.959963984540054;
+    // For df > 30, use the asymptotic Student-t quantile; using 1.96
+    // directly would understate uncertainty for moderately sized studies.
+    const t = T95[df] || z + (z ** 3 + z) / (4 * df) +
+        (5 * z ** 5 + 16 * z ** 3 + 3 * z) / (96 * df ** 2);
     const delta = t * sd / Math.sqrt(n);
     return { n, mean, sd, ci95: [mean - delta, mean + delta] };
 }
@@ -71,6 +76,8 @@ function summarize(items, reports) {
                 !report.metrics?.telemetry_validated ||
                 (report.experiment?.id && report.experiment.id !== item.id)) continue;
             const m = report.metrics;
+            if (![m.win_rate, m.timeout_rate, m.score_rate]
+                .every(value => typeof value === 'number' && Number.isFinite(value))) continue;
             const benchmark = report.benchmark || {};
             const identity = [
                 report.build_id, report.environment_executable_sha256,
