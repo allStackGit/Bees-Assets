@@ -87,8 +87,12 @@ The portable `bees-sim` crate currently contains:
   with authored dimensions and prefab-default poses, while a third imports the
   standalone **208-vertex Polygon Obstacle** gameplay collider (excluding its
   separate proximity sensor). Destruction events
-  include Unity's size-class-dependent shard and piece counts; actually
-  spawning fragments and updating registries is still unimplemented.
+  include Unity's size-class-dependent shard and piece counts. Destroyed
+  collision asteroids leave the active ID registry and their inactive
+  physics/metadata slots are recycled on subsequent spawns, with new entity
+  IDs and world-local reuse metrics. End-of-level destruction suppresses
+  fragment events. Actual shard/piece spawning, pathfinder invalidation,
+  nearby-entity cleanup and rendering remain unimplemented.
 - An optional tactical reward consumer using the current RL team's shared
   positive/negative asymptotic shaping budgets, with mined cargo excluded
   from persistent-fleet damage reward on death.
