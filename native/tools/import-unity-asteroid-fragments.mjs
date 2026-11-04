@@ -18,7 +18,7 @@ function readList(field) {
     ).exec(scene)?.[1];
     if (!block) throw new Error('Missing prefab palette ' + field);
     const guids = [...block.matchAll(/guid: ([0-9a-f]{32})/g)].map(m => m[1]);
-    if (!guids.length || guids.length !== block.split(/\\r?\\n/).filter(Boolean).length) {
+    if (!guids.length || guids.length !== block.split(/\r?\n/).filter(Boolean).length) {
         throw new Error('Malformed prefab palette ' + field);
     }
     return guids;
@@ -27,7 +27,7 @@ function readList(field) {
 function sourceGuid(folder, name) {
     const file = path.join(root, sourceDir, folder, name + '.prefab.meta');
     const source = fs.readFileSync(file, 'utf8');
-    const guid = /^guid:\\s*([0-9a-f]{32})\\s*$/m.exec(source)?.[1];
+    const guid = /^guid:\s*([0-9a-f]{32})\s*$/m.exec(source)?.[1];
     if (!guid) throw new Error('No prefab GUID in ' + file);
     return guid;
 }
