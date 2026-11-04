@@ -173,8 +173,10 @@ class LinuxSupervisor {
                 '--property=Id,Description,LoadState,ActiveState,SubState,Result,MainPID,MemoryMax,CPUQuotaPerSecUSec,MemoryCurrent,CPUUsageNSec,TasksCurrent,KillMode,KillSignal'],
             {timeout:12000,maxBuffer:16384,windowsHide:true});
         const p=parseShow(out.stdout);
-        if(p.LoadState!=='loaded')
+        if(p.LoadState==='not-found')
             return {state:'unverified',active:false,unit_exists:false};
+        if(p.LoadState!=='loaded')
+            return {state:'unverified',active:false,unit_exists:true};
         if(p.Id!==record.unit||p.Description!==descriptionFor(record.job_id))
             throw Error('Unit identity mismatch; refusing to control an unknown service.');
         const expectedMemory=record.ram_mb*1048576;
@@ -186,7 +188,7 @@ class LinuxSupervisor {
             (p.KillMode!=='mixed'||
                 !['SIGINT','2'].includes(p.KillSignal)))
             throw Error('Systemd did not confirm checkpoint-aware interrupt semantics.');
-        if(p.ActiveState==='active') {
+        if(p.ActiveState==='active'||p.ActiveState==='deactivating') {
             const numeric=value=>/^[0-9]+$/.test(value||'')&&
                 Number.isSafeInteger(Number(value))?Number(value):null;
             const memoryBytes=numeric(p.MemoryCurrent);
