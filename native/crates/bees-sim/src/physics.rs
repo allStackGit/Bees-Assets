@@ -33,6 +33,56 @@ pub struct ObstacleTriggerEnter {
     pub obstacle_id: i64,
 }
 
+/// Primary hull overlap between a ship and a participating obstacle.
+/// Near/touch classification requires the separately authored proximity
+/// collider and is not implied by this contact.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct ShipObstacleContact {
+    pub ship_id: i64,
+    pub obstacle_id: i64,
+}
+
+/// Obstacle pairs have a stable, canonical ID order regardless of which
+/// physical body initiated the broadphase query.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct ObstaclePairContact {
+    pub first_obstacle_id: i64,
+    pub second_obstacle_id: i64,
+}
+
+fn update_contact_changes<T: Copy + Ord>(
+    current: &mut Vec<T>,
+    previous: &mut Vec<T>,
+    entered: &mut Vec<T>,
+    exited: &mut Vec<T>,
+) {
+    current.sort_unstable();
+    current.dedup();
+    entered.clear();
+    exited.clear();
+    let mut previous_index = 0;
+    let mut current_index = 0;
+    while previous_index < previous.len() && current_index < current.len() {
+        match previous[previous_index].cmp(&current[current_index]) {
+            std::cmp::Ordering::Less => {
+                exited.push(previous[previous_index]);
+                previous_index += 1;
+            }
+            std::cmp::Ordering::Greater => {
+                entered.push(current[current_index]);
+                current_index += 1;
+            }
+            std::cmp::Ordering::Equal => {
+                previous_index += 1;
+                current_index += 1;
+            }
+        }
+    }
+    exited.extend_from_slice(&previous[previous_index..]);
+    entered.extend_from_slice(&current[current_index..]);
+    std::mem::swap(previous, current);
+}
+
 /// Unity 2D physics layers are 0..31. The actual layer collision matrix
 /// must be imported from the authoritative project settings. No permissive
 /// default is provided for game execution.
@@ -302,6 +352,10 @@ pub struct ObstacleBody {
     pub angular_velocity_degrees: f32,
     pub layer: u8,
     pub active: bool,
+    /// Enable ship/obstacle and obstacle/obstacle hull contact reporting.
+    /// Gameplay selects the participants; static decorations do not initiate
+    /// expensive pair searches.
+    pub tracks_body_contacts: bool,
     collider: WorldCollider,
 }
 
@@ -323,7 +377,8 @@ impl ObstacleBody {
         }
         Ok(Self {
             id, pose, linear_velocity, angular_velocity_degrees, layer,
-            active: true, collider: WorldCollider::new(shape)?,
+            active: true, tracks_body_contacts: false,
+            collider: WorldCollider::new(shape)?,
         })
     }
 
@@ -343,6 +398,10 @@ pub struct PhysicsStepCounts {
     pub narrowphase_tests: u64,
     pub trigger_enters: u64,
     pub obstacle_trigger_enters: u64,
+    pub ship_obstacle_enters: u64,
+    pub ship_obstacle_exits: u64,
+    pub obstacle_pair_enters: u64,
+    pub obstacle_pair_exits: u64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -482,6 +541,14 @@ pub struct KinematicPhysics {
     obstacle_overlaps_previous: Vec<ObstacleTriggerEnter>,
     obstacle_overlaps_current: Vec<ObstacleTriggerEnter>,
     obstacle_entries: Vec<ObstacleTriggerEnter>,
+    ship_obstacle_previous: Vec<ShipObstacleContact>,
+    ship_obstacle_current: Vec<ShipObstacleContact>,
+    ship_obstacle_enters: Vec<ShipObstacleContact>,
+    ship_obstacle_exits: Vec<ShipObstacleContact>,
+    obstacle_pairs_previous: Vec<ObstaclePairContact>,
+    obstacle_pairs_current: Vec<ObstaclePairContact>,
+    obstacle_pair_enters: Vec<ObstaclePairContact>,
+    obstacle_pair_exits: Vec<ObstaclePairContact>,
     counts: PhysicsStepCounts,
 }
 
@@ -499,6 +566,14 @@ impl KinematicPhysics {
             obstacle_overlaps_previous: Vec::new(),
             obstacle_overlaps_current: Vec::new(),
             obstacle_entries: Vec::new(),
+            ship_obstacle_previous: Vec::new(),
+            ship_obstacle_current: Vec::new(),
+            ship_obstacle_enters: Vec::new(),
+            ship_obstacle_exits: Vec::new(),
+            obstacle_pairs_previous: Vec::new(),
+            obstacle_pairs_current: Vec::new(),
+            obstacle_pair_enters: Vec::new(),
+            obstacle_pair_exits: Vec::new(),
             counts: PhysicsStepCounts::default(),
         })
     }
@@ -512,6 +587,10 @@ impl KinematicPhysics {
     pub fn obstacle_trigger_entries(&self) -> &[ObstacleTriggerEnter] { &self.obstacle_entries }
     pub fn obstacles(&self) -> &[ObstacleBody] { &self.obstacles }
     pub fn obstacles_mut(&mut self) -> &mut [ObstacleBody] { &mut self.obstacles }
+    pub fn ship_obstacle_entries(&self) -> &[ShipObstacleContact] { &self.ship_obstacle_enters }
+    pub fn ship_obstacle_exits(&self) -> &[ShipObstacleContact] { &self.ship_obstacle_exits }
+    pub fn obstacle_pair_entries(&self) -> &[ObstaclePairContact] { &self.obstacle_pair_enters }
+    pub fn obstacle_pair_exits(&self) -> &[ObstaclePairContact] { &self.obstacle_pair_exits }
 
     /// Obstacles retain distinct IDs across the unified world. Their
     /// gameplay kind, health and destruction state live in CombatWorld.
@@ -666,6 +745,68 @@ impl KinematicPhysics {
                 }
             }
         }
+        // These overlap streams describe PRIMARY body geometry only. Unity
+        // CollisionAsteroid also has a separate proximity collider; that
+        // proximity state must be imported before combat damage is enabled.
+        self.ship_obstacle_current.clear();
+        for ship in &self.ships {
+            if !ship.active { continue; }
+            let Some(bounds) = ship.collider.bounds else { continue };
+            self.grid.candidates(bounds, &mut self.candidates);
+            self.counts.broadphase_candidates += self.candidates.len() as u64;
+            for &index in &self.candidates {
+                let obstacle = &self.obstacles[index];
+                if !obstacle.active || !obstacle.tracks_body_contacts ||
+                    !collision_matrix.allows(ship.layer, obstacle.layer) {
+                    continue;
+                }
+                let Some(obstacle_bounds) = obstacle.collider.bounds else { continue };
+                if !bounds.overlaps(obstacle_bounds) { continue; }
+                self.counts.narrowphase_tests += 1;
+                if ship.collider.overlaps(&obstacle.collider) {
+                    self.ship_obstacle_current.push(ShipObstacleContact {
+                        ship_id: ship.id, obstacle_id: obstacle.id,
+                    });
+                }
+            }
+        }
+        self.obstacle_pairs_current.clear();
+        for (source_index, source) in self.obstacles.iter().enumerate() {
+            if !source.active || !source.tracks_body_contacts { continue; }
+            let Some(bounds) = source.collider.bounds else { continue };
+            self.grid.candidates(bounds, &mut self.candidates);
+            self.counts.broadphase_candidates += self.candidates.len() as u64;
+            for &index in &self.candidates {
+                let other = &self.obstacles[index];
+                if !other.active || index == source_index ||
+                    (other.tracks_body_contacts && index < source_index) ||
+                    !collision_matrix.allows(source.layer, other.layer) {
+                    continue;
+                }
+                let Some(other_bounds) = other.collider.bounds else { continue };
+                if !bounds.overlaps(other_bounds) { continue; }
+                self.counts.narrowphase_tests += 1;
+                if source.collider.overlaps(&other.collider) {
+                    self.obstacle_pairs_current.push(ObstaclePairContact {
+                        first_obstacle_id: source.id.min(other.id),
+                        second_obstacle_id: source.id.max(other.id),
+                    });
+                }
+            }
+        }
+        update_contact_changes(
+            &mut self.ship_obstacle_current, &mut self.ship_obstacle_previous,
+            &mut self.ship_obstacle_enters, &mut self.ship_obstacle_exits,
+        );
+        self.counts.ship_obstacle_enters = self.ship_obstacle_enters.len() as u64;
+        self.counts.ship_obstacle_exits = self.ship_obstacle_exits.len() as u64;
+        update_contact_changes(
+            &mut self.obstacle_pairs_current, &mut self.obstacle_pairs_previous,
+            &mut self.obstacle_pair_enters, &mut self.obstacle_pair_exits,
+        );
+        self.counts.obstacle_pair_enters = self.obstacle_pair_enters.len() as u64;
+        self.counts.obstacle_pair_exits = self.obstacle_pair_exits.len() as u64;
+
         self.obstacle_overlaps_current.sort_unstable();
         self.obstacle_overlaps_current.dedup();
         self.obstacle_entries.clear();
@@ -721,7 +862,9 @@ impl crate::simulation::GameRules<KinematicPhysics> for KinematicPhysicsRules {
             decisions: 0,
             active_ships: world.state.ships().iter().filter(|ship| ship.active).count() as u32,
             active_projectiles: world.state.projectiles().iter().filter(|shot| shot.active).count() as u32,
-            events: counts.trigger_enters + counts.obstacle_trigger_enters,
+            events: counts.trigger_enters + counts.obstacle_trigger_enters +
+                counts.ship_obstacle_enters + counts.ship_obstacle_exits +
+                counts.obstacle_pair_enters + counts.obstacle_pair_exits,
         })
     }
 }
