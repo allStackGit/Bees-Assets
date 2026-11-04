@@ -16,6 +16,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use crate::collision::{Aabb, Pose};
+use crate::asteroid_assets::CollisionAsteroidCatalog;
 use crate::explosion_lifecycle::{ExplosionAction, ExplosionEvent, ExplosionTimeline};
 use crate::bomb::{BombAction, StrikerBombFuse};
 use crate::combat::{CombatError, DamageSource, HitEvent, ShipVitals};
@@ -26,6 +27,7 @@ use crate::physics::{
     PhysicsError, ProjectileBody, ShipBody, ShipShape, TriggerEnter,
 };
 use crate::policy::Decision;
+use crate::geometry::Vec2;
 use crate::movement::ShipMotion;
 use crate::obstacle::{AsteroidDamage, CombatObstacle, ObstacleKind};
 use crate::projectile::ProjectileMotion;
@@ -440,6 +442,29 @@ impl CombatWorld {
         self.ship_by_id.insert(ship.entity_id, index);
         self.ships.push(ship);
         Ok(())
+    }
+
+    /// Spawns a concrete authored CollisionAsteroid prefab into the same
+    /// physics/combat world as ships and projectiles. Never approximates an
+    /// asteroid's hull using a sprite bounding rectangle.
+    ///
+    /// Training durability follows the caller's established guard; None
+    /// restores the normal ConfigData.SizeClass * health increment.
+    pub fn spawn_collision_asteroid(
+        &mut self,
+        catalog: &CollisionAsteroidCatalog,
+        prefab_number: u8,
+        entity_id: i64,
+        pose: Pose,
+        linear_velocity: Vec2,
+        angular_velocity_degrees: f32,
+        effective_max_health: Option<i32>,
+    ) -> Result<(), CombatWorldError> {
+        let (obstacle, body) = catalog.prepare_spawn(
+            prefab_number, entity_id, pose, linear_velocity,
+            angular_velocity_degrees, effective_max_health,
+        ).map_err(|_| CombatWorldError::InvalidObstacle)?;
+        self.add_obstacle(obstacle, body)
     }
 
     /// Obstacles use the same world-local geometry and collision matrix
@@ -1290,6 +1315,32 @@ mod tests {
             ShipShape::Circle { offset: Vec2::ZERO, radius },
             Vec2::ZERO, 0.0,
         ).unwrap()
+    }
+
+    #[test]
+    fn authored_asteroid_spawn_keeps_exact_collider_and_training_durability() {
+        let catalog = CollisionAsteroidCatalog::embedded().unwrap();
+        let assets = Arc::new(ProjectileAssetCatalog::embedded().unwrap());
+        let mut world = CombatWorld::new(
+            Aabb {
+                min: Vec2::new(-32.0, -32.0),
+                max: Vec2::new(32.0, 32.0),
+            }, 4.0, assets,
+        ).unwrap();
+        world.spawn_collision_asteroid(
+            &catalog, 11, 1,
+            Pose { position: Vec2::new(3.0, 4.0), rotation_degrees: 45.0 },
+            Vec2::ZERO, 0.0, Some(5),
+        ).unwrap();
+        assert_eq!(world.obstacles()[0].kind, ObstacleKind::CollisionAsteroid);
+        assert_eq!(world.obstacles()[0].size_class, 6);
+        assert_eq!(world.obstacles()[0].vitals.unwrap().health, 5);
+        assert_eq!(world.physics.obstacles()[0].pose.position, Vec2::new(3.0, 4.0));
+        assert_eq!(world.physics.obstacles()[0].layer, 19);
+        assert!(matches!(
+            world.physics.obstacles()[0].shape(),
+            ShipShape::Polygon(_)
+        ));
     }
 
     #[test]
