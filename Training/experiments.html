@@ -1024,7 +1024,7 @@ function render(data) {
             label.append(percent);
             const download = txt('button', 'Download logs ZIP');
             download.type = 'button';
-            download.title = 'Export the newest selected portion of each available run log, preserving complete lines; no checkpoints';
+            download.title = 'Export the newest selected portion of each run log as ZIP files of at most 500 MB each; no checkpoints';
             download.addEventListener('click', () => {
                 const link = document.createElement('a');
                 link.href = '/api/experiment-logs?experiment_id=' +
@@ -1038,7 +1038,7 @@ function render(data) {
                 link.remove();
                 $('message').classList.remove('error');
                 $('message').textContent = 'Preparing newest ' + percent.value +
-                    '% of available logs for ' + item.name + '. The download begins when ready.';
+                    '% of available logs for ' + item.name + '. Exports over 500 MB open a page with numbered ZIP downloads.';
             });
             exportBar.append(label, download);
             name.append(exportBar);
