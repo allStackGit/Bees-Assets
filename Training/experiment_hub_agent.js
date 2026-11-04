@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 'use strict';
 
-// Read-only, cross-platform Experiment Hub heartbeat agent.
-// It never runs commands, launches jobs, or allocates hardware.
+// Cross-platform Experiment Hub presence and lease-receipt agent.
+// The only agent output is machine observations and acknowledged offer IDs.
+// It never runs commands, launches jobs, or enforces hardware quotas.
 const http = require('node:http');
 const os = require('node:os');
 
@@ -34,10 +35,41 @@ function observations(machineId) {
     };
 }
 
-function sendHeartbeat(url,machineId,token) {
+function observedOffers(offers,observation) {
+    if (!Array.isArray(offers)||offers.length>100)
+        throw Error('Invalid coordination lease offer list.');
+    const ids=new Set();
+    let claimedCpus=0,claimedRam=0;
+    for (const offer of offers) {
+        const r=offer?.resources;
+        if (!offer || typeof offer.id!=='string' ||
+            !/^[0-9a-f-]{36}$/.test(offer.id) ||
+            !['offered','acknowledged'].includes(offer.status) ||
+            ids.has(offer.id) || !r ||
+            !Number.isSafeInteger(r.cpus) || r.cpus<1 ||
+            !Number.isSafeInteger(r.ram_mb) || r.ram_mb<1)
+            throw Error('Invalid coordination lease offer.');
+        ids.add(offer.id);
+        claimedCpus+=r.cpus;
+        claimedRam+=r.ram_mb;
+    }
+    // Do not claim to have seen a workload arrangement beyond observed
+    // CPU/RAM capacity. Physical availability and GPU identity are unproven.
+    if (claimedCpus>observation.cpus || claimedRam>observation.ram_mb)
+        return [];
+    return [...ids];
+}
+
+function sendHeartbeat(url,machineId,token,observedLeaseIds=[]) {
     if (typeof token !== 'string' || !TOKEN.test(token))
         return Promise.reject(Error('Missing/invalid EXPERIMENT_HUB_AGENT_TOKEN.'));
-    const payload=JSON.stringify(observations(machineId));
+    if (!Array.isArray(observedLeaseIds) || observedLeaseIds.length>100 ||
+        observedLeaseIds.some(id=>typeof id!=='string' ||
+            !/^[0-9a-f-]{36}$/.test(id)))
+        return Promise.reject(Error('Invalid lease acknowledgement IDs.'));
+    const payload=JSON.stringify({
+        ...observations(machineId),observed_lease_ids:observedLeaseIds,
+    });
     return new Promise((resolve,reject)=>{
         const req=http.request(url,{
             method:'POST',timeout:10000,
@@ -78,13 +110,14 @@ async function main() {
     const token=process.env.EXPERIMENT_HUB_AGENT_TOKEN;
     observations(id);
     if(!TOKEN.test(token||''))throw Error('Set the one-time enrolled agent credential in EXPERIMENT_HUB_AGENT_TOKEN.');
-    let active=false,last='initial';
+    let active=false,last='initial',receipts=[];
     const poll=async()=>{
         if(active)return;
         active=true;
         try{
-            await sendHeartbeat(url,id,token);
-            if(last!=='connected')console.log('[experiment-hub-agent] connected ('+id+'); observation only, no job execution.');
+            const response=await sendHeartbeat(url,id,token,receipts);
+            receipts=observedOffers(response.lease_offers||[],observations(id));
+            if(last!=='connected')console.log('[experiment-hub-agent] connected ('+id+'); coordination only, no job execution.');
             last='connected';
         }catch(error){
             const message=String(error.message||error);
@@ -95,6 +128,13 @@ async function main() {
     await poll();
     if(process.argv.includes('--once')) {
         if(last!=='connected')process.exitCode=1;
+        else if(receipts.length) {
+            try { await sendHeartbeat(url,id,token,receipts); }
+            catch(error) {
+                console.error('[experiment-hub-agent] Lease receipt failed: '+error.message);
+                process.exitCode=1;
+            }
+        }
         return;
     }
     setInterval(poll,INTERVAL_MS);
@@ -104,4 +144,4 @@ if(require.main===module)main().catch(error=>{
     console.error('[experiment-hub-agent] '+error.message);
     process.exitCode=1;
 });
-module.exports={endpoint,observations,sendHeartbeat};
+module.exports={endpoint,observations,observedOffers,sendHeartbeat};
