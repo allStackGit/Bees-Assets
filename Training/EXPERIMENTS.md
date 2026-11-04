@@ -444,11 +444,20 @@ min/max capacity. Disabled +/- controls now show the specific reason inline
 (stale/offline worker, unsupported deployed runtime, missing safe limits,
 or release rollout). Updating only the dashboard does not add that
 capability to an older pinned worker runtime.
-Changing a running worker prompts a warning and records
-a capacity-change marker on the active experiment: compare throughput
-before and after separately. The **Auto** (automatically tuned workers) or **Reset** (locally configured
-manual workers) button clears the dashboard override and restores the worker's
-previous tuning or fixed target.
+Clicking +/- explicitly requests a one-environment change relative
+to the observed worker count (or a pending explicit override), without
+a blocking confirmation popup. The row distinguishes request acceptance from
+the worker's reported application; the control server still requires the
+explicit active-training authorization sent by this click. Each accepted
+adjustment records a capacity-change marker on the active experiment: compare
+throughput before and after separately. The remote supervisor uses the
+existing live Unity resize file for fixed-count as well as automatically tuned
+workers, so a healthy live adjustment does not restart that worker's actor,
+other workers, or the learner. Deployed older supervisors still require a
+compatible worker-runtime rollout; updating the dashboard alone cannot
+retrofit their behavior. The **Auto** (automatically tuned workers) or
+**Reset** (locally configured manual workers) button clears the dashboard
+override and restores the worker's previous tuning or fixed target.
 A fixed UI target pauses the automatic optimizer for that worker. Changes
 made while training is stopped persist in authenticated training control
 and take effect when that worker next runs; offline/unsupported workers
