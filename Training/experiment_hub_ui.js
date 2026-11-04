@@ -159,17 +159,66 @@ document.addEventListener('DOMContentLoaded', () => {
             cell(tr,j.configuration_revision);
             const linked=state.reservations.find(l=>l.id===j.lease_id &&
                 ['offered','acknowledged'].includes(l.status));
-            cell(tr,j.status==='waiting_adapter'
+            const machine=state.machines.find(m=>m.id===j.assigned_machine_id);
+            const labels={
+                start_requested:'Start requested',launch_requested:'Starting',
+                running:'Running (native verified)',
+                stop_requested:'Stop requested',finished:'Finished',
+                failed:'Failed',stopped:'Stopped',unverified:'Needs inspection',
+                cancelled:'Cancelled',
+            };
+            const live=j.live_execution;
+            const usage=live && j.status==='running' ?
+                ' · '+(live.memory_current_mb==null?'RAM ?':live.memory_current_mb+' MiB RAM')+
+                (live.cpu_time_ns==null?'':' · '+Math.round(live.cpu_time_ns/1e9)+' CPU seconds')
+                :'';
+            const status=j.status==='waiting_adapter'
                 ?linked?('Hub budget claim on '+linked.machine_id+' · '+
                     (linked.receipt_fresh?'Receipt fresh':linked.status)+
-                    ' · No execution')
+                    ' · Not started')
                     :'Waiting for trusted adapter · No claim'
-                :j.status);
+                :(labels[j.status]||j.status)+usage+
+                    (machine?.status==='offline'?' · Agent offline':'');
+            const detail=j.execution_diagnostic?' · '+j.execution_diagnostic:'';
+            const statusCell=cell(tr,status);
+            statusCell.title=detail||j.status_reason||status;
             cell(tr,j.resources.cpus+' CPU / '+j.resources.ram_mb+' MiB / '+
                 j.resources.gpu_count+' GPUs');
             const actions=cell(tr,'');
             if(j.status==='waiting_adapter'&&!j.lease_id)
                 actions.append(button('Coordinate capacity',()=>allocateJob([j.id])));
+            if(j.status==='waiting_adapter'&&linked?.receipt_fresh&&
+                machine?.status==='connected'&&
+                machine.local_executor_enabled===true&&
+                machine.installed_projects?.includes(j.project_id)&&
+                j.resources.gpu_count===0)
+                actions.append(button('Start on Linux',async()=>{
+                    if(!confirm('Authorize native CPU/RAM-limited execution of '+
+                        j.configuration_name+' on '+machine.name+
+                        '? Only the installed local adapter selects executable code. This starts a real process; verify host capacity and experimental validity.'))return;
+                    try{
+                        await action('hub/jobs/start',{
+                            job_id:j.id,confirm_start:true,
+                        });
+                        feedback('hub-job-message',
+                            'Native start authorized. Awaiting local systemd verification.');
+                        await reload();
+                    }catch(e){feedback('hub-job-message',e.message);}
+                }));
+            if(['start_requested','launch_requested','running','unverified']
+                .includes(j.status))
+                actions.append(button('Stop managed job',async()=>{
+                    if(!confirm('Request native stop for '+j.configuration_name+
+                        '? The agent must authenticate and verify the local systemd unit. An offline agent may leave stop pending.'))return;
+                    try{
+                        await action('hub/jobs/stop',{
+                            job_id:j.id,confirm_stop:true,
+                        });
+                        feedback('hub-job-message',
+                            'Stop recorded. Awaiting machine-local service confirmation.');
+                        await reload();
+                    }catch(e){feedback('hub-job-message',e.message);}
+                }));
             if(j.status==='waiting_adapter'&&j.lease_id)
                 actions.append(button('Release claim',async()=>{
                     if(!confirm('Release this advisory budget claim? No process is stopped.'))return;
@@ -199,9 +248,16 @@ document.addEventListener('DOMContentLoaded', () => {
         const waiting=records.filter(j=>j.status==='waiting_adapter').length;
         const cancelled=records.filter(j=>j.status==='cancelled').length;
         const allocated=records.filter(j=>j.status==='waiting_adapter'&&j.lease_id).length;
+        const running=records.filter(j=>j.status==='running').length;
+        const pendingNative=records.filter(j=>[
+            'start_requested','launch_requested','stop_requested'
+        ].includes(j.status)).length;
+        const uncertain=records.filter(j=>j.status==='unverified').length;
         feedback('hub-other-monitor',
-            waiting+' waiting for trusted adapter · '+allocated+' with advisory capacity claims · '+
-            cancelled+' cancelled · No managed process running for this project.');
+            waiting+' queued · '+allocated+' with advisory claims · '+
+            running+' native services reported running · '+pendingNative+
+            ' start/stop operations pending · '+uncertain+' requiring inspection · '+
+            cancelled+' cancelled. Remote status is heartbeat-based.');
         $('hub-machine-rows').replaceChildren();
         for(const m of state.machines) {
             const tr=document.createElement('tr');
@@ -211,7 +267,9 @@ document.addEventListener('DOMContentLoaded', () => {
             cell(tr,(m.gpus||[]).map(g=>g.id+' ('+g.vram_mb+' MiB)').join(', ')||'None');
             const capability=m.execution_capabilities;
             const control=cell(tr,m.status==='connected'
-                ?'Not installed'+(capability?.cgroup_v2_detected?' · Linux cgroup v2 detected':'')
+                ?m.local_executor_enabled
+                    ?'Local Linux CPU/RAM adapter opted in; verify per started service'
+                    :'Not installed'+(capability?.cgroup_v2_detected?' · Linux cgroup v2 detected':'')
                 :'Not verified');
             control.title=capability?.reason||'No authenticated native capability report.';
             cell(tr,m.last_seen_at?.replace('T',' ').slice(0,19)||'—');
