@@ -2021,9 +2021,42 @@ const server = http.createServer(async (req, res) => {
             return json(res, 200, { ok: true, curriculum: template });
         }
         if (route === '/api/queue') {
-            const item = await definition(value);
-            state.items.push(item); save();
-            return json(res, 201, item);
+            // Ordinary requests still queue exactly one experiment. Replicates
+            // are an explicit opt-in and run sequentially through the existing
+            // queue, each with fresh policy/optimizer initialization.
+            const count = value.replicates == null ? 1 : Number(value.replicates);
+            if (!Number.isSafeInteger(count) || count < 1 || count > 32) {
+                throw Error('Replicate count must be 1–32.');
+            }
+            const baseSeed = Number(value.trainer?.seed);
+            if (count > 1 && (!Number.isInteger(baseSeed) || baseSeed < 0 ||
+                baseSeed + count - 1 >= 2 ** 31)) {
+                throw Error('Replicates require a valid starting initialization seed with room for all seeds.');
+            }
+            const studyId = count > 1 ? crypto.randomUUID() : null;
+            const prepared = [];
+            for (let i = 0; i < count; i++) {
+                const seed = count === 1 ? baseSeed : baseSeed + i;
+                const suffix = count > 1 ? ' · seed ' + seed : '';
+                const input = {
+                    ...value,
+                    name: count > 1 ? String(value.name || '').slice(0, 100 - suffix.length) + suffix : value.name,
+                    trainer: { ...value.trainer, seed },
+                };
+                const item = await definition(input);
+                if (studyId) {
+                    item.study_id = studyId;
+                    item.study_label = String(value.name || '');
+                    item.replicate_number = i + 1;
+                    item.replicate_count = count;
+                    item.replicate_seed = seed;
+                }
+                prepared.push(item);
+            }
+            state.items.push(...prepared);
+            try { save(); }
+            catch (error) { state.items.splice(-prepared.length, prepared.length); throw error; }
+            return json(res, 201, { items: prepared, study_id: studyId });
         }
         if (route === '/api/edit-queued') {
             if (busy) return json(res, 409, { error: 'Queue manager is busy; retry after refresh.' });
