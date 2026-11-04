@@ -146,9 +146,9 @@ impl ShipBody {
 
     #[inline]
     fn overlaps_projectile(&self, center: Vec2, radius: f32) -> bool {
-        match self.shape {
+        match &self.shape {
             ShipShape::Circle { radius: hull_radius, .. } => {
-                circles_overlap(self.circle_world, hull_radius, center, radius)
+                circles_overlap(self.circle_world, *hull_radius, center, radius)
             }
             ShipShape::Polygon(_) | ShipShape::Box { .. } => {
                 circle_overlaps_polygon(center, radius, &self.hull_world)
