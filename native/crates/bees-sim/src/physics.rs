@@ -284,7 +284,7 @@ impl ProjectileBody {
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct PhysicsStepCounts {
-    pub moved_bodies: u64,
+    pub integrated_bodies: u64,
     pub broadphase_candidates: u64,
     pub narrowphase_tests: u64,
     pub trigger_enters: u64,
@@ -476,13 +476,13 @@ impl KinematicPhysics {
             if !ship.active { continue; }
             ship.motion.position += ship.motion.body_velocity * dt;
             ship.update_hull();
-            self.counts.moved_bodies += 1;
+            self.counts.integrated_bodies += 1;
         }
         for projectile in &mut self.projectiles {
             if !projectile.active { continue; }
             if projectile.has_body {
                 projectile.motion.position += projectile.motion.velocity * dt;
-                self.counts.moved_bodies += 1;
+                self.counts.integrated_bodies += 1;
             }
             projectile.update_hull();
         }
