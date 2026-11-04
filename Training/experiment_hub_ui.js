@@ -257,6 +257,12 @@ document.addEventListener('DOMContentLoaded', () => {
             await reload();
         }catch(err){feedback('hub-placements',err.message);}
     });
+    const shareMode=$('hub-request-gpu-mode');
+    shareMode.addEventListener('change',()=>{
+        const shared=shareMode.value==='shared';
+        $('hub-request-share-vram').disabled=!shared;
+        $('hub-request-share-compute').disabled=!shared;
+    });
     $('hub-preview').addEventListener('click',async()=>{
         try {
             const query=new URLSearchParams({
@@ -265,6 +271,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 gpus:$('hub-request-gpus').value.trim(),
                 gpu_count:$('hub-request-gpu-count').value,
                 min_gpu_vram_mb:$('hub-request-gpu-vram').value,
+                gpu_mode:shareMode.value,
+                gpu_vram_mb:shareMode.value==='shared'
+                    ?$('hub-request-share-vram').value:'0',
+                gpu_compute_pct:shareMode.value==='shared'
+                    ?$('hub-request-share-compute').value:'100',
             });
             const r=await fetch('/api/hub/placements?'+query,{cache:'no-store'});
             const data=await r.json();
@@ -274,6 +285,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 (p.suggested_gpus?.length?' · GPUs '+p.suggested_gpus.join(', '):'')+' — '+p.reason
             ).join('\n')||'No registered machines.');
         }catch(e){feedback('hub-placements',e.message);}
+    });
+
+    $('hub-plan').addEventListener('click',async()=>{
+        try {
+            const jobs=JSON.parse($('hub-plan-json').value);
+            const result=await action('hub/plan',{jobs});
+            feedback('hub-plan-result',result.placements.map(p=>
+                p.id+': '+(p.capacity_fits
+                    ?p.machine_name+(p.suggested_gpus.length
+                        ?' · '+p.suggested_gpus.join(', '):'')
+                    :'No fit')+' — '+p.reason
+            ).join('\n')||'No workloads entered. No changes made.');
+        }catch(e){feedback('hub-plan-result',e.message);}
     });
 
     async function loadMonitorBees() {
