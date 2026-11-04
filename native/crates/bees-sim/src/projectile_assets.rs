@@ -2,9 +2,12 @@
 //! process from native/assets/projectile-colliders.json. Rendered gameplay,
 //! training and evaluation all construct physics bodies through this catalog.
 
+use std::sync::Arc;
+
 use serde::Deserialize;
 
 use crate::collider_asset_shape::RawShape;
+use crate::explosion_lifecycle::{ExplosionAction, ExplosionEvent};
 use crate::physics::{PhysicsError, ProjectileBody, ShipShape};
 use crate::projectile::ProjectileMotion;
 
@@ -22,6 +25,8 @@ pub struct ProjectileAsset {
     pub has_body: bool,
     pub rocket_max_speed: Option<f32>,
     pub shape: Option<ShipShape>,
+    /// Immutable gameplay animation events imported from the Unity clips.
+    pub explosion_events: Arc<[ExplosionEvent]>, 
 }
 
 impl ProjectileAsset {
@@ -48,6 +53,7 @@ pub enum ProjectileAssetError {
     DuplicateType(u8),
     MissingType(u8),
     InvalidShape(u8),
+    InvalidAnimation(u8),
 }
 
 #[derive(Debug)]
@@ -70,6 +76,15 @@ struct RawProjectile {
     has_body: bool,
     rocket_max_speed: Option<f32>,
     shape: Option<RawShape>,
+    #[serde(default)]
+    animation_events: Vec<RawAnimationEvent>,
+}
+
+#[derive(Deserialize)]
+struct RawAnimationEvent {
+    time_seconds: f32,
+    action: String,
+    int_parameter: i32,
 }
 
 impl ProjectileAssetCatalog {
@@ -104,6 +119,34 @@ impl ProjectileAssetCatalog {
                 .map(|value| value.into_shape()
                     .ok_or(ProjectileAssetError::InvalidShape(entry.projectile_type as u8)))
                 .transpose()?;
+            let mut animation_events: Vec<ExplosionEvent> = Vec::with_capacity(entry.animation_events.len());
+            let mut seen_kill = false;
+            let mut harmless_count = 0;
+            for event in entry.animation_events {
+                if !event.time_seconds.is_finite() || event.time_seconds < 0.0 ||
+                    seen_kill || animation_events.last().is_some_and(|prev| prev.time_seconds > event.time_seconds) {
+                    return Err(ProjectileAssetError::InvalidAnimation(entry.projectile_type as u8));
+                }
+                let action = match (event.action.as_str(), event.int_parameter) {
+                    ("SetColliderSize", radius) if radius > 0 => ExplosionAction::SetRadius(radius as f32),
+                    ("SetHarmless", 0) => {
+                        harmless_count += 1;
+                        ExplosionAction::SetHarmless
+                    }
+                    ("Kill", 0) => {
+                        seen_kill = true;
+                        ExplosionAction::Kill
+                    }
+                    _ => return Err(ProjectileAssetError::InvalidAnimation(entry.projectile_type as u8)),
+                };
+                animation_events.push(ExplosionEvent { time_seconds: event.time_seconds, action });
+            }
+            let is_explosion = (13..=15).contains(&entry.projectile_type);
+            if is_explosion != !animation_events.is_empty() ||
+                (is_explosion && (!seen_kill || harmless_count != 1 ||
+                    !matches!(&shape, Some(ShipShape::Circle { .. })))) {
+                return Err(ProjectileAssetError::InvalidAnimation(entry.projectile_type as u8));
+            }
             // A projectile without a collider is a script-driven entity
             // (currently StrikerBomb), not a ghost circle of radius zero.
             slots[index] = Some(ProjectileAsset {
@@ -113,6 +156,7 @@ impl ProjectileAssetCatalog {
                 has_body: entry.has_body,
                 rocket_max_speed: entry.rocket_max_speed,
                 shape,
+                explosion_events: Arc::from(animation_events.into_boxed_slice()),
             });
         }
         let projectiles = slots.into_iter().enumerate()
@@ -147,6 +191,9 @@ mod tests {
         assert!(!catalog.by_type(13).unwrap().has_body);
         assert_eq!(catalog.by_type(14).unwrap().collision_layer, 20);
         assert_eq!(catalog.by_type(5).unwrap().rocket_max_speed, Some(160.0));
+        assert_eq!(catalog.by_type(13).unwrap().explosion_events.len(), 2);
+        assert_eq!(catalog.by_type(14).unwrap().explosion_events.len(), 7);
+        assert_eq!(catalog.by_type(15).unwrap().explosion_events.len(), 6);
         assert!(catalog.by_type(0).is_none());
     }
 }
