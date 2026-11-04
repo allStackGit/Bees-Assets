@@ -38,6 +38,14 @@ function request(input) {
 
 function remaining(machine,reservations) {
     const claimed=reservations.filter(r=>r.machine_id===machine.id&&r.status==='active');
+    // A live authenticated agent may reduce a manually declared CPU/RAM
+    // budget but never increase it. Stale measurements are not used.
+    const cpuBudget=machine.status==='connected' &&
+        Number.isSafeInteger(machine.reported_cpus)
+        ?Math.min(machine.cpus,machine.reported_cpus):machine.cpus;
+    const ramBudget=machine.status==='connected' &&
+        Number.isSafeInteger(machine.reported_ram_mb)
+        ?Math.min(machine.ram_mb,machine.reported_ram_mb):machine.ram_mb;
     const usedCpus=claimed.reduce((sum,r)=>sum+(r.resources?.cpus||0),0);
     const usedRam=claimed.reduce((sum,r)=>sum+(r.resources?.ram_mb||0),0);
     const capacity=machine.gpus.map(g=>({id:g.id,vram_mb:g.vram_mb,
@@ -62,8 +70,8 @@ function remaining(machine,reservations) {
     for(const gpu of capacity) {
         if(gpu.exclusive){gpu.available_vram_mb=0;gpu.available_compute_pct=0;}
     }
-    return {cpus:Math.max(0,machine.cpus-usedCpus),
-        ram_mb:Math.max(0,machine.ram_mb-usedRam),
+    return {cpus:Math.max(0,cpuBudget-usedCpus),
+        ram_mb:Math.max(0,ramBudget-usedRam),
         gpus:capacity.filter(g=>!g.exclusive&&g.available_vram_mb>0&&
             g.available_compute_pct>0).map(g=>g.id),
         gpu_capacity:capacity};
@@ -87,12 +95,14 @@ function placements(machines,reservations,input) {
             :eligible.slice(0,wanted.gpu_count);
         const capacityFits=wanted.cpus<=available.cpus&&
             wanted.ram_mb<=available.ram_mb&&selected.length===wanted.gpu_count;
-        const online=machine.status==='online';
+        const online=machine.status==='connected';
         return {machine_id:machine.id,machine_name:machine.name,online,available,
-            fits:online&&capacityFits,capacity_fits:capacityFits,
+            // Heartbeats authenticate a reporting process, not reservation
+            // enforcement. No job is executable through this planner yet.
+            fits:false,capacity_fits:capacityFits,
             suggested_gpus:capacityFits?selected.map(g=>g.id):[],
-            reason:!online?'No authenticated healthy agent; capacity preview only'
-                :capacityFits?'Budget fits (agent enforcement still required)'
+            reason:!online?'No currently authenticated agent; capacity preview only'
+                :capacityFits?'Agent connected; resource isolation unavailable'
                 :'Insufficient CPU, RAM, GPU VRAM, or GPU compute budget'};
     });
 }
