@@ -25,7 +25,7 @@ use crate::combat::{CombatError, DamageSource, HitEvent, ShipVitals};
 use crate::damage::can_basic_projectile_damage;
 use crate::damage_reservations::{DamageReservations, DamageStatus, ReservationError};
 use crate::physics::{
-    CollisionMatrix, KinematicPhysics, ObstacleBody, ObstacleTriggerEnter,
+    CollisionMatrix, KinematicPhysics, ObstacleBody, ObstaclePairContact, ObstacleTriggerEnter,
     PhysicsError, ProjectileBody, ShipBody, ShipShape, TriggerEnter,
 };
 use crate::policy::Decision;
@@ -112,6 +112,9 @@ pub enum CombatEvent {
         size_class: u8,
         breakup: AsteroidBreakup,
     },
+    /// MapBorder.OnTriggerExit2D calls Kill(true) on a previously entered
+    /// asteroid, without generating shards.
+    AsteroidExitedMap { obstacle_id: i64 },
     ShipDied {
         victim_id: i64,
         killer_id: i64,
@@ -264,6 +267,12 @@ pub struct ObstacleStorageMetrics {
     pub slots_reused: u64,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct AsteroidBorderState {
+    pub has_touched_map_border: bool,
+    pub has_entered_map: bool,
+}
+
 /// State and scratch are owned per arena. No process globals, no cross-world
 /// static dictionaries. Dense arrays use identical indices to physics bodies;
 /// ID maps are only used when routing collision results.
@@ -280,6 +289,7 @@ pub struct CombatWorld {
     obstacle_slot_reuses: u64,
     ship_by_id: HashMap<i64, usize>,
     obstacle_by_id: HashMap<i64, usize>,
+    asteroid_border_states: HashMap<i64, AsteroidBorderState>,
     fleet_id_by_ship: HashMap<i64, i64>,
     projectile_by_id: HashMap<i64, usize>,
     reservations: DamageReservations,
@@ -314,6 +324,7 @@ impl CombatWorld {
             obstacle_slot_reuses: 0,
             ship_by_id: HashMap::new(),
             obstacle_by_id: HashMap::new(),
+            asteroid_border_states: HashMap::new(),
             fleet_id_by_ship: HashMap::new(),
             projectile_by_id: HashMap::new(),
             reservations: DamageReservations::new(),
@@ -335,6 +346,9 @@ impl CombatWorld {
     pub fn projectiles(&self) -> &[CombatProjectile] { &self.projectiles }
     pub fn reservations(&self) -> &DamageReservations { &self.reservations }
     pub fn obstacles(&self) -> &[CombatObstacle] { &self.obstacles }
+    pub fn asteroid_border_state(&self, entity_id: i64) -> Option<AsteroidBorderState> {
+        self.asteroid_border_states.get(&entity_id).copied()
+    }
 
     /// Includes both dormant slots and live shots. This is measured per
     /// world, so stress runs can distinguish peak concurrency from lifetime
@@ -535,7 +549,7 @@ impl CombatWorld {
     pub fn add_obstacle(
         &mut self,
         obstacle: CombatObstacle,
-        body: ObstacleBody,
+        mut body: ObstacleBody,
     ) -> Result<(), CombatWorldError> {
         if body.id != obstacle.entity_id || body.id < self.next_entity_id ||
             self.ship_by_id.contains_key(&body.id) ||
@@ -548,6 +562,9 @@ impl CombatWorld {
             return Err(CombatWorldError::InvalidObstacle);
         }
         let next_id = body.id.checked_add(1).ok_or(CombatWorldError::EntityIdExhausted)?;
+        let is_asteroid = obstacle.kind == ObstacleKind::CollisionAsteroid;
+        let entity_id = obstacle.entity_id;
+        body.tracks_body_contacts = is_asteroid;
         if let Some(&index) = self.free_obstacle_slots.last() {
             self.physics.replace_ended_obstacle(index, body)?;
             self.free_obstacle_slots.pop();
@@ -562,6 +579,9 @@ impl CombatWorld {
             self.obstacles.push(obstacle);
         }
         self.next_entity_id = next_id;
+        if is_asteroid {
+            self.asteroid_border_states.insert(entity_id, AsteroidBorderState::default());
+        }
         Ok(())
     }
 
@@ -1105,6 +1125,48 @@ impl CombatWorld {
         Ok(())
     }
 
+    /// MapBorder reports entry when an asteroid first touches the border,
+    /// but only its subsequent EXIT changes HasEnteredMap or removes it.
+    /// These events are processed after the shared physics step and use the
+    /// same authored hulls in rendered and headless worlds.
+    fn asteroid_at_border(&self, pair: ObstaclePairContact) -> Option<i64> {
+        let first = &self.obstacles[*self.obstacle_by_id.get(&pair.first_obstacle_id)?];
+        let second = &self.obstacles[*self.obstacle_by_id.get(&pair.second_obstacle_id)?];
+        match (first.kind, second.kind) {
+            (ObstacleKind::CollisionAsteroid, ObstacleKind::MapBorder) => Some(first.entity_id),
+            (ObstacleKind::MapBorder, ObstacleKind::CollisionAsteroid) => Some(second.entity_id),
+            _ => None,
+        }
+    }
+
+    fn process_map_border_contacts(&mut self) {
+        for index in 0..self.physics.obstacle_pair_entries().len() {
+            let pair = self.physics.obstacle_pair_entries()[index];
+            if let Some(asteroid_id) = self.asteroid_at_border(pair) {
+                if let Some(state) = self.asteroid_border_states.get_mut(&asteroid_id) {
+                    state.has_touched_map_border = true;
+                }
+            }
+        }
+        for index in 0..self.physics.obstacle_pair_exits().len() {
+            let pair = self.physics.obstacle_pair_exits()[index];
+            let Some(asteroid_id) = self.asteroid_at_border(pair) else { continue };
+            let Some(state) = self.asteroid_border_states.get_mut(&asteroid_id) else {
+                continue;
+            };
+            if state.has_entered_map {
+                let &obstacle_index = self.obstacle_by_id.get(&asteroid_id)
+                    .expect("active asteroid has a world registry entry");
+                self.retire_collision_asteroid(obstacle_index, false);
+                self.events.push(CombatEvent::AsteroidExitedMap {
+                    obstacle_id: asteroid_id,
+                });
+            } else {
+                state.has_entered_map = true;
+            }
+        }
+    }
+
     /// Unity's CollisionAsteroid.Kill(true) (teardown/map border) removes
     /// the body without spawning children. A normal kill emits the authored
     /// breakup request. Callers must not reuse a retired entity ID.
@@ -1134,6 +1196,7 @@ impl CombatWorld {
         }
         self.physics.obstacles_mut()[index].active = false;
         self.obstacle_by_id.remove(&entity_id);
+        self.asteroid_border_states.remove(&entity_id);
         self.free_obstacle_slots.push(index);
         if with_breakup {
             self.events.push(CombatEvent::AsteroidDestroyed {
@@ -1261,6 +1324,7 @@ impl CombatWorld {
         self.pending_contacts.extend_from_slice(new_contacts);
         self.pending_obstacle_contacts
             .extend_from_slice(self.physics.obstacle_trigger_entries());
+        self.process_map_border_contacts();
 
         Ok(StepCounts {
             active_ships: self.physics.ships().iter().filter(|ship| ship.active).count() as u32,
