@@ -20,6 +20,7 @@ pub struct ProjectileAsset {
     pub projectile_type: u8,
     pub collision_layer: u8,
     pub has_body: bool,
+    pub rocket_max_speed: Option<f32>,
     pub shape: Option<ShipShape>,
 }
 
@@ -67,6 +68,7 @@ struct RawProjectile {
     projectile_type: u32,
     layer: u8,
     has_body: bool,
+    rocket_max_speed: Option<f32>,
     shape: Option<RawShape>,
 }
 
@@ -93,7 +95,9 @@ impl ProjectileAssetCatalog {
             if slots[index].is_some() {
                 return Err(ProjectileAssetError::DuplicateType(entry.projectile_type as u8));
             }
-            if entry.name.is_empty() || entry.layer >= 32 {
+            if entry.name.is_empty() || entry.layer >= 32 ||
+                (entry.projectile_type == 5 && !entry.rocket_max_speed.is_some_and(|speed| speed.is_finite() && speed > 0.0)) ||
+                (entry.projectile_type != 5 && entry.rocket_max_speed.is_some()) {
                 return Err(ProjectileAssetError::InvalidShape(entry.projectile_type as u8));
             }
             let shape = entry.shape
@@ -107,6 +111,7 @@ impl ProjectileAssetCatalog {
                 projectile_type: entry.projectile_type as u8,
                 collision_layer: entry.layer,
                 has_body: entry.has_body,
+                rocket_max_speed: entry.rocket_max_speed,
                 shape,
             });
         }
@@ -141,6 +146,7 @@ mod tests {
         assert!(catalog.by_type(12).unwrap().shape.is_none());
         assert!(!catalog.by_type(13).unwrap().has_body);
         assert_eq!(catalog.by_type(14).unwrap().collision_layer, 20);
+        assert_eq!(catalog.by_type(5).unwrap().rocket_max_speed, Some(160.0));
         assert!(catalog.by_type(0).is_none());
     }
 }
