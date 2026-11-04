@@ -2127,6 +2127,9 @@ const server = http.createServer(async (req, res) => {
             }
             return await exportExperimentLogs(item, res, percent);
         }
+        if (req.method === 'GET' && route === '/api/hub/jobs/plan') {
+            return json(res, 200, requireHub().plannedJobs());
+        }
         if (req.method === 'GET' && route === '/api/hub/state') {
             const data = requireHub().snapshot();
             // Existing Bees state is exposed, not imported or rewritten. The Hub
@@ -2400,6 +2403,9 @@ const server = http.createServer(async (req, res) => {
         }
         if (route === '/api/hub/jobs') {
             return json(res, 201, requireHub().queueConfiguration(value));
+        }
+        if (route === '/api/hub/jobs/cancel') {
+            return json(res, 200, requireHub().cancelJob(value));
         }
         if (route === '/api/storage') {
             if (busy || state.active_id || state.armed || state.stop_requested) {
