@@ -219,7 +219,7 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
 </head>
 <body>
 <header><div><h1>Bees Experiments</h1><small>Local experiment queue and training comparisons · Version 1</small></div>
-<div class="bar"><button id="start" class="primary">Run queue</button><button id="pause">Pause for maintenance</button><button id="resume" class="primary" hidden>Resume training</button><button id="stop" class="danger">Stop safely</button></div></header>
+<div class="bar"><button id="start" class="primary">Run queue</button><button id="pause">Pause for maintenance</button><button id="update-workers" hidden>Update worker software</button><button id="resume" class="primary" hidden>Resume training</button><button id="stop" class="danger">Stop safely</button></div></header>
 <div id="message" role="status"></div>
 <section>
 <h2>Overview</h2><div id="overview" class="summary"></div>
@@ -859,6 +859,8 @@ function render(data) {
     $('pause').disabled = data.busy || Boolean(data.stop_requested);
     $('resume').hidden = active?.status !== 'paused';
     $('resume').disabled = data.busy;
+    $('update-workers').hidden = active?.status !== 'paused';
+    $('update-workers').disabled = data.busy;
     $('stop').disabled = maintaining || (!data.active_id && !data.armed);
     $('message').textContent = data.message || '';
     $('message').classList.toggle('error', /failed|error|attention|paused|interrupted|refusing|changed|not started/i.test(data.message || ''));
@@ -1754,6 +1756,24 @@ $('pause').addEventListener('click', async () => {
     if (!confirm('Pause the active experiment for maintenance? The trainer will save its checkpoint, the queue will stay stopped, and Resume will continue this same run. Wait for Paused before closing or updating the manager.')) return;
     try { await request('/api/pause', {}); await refresh(); }
     catch (err) { $('message').textContent = err.message; $('message').classList.add('error'); }
+});
+$('update-workers').addEventListener('click', async () => {
+    if (!confirm('Publish updated worker software for the paused experiment? The Unity build, learner runtime and optimizer checkpoint will not change. Remote supervisors will adopt the update, then you can resume the same run.')) return;
+    $('update-workers').disabled = true;
+    $('resume').disabled = true;
+    $('message').classList.remove('error');
+    $('message').textContent = 'Packaging and publishing worker-only runtime…';
+    try {
+        await request('/api/update-workers', {});
+        await refresh();
+    } catch (error) {
+        $('message').textContent = error.message;
+        $('message').classList.add('error');
+        await refresh();
+    } finally {
+        $('update-workers').disabled = false;
+        $('resume').disabled = false;
+    }
 });
 $('resume').addEventListener('click', async () => {
     try { await request('/api/resume', {}); await refresh(); }
