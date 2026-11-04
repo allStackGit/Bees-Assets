@@ -228,7 +228,7 @@ class ExperimentHub {
         for(const job of jobs) {
             if(job.lease_id) {
                 const lease=next.reservations.find(l=>l.id===job.lease_id &&
-                    l.job_id===job.id && l.project_id===project.id &&
+                    l.job_id===job.id && l.project_id===job.project_id &&
                     ['offered','acknowledged'].includes(l.status));
                 if(!lease)throw Error('Job allocation ledger inconsistent; no changes committed.');
                 results.push({job_id:job.id,machine_id:lease.machine_id,
