@@ -17,6 +17,7 @@ use std::collections::{HashMap, HashSet};
 use crate::collision::Aabb;
 use crate::combat::{CombatError, DamageSource, HitEvent, ShipVitals};
 use crate::damage::can_basic_projectile_damage;
+use crate::damage_reservations::{DamageReservations, DamageStatus, ReservationError};
 use crate::physics::{
     CollisionMatrix, KinematicPhysics, PhysicsError, ProjectileBody, ShipBody, TriggerEnter,
 };
@@ -33,6 +34,9 @@ use crate::telemetry::StepCounts;
 pub enum CombatWorldError {
     Physics(PhysicsError),
     Combat(CombatError),
+    Reservation(ReservationError),
+    UnknownProjectile,
+    UnknownShip,
     DuplicateEntity,
     InvalidSide,
     InvalidProjectilePower,
@@ -47,6 +51,9 @@ impl From<PhysicsError> for CombatWorldError {
 }
 impl From<CombatError> for CombatWorldError {
     fn from(value: CombatError) -> Self { Self::Combat(value) }
+}
+impl From<ReservationError> for CombatWorldError {
+    fn from(value: ReservationError) -> Self { Self::Reservation(value) }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -150,6 +157,7 @@ pub struct CombatWorld {
     projectiles: Vec<CombatProjectile>,
     ship_by_id: HashMap<i64, usize>,
     projectile_by_id: HashMap<i64, usize>,
+    reservations: DamageReservations,
     pending_contacts: Vec<TriggerEnter>,
     processing_contacts: Vec<TriggerEnter>,
     processed_this_tick: HashSet<i64>,
@@ -167,6 +175,7 @@ impl CombatWorld {
             projectiles: Vec::new(),
             ship_by_id: HashMap::new(),
             projectile_by_id: HashMap::new(),
+            reservations: DamageReservations::new(),
             pending_contacts: Vec::new(),
             processing_contacts: Vec::new(),
             processed_this_tick: HashSet::new(),
@@ -180,6 +189,7 @@ impl CombatWorld {
     pub fn events(&self) -> &[CombatEvent] { &self.events }
     pub fn ships(&self) -> &[CombatShip] { &self.ships }
     pub fn projectiles(&self) -> &[CombatProjectile] { &self.projectiles }
+    pub fn reservations(&self) -> &DamageReservations { &self.reservations }
 
     /// The canonical spawn path for game and training. Asset collider
     /// geometry is shared, not reconstructed per world or per spawn.
@@ -252,6 +262,55 @@ impl CombatWorld {
         Ok(())
     }
 
+    /// Bind the existing weapon's outgoing-damage reservation exactly once.
+    /// Projectile.Setup only captures this handle; it never creates a second
+    /// reservation. The final weapon port will call this when firing.
+    pub fn reserve_projectile_damage(
+        &mut self,
+        projectile_id: i64,
+        target_id: i64,
+    ) -> Result<DamageStatus, CombatWorldError> {
+        let shot_index = *self.projectile_by_id.get(&projectile_id)
+            .ok_or(CombatWorldError::UnknownProjectile)?;
+        let target_index = *self.ship_by_id.get(&target_id)
+            .ok_or(CombatWorldError::UnknownShip)?;
+        if !self.physics.projectiles()[shot_index].active ||
+            !self.physics.ships()[target_index].active {
+            return Err(CombatWorldError::Reservation(ReservationError::TargetUnavailable));
+        }
+        let shot = &self.projectiles[shot_index];
+        let health = self.ships[target_index].vitals.health();
+        Ok(self.reservations.reserve(
+            projectile_id, shot.owner.shooter_side, target_id, health, shot.power,
+        )?)
+    }
+
+    /// The target-selection command can consult the same reserved-damage
+    /// counter as GameState.GetShipDamageStatus without copying the ledger.
+    pub fn target_damage_status(&mut self, side: i32, target_id: i64)
+        -> Result<DamageStatus, CombatWorldError>
+    {
+        let ship_index = *self.ship_by_id.get(&target_id)
+            .ok_or(CombatWorldError::UnknownShip)?;
+        Ok(self.reservations.status(
+            side, target_id, self.ships[ship_index].vitals.health(),
+        ))
+    }
+
+    /// Return a shot to the dormant state once, release only its OWN
+    /// reservation, and notify other gameplay systems in Unity's order.
+    /// Rockets transfer their lease to the explosion before calling this.
+    fn end_projectile(&mut self, index: usize) {
+        let projectile = &mut self.physics.projectiles_mut()[index];
+        if !projectile.active {
+            return;
+        }
+        projectile.active = false;
+        let id = projectile.id;
+        self.reservations.release(id);
+        self.events.push(CombatEvent::ProjectileEnded { projectile_id: id });
+    }
+
     fn resolve_contact(&mut self, contact: TriggerEnter) -> Result<(), CombatWorldError> {
         let Some(&shot_index) = self.projectile_by_id.get(&contact.projectile_id) else {
             return Ok(());
@@ -263,9 +322,13 @@ impl CombatWorld {
             !self.physics.ships()[ship_index].active {
             return Ok(());
         }
-        let ship = &mut self.ships[ship_index];
+
+        // Scope mutable shot-state borrow before changing the world or
+        // returning the projectile to its pool. This is also the source's
+        // ContactTarget-before-LogAttackingDamage event ordering.
+        let target = &self.ships[ship_index];
         let shot = &mut self.projectiles[shot_index];
-         let is_ignored = shot.ignored_ships.contains(&ship.entity_id);
+        let owner = shot.owner;
         let shot_type = shot.projectile_type;
         let mut ends_projectile = false;
         let mut accepted_power = None;
@@ -273,18 +336,17 @@ impl CombatWorld {
         match &mut shot.behavior {
             ImpactBehavior::Explosion(explosion) => {
                 if explosion.accept_ship(
-                    ship.entity_id, shot.owner.shooter_side,
-                    shot.owner.shooter_is_fire_barge, ship.side,
-                    shot_type == 15, ship.vitals.is_dead()
+                    target.entity_id, owner.shooter_side,
+                    owner.shooter_is_fire_barge, target.side,
+                    shot_type == 15, target.vitals.is_dead(),
                 ) {
                     accepted_power = Some(shot.power);
                 }
             }
             ImpactBehavior::Direct => {
                 if can_basic_projectile_damage(
-                    shot.owner.shooter_side,
-                    shot.owner.shooter_is_fire_barge,
-                    ship.side, is_ignored,
+                    owner.shooter_side, owner.shooter_is_fire_barge,
+                    target.side, shot.ignored_ships.contains(&target.entity_id),
                 ) {
                     accepted_power = Some(shot.power);
                     ends_projectile = true;
@@ -292,12 +354,11 @@ impl CombatWorld {
             }
             ImpactBehavior::Penetrating(piercing) => {
                 if can_basic_projectile_damage(
-                    shot.owner.shooter_side,
-                    shot.owner.shooter_is_fire_barge,
-                    ship.side, is_ignored,
+                    owner.shooter_side, owner.shooter_is_fire_barge,
+                    target.side, shot.ignored_ships.contains(&target.entity_id),
                 ) {
                     if let Some(outcome) = piercing.contact_ship(
-                        ship.entity_id, ship.vitals.health()
+                        target.entity_id, target.vitals.health(),
                     ) {
                         accepted_power = Some(outcome.damage_requested);
                         ends_projectile = outcome.ends_projectile;
@@ -307,43 +368,36 @@ impl CombatWorld {
             }
         }
 
-        // Unity calls ContactTarget() before Ship.LogAttackingDamage().
-        // Ordinary shots and spent piercing shots therefore return to their
-        // pool before the health, TSV, and kill callbacks run.
         if ends_projectile {
-            self.physics.projectiles_mut()[shot_index].active = false;
-            self.events.push(CombatEvent::ProjectileEnded {
-                projectile_id: contact.projectile_id,
-            });
+            self.end_projectile(shot_index);
         }
-
         if let Some(power) = accepted_power {
             let attribution = self.physics.projectiles()[shot_index].motion.attribution;
-            if let Some(delta) = ship.vitals.apply_damage(power, self.shots_harmless)? {
+            let target = &mut self.ships[ship_index];
+            if let Some(delta) = target.vitals.apply_damage(power, self.shots_harmless)? {
+                self.reservations.target_health_changed(target.entity_id, target.vitals.health());
                 let source = match shot_type {
-                    14 if shot.owner.self_detonation => DamageSource::Explosion,
+                    14 if owner.self_detonation => DamageSource::Explosion,
                     14 => DamageSource::DeathExplosion,
                     _ => DamageSource::Gun,
                 };
-                let event = HitEvent::new(
-                    shot.entity_id, attribution.root_shot_id,
-                    shot.owner.shooter_id, ship.entity_id,
-                    shot.owner.shooter_side, ship.side,
+                self.events.push(CombatEvent::Hit(HitEvent::new(
+                    contact.projectile_id, attribution.root_shot_id,
+                    owner.shooter_id, target.entity_id,
+                    owner.shooter_side, target.side,
                     attribution.command_outcome_id,
                     source, delta, false,
-                );
-                self.events.push(CombatEvent::Hit(event));
+                )));
                 if delta.killed {
                     self.physics.ships_mut()[ship_index].active = false;
                     self.events.push(CombatEvent::ShipDied {
-                        victim_id: ship.entity_id,
-                        killer_id: shot.owner.shooter_id,
+                        victim_id: target.entity_id,
+                        killer_id: owner.shooter_id,
                         command_outcome_id: attribution.command_outcome_id,
                     });
                 }
             }
         }
-
         Ok(())
     }
 
@@ -392,12 +446,9 @@ impl CombatWorld {
             if self.projectiles[index].is_explosion() {
                 continue;
             }
-            let projectile = &mut self.physics.projectiles_mut()[index];
-            if projectile.active && projectile.motion.has_exceeded_range() {
-                projectile.active = false;
-                self.events.push(CombatEvent::ProjectileEnded {
-                    projectile_id: projectile.id,
-                });
+            if self.physics.projectiles()[index].active &&
+                self.physics.projectiles()[index].motion.has_exceeded_range() {
+                self.end_projectile(index);
             }
         }
 
