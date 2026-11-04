@@ -7,6 +7,7 @@
 const http = require('node:http');
 const os = require('node:os');
 const {inspectHost}=require('./experiment_hub_host');
+const {fromEnvironment}=require('./experiment_hub_execution');
 
 const ID = /^[a-z][a-z0-9_-]{0,47}$/;
 const TOKEN = /^[0-9a-f]{64}$/;
@@ -62,15 +63,22 @@ function observedOffers(offers,observation) {
     return [...ids];
 }
 
-function sendHeartbeat(url,machineId,token,observedLeaseIds=[]) {
+function sendHeartbeat(url,machineId,token,observedLeaseIds=[],
+    executionReports=[],advertisement={}) {
     if (typeof token !== 'string' || !TOKEN.test(token))
         return Promise.reject(Error('Missing/invalid EXPERIMENT_HUB_AGENT_TOKEN.'));
     if (!Array.isArray(observedLeaseIds) || observedLeaseIds.length>100 ||
         observedLeaseIds.some(id=>typeof id!=='string' ||
             !/^[0-9a-f-]{36}$/.test(id)))
         return Promise.reject(Error('Invalid lease acknowledgement IDs.'));
+    if(!Array.isArray(executionReports)||executionReports.length>50||
+        !advertisement||typeof advertisement!=='object')
+        return Promise.reject(Error('Invalid local execution report batch.'));
     const payload=JSON.stringify({
         ...observations(machineId),observed_lease_ids:observedLeaseIds,
+        execution_reports:executionReports,
+        local_executor:advertisement.local_executor===true,
+        installed_projects:advertisement.installed_projects||[],
     });
     return new Promise((resolve,reject)=>{
         const req=http.request(url,{
@@ -88,7 +96,7 @@ function sendHeartbeat(url,machineId,token,observedLeaseIds=[]) {
             res.setEncoding('utf8');
             res.on('data',chunk=>{
                 text+=chunk;
-                if(text.length>65536)req.destroy(Error('Oversized hub reply.'));
+                if(text.length>200000)req.destroy(Error('Oversized hub reply.'));
             });
             res.on('end',()=>{
                 let parsed;
@@ -112,14 +120,32 @@ async function main() {
     const token=process.env.EXPERIMENT_HUB_AGENT_TOKEN;
     observations(id);
     if(!TOKEN.test(token||''))throw Error('Set the one-time enrolled agent credential in EXPERIMENT_HUB_AGENT_TOKEN.');
-    let active=false,last='initial',receipts=[];
+    // Disabled unless the operator explicitly configures local adapter code,
+    // a private supervisor ledger and the opt-in execution environment flag.
+    const executor=fromEnvironment(process.env);
+    const advertisement=executor?executor.advertisement():{};
+    let active=false,last='initial',receipts=[],pendingReports=[];
     const poll=async()=>{
         if(active)return;
         active=true;
         try{
-            const response=await sendHeartbeat(url,id,token,receipts);
+            const response=await sendHeartbeat(url,id,token,receipts,
+                pendingReports,advertisement);
+            // The coordinator accepted these reports. Any subsequent agent
+            // crash is reconciled using the native service journal.
+            pendingReports=[];
             receipts=observedOffers(response.lease_offers||[],observations(id));
-            if(last!=='connected')console.log('[experiment-hub-agent] connected ('+id+'); coordination only, no job execution.');
+            if(executor) {
+                const orders=response.execution_orders||[];
+                if(!Array.isArray(orders)||orders.length>1)
+                    throw Error('Invalid machine execution order batch.');
+                if(orders.length)
+                    pendingReports=[await executor.handle(orders[0])];
+            }
+            if(last!=='connected')
+                console.log('[experiment-hub-agent] connected ('+id+
+                    (executor?'; locally approved Linux execution enabled':
+                        '; observation only, no job execution')+').');
             last='connected';
         }catch(error){
             const message=String(error.message||error);
@@ -130,10 +156,12 @@ async function main() {
     await poll();
     if(process.argv.includes('--once')) {
         if(last!=='connected')process.exitCode=1;
-        else if(receipts.length) {
-            try { await sendHeartbeat(url,id,token,receipts); }
-            catch(error) {
-                console.error('[experiment-hub-agent] Lease receipt failed: '+error.message);
+        else if(receipts.length||pendingReports.length) {
+            try {
+                await sendHeartbeat(url,id,token,receipts,pendingReports,
+                    advertisement);
+            }catch(error) {
+                console.error('[experiment-hub-agent] Final receipt failed: '+error.message);
                 process.exitCode=1;
             }
         }
