@@ -194,7 +194,7 @@ function findFilesByName(root, name, limit = 20) {
     return found;
 }
 
-async function invokeUnityBuild(unity, method, output, entrypoint, logName) {
+async function invokeUnityBuild(unity, method, output, entrypoint, logName, onProgress = null) {
     const logRoot = path.join(paths.logsRoot, 'Build');
     ensureDir(logRoot);
     const logPath = path.join(logRoot, logName);
@@ -223,9 +223,11 @@ async function invokeUnityBuild(unity, method, output, entrypoint, logName) {
         stdio: 'ignore',
     });
     const started = Date.now();
+    if (onProgress) onProgress('Starting Unity', 0);
     let lastStatus = '';
     const timer = setInterval(() => {
         const phase = getUnityBuildProgressStatus(logPath);
+        if (onProgress) onProgress(phase, Math.floor((Date.now() - started) / 1000));
         if (phase !== lastStatus || Date.now() - started < 5000) {
             const seconds = Math.floor((Date.now() - started) / 1000);
             console.log('Unity build: ' + phase + ' - elapsed ' + seconds + 's');
@@ -415,6 +417,8 @@ async function reconcileLatestReleaseBeforeBuild(config, python, unity, adminTok
 // The paused experiment owns the same optimizer, run, Python runtime and
 // frozen trainer config while Unity game behavior may intentionally change.
 async function invokeMaintenanceUnityRebuild(options = {}) {
+    const report = typeof options.onProgress === 'function' ? options.onProgress : () => {};
+    report('Verifying paused run, checkpoint ownership and RL compatibility');
     const config = require('./common').loadConfig();
     const python = resolvePython(config);
     const release = getLatestRelease();
@@ -445,6 +449,7 @@ async function invokeMaintenanceUnityRebuild(options = {}) {
         throw Error('Unity source changes the RL compatibility contract. Rebuild refused to protect the existing optimizer.');
     }
     assertUnityProjectAvailableForBatchBuild();
+    report('Preparing the pinned training and worker runtimes');
     const unity = resolveUnityEditor(config);
     const stamp = new Date();
     const sha = getGitShortSha();
@@ -491,10 +496,15 @@ async function invokeMaintenanceUnityRebuild(options = {}) {
         }
     }
 
+    report('Compiling Windows RL Unity player');
     await invokeUnityBuild(unity, 'BeesCommandLineBuild.BuildWindowsRl',
-        windows, 'Bees RL Training.exe', buildId + '-rl-windows.log');
+        windows, 'Bees RL Training.exe', buildId + '-rl-windows.log',
+        (phase, seconds) => report('Windows Unity: ' + phase + ' (' + seconds + 's in Unity)'));
+    report('Compiling Linux RL Unity player');
     await invokeUnityBuild(unity, 'BeesCommandLineBuild.BuildLinuxRl',
-        linux, 'Bees RL Training.x86_64', buildId + '-rl-linux.log');
+        linux, 'Bees RL Training.x86_64', buildId + '-rl-linux.log',
+        (phase, seconds) => report('Linux Unity: ' + phase + ' (' + seconds + 's in Unity)'));
+    report('Checking RL compatibility and packaging Windows/Linux players');
     if (checkKey() !== originalKey) {
         throw Error('RL compatibility contract changed during Unity compilation. The old release remains active.');
     }
@@ -526,6 +536,7 @@ async function invokeMaintenanceUnityRebuild(options = {}) {
     const envArgs = (desired.environment_args || []).map(String);
     // The new compiled Windows player must validate *the current stage's*
     // environment arguments before the control plane may stage a new build.
+    report('Validating the new Unity player against the current curriculum stage');
     const validationKey = await assertRlEnvironmentArgsValid(
         config, candidate, envArgs, python
     );
@@ -540,6 +551,7 @@ async function invokeMaintenanceUnityRebuild(options = {}) {
 
     let bootstrapPublished = false;
     try {
+        report('Publishing compatible Unity builds to the paused worker cluster');
         if (!config.localOnly && exists(paths.tailnetAddressPath)) {
             bootstrapPublished = true;
             prepareRemoteBootstrap(config, python, candidate,
@@ -549,9 +561,11 @@ async function invokeMaintenanceUnityRebuild(options = {}) {
         await publishRelease(config, admin, candidate);
         const staged = await stageRelease(config, admin, candidate, envArgs, validationKey);
         if (staged.pending_release) {
+            report('Waiting for the new Unity build to become canonical on workers');
             await waitReleaseRollout(config, admin, buildId,
                 release.run_id, release.compatibility_key);
         }
+        report('Finalizing the same-run release and retaining its learner checkpoint');
         // Persist only when the coordinated control-plane release is canonical.
         saveLatestRelease(candidate);
         if (workerOverride) writeJsonAtomic(overridePath, workerOverride);
