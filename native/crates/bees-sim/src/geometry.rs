@@ -22,7 +22,7 @@ impl Vec2 {
 
     #[inline]
     pub fn length_squared(self) -> f32 {
-        self.x.mul_add(self.x, self.y * self.y)
+        self.x * self.x + self.y * self.y
     }
 
     #[inline]
