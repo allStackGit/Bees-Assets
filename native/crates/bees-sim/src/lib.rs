@@ -7,9 +7,12 @@
 
 #![forbid(unsafe_code)]
 
+pub mod collision;
 pub mod control;
 pub mod geometry;
+pub mod hulls;
 pub mod movement;
+pub mod physics;
 pub mod policy;
 pub mod projectile;
 pub mod simulation;
