@@ -100,6 +100,7 @@ impl FragmentSpawnSettings {
         self.half_map_extents.is_finite() &&
         self.half_map_extents.x > 0.0 &&
         self.half_map_extents.y > 0.0 &&
+        self.asteroid_max_speed_exclusive <= (i32::MAX as u32 - 2) &&
         self.effective_max_health.is_none_or(|health| health > 0)
     }
 }
