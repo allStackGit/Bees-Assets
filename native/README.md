@@ -52,13 +52,23 @@ The dependency-free `bees-sim` crate currently contains:
   including polygon-to-box and box-to-box trigger checks.
 - A physics-only world adapter wired into the shared scheduler. It explicitly
   rejects PPO actions until the complete gameplay rules are migrated.
+- A partial shared combat-world impact path for direct, piercing and explosion
+  projectiles: queued trigger processing, health and TSV recalculation, shooter
+  and Hive Mind command attribution, death events, strict shot expiry, and
+  source-consistent projectile-end callback ordering. Ships and shots spawn
+  through the same authored collider catalogs in rendered/headless contexts.
+- An optional tactical reward consumer using the current RL team's shared
+  positive/negative asymptotic shaping budgets, with mined cargo excluded
+  from persistent-fleet damage reward on death.
 
 **Not yet implemented:** complete normal user/Hive Mind movement,
-weapon-specific spawn/attack ownership, Striker Bomb delayed damage, rocket
-explosion spawning, Unity-equivalent physics callback ordering and full
-collision-layer matrix, complete damage/TSV/episode accounting, visibility and
-observations, rewards, game modes, presentation, server/persistence, PPO and
-experiment orchestration.
+weapon-specific targeting and projectile spawning, Striker Bomb delayed damage,
+rocket explosion creation, native Hive Mind command updates and persistence,
+squad/formation removal and full ship-death lifecycle, complete RL reward
+delivery and episode termination, Unity-equivalent physics callback ordering,
+obstacle contacts and the full collision-layer matrix, visibility and
+observations, game modes, presentation, server/persistence, distributed PPO
+and experiment orchestration.
 
 The current native physics is a **partial implementation**, not a valid
 standalone Bees battle. It must not produce training or evaluation samples
@@ -72,6 +82,8 @@ do not imply that Unity/Box2D physics parity is already established.
 | Authored primary ship hull assets | `Prefabs/Entities/Ships/*.prefab` via serialized `Entity.Collider` |
 | Core geometry, timing and body orientation | `Scripts/Entities/Entity.cs`, `Scripts/Utilities.cs`, `Scripts/ScaledTimer.cs` |
 | Base turret aim, targeting and shot cadence | `Scripts/Entities/Ships/Weapons/Turret*.cs` |
+| Shared health, value and hit accounting | `Scripts/Entities/Ships/Ship.Combat.cs`, `Scripts/Utilities.cs` |
+| Ported tactical reward budget | `Scripts/Scenes/RlOneVsOneReward.cs`, `RlOneVsOneEpisodeCoordinator.cs` |
 | Ships, movement and subclass behavior | `Scripts/Entities/Ships/` |
 | Weapons, projectiles, damage and collisions | `Scripts/Entities/Ships/Weapons/`, `Scripts/Entities/Projectiles/`, `Scripts/Entities/` |
 | Scenes, game modes, map generation and UI | `Scripts/Scenes/`, `Scripts/Levels/`, `Scripts/UI Components/` |
