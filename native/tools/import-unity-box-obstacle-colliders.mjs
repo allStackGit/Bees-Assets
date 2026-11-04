@@ -1,12 +1,12 @@
 #!/usr/bin/env node
-// Export only the verified direct-variant obstacle families. Nested variants
-// and other obstacle types require explicit inheritance rules, not guesses.
+// Export the verified direct and second-level prefab variant obstacle
+// families. Other obstacle types require explicit inheritance rules.
 // --check compares the live Unity prefabs with the committed native manifest.
 
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createBoxObstacleBatch } from './unity-box-obstacle-colliders.mjs';
+import { createBoxObstacleBatch, appendNestedBoxVariants } from './unity-box-obstacle-colliders.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const obstacles = path.join(root, 'Prefabs', 'Entities', 'Obstacles');
@@ -28,7 +28,8 @@ function group(folder, baseName, obstacleType, variantNames) {
 
 const names = [
     '_Obstacle', '1x1', '1x1 1', 'Big Wall', 'Corner Obstacle', 'Slanted',
-    'Top Border', 'Bottom Border Variant', 'Left Border Variant', 'Right Border Variant'
+    'Top Border', 'Bottom Border Variant', 'Left Border Variant', 'Right Border Variant',
+    'Slanted Variant', 'Box'
 ];
 const sources = [
     group(obstacles, '_Obstacle', 0,
@@ -36,7 +37,20 @@ const sources = [
     group(path.join(obstacles, 'Map Borders'), 'Top Border', 1,
         ['Bottom Border Variant', 'Left Border Variant', 'Right Border Variant'])
 ];
-const parsed = createBoxObstacleBatch(sources);
+const parentAssets = createBoxObstacleBatch(sources);
+function nested(name, parentName) {
+    const parentMeta = fs.readFileSync(path.join(obstacles, parentName + '.prefab.meta'), 'utf8');
+    const parentGuid = /^guid: ([0-9a-f]{32})$/m.exec(parentMeta)?.[1];
+    if (!parentGuid) throw new Error('Missing source GUID: ' + parentName);
+    return {
+        name, parentName, parentGuid,
+        source: fs.readFileSync(path.join(obstacles, name + '.prefab'), 'utf8'),
+    };
+}
+const parsed = appendNestedBoxVariants(parentAssets, [
+    nested('Slanted Variant', 'Slanted'),
+    nested('Box', 'Corner Obstacle'),
+]);
 if (parsed.length !== names.length ||
     parsed.some((entry,index) => entry.name !== names[index])) {
     throw new Error('Unexpected native obstacle prefab identity/order');
