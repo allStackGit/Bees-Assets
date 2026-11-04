@@ -56,7 +56,7 @@ impl Pose {
     /// The ship prefabs examined so far have unit local scale.
     pub fn transform_into(&self, local_vertices: &[Vec2], out: &mut Vec<Vec2>) {
         out.clear();
-        out.reserve(local_vertices.len().saturating_sub(out.capacity()));
+        out.reserve(local_vertices.len());
         let (sin, cos) = self.rotation_degrees.to_radians().sin_cos();
         for &vertex in local_vertices {
             out.push(Vec2::new(
@@ -121,9 +121,13 @@ pub fn circle_overlaps_polygon(
 fn point_on_segment(point: Vec2, a: Vec2, b: Vec2) -> bool {
     let edge = b - a;
     let delta = point - a;
+    let length_sq = dot(edge, edge);
+    if length_sq == 0.0 {
+        return dot(delta, delta) <= 1.0e-10;
+    }
     cross(edge, delta).abs() <= 1.0e-5
         && dot(delta, edge) >= 0.0
-        && dot(delta, edge) <= dot(edge, edge)
+        && dot(delta, edge) <= length_sq
 }
 
 fn segments_intersect(a: Vec2, b: Vec2, c: Vec2, d: Vec2) -> bool {
