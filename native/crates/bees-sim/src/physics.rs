@@ -50,6 +50,14 @@ pub struct ObstaclePairContact {
     pub second_obstacle_id: i64,
 }
 
+/// Proximity is directional: the source obstacle owns the larger child
+/// trigger, and the target has its regular primary collider.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct ObstacleProximityContact {
+    pub source_obstacle_id: i64,
+    pub other_obstacle_id: i64,
+}
+
 fn update_contact_changes<T: Copy + Ord>(
     current: &mut Vec<T>,
     previous: &mut Vec<T>,
@@ -424,6 +432,10 @@ pub struct PhysicsStepCounts {
     pub ship_obstacle_exits: u64,
     pub obstacle_pair_enters: u64,
     pub obstacle_pair_exits: u64,
+    pub proximity_ship_enters: u64,
+    pub proximity_ship_exits: u64,
+    pub proximity_obstacle_enters: u64,
+    pub proximity_obstacle_exits: u64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -571,6 +583,14 @@ pub struct KinematicPhysics {
     obstacle_pairs_current: Vec<ObstaclePairContact>,
     obstacle_pair_enters: Vec<ObstaclePairContact>,
     obstacle_pair_exits: Vec<ObstaclePairContact>,
+    proximity_ship_previous: Vec<ShipObstacleContact>,
+    proximity_ship_current: Vec<ShipObstacleContact>,
+    proximity_ship_enters: Vec<ShipObstacleContact>,
+    proximity_ship_exits: Vec<ShipObstacleContact>,
+    proximity_obstacle_previous: Vec<ObstacleProximityContact>,
+    proximity_obstacle_current: Vec<ObstacleProximityContact>,
+    proximity_obstacle_enters: Vec<ObstacleProximityContact>,
+    proximity_obstacle_exits: Vec<ObstacleProximityContact>,
     counts: PhysicsStepCounts,
 }
 
@@ -596,6 +616,14 @@ impl KinematicPhysics {
             obstacle_pairs_current: Vec::new(),
             obstacle_pair_enters: Vec::new(),
             obstacle_pair_exits: Vec::new(),
+            proximity_ship_previous: Vec::new(),
+            proximity_ship_current: Vec::new(),
+            proximity_ship_enters: Vec::new(),
+            proximity_ship_exits: Vec::new(),
+            proximity_obstacle_previous: Vec::new(),
+            proximity_obstacle_current: Vec::new(),
+            proximity_obstacle_enters: Vec::new(),
+            proximity_obstacle_exits: Vec::new(),
             counts: PhysicsStepCounts::default(),
         })
     }
@@ -613,6 +641,10 @@ impl KinematicPhysics {
     pub fn ship_obstacle_exits(&self) -> &[ShipObstacleContact] { &self.ship_obstacle_exits }
     pub fn obstacle_pair_entries(&self) -> &[ObstaclePairContact] { &self.obstacle_pair_enters }
     pub fn obstacle_pair_exits(&self) -> &[ObstaclePairContact] { &self.obstacle_pair_exits }
+    pub fn proximity_ship_entries(&self) -> &[ShipObstacleContact] { &self.proximity_ship_enters }
+    pub fn proximity_ship_exits(&self) -> &[ShipObstacleContact] { &self.proximity_ship_exits }
+    pub fn proximity_obstacle_entries(&self) -> &[ObstacleProximityContact] { &self.proximity_obstacle_enters }
+    pub fn proximity_obstacle_exits(&self) -> &[ObstacleProximityContact] { &self.proximity_obstacle_exits }
 
     /// Obstacles retain distinct IDs across the unified world. Their
     /// gameplay kind, health and destruction state live in CombatWorld.
@@ -734,6 +766,40 @@ impl KinematicPhysics {
                 }
             }
         }
+        // Proximity-to-ship checks reuse the ship grid before it is rebuilt
+        // for obstacles. Unity's child layer is evaluated independently
+        // from the primary asteroid hull layer.
+        self.proximity_ship_current.clear();
+        for obstacle in &self.obstacles {
+            if !obstacle.active || !obstacle.tracks_body_contacts { continue; }
+            let (Some(proximity), Some(layer)) = (
+                obstacle.proximity_collider.as_ref(), obstacle.proximity_layer,
+            ) else { continue };
+            let Some(bounds) = proximity.bounds else { continue };
+            self.grid.candidates(bounds, &mut self.candidates);
+            self.counts.broadphase_candidates += self.candidates.len() as u64;
+            for &index in &self.candidates {
+                let ship = &self.ships[index];
+                if !ship.active || !collision_matrix.allows(layer, ship.layer) {
+                    continue;
+                }
+                let Some(other_bounds) = ship.collider.bounds else { continue };
+                if !bounds.overlaps(other_bounds) { continue; }
+                self.counts.narrowphase_tests += 1;
+                if proximity.overlaps(&ship.collider) {
+                    self.proximity_ship_current.push(ShipObstacleContact {
+                        ship_id: ship.id, obstacle_id: obstacle.id,
+                    });
+                }
+            }
+        }
+        update_contact_changes(
+            &mut self.proximity_ship_current, &mut self.proximity_ship_previous,
+            &mut self.proximity_ship_enters, &mut self.proximity_ship_exits,
+        );
+        self.counts.proximity_ship_enters = self.proximity_ship_enters.len() as u64;
+        self.counts.proximity_ship_exits = self.proximity_ship_exits.len() as u64;
+
         // Rebuild the SAME uniform grid for obstacle queries after all
         // ship queries finish. Two grids double the per-world cell-array
         // footprint and buy nothing when these phases are serial.
@@ -770,6 +836,38 @@ impl KinematicPhysics {
         // These overlap streams describe PRIMARY body geometry only. Unity
         // CollisionAsteroid also has a separate proximity collider; that
         // proximity state must be imported before combat damage is enabled.
+        self.proximity_obstacle_current.clear();
+        for source in &self.obstacles {
+            if !source.active || !source.tracks_body_contacts { continue; }
+            let (Some(proximity), Some(layer)) = (
+                source.proximity_collider.as_ref(), source.proximity_layer,
+            ) else { continue };
+            let Some(bounds) = proximity.bounds else { continue };
+            self.grid.candidates(bounds, &mut self.candidates);
+            self.counts.broadphase_candidates += self.candidates.len() as u64;
+            for &index in &self.candidates {
+                let other = &self.obstacles[index];
+                if !other.active || other.id == source.id ||
+                    !collision_matrix.allows(layer, other.layer) {
+                    continue;
+                }
+                let Some(other_bounds) = other.collider.bounds else { continue };
+                if !bounds.overlaps(other_bounds) { continue; }
+                self.counts.narrowphase_tests += 1;
+                if proximity.overlaps(&other.collider) {
+                    self.proximity_obstacle_current.push(ObstacleProximityContact {
+                        source_obstacle_id: source.id, other_obstacle_id: other.id,
+                    });
+                }
+            }
+        }
+        update_contact_changes(
+            &mut self.proximity_obstacle_current, &mut self.proximity_obstacle_previous,
+            &mut self.proximity_obstacle_enters, &mut self.proximity_obstacle_exits,
+        );
+        self.counts.proximity_obstacle_enters = self.proximity_obstacle_enters.len() as u64;
+        self.counts.proximity_obstacle_exits = self.proximity_obstacle_exits.len() as u64;
+
         self.ship_obstacle_current.clear();
         for ship in &self.ships {
             if !ship.active { continue; }
@@ -886,7 +984,9 @@ impl crate::simulation::GameRules<KinematicPhysics> for KinematicPhysicsRules {
             active_projectiles: world.state.projectiles().iter().filter(|shot| shot.active).count() as u32,
             events: counts.trigger_enters + counts.obstacle_trigger_enters +
                 counts.ship_obstacle_enters + counts.ship_obstacle_exits +
-                counts.obstacle_pair_enters + counts.obstacle_pair_exits,
+                counts.obstacle_pair_enters + counts.obstacle_pair_exits +
+                counts.proximity_ship_enters + counts.proximity_ship_exits +
+                counts.proximity_obstacle_enters + counts.proximity_obstacle_exits,
         })
     }
 }
