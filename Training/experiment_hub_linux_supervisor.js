@@ -185,7 +185,9 @@ class LinuxSupervisor {
         const updated={...record,state,
             observed_at:new Date().toISOString(),
             diagnostic:result.diagnostic||null};
-        this.commit(this.state.records.map(r=>r.job_id===jobId?updated:r));
+        if(record.state!==updated.state ||
+            (record.diagnostic||null)!==updated.diagnostic)
+            this.commit(this.state.records.map(r=>r.job_id===jobId?updated:r));
         return {...updated,active:result.active};
     }
     async start(job,lease) {
