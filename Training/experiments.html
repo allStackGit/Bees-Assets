@@ -360,6 +360,24 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
     </div>
     <button type="button" id="hub-preview">Check capacity</button>
     <div id="hub-placements" class="hub-notice" role="status">Resource placement does not start a workload.</div>
+    <div class="hub-standalone">
+      <h3>Coordinate a resource lease</h3>
+      <p class="muted">Uses the CPU, RAM and GPU requirements above. Only connected machines may receive a lease. Issuing a lease blocks capacity for other Hub requests; the agent acknowledges its receipt but does not enforce isolation, reserve actual GPU memory, or start training. Existing untracked processes may still conflict. You must release a lease explicitly.</p>
+      <div class="formgrid">
+        <label>Project<select id="hub-lease-project"></select></label>
+        <label>Connected machine<select id="hub-lease-machine"></select></label>
+      </div>
+      <button type="button" id="hub-lease-request">Issue coordination lease</button>
+      <p id="hub-lease-message" class="hub-notice" role="status">No lease requested.</p>
+    </div>
+  </div>
+  <div class="hub-standalone">
+    <h3>Current coordination leases</h3>
+    <p class="muted">An acknowledged lease means the agent saw the request. Receipt freshness is lost after disconnection or coordinator restart, but the capacity claim remains until it is explicitly released.</p>
+    <div class="tablewrap hub-table"><table>
+      <thead><tr><th>Project</th><th>Machine</th><th>CPU / RAM</th><th>GPUs</th><th>Lease state</th><th>Action</th></tr></thead>
+      <tbody id="hub-lease-rows"></tbody>
+    </table></div>
   </div>
   <div class="hub-standalone">
     <h3>Simultaneous workload preview</h3>
