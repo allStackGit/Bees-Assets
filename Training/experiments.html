@@ -229,6 +229,7 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
 .hub-controls { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 10px; }
 .hub-controls button { flex: 0 1 auto; }
 .hub-tabs label select { min-width: 150px; }
+#hub-placements, #hub-plan-result { white-space: pre-line; }
 </style>
 </head>
 <body>
@@ -320,7 +321,7 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
     </table></div>
     <p id="hub-live-bees-note" class="hub-notice"></p>
   </div>
-  <p class="muted">Register capacities and inspect potential CPU, RAM and exclusive-GPU placements. Manually registered machines remain unverified and cannot be scheduled until an authenticated agent confirms health and isolation.</p>
+  <p class="muted">Register capacities and preview concurrent CPU, RAM, and GPU placement. Choose exclusive GPUs or shared VRAM and compute admission budgets. GPU percentages are only planning estimates, not enforced compute quotas or guarantees against slowdown. Registered machines remain unverified until authenticated agents establish hardware ownership.</p>
   <div class="hub-standalone">
     <h3>Register machine</h3>
     <form id="hub-machine-form">
@@ -345,10 +346,22 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
       <label>Requested RAM MiB<input id="hub-request-ram" type="number" value="2048" min="1"></label>
       <label>GPU count<input id="hub-request-gpu-count" type="number" value="0" min="0" max="32"></label>
       <label>Minimum VRAM per GPU (MiB)<input id="hub-request-gpu-vram" type="number" value="0" min="0"></label>
+      <label>GPU allocation mode<select id="hub-request-gpu-mode"><option value="exclusive">Exclusive device</option><option value="shared">Shared budget (advisory)</option></select></label>
+      <label>Shared VRAM budget per GPU (MiB)<input id="hub-request-share-vram" type="number" value="8192" min="1" disabled></label>
+      <label>Shared compute budget per GPU (%)<input id="hub-request-share-compute" type="number" value="50" min="1" max="100" disabled></label>
       <label class="wide">Exact GPU device IDs (optional, comma separated)<input id="hub-request-gpus" placeholder="Leave empty to choose any suitable GPU"></label>
     </div>
     <button type="button" id="hub-preview">Check capacity</button>
     <div id="hub-placements" class="hub-notice" role="status">Resource placement does not start a workload.</div>
+  </div>
+  <div class="hub-standalone">
+    <h3>Simultaneous workload preview</h3>
+    <p class="muted">Enter a JSON array of workloads, each with a unique ID and resource request. CPU and RAM are required; GPU fields are optional. Shared GPUs additionally require gpu_mode = shared, gpu_count, gpu_vram_mb, and gpu_compute_pct. This is greedy capacity planning, not scheduling, process isolation, or a performance promise.</p>
+    <label class="wide">Workloads (JSON)
+      <textarea id="hub-plan-json" rows="8">[]</textarea>
+    </label>
+    <button type="button" id="hub-plan">Preview concurrent workloads</button>
+    <div id="hub-plan-result" class="hub-notice" role="status">No resources reserved or processes launched.</div>
   </div>
 </section>
 
