@@ -381,7 +381,10 @@ class ExperimentHub {
                     .includes(report.state)||
                 seen.has(report.job_id)||
                 (report.diagnostic!=null&&
-                    (typeof report.diagnostic!=='string'||report.diagnostic.length>220)))
+                    (typeof report.diagnostic!=='string'||report.diagnostic.length>220))||
+                ['memory_current_mb','cpu_time_ns','process_tasks'].some(k=>
+                    report[k]!=null&&
+                    (!Number.isSafeInteger(report[k])||report[k]<0)))
                 throw Error('Invalid native execution report.');
             seen.add(report.job_id);
             const job=next.jobs.find(j=>j.id===report.job_id);
@@ -544,10 +547,6 @@ class ExperimentHub {
             if (lease) this.leaseReceipts.set(id,received);
         }
         for(const item of reports) {
-            const fields=['memory_current_mb','cpu_time_ns','process_tasks'];
-            if(fields.some(k=>item[k]!=null&&
-                (!Number.isSafeInteger(item[k])||item[k]<0)))
-                throw Error('Invalid native process metrics.');
             this.executionTelemetry.set(item.job_id,{
                 at:new Date(received).toISOString(),state:item.state,
                 memory_current_mb:item.memory_current_mb??null,
