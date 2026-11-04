@@ -13,7 +13,7 @@
 
 use std::sync::Arc;
 
-use crate::collision::{circle_overlaps_polygon, Aabb, Pose};
+use crate::collision::{circle_overlaps_polygon, circles_overlap, Aabb, Pose};
 use crate::geometry::Vec2;
 use crate::movement::ShipMotion;
 use crate::projectile::ProjectileMotion;
@@ -46,32 +46,67 @@ impl CollisionMatrix {
     }
 }
 
+/// Shared authored ship collider. Offset and dimensions are imported from
+/// the actual Entity.Collider reference, not arbitrary nearby vision/range
+/// sensor colliders in Unity prefabs.
+#[derive(Clone, Debug)]
+pub enum ShipShape {
+    Polygon(Arc<[Vec2]>),
+    Circle { offset: Vec2, radius: f32 },
+    Box { offset: Vec2, half_extents: Vec2 },
+}
+
+impl From<Arc<[Vec2]>> for ShipShape {
+    fn from(hull: Arc<[Vec2]>) -> Self {
+        Self::Polygon(hull)
+    }
+}
+
+impl ShipShape {
+    fn valid(&self) -> bool {
+        match self {
+            Self::Polygon(vertices) => {
+                vertices.len() >= 3 && vertices.iter().all(|vertex| vertex.is_finite())
+            }
+            Self::Circle { offset, radius } => {
+                offset.is_finite() && radius.is_finite() && *radius >= 0.0
+            }
+            Self::Box { offset, half_extents } => {
+                offset.is_finite() && half_extents.is_finite()
+                    && half_extents.x > 0.0 && half_extents.y > 0.0
+            }
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct ShipBody {
     pub id: i64,
     pub motion: ShipMotion,
     pub layer: u8,
     pub active: bool,
-    pub hull_local: Arc<[Vec2]>,
+    pub shape: ShipShape,
     hull_world: Vec<Vec2>,
+    circle_world: Vec2,
     bounds: Option<Aabb>,
     cached_pose: Option<Pose>,
 }
 
 impl ShipBody {
-    pub fn new(id: i64, motion: ShipMotion, layer: u8, hull_local: Arc<[Vec2]>) -> Result<Self, PhysicsError> {
-        if layer >= 32 || hull_local.len() < 3 || !hull_local.iter().all(|v| v.is_finite()) {
+    pub fn new(
+        id: i64,
+        motion: ShipMotion,
+        layer: u8,
+        shape: impl Into<ShipShape>,
+    ) -> Result<Self, PhysicsError> {
+        let shape = shape.into();
+        if layer >= 32 || !shape.valid() {
             return Err(PhysicsError::InvalidCollider);
         }
         Ok(Self {
-            id,
-            motion,
-            layer,
-            active: true,
-            hull_local,
-            hull_world: Vec::new(),
-            bounds: None,
-            cached_pose: None,
+            id, motion, layer, active: true, shape,
+            hull_world: Vec::new(), circle_world: Vec2::ZERO,
+            bounds: None, cached_pose: None,
         })
     }
 
@@ -83,9 +118,42 @@ impl ShipBody {
         if self.cached_pose == Some(pose) {
             return;
         }
-        pose.transform_into(&self.hull_local, &mut self.hull_world);
-        self.bounds = Aabb::from_points(&self.hull_world);
+        match &self.shape {
+            ShipShape::Polygon(vertices) => {
+                pose.transform_into(vertices, &mut self.hull_world);
+                self.bounds = Aabb::from_points(&self.hull_world);
+            }
+            ShipShape::Box { offset, half_extents } => {
+                let x = half_extents.x;
+                let y = half_extents.y;
+                let points = [
+                    Vec2::new(offset.x - x, offset.y - y),
+                    Vec2::new(offset.x + x, offset.y - y),
+                    Vec2::new(offset.x + x, offset.y + y),
+                    Vec2::new(offset.x - x, offset.y + y),
+                ];
+                pose.transform_into(&points, &mut self.hull_world);
+                self.bounds = Aabb::from_points(&self.hull_world);
+            }
+            ShipShape::Circle { offset, radius } => {
+                self.hull_world.clear();
+                self.circle_world = pose.transform_point(*offset);
+                self.bounds = Some(Aabb::circle(self.circle_world, *radius));
+            }
+        }
         self.cached_pose = Some(pose);
+    }
+
+    #[inline]
+    fn overlaps_projectile(&self, center: Vec2, radius: f32) -> bool {
+        match self.shape {
+            ShipShape::Circle { radius: hull_radius, .. } => {
+                circles_overlap(self.circle_world, hull_radius, center, radius)
+            }
+            ShipShape::Polygon(_) | ShipShape::Box { .. } => {
+                circle_overlaps_polygon(center, radius, &self.hull_world)
+            }
+        }
     }
 }
 
@@ -325,7 +393,7 @@ impl KinematicPhysics {
                     continue;
                 }
                 self.counts.narrowphase_tests += 1;
-                if circle_overlaps_polygon(projectile.motion.position, projectile.radius, &ship.hull_world) {
+                if ship.overlaps_projectile(projectile.motion.position, projectile.radius) {
                     self.overlaps_current.push(TriggerEnter {
                         projectile_id: projectile.id,
                         ship_id: ship.id,
@@ -450,6 +518,33 @@ mod tests {
         assert_eq!(second.events, 0);
         assert_eq!(scheduler.measurements().ticks, 2);
         assert_eq!(scheduler.measurements().events, 1);
+    }
+
+    #[test]
+    fn box_and_circle_hulls_use_authored_shapes_not_polygon_approximations() {
+        let mut physics = KinematicPhysics::new(
+            Aabb { min: Vec2::new(-10.0, -10.0), max: Vec2::new(10.0, 10.0) },
+            4.0,
+        ).unwrap();
+        physics.add_ship(ShipBody::new(
+            1, ShipMotion::new(Vec2::new(0.0, 0.0), 30.0, 0.0, 0.0, 2.0),
+            12, ShipShape::Box {
+                offset: Vec2::ZERO, half_extents: Vec2::new(2.0, 1.0),
+            },
+        ).unwrap()).unwrap();
+        physics.add_ship(ShipBody::new(
+            2, ShipMotion::new(Vec2::new(6.0, 0.0), 0.0, 0.0, 0.0, 2.0),
+            12, ShipShape::Circle {
+                offset: Vec2::new(0.5, 0.0), radius: 1.0,
+            },
+        ).unwrap()).unwrap();
+        physics.add_projectile(ProjectileBody::new(
+            3, ProjectileMotion::new(Vec2::ZERO, 0.0, 0.0, 10.0, 3, 0),
+            10, 0.5,
+        ).unwrap()).unwrap();
+        assert_eq!(physics.step(0.02, &matrix_for_test()).unwrap()[0].ship_id, 1);
+        physics.projectiles_mut()[0].motion.position = Vec2::new(6.5, 0.0);
+        assert_eq!(physics.step(0.02, &matrix_for_test()).unwrap()[0].ship_id, 2);
     }
 
     #[test]
