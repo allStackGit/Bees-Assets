@@ -1887,13 +1887,15 @@ function json(res, status, obj) {
         'X-Content-Type-Options': 'nosniff' });
     res.end(body);
 }
-async function body(req) {
+async function body(req, limitBytes = 5_000_000) {
     if (!String(req.headers['content-type'] || '').startsWith('application/json'))
         throw Error('JSON requests only.');
-    let raw = '';
+    let raw = '', received = 0;
     for await (const chunk of req) {
+        received += chunk.length;
+        if (received > limitBytes)
+            throw Error('JSON request exceeds allowed byte limit.');
         raw += chunk.toString('utf8');
-        if (raw.length > 5_000_000) throw Error('Request exceeds 5 MB.');
     }
     return JSON.parse(raw || '{}');
 }
@@ -2819,7 +2821,7 @@ const agentServer = http.createServer(async (req, res) => {
         const declaredSize=Number(req.headers['content-length'] || 0);
         if (!Number.isFinite(declaredSize) || declaredSize>32768)
             return json(res, 413, {error:'Agent request too large.'});
-        const value=await body(req);
+        const value=await body(req,32768);
         return json(res, 200, requireHub().heartbeat(value,
             req.headers['x-hub-agent-token']));
     } catch (error) {
