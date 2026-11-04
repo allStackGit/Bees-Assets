@@ -883,7 +883,8 @@ async function evaluateStageSuite(item, index, status, checkpointRecord = null) 
         }
         item.stage_evaluation_error = error.message;
         state.armed = false;
-        state.message = 'Checkpoint evaluation failed; queue disarmed: ' + error.message;
+        state.message = (checkpointRecord ? 'Checkpoint' : 'Stage') +
+            ' evaluation failed; queue disarmed: ' + error.message;
         save();
         return false;
     }
@@ -1311,10 +1312,12 @@ async function transitionStage(item, status) {
         blocked(item, 'Curriculum stop ownership was not durably confirmed; inspect the stopped run before manual recovery.');
         return;
     }
-    if (status.desired.training_enabled && stageSuiteAtBoundary(item) &&
-        stageRecord(item, index).evaluation?.status !== 'completed' &&
-        matches(status.desired.environment_args, next.env_args)) {
-        blocked(item, 'Next curriculum stage was started without verified stage evaluations.');
+    if (status.desired.training_enabled &&
+        matches(status.desired.environment_args, next.env_args) &&
+        ((stageSuiteAtBoundary(item) &&
+            stageRecord(item, index).evaluation?.status !== 'completed') ||
+            periodicEvaluationDue(item))) {
+        blocked(item, 'Next curriculum stage was started before its required checkpoint evaluation.');
         return;
     }
     if (!status.desired.training_enabled) {
