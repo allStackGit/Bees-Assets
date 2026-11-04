@@ -77,16 +77,19 @@ The portable `bees-sim` crate currently contains:
   Ordinary projectile impacts can damage collision asteroids, terminate
   against borders or record static-obstacle hits; rockets explode on
   non-border obstacles and explosion projectiles deduplicate asteroid hits.
-  Asteroid destruction emits a lifecycle event for future shard, registry
-  and pathfinder handling. Obstacle colliders must currently be supplied
-  explicitly; their complete authored prefab catalog is not yet imported.
+  All **28 authored collision asteroid variants** are now imported with the
+  exact active primary polygon (including inherited prefab overrides),
+  size class and authored layer. A shared catalog provides their normal
+  starting health and accepts the training durability override. Destruction
+  still emits an event for future shard, registry and pathfinder handling.
 - An optional tactical reward consumer using the current RL team's shared
   positive/negative asymptotic shaping budgets, with mined cargo excluded
   from persistent-fleet damage reward on death.
 
 **Not yet implemented:** complete normal user/Hive Mind movement,
-weapon-specific targeting and projectile spawning, authored obstacle
-prefabs and the full collision-layer matrix, moving-asteroid AI, obstacle/ship
+weapon-specific targeting and projectile spawning, remaining authored
+static/border/mining obstacle prefabs and the full collision-layer matrix,
+moving-asteroid AI, obstacle/ship
 and asteroid/asteroid collisions, asteroid fragmentation and registry cleanup,
 Unity-equivalent Animator/FixedUpdate/Physics2D ordering, native Hive Mind
 command updates and persistence, squad/formation removal and full ship-death
@@ -156,6 +159,23 @@ through native asset tooling rather than depending on Unity at runtime.
 The physics layer accepts a required collision-layer matrix, but no verified
 export of the existing Unity Physics2D matrix is yet available. Do not replace
 this missing contract with an allow-all default in gameplay or training.
+
+## Collision asteroid prefab migration
+
+`native/assets/asteroid-colliders.json` contains the primary colliders for
+all 28 `Collision Asteroids/Asteroid N.prefab` assets. Both standalone prefabs
+and their inherited YAML overrides are decoded by a single source importer:
+
+```sh
+node native/tools/import-unity-asteroid-colliders.mjs --check
+```
+
+Omit `--check` to regenerate. The importer uses the serialized
+`Obstacle.Collider` reference and **honors the declared path-array size**:
+serialized point overrides for inactive paths are not collision geometry.
+It rejects unsupported multiple *active* polygon paths. The catalog stores
+normal `SizeClass × CollisionAsteroidHealthIncrement` durability; training
+must still pass its effective-health override when spawning.
 
 ## Projectile collider migration
 
