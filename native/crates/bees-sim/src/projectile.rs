@@ -8,6 +8,11 @@
 
 use crate::geometry::{projectile_velocity, Vec2};
 
+/// Both Unity small laser-shot prefabs currently use CircleCollider2D radius
+/// 0.5. Other projectile shapes must come from the eventual projectile asset
+/// catalog rather than assuming every weapon fires this shot.
+pub const SMALL_LASER_SHOT_RADIUS: f32 = 0.5;
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct ShotAttribution {
     /// The original shot identifier also belongs to explosion and split
