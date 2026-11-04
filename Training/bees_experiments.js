@@ -1774,7 +1774,7 @@ function editableDefinition(item) {
     return input;
 }
 
-function benchmarkReports() {
+function benchmarkReports(limit = 1000) {
     if (!fs.existsSync(BENCHMARK_REPORTS)) return [];
     // Reports are small immutable JSON summaries. Never enumerate raw training
     // data, checkpoints or unrelated files to populate the UI.
@@ -1782,7 +1782,7 @@ function benchmarkReports() {
         .filter(entry => entry.isFile() &&
             /^\d{8}T\d{6}-[a-f0-9]{32}\.json$/.test(entry.name))
         .map(entry => entry.name)
-        .sort().reverse().slice(0, 1000)
+        .sort().reverse().slice(0, limit)
         .map(name => {
             const report = readJson(path.join(BENCHMARK_REPORTS, name));
             return report ? { ...report, _file: name } : null;
@@ -2022,7 +2022,7 @@ const server = http.createServer(async (req, res) => {
             return json(res, 200, { reports: benchmarkReports() });
         }
         if (req.method === 'GET' && route === '/api/research-summary') {
-            return json(res, 200, { groups: summarizeResearch(state.items, benchmarkReports()) });
+            return json(res, 200, { groups: summarizeResearch(state.items, benchmarkReports(Infinity)) });
         }
         if (req.method === 'GET' && route === '/api/queued') {
             const item = state.items.find(x => x.id === url.searchParams.get('id'));
@@ -2108,12 +2108,12 @@ const server = http.createServer(async (req, res) => {
             const studyId = count > 1 ? crypto.randomUUID() : null;
             const prepared = [];
             for (let i = 0; i < count; i++) {
-                const seed = count === 1 ? baseSeed : baseSeed + i;
+                const seed = baseSeed + i;
                 const suffix = count > 1 ? ' · seed ' + seed : '';
                 const input = {
                     ...value,
                     name: count > 1 ? String(value.name || '').slice(0, 100 - suffix.length) + suffix : value.name,
-                    trainer: { ...value.trainer, seed },
+                    trainer: count > 1 ? { ...value.trainer, seed } : (value.trainer || {}),
                 };
                 const item = await definition(input);
                 if (studyId) {
