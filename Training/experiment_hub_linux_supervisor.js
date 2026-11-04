@@ -102,6 +102,8 @@ function launchArguments(record,invocation) {
             (invocation.stop_policy==='interrupt-main'?'SIGINT':'SIGTERM'),
         '--property=TimeoutStopSec='+
             (invocation.stop_policy==='interrupt-main'?'600s':'20s'),
+        ...(invocation.stop_policy==='interrupt-main'
+            ?['--property=SuccessExitStatus=130']:[]),
         '--property=CPUAccounting=yes','--property=MemoryAccounting=yes',
         // These masks keep default CUDA/ROCm selectors from using a GPU
         // inside CPU-budgeted jobs; they do NOT create GPU device isolation.
@@ -170,7 +172,7 @@ class LinuxSupervisor {
     async inspectUnit(record) {
         const out=await this.runner(SYSTEMCTL,
             ['--user','show',record.unit,'--no-pager',
-                '--property=Id,Description,LoadState,ActiveState,SubState,Result,MainPID,MemoryMax,CPUQuotaPerSecUSec,MemoryCurrent,CPUUsageNSec,TasksCurrent,KillMode,KillSignal'],
+                '--property=Id,Description,LoadState,ActiveState,SubState,Result,MainPID,MemoryMax,CPUQuotaPerSecUSec,MemoryCurrent,CPUUsageNSec,TasksCurrent,KillMode,KillSignal,ExecMainStatus'],
             {timeout:12000,maxBuffer:16384,windowsHide:true});
         const p=parseShow(out.stdout);
         if(p.LoadState==='not-found')
@@ -199,9 +201,16 @@ class LinuxSupervisor {
                 cpu_time_ns:numeric(p.CPUUsageNSec),
                 process_tasks:numeric(p.TasksCurrent)};
         }
-        if(p.ActiveState==='inactive'||p.ActiveState==='failed')
-            return {state:p.Result==='success'?'finished':'failed',
+        if(p.ActiveState==='inactive'||p.ActiveState==='failed') {
+            // Ants' reviewed CLI returns 130 after a handled SIGINT, even
+            // when it deliberately preserved the previous durable checkpoint.
+            const expectedInterrupt=record.stop_requested_at&&
+                record.stop_policy==='interrupt-main'&&
+                p.Result==='exit-code'&&p.ExecMainStatus==='130';
+            return {state:p.Result==='success'||expectedInterrupt
+                ?'finished':'failed',
                 active:false,unit_exists:true,pid:null};
+        }
         return {state:'unverified',active:false,unit_exists:true};
     }
     // Does not restart anything. A crash after the start request leaves a
