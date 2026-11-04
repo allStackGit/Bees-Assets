@@ -2206,10 +2206,23 @@ const server = http.createServer(async (req, res) => {
                 if (!canEditQueued(original)) throw Error('The selected experiment started during editing.');
                 const index = state.items.indexOf(original);
                 if (index < 0) throw Error('Queued experiment changed during editing.');
+                const seed = prepared.trainer_config?.resolved?.seed;
+                if (original.study_id && state.items.some(peer =>
+                    peer.id !== original.id && peer.study_id === original.study_id &&
+                    peer.trainer_config?.resolved?.seed === seed)) {
+                    throw Error('A replicate in this study already uses the selected initialization seed.');
+                }
                 const revised = {
                     ...prepared, id: original.id, created_at: original.created_at,
                     edit_revision: (original.edit_revision || 0) + 1,
                     edited_at: now(),
+                    ...(original.study_id ? {
+                        study_id: original.study_id,
+                        study_label: original.study_label,
+                        replicate_number: original.replicate_number,
+                        replicate_count: original.replicate_count,
+                        replicate_seed: seed,
+                    } : {}),
                 };
                 state.items[index] = revised; // Preserve queue position and identity.
                 try { save(); }
