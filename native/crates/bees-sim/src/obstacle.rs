@@ -76,6 +76,43 @@ impl ObstacleVitals {
     }
 }
 
+/// CollisionAsteroid.ObstacleCollision uses the *authored* original health
+/// for collision damage, not the episode's effective training durability.
+/// The collision zeroes health immediately; GotKilledInCollision then
+/// schedules Kill(false) after 0.35 seconds. This function does not set
+/// is_dead or remove physics bodies.
+pub fn resolve_asteroid_pair_damage(
+    first: &mut ObstacleVitals,
+    first_size: u8,
+    second: &mut ObstacleVitals,
+    second_size: u8,
+) -> Option<(AsteroidDamage, AsteroidDamage)> {
+    if first.is_dead || second.is_dead || first.health <= 0 ||
+        second.health <= 0 || first_size == 0 || second_size == 0 {
+        return None;
+    }
+    let first_before = first.health;
+    let second_before = second.health;
+    if first_size > second_size {
+        first.health -= second.original_health.min(first.health);
+        second.health = 0;
+    } else if first_size < second_size {
+        second.health -= first.original_health.min(second.health);
+        first.health = 0;
+    } else {
+        first.health = 0;
+        second.health = 0;
+    }
+    let status = |before: i32, vitals: &ObstacleVitals| AsteroidDamage {
+        health_before: before,
+        health_after: vitals.health,
+        killed: vitals.health == 0,
+        cracked: vitals.health > 0 &&
+            (vitals.health as f32 / vitals.effective_max_health as f32) < 0.5,
+    };
+    Some((status(first_before, first), status(second_before, second)))
+}
+
 /// Exact spawn counts from CollisionAsteroid.SpawnBreakAwayAsteroids.
 /// The consuming world must still supply pool-specific prefab geometry,
 /// inherited angular velocity, random velocity/heading, sibling exclusion,
