@@ -13,6 +13,7 @@
 //! guaranteed to match until checked with a live reference build.
 
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 use crate::collision::Aabb;
 use crate::combat::{CombatError, DamageSource, HitEvent, ShipVitals};
@@ -26,7 +27,9 @@ use crate::movement::ShipMotion;
 use crate::projectile::ProjectileMotion;
 use crate::ship_assets::ShipAsset;
 use crate::projectile_assets::ProjectileAsset;
-use crate::projectile_rules::{ExplosionContacts, PiercingShot, PiercingType};
+use crate::projectile_rules::{rocket_accelerated_velocity, ExplosionContacts, PiercingShot, PiercingType};
+use crate::projectile_assets::ProjectileAssetCatalog;
+use crate::timer::ScaledTimer;
 use crate::simulation::{GameRules, World};
 use crate::telemetry::StepCounts;
 
@@ -37,6 +40,8 @@ pub enum CombatWorldError {
     Reservation(ReservationError),
     UnknownProjectile,
     UnknownShip,
+    EntityIdExhausted,
+    MissingRocketStats,
     DuplicateEntity,
     InvalidSide,
     InvalidProjectilePower,
@@ -86,22 +91,31 @@ pub enum CombatEvent {
     ProjectileEnded {
         projectile_id: i64,
     },
+    ProjectileContinued {
+        parent_id: i64,
+        continuation_id: i64,
+    },
 }
 
 enum ImpactBehavior {
     Direct,
+    Rocket { acceleration_timer: ScaledTimer, max_speed: f32 },
     Penetrating(PiercingShot),
     Explosion(ExplosionContacts),
 }
 
 impl ImpactBehavior {
-    fn for_type(projectile_type: u8, power: i32) -> Result<Self, CombatWorldError> {
+    fn for_type(projectile_type: u8, power: i32, rocket_max_speed: Option<f32>) -> Result<Self, CombatWorldError> {
         match projectile_type {
             1 | 2 | 3 | 6 | 7 | 10 | 11 => Ok(Self::Direct),
             4 => Ok(Self::Penetrating(PiercingShot::new(PiercingType::PowerShot, power))),
             8 => Ok(Self::Penetrating(PiercingShot::new(PiercingType::LaserBeam, power))),
             13..=15 => Ok(Self::Explosion(ExplosionContacts::new())),
-            5 | 9 | 12 => Err(CombatWorldError::UnportedProjectileType(projectile_type)),
+            5 => Ok(Self::Rocket {
+                acceleration_timer: ScaledTimer::new(0.1, true, true),
+                max_speed: rocket_max_speed.ok_or(CombatWorldError::MissingRocketStats)?,
+            }),
+            9 | 12 => Err(CombatWorldError::UnportedProjectileType(projectile_type)),
             _ => Err(CombatWorldError::InvalidProjectileType(projectile_type)),
         }
     }
@@ -128,9 +142,10 @@ impl CombatProjectile {
         projectile_type: u8,
         owner: ShotOwner,
         power: i32,
+        rocket_max_speed: Option<f32>,
     ) -> Result<Self, CombatWorldError> {
         if power < 0 { return Err(CombatWorldError::InvalidProjectilePower); }
-        let behavior = ImpactBehavior::for_type(projectile_type, power)?;
+        let behavior = ImpactBehavior::for_type(projectile_type, power, rocket_max_speed)?;
         Ok(Self {
             entity_id, projectile_type, owner, power,
             ignored_ships: HashSet::new(), behavior,
@@ -153,6 +168,8 @@ impl CombatProjectile {
 /// ID maps are only used when routing collision results.
 pub struct CombatWorld {
     physics: KinematicPhysics,
+    projectile_assets: Arc<ProjectileAssetCatalog>,
+    next_entity_id: i64,
     ships: Vec<CombatShip>,
     projectiles: Vec<CombatProjectile>,
     ship_by_id: HashMap<i64, usize>,
@@ -168,9 +185,15 @@ pub struct CombatWorld {
 }
 
 impl CombatWorld {
-    pub fn new(area: Aabb, cell_size: f32) -> Result<Self, CombatWorldError> {
+    pub fn new(
+        area: Aabb,
+        cell_size: f32,
+        projectile_assets: Arc<ProjectileAssetCatalog>,
+    ) -> Result<Self, CombatWorldError> {
         Ok(Self {
             physics: KinematicPhysics::new(area, cell_size)?,
+            projectile_assets,
+            next_entity_id: 1,
             ships: Vec::new(),
             projectiles: Vec::new(),
             ship_by_id: HashMap::new(),
@@ -219,7 +242,7 @@ impl CombatWorld {
         rotation_degrees: f32,
     ) -> Result<(), CombatWorldError> {
         let metadata = CombatProjectile::new(
-            entity_id, asset.projectile_type, owner, power,
+            entity_id, asset.projectile_type, owner, power, asset.rocket_max_speed,
         )?;
         let body = asset.spawn_physics_body(entity_id, motion, rotation_degrees)?;
         self.add_projectile(metadata, body)
@@ -237,7 +260,9 @@ impl CombatWorld {
         {
             return Err(CombatWorldError::DuplicateEntity);
         }
+        let next_id = body.id.checked_add(1).ok_or(CombatWorldError::EntityIdExhausted)?;
         let index = self.physics.add_ship(body)?;
+        self.next_entity_id = self.next_entity_id.max(next_id);
         debug_assert_eq!(index, self.ships.len());
         self.ship_by_id.insert(ship.entity_id, index);
         self.ships.push(ship);
@@ -255,7 +280,9 @@ impl CombatWorld {
         {
             return Err(CombatWorldError::DuplicateEntity);
         }
+        let next_id = body.id.checked_add(1).ok_or(CombatWorldError::EntityIdExhausted)?;
         let index = self.physics.add_projectile(body)?;
+        self.next_entity_id = self.next_entity_id.max(next_id);
         debug_assert_eq!(index, self.projectiles.len());
         self.projectile_by_id.insert(projectile.entity_id, index);
         self.projectiles.push(projectile);
@@ -504,9 +531,10 @@ mod tests {
     #[test]
     fn live_collision_debits_tsv_and_keeps_original_command_owner() {
         let ships = ShipAssetCatalog::embedded().unwrap();
+        let projectile_assets = Arc::new(ProjectileAssetCatalog::embedded().unwrap());
         let mut world = CombatWorld::new(
             Aabb { min: Vec2::new(-20.0, -20.0), max: Vec2::new(20.0, 20.0) },
-            4.0,
+            4.0, projectile_assets.clone(),
         ).unwrap();
         world.spawn_ship(
             ships.by_type(13).unwrap(), 5, 2,
@@ -519,7 +547,7 @@ mod tests {
         let matrix = CollisionMatrix::from_rows(rows);
         let motion = ProjectileMotion::new(Vec2::ZERO, 0.0, 0.0, 40.0, 9, 77);
         world.spawn_projectile(
-            ProjectileAssetCatalog::embedded().unwrap().by_type(1).unwrap(),
+            projectile_assets.by_type(1).unwrap(),
             9,
             ShotOwner {
                 shooter_id: 3, shooter_side: 1,
