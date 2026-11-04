@@ -339,8 +339,14 @@ impl CombatWorld {
         let target_index = *self.ship_by_id.get(&target_id)
             .ok_or(CombatWorldError::UnknownShip)?;
         if self.ships[target_index].vitals.is_dead() ||
-            !self.physics.ships()[target_index].active {
+            !self.physics.ships()[target_index].active ||
+            self.ships[target_index].side == owner.shooter_side {
             return Err(CombatWorldError::InvalidBombTarget);
+        }
+        // A Striker must have a live fleet identity when the bomb is
+        // released. Only a later identity mismatch makes damage unattributed.
+        if self.fleet_id_by_ship.get(&owner.shooter_id) != Some(&shooter_fleet_id) {
+            return Err(CombatWorldError::InvalidFleetIdentity);
         }
         let asset = self.projectile_assets.by_type(12)
             .ok_or(CombatWorldError::InvalidProjectileType(12))?;
@@ -437,6 +443,23 @@ impl CombatWorld {
         Ok(self.reservations.status(
             side, target_id, self.ships[ship_index].vitals.health(),
         ))
+    }
+
+    /// Bomb.SetTargetShip reserves at weapon selection time. When its
+    /// delivery object is created, transfer that existing lease, not a new
+    /// reservation. Cancellation of an unused weapon target calls release
+    /// on the original weapon owner instead.
+    pub fn transfer_damage_reservation(
+        &mut self,
+        from_owner_id: i64,
+        projectile_id: i64,
+    ) -> Result<bool, CombatWorldError> {
+        let index = *self.projectile_by_id.get(&projectile_id)
+            .ok_or(CombatWorldError::UnknownProjectile)?;
+        if !self.physics.projectiles()[index].active {
+            return Err(CombatWorldError::UnknownProjectile);
+        }
+        Ok(self.reservations.transfer(from_owner_id, projectile_id)?)
     }
 
     /// Return a shot to the dormant state once, release only its OWN
