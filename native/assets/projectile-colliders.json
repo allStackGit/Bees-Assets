@@ -7,6 +7,7 @@
       "projectile_type": 1,
       "layer": 10,
       "has_body": true,
+      "shot_speed": 100,
       "shape": {
         "kind": "circle",
         "offset": [
@@ -126,6 +127,7 @@
       "projectile_type": 9,
       "layer": 10,
       "has_body": true,
+      "split_count": 4,
       "shape": {
         "kind": "circle",
         "offset": [
