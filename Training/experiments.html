@@ -402,7 +402,10 @@ function chart(items) {
         : sample.step;
     const seriesFor = item => {
         const inputs = (item.samples || [])
-            .map(sample => ({ x: xValue(sample), raw: metricValue(sample, metric) }))
+            .map((sample, sourceIndex) => ({
+                x: xValue(sample), raw: metricValue(sample, metric),
+                step: sample.step, at: sample.at, sourceIndex,
+            }))
             .filter(point => Number.isFinite(point.x) &&
                 point.raw != null && Number.isFinite(Number(point.raw)));
         let total = 0;
@@ -599,13 +602,54 @@ function chart(items) {
             }
         }
     }
+    const sampleGaps = [];
     for (const dataset of datasets) {
         if (!dataset.points.length) continue;
-        const path = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
-        path.setAttribute('points', dataset.points.map(p =>
-            xx(p.x) + ',' + yy(p.y)).join(' '));
-        path.setAttribute('stroke', dataset.color); path.setAttribute('stroke-width', '1.2');
-        path.setAttribute('fill', 'none'); svg.append(path);
+        const drawSegment = segment => {
+            if (!segment.length) return;
+            if (segment.length === 1) {
+                const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                dot.setAttribute('cx', String(xx(segment[0].x)));
+                dot.setAttribute('cy', String(yy(segment[0].y)));
+                dot.setAttribute('r', '2.5');
+                dot.setAttribute('fill', dataset.color);
+                svg.append(dot);
+                return;
+            }
+            const path = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+            path.setAttribute('points', segment.map(p =>
+                xx(p.x) + ',' + yy(p.y)).join(' '));
+            path.setAttribute('stroke', dataset.color);
+            path.setAttribute('stroke-width', '1.2');
+            path.setAttribute('fill', 'none');
+            svg.append(path);
+        };
+        let segment = [dataset.points[0]];
+        for (let i = 1; i < dataset.points.length; i++) {
+            const previous = dataset.points[i - 1];
+            const current = dataset.points[i];
+            const delta = current.step - previous.step;
+            const missingMetric = current.sourceIndex > previous.sourceIndex + 1;
+            // A missing sequence in the persisted chart or more than a
+            // million steps without a sample is unknown, not an interpolated
+            // performance trend. The original 500-sample compaction may have
+            // discarded older points, so report missing *stored* readings.
+            const missingSteps = Number.isFinite(delta) && delta > 1000000;
+            if (missingMetric || missingSteps || current.x <= previous.x) {
+                drawSegment(segment);
+                if (current.x > previous.x) sampleGaps.push({
+                    run: dataset.item.name, from: previous.step, to: current.step,
+                    fromX: previous.x, toX: current.x,
+                    earlierAt: previous.at, laterAt: current.at,
+                    skippedMetrics: Math.max(0, current.sourceIndex - previous.sourceIndex - 1),
+                    metric,
+                });
+                segment = [current];
+            } else {
+                segment.push(current);
+            }
+        }
+        drawSegment(segment);
         const latestPoint = dataset.points[dataset.points.length - 1];
         const label = txt('span', dataset.item.name +
             ' · latest ' + fmt(latestPoint.raw, 3) +
@@ -615,15 +659,27 @@ function chart(items) {
         dot.className = 'dot'; dot.style.background = dataset.color;
         label.prepend(dot); $('legend').append(label);
     }
+    if (sampleGaps.length) {
+        const largest = sampleGaps.slice().sort((a, b) =>
+            (b.to - b.from) - (a.to - a.from)).slice(0, 3);
+        for (const gap of largest) $('legend').append(txt('span',
+            'NO STORED DATA · ' + gap.run + ' · ' + fmt(gap.from) +
+            '–' + fmt(gap.to) + ' steps (' + fmt(gap.to - gap.from) +
+            ' steps between consecutive plotted samples)' +
+            (gap.skippedMetrics ? ' · ' + gap.skippedMetrics +
+                ' intervening samples lack this metric' : '') +
+            '. Line intentionally disconnected.'));
+    }
     if (envMarkers.length) $('legend').append(txt('span',
         '○ Vertical ticks: ' + envMarkers.length + ' environment-count changes · hover for worker details'));
     const hoverLayer = document.createElementNS('http://www.w3.org/2000/svg', 'g');
     hoverLayer.setAttribute('id', 'chart-hover-overlay');
     svg.append(hoverLayer);
     chartHover = { datasets, hoverLayer, xmax, xx, yy, metric, axis, smooth,
-        envMarkers, evaluationMarkers };
+        envMarkers, evaluationMarkers, sampleGaps };
     $('graph-inspect').textContent =
         'Hover for raw, rolling and running-mean values.' +
+        (sampleGaps.length ? ' Disconnected lines indicate missing stored observations, not interpolated results.' : '') +
         (envMarkers.length ? ' Vertical ticks mark observed worker environment-count changes; historical requests are approximate.' : '') +
         ' Rolling averages use the last ' +
         smooth + ' recorded sample(s), not an independent evaluation.';
@@ -740,8 +796,11 @@ function inspectChart(event) {
         Math.abs(chartHover.xx(change.x) - pixelX) <= 7);
     const nearbyEvaluations = chartHover.evaluationMarkers.filter(event =>
         Math.abs(chartHover.xx(event.x) - pixelX) <= 7);
+    const missingHere = chartHover.sampleGaps.filter(gap =>
+        x > gap.fromX && x < gap.toX);
     const text = [
-        ...nearest.map(({ item, point }) =>
+        ...nearest.filter(({ item }) => !missingHere.some(gap =>
+            gap.run === item.name)).map(({ item, point }) =>
             item.name + ' · ' + (chartHover.axis === 'time'
                 ? fmt(point.x, 2) + ' training h' : fmt(point.x) + ' steps') +
             '\n  raw ' + fmt(point.raw, 3) +
@@ -751,6 +810,13 @@ function inspectChart(event) {
             'ENV COUNT · ' + change.run + ' · ' + change.label +
             ' · ' + new Date(change.at).toLocaleString()),
         ...nearbyEvaluations.map(event => 'EVALUATION · ' + event.label),
+        ...missingHere.map(gap => 'NO STORED ' + chartHover.metric.toUpperCase() +
+            ' DATA · ' + gap.run + ' · ' + fmt(gap.from) + '–' +
+            fmt(gap.to) + ' learner steps' +
+            (gap.earlierAt && gap.laterAt ? ' · samples dated ' +
+                new Date(gap.earlierAt).toLocaleString() + ' and ' +
+                new Date(gap.laterAt).toLocaleString() : '') +
+            ' · no measured trend between these endpoints'),
     ].join('\n');
     $('graph-inspect').textContent = text.replaceAll('\n', ' ');
     const tooltip = $('graph-tooltip');
