@@ -81,8 +81,9 @@ The portable `bees-sim` crate currently contains:
   Ordinary projectile impacts can damage collision asteroids, terminate
   against borders or record static-obstacle hits; rockets explode on
   non-border obstacles and explosion projectiles deduplicate asteroid hits.
-  All **28 authored collision asteroid variants** are imported with their
-  active primary polygons, inherited overrides, size class and layer. A
+  All **28 authored collision asteroid variants** are imported with both
+  primary and child proximity polygons (including inherited vertex
+  overrides, transform scale, size class, and separate collision layers). A
   second catalog provides **eight static box variants and four map borders**
   with authored dimensions and prefab-default poses, while a third imports the
   standalone **208-vertex Polygon Obstacle** gameplay collider (excluding its
@@ -91,8 +92,17 @@ The portable `bees-sim` crate currently contains:
   collision asteroids leave the active ID registry and their inactive
   physics/metadata slots are recycled on subsequent spawns, with new entity
   IDs and world-local reuse metrics. End-of-level destruction suppresses
-  fragment events. Actual shard/piece spawning, pathfinder invalidation,
-  nearby-entity cleanup and rendering remain unimplemented.
+  fragment events. The shared physics now reports separate primary-hull
+  and authored-proximity entry/exit contact streams, including directed
+  asteroid-to-obstacle proximity contacts. Map borders track asteroid
+  entry/exit history and remove exiting asteroids without fragmentation.
+  The native asset catalog preserves authored OriginalHealth separately
+  from an episode's effective training durability. Collision damage
+  callbacks are not yet wired to these streams: in Unity, the first
+  proximity entry and the later primary collider entry have different
+  meanings and callback order still requires parity validation.
+  Actual shard/piece spawning, pathfinder invalidation, nearby-entity
+  cleanup and rendering remain unimplemented.
 - An optional tactical reward consumer using the current RL team's shared
   positive/negative asymptotic shaping budgets, with mined cargo excluded
   from persistent-fleet damage reward on death.
@@ -100,8 +110,9 @@ The portable `bees-sim` crate currently contains:
 **Not yet implemented:** complete normal user/Hive Mind movement,
 weapon-specific targeting and projectile spawning, remaining authored
 static/border/mining obstacle prefabs and the full collision-layer matrix,
-moving-asteroid AI, obstacle/ship
-and asteroid/asteroid collisions, asteroid fragmentation and registry cleanup,
+moving-asteroid AI, obstacle/ship and asteroid/asteroid *damage/lifecycle*
+callbacks (geometric contact streams are available), asteroid fragmentation
+and full registry/observer cleanup,
 Unity-equivalent Animator/FixedUpdate/Physics2D ordering, native Hive Mind
 command updates and persistence, squad/formation removal and full ship-death
 lifecycle, complete RL reward delivery and episode termination, visibility
@@ -187,8 +198,9 @@ Physics2D parity nor complete battle readiness.
 
 ## Collision asteroid prefab migration
 
-`native/assets/asteroid-colliders.json` contains the primary colliders for
-all 28 `Collision Asteroids/Asteroid N.prefab` assets. Both standalone prefabs
+`native/assets/asteroid-colliders.json` contains the primary (layer 19)
+and proximity (layer 20) polygon colliders for all 28
+`Collision Asteroids/Asteroid N.prefab` assets. Both standalone prefabs
 and their inherited YAML overrides are decoded by a single source importer:
 
 ```sh
@@ -198,9 +210,12 @@ node native/tools/import-unity-asteroid-colliders.mjs --check
 Omit `--check` to regenerate. The importer uses the serialized
 `Obstacle.Collider` reference and **honors the declared path-array size**:
 serialized point overrides for inactive paths are not collision geometry.
-It rejects unsupported multiple *active* polygon paths. The catalog stores
-normal `SizeClass × CollisionAsteroidHealthIncrement` durability; training
-must still pass its effective-health override when spawning.
+It rejects unsupported multiple *active* polygon paths in either collider.
+The proximity shape applies the authored child scale/offset and distinct
+layer, rather than scaling the primary hull by a guessed radius. The catalog
+stores normal `SizeClass × CollisionAsteroidHealthIncrement` durability;
+training must still pass its effective-health override when spawning, while
+collision rules retain the original authored health.
 
 ## Static boxes and map borders
 
