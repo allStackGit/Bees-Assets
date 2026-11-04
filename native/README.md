@@ -66,14 +66,20 @@ The portable `bees-sim` crate currently contains:
   entity IDs remain monotonically increasing independently of pooled slots.
   Ships and shots spawn through the same authored collider catalogs in
   rendered/headless contexts.
+- Striker Bomb's two-stage fuse, original target/shooter identity checks and
+  target-relative attachment are implemented in the shared combat world.
+- Frigate, Fire Barge and Fire Tank explosion animation events are imported
+  from their Unity clips. Their radius changes modify the actual physics
+  collider; harmlessness disables new damage; Kill releases the reservation
+  and returns the projectile slot to the pool.
 - An optional tactical reward consumer using the current RL team's shared
   positive/negative asymptotic shaping budgets, with mined cargo excluded
   from persistent-fleet damage reward on death.
 
 **Not yet implemented:** complete normal user/Hive Mind movement,
-weapon-specific targeting and projectile spawning, Striker Bomb delayed damage,
-rocket explosion lifetime/animation completion and obstacle impacts,
-native Hive Mind command updates and persistence,
+weapon-specific targeting and projectile spawning, Unity-equivalent
+Animator/FixedUpdate ordering and obstacle impacts, native Hive Mind command
+updates and persistence,
 squad/formation removal and full ship-death lifecycle, complete RL reward
 delivery and episode termination, Unity-equivalent physics callback ordering,
 obstacle contacts and the full collision-layer matrix, visibility and
@@ -159,9 +165,9 @@ tools, not production runtime dependencies.
 Frigate Rocket speed is exported from the prefab's `MaxSpeed` (160);
 the explosion's authored collider is loaded from projectile type 13. During
 migration, the native combat world requires one shared immutable
-`Arc<ProjectileAssetCatalog>` at construction. Its explosion-end callback
-must be connected to the native animation/timer lifecycle before full parity
-can be claimed.
+`Arc<ProjectileAssetCatalog>` at construction. Explosion event callbacks now run in the native
+simulation, but their ordering against Unity Animator and Physics2D ticks
+has not been verified in a running reference build.
 
 The runtime shares one transformed-collider implementation between ships and
 projectiles. Source-based shape geometry is necessary but **does not establish
