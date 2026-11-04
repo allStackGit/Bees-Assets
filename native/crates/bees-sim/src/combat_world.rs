@@ -256,6 +256,14 @@ pub struct ProjectileStorageMetrics {
     pub slots_reused: u64,
 }
 
+/// Monitors whether asteroid churn grows memory or reuses inactive bodies.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ObstacleStorageMetrics {
+    pub allocated_slots: usize,
+    pub active_obstacles: usize,
+    pub slots_reused: u64,
+}
+
 /// State and scratch are owned per arena. No process globals, no cross-world
 /// static dictionaries. Dense arrays use identical indices to physics bodies;
 /// ID maps are only used when routing collision results.
@@ -268,6 +276,8 @@ pub struct CombatWorld {
     obstacles: Vec<CombatObstacle>,
     free_projectile_slots: Vec<usize>,
     projectile_slot_reuses: u64,
+    free_obstacle_slots: Vec<usize>,
+    obstacle_slot_reuses: u64,
     ship_by_id: HashMap<i64, usize>,
     obstacle_by_id: HashMap<i64, usize>,
     fleet_id_by_ship: HashMap<i64, i64>,
@@ -300,6 +310,8 @@ impl CombatWorld {
             obstacles: Vec::new(),
             free_projectile_slots: Vec::new(),
             projectile_slot_reuses: 0,
+            free_obstacle_slots: Vec::new(),
+            obstacle_slot_reuses: 0,
             ship_by_id: HashMap::new(),
             obstacle_by_id: HashMap::new(),
             fleet_id_by_ship: HashMap::new(),
@@ -333,6 +345,15 @@ impl CombatWorld {
             active_projectiles: self.physics.projectiles().iter()
                 .filter(|body| body.active).count(),
             slots_reused: self.projectile_slot_reuses,
+        }
+    }
+
+    pub fn obstacle_storage_metrics(&self) -> ObstacleStorageMetrics {
+        ObstacleStorageMetrics {
+            allocated_slots: self.obstacles.len(),
+            active_obstacles: self.physics.obstacles().iter()
+                .filter(|body| body.active).count(),
+            slots_reused: self.obstacle_slot_reuses,
         }
     }
 
@@ -527,10 +548,19 @@ impl CombatWorld {
             return Err(CombatWorldError::InvalidObstacle);
         }
         let next_id = body.id.checked_add(1).ok_or(CombatWorldError::EntityIdExhausted)?;
-        let index = self.physics.add_obstacle(body)?;
-        debug_assert_eq!(index, self.obstacles.len());
-        self.obstacle_by_id.insert(obstacle.entity_id, index);
-        self.obstacles.push(obstacle);
+        if let Some(&index) = self.free_obstacle_slots.last() {
+            self.physics.replace_ended_obstacle(index, body)?;
+            self.free_obstacle_slots.pop();
+            self.obstacle_slot_reuses += 1;
+            debug_assert!(!self.obstacle_by_id.contains_key(&self.obstacles[index].entity_id));
+            self.obstacle_by_id.insert(obstacle.entity_id, index);
+            self.obstacles[index] = obstacle;
+        } else {
+            let index = self.physics.add_obstacle(body)?;
+            debug_assert_eq!(index, self.obstacles.len());
+            self.obstacle_by_id.insert(obstacle.entity_id, index);
+            self.obstacles.push(obstacle);
+        }
         self.next_entity_id = next_id;
         Ok(())
     }
@@ -1075,6 +1105,46 @@ impl CombatWorld {
         Ok(())
     }
 
+    /// Unity's CollisionAsteroid.Kill(true) (teardown/map border) removes
+    /// the body without spawning children. A normal kill emits the authored
+    /// breakup request. Callers must not reuse a retired entity ID.
+    pub fn kill_collision_asteroid(
+        &mut self,
+        entity_id: i64,
+        end_kill: bool,
+    ) -> Result<bool, CombatWorldError> {
+        let &index = self.obstacle_by_id.get(&entity_id)
+            .ok_or(CombatWorldError::UnknownObstacle)?;
+        if self.obstacles[index].kind != ObstacleKind::CollisionAsteroid {
+            return Err(CombatWorldError::InvalidObstacle);
+        }
+        Ok(self.retire_collision_asteroid(index, !end_kill))
+    }
+
+    fn retire_collision_asteroid(&mut self, index: usize, with_breakup: bool) -> bool {
+        if self.obstacles[index].kind != ObstacleKind::CollisionAsteroid ||
+            !self.physics.obstacles()[index].active {
+            return false;
+        }
+        let obstacle = &mut self.obstacles[index];
+        let entity_id = obstacle.entity_id;
+        let size_class = obstacle.size_class;
+        if let Some(vitals) = &mut obstacle.vitals {
+            vitals.is_dead = true;
+        }
+        self.physics.obstacles_mut()[index].active = false;
+        self.obstacle_by_id.remove(&entity_id);
+        self.free_obstacle_slots.push(index);
+        if with_breakup {
+            self.events.push(CombatEvent::AsteroidDestroyed {
+                obstacle_id: entity_id,
+                size_class,
+                breakup: AsteroidBreakup::for_size_class(size_class),
+            });
+        }
+        true
+    }
+
     fn damage_collision_asteroid(
         &mut self,
         contact: ObstacleTriggerEnter,
@@ -1092,14 +1162,9 @@ impl CombatWorld {
             damage,
         });
         if damage.killed {
-            // Unity calls CollisionAsteroid.Kill(false), which removes the
-            // obstacle and schedules its authored shard consequences.
-            self.physics.obstacles_mut()[obstacle_index].active = false;
-            self.events.push(CombatEvent::AsteroidDestroyed {
-                obstacle_id: contact.obstacle_id,
-                size_class: obstacle.size_class,
-                breakup: AsteroidBreakup::for_size_class(obstacle.size_class),
-            });
+            // Normal destruction drops the registry entry and frees the
+            // physical slot; future fragments need distinct entity IDs.
+            self.retire_collision_asteroid(obstacle_index, true);
         }
     }
 
