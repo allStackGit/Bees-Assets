@@ -52,8 +52,18 @@ pub struct Pose {
 }
 
 impl Pose {
+    /// Transform an authored local collider offset or vertex.
+    #[inline]
+    pub fn transform_point(&self, point: Vec2) -> Vec2 {
+        let (sin, cos) = self.rotation_degrees.to_radians().sin_cos();
+        Vec2::new(
+            self.position.x + point.x * cos - point.y * sin,
+            self.position.y + point.x * sin + point.y * cos,
+        )
+    }
+
     /// Transform prefab collider vertices into the Level map coordinate frame.
-    /// The ship prefabs examined so far have unit local scale.
+    /// Prefab-specific scale is applied when importing the hull asset.
     pub fn transform_into(&self, local_vertices: &[Vec2], out: &mut Vec<Vec2>) {
         out.clear();
         out.reserve(local_vertices.len());
@@ -113,6 +123,14 @@ pub fn circle_overlaps_polygon(
         previous = current;
     }
     inside
+}
+
+/// Exact overlap for two circular trigger colliders.
+#[inline]
+pub fn circles_overlap(a: Vec2, radius_a: f32, b: Vec2, radius_b: f32) -> bool {
+    let delta = a - b;
+    let combined = radius_a + radius_b;
+    delta.length_squared() <= combined * combined
 }
 
 /// Segment intersection for collision between polygon outlines. Collinear
