@@ -126,7 +126,7 @@ pub fn resolve_asteroid_ship_damage(
     ship_current_health: i32,
 ) -> Option<(AsteroidDamage, i32)> {
     if asteroid.is_dead || asteroid.health <= 0 || asteroid_size_class == 0 ||
-        !ship_size_class.is_finite() || ship_size_class <= 0.0 ||
+        !ship_size_class.is_finite() || ship_size_class < 0.0 ||
         ship_original_health <= 0 || ship_current_health <= 0 {
         return None;
     }
