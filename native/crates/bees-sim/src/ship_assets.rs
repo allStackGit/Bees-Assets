@@ -4,11 +4,9 @@
 //! No JSON parsing, string matching, or geometry allocation occurs per tick.
 //! The canonical native asset is native/assets/ship-colliders.json.
 
-use std::sync::Arc;
-
 use serde::Deserialize;
 
-use crate::geometry::Vec2;
+use crate::collider_asset_shape::RawShape;
 use crate::movement::ShipMotion;
 use crate::physics::{PhysicsError, ShipBody, ShipShape};
 
@@ -67,14 +65,6 @@ struct RawShip {
     shape: RawShape,
 }
 
-#[derive(Deserialize)]
-#[serde(tag = "kind", rename_all = "lowercase")]
-enum RawShape {
-    Polygon { vertices: Vec<[f32; 2]> },
-    Circle { offset: [f32; 2], radius: f32 },
-    Box { offset: [f32; 2], half_extents: [f32; 2] },
-}
-
 impl ShipAssetCatalog {
     pub fn embedded() -> Result<Self, AssetError> {
         Self::parse(ASSET_JSON)
@@ -100,36 +90,8 @@ impl ShipAssetCatalog {
                 return Err(AssetError::InvalidShape(kind as u8));
             }
 
-            let shape = match ship.shape {
-                RawShape::Polygon { vertices } => {
-                    if vertices.len() < 3 || vertices.iter().flatten().any(|value| !value.is_finite()) {
-                        return Err(AssetError::InvalidShape(kind as u8));
-                    }
-                    let hull: Vec<Vec2> = vertices.iter()
-                        .map(|xy| Vec2::new(xy[0], xy[1])).collect();
-                    ShipShape::Polygon(Arc::from(hull.into_boxed_slice()))
-                }
-                RawShape::Circle { offset, radius } => {
-                    if !radius.is_finite() || radius < 0.0 ||
-                        offset.iter().any(|value| !value.is_finite()) {
-                        return Err(AssetError::InvalidShape(kind as u8));
-                    }
-                    ShipShape::Circle {
-                        offset: Vec2::new(offset[0], offset[1]),
-                        radius,
-                    }
-                }
-                RawShape::Box { offset, half_extents } => {
-                    if offset.iter().chain(half_extents.iter()).any(|value| !value.is_finite()) ||
-                        half_extents.iter().any(|value| *value <= 0.0) {
-                        return Err(AssetError::InvalidShape(kind as u8));
-                    }
-                    ShipShape::Box {
-                        offset: Vec2::new(offset[0], offset[1]),
-                        half_extents: Vec2::new(half_extents[0], half_extents[1]),
-                    }
-                }
-            };
+            let shape = ship.shape.into_shape()
+                .ok_or(AssetError::InvalidShape(kind as u8))?;
 
             slots[kind] = Some(ShipAsset {
                 name: ship.name,
