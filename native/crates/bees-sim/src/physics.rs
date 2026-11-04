@@ -25,6 +25,14 @@ pub struct TriggerEnter {
     pub ship_id: i64,
 }
 
+/// Separate trigger stream: Unity projectiles queue ship and obstacle
+/// contacts independently and consume ship contacts first.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct ObstacleTriggerEnter {
+    pub projectile_id: i64,
+    pub obstacle_id: i64,
+}
+
 /// Unity 2D physics layers are 0..31. The actual layer collision matrix
 /// must be imported from the authoritative project settings. No permissive
 /// default is provided for game execution.
@@ -282,12 +290,59 @@ impl ProjectileBody {
     }
 }
 
+/// An authored obstacle collider with a kinematic world transform. Static
+/// obstacles and borders use zero velocity; collision asteroids use the
+/// body's gameplay-supplied linear/angular velocity. This does not invent
+/// Unity Rigidbody2D collision impulses, asteroid AI or prefab geometry.
+#[derive(Clone, Debug)]
+pub struct ObstacleBody {
+    pub id: i64,
+    pub pose: Pose,
+    pub linear_velocity: Vec2,
+    pub angular_velocity_degrees: f32,
+    pub layer: u8,
+    pub active: bool,
+    collider: WorldCollider,
+}
+
+impl ObstacleBody {
+    pub fn new(
+        id: i64,
+        pose: Pose,
+        layer: u8,
+        shape: ShipShape,
+        linear_velocity: Vec2,
+        angular_velocity_degrees: f32,
+    ) -> Result<Self, PhysicsError> {
+        if layer >= 32 || !pose.position.is_finite() ||
+            !pose.rotation_degrees.is_finite() ||
+            !linear_velocity.is_finite() ||
+            !angular_velocity_degrees.is_finite()
+        {
+            return Err(PhysicsError::InvalidCollider);
+        }
+        Ok(Self {
+            id, pose, linear_velocity, angular_velocity_degrees, layer,
+            active: true, collider: WorldCollider::new(shape)?,
+        })
+    }
+
+    pub fn shape(&self) -> &ShipShape {
+        &self.collider.shape
+    }
+
+    fn update_hull(&mut self) {
+        self.collider.update(self.pose);
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct PhysicsStepCounts {
     pub integrated_bodies: u64,
     pub broadphase_candidates: u64,
     pub narrowphase_tests: u64,
     pub trigger_enters: u64,
+    pub obstacle_trigger_enters: u64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -353,18 +408,15 @@ impl SpatialGrid {
         ))
     }
 
-    fn rebuild(&mut self, ships: &[ShipBody]) {
+    fn rebuild_with(&mut self, item_count: usize, mut item_bounds: impl FnMut(usize) -> Option<Aabb>) {
         for &index in &self.touched {
             self.cells[index].clear();
         }
         self.touched.clear();
         self.overflow.clear();
-        self.seen.resize(ships.len(), 0);
-        for (ship_index, ship) in ships.iter().enumerate() {
-            if !ship.active {
-                continue;
-            }
-            let Some(bounds) = ship.collider.bounds else { continue };
+        self.seen.resize(item_count, 0);
+        for ship_index in 0..item_count {
+            let Some(bounds) = item_bounds(ship_index) else { continue };
             // If a hull protrudes beyond the grid, it must remain queryable
             // even by a projectile entirely outside the grid.
             if bounds.min.x < self.area.min.x || bounds.min.y < self.area.min.y
@@ -419,11 +471,16 @@ impl SpatialGrid {
 pub struct KinematicPhysics {
     ships: Vec<ShipBody>,
     projectiles: Vec<ProjectileBody>,
+    obstacles: Vec<ObstacleBody>,
     grid: SpatialGrid,
+    obstacle_grid: SpatialGrid,
     candidates: Vec<usize>,
     overlaps_previous: Vec<TriggerEnter>,
     overlaps_current: Vec<TriggerEnter>,
     entries: Vec<TriggerEnter>,
+    obstacle_overlaps_previous: Vec<ObstacleTriggerEnter>,
+    obstacle_overlaps_current: Vec<ObstacleTriggerEnter>,
+    obstacle_entries: Vec<ObstacleTriggerEnter>,
     counts: PhysicsStepCounts,
 }
 
@@ -432,11 +489,16 @@ impl KinematicPhysics {
         Ok(Self {
             ships: Vec::new(),
             projectiles: Vec::new(),
+            obstacles: Vec::new(),
             grid: SpatialGrid::new(area, cell_size)?,
+            obstacle_grid: SpatialGrid::new(area, cell_size)?,
             candidates: Vec::new(),
             overlaps_previous: Vec::new(),
             overlaps_current: Vec::new(),
             entries: Vec::new(),
+            obstacle_overlaps_previous: Vec::new(),
+            obstacle_overlaps_current: Vec::new(),
+            obstacle_entries: Vec::new(),
             counts: PhysicsStepCounts::default(),
         })
     }
@@ -447,6 +509,20 @@ impl KinematicPhysics {
     pub fn projectiles_mut(&mut self) -> &mut [ProjectileBody] { &mut self.projectiles }
     pub fn counts(&self) -> PhysicsStepCounts { self.counts }
     pub fn trigger_entries(&self) -> &[TriggerEnter] { &self.entries }
+    pub fn obstacle_trigger_entries(&self) -> &[ObstacleTriggerEnter] { &self.obstacle_entries }
+    pub fn obstacles(&self) -> &[ObstacleBody] { &self.obstacles }
+    pub fn obstacles_mut(&mut self) -> &mut [ObstacleBody] { &mut self.obstacles }
+
+    /// Obstacles retain distinct IDs across the unified world. Their
+    /// gameplay kind, health and destruction state live in CombatWorld.
+    pub fn add_obstacle(&mut self, body: ObstacleBody) -> Result<usize, PhysicsError> {
+        if self.obstacles.iter().any(|other| other.id == body.id) {
+            return Err(PhysicsError::DuplicateEntityId);
+        }
+        let index = self.obstacles.len();
+        self.obstacles.push(body);
+        Ok(index)
+    }
 
     pub fn add_ship(&mut self, ship: ShipBody) -> Result<usize, PhysicsError> {
         if self.ships.iter().any(|other| other.id == ship.id) {
@@ -505,7 +581,21 @@ impl KinematicPhysics {
             }
             projectile.update_hull();
         }
-        self.grid.rebuild(&self.ships);
+        for obstacle in &mut self.obstacles {
+            if !obstacle.active { continue; }
+            obstacle.pose.position += obstacle.linear_velocity * dt;
+            obstacle.pose.rotation_degrees += obstacle.angular_velocity_degrees * dt;
+            obstacle.update_hull();
+            self.counts.integrated_bodies += 1;
+        }
+        self.grid.rebuild_with(self.ships.len(), |index| {
+            let ship = &self.ships[index];
+            if ship.active { ship.collider.bounds } else { None }
+        });
+        self.obstacle_grid.rebuild_with(self.obstacles.len(), |index| {
+            let obstacle = &self.obstacles[index];
+            if obstacle.active { obstacle.collider.bounds } else { None }
+        });
         self.overlaps_current.clear();
         for projectile in &self.projectiles {
             if !projectile.active { continue; }
@@ -531,6 +621,45 @@ impl KinematicPhysics {
                 }
             }
         }
+        // Obstacle contacts retain their own overlap history and queue.
+        // A shot can contact a ship and an obstacle in the same physics tick.
+        self.obstacle_overlaps_current.clear();
+        for projectile in &self.projectiles {
+            if !projectile.active { continue; }
+            let Some(projectile_collider) = &projectile.collider else { continue };
+            let Some(area) = projectile_collider.bounds else { continue };
+            self.obstacle_grid.candidates(area, &mut self.candidates);
+            self.counts.broadphase_candidates += self.candidates.len() as u64;
+            for &index in &self.candidates {
+                let obstacle = &self.obstacles[index];
+                if !obstacle.active ||
+                    !collision_matrix.allows(projectile.layer, obstacle.layer) {
+                    continue;
+                }
+                let Some(bounds) = obstacle.collider.bounds else { continue };
+                if !area.overlaps(bounds) { continue; }
+                self.counts.narrowphase_tests += 1;
+                if obstacle.collider.overlaps(projectile_collider) {
+                    self.obstacle_overlaps_current.push(ObstacleTriggerEnter {
+                        projectile_id: projectile.id,
+                        obstacle_id: obstacle.id,
+                    });
+                }
+            }
+        }
+        self.obstacle_overlaps_current.sort_unstable();
+        self.obstacle_overlaps_current.dedup();
+        self.obstacle_entries.clear();
+        for &pair in &self.obstacle_overlaps_current {
+            if self.obstacle_overlaps_previous.binary_search(&pair).is_err() {
+                self.obstacle_entries.push(pair);
+            }
+        }
+        self.counts.obstacle_trigger_enters = self.obstacle_entries.len() as u64;
+        std::mem::swap(
+            &mut self.obstacle_overlaps_previous,
+            &mut self.obstacle_overlaps_current,
+        );
         // Stable event ordering is necessary for reproducible outcome credit.
         // Unity callback order may differ: parity must be checked explicitly.
         self.overlaps_current.sort_unstable();
