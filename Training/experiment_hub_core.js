@@ -113,54 +113,136 @@ class ExperimentHub {
     }
     // These are conservative coordinator-side claims, NOT operating system
     // isolation or an authorization to execute a workload.
-    requestLease(value) {
-        if (!object(value) || value.confirm_request !== true ||
-            !ID.test(String(value.machine_id || '')))
-            throw Error('Select a machine and explicitly confirm the coordination lease.');
-        const project = this.project(value.project_id);
-        const wanted = resourceRequest(value.resources);
-        const snapshot = this.snapshot();
-        const machine = snapshot.machines.find(m=>m.id===value.machine_id);
-        if (!machine || machine.status !== 'connected')
+    // Build an offer in a caller-owned registry copy. A batch of job claims
+    // can then be durably committed together or not at all.
+    offerIn(next, projectId, machineId, wanted, jobId = null) {
+        const project=this.project(projectId);
+        const machine=this.snapshot().machines.find(m=>m.id===machineId);
+        if(!machine || machine.status!=='connected')
             throw Error('Machine must have a currently authenticated agent.');
-        const placement = resourcePlacements([machine],snapshot.reservations,wanted)[0];
-        if (!placement.online || !placement.capacity_fits)
-            throw Error('Requested capacity is unavailable on this connected machine.');
-        const activeCount = snapshot.reservations.filter(r=>
-            ['active','offered','acknowledged'].includes(r.status)).length;
-        if (activeCount >= 100)
-            throw Error('The Hub has reached the maximum simultaneous claims.');
-        const lease = {
+        const place=resourcePlacements([machine],next.reservations,wanted)[0];
+        if(!place.online || !place.capacity_fits)
+            throw Error('Requested capacity is unavailable on this machine.');
+        if(next.reservations.filter(r=>
+            ['active','offered','acknowledged'].includes(r.status)).length>=100)
+            throw Error('Maximum simultaneous coordination claims reached.');
+        const lease={
             id:crypto.randomUUID(),issued_by:'experiment-hub',
             project_id:project.id,machine_id:machine.id,
             status:'offered',created_at:now(),acknowledged_at:null,
             released_at:null,
-            resources:{...wanted,gpus:placement.suggested_gpus},
+            resources:{...wanted,gpus:place.suggested_gpus},
         };
+        if(jobId!==null)lease.job_id=jobId;
+        const released=next.reservations.filter(r=>r.status==='released').slice(-100);
+        next.reservations=next.reservations.filter(r=>r.status!=='released')
+            .concat(released,lease);
+        return lease;
+    }
+    requestLease(value) {
+        if(!object(value)||value.confirm_request!==true||
+            !ID.test(String(value.machine_id||'')))
+            throw Error('Select a machine and explicitly confirm the coordination lease.');
         const next=copy(this.state);
-        // Bound released record history rather than duplicating endless data.
-        const closed=next.reservations.filter(x=>x.status==='released').slice(-100);
-        next.reservations=next.reservations.filter(x=>x.status!=='released').concat(closed,lease);
+        const lease=this.offerIn(next,value.project_id,value.machine_id,
+            resourceRequest(value.resources));
         this.commit(next);
         return {...copy(lease),receipt_fresh:false};
     }
+    // Releasing a Hub-owned job claim also unassigns its unstarted job
+    // in the same durable update, so job and lease can never disagree.
+    releaseIn(next, lease) {
+        if(!lease || lease.issued_by!=='experiment-hub' ||
+            !['offered','acknowledged'].includes(lease.status))
+            throw Error('Only an outstanding Hub coordination lease can be released.');
+        if(lease.job_id) {
+            const job=next.jobs.find(j=>j.id===lease.job_id);
+            if(!job || job.lease_id!==lease.id || job.status!=='waiting_adapter')
+                throw Error('Cannot release a lease linked to an unknown or non-pending job.');
+            job.lease_id=null;
+            job.assigned_machine_id=null;
+            job.assigned_at=null;
+            job.status_reason='No allocation or trusted execution adapter is installed.';
+        }
+        lease.status='released';
+        lease.released_at=now();
+        return lease;
+    }
     releaseLease(value) {
-        if (!object(value) || value.confirm_release !== true ||
-            typeof value.lease_id !== 'string')
+        if(!object(value)||value.confirm_release!==true||
+            typeof value.lease_id!=='string')
             throw Error('Explicitly confirm which lease should be released.');
         const next=copy(this.state);
         const lease=next.reservations.find(x=>x.id===value.lease_id &&
             x.issued_by==='experiment-hub');
-        if (!lease) throw Error('Hub-issued lease not found.');
-        if (lease.status !== 'released') {
-            if (!['offered','acknowledged'].includes(lease.status))
-                throw Error('This reservation cannot be released through the Hub.');
-            lease.status='released';
-            lease.released_at=now();
+        if(!lease)throw Error('Hub-issued lease not found.');
+        if(lease.status!=='released') {
+            this.releaseIn(next,lease);
             this.commit(next);
         }
         this.leaseReceipts.delete(lease.id);
         return {...copy(lease),receipt_fresh:false};
+    }
+    // Queue placement is operator-triggered and advisory, never a process launch.
+    // All selected jobs, claim records, and linked IDs commit atomically.
+    allocateJobs(value) {
+        if(!object(value)||value.confirm_allocate!==true)
+            throw Error('Explicitly confirm the advisory allocation.');
+        const project=this.project(value.project_id);
+        if(project.adapter==='bees')
+            throw Error('Bees uses its existing coordinator, not Hub allocation.');
+        const requested=value.job_ids;
+        if(requested!==undefined && (!Array.isArray(requested) ||
+            requested.length<1 || requested.length>100 ||
+            new Set(requested).size!==requested.length ||
+            requested.some(id=>typeof id!=='string')))
+            throw Error('Select 1–100 distinct pending job IDs.');
+        const next=copy(this.state);
+        const jobs=next.jobs.filter(j=>j.project_id===project.id &&
+            j.status==='waiting_adapter' &&
+            (requested===undefined || requested.includes(j.id)));
+        if(requested && jobs.length!==requested.length)
+            throw Error('One or more selected jobs are unavailable or no longer pending.');
+        if(!jobs.length)throw Error('No pending jobs to allocate.');
+        if(value.machine_id!=null &&
+            (!ID.test(String(value.machine_id))||jobs.length!==1))
+            throw Error('A preferred machine may only be selected for one job.');
+        const machines=this.snapshot().machines.filter(m=>m.status==='connected');
+        const results=[];
+        for(const job of jobs) {
+            if(job.lease_id) {
+                const lease=next.reservations.find(l=>l.id===job.lease_id &&
+                    l.job_id===job.id && l.project_id===project.id &&
+                    ['offered','acknowledged'].includes(l.status));
+                if(!lease)throw Error('Job allocation ledger inconsistent; no changes committed.');
+                results.push({job_id:job.id,machine_id:lease.machine_id,
+                    lease_id:lease.id,status:'already_claimed'});
+                continue;
+            }
+            const eligible=resourcePlacements(machines,next.reservations,job.resources)
+                .filter(p=>p.capacity_fits &&
+                    (!value.machine_id||p.machine_id===value.machine_id))
+                .sort((a,b)=>a.available.cpus-b.available.cpus||
+                    a.available.ram_mb-b.available.ram_mb||
+                    a.machine_id.localeCompare(b.machine_id));
+            const chosen=eligible[0];
+            if(!chosen) {
+                results.push({job_id:job.id,machine_id:null,lease_id:null,
+                    status:'insufficient_capacity'});
+                continue;
+            }
+            const lease=this.offerIn(next,project.id,chosen.machine_id,
+                resourceRequest(job.resources),job.id);
+            job.lease_id=lease.id;
+            job.assigned_machine_id=lease.machine_id;
+            job.assigned_at=now();
+            job.status_reason='Hub coordination capacity claimed; execution still blocked.';
+            results.push({job_id:job.id,machine_id:lease.machine_id,
+                lease_id:lease.id,status:'claimed'});
+        }
+        if(results.some(r=>r.status==='claimed'))this.commit(next);
+        return {results,executable:false,
+            note:'Coordination only: no process started or hardware limits enforced.'};
     }
     enrollMachine(value) {
         if (!object(value) || !ID.test(String(value.machine_id || '')))
@@ -344,6 +426,12 @@ class ExperimentHub {
         if (job.status==='cancelled') return copy(job);
         if (job.status!=='waiting_adapter')
             throw Error('Only unstarted jobs can be cancelled without an execution adapter.');
+        if(job.lease_id) {
+            const lease=next.reservations.find(l=>l.id===job.lease_id &&
+                l.job_id===job.id && ['offered','acknowledged'].includes(l.status));
+            if(!lease)throw Error('Job allocation ledger inconsistent; refusing cancellation.');
+            this.releaseIn(next,lease);
+        }
         job.status='cancelled';
         job.status_reason='Cancelled before any execution was permitted.';
         job.cancelled_at=now();
@@ -358,14 +446,35 @@ class ExperimentHub {
         // job purely hypothetically, and even connected hosts are not executable.
         // Use bounded planner labels, then restore durable UUID identities
         // using the planner's original-input-order result contract.
-        return {jobs:plan(snapshot.machines,snapshot.reservations,
-            jobs.map((job,index)=>({id:'job_'+index,resources:job.resources})))
+        const pending=jobs.filter(j=>!j.lease_id);
+        const proposed=plan(snapshot.machines,snapshot.reservations,
+            pending.map((job,index)=>({id:'job_'+index,resources:job.resources})))
             .map((row,index)=>{
-                const job=jobs[index];
+                const job=pending[index];
                 return {...row,id:job.id,project_id:job.project_id,
                     configuration_name:job.configuration_name,
-                    status:job.status,executable:false};
-            }),note:'Advisory what-if only. No adapter, worker launch, or OS limits are enabled.'};
+                    status:job.status,claimed:false,executable:false};
+            });
+        const claimed=jobs.filter(j=>j.lease_id).map(job=>{
+            const lease=snapshot.reservations.find(l=>l.id===job.lease_id &&
+                l.job_id===job.id && ['offered','acknowledged'].includes(l.status));
+            if(!lease)return {id:job.id,project_id:job.project_id,
+                configuration_name:job.configuration_name,claimed:true,
+                status:'ledger_inconsistent',executable:false};
+            const machine=snapshot.machines.find(m=>m.id===lease.machine_id);
+            return {id:job.id,project_id:job.project_id,
+                configuration_name:job.configuration_name,
+                status:job.status,claimed:true,lease_id:lease.id,
+                lease_status:lease.status,receipt_fresh:lease.receipt_fresh,
+                machine_id:lease.machine_id,
+                machine_name:machine?.name||lease.machine_id,
+                online:machine?.status==='connected',capacity_fits:false,
+                suggested_gpus:lease.resources.gpus,executable:false,
+                reason:'Existing advisory lease, not a new capacity placement'};
+        });
+        const byId=new Map([...claimed,...proposed].map(j=>[j.id,j]));
+        return {jobs:jobs.map(j=>byId.get(j.id)),note:
+            'Advisory only: Hub budget claims are not OS resource isolation or permission to execute.'};
     }
     addMachine(value) {
         if (!object(value) || !ID.test(String(value.id||''))) throw Error('Use a lowercase machine ID.');
