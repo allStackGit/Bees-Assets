@@ -188,7 +188,9 @@ class ExperimentHub {
     allocateJobs(value) {
         if(!object(value)||value.confirm_allocate!==true)
             throw Error('Explicitly confirm the advisory allocation.');
-        const allProjects=value.project_id==='all';
+        const allProjects=value.all_projects===true;
+        if(allProjects && value.project_id!=null)
+            throw Error('Specify either all projects or one project.');
         const project=allProjects?null:this.project(value.project_id);
         if(project?.adapter==='bees')
             throw Error('Bees uses its existing coordinator, not Hub allocation.');
