@@ -102,6 +102,26 @@ pub fn timed_ship_rotation(rotation: f32, target: f32, degrees_per_second: f32, 
     }
 }
 
+/// `Utilities.TimedRotationDifference(Turret,...)` differs from ship
+/// turning: when within the three-degree band, the turret snaps precisely
+/// to its requested heading. The bool reports whether it is aligned.
+#[inline]
+pub fn timed_turret_rotation(
+    rotation: f32,
+    target: f32,
+    degrees_per_second: f32,
+    dt: f32,
+) -> (f32, bool) {
+    let diff = delta_angle(rotation, target);
+    if diff > 3.0 {
+        (rotation + dt * degrees_per_second, false)
+    } else if diff < -3.0 {
+        (rotation - dt * degrees_per_second, false)
+    } else {
+        (if diff != 0.0 { target } else { rotation }, true)
+    }
+}
+
 /// `Ship.RlDirectionalMovement` velocity convention. CurrentSpeed is not
 /// necessarily the ship's base Speed; special roles can change it temporarily.
 #[inline]
@@ -138,6 +158,12 @@ mod tests {
         assert_eq!(timed_ship_rotation(0.0, 90.0, 90.0, 0.02), 1.8);
         assert_eq!(timed_ship_rotation(0.0, 270.0, 90.0, 0.02), -1.8);
         assert_eq!(delta_angle(350.0, 10.0), 20.0);
+    }
+
+    #[test]
+    fn turret_turns_and_snaps_inside_three_degree_deadband() {
+        assert_eq!(timed_turret_rotation(0.0, 90.0, 90.0, 0.02), (1.8, false));
+        assert_eq!(timed_turret_rotation(88.0, 90.0, 90.0, 0.02), (90.0, true));
     }
 
     #[test]
