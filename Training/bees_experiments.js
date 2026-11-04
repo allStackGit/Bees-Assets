@@ -22,6 +22,7 @@ const PORT = 7148;
 const DB = path.join(paths.trainingRoot, 'Experiments', 'experiments-v1.json');
 const HTML = path.join(__dirname, 'experiments.html');
 const LOG_EXPORTER = path.join(__dirname, 'bees_experiment_logs.py');
+const RESEARCH_EXPORTER = path.join(__dirname, 'bees_experiment_research_export.py');
 const BENCHMARK_REPORTS = path.join(paths.trainingRoot, 'Experiments', 'Benchmarks');
 const empty = () => ({ version: 1, armed: false, stop_requested: false, active_id: null, message: '', items: [] });
 const state = fs.existsSync(DB) ? readJson(DB) : empty();
@@ -1810,6 +1811,44 @@ async function body(req) {
 }
 
 
+// On-demand, compact scientific evidence export. It is intentionally read-only
+// and does not stop training, duplicate models, or modify frozen studies.
+async function exportResearchBundle(res, item, studyId = null) {
+    const directory = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bees-study-'));
+    const target = path.join(directory, 'research.zip');
+    try {
+        const python = resolvePython(loadConfig());
+        await new Promise((resolve, reject) => {
+            const args = [RESEARCH_EXPORTER, '--db', DB, '--benchmarks', BENCHMARK_REPORTS,
+                '--output', target, studyId ? '--study-id' : '--experiment-id',
+                studyId || item.id];
+            const child = execFile(python, args, { windowsHide: true, maxBuffer: 65536 },
+                (error, stdout, stderr) => error
+                    ? reject(Error(String(stderr || error.message).trim()))
+                    : resolve(stdout));
+            res.once('close', () => child.kill());
+        });
+        if (res.destroyed) return;
+        const stats = await fs.promises.stat(target);
+        if (!stats.isFile() || !stats.size) throw Error('No research bundle was produced.');
+        const name = 'bees-research-' +
+            String(studyId || item.run_id).replace(/[^A-Za-z0-9._-]/g, '_') + '.zip';
+        res.writeHead(200, {
+            'Content-Type': 'application/zip',
+            'Content-Disposition': 'attachment; filename="' + name + '"',
+            'Content-Length': stats.size,
+            'Cache-Control': 'no-store',
+            'X-Content-Type-Options': 'nosniff',
+        });
+        const stream = fs.createReadStream(target);
+        stream.on('error', () => res.destroy());
+        stream.pipe(res);
+        await new Promise(resolve => res.once('close', resolve));
+    } finally {
+        await fs.promises.rm(directory, { recursive: true, force: true });
+    }
+}
+
 // ZIP parts are prepared off the event loop and served independently. A
 // temporary download session retains them for one hour so browser download
 // restrictions cannot cause silent data loss or require recompression.
@@ -1964,6 +2003,18 @@ const server = http.createServer(async (req, res) => {
         }
         if (req.method === 'GET' && route === '/api/experiment-log-part') {
             return sendLogExportPart(res, url.searchParams.get('id'), url.searchParams.get('part'));
+        }
+        if (req.method === 'GET' && route === '/api/research-bundle') {
+            const studyId = url.searchParams.get('study_id');
+            const experimentId = url.searchParams.get('experiment_id');
+            if (Boolean(studyId) === Boolean(experimentId)) {
+                return json(res, 400, { error: 'Select one research study or experiment.' });
+            }
+            const item = state.items.find(entry => studyId
+                ? entry.study_id === studyId && entry.run_id
+                : entry.id === experimentId && entry.run_id);
+            if (!item) return json(res, 404, { error: 'Selected research run is unavailable.' });
+            return await exportResearchBundle(res, item, studyId);
         }
         if (req.method === 'GET' && route === '/api/experiment-logs') {
             const id = url.searchParams.get('experiment_id');
