@@ -35,7 +35,7 @@ use crate::obstacle::{AsteroidBreakup, AsteroidDamage, CombatObstacle, ObstacleK
 use crate::projectile::ProjectileMotion;
 use crate::ship_assets::ShipAsset;
 use crate::projectile_assets::ProjectileAsset;
-use crate::projectile_rules::{rocket_accelerated_velocity, ExplosionContacts, PiercingShot, PiercingType};
+use crate::projectile_rules::{rocket_accelerated_velocity, split_fragments, ExplosionContacts, PiercingShot, PiercingType};
 use crate::projectile_assets::ProjectileAssetCatalog;
 use crate::timer::ScaledTimer;
 use crate::simulation::{GameRules, World};
@@ -128,6 +128,7 @@ pub enum CombatEvent {
 
 enum ImpactBehavior {
     Direct,
+    Splitter { split_count: u8 },
     StrikerBomb(StrikerBombFuse),
     Rocket { acceleration_timer: ScaledTimer, max_speed: f32 },
     Penetrating(PiercingShot),
@@ -140,6 +141,7 @@ impl ImpactBehavior {
         power: i32,
         rocket_max_speed: Option<f32>,
         explosion_events: Arc<[ExplosionEvent]>,
+        split_count: Option<u8>,
     ) -> Result<Self, CombatWorldError> {
         match projectile_type {
             1 | 2 | 3 | 6 | 7 | 10 | 11 => Ok(Self::Direct),
@@ -154,7 +156,9 @@ impl ImpactBehavior {
                 max_speed: rocket_max_speed.ok_or(CombatWorldError::MissingRocketStats)?,
             }),
             12 => Err(CombatWorldError::InvalidBombTarget),
-            9 => Err(CombatWorldError::UnportedProjectileType(projectile_type)),
+            9 => Ok(Self::Splitter {
+                split_count: split_count.ok_or(CombatWorldError::InvalidProjectileType(9))?,
+            }),
             _ => Err(CombatWorldError::InvalidProjectileType(projectile_type)),
         }
     }
@@ -183,10 +187,11 @@ impl CombatProjectile {
         power: i32,
         rocket_max_speed: Option<f32>,
         explosion_events: Arc<[ExplosionEvent]>,
+        split_count: Option<u8>,
     ) -> Result<Self, CombatWorldError> {
         if power < 0 { return Err(CombatWorldError::InvalidProjectilePower); }
         let behavior = ImpactBehavior::for_type(
-            projectile_type, power, rocket_max_speed, explosion_events,
+            projectile_type, power, rocket_max_speed, explosion_events, split_count,
         )?;
         Ok(Self {
             entity_id, projectile_type, owner, power,
@@ -360,7 +365,7 @@ impl CombatWorld {
     ) -> Result<(), CombatWorldError> {
         let metadata = CombatProjectile::new(
             entity_id, asset.projectile_type, owner, power, asset.rocket_max_speed,
-            asset.explosion_events.clone(),
+            asset.explosion_events.clone(), asset.split_count,
         )?;
         let body = asset.spawn_physics_body(entity_id, motion, rotation_degrees)?;
         self.add_projectile(metadata, body)
