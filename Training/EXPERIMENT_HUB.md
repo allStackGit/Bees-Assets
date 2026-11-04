@@ -89,11 +89,43 @@ rejected by this generic queue and continues to use its existing coordinator.
 
 The API is `POST /api/hub/jobs` with
 `{configuration_id, expected_revision, resources}`,
-`POST /api/hub/jobs/cancel` with `{job_id,confirm_cancel:true}`, and
-`GET /api/hub/jobs/plan` for a read-only view. Pending jobs do not
-reserve machine capacity. The registry limits outstanding non-Bees jobs to
+`POST /api/hub/jobs/cancel` with `{job_id,confirm_cancel:true}`,
+`GET /api/hub/jobs/plan` for a read-only view, and
+`POST /api/hub/jobs/allocate` to claim Hub capacity. Jobs are queued
+without initial claims. The registry limits outstanding non-Bees jobs to
 100 and stored job records to 1,000; it refuses to silently delete old
 experiment definitions.
+
+### Atomic advisory job allocation
+
+A currently connected machine can be allocated to a pending job using
+`{project_id,job_ids:[...],machine_id,confirm_allocate:true}` (one job
+when specifying a machine). Omitting `job_ids` considers all pending
+jobs in that project. `{all_projects:true,confirm_allocate:true}` runs
+a bounded cross-project round-robin pass, FIFO within each project.
+Only the Hub ledger's estimated CPU, RAM and per-GPU budgets are admitted.
+
+Allocation links the job and an `offered` coordination lease in the
+**same atomic registry write**. The job remains `waiting_adapter` and
+cannot execute. The agent later acknowledges the lease as already
+described above, but that does not prove resource enforcement. Assigned
+jobs remain assigned after coordinator restart or agent disconnection;
+there is no automatic reclaim without evidence that workloads have
+stopped. The read-only planner displays linked assignments separately
+from hypothetical capacity for unassigned jobs, preventing a linked
+job from being counted twice.
+
+Cancelling an unstarted assigned job releases its lease in that same
+atomic write. Releasing its lease through Machines clears the job's
+machine assignment while leaving the job pending. Inconsistent
+job-to-lease references fail closed without publishing partial changes.
+A disk-write failure likewise publishes neither half of the update.
+
+**This operation does not launch, isolate, pause or stop a process.**
+Even an agent-acknowledged assignment is not a binding on independently
+running Bees/Ants/LLM software. The Hub does not yet know how much GPU
+time is being consumed by untracked workloads, and cannot enforce
+a minimum performance share.
 
 No saved project configuration may supply a program path, executable
 argument list, shell command or privileged adapter name to this API. An
@@ -103,9 +135,10 @@ safely transition any job out of `waiting_adapter`.
 
 ## Coordinated resource leases (not process isolation)
 
-The Machines tab can issue a **coordination lease** for a selected project and
-a currently connected machine using the CPU, RAM and GPU fields in **Placement
-preview**. Issuing requires explicit confirmation. The requested budget is
+The Machines tab can issue a **standalone coordination lease** for a selected
+project and a currently connected machine using the CPU, RAM and GPU fields
+in **Placement preview**. A queued job can alternatively request a linked
+lease using the Train tab. Issuing either requires explicit confirmation. The requested budget is
 admitted using the same planner as the multi-workload preview; a new offer
 counts against available capacity immediately so concurrent Hub requests cannot
 overbook the same registered resources. Leases are persisted in `hub-v1.json`,
