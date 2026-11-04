@@ -153,7 +153,7 @@ class LinuxSupervisor {
     async inspectUnit(record) {
         const out=await this.runner(SYSTEMCTL,
             ['--user','show',record.unit,'--no-pager',
-                '--property=Id,Description,LoadState,ActiveState,SubState,Result,MainPID,MemoryMax,CPUQuotaPerSecUSec'],
+                '--property=Id,Description,LoadState,ActiveState,SubState,Result,MainPID,MemoryMax,CPUQuotaPerSecUSec,MemoryCurrent,CPUUsageNSec,TasksCurrent'],
             {timeout:12000,maxBuffer:16384,windowsHide:true});
         const p=parseShow(out.stdout);
         if(p.LoadState!=='loaded')return {state:'unverified',active:false};
@@ -164,8 +164,17 @@ class LinuxSupervisor {
         if(!Number.isSafeInteger(memory)||memory!==expectedMemory||
             cpu!==record.cpus*1000000)
             throw Error('Systemd did not confirm the exact CPU and memory limits.');
-        if(p.ActiveState==='active')
-            return {state:'running',active:true,pid:Number(p.MainPID)||null};
+        if(p.ActiveState==='active') {
+            const numeric=value=>/^[0-9]+$/.test(value||'')&&
+                Number.isSafeInteger(Number(value))?Number(value):null;
+            const memoryBytes=numeric(p.MemoryCurrent);
+            return {state:'running',active:true,
+                pid:numeric(p.MainPID)||null,
+                memory_current_mb:memoryBytes==null?null:
+                    Math.round(memoryBytes/1048576),
+                cpu_time_ns:numeric(p.CPUUsageNSec),
+                process_tasks:numeric(p.TasksCurrent)};
+        }
         if(p.ActiveState==='inactive'||p.ActiveState==='failed')
             return {state:p.Result==='success'?'finished':'failed',
                 active:false,pid:null};
@@ -188,7 +197,11 @@ class LinuxSupervisor {
         if(record.state!==updated.state ||
             (record.diagnostic||null)!==updated.diagnostic)
             this.commit(this.state.records.map(r=>r.job_id===jobId?updated:r));
-        return {...updated,active:result.active};
+        return {...updated,active:result.active,
+            pid:result.pid??null,
+            memory_current_mb:result.memory_current_mb??null,
+            cpu_time_ns:result.cpu_time_ns??null,
+            process_tasks:result.process_tasks??null};
     }
     async start(job,lease) {
         const host=this.hostInspector();
