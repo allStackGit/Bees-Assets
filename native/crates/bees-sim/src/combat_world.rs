@@ -338,6 +338,70 @@ impl CombatWorld {
         self.events.push(CombatEvent::ProjectileEnded { projectile_id: id });
     }
 
+    /// A rocket's explosion has a distinct native entity identity but the
+    /// original root-shot ID, command outcome and shooter/fleet ownership.
+    /// Its damage reservation transfers without ever being counted twice.
+    fn spawn_rocket_explosion(&mut self, rocket_index: usize)
+        -> Result<(), CombatWorldError>
+    {
+        let rocket = &self.projectiles[rocket_index];
+        let parent_id = rocket.entity_id;
+        let parent_body = &self.physics.projectiles()[rocket_index];
+        let origin = parent_body.motion.position;
+        let attribution = parent_body.motion.attribution;
+        let owner = rocket.owner;
+        let power = rocket.power;
+        let continuation_id = self.next_entity_id;
+        if continuation_id == i64::MAX {
+            return Err(CombatWorldError::EntityIdExhausted);
+        }
+        let asset = self.projectile_assets.by_type(13)
+            .ok_or(CombatWorldError::InvalidProjectileType(13))?.clone();
+        // RocketExplosion.Setup is untargeted and stationary: its 0 range
+        // is valid because RocketExplosion.FixedUpdate skips range expiry.
+        let motion = ProjectileMotion::new(
+            origin, 0.0, 0.0, 0.0,
+            attribution.root_shot_id, attribution.command_outcome_id,
+        );
+        self.spawn_projectile(&asset, continuation_id, owner, power, motion, 0.0)?;
+        self.reservations.transfer(parent_id, continuation_id)?;
+        self.events.push(CombatEvent::ProjectileContinued {
+            parent_id, continuation_id,
+        });
+        Ok(())
+    }
+
+    /// Animation/fuse completion and game cleanup use this same end path.
+    /// In particular, a rocket explosion releases the reservation it
+    /// inherited, even though its projectile Target reference is null.
+    pub fn end_projectile_by_id(&mut self, id: i64)
+        -> Result<(), CombatWorldError>
+    {
+        let index = *self.projectile_by_id.get(&id)
+            .ok_or(CombatWorldError::UnknownProjectile)?;
+        self.end_projectile(index);
+        Ok(())
+    }
+
+    /// Rocket.Setup registers a repeating 0.1-second ScaledTimer with an
+    /// immediate first callback. Timer advancement is kept separate from
+    /// projectile collision and only operates on active rocket bodies.
+    fn update_rocket_timers(&mut self, dt: f32) {
+        for (index, shot) in self.projectiles.iter_mut().enumerate() {
+            if !self.physics.projectiles()[index].active {
+                continue;
+            }
+            let ImpactBehavior::Rocket { acceleration_timer, max_speed } =
+                &mut shot.behavior else { continue };
+            if let Some(due) = acceleration_timer.begin_update(dt) {
+                let body = &mut self.physics.projectiles_mut()[index];
+                body.motion.velocity =
+                    rocket_accelerated_velocity(body.motion.velocity, *max_speed);
+                acceleration_timer.finish_update(due);
+            }
+        }
+    }
+
     fn resolve_contact(&mut self, contact: TriggerEnter) -> Result<(), CombatWorldError> {
         let Some(&shot_index) = self.projectile_by_id.get(&contact.projectile_id) else {
             return Ok(());
@@ -359,6 +423,7 @@ impl CombatWorld {
         let shot_type = shot.projectile_type;
         let mut ends_projectile = false;
         let mut accepted_power = None;
+        let mut rocket_explodes = false;
 
         match &mut shot.behavior {
             ImpactBehavior::Explosion(explosion) => {
@@ -368,6 +433,16 @@ impl CombatWorld {
                     shot_type == 15, target.vitals.is_dead(),
                 ) {
                     accepted_power = Some(shot.power);
+                }
+            }
+            ImpactBehavior::Rocket { .. } => {
+                if can_basic_projectile_damage(
+                    owner.shooter_side, owner.shooter_is_fire_barge,
+                    target.side, shot.ignored_ships.contains(&target.entity_id),
+                ) {
+                    // Rocket.ShipCollision calls ContactTarget -> AddExplosion
+                    // -> Kill, but never deals direct rocket damage.
+                    rocket_explodes = true;
                 }
             }
             ImpactBehavior::Direct => {
@@ -395,6 +470,11 @@ impl CombatWorld {
             }
         }
 
+        if rocket_explodes {
+            self.spawn_rocket_explosion(shot_index)?;
+            self.end_projectile(shot_index);
+            return Ok(());
+        }
         if ends_projectile {
             self.end_projectile(shot_index);
         }
@@ -484,6 +564,7 @@ impl CombatWorld {
                 ship.motion.fixed_step_rl(dt);
             }
         }
+        self.update_rocket_timers(dt);
         let new_contacts = self.physics.step(dt, collision_matrix)?;
         self.pending_contacts.extend_from_slice(new_contacts);
 
