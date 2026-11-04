@@ -16,6 +16,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use crate::collision::Aabb;
+use crate::bomb::{BombAction, StrikerBombFuse};
 use crate::combat::{CombatError, DamageSource, HitEvent, ShipVitals};
 use crate::damage::can_basic_projectile_damage;
 use crate::damage_reservations::{DamageReservations, DamageStatus, ReservationError};
@@ -42,6 +43,8 @@ pub enum CombatWorldError {
     UnknownShip,
     EntityIdExhausted,
     MissingRocketStats,
+    InvalidFleetIdentity,
+    InvalidBombTarget,
     DuplicateEntity,
     InvalidSide,
     InvalidProjectilePower,
@@ -83,6 +86,8 @@ pub struct ShotOwner {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum CombatEvent {
     Hit(HitEvent),
+    UnattributedDamage { target_id: i64, delta: crate::combat::DamageDelta },
+    BombDetonated { projectile_id: i64, target_id: i64 },
     ShipDied {
         victim_id: i64,
         killer_id: i64,
@@ -99,6 +104,7 @@ pub enum CombatEvent {
 
 enum ImpactBehavior {
     Direct,
+    StrikerBomb(StrikerBombFuse),
     Rocket { acceleration_timer: ScaledTimer, max_speed: f32 },
     Penetrating(PiercingShot),
     Explosion(ExplosionContacts),
@@ -115,7 +121,8 @@ impl ImpactBehavior {
                 acceleration_timer: ScaledTimer::new(0.1, true, true),
                 max_speed: rocket_max_speed.ok_or(CombatWorldError::MissingRocketStats)?,
             }),
-            9 | 12 => Err(CombatWorldError::UnportedProjectileType(projectile_type)),
+            12 => Err(CombatWorldError::InvalidBombTarget),
+            9 => Err(CombatWorldError::UnportedProjectileType(projectile_type)),
             _ => Err(CombatWorldError::InvalidProjectileType(projectile_type)),
         }
     }
@@ -182,6 +189,7 @@ pub struct CombatWorld {
     free_projectile_slots: Vec<usize>,
     projectile_slot_reuses: u64,
     ship_by_id: HashMap<i64, usize>,
+    fleet_id_by_ship: HashMap<i64, i64>,
     projectile_by_id: HashMap<i64, usize>,
     reservations: DamageReservations,
     pending_contacts: Vec<TriggerEnter>,
@@ -208,6 +216,7 @@ impl CombatWorld {
             free_projectile_slots: Vec::new(),
             projectile_slot_reuses: 0,
             ship_by_id: HashMap::new(),
+            fleet_id_by_ship: HashMap::new(),
             projectile_by_id: HashMap::new(),
             reservations: DamageReservations::new(),
             pending_contacts: Vec::new(),
@@ -269,6 +278,54 @@ impl CombatWorld {
         )?;
         let body = asset.spawn_physics_body(entity_id, motion, rotation_degrees)?;
         self.add_projectile(metadata, body)
+    }
+
+    /// Preserve the persistent FleetShip identity independently of pooled
+    /// combat wrappers. Required before bomb launch to permit future damage
+    /// attribution even if the shooter has since been killed.
+    pub fn set_ship_fleet_identity(
+        &mut self, ship_id: i64, fleet_ship_id: i64,
+    ) -> Result<(), CombatWorldError> {
+        if fleet_ship_id <= 0 {
+            return Err(CombatWorldError::InvalidFleetIdentity);
+        }
+        if !self.ship_by_id.contains_key(&ship_id) {
+            return Err(CombatWorldError::UnknownShip);
+        }
+        self.fleet_id_by_ship.insert(ship_id, fleet_ship_id);
+        Ok(())
+    }
+
+    /// A Striker bomb is attached to a particular runtime ship, never to a
+    /// reusable Unity-style pooled wrapper. The world owns both fuse stages
+    /// and retains the bomb's slot until delayed damage has resolved.
+    pub fn spawn_striker_bomb(
+        &mut self,
+        entity_id: i64,
+        owner: ShotOwner,
+        target_id: i64,
+        shooter_fleet_id: i64,
+        power: i32,
+        motion: ProjectileMotion,
+    ) -> Result<(), CombatWorldError> {
+        if shooter_fleet_id <= 0 {
+            return Err(CombatWorldError::InvalidFleetIdentity);
+        }
+        let target_index = *self.ship_by_id.get(&target_id)
+            .ok_or(CombatWorldError::UnknownShip)?;
+        if self.ships[target_index].vitals.is_dead() ||
+            !self.physics.ships()[target_index].active {
+            return Err(CombatWorldError::InvalidBombTarget);
+        }
+        let asset = self.projectile_assets.by_type(12)
+            .ok_or(CombatWorldError::InvalidProjectileType(12))?;
+        let body = asset.spawn_physics_body(entity_id, motion, 0.0)?;
+        let mut shot = CombatProjectile::new(entity_id, 1, owner, power, None)?;
+        shot.projectile_type = 12;
+        shot.behavior = ImpactBehavior::StrikerBomb(
+            StrikerBombFuse::new(target_id, shooter_fleet_id),
+        );
+        self.add_projectile(shot, body)
     }
 
     pub fn add_ship(
@@ -438,6 +495,83 @@ impl CombatWorld {
         }
     }
 
+    /// Advance script-driven bombs. Their physics bodies have no collider
+    /// or velocity; the bomb remains allocated through both callback stages.
+    fn update_striker_bombs(&mut self, dt: f32) -> Result<(), CombatWorldError> {
+        for index in 0..self.projectiles.len() {
+            if !self.physics.projectiles()[index].active { continue; }
+            let (action, target_id, shooter_fleet_id) = {
+                let ImpactBehavior::StrikerBomb(fuse) =
+                    &self.projectiles[index].behavior else { continue };
+                (BombAction::None, fuse.contacted_ship_id(), fuse.shooter_fleet_ship_id())
+            };
+            let _ = action;
+            let target_alive = self.ship_by_id.get(&target_id).copied()
+                .is_some_and(|target_index| {
+                    self.physics.ships()[target_index].active &&
+                    !self.ships[target_index].vitals.is_dead()
+                });
+            let action = {
+                let ImpactBehavior::StrikerBomb(fuse) =
+                    &mut self.projectiles[index].behavior else { continue };
+                fuse.advance(dt, target_alive)
+            };
+            match action {
+                BombAction::None => {}
+                BombAction::Detonated => {
+                    self.events.push(CombatEvent::BombDetonated {
+                        projectile_id: self.projectiles[index].entity_id,
+                        target_id,
+                    });
+                }
+                BombAction::EndWithoutDamage => self.end_projectile(index),
+                BombAction::ApplyDamageAndEnd => {
+                    // The fuse is still the original owner until DamageAndKill.
+                    // Invalid shooter identity turns this into unattributed
+                    // physical damage, not credit to a recycled ship wrapper.
+                    let owner = self.projectiles[index].owner;
+                    let identity_valid = self.fleet_id_by_ship
+                        .get(&owner.shooter_id)
+                        .is_some_and(|value| *value == shooter_fleet_id);
+                    let power = self.projectiles[index].power;
+                    let projectile_id = self.projectiles[index].entity_id;
+                    let attribution = self.physics.projectiles()[index].motion.attribution;
+                    if target_alive {
+                        let target_index = *self.ship_by_id.get(&target_id)
+                            .ok_or(CombatWorldError::UnknownShip)?;
+                        let target = &mut self.ships[target_index];
+                        if let Some(delta) = target.vitals.apply_damage(power, self.shots_harmless)? {
+                            self.reservations.target_health_changed(target_id, target.vitals.health());
+                            if identity_valid {
+                                self.events.push(CombatEvent::Hit(HitEvent::new(
+                                    projectile_id, attribution.root_shot_id,
+                                    owner.shooter_id, target_id,
+                                    owner.shooter_side, target.side,
+                                    attribution.command_outcome_id,
+                                    crate::combat::DamageSource::Bomb, delta, false,
+                                )));
+                            } else {
+                                self.events.push(CombatEvent::UnattributedDamage { target_id, delta });
+                            }
+                            if delta.killed {
+                                self.physics.ships_mut()[target_index].active = false;
+                                self.events.push(CombatEvent::ShipDied {
+                                    victim_id: target_id,
+                                    killer_id: if identity_valid { owner.shooter_id } else { 0 },
+                                    command_outcome_id: if identity_valid {
+                                        attribution.command_outcome_id
+                                    } else { 0 },
+                                });
+                            }
+                        }
+                    }
+                    self.end_projectile(index);
+                }
+            }
+        }
+        Ok(())
+    }
+
     fn resolve_contact(&mut self, contact: TriggerEnter) -> Result<(), CombatWorldError> {
         let Some(&shot_index) = self.projectile_by_id.get(&contact.projectile_id) else {
             return Ok(());
@@ -462,6 +596,7 @@ impl CombatWorld {
         let mut rocket_explodes = false;
 
         match &mut shot.behavior {
+            ImpactBehavior::StrikerBomb(_) => {},
             ImpactBehavior::Explosion(explosion) => {
                 if explosion.accept_ship(
                     target.entity_id, owner.shooter_side,
@@ -586,7 +721,8 @@ impl CombatWorld {
         // contact processing, not on a newly fired shot or as a swept ray.
         // Rocket explosions override FixedUpdate and never range-expire here.
         for index in 0..self.projectiles.len() {
-            if self.projectiles[index].is_explosion() {
+            if self.projectiles[index].is_explosion() ||
+                matches!(&self.projectiles[index].behavior, ImpactBehavior::StrikerBomb(_)) {
                 continue;
             }
             if self.physics.projectiles()[index].active &&
@@ -601,6 +737,7 @@ impl CombatWorld {
             }
         }
         self.update_rocket_timers(dt);
+        self.update_striker_bombs(dt)?;
         let new_contacts = self.physics.step(dt, collision_matrix)?;
         self.pending_contacts.extend_from_slice(new_contacts);
 
