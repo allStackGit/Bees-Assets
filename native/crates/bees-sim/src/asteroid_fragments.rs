@@ -88,7 +88,9 @@ pub struct FragmentSpawnSettings {
     pub map_bounds: Aabb,
     pub half_map_extents: Vec2,
     pub asteroid_max_speed_exclusive: u32,
-    pub effective_max_health: Option<i32>,
+    /// Unity computes ceil(OriginalHealth * CurrentHealthRatio), clamped
+    /// to at least one, independently for each newly set up shard.
+    pub training_health_ratio: Option<f32>,
 }
 
 impl FragmentSpawnSettings {
@@ -101,7 +103,8 @@ impl FragmentSpawnSettings {
         self.half_map_extents.x > 0.0 &&
         self.half_map_extents.y > 0.0 &&
         self.asteroid_max_speed_exclusive <= (i32::MAX as u32 - 2) &&
-        self.effective_max_health.is_none_or(|health| health > 0)
+        self.training_health_ratio.is_none_or(|ratio|
+            ratio.is_finite() && ratio >= 0.0)
     }
 }
 
