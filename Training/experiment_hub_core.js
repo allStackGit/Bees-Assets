@@ -49,8 +49,17 @@ function boundedReport(value) {
             cgroup_controllers:e.cgroup_controllers.slice(),reason:e.reason,
         };
     }
+    const localExecutor=value.local_executor===true;
+    const installed=value.installed_projects==null?[]:value.installed_projects;
+    if(!Array.isArray(installed)||installed.length>32||
+        installed.some(p=>typeof p!=='string'||!ID.test(p))||
+        new Set(installed).size!==installed.length||
+        (!localExecutor&&installed.length))
+        throw Error('Invalid locally installed execution adapters.');
     return {cpus:value.cpus,ram_mb:value.ram_mb,
-        platform:value.platform,execution};
+        platform:value.platform,execution,
+        local_executor:localExecutor&&value.platform==='linux',
+        installed_projects:value.platform==='linux'&&localExecutor?installed.slice():[]};
 }
 
 function object(value) {
@@ -133,6 +142,8 @@ class ExperimentHub {
                 machine.reported_ram_mb = report.ram_mb;
                 machine.agent_platform = report.platform;
                 machine.execution_capabilities = copy(report.execution);
+                machine.local_executor_enabled = report.local_executor;
+                machine.installed_projects = report.installed_projects.slice();
             }
             return machine;
         });
@@ -297,6 +308,144 @@ class ExperimentHub {
         if(results.some(r=>r.status==='claimed'))this.commit(next);
         return {results,executable:false,
             note:'Coordination only: no process started or hardware limits enforced.'};
+    }
+    // The administrative endpoint never supplies an executable. It persists
+    // a single authorization for one already frozen, explicitly leased job.
+    authorizeStart(value) {
+        if(!object(value)||value.confirm_start!==true||
+            typeof value.job_id!=='string')
+            throw Error('Explicitly confirm which queued job to start.');
+        const snapshot=this.snapshot();
+        const job=snapshot.jobs.find(j=>j.id===value.job_id);
+        if(!job||job.status!=='waiting_adapter'||!job.lease_id||
+            job.adapter!=='unconfigured'||job.project_id==='bees')
+            throw Error('Only a leased, unstarted non-Bees job can request execution.');
+        const lease=snapshot.reservations.find(l=>l.id===job.lease_id &&
+            l.job_id===job.id&&l.project_id===job.project_id &&
+            l.machine_id===job.assigned_machine_id &&
+            l.issued_by==='experiment-hub'&&l.status==='acknowledged');
+        const machine=snapshot.machines.find(m=>m.id===job.assigned_machine_id);
+        const r=job.resources;
+        if(!lease||!lease.receipt_fresh||!machine||
+            machine.status!=='connected'||machine.agent_platform!=='linux'||
+            machine.local_executor_enabled!==true||
+            !machine.installed_projects?.includes(job.project_id)||
+            !r||r.gpu_count!==0||(r.gpus||[]).length||
+            lease.resources.gpu_count!==0||
+            r.cpus>machine.reported_cpus||r.ram_mb>machine.reported_ram_mb)
+            throw Error('Fresh Linux agent, installed local adapter and CPU-only acknowledged lease required.');
+        const next=copy(this.state);
+        const selected=next.jobs.find(j=>j.id===job.id);
+        selected.status='start_requested';
+        selected.dispatch_id=crypto.randomUUID();
+        selected.start_requested_at=now();
+        selected.status_reason='Start authorized; waiting for machine-local systemd verification.';
+        this.commit(next);
+        return {id:selected.id,status:selected.status,dispatch_id:selected.dispatch_id};
+    }
+    authorizeStop(value) {
+        if(!object(value)||value.confirm_stop!==true||
+            typeof value.job_id!=='string')
+            throw Error('Explicitly confirm which managed job to stop.');
+        const next=copy(this.state);
+        const job=next.jobs.find(j=>j.id===value.job_id);
+        if(!job||!job.dispatch_id||
+            !['start_requested','launch_requested','running','unverified'].includes(job.status))
+            throw Error('Only a dispatched, nonterminal job may request a native stop.');
+        const lease=next.reservations.find(l=>l.id===job.lease_id &&
+            l.job_id===job.id&&l.status==='acknowledged');
+        if(!lease)throw Error('Job/lease ownership cannot be verified.');
+        job.status='stop_requested';
+        job.stop_requested_at=now();
+        job.status_reason='Stop requested; awaiting local service confirmation.';
+        this.commit(next);
+        return {id:job.id,status:job.status};
+    }
+    // The report is authenticated by the machine-token heartbeat. A second
+    // machine, retired dispatch ID or unrelated lease cannot update the job.
+    recordExecution(next,machine,items) {
+        if(!Array.isArray(items)||items.length>50)
+            throw Error('Invalid execution reports.');
+        const seen=new Set();
+        let changed=false;
+        for(const report of items) {
+            if(!object(report)||typeof report.job_id!=='string'||
+                typeof report.lease_id!=='string'||
+                typeof report.dispatch_id!=='string'||
+                !['launch_requested','running','finished','failed','stopped','unverified']
+                    .includes(report.state)||
+                seen.has(report.job_id)||
+                (report.diagnostic!=null&&
+                    (typeof report.diagnostic!=='string'||report.diagnostic.length>220)))
+                throw Error('Invalid native execution report.');
+            seen.add(report.job_id);
+            const job=next.jobs.find(j=>j.id===report.job_id);
+            const lease=next.reservations.find(l=>l.id===report.lease_id);
+            if(!job||!lease||job.dispatch_id!==report.dispatch_id||
+                job.lease_id!==lease.id||lease.job_id!==job.id||
+                lease.machine_id!==machine.id||job.assigned_machine_id!==machine.id||
+                lease.status!=='acknowledged'||lease.project_id!==job.project_id)
+                throw Error('Native execution report does not match its job and machine.');
+            if(['finished','failed','stopped'].includes(job.status))continue;
+            if(!['start_requested','launch_requested','running',
+                    'stop_requested','unverified'].includes(job.status))
+                throw Error('Job is not awaiting a native execution report.');
+            const state=report.state==='running'&&job.status==='stop_requested'
+                ?'stop_requested':report.state;
+            if(state==='launch_requested'&&job.status!=='start_requested')continue;
+            if(job.status==='stop_requested'&&report.state==='launch_requested')continue;
+            if(job.status!==state||job.execution_diagnostic!==report.diagnostic) {
+                job.status=state;
+                job.status_reason=state==='unverified'
+                    ?'Native service state requires inspection; no automatic retry.'
+                    :state==='stop_requested'
+                    ?'Stop requested; native process still reported running.'
+                    :state==='running'
+                    ?'Locally verified systemd service running.'
+                    :'Native service state reported by its machine-local supervisor.';
+                job.execution_diagnostic=report.diagnostic||null;
+                job.execution_updated_at=now();
+                changed=true;
+            }
+        }
+        return changed;
+    }
+    executionOrders(machineId) {
+        const snapshot=this.snapshot();
+        const machine=snapshot.machines.find(m=>m.id===machineId);
+        if(!machine||machine.status!=='connected'||
+            machine.local_executor_enabled!==true)return [];
+        const jobs=snapshot.jobs.filter(j=>j.assigned_machine_id===machineId &&
+            j.dispatch_id&&['start_requested','launch_requested','running',
+                'stop_requested','unverified'].includes(j.status));
+        // Prioritize pending stops, then preserve queue order. One instruction
+        // per heartbeat bounds response size and avoids concurrent launches.
+        jobs.sort((a,b)=>Number(b.status==='stop_requested')-
+            Number(a.status==='stop_requested'));
+        for(const job of jobs) {
+            const lease=snapshot.reservations.find(l=>l.id===job.lease_id &&
+                l.job_id===job.id&&l.status==='acknowledged'&&l.receipt_fresh);
+            if(!lease||!machine.installed_projects.includes(job.project_id))continue;
+            const action=job.status==='stop_requested'?'stop':
+                job.status==='start_requested'?'start':'inspect';
+            return [{
+                action,dispatch_id:job.dispatch_id,
+                job:{
+                    id:job.id,project_id:job.project_id,adapter:job.adapter,
+                    lease_id:job.lease_id,status:'waiting_adapter',
+                    frozen_parameters:copy(job.frozen_parameters),
+                    configuration_sha256:job.configuration_sha256,
+                    resources:copy(job.resources),
+                },
+                lease:{
+                    id:lease.id,job_id:job.id,project_id:lease.project_id,
+                    machine_id:lease.machine_id,issued_by:lease.issued_by,
+                    status:lease.status,receipt_fresh:true,
+                    resources:copy(lease.resources),
+                },
+            }];
+        }
+        return [];
     }
     enrollMachine(value) {
         if (!object(value) || !ID.test(String(value.machine_id || '')))
