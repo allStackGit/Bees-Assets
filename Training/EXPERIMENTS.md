@@ -368,6 +368,31 @@ changes require a separate versioned policy implementation and are rejected here
 Illustrative settings are not recommendations; short validation runs do not
 establish which PPO configuration learns best.
 
+### Rebuild Unity RL players without creating a new experiment
+
+Pause the active experiment and wait for **Paused**. Select **Rebuild Unity
+(experimental)**. The dashboard warns that changes in simulation physics,
+weapon behavior, rewards or timing can invalidate before/after comparisons,
+even if the agent's observation/action interface has not changed. It records
+the event as a solid **U** line on the graphs and in the run details.
+
+This operation builds new Windows and Linux Unity RL players and validates
+the current stage's environment arguments. It preserves the current run ID,
+optimizer checkpoint, curriculum stage, frozen trainer configuration and
+learner Python runtime. Only an unchanged RL compatibility fingerprint is
+accepted. A different training contract is rejected rather than starting
+a new network. A successful build is published through the existing
+compatible release rollout; the manager updates the pinned Unity build
+identity only after BeesServer confirms canonical activation. Select
+**Resume training** to continue that same experiment.
+
+A failed compilation before publication leaves the old build canonical.
+If publication becomes incomplete or ownership cannot be proven, the
+experiment stays paused instead of trying an unsafe resume. An unchanged
+compatibility fingerprint establishes interface compatibility, **not**
+scientific comparability; interpret results before/after **U** as separate
+conditions until validated.
+
 ### Update remote worker software without ending an experiment
 
 From the Experiment Manager, choose **Pause for maintenance** and wait for
