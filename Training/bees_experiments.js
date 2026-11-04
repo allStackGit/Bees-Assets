@@ -2396,6 +2396,13 @@ const server = http.createServer(async (req, res) => {
         if (route === '/api/hub/machines/revoke') {
             return json(res, 200, requireHub().revokeMachine(value));
         }
+        if (route === '/api/hub/leases') {
+            // Claim admission budget only; no remote program may be launched.
+            return json(res, 201, requireHub().requestLease(value));
+        }
+        if (route === '/api/hub/leases/release') {
+            return json(res, 200, requireHub().releaseLease(value));
+        }
         if (route === '/api/hub/jobs') {
             return json(res, 201, requireHub().queueConfiguration(value));
         }
