@@ -668,6 +668,58 @@ impl CombatWorld {
         Ok(())
     }
 
+    /// SplitterShot.KillSequence spawns BeeSmall ballistic children before
+    /// ending the parent. Each new child keeps the parent root-shot/command
+    /// attribution and shooter, but has NO target damage reservation.
+    /// The hit ship is ignored by children spawned from a ship impact.
+    fn spawn_split_children(
+        &mut self,
+        parent_index: usize,
+        contacted_ship_id: Option<i64>,
+    ) -> Result<(), CombatWorldError> {
+        let count = match &self.projectiles[parent_index].behavior {
+            ImpactBehavior::Splitter { split_count } => usize::from(*split_count),
+            _ => return Err(CombatWorldError::InvalidProjectileType(
+                self.projectiles[parent_index].projectile_type,
+            )),
+        };
+        let parent = &self.physics.projectiles()[parent_index].motion;
+        let origin = parent.position;
+        let distance = (origin - parent.starting_position).length_squared().sqrt();
+        let angle = parent.angle_radians;
+        let range = parent.range;
+        let attribution = parent.attribution;
+        let owner = self.projectiles[parent_index].owner;
+        let power = self.projectiles[parent_index].power;
+        let parent_id = self.projectiles[parent_index].entity_id;
+        let child_asset = self.projectile_assets.by_type(1)
+            .ok_or(CombatWorldError::InvalidProjectileType(1))?.clone();
+        let speed = child_asset.shot_speed
+            .ok_or(CombatWorldError::InvalidProjectileType(1))?;
+        for fragment in split_fragments(
+            count, angle, distance, range, power, contacted_ship_id,
+        ) {
+            let child_id = self.next_entity_id;
+            let motion = ProjectileMotion::new(
+                origin, speed, fragment.angle_radians, range,
+                attribution.root_shot_id, attribution.command_outcome_id,
+            );
+            self.spawn_projectile(
+                &child_asset, child_id, owner, fragment.power, motion,
+                -fragment.angle_radians.to_degrees(),
+            )?;
+            if let Some(ignored_ship) = fragment.ignore_ship_id {
+                if let Some(&index) = self.projectile_by_id.get(&child_id) {
+                    self.projectiles[index].ignored_ships.insert(ignored_ship);
+                }
+            }
+            self.events.push(CombatEvent::ProjectileContinued {
+                parent_id, continuation_id: child_id,
+            });
+        }
+        Ok(())
+    }
+
     /// Animation/fuse completion and game cleanup use this same end path.
     /// In particular, a rocket explosion releases the reservation it
     /// inherited, even though its projectile Target reference is null.
