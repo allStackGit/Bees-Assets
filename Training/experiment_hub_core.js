@@ -351,7 +351,7 @@ class ExperimentHub {
             !['cpu','memory'].every(c=>
                 machine.execution_capabilities?.cgroup_controllers.includes(c))||
             !machine.installed_projects?.includes(job.project_id)||
-            !r||r.gpu_count!==0||(r.gpus||[]).length||
+            !r||r.ram_mb<128||r.gpu_count!==0||(r.gpus||[]).length||
             lease.resources.gpu_count!==0||
             r.cpus>machine.reported_cpus||r.ram_mb>machine.reported_ram_mb)
             throw Error('Fresh Linux agent, installed local adapter and CPU-only acknowledged lease required.');
@@ -384,7 +384,7 @@ class ExperimentHub {
     }
     // The report is authenticated by the machine-token heartbeat. A second
     // machine, retired dispatch ID or unrelated lease cannot update the job.
-    recordExecution(next,machine,items) {
+    recordExecution(next,machine,items,installedProjects=[]) {
         if(!Array.isArray(items)||items.length>50)
             throw Error('Invalid execution reports.');
         const seen=new Set();
@@ -405,7 +405,8 @@ class ExperimentHub {
             seen.add(report.job_id);
             const job=next.jobs.find(j=>j.id===report.job_id);
             const lease=next.reservations.find(l=>l.id===report.lease_id);
-            if(!job||!lease||job.dispatch_id!==report.dispatch_id||
+            if(!job||!lease||!installedProjects.includes(job.project_id)||
+                job.dispatch_id!==report.dispatch_id||
                 job.lease_id!==lease.id||lease.job_id!==job.id||
                 lease.machine_id!==machine.id||job.assigned_machine_id!==machine.id||
                 lease.status!=='acknowledged'||lease.project_id!==job.project_id)
@@ -565,7 +566,11 @@ class ExperimentHub {
             }
         }
         const reports=value.execution_reports==null?[]:value.execution_reports;
-        if(this.recordExecution(next,machine,reports))changed=true;
+        if(reports.length&&(!report.local_executor||
+            report.platform!=='linux'))
+            throw Error('Native lifecycle reports require a locally enabled Linux executor.');
+        if(this.recordExecution(next,machine,reports,report.installed_projects))
+            changed=true;
         if (changed) this.commit(next);
         // Do not mark receipt or liveness until the durable acknowledgement
         // succeeds. A disk failure leaves the previous lease available.
