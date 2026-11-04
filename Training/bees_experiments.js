@@ -5,7 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { execFile } = require('node:child_process');
-const { invokeStart, invokeStop, invokeWorkerRuntime } = require('./operator/commands');
+const { invokeStart, invokeStop, invokeBuild, invokeWorkerRuntime } = require('./operator/commands');
 const { invokeMaintenanceUnityRebuild } = require('./operator/build');
 const { summarize: summarizeResearch, differences: compareResearch,
     sampleEfficiency: researchEfficiency } = require('./bees_experiment_research');
@@ -60,6 +60,30 @@ let busy = false;
 let rebuildProgress = null;
 let logExportBusy = false;
 let storageMigrationPending = false;
+let hubOperatorOperation = null;
+function runHubOperatorOperation(kind, execute) {
+    if (hubOperatorOperation?.status === 'running' || busy)
+        throw Error('Another training operation is in progress.');
+    const op = {kind, status:'running', started_at:now(), message:'Starting ' + kind};
+    hubOperatorOperation = op;
+    busy = true;
+    setImmediate(async () => {
+        try {
+            await execute();
+            op.status = 'completed';
+            op.message = kind + ' completed. Check the live training status.';
+        } catch (error) {
+            op.status = 'failed';
+            op.message = error.message;
+            console.error('[hub operator]', kind, error.stack || String(error));
+        } finally {
+            op.finished_at = now();
+            busy = false;
+        }
+    });
+    return {...op};
+}
+
 const logExportSessions = new Map();
 let lastRoutineSaveMs = 0;
 const save = () => { ensureDir(path.dirname(DB)); writeJsonAtomic(DB, state); };
@@ -2105,6 +2129,19 @@ const server = http.createServer(async (req, res) => {
                 },
             });
         }
+        if (req.method === 'GET' && route === '/api/hub/bees/control') {
+            const status = await control();
+            const d = status.desired || {};
+            return json(res, 200, {
+                run_id:d.run_id || null,
+                training_enabled:Boolean(d.training_enabled),
+                pending_release:Boolean(d.pending_release),
+                env_args:Array.isArray(d.environment_args) ? d.environment_args : [],
+                experiment_owned:Boolean(state.active_id),
+                operator_operation:hubOperatorOperation,
+                // The CLI and UI share the same Bees control plane.
+            });
+        }
         if (req.method === 'GET' && route === '/api/hub/placements') {
             const data = requireHub().snapshot();
             const gpus = (url.searchParams.get('gpus') || '').split(',').filter(Boolean);
@@ -2213,6 +2250,49 @@ const server = http.createServer(async (req, res) => {
         const value = await body(req);
         if (storageMigrationPending) {
             return json(res, 409, { error: 'Data-location switch prepared. Restart this manager before making other changes.' });
+        }
+        if (route === '/api/hub/bees/start' ||
+            route === '/api/hub/bees/stop' ||
+            route === '/api/hub/bees/build') {
+            if (state.active_id || state.armed || state.stop_requested || busy) {
+                return json(res, 409, {
+                    error:'An experiment or another operator action owns training. Use the existing experiment controls.',
+                });
+            }
+            const before = await control();
+            if (!before.desired || before.desired.pending_release) {
+                return json(res, 409, {error:'Training control is unavailable or a release is pending.'});
+            }
+            if (route === '/api/hub/bees/stop') {
+                if (!before.desired.training_enabled)
+                    return json(res, 409, {error:'Bees training is already stopped.'});
+                if (value.confirm_stop !== true)
+                    return json(res, 409, {error:'Explicitly confirm graceful stop.'});
+                return json(res, 202, {
+                    operation:runHubOperatorOperation('Graceful Bees stop', async()=>invokeStop({})),
+                });
+            }
+            if (before.desired.training_enabled) {
+                return json(res, 409, {error:'Stop the current training run safely first.'});
+            }
+            if (route === '/api/hub/bees/build') {
+                if (value.confirm_build !== true)
+                    return json(res, 409, {error:'Confirm the training release build.'});
+                return json(res, 202, {
+                    operation:runHubOperatorOperation('Bees RL build', async()=>invokeBuild({})),
+                });
+            }
+            if (!['resume','new'].includes(value.mode))
+                return json(res, 400, {error:'Use resume or new run mode.'});
+            if (value.mode === 'new' && value.confirm_new_run !== true)
+                return json(res, 409, {error:'Confirm starting a fresh optimizer and run identity.'});
+            const args = before.desired.environment_args || [];
+            return json(res, 202, {
+                operation:runHubOperatorOperation(
+                    value.mode === 'new' ? 'New Bees run' : 'Resume Bees run',
+                    async()=>invokeStart({newRun:value.mode==='new', envArgs:args}),
+                ),
+            });
         }
         if (route === '/api/hub/projects') {
             return json(res, 201, requireHub().addProject(value));
