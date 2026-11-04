@@ -326,6 +326,7 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
 const $ = id => document.getElementById(id);
 const chosen = new Set();
 let chosenInitialized = false;
+let rebuildRequestPending = false;
 let latest = null;
 let editingId = null;
 let editingRevision = null;
@@ -905,8 +906,13 @@ function render(data) {
     $('rebuild-unity').hidden = active?.status !== 'paused';
     $('rebuild-unity').disabled = data.busy;
     $('stop').disabled = maintaining || (!data.active_id && !data.armed);
-    $('message').textContent = data.message || '';
-    $('message').classList.toggle('error', /failed|error|attention|paused|interrupted|refusing|changed|not started/i.test(data.message || ''));
+    const progress = data.rebuild_progress;
+    const elapsed = progress ? Math.max(0, Math.floor((Date.now() - Date.parse(progress.started_at)) / 1000)) : 0;
+    $('message').textContent = progress
+        ? progress.message + ' · elapsed ' + fmt(elapsed) + 's'
+        : rebuildRequestPending ? 'Checking paused run before Unity rebuild…' : data.message || '';
+    $('message').classList.toggle('error', !progress && !rebuildRequestPending &&
+        /failed|error|attention|interrupted|refusing|changed|not started/i.test(data.message || ''));
     $('evaluate-after').disabled = !data.benchmark_configured;
     $('evaluate-stages').disabled = !data.benchmark_configured;
     $('benchmark-config').textContent = data.benchmark_configured
@@ -1823,18 +1829,22 @@ $('rebuild-unity').addEventListener('click', async () => {
         'will be retained. Builds whose RL compatibility fingerprint changed will be rejected. ' +
         'A failed build leaves the experiment paused. Continue?';
     if (!confirm(explanation)) return;
+    rebuildRequestPending = true;
     $('rebuild-unity').disabled = true;
     $('resume').disabled = true;
     $('message').classList.remove('error');
-    $('message').textContent = 'Compiling Unity Windows and Linux players; experiment remains paused…';
+    $('message').textContent = 'Checking paused run before Unity rebuild…';
     try {
         await request('/api/rebuild-unity', {});
+        rebuildRequestPending = false;
         await refresh();
     } catch (error) {
+        rebuildRequestPending = false;
         await refresh();
         $('message').textContent = error.message;
         $('message').classList.add('error');
     } finally {
+        rebuildRequestPending = false;
         $('rebuild-unity').disabled = false;
         $('resume').disabled = false;
     }
