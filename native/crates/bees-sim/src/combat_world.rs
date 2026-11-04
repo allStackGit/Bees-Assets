@@ -17,6 +17,7 @@ use std::sync::Arc;
 
 use crate::collision::{Aabb, Pose};
 use crate::asteroid_assets::CollisionAsteroidCatalog;
+use crate::box_obstacle_assets::BoxObstacleCatalog;
 use crate::explosion_lifecycle::{ExplosionAction, ExplosionEvent, ExplosionTimeline};
 use crate::bomb::{BombAction, StrikerBombFuse};
 use crate::combat::{CombatError, DamageSource, HitEvent, ShipVitals};
@@ -464,6 +465,23 @@ impl CombatWorld {
             prefab_number, entity_id, pose, linear_velocity,
             angular_velocity_degrees, effective_max_health,
         ).map_err(|_| CombatWorldError::InvalidObstacle)?;
+        self.add_obstacle(obstacle, body)
+    }
+
+    /// Add a static obstacle or map border from its verified prefab shape.
+    /// Placement may be supplied by the owning map; None uses the actual
+    /// authored prefab transform. The shape is shared, never reconstructed
+    /// from a visual bounding rectangle.
+    pub fn spawn_box_obstacle(
+        &mut self,
+        catalog: &BoxObstacleCatalog,
+        name: &str,
+        entity_id: i64,
+        override_pose: Option<Pose>,
+    ) -> Result<(), CombatWorldError> {
+        let asset = catalog.by_name(name)
+            .ok_or(CombatWorldError::InvalidObstacle)?;
+        let (obstacle, body) = asset.prepare_spawn(entity_id, override_pose)?;
         self.add_obstacle(obstacle, body)
     }
 
@@ -1315,6 +1333,33 @@ mod tests {
             ShipShape::Circle { offset: Vec2::ZERO, radius },
             Vec2::ZERO, 0.0,
         ).unwrap()
+    }
+
+    #[test]
+    fn authored_map_border_and_static_wall_spawn_using_shared_asset_geometry() {
+        let boxes = BoxObstacleCatalog::embedded().unwrap();
+        let assets = Arc::new(ProjectileAssetCatalog::embedded().unwrap());
+        let mut world = CombatWorld::new(
+            Aabb {
+                min: Vec2::new(-320.0, -320.0),
+                max: Vec2::new(320.0, 320.0),
+            }, 8.0, assets,
+        ).unwrap();
+        world.spawn_box_obstacle(&boxes, "Top Border", 1, None).unwrap();
+        world.spawn_box_obstacle(
+            &boxes, "1x1", 2,
+            Some(Pose { position: Vec2::new(0.0, 0.0),
+                rotation_degrees: 0.0 }),
+        ).unwrap();
+        assert_eq!(world.obstacles()[0].kind, ObstacleKind::MapBorder);
+        assert_eq!(world.obstacles()[1].kind, ObstacleKind::StaticObstacle);
+        assert_eq!(world.physics.obstacles()[0].pose.position,
+            Vec2::new(0.0, 268.0));
+        assert_eq!(world.physics.obstacles()[1].pose.position, Vec2::ZERO);
+        assert!(matches!(world.physics.obstacles()[0].shape(),
+            ShipShape::Box { .. }));
+        assert!(matches!(world.physics.obstacles()[1].shape(),
+            ShipShape::Box { .. }));
     }
 
     #[test]
