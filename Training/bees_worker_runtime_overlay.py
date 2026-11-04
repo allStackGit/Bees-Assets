@@ -14,7 +14,7 @@ import zipfile
 
 from bees_release_runtime import (
     MANIFEST_NAME, VERSION_NAME, _canonical_json, _runtime_version,
-    _sha256_file, _zip_info, verify_runtime,
+    _zip_info, verify_runtime,
 )
 
 # These modules run exclusively in remote-worker processes. All learner,
@@ -43,7 +43,12 @@ def package_worker_overlay(
         file = source_root / name
         if name not in payloads or not file.is_file() or file.is_symlink():
             raise ValueError("Missing trusted worker source: " + name)
-        payloads[name] = file.read_bytes()
+        payload = file.read_bytes()
+        try:
+            compile(payload, str(file), "exec")
+        except SyntaxError as error:
+            raise ValueError("Updated worker source has invalid Python syntax: " + name) from error
+        payloads[name] = payload
 
     entries = [
         {"path": name, "size": len(data), "sha256": hashlib.sha256(data).hexdigest()}
