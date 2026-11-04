@@ -85,7 +85,7 @@ impl ProjectileAssetCatalog {
             std::iter::repeat_with(|| None).take(PROJECTILE_TYPE_COUNT).collect();
         for entry in raw.projectiles {
             if entry.projectile_type == 0 ||
-                usize::try_from(entry.projectile_type).ok().is_none_or(|i| i > PROJECTILE_TYPE_COUNT)
+                entry.projectile_type > PROJECTILE_TYPE_COUNT as u32
             {
                 return Err(ProjectileAssetError::InvalidType(entry.projectile_type));
             }
@@ -135,8 +135,8 @@ mod tests {
     fn projectile_assets_use_authored_colliders_and_all_types() {
         let catalog = ProjectileAssetCatalog::embedded().unwrap();
         assert_eq!(catalog.projectiles().len(), PROJECTILE_TYPE_COUNT);
-        assert!(matches!(catalog.by_type(4).unwrap().shape, Some(ShipShape::Box { .. })));
-        assert!(matches!(catalog.by_type(8).unwrap().shape, Some(ShipShape::Box { .. })));
+        assert!(matches!(&catalog.by_type(4).unwrap().shape, Some(ShipShape::Box { .. })));
+        assert!(matches!(&catalog.by_type(8).unwrap().shape, Some(ShipShape::Box { .. })));
         assert!(!catalog.by_type(12).unwrap().has_body);
         assert!(catalog.by_type(12).unwrap().shape.is_none());
         assert!(!catalog.by_type(13).unwrap().has_body);
