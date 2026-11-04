@@ -67,7 +67,7 @@ class LocalExecution {
             }
             if(!observed)observed={state:'unverified'};
         }
-        const state=['launch_requested','running','finished','failed','stopped']
+        const state=['launch_requested','running','stop_requested','finished','failed','stopped']
             .includes(observed.state)?observed.state:'unverified';
         return {
             job_id:job.id,lease_id:lease.id,
