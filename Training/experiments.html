@@ -547,6 +547,8 @@ function chart(items) {
         if (!dataset.points.length) continue;
         for (const [index, record] of (dataset.item.stage_history || []).entries()) {
             if (record?.finished_step == null && !record?.evaluation) continue;
+            // The final stage finishes the experiment; it is not a transition.
+            if (!record?.evaluation && index >= (dataset.item.stages?.length || 0) - 1) continue;
             const x = axis === 'time'
                 ? (record.finished_training_s != null
                     ? record.finished_training_s / 3600
@@ -1047,7 +1049,7 @@ function render(data) {
         }
         if (item.trainer_config) details.append(txt('pre', 'Initialization: fresh\nFrozen configuration SHA: ' + item.trainer_config.sha256 + '\nSettings:\n' + JSON.stringify(item.trainer_config.resolved, null, 2) + '\nVerified generated configurations: ' + (item.applied_configurations || []).length));
         if (item.stage_evaluation_error) {
-            details.append(Object.assign(txt('p', 'Stage evaluation failure: ' +
+            details.append(Object.assign(txt('p', 'Evaluation failure: ' +
                 item.stage_evaluation_error), { className: 'error' }));
         }
         if (item.benchmark_status) {
