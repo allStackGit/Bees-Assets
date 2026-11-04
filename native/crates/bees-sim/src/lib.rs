@@ -7,6 +7,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod asteroid_assets;
 pub mod bomb;
 mod collider_asset_shape;
 pub mod collision;
