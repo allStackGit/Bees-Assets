@@ -99,6 +99,13 @@ def create_bundle(db: Path, benchmarks: Path, destination: Path,
                     raise ValueError("Invalid frozen trainer configuration digest.")
                 add("configs/" + digest + ".yaml", Path(config["path"]), digest)
 
+            # Full append-only measured history, when available. Older samples
+            # already discarded by pre-archive releases remain unrecoverable.
+            if re.fullmatch(r"[A-Za-z0-9._-]{1,128}", str(item.get("id", ""))):
+                metric_file = db.parent / "Metrics" / (item["id"] + ".jsonl")
+                if metric_file.is_file():
+                    add("metrics/" + item["id"] + ".jsonl", metric_file)
+
             for plan_name in ("benchmark", "stage_benchmarks", "heldout_benchmarks"):
                 plan = item.get(plan_name) or {}
                 for label, value in (plan.get("files") or {}).items():
