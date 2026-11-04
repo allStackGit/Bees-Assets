@@ -22,10 +22,12 @@ use crate::combat::{CombatError, DamageSource, HitEvent, ShipVitals};
 use crate::damage::can_basic_projectile_damage;
 use crate::damage_reservations::{DamageReservations, DamageStatus, ReservationError};
 use crate::physics::{
-    CollisionMatrix, KinematicPhysics, PhysicsError, ProjectileBody, ShipBody, ShipShape, TriggerEnter,
+    CollisionMatrix, KinematicPhysics, ObstacleBody, ObstacleTriggerEnter,
+    PhysicsError, ProjectileBody, ShipBody, ShipShape, TriggerEnter,
 };
 use crate::policy::Decision;
 use crate::movement::ShipMotion;
+use crate::obstacle::{AsteroidDamage, CombatObstacle, ObstacleKind};
 use crate::projectile::ProjectileMotion;
 use crate::ship_assets::ShipAsset;
 use crate::projectile_assets::ProjectileAsset;
@@ -42,6 +44,8 @@ pub enum CombatWorldError {
     Reservation(ReservationError),
     UnknownProjectile,
     UnknownShip,
+    UnknownObstacle,
+    InvalidObstacle,
     EntityIdExhausted,
     MissingRocketStats,
     InvalidFleetIdentity,
@@ -89,6 +93,17 @@ pub enum CombatEvent {
     Hit(HitEvent),
     UnattributedDamage { target_id: i64, delta: crate::combat::DamageDelta },
     BombDetonated { projectile_id: i64, target_id: i64 },
+    /// Emitted for projectile impacts against static geometry; the
+    /// dedicated RL coordinator determines the corresponding reward.
+    StaticObstacleImpact { projectile_id: i64, obstacle_id: i64 },
+    AsteroidDamaged {
+        projectile_id: i64,
+        obstacle_id: i64,
+        damage: AsteroidDamage,
+    },
+    /// CollisionAsteroid.Kill(false) must also remove pathfinder/registry
+    /// ownership and generate shards according to its original SizeClass.
+    AsteroidDestroyed { obstacle_id: i64, size_class: u8 },
     ShipDied {
         victim_id: i64,
         killer_id: i64,
@@ -237,15 +252,20 @@ pub struct CombatWorld {
     next_entity_id: i64,
     ships: Vec<CombatShip>,
     projectiles: Vec<CombatProjectile>,
+    obstacles: Vec<CombatObstacle>,
     free_projectile_slots: Vec<usize>,
     projectile_slot_reuses: u64,
     ship_by_id: HashMap<i64, usize>,
+    obstacle_by_id: HashMap<i64, usize>,
     fleet_id_by_ship: HashMap<i64, i64>,
     projectile_by_id: HashMap<i64, usize>,
     reservations: DamageReservations,
     pending_contacts: Vec<TriggerEnter>,
     processing_contacts: Vec<TriggerEnter>,
+    pending_obstacle_contacts: Vec<ObstacleTriggerEnter>,
+    processing_obstacle_contacts: Vec<ObstacleTriggerEnter>,
     processed_this_tick: HashSet<i64>,
+    processed_obstacles_this_tick: HashSet<i64>,
     events: Vec<CombatEvent>,
     pub shots_harmless: bool,
     /// Dedicated RL episodes cannot apply further hits after game over.
@@ -264,15 +284,20 @@ impl CombatWorld {
             next_entity_id: 1,
             ships: Vec::new(),
             projectiles: Vec::new(),
+            obstacles: Vec::new(),
             free_projectile_slots: Vec::new(),
             projectile_slot_reuses: 0,
             ship_by_id: HashMap::new(),
+            obstacle_by_id: HashMap::new(),
             fleet_id_by_ship: HashMap::new(),
             projectile_by_id: HashMap::new(),
             reservations: DamageReservations::new(),
             pending_contacts: Vec::new(),
             processing_contacts: Vec::new(),
+            pending_obstacle_contacts: Vec::new(),
+            processing_obstacle_contacts: Vec::new(),
             processed_this_tick: HashSet::new(),
+            processed_obstacles_this_tick: HashSet::new(),
             events: Vec::new(),
             shots_harmless: false,
             frozen_after_elimination: false,
@@ -284,6 +309,7 @@ impl CombatWorld {
     pub fn ships(&self) -> &[CombatShip] { &self.ships }
     pub fn projectiles(&self) -> &[CombatProjectile] { &self.projectiles }
     pub fn reservations(&self) -> &DamageReservations { &self.reservations }
+    pub fn obstacles(&self) -> &[CombatObstacle] { &self.obstacles }
 
     /// Includes both dormant slots and live shots. This is measured per
     /// world, so stress runs can distinguish peak concurrency from lifetime
@@ -402,7 +428,8 @@ impl CombatWorld {
         if ship.side <= 0 { return Err(CombatWorldError::InvalidSide); }
         if body.id != ship.entity_id || body.id < self.next_entity_id ||
             self.ship_by_id.contains_key(&ship.entity_id) ||
-            self.projectile_by_id.contains_key(&ship.entity_id)
+            self.projectile_by_id.contains_key(&ship.entity_id) ||
+            self.obstacle_by_id.contains_key(&ship.entity_id)
         {
             return Err(CombatWorldError::DuplicateEntity);
         }
@@ -415,6 +442,33 @@ impl CombatWorld {
         Ok(())
     }
 
+    /// Obstacles use the same world-local geometry and collision matrix
+    /// as ships and projectiles. Callers MUST supply the actual obstacle
+    /// collider: this path never substitutes a bounding-circle heuristic.
+    pub fn add_obstacle(
+        &mut self,
+        obstacle: CombatObstacle,
+        body: ObstacleBody,
+    ) -> Result<(), CombatWorldError> {
+        if body.id != obstacle.entity_id || body.id < self.next_entity_id ||
+            self.ship_by_id.contains_key(&body.id) ||
+            self.projectile_by_id.contains_key(&body.id) ||
+            self.obstacle_by_id.contains_key(&body.id)
+        {
+            return Err(CombatWorldError::DuplicateEntity);
+        }
+        if obstacle.kind == ObstacleKind::CollisionAsteroid && obstacle.vitals.is_none() {
+            return Err(CombatWorldError::InvalidObstacle);
+        }
+        let next_id = body.id.checked_add(1).ok_or(CombatWorldError::EntityIdExhausted)?;
+        let index = self.physics.add_obstacle(body)?;
+        debug_assert_eq!(index, self.obstacles.len());
+        self.obstacle_by_id.insert(obstacle.entity_id, index);
+        self.obstacles.push(obstacle);
+        self.next_entity_id = next_id;
+        Ok(())
+    }
+
     pub fn add_projectile(
         &mut self,
         projectile: CombatProjectile,
@@ -422,7 +476,8 @@ impl CombatWorld {
     ) -> Result<(), CombatWorldError> {
         if body.id != projectile.entity_id || body.id < self.next_entity_id ||
             self.ship_by_id.contains_key(&projectile.entity_id) ||
-            self.projectile_by_id.contains_key(&projectile.entity_id)
+            self.projectile_by_id.contains_key(&projectile.entity_id) ||
+            self.obstacle_by_id.contains_key(&projectile.entity_id)
         {
             return Err(CombatWorldError::DuplicateEntity);
         }
