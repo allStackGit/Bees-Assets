@@ -451,7 +451,12 @@ impl crate::simulation::GameRules<KinematicPhysics> for KinematicPhysicsRules {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::hulls::{GUNSHIP, SMALL_LASER_SHOT_RADIUS};
+    use crate::projectile::SMALL_LASER_SHOT_RADIUS;
+    use crate::ship_assets::ShipAssetCatalog;
+
+    fn gunship_shape() -> ShipShape {
+        ShipAssetCatalog::embedded().unwrap().by_type(13).unwrap().shape.clone()
+    }
 
     fn matrix_for_test() -> CollisionMatrix {
         let mut rows = [0u32; 32];
@@ -469,7 +474,7 @@ mod tests {
             2,
             ShipMotion::new(Vec2::ZERO, 0.0, 0.0, 0.0, 4.0),
             12,
-            Arc::from(GUNSHIP),
+            gunship_shape(),
         ).unwrap()).unwrap();
         physics.add_projectile(ProjectileBody::new(
             5,
@@ -500,7 +505,7 @@ mod tests {
         ).unwrap();
         physics.add_ship(ShipBody::new(
             1, ShipMotion::new(Vec2::ZERO, 0.0, 0.0, 0.0, 4.0),
-            12, Arc::from(GUNSHIP),
+            12, gunship_shape(),
         ).unwrap()).unwrap();
         physics.add_projectile(ProjectileBody::new(
             2, ProjectileMotion::new(Vec2::ZERO, 0.0, 0.0, 10.0, 2, 0),
@@ -554,7 +559,7 @@ mod tests {
         ).unwrap();
         physics.add_ship(ShipBody::new(
             9, ShipMotion::new(Vec2::new(-1.0, -1.0), 0.0, 0.0, 0.0, 4.0),
-            12, Arc::from(GUNSHIP),
+            12, gunship_shape(),
         ).unwrap()).unwrap();
         physics.add_projectile(ProjectileBody::new(
             10, ProjectileMotion::new(Vec2::new(-1.0, -1.0), 0.0, 0.0, 20.0, 10, 0),
