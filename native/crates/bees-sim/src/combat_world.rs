@@ -330,6 +330,9 @@ pub struct CombatWorld {
     /// Directional child-proximity contacts; a primary collider entry only
     /// becomes a collision after the owning asteroid detects its neighbor.
     nearby_asteroid_pairs: HashSet<(i64, i64)>,
+    /// Every shard spawned by one asteroid destruction shares the parent's
+    /// immutable entity ID as its family key. Non-shard asteroids are absent.
+    asteroid_shard_family: HashMap<i64, i64>,
     asteroid_delayed_kills: HashMap<i64, ScaledTimer>,
     expired_asteroid_ids: Vec<i64>,
     fleet_id_by_ship: HashMap<i64, i64>,
@@ -370,6 +373,7 @@ impl CombatWorld {
             obstacle_by_id: HashMap::new(),
             asteroid_border_states: HashMap::new(),
             nearby_asteroid_pairs: HashSet::new(),
+            asteroid_shard_family: HashMap::new(),
             asteroid_delayed_kills: HashMap::new(),
             expired_asteroid_ids: Vec::new(),
             fleet_id_by_ship: HashMap::new(),
@@ -577,6 +581,25 @@ impl CombatWorld {
             angular_velocity_degrees, effective_max_health,
         ).map_err(|_| CombatWorldError::InvalidObstacle)?;
         self.add_obstacle(obstacle, body)
+    }
+
+    /// Assign the parent-destruction ID to a newly spawned shard. Both
+    /// siblings must have the same family ID to ignore their collisions.
+    /// Other asteroids, ships, and shots still collide with shards normally.
+    pub fn register_asteroid_shard(
+        &mut self,
+        shard_id: i64,
+        parent_id: i64,
+    ) -> Result<(), CombatWorldError> {
+        let &index = self.obstacle_by_id.get(&shard_id)
+            .ok_or(CombatWorldError::UnknownObstacle)?;
+        if parent_id <= 0 ||
+            parent_id == shard_id ||
+            self.obstacles[index].kind != ObstacleKind::CollisionAsteroid {
+            return Err(CombatWorldError::InvalidObstacle);
+        }
+        self.asteroid_shard_family.insert(shard_id, parent_id);
+        Ok(())
     }
 
     /// Add a static obstacle or map border from its verified prefab shape.
@@ -1298,6 +1321,14 @@ impl CombatWorld {
         if !first_eligible && !second_eligible {
             return;
         }
+        // CollisionAsteroid.ObstacleCollision excludes every member of
+        // ShardFamily; the same group ID captures that exclusion without
+        // quadratic per-shard HashSets.
+        if self.asteroid_shard_family.get(&first_id).is_some() &&
+            self.asteroid_shard_family.get(&first_id) ==
+                self.asteroid_shard_family.get(&second_id) {
+            return;
+        }
 
         let (first, second) = if first_index < second_index {
             let (left, right) = self.obstacles.split_at_mut(second_index);
@@ -1462,6 +1493,7 @@ impl CombatWorld {
         self.physics.obstacles_mut()[index].active = false;
         self.obstacle_by_id.remove(&entity_id);
         self.asteroid_border_states.remove(&entity_id);
+        self.asteroid_shard_family.remove(&entity_id);
         self.asteroid_delayed_kills.remove(&entity_id);
         self.nearby_asteroid_pairs.retain(|&(source, target)| {
             source != entity_id && target != entity_id
