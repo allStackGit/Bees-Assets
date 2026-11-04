@@ -1482,7 +1482,7 @@ async function body(req) {
 
 // One archive at a time; files are streamed from an on-disk temporary ZIP,
 // never loaded into the manager's heap or mixed with training state.
-async function exportExperimentLogs(item, res) {
+async function exportExperimentLogs(item, res, percent) {
     if (logExportBusy) return json(res, 409, {
         error: 'Another experiment log archive is being prepared or downloaded.',
     });
@@ -1497,6 +1497,7 @@ async function exportExperimentLogs(item, res) {
                 LOG_EXPORTER, '--bees-root', paths.beesRoot,
                 '--assets-root', paths.assetsRoot,
                 '--run-id', item.run_id, '--output', archive,
+                '--log-percent', String(percent),
             ], { windowsHide: true, maxBuffer: 262144 }, (error, stdout, stderr) => {
                 error ? reject(Error(String(stderr || error.message).trim())) : resolve(stdout);
             });
@@ -1506,7 +1507,7 @@ async function exportExperimentLogs(item, res) {
         const size = fs.statSync(archive).size;
         res.writeHead(200, {
             'Content-Type': 'application/zip',
-            'Content-Disposition': 'attachment; filename="bees-' + item.run_id + '-logs.zip"',
+            'Content-Disposition': 'attachment; filename="bees-' + item.run_id + '-logs-last-' + percent + 'pct.zip"',
             'Content-Length': size,
             'Cache-Control': 'no-store',
             'X-Content-Type-Options': 'nosniff',
@@ -1546,7 +1547,11 @@ const server = http.createServer(async (req, res) => {
                 !/^[A-Za-z0-9._-]{1,128}$/.test(item.run_id)) {
                 return json(res, 404, { error: 'A started experiment with a valid run ID is required.' });
             }
-            return await exportExperimentLogs(item, res);
+            const percent = Number(url.searchParams.get('percent') || 5);
+            if (![1, 5, 10, 25, 50, 100].includes(percent)) {
+                return json(res, 400, { error: 'Select 1, 5, 10, 25, 50 or 100 percent.' });
+            }
+            return await exportExperimentLogs(item, res, percent);
         }
         if (req.method === 'GET' && route === '/api/state') {
             return json(res, 200, { ...state, busy, benchmark_configured: fs.existsSync(BENCHMARK_SETTINGS) });
