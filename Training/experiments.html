@@ -299,7 +299,7 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
 </section>
 <section data-hub-tab="train" data-project="other">
   <h2>Project job queue</h2>
-  <p class="hub-notice">You can freeze and queue jobs for future execution adapters. Queued jobs remain blocked: no process is launched, no machine allocation is enforced, and your existing Bees experiments continue independently.</p>
+  <p class="hub-notice">Queue frozen configurations, coordinate resource claims, and explicitly start or stop CPU-only jobs on Linux machines with a locally installed, opted-in trusted adapter. Workloads cannot execute from configuration JSON alone. GPU jobs, Windows execution, disconnected agents, and unverified native limits remain blocked. Bees training stays under its existing operator.</p>
   <div class="hub-standalone">
     <h3>Queue a saved configuration</h3>
     <div class="formgrid">
@@ -326,7 +326,7 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
 <section data-hub-tab="monitor" data-project="other">
   <h2>Project monitoring</h2>
   <p id="hub-other-monitor" class="hub-notice">No managed execution is available. Pending jobs and cancellation history are visible in Train.</p>
-  <p class="muted">Jobs waiting for an adapter are not running. Live CPU/GPU/process metrics can only begin after a trusted execution adapter and native resource controller are installed.</p>
+  <p class="muted">Native CPU-only service status and current memory/CPU usage appear when a locally approved Linux job reports them. Unknown service states require manual review; GPU isolation and cross-project GPU execution are not available.</p>
 </section>
 <section data-hub-tab="compare" data-project="other">
   <h2>Project comparisons</h2>
