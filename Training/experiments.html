@@ -1152,6 +1152,19 @@ function render(data) {
             }
             details.append(research);
         }
+        if (item.run_id) {
+            const exportResearch = txt('button', item.study_id
+                ? 'Export study evidence ZIP' : 'Export experiment evidence ZIP');
+            exportResearch.type = 'button';
+            exportResearch.title = 'Export frozen configurations, benchmark inputs, aggregated reports, individual-match CSVs and sampled training metrics. Model and Unity binaries are referenced by hash, not duplicated.';
+            exportResearch.addEventListener('click', () => {
+                const key = item.study_id ? 'study_id' : 'experiment_id';
+                const value = item.study_id || item.id;
+                window.location.href = '/api/research-bundle?' +
+                    key + '=' + encodeURIComponent(value);
+            });
+            details.append(exportResearch);
+        }
         if (item.trainer_config) details.append(txt('pre', 'Initialization: fresh\nFrozen configuration SHA: ' + item.trainer_config.sha256 + '\nSettings:\n' + JSON.stringify(item.trainer_config.resolved, null, 2) + '\nVerified generated configurations: ' + (item.applied_configurations || []).length));
         if (item.stage_evaluation_error) {
             details.append(Object.assign(txt('p', 'Evaluation failure: ' +
