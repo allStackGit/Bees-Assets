@@ -9,6 +9,8 @@
 
 mod collider_asset_shape;
 pub mod collision;
+pub mod combat;
+pub mod combat_world;
 pub mod control;
 pub mod damage;
 pub mod geometry;
