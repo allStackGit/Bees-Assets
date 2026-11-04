@@ -483,6 +483,7 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
 </details>
 </details>
 </section>
+<script src="/experiment-hub-ui.js"></script>
 <script>
 'use strict';
 const $ = id => document.getElementById(id);
@@ -2291,34 +2292,7 @@ async function openQueuedEditor(id) {
 $('create').addEventListener('submit', async e => {
     e.preventDefault();
     try {
-        const payload = {
-            name: $('name').value, group: $('group').value,
-            max_steps: Number($('steps').value),
-            scenario_seed: $('scenario-seed').value.trim() === ''
-                ? null : Number($('scenario-seed').value),
-            unlimited_steps: $('unlimited-steps').checked,
-            max_minutes: $('minutes').value.trim() === '' ? null : Number($('minutes').value),
-            stall_minutes: $('stall').value.trim() === '' ? null : Number($('stall').value),
-            env_args: $('args').value.split('\n').map(s => s.trim()).filter(Boolean),
-            stage_name: $('stage-name').value,
-            target_timeout_pct: $('stage-target').value.trim() || null,
-            stages: [...$('stage-rows').children].map(row => ({
-                name: row.querySelector('.stage-name').value,
-                steps: Number(row.querySelector('.stage-steps').value),
-                target_timeout_pct: row.querySelector('.stage-target').value.trim() || null,
-                env_args: row.querySelector('.stage-args').value.split('\n')
-                    .map(x => x.trim()).filter(Boolean),
-            })),
-            evaluation_mode: $('evaluation-mode').value,
-            reserve_heldout: $('reserve-heldout').checked,
-            replicates: !editingId && $('replicate-enabled').checked
-                ? Number($('replicate-count').value) : 1,
-            trainer: {
-                hyperparameters: Object.fromEntries(['beta','lambd','learning_rate','batch_size','buffer_size','num_epoch'].map(k => [k, Number($('trainer-' + k).value)])),
-                network_settings: { num_layers: Number($('trainer-num_layers').value), normalize: $('trainer-normalize').value === 'true' },
-                seed: Number($('trainer-seed').value),
-            },
-        };
+        const payload = trainingFormPayload();
         if (editingId) {
             await request('/api/edit-queued', {
                 id: editingId, revision: editingRevision,
