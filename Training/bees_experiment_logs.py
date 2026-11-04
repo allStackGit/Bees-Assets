@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 RUN_RE = re.compile(r"[A-Za-z0-9._-]{1,128}")
-TEXT_LOG_SUFFIXES = {".log", ".txt", ".jsonl", ".csv"}
+TEXT_LOG_SUFFIXES = {".log", ".txt", ".jsonl", ".csv", ".json"}
 
 
 def export_logs(
@@ -34,11 +34,11 @@ def export_logs(
     if not output.parent.is_dir():
         raise ValueError("Output directory does not exist")
     sources = (
-        ("workers", bees_root / "Training" / "TrainerLogs" / run_id, None),
-        ("learner", bees_root / "ManagedBuilds" / "central-learner" / "logs" / run_id, None),
+        ("workers", bees_root / "Training" / "TrainerLogs" / run_id, TEXT_LOG_SUFFIXES),
+        ("learner", bees_root / "ManagedBuilds" / "central-learner" / "logs" / run_id, TEXT_LOG_SUFFIXES),
         ("trainer-results", bees_root / "Training" / "trainer-results" / run_id, TEXT_LOG_SUFFIXES),
         ("continual-service", bees_root / "Training" / "metadata" / "continuous-service" / run_id, TEXT_LOG_SUFFIXES),
-        ("server-upload", assets_root / "BeesServer~" / "training-logs" / run_id, None),
+        ("server-upload", assets_root / "BeesServer~" / "training-logs" / run_id, TEXT_LOG_SUFFIXES),
     )
     selected = []
     searched = []
