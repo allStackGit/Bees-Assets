@@ -36,22 +36,32 @@ The dependency-free `bees-sim` crate currently contains:
 - Projectile velocity, strict range expiry and continuation/command attribution.
 - The reusable ScaledTimer state machine, including immediate execution and
   generation-preserving callback reuse semantics.
+- Versioned native assets for **all 24 primary ship colliders**, migrated from
+  their specific serialized `Entity.Collider` component references. The same
+  collision catalog is loaded once per process and shared across worlds.
+- Polygon, circular and box hulls (including concave polygon contact);
+  reusable broadphase spatial grid; kinematic velocity integration; explicit
+  layer-mask filtering; trigger-entry detection and per-step physics counters.
+- Source-matched direct-projectile and explosion-contact eligibility rules.
+- A physics-only world adapter wired into the shared scheduler. It explicitly
+  rejects PPO actions until the complete gameplay rules are migrated.
 
-**Not yet implemented:** complete ship types, normal user/Hive Mind movement,
-all weapon variants, complete projectile/damage behavior, spatial physics and
-collision resolution, visibility and observations, rewards and episode lifecycle,
-gameplay modes, graphical presentation, server/persistence, distributed PPO and
-experiment management.
+**Not yet implemented:** complete normal user/Hive Mind movement, all weapon
+and projectile variants, Unity-equivalent physics callback ordering and full
+collision-layer matrix, complete damage/TSV/episode accounting, visibility and
+observations, rewards, game modes, presentation, server/persistence, PPO and
+experiment orchestration.
 
-The code calculates commands, timers and physics-facing velocity, **not a valid
-standalone battle**. The real simulation will only be valid when those rules
-are integrated with one shared collision and gameplay state implementation.
-Do not use this incomplete engine for training or benchmark comparisons.
+The current native physics is a **partial implementation**, not a valid
+standalone Bees battle. It must not produce training or evaluation samples
+until full gameplay parity is achieved. Source tests and collision models
+do not imply that Unity/Box2D physics parity is already established.
 
 ## Source-of-truth porting map
 
 | Gameplay or service contract | Existing authoritative source |
 | --- | --- |
+| Authored primary ship hull assets | `Prefabs/Entities/Ships/*.prefab` via serialized `Entity.Collider` |
 | Core geometry, timing and body orientation | `Scripts/Entities/Entity.cs`, `Scripts/Utilities.cs`, `Scripts/ScaledTimer.cs` |
 | Base turret aim, targeting and shot cadence | `Scripts/Entities/Ships/Weapons/Turret*.cs` |
 | Ships, movement and subclass behavior | `Scripts/Entities/Ships/` |
@@ -72,11 +82,33 @@ parity, cross-platform operation and performance are demonstrated.
 
 From `native/`, when a Rust toolchain is installed, run
 `cargo test --workspace` and `cargo check --workspace --all-targets`.
-This workspace is intentionally independent of the Unity Editor, Node, Python,
-the GPU and the operating-system-specific windowing libraries. These commands
+The simulation runtime is independent of Unity and Python; its immutable
+asset catalog uses serde/serde_json once during initialization. The importer
+is a separate, optional Node script for the migration period. These commands
 exercise the library source and unit contracts; they do **not** prove game,
 physics, model or distributed-system parity.
 
 Every native gameplay feature must be implemented once in the shared core.
 Rendering and learning modules must call that implementation rather than
 copying its rules into platform-specific or training-only code.
+
+## Authored collider migration
+
+`native/assets/ship-colliders.json` is the versioned **native** source for
+primary ship hulls. To regenerate it from current Unity source during migration,
+run from a checkout of this repository:
+
+```sh
+node native/tools/import-unity-ship-colliders.mjs
+```
+
+The importer resolves the explicit root `Entity.Collider` file ID, including
+negative IDs, and distinguishes the hull from attached sensing/range colliders.
+It incorporates authored XY transform scale (the Human Target prefab uses
+50×) and rejects unsupported shapes or ambiguous layouts. Once Unity assets
+are retired, the native catalog remains authoritative and should be maintained
+through native asset tooling rather than depending on Unity at runtime.
+
+The physics layer accepts a required collision-layer matrix, but no verified
+export of the existing Unity Physics2D matrix is yet available. Do not replace
+this missing contract with an allow-all default in gameplay or training.
