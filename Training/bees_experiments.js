@@ -1161,9 +1161,11 @@ async function checkpointPeriodic(item, status) {
         return;
     }
     verifyTrainerSnapshot(item);
-    const latest = (item.checkpoint_history || []).slice(-1)[0];
-    const completed = latest?.evaluation?.status === 'completed' &&
-        latest.ordinal < (item.checkpoint_next_index || 1);
+    const activeOrdinal = item.checkpoint_active_ordinal;
+    const record = (item.checkpoint_history || []).find(
+        entry => entry.ordinal === activeOrdinal);
+    const completed = record?.evaluation?.status === 'completed' &&
+        activeOrdinal < (item.checkpoint_next_index || 1);
     if (d.training_enabled && !item.checkpoint_resume_pending) {
         if (completed) {
             blocked(item, 'Training restarted after checkpoint evaluation without a verified manager resume.');
@@ -1213,6 +1215,7 @@ async function checkpointPeriodic(item, status) {
         throw Error('Same-run resume after periodic checkpoint was not confirmed.');
     }
     delete item.checkpoint_resume_pending;
+    delete item.checkpoint_active_ordinal;
     item.status = 'running';
     item.last_progress = now();
     state.message = 'Completed periodic checkpoint and resumed ' + item.name +
@@ -1463,6 +1466,7 @@ async function monitor() {
     } else if (periodicEvaluationDue(item)) {
         measure(item, status, true, 'pre-evaluation');
         item.status = 'checkpointing';
+        item.checkpoint_active_ordinal = item.checkpoint_next_index || 1;
         state.message = 'Evaluating ' + item.name + ' at ' +
             periodicEvaluationTarget(item, item.checkpoint_next_index || 1).toLocaleString() +
             ' learner steps, without changing the curriculum stage.';
