@@ -289,7 +289,7 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
 <div class="bar"><h2>Runs and comparisons</h2><label>Show group <select id="filter"><option value="">All</option></select></label>
 <label>Graph <select id="metric"><option value="timeout_pct">Timeout %</option><option value="bee_hits_per_shot">Bee hits per shot</option><option value="human_hits_per_shot">Human hits per shot</option><option value="bee_aim_error_deg">Bee aim error °</option><option value="human_aim_error_deg">Human aim error °</option><option value="bee_near_miss_pct">Bee near-miss %</option><option value="human_near_miss_pct">Human near-miss %</option><option value="bee_win_pct">Bee win %</option><option value="human_win_pct">Human win %</option><option value="group_reward" selected>Mean Group Reward</option><option value="reward">Mean Reward (individual)</option><option value="steps_per_second">Reported learner steps/s</option><option value="effective_steps_per_second">Effective learner steps/s</option><option value="ppo_busy_pct">PPO busy %</option><option value="ppo_update_s">PPO seconds/update</option><option value="ppo_minibatches_s">PPO minibatches/s</option><option value="ppo_gpu_pct">PPO GPU utilization %</option><option value="pipeline_staged_s">Worker staged/s</option><option value="pipeline_accepted_s">Worker accepted/s</option><option value="pipeline_consumed_s">Worker consumed/s</option><option value="pipeline_broker_q">Broker queue depth</option></select></label>
 <label>Horizontal axis <select id="axis"><option value="steps">Learner steps</option><option value="time">Observed training hours</option></select></label>
-<label>Smoothing <select id="smoothing"><option value="1">Raw samples</option><option value="5">Last 5 samples</option><option value="15">Last 15 samples</option><option value="30">Last 30 samples</option></select></label><button id="chart-png" type="button">Save chart PNG</button></div>
+<label>Smoothing <select id="smoothing"><option value="1">Raw samples</option><option value="5">Last 5 samples</option><option value="15">Last 15 samples</option><option value="30">Last 30 samples</option></select></label><button id="chart-png" type="button">Save chart PNG</button><button id="chart-csv" type="button">Save chart CSV</button></div>
 <div class="graph-wrap"><svg id="graph" class="graph" viewBox="0 0 800 250" role="img" aria-label="Interactive training curves"></svg><div id="graph-tooltip" role="status"></div></div>
 <div id="graph-inspect">Hover over the graph for sample values. Latest and average values appear in the legend.</div>
 <div id="legend"></div>
@@ -802,6 +802,65 @@ async function saveChartPng() {
     }
 }
 $('chart-png').addEventListener('click', saveChartPng);
+// Export the same valid plotted samples used by the current chart, with the
+// displayed smoothed value alongside its underlying raw and running mean.
+// No interpolation, averaging across experiments, or historical reconstruction.
+function saveChartCsv() {
+    const button = $('chart-csv');
+    if (button.disabled) return;
+    button.disabled = true;
+    try {
+        const datasets = chartHover?.datasets || [];
+        if (!datasets.some(dataset => dataset.points.length)) {
+            throw Error('Select a plotted run with recorded samples first.');
+        }
+        const metric = chartHover.metric;
+        const axis = chartHover.axis;
+        const smooth = chartHover.smooth;
+        const header = [
+            'experiment', 'run_id', 'metric', 'horizontal_axis', 'smoothing_samples',
+            'learner_steps', 'recorded_at_utc', 'x_value', 'raw_value',
+            'plotted_value', 'recorded_running_mean',
+        ];
+        const rows = [header];
+        for (const dataset of datasets) {
+            for (const point of dataset.points) {
+                rows.push([
+                    dataset.item.name, dataset.item.run_id || '', metric, axis, smooth,
+                    point.step, point.at, point.x, Number(point.raw),
+                    point.y, point.mean,
+                ]);
+            }
+        }
+        // Quote CSV fields, preserve Unicode, and guard spreadsheet viewers
+        // against interpreting user-entered experiment names as formulas.
+        const csvCell = value => {
+            if (value == null) return '';
+            let text = String(value);
+            if (typeof value === 'string' && /^[\s]*[=+@-]/.test(text)) {
+                text = "'" + text;
+            }
+            return '"' + text.replace(/"/g, '""') + '"';
+        };
+        const csv = '\uFEFF' + rows.map(row => row.map(csvCell).join(',')).join('\r\n') + '\r\n';
+        const url = URL.createObjectURL(new Blob([csv], {
+            type: 'text/csv;charset=utf-8',
+        }));
+        const anchor = document.createElement('a');
+        const timestamp = new Date().toISOString()
+            .replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
+        anchor.download = 'bees-' + metric + '-chart-' + timestamp + '.csv';
+        anchor.href = url;
+        anchor.click();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (error) {
+        $('message').textContent = 'Chart CSV export failed: ' + error.message;
+        $('message').classList.add('error');
+    } finally {
+        button.disabled = false;
+    }
+}
+$('chart-csv').addEventListener('click', saveChartCsv);
 function inspectChart(event) {
     if (!chartHover) return;
     const svg = $('graph'), rect = svg.getBoundingClientRect();
