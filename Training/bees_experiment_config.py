@@ -19,7 +19,7 @@ def resolved(value):
     return {"hyperparameters": b["hyperparameters"],
             "network_settings": b["network_settings"],
             "seed": value.get("env_settings", {}).get("seed", 0),
-            "trainer_type": b["trainer_type"]}
+            "trainer_type": b["trainer_type"], "max_steps": b["max_steps"]}
 
 def prepare(base, overrides, output):
     value = yaml.safe_load(base.read_text(encoding="utf-8"))
