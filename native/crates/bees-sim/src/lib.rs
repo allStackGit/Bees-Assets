@@ -1,12 +1,16 @@
 //! Shared Bees simulation foundation.
 //!
-//! The graphical game, headless workers and evaluators must call the same
-//! simulation rules. This crate does not claim gameplay parity yet. No
-//! competing simplified training-only rules are permitted.
+//! Graphical game, headless workers and evaluation must use the same rules.
+//! The current code ports selected *actual* movement and projectile contracts;
+//! it does not yet implement complete gameplay, physics, observations or RL.
+//! No alternate simplified training-only rule implementation is permitted.
 
 #![forbid(unsafe_code)]
 
+pub mod control;
 pub mod geometry;
+pub mod movement;
 pub mod policy;
+pub mod projectile;
 pub mod simulation;
 pub mod telemetry;
