@@ -6,6 +6,21 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const ID = /^[a-z][a-z0-9_-]{0,47}$/;
 const now = () => new Date().toISOString();
+const AGENT_HEARTBEAT_TTL_MS = 45000;
+function fingerprint(machineId, token) {
+    return crypto.createHash('sha256').update(machineId + ':' + token).digest('hex');
+}
+function boundedReport(value) {
+    if (!object(value) ||
+        !Number.isSafeInteger(value.cpus) || value.cpus < 1 || value.cpus > 4096 ||
+        !Number.isSafeInteger(value.ram_mb) || value.ram_mb < 128 ||
+        value.ram_mb > 100000000 ||
+        typeof value.platform !== 'string' ||
+        !/^[a-z0-9_-]{1,32}$/i.test(value.platform))
+        throw Error('Invalid agent CPU, RAM, or platform report.');
+    return {cpus:value.cpus, ram_mb:value.ram_mb, platform:value.platform};
+}
+
 function object(value) {
     return value && typeof value === 'object' && !Array.isArray(value);
 }
@@ -42,6 +57,9 @@ class ExperimentHub {
             machines:[],
             reservations:[],
         };
+        // Heartbeats are ephemeral. After a coordinator restart, a machine is
+        // not considered connected until it authenticates again.
+        this.agentReports = new Map();
         const s = this.state;
         if (!object(s) || s.version !== 1 ||
             !['projects','configurations','jobs','machines','reservations'].every(key=>Array.isArray(s[key])))
@@ -55,7 +73,82 @@ class ExperimentHub {
         writeAtomic(this.file, next);
         this.state = next;
     }
-    snapshot() { return copy(this.state); }
+    snapshot() {
+        const snapshot = copy(this.state);
+        const observedAt = Date.now();
+        snapshot.machines = snapshot.machines.map(machine => {
+            const report = this.agentReports.get(machine.id);
+            const enrolled = typeof machine.agent_key_sha256 === 'string';
+            const fresh = enrolled && report &&
+                observedAt >= report.received_ms &&
+                observedAt - report.received_ms < AGENT_HEARTBEAT_TTL_MS;
+            // Never leak even a credential verifier through any dashboard API.
+            delete machine.agent_key_sha256;
+            machine.agent_enrolled = enrolled;
+            machine.status = !enrolled ? 'unverified' : fresh ? 'connected' : 'offline';
+            machine.last_seen_at = fresh
+                ? new Date(report.received_ms).toISOString() : null;
+            if (fresh) {
+                machine.reported_cpus = report.cpus;
+                machine.reported_ram_mb = report.ram_mb;
+                machine.agent_platform = report.platform;
+            }
+            return machine;
+        });
+        return snapshot;
+    }
+    enrollMachine(value) {
+        if (!object(value) || !ID.test(String(value.machine_id || '')))
+            throw Error('Invalid machine identity.');
+        const next = copy(this.state);
+        const machine = next.machines.find(x => x.id === value.machine_id);
+        if (!machine) throw Error('Machine not registered.');
+        if (machine.agent_key_sha256 && value.confirm_rotate !== true)
+            throw Error('Explicitly confirm replacing this agent credential.');
+        if (value.confirm_enroll !== true)
+            throw Error('Explicitly confirm issuing a machine credential.');
+        // 256-bit secrets are not stored in plaintext. This value is returned
+        // only by this enrollment call; future snapshots never reveal it.
+        const token = crypto.randomBytes(32).toString('hex');
+        machine.agent_key_sha256 = fingerprint(machine.id, token);
+        this.commit(next);
+        this.agentReports.delete(machine.id);
+        return {machine_id:machine.id, agent_token:token};
+    }
+    revokeMachine(value) {
+        if (!object(value) || !ID.test(String(value.machine_id || '')) ||
+            value.confirm_revoke !== true)
+            throw Error('Explicitly confirm the machine credential revocation.');
+        const next = copy(this.state);
+        const machine = next.machines.find(x => x.id === value.machine_id);
+        if (!machine) throw Error('Machine not registered.');
+        delete machine.agent_key_sha256;
+        this.commit(next);
+        this.agentReports.delete(machine.id);
+        return {machine_id:machine.id, revoked:true};
+    }
+    heartbeat(value, token) {
+        if (!object(value) || !ID.test(String(value.machine_id || '')))
+            throw Error('Invalid agent identity.');
+        // Respond generically for unknown IDs and invalid tokens.
+        const machine = this.state.machines.find(x=>x.id===value.machine_id);
+        if (!machine || !machine.agent_key_sha256 ||
+            typeof token !== 'string' || !/^[0-9a-f]{64}$/.test(token)) {
+            const error = Error('Agent authentication failed.');
+            error.status = 401; throw error;
+        }
+        const expected = Buffer.from(machine.agent_key_sha256,'hex');
+        const supplied = Buffer.from(fingerprint(machine.id,token),'hex');
+        if (expected.length !== supplied.length ||
+            !crypto.timingSafeEqual(expected,supplied)) {
+            const error = Error('Agent authentication failed.');
+            error.status = 401; throw error;
+        }
+        const report = boundedReport(value);
+        this.agentReports.set(machine.id,{...report,received_ms:Date.now()});
+        return {machine_id:machine.id, status:'connected',
+            heartbeat_ttl_seconds:Math.floor(AGENT_HEARTBEAT_TTL_MS/1000)};
+    }
     project(id) {
         const project = this.state.projects.find(p=>p.id===id);
         if (!project) throw Error('Unknown project.');
