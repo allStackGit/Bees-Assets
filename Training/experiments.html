@@ -419,11 +419,13 @@ function chart(items) {
         item, color: colors[index % colors.length], points: seriesFor(item),
     }));
     if (metric === 'group_reward') {
-        for (const { item, points: recorded } of datasets) {
+        for (const { item } of datasets) {
             const samples = item.samples || [];
-            if (!samples.length || recorded.length === samples.length) continue;
-            const first = samples.find(sample => Number.isFinite(sample.group_reward));
-            const coverage = recorded.length + '/' + samples.length;
+            const withReward = samples.filter(sample =>
+                sample.group_reward != null && Number.isFinite(Number(sample.group_reward)));
+            if (!samples.length || withReward.length === samples.length) continue;
+            const first = withReward[0];
+            const coverage = withReward.length + '/' + samples.length;
             $('legend').append(txt('span', item.name + ': Mean Group Reward available for ' +
                 coverage + ' recorded samples' +
                 (first?.step != null ? ' (first at ' + fmt(first.step) + ' steps)' : '') +
