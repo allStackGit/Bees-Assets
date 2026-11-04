@@ -185,9 +185,11 @@ per-device measurement and platform-level isolation are implemented.
    never returned in state refreshes, stored in cleartext by the Hub, or
    displayed again. **Rotate** invalidates the previous token; **Revoke**
    disables the agent until a new enrollment.
-3. Start `node Training/experiment_hub_agent.js` on that machine using
-   Node.js 18 or later. It sends read-only authenticated heartbeats every
-   15 seconds and reports available CPU parallelism, total RAM, and OS.
+3. Install `experiment_hub_agent.js` and `experiment_hub_host.js` in the
+   same Training directory and start `node Training/experiment_hub_agent.js`
+   on that machine using Node.js 18 or later. It sends read-only authenticated
+   heartbeats every 15 seconds and reports CPU parallelism, RAM, operating
+   system, and read-only native resource-control discovery.
    Set `EXPERIMENT_HUB_AGENT_TOKEN` from the enrollment output. Do not
    commit it or include it in logs or an unprotected shell history.
 4. The Hub administrator dashboard listens at `127.0.0.1:7148` but
@@ -218,6 +220,32 @@ Bees, Ants, or any third-party training process. Enrolled machines are still
 ineligible for Hub execution. It acknowledges coordination offers, but does not
 enforce CPU, RAM, or GPU limits; even a claimed placement may interfere
 with an existing untracked job.
+
+## Native execution readiness (discovery, not enforcement)
+
+`experiment_hub_host.js` inspects local OS facilities without modifying
+host state. On Linux, it reads the cgroup v2 controller list from sysfs
+(`cpu`, `memory`, `io`, `pids`, `cpuset` when present). On Windows it
+identifies that the required Job Objects execution backend has not yet
+been installed. A detected cgroup hierarchy does **not** prove that
+controllers are delegated to the agent, that the agent can supervise a
+process safely from creation to termination, or that other workloads
+are isolated. The detection does not create or modify cgroups, job
+objects, running processes or OS settings.
+
+The agent includes protocol version 1 read-only discovery in its
+authenticated heartbeat. The manager accepts reports only as
+`backend:"none"` with all native limit/enforcement flags false; a
+machine's Native controls column distinguishes available OS facilities
+from an actually installed supervisor. Older agents without a report
+remain observable, but are likewise ineligible for execution.
+
+**No work may transition from `waiting_adapter` into running on the
+strength of a heartbeat, a detected cgroup, or a coordination lease.**
+Native process ownership, CPU and RAM control and validation, GPU
+visibility/isolation, and trusted installed per-project adapters must
+be implemented before enabling real execution. Merely installing
+systemd or recognizing a Windows OS is insufficient.
 
 ## Not yet implemented
 
