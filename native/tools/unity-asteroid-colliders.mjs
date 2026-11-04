@@ -205,7 +205,7 @@ export function createAsteroidBatch(baseContent, baseGuid, otherPrefabs) {
             fail(name, 'duplicate or unexpected prefab');
         }
         seen.add(index);
-        const variant = text.includes('PrefabInstance:')
+        const variant = /^PrefabInstance:\s*$/m.test(text)
             ? asteroidFromVariant(name, text, base, baseGuid)
             : (() => {
                 const standalone = baseAsteroid(name, text);
