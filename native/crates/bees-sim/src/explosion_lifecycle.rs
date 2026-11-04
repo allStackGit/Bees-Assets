@@ -3,6 +3,7 @@
 //! Source clips:
 //!   Sprites/Projectiles/Animations/Frigate Rocket Explosion.anim
 //!   Sprites/Projectiles/Animations/Fireship Explosion.anim
+//!   Sprites/Objects/Fire Tank Explosion.anim
 //! Imported into native/assets/projectile-colliders.json. These gameplay
 //! events are not rendered animation frames: changing the collision radius,
 //! disabling damage, and ending a projectile affect both graphics and RL.
@@ -81,6 +82,27 @@ mod tests {
         clock.advance(0.3);
         assert_eq!(clock.take_due(), Some(ExplosionAction::Kill));
         assert_eq!(clock.take_due(), None);
+    }
+
+    #[test]
+    fn fire_tank_growth_and_end_events_are_in_clip_order() {
+        let catalog = ProjectileAssetCatalog::embedded().unwrap();
+        let mut clock = ExplosionTimeline::new(
+            catalog.by_type(15).unwrap().explosion_events.clone()
+        );
+        clock.advance(2.0);
+        let mut actions = Vec::new();
+        while let Some(action) = clock.take_due() {
+            actions.push(action);
+        }
+        assert_eq!(actions, [
+            ExplosionAction::SetRadius(7.0),
+            ExplosionAction::SetRadius(8.0),
+            ExplosionAction::SetRadius(9.0),
+            ExplosionAction::SetRadius(18.0),
+            ExplosionAction::SetHarmless,
+            ExplosionAction::Kill,
+        ]);
     }
 
     #[test]
