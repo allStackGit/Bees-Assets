@@ -378,7 +378,8 @@ Ants checkout, Python 3.12 environment, production YAML, schema-5 final
 qualification report, and a dedicated artifact parent directory. The
 adapter requires pinned SHA-256 digests of both the YAML and report at
 startup **and again before each launch**; it refuses changed files.
-It passes the report unchanged into Ants' own production training
+The per-job artifact parent **must be outside the Ants source checkout**
+to preserve its clean source identity. It passes the report unchanged into Ants' own production training
 authorization. That authorization independently requires the exact
 current source, configuration and resolved runtime/device lineage
 used by the passing qualification report. This adapter cannot authorize
@@ -431,10 +432,12 @@ the Linux supervisor configures `KillSignal=SIGINT`,
 stop is persisted before systemd is asked to stop the service
 asynchronously. The supervisor does not send repeated interrupts after
 an ambiguous stop request. This lets Ants' existing `KeyboardInterrupt`
-path make its own checkpoint decision. **An interruption during an
-active mutation cycle may deliberately skip an exit checkpoint to
-protect integrity**, retaining the previous durable checkpoint; if
-the grace period expires, systemd may forcibly end the process.
+path make its own checkpoint decision. A handled interrupt returns
+exit code 130; the supervisor recognizes that as a requested stop, not
+an unexplained training failure. **An interruption during an active
+mutation cycle may deliberately skip an exit checkpoint to protect
+integrity**, retaining the previous durable checkpoint; if the grace
+period expires, systemd may forcibly end the process.
 
 CPU-budgeted services mask CUDA/HIP/ROCm GPU selection environment
 variables, but this is not kernel-enforced GPU device isolation.
