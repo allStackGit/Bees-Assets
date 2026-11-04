@@ -7,6 +7,7 @@
 
 #![forbid(unsafe_code)]
 
+mod collider_asset_shape;
 pub mod collision;
 pub mod control;
 pub mod damage;
@@ -15,6 +16,7 @@ pub mod movement;
 pub mod physics;
 pub mod policy;
 pub mod projectile;
+pub mod projectile_assets;
 pub mod simulation;
 pub mod ship_assets;
 pub mod telemetry;
