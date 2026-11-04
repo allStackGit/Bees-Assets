@@ -34,6 +34,24 @@ impl RandomStream {
         value = (value ^ (value >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
         value ^ (value >> 31)
     }
+
+    /// Rejection sampling avoids modulo bias for seeded scenario and frame
+    /// selection, while remaining allocation-free and world-local.
+    pub fn next_below(&mut self, upper_exclusive: u64) -> u64 {
+        assert!(upper_exclusive > 0, "random upper bound must be positive");
+        let threshold = upper_exclusive.wrapping_neg() % upper_exclusive;
+        loop {
+            let value = self.next_u64();
+            if value >= threshold {
+                return value % upper_exclusive;
+            }
+        }
+    }
+
+    /// Save and restore the exact stream position with a world checkpoint.
+    pub const fn state(&self) -> u64 {
+        self.state
+    }
 }
 
 /// World-local state, owned by exactly one simulation. No Unity-style static
@@ -65,6 +83,15 @@ impl<S> World<S> {
     pub fn is_failed(&self) -> bool {
         self.failed
     }
+
+    /// Explicit episode reset clears a failed/finished world; simply calling
+    /// step again after an error is intentionally prohibited.
+    pub fn reset_episode(&mut self, seed: u64, state: S) {
+        self.state = state;
+        self.random = RandomStream::new(seed);
+        self.tick = 0;
+        self.failed = false;
+    }
 }
 
 /// Rules are implemented once in the shared game crate. The exact same type
@@ -72,8 +99,10 @@ impl<S> World<S> {
 pub trait GameRules<S> {
     type Error;
 
+    // Rules are shared and stateless; all mutable world scratch/state must be
+    // owned by World<S> so independent worlds can run in parallel.
     fn step(
-        &mut self,
+        &self,
         world: &mut World<S>,
         decisions: &[Decision],
         dt_seconds: f32,
@@ -131,6 +160,17 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
         self.worlds.get(index)
     }
 
+    pub fn world_count(&self) -> usize {
+        self.worlds.len()
+    }
+
+    /// Reset in place to avoid recreating world storage on every episode.
+    pub fn reset_world(&mut self, index: usize, seed: u64, state: S) -> Result<(), &'static str> {
+        let world = self.worlds.get_mut(index).ok_or("missing world index")?;
+        world.reset_episode(seed, state);
+        Ok(())
+    }
+
     pub fn measurements(&self) -> Measurements {
         self.measurements
     }
@@ -158,6 +198,7 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
                 // A failing rules update may have partially mutated world state.
                 // Never resume the same world silently from that state.
                 world.failed = true;
+                self.measurements.failed_steps += 1;
                 return Err(StepError::Rules { id: world.id, source });
             }
         };
@@ -165,5 +206,60 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
         world.tick += 1;
         self.measurements.record(counts, start.map(|start| start.elapsed()));
         Ok(counts)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct CountingRules;
+
+    impl GameRules<u64> for CountingRules {
+        type Error = ();
+
+        fn step(
+            &self,
+            world: &mut World<u64>,
+            decisions: &[Decision],
+            _dt_seconds: f32,
+        ) -> Result<StepCounts, Self::Error> {
+            world.state += 1;
+            Ok(StepCounts {
+                decisions: decisions.len() as u64,
+                active_ships: 1,
+                ..StepCounts::default()
+            })
+        }
+    }
+
+    #[test]
+    fn worlds_are_independent_and_episode_reset_restarts_only_one() {
+        let mut simulation = Simulation::new(CountingRules, 0.02).unwrap();
+        simulation.add_world(World::new(WorldId(1), 123, 0)).unwrap();
+        simulation.add_world(World::new(WorldId(2), 456, 0)).unwrap();
+        simulation.step_world(0, &[]).unwrap();
+        simulation.step_world(0, &[]).unwrap();
+        simulation.step_world(1, &[]).unwrap();
+        assert_eq!(simulation.world(0).unwrap().state, 2);
+        assert_eq!(simulation.world(1).unwrap().state, 1);
+
+        simulation.reset_world(0, 123, 0).unwrap();
+        assert_eq!(simulation.world(0).unwrap().tick(), 0);
+        assert_eq!(simulation.world(1).unwrap().tick(), 1);
+        assert_eq!(simulation.measurements().ticks, 3);
+    }
+
+    #[test]
+    fn reproducible_world_random_stream_and_no_modulo_bias_path() {
+        let mut one = RandomStream::new(987);
+        let mut two = RandomStream::new(987);
+        for _ in 0..100 {
+            let a = one.next_below(12);
+            let b = two.next_below(12);
+            assert_eq!(a, b);
+            assert!(a < 12);
+        }
+        assert_eq!(one.state(), two.state());
     }
 }
