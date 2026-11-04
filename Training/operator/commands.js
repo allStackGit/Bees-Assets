@@ -49,6 +49,7 @@ const {
     installReleaseTrainingRuntime,
     newReleaseTrainingRuntime,
     newTrainingRunPlan,
+    resolveReleaseTrainingRuntime,
     saveLatestRelease,
 } = require('./runtime');
 const {
