@@ -66,6 +66,7 @@
       "projectile_type": 5,
       "layer": 18,
       "has_body": true,
+      "rocket_max_speed": 160,
       "shape": {
         "kind": "circle",
         "offset": [
