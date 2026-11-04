@@ -97,12 +97,15 @@ The portable `bees-sim` crate currently contains:
   asteroid-to-obstacle proximity contacts. Map borders track asteroid
   entry/exit history and remove exiting asteroids without fragmentation.
   The native asset catalog preserves authored OriginalHealth separately
-  from an episode's effective training durability. Collision damage
-  callbacks are not yet wired to these streams: in Unity, the first
-  proximity entry and the later primary collider entry have different
-  meanings and callback order still requires parity validation.
-  Actual shard/piece spawning, pathfinder invalidation, nearby-entity
-  cleanup and rendering remain unimplemented.
+  from an episode's effective training durability. The shared combat world
+  now uses proximity and primary contacts for asteroid/asteroid collisions
+  and asteroid/ship damage, with Unity's size comparison, health accounting
+  and 0.35-second delayed destruction. Ship contacts require explicit
+  authored SizeClass and OriginalHealth (never inferred from adjusted
+  training durability); missing profiles fail instead of applying guessed
+  damage. Trigger ordering still requires comparison with Unity.
+  Actual shard/piece spawning, sibling exclusions, pathfinder invalidation,
+  observer cleanup and rendering remain unimplemented.
 - An optional tactical reward consumer using the current RL team's shared
   positive/negative asymptotic shaping budgets, with mined cargo excluded
   from persistent-fleet damage reward on death.
@@ -110,9 +113,9 @@ The portable `bees-sim` crate currently contains:
 **Not yet implemented:** complete normal user/Hive Mind movement,
 weapon-specific targeting and projectile spawning, remaining authored
 static/border/mining obstacle prefabs and the full collision-layer matrix,
-moving-asteroid AI, obstacle/ship and asteroid/asteroid *damage/lifecycle*
-callbacks (geometric contact streams are available), asteroid fragmentation
-and full registry/observer cleanup,
+moving-asteroid AI, final ship collision-profile wiring from game assets,
+shard-family collision exclusions, asteroid fragmentation, full registry/
+observer cleanup,
 Unity-equivalent Animator/FixedUpdate/Physics2D ordering, native Hive Mind
 command updates and persistence, squad/formation removal and full ship-death
 lifecycle, complete RL reward delivery and episode termination, visibility
