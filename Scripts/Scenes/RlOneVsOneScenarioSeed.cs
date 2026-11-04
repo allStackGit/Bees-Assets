@@ -86,8 +86,12 @@ internal static class RlOneVsOneScenarioSeed
                 hostHash = (hostHash * 31) + value;
             }
         }
-        return Derive(Derive(seed, hostHash & int.MaxValue, EnvironmentStreamSalt),
+        int resolved = Derive(Derive(seed, hostHash & int.MaxValue, EnvironmentStreamSalt),
             port, IdentityStreamSalt);
+        Debug.Log("Bees RL scenario seed: configured=" + seed +
+            " host=" + Environment.MachineName +
+            " mlagents_port=" + port + " derived_root=" + resolved);
+        return resolved;
     }
 
     internal static int Create(Level level, int streamSalt, string[] args = null)
