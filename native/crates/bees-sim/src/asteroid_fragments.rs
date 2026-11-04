@@ -26,7 +26,6 @@ pub enum FragmentError {
     Malformed(String),
     InvalidSchema(u32),
     InvalidPalette,
-    InvalidSettings,
 }
 
 #[derive(Deserialize)]
@@ -211,6 +210,15 @@ impl AsteroidPieceState {
             half_seconds: 0, active: true,
             timer: ScaledTimer::new(0.5, true, true),
         }
+    }
+
+    /// ConfigData.FadingAsteroidPiecesColors is white at alpha 0.9..0.1.
+    /// DeathTimer kills at HalfSeconds == 8, so the last (0.1) entry is
+    /// never applied by the current Unity source.
+    pub fn sprite_opacity(&self) -> f32 {
+        if !self.active { return 0.0; }
+        if self.half_seconds == 0 { 1.0 }
+        else { 1.0 - (self.half_seconds as f32 / 10.0) }
     }
 
     /// Returns the authored fade-color index, if one was reached this step.
