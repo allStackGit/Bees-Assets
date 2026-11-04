@@ -6,6 +6,7 @@ This tool never changes training state, champions or checkpoints.
 from __future__ import annotations
 
 import argparse
+import csv
 import hashlib
 import json
 import math
@@ -14,6 +15,7 @@ import re
 import sqlite3
 import tempfile
 import uuid
+from dataclasses import fields
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -108,6 +110,7 @@ def evaluate(recipe: Path, candidate: Path, opponent: str | Path, environment: P
     # validation and --help do not need the ML-Agents/ONNX runtime installed.
     from bees_continual_evaluate import EVALUATION_PROTOCOL_VERSION, run_match_group
 
+    episodes = []
     result = run_match_group(
         environment_path=environment,
         candidate_model_path=candidate,
@@ -124,6 +127,7 @@ def evaluate(recipe: Path, candidate: Path, opponent: str | Path, environment: P
         max_environment_steps_per_match=benchmark.get(
             "max_environment_steps_per_match", 200000
         ),
+        episode_results_out=episodes,
     )
     stamp = datetime.now(timezone.utc)
     record = {
@@ -156,14 +160,54 @@ def evaluate(recipe: Path, candidate: Path, opponent: str | Path, environment: P
     if experiment is not None:
         record["experiment"] = experiment
     output_root.mkdir(parents=True, exist_ok=True)
-    name = stamp.strftime("%Y%m%dT%H%M%S") + "-" + uuid.uuid4().hex + ".json"
-    destination = output_root / name
+    stem = stamp.strftime("%Y%m%dT%H%M%S") + "-" + uuid.uuid4().hex
+    destination = output_root / (stem + ".json")
+    detail_path = output_root / (stem + ".episodes.csv")
+
+    # Compact raw per-match evidence. The Unity process exposes a single seeded
+    # scenario stream, not independently addressable per-match seeds; the file
+    # therefore records episode number and the report's recipe seed, not
+    # fabricated per-match seeds or unobserved spawn positions.
+    if len(episodes) != result.matches:
+        raise ValueError("Episode detail count does not match validated benchmark totals.")
+    episode_fields = [field.name for field in fields(type(episodes[0]))] if episodes else []
+    columns = ["candidate_outcome"] + episode_fields
+    side = 0  # The benchmark runner always assigns the candidate to team 0.
+    fd_detail, temporary_detail = tempfile.mkstemp(
+        prefix=".benchmark-episodes-", suffix=".csv", dir=output_root)
+    try:
+        with os.fdopen(fd_detail, "w", encoding="utf-8", newline="") as out:
+            writer = csv.writer(out)
+            writer.writerow(columns)
+            for episode in episodes:
+                outcome = ("timeout" if episode.timed_out else
+                           "win" if episode.winning_team_id == side else
+                           "draw" if episode.winning_team_id == -1 else "loss")
+                writer.writerow([outcome] + [
+                    getattr(episode, field) for field in episode_fields
+                ])
+        os.replace(temporary_detail, detail_path)
+    finally:
+        if os.path.exists(temporary_detail):
+            os.unlink(temporary_detail)
+
+    record["episode_detail"] = {
+        "file": detail_path.name,
+        "sha256": sha256_file(detail_path),
+        "rows": len(episodes),
+        "format": "csv",
+        "schema_version": 1,
+        "seed_scope": "one seeded scenario stream per evaluation",
+    }
     fd, temporary = tempfile.mkstemp(prefix=".benchmark-", suffix=".json", dir=output_root)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as out:
             json.dump(record, out, indent=2, sort_keys=True)
             out.write("\n")
         os.replace(temporary, destination)
+    except Exception:
+        detail_path.unlink(missing_ok=True)
+        raise
     finally:
         if os.path.exists(temporary):
             os.unlink(temporary)
