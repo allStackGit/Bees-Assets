@@ -2195,6 +2195,92 @@ $('graph').addEventListener('mouseleave', () => {
 });
 $('axis').addEventListener('change', () => latest && chart(
     latest.items.filter(x => !$('filter').value || x.group === $('filter').value)));
+let researchGroups = [];
+async function loadResearchSummary() {
+    const button = $('research-refresh');
+    button.disabled = true;
+    try {
+        const response = await fetch('/api/research-summary', {cache:'no-store'});
+        const data = await response.json();
+        if (!response.ok) throw Error(data.error || 'Research statistics unavailable.');
+        researchGroups = data.groups || [];
+        const rows = $('research-rows');
+        rows.replaceChildren();
+        const percentage = number => number == null ? '—' : fmt(100 * number, 2) + '%';
+        for (const group of researchGroups) {
+            const row = document.createElement('tr');
+            cell(row, group.comparison_group + ' · ' + group.study_label);
+            cell(row, 'beta ' + (group.beta ?? '—'));
+            cell(row, group.checkpoint +
+                (typeof group.target_step === 'number'
+                    ? ' · ' + fmt(group.target_step) + ' steps' : ''));
+            cell(row, group.scenario);
+            cell(row, group.win_rate.n + '/' + group.expected_replicates);
+            cell(row, percentage(group.win_rate.mean));
+            cell(row, percentage(group.win_rate.sd));
+            cell(row, group.win_rate.ci95
+                ? group.win_rate.ci95.map(percentage).join(' to ') : '— (one seed)');
+            cell(row, percentage(group.timeout_rate.mean));
+            cell(row, group.purpose === 'heldout' ? 'Held-out' : 'Development');
+            rows.append(row);
+        }
+        $('research-message').textContent = researchGroups.length
+            ? researchGroups.length + ' comparable condition/benchmark/checkpoint groups. ' +
+                'Incomplete replicate sets remain descriptive; do not infer a treatment advantage from a single seed.'
+            : 'No completed benchmark evaluations with comparable provenance yet.';
+    } catch (error) {
+        $('research-message').textContent = 'Research summary failed: ' + error.message;
+    } finally {
+        button.disabled = false;
+    }
+}
+function saveResearchCsv() {
+    if (!researchGroups.length) {
+        $('research-message').textContent = 'Refresh the research summary before exporting.';
+        return;
+    }
+    const columns = ['comparison_group','study_label','study_id','condition_id',
+        'beta','purpose','scenario','checkpoint','target_step','benchmark_identity',
+        'independent_runs','expected_replicates','mean_win_rate','sd_win_rate',
+        'win_ci95_lower','win_ci95_upper','mean_timeout_rate','sd_timeout_rate',
+        'mean_score_rate','seeds','run_ids','actual_steps'];
+    const data = researchGroups.map(group => ({
+        ...group,
+        independent_runs: group.win_rate.n,
+        mean_win_rate: group.win_rate.mean,
+        sd_win_rate: group.win_rate.sd,
+        win_ci95_lower: group.win_rate.ci95?.[0],
+        win_ci95_upper: group.win_rate.ci95?.[1],
+        mean_timeout_rate: group.timeout_rate.mean,
+        sd_timeout_rate: group.timeout_rate.sd,
+        mean_score_rate: group.score_rate.mean,
+        seeds: group.runs.map(run => run.seed).join(';'),
+        run_ids: group.runs.map(run => run.run_id).join(';'),
+        actual_steps: group.runs.map(run => run.actual_step).join(';'),
+    }));
+    const cellText = value => {
+        if (value == null) return '';
+        let text = String(value);
+        if (typeof value === 'string' && /^\s*[=+@-]/.test(text))
+            text = "'" + text;
+        return '"' + text.replace(/"/g, '""') + '"';
+    };
+    const csv = '\uFEFF' + [columns, ...data.map(row => columns.map(key => row[key]))]
+        .map(row => row.map(cellText).join(',')).join('\r\n') + '\r\n';
+    const url = URL.createObjectURL(new Blob([csv], {type:'text/csv;charset=utf-8'}));
+    const link = document.createElement('a');
+    const stamp = new Date().toISOString().replace(/[-:]/g,'').replace(/\.\d{3}Z$/, 'Z');
+    link.download = 'bees-research-comparison-' + stamp + '.csv';
+    link.href = url;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+$('research-refresh').addEventListener('click', loadResearchSummary);
+$('research-csv').addEventListener('click', saveResearchCsv);
+$('research-panel').addEventListener('toggle', () => {
+    if ($('research-panel').open) loadResearchSummary();
+});
+
 async function loadTrainerDefaults() {
     const button = $('create').querySelector('button[type=submit]');
     button.disabled = true;
