@@ -12,7 +12,7 @@ const TOKEN = /^[0-9a-f]{64}$/;
 const INTERVAL_MS = 15000;
 
 function endpoint(input) {
-    const url = new URL(input || 'http://127.0.0.1:7148');
+    const url = new URL(input || 'http://127.0.0.1:7149');
     if (url.protocol !== 'http:' ||
         !['127.0.0.1','localhost'].includes(url.hostname) ||
         url.username || url.password || url.search || url.hash ||
@@ -76,7 +76,7 @@ function sendHeartbeat(url,machineId,token,observedLeaseIds=[]) {
             headers:{
                 // The manager remains loopback-bound and expects its own
                 // origin. This works with a local SSH forwarded port.
-                Host:'127.0.0.1:7148',
+                Host:'127.0.0.1:7149',
                 'Content-Type':'application/json',
                 'Content-Length':Buffer.byteLength(payload),
                 'X-Hub-Agent-Token':token,
