@@ -71,8 +71,9 @@ impl ShipVitals {
         if self.health <= 0 {
             return 0.0;
         }
-        (self.max_health as f32 + self.health as f32)
-            / (self.max_health as f32 * 2.0)
+        let numerator = i64::from(self.max_health) + i64::from(self.health);
+        let denominator = i64::from(self.max_health) * 2;
+        (numerator as f32) / (denominator as f32)
     }
 
     /// Utilities.CalculateTsv:
