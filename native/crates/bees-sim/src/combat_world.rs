@@ -30,7 +30,7 @@ use crate::physics::{
 use crate::policy::Decision;
 use crate::geometry::Vec2;
 use crate::movement::ShipMotion;
-use crate::obstacle::{AsteroidDamage, CombatObstacle, ObstacleKind};
+use crate::obstacle::{AsteroidBreakup, AsteroidDamage, CombatObstacle, ObstacleKind};
 use crate::projectile::ProjectileMotion;
 use crate::ship_assets::ShipAsset;
 use crate::projectile_assets::ProjectileAsset;
@@ -106,7 +106,11 @@ pub enum CombatEvent {
     },
     /// CollisionAsteroid.Kill(false) must also remove pathfinder/registry
     /// ownership and generate shards according to its original SizeClass.
-    AsteroidDestroyed { obstacle_id: i64, size_class: u8 },
+    AsteroidDestroyed {
+        obstacle_id: i64,
+        size_class: u8,
+        breakup: AsteroidBreakup,
+    },
     ShipDied {
         victim_id: i64,
         killer_id: i64,
@@ -1002,6 +1006,7 @@ impl CombatWorld {
             self.events.push(CombatEvent::AsteroidDestroyed {
                 obstacle_id: contact.obstacle_id,
                 size_class: obstacle.size_class,
+                breakup: AsteroidBreakup::for_size_class(obstacle.size_class),
             });
         }
     }
@@ -1425,6 +1430,9 @@ mod tests {
         }));
         assert!(matches!(world.events()[1], CombatEvent::AsteroidDestroyed {
             obstacle_id: 1, size_class: 6,
+            breakup: AsteroidBreakup {
+                collision_asteroid_shards: 2, asteroid_pieces: 9,
+            },
         }));
         assert!(matches!(world.events()[2], CombatEvent::ProjectileEnded {
             projectile_id: 2,
