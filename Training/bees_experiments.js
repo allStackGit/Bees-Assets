@@ -2285,6 +2285,12 @@ const server = http.createServer(async (req, res) => {
         }
         if (req.method !== 'POST') return json(res, 404, { error: 'Not found.' });
         const value = await body(req);
+        if (route === '/api/hub/agent/heartbeat') {
+            // Bearer authentication plus short-lived, in-memory liveness.
+            // Never forward arbitrary commands or mutate Bees training state.
+            return json(res, 200, requireHub().heartbeat(value,
+                req.headers['x-hub-agent-token']));
+        }
         if (storageMigrationPending) {
             return json(res, 409, { error: 'Data-location switch prepared. Restart this manager before making other changes.' });
         }
@@ -2382,6 +2388,13 @@ const server = http.createServer(async (req, res) => {
         }
         if (route === '/api/hub/machines') {
             return json(res, 201, requireHub().addMachine(value));
+        }
+        if (route === '/api/hub/machines/enroll') {
+            // One-time secret returned only to the loopback dashboard caller.
+            return json(res, 201, requireHub().enrollMachine(value));
+        }
+        if (route === '/api/hub/machines/revoke') {
+            return json(res, 200, requireHub().revokeMachine(value));
         }
         if (route === '/api/hub/jobs') {
             return json(res, 201, requireHub().queueConfiguration(value));
@@ -2771,7 +2784,7 @@ const server = http.createServer(async (req, res) => {
         }
         return json(res, 404, { error: 'Not found.' });
     } catch (err) {
-        return json(res, 400, { error: err.message });
+        return json(res, err.status === 401 ? 401 : 400, { error: err.message });
     }
 });
 if (require.main === module) {
