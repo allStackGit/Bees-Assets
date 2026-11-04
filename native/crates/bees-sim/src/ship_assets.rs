@@ -167,13 +167,13 @@ mod tests {
         assert_eq!(assets.by_type(13).unwrap().name, "Gunship");
         assert_eq!(assets.by_type(23).unwrap().name, "Human Target");
         assert!(matches!(
-            assets.by_type(0).unwrap().shape, ShipShape::Box { .. }
+            &assets.by_type(0).unwrap().shape, ShipShape::Box { .. }
         ));
         assert!(matches!(
-            assets.by_type(14).unwrap().shape, ShipShape::Circle { .. }
+            &assets.by_type(14).unwrap().shape, ShipShape::Circle { .. }
         ));
         assert!(matches!(
-            assets.by_type(15).unwrap().shape, ShipShape::Polygon(_)
+            &assets.by_type(15).unwrap().shape, ShipShape::Polygon(_)
         ));
     }
 
