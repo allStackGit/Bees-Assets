@@ -304,7 +304,7 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
 <div class="bar"><h2>Runs and comparisons</h2><label>Show group <select id="filter"><option value="">All</option></select></label>
 <label>Graph <select id="metric"><option value="timeout_pct">Timeout %</option><option value="bee_hits_per_shot">Bee hits per shot</option><option value="human_hits_per_shot">Human hits per shot</option><option value="bee_aim_error_deg">Bee aim error °</option><option value="human_aim_error_deg">Human aim error °</option><option value="bee_near_miss_pct">Bee near-miss %</option><option value="human_near_miss_pct">Human near-miss %</option><option value="bee_win_pct">Bee win %</option><option value="human_win_pct">Human win %</option><option value="group_reward" selected>Mean Group Reward</option><option value="reward">Mean Reward (individual)</option><option value="steps_per_second">Reported learner steps/s</option><option value="effective_steps_per_second">Effective learner steps/s</option><option value="ppo_busy_pct">PPO busy %</option><option value="ppo_update_s">PPO seconds/update</option><option value="ppo_minibatches_s">PPO minibatches/s</option><option value="ppo_gpu_pct">PPO GPU utilization %</option><option value="pipeline_staged_s">Worker staged/s</option><option value="pipeline_accepted_s">Worker accepted/s</option><option value="pipeline_consumed_s">Worker consumed/s</option><option value="pipeline_broker_q">Broker queue depth</option></select></label>
 <label>Horizontal axis <select id="axis"><option value="steps">Learner steps</option><option value="time">Observed training hours</option></select></label>
-<label>Smoothing <select id="smoothing"><option value="1">Raw samples</option><option value="5">Last 5 samples</option><option value="15">Last 15 samples</option><option value="30">Last 30 samples</option></select></label><button id="chart-png" type="button">Save chart PNG</button><button id="chart-csv" type="button">Save chart CSV</button></div>
+<label>Smoothing <select id="smoothing"><option value="1">Raw samples</option><option value="5">Last 5 samples</option><option value="15">Last 15 samples</option><option value="30">Last 30 samples</option></select></label><button id="chart-png" type="button">Save chart PNG</button><button id="chart-csv" type="button">Save chart CSV</button><button id="chart-history" type="button">Load full chart history</button><button id="chart-recent" type="button">Use recent samples</button></div>
 <div class="graph-wrap"><svg id="graph" class="graph" viewBox="0 0 800 250" role="img" aria-label="Interactive training curves"></svg><div id="graph-tooltip" role="status"></div></div>
 <div id="graph-inspect">Hover over the graph for sample values. Latest and average values appear in the legend.</div>
 <div id="legend"></div>
@@ -449,6 +449,7 @@ function environmentMarkers(item, axis) {
     }).filter(change => Number.isFinite(change.x) && change.x >= 0);
 }
 let chartHover = null;
+const fullChartHistory = new Map();
 function chart(items) {
     const svg = $('graph'); svg.replaceChildren(); $('legend').replaceChildren(); $('chart-notes').replaceChildren();
     const tooltip = $('graph-tooltip');
@@ -460,10 +461,15 @@ function chart(items) {
         ? (Number.isFinite(sample.training_s) ? sample.training_s / 3600 : null)
         : sample.step;
     const seriesFor = item => {
-        const inputs = (item.samples || [])
+        const archive = fullChartHistory.get(item.id);
+        const compatible = archive && archive.metric === metric &&
+            archive.axis === axis && archive.smooth === smooth;
+        const inputs = (compatible ? archive.samples : item.samples || [])
             .map((sample, sourceIndex) => ({
                 x: xValue(sample), raw: metricValue(sample, metric),
                 step: sample.step, at: sample.at, sourceIndex,
+                fromArchive: compatible,
+                chartY: sample._chart_plotted, chartMean: sample._chart_mean,
             }))
             .filter(point => Number.isFinite(point.x) &&
                 point.raw != null && Number.isFinite(Number(point.raw)));
@@ -472,8 +478,11 @@ function chart(items) {
             total += Number(point.raw);
             const range = inputs.slice(Math.max(0, index - smooth + 1), index + 1);
             return {
-                ...point, y: range.reduce((n, p) => n + Number(p.raw), 0) / range.length,
-                mean: total / (index + 1),
+                ...point,
+                y: point.fromArchive && Number.isFinite(point.chartY)
+                    ? point.chartY : range.reduce((n, p) => n + Number(p.raw), 0) / range.length,
+                mean: point.fromArchive && Number.isFinite(point.chartMean)
+                    ? point.chartMean : total / (index + 1),
             };
         });
     };
@@ -484,7 +493,16 @@ function chart(items) {
     const renderChartNotes = () => $('chart-notes').replaceChildren(
         ...chartNotes.map(note => txt('span', note)));
     for (const dataset of datasets) {
-        const samples = dataset.item.samples || [];
+        const archive = fullChartHistory.get(dataset.item.id);
+        const samples = archive && archive.metric === metric &&
+            archive.axis === axis && archive.smooth === smooth
+            ? archive.samples : dataset.item.samples || [];
+        if (archive?.downsampled && archive.metric === metric &&
+            archive.axis === axis && archive.smooth === smooth) {
+            chartNotes.push(dataset.item.name + ': full recorded history available; ' +
+                archive.plotted + ' valid points reduced to ' + samples.length +
+                ' display points (min/max preserving, smoothing calculated before reduction).');
+        }
         if (!samples.length) continue;
         const covered = samples.filter(sample =>
             Number.isFinite(xValue(sample)) && metricValue(sample, metric) != null &&
@@ -746,6 +764,42 @@ function chart(items) {
         ' Rolling averages use the last ' +
         smooth + ' recorded sample(s), not an independent evaluation.';
 }
+async function loadFullChartHistory() {
+    const button = $('chart-history');
+    if (button.disabled || !latest) return;
+    const visible = latest.items.filter(item =>
+        chosen.has(item.id) && (!$('filter').value || item.group === $('filter').value));
+    if (!visible.length) {
+        $('graph-inspect').textContent = 'Select a run using its Plot checkbox first.';
+        return;
+    }
+    button.disabled = true;
+    try {
+        const metric = $('metric').value, axis = $('axis').value;
+        const smooth = Number($('smoothing').value) || 1;
+        const history = await Promise.all(visible.map(async item => {
+            const qs = new URLSearchParams({id:item.id,metric,axis,
+                smoothing:String(smooth)});
+            const response = await fetch('/api/metric-history?' + qs, {cache:'no-store'});
+            const data = await response.json();
+            if (!response.ok) throw Error(data.error || 'History retrieval failed.');
+            return [item.id, { ...data, metric, axis, smooth }];
+        }));
+        for (const [id, data] of history) fullChartHistory.set(id, data);
+        chart(visible);
+    } catch (error) {
+        $('graph-inspect').textContent = 'Full metric history unavailable: ' + error.message;
+    } finally {
+        button.disabled = false;
+    }
+}
+$('chart-history').addEventListener('click', loadFullChartHistory);
+$('chart-recent').addEventListener('click', () => {
+    fullChartHistory.clear();
+    if (latest) chart(latest.items.filter(x =>
+        !$('filter').value || x.group === $('filter').value));
+});
+
 // Export the exact displayed SVG and its series legend; no chart-data
 // rerendering or external image service is needed.
 async function saveChartPng() {
@@ -1163,6 +1217,18 @@ function render(data) {
                 research.append(btn);
             }
             details.append(research);
+        }
+        if (item.id && item.samples?.length) {
+            const rawMetrics = txt('button', 'Save complete metrics JSONL');
+            rawMetrics.type = 'button';
+            rawMetrics.title = 'Save all preserved minute-resolution samples, including nested PPO and pipeline measurements. Older samples already discarded before archival cannot be recovered.';
+            rawMetrics.addEventListener('click', () => {
+                window.location.href = '/api/metric-archive?id=' +
+                    encodeURIComponent(item.id);
+            });
+            details.append(rawMetrics);
+            if (item.metric_archive_error)
+                details.append(txt('p', 'Metric archive warning: ' + item.metric_archive_error));
         }
         if (item.run_id) {
             const exportResearch = txt('button', item.study_id
