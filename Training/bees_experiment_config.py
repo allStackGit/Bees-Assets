@@ -19,19 +19,13 @@ def resolved(value):
     return {"hyperparameters": b["hyperparameters"],
             "network_settings": b["network_settings"],
             "seed": value.get("env_settings", {}).get("seed", 0),
-            "trainer_type": b["trainer_type"], "max_steps": b["max_steps"]}
+            "trainer_type": b["trainer_type"]}
 
 def prepare(base, overrides, output):
     value = yaml.safe_load(base.read_text(encoding="utf-8"))
     if not isinstance(overrides, dict) or set(overrides) - {"hyperparameters", "network_settings", "seed"}:
         raise ValueError("Only PPO settings, supported network settings and seed may be overridden.")
     b = value["behaviors"][BEHAVIOR]
-    # ML-Agents requires a finite max_steps integer. Do not let the base
-    # training YAML impose an unrelated experiment stop; the experiment
-    # coordinator owns the configured step budget (or unlimited final stage).
-    # This is the largest integer our JSON/JavaScript step counters can
-    # represent exactly, not an operational run-duration limit.
-    b["max_steps"] = (1 << 53) - 1
     for section, allowed in (("hyperparameters", HYPER), ("network_settings", NETWORK)):
         changes = overrides.get(section, {})
         if not isinstance(changes, dict) or set(changes) - allowed:
