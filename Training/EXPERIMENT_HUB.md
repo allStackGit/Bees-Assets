@@ -38,11 +38,31 @@ registry writes are atomic and only published in memory after they succeed.
 If the optional Hub registry cannot be loaded, Bees experiment management
 continues to run independently.
 
-`experiment_hub_resources.js` performs pure admission calculations; it
-does not execute jobs or enforce isolation. A verified GPU may be reserved
-exclusively in the eventual scheduler, but this preview **is not** a physical
-reservation. The UI requires explicit confirmation before operating the
-Bees learner.
+`experiment_hub_resources.js` performs pure admission calculations and
+greedy, simultaneous workload placement. Requests include CPU slots, RAM, GPU
+count or exact device IDs, and minimum physical VRAM. GPUs default to
+**exclusive** allocation (including older reservations). A request may instead
+use `gpu_mode: "shared"` with positive per-GPU `gpu_vram_mb` and
+`gpu_compute_pct` (1–100), with explicit aggregation of claimed GPU memory and
+admission budget. The Machines tab previews a single request or a JSON array
+of concurrent workloads. For example, three independent jobs can have
+different CPU/RAM footprints and share one physical GPU when their combined
+VRAM and compute budgets fit.
+
+`POST /api/hub/plan` accepts `{"jobs":[{"id":"bees_actor",
+"resources":{"cpus":4,"ram_mb":8192,"gpu_count":1,"gpu_mode":"shared",
+"gpu_vram_mb":8192,"gpu_compute_pct":40}}]}` and returns a placement preview,
+**not** a queued job. The planner is greedy, does not optimize all possible
+assignments, and does not mutate persistent jobs, reservations, or machines.
+It may preview physically registered but unverified machines.
+
+**Capacity budgets are not performance guarantees.** Compute percentages
+do not enforce GPU execution time, prevent kernel contention, or establish
+ROCm/CUDA quality-of-service. The proposed placement neither starts
+processes nor grants hardware ownership. The future authenticated agent
+and platform-specific adapters must prove isolation and live capacity before
+any reservation becomes executable. The UI requires explicit confirmation
+before operating the Bees learner.
 
 ## Not yet implemented
 
