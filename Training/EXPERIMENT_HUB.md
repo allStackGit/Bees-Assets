@@ -64,9 +64,9 @@ It may preview physically registered but unverified machines.
 **Capacity budgets are not performance guarantees.** Compute percentages
 do not enforce GPU execution time, prevent kernel contention, or establish
 ROCm/CUDA quality-of-service. The proposed placement neither starts
-processes nor grants hardware ownership. The future authenticated agent
-and platform-specific adapters must prove isolation and live capacity before
-any reservation becomes executable. The UI requires explicit confirmation
+processes nor grants hardware ownership. The installed local Linux supervisor can enforce CPU and memory limits
+for an explicitly authorized CPU-only job, but a planner preview alone
+provides neither execution authority nor GPU isolation. The UI requires explicit confirmation
 before operating the Bees learner.
 
 ## Immutable, non-executable project jobs
@@ -107,9 +107,9 @@ a bounded cross-project round-robin pass, FIFO within each project.
 Only the Hub ledger's estimated CPU, RAM and per-GPU budgets are admitted.
 
 Allocation links the job and an `offered` coordination lease in the
-**same atomic registry write**. The job remains `waiting_adapter` and
-cannot execute. The agent later acknowledges the lease as already
-described above, but that does not prove resource enforcement. Assigned
+**same atomic registry write**. The job remains `waiting_adapter` until a separate, explicitly
+confirmed native start authorization. The agent's lease receipt alone
+does not prove resource enforcement or authorize any program launch. Assigned
 jobs remain assigned after coordinator restart or agent disconnection;
 there is no automatic reclaim without evidence that workloads have
 stopped. The read-only planner displays linked assignments separately
@@ -129,10 +129,10 @@ time is being consumed by untracked workloads, and cannot enforce
 a minimum performance share.
 
 No saved project configuration may supply a program path, executable
-argument list, shell command or privileged adapter name to this API. An
-independently installed, trusted server/agent adapter and a verified native
-resource-control backend are required before a future implementation can
-safely transition any job out of `waiting_adapter`.
+argument list, shell command or privileged adapter name to this API.
+An installed local trusted adapter, explicit dashboard authorization
+and verified native CPU/RAM service limits are required before a
+job can transition out of `waiting_adapter`.
 
 ## Coordinated resource leases (not process isolation)
 
@@ -324,6 +324,14 @@ this executable separately. Saved experiment configurations never
 supply a program path or shell command. **This PR does not install
 working Ants, LLM, or other project runners on a machine.** Local
 adapter configuration and authentication secrets must not be committed.
+
+The agent generates a fresh process-instance identity when it starts.
+While a native agent's authenticated heartbeat is fresh, a different
+instance cannot take over its machine identity or receive native
+instructions. Replacement agents become eligible after that instance
+expires (45 seconds); this does not release job leases or bypass
+the deterministic systemd unit and local ownership ledger. The
+worker-only endpoint also enforces a 32-KiB request byte limit.
 
 The agent sends a native report only after its local systemd supervisor
 inspects the exact service identity and `CPUQuota`/`MemoryMax` limits.
