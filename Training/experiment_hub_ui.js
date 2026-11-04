@@ -476,7 +476,7 @@ document.addEventListener('DOMContentLoaded', () => {
             ' non-Bees project(s)? This makes durable bookkeeping claims only; no workloads launch and no OS resource isolation is provided.'))return;
         try{
             const result=await action('hub/jobs/allocate',{
-                project_id:'all',confirm_allocate:true,
+                all_projects:true,confirm_allocate:true,
             });
             const allocated=result.results.filter(x=>x.status==='claimed').length;
             const blocked=result.results.filter(x=>x.status==='insufficient_capacity').length;
