@@ -37,7 +37,11 @@ function request(input) {
 }
 
 function remaining(machine,reservations) {
-    const claimed=reservations.filter(r=>r.machine_id===machine.id&&r.status==='active');
+    // Both unacknowledged offers and acknowledged leases consume the Hub's
+    // scheduling budget. Releasing only one side would permit overcommit.
+    // Pre-existing 'active' claims remain protected.
+    const claimed=reservations.filter(r=>r.machine_id===machine.id&&
+        ['active','offered','acknowledged'].includes(r.status));
     // A live authenticated agent may reduce a manually declared CPU/RAM
     // budget but never increase it. Stale measurements are not used.
     const cpuBudget=machine.status==='connected' &&
