@@ -7,7 +7,13 @@ const crypto = require('node:crypto');
 const { execFile } = require('node:child_process');
 const { invokeStart, invokeStop, invokeWorkerRuntime } = require('./operator/commands');
 const { invokeMaintenanceUnityRebuild } = require('./operator/build');
-const { summarize: summarizeResearch } = require('./bees_experiment_research');
+const { summarize: summarizeResearch, differences: compareResearch,
+    sampleEfficiency: researchEfficiency } = require('./bees_experiment_research');
+const { freezePlan: freezeEvaluator, supportsPurpose: evaluatorSupportsPurpose } =
+    require('./bees_experiment_evaluator_versions');
+const { selectedRoot, copyAndSelect } = require('./bees_experiment_storage');
+const { append: appendMetricSample, plot: archivedMetricsChart,
+    filename: metricArchivePath } = require('./bees_experiment_metrics');
 const { getStatus } = require('./operator/control');
 const { getPendingForcedNewRunPlan } = require('./operator/runtime');
 const { assertRlEnvironmentArgsValid } = require('./operator/validation');
@@ -19,11 +25,12 @@ const { paths, readJson, writeJsonAtomic, ensureDir, loadConfig, resolvePython, 
 const HOST = '127.0.0.1';
 // A fixed port also prevents two coordinators from writing the same state file.
 const PORT = 7148;
-const DB = path.join(paths.trainingRoot, 'Experiments', 'experiments-v1.json');
+const DATA_ROOT = selectedRoot(paths.trainingRoot);
+const DB = path.join(DATA_ROOT, 'experiments-v1.json');
 const HTML = path.join(__dirname, 'experiments.html');
 const LOG_EXPORTER = path.join(__dirname, 'bees_experiment_logs.py');
 const RESEARCH_EXPORTER = path.join(__dirname, 'bees_experiment_research_export.py');
-const BENCHMARK_REPORTS = path.join(paths.trainingRoot, 'Experiments', 'Benchmarks');
+const BENCHMARK_REPORTS = path.join(DATA_ROOT, 'Benchmarks');
 const empty = () => ({ version: 1, armed: false, stop_requested: false, active_id: null, message: '', items: [] });
 const state = fs.existsSync(DB) ? readJson(DB) : empty();
 if (!state || state.version !== 1 || !Array.isArray(state.items) || typeof state.armed !== 'boolean') {
@@ -37,6 +44,7 @@ for (const item of state.items) delete item.performance_clock;
 let busy = false;
 let rebuildProgress = null;
 let logExportBusy = false;
+let storageMigrationPending = false;
 const logExportSessions = new Map();
 let lastRoutineSaveMs = 0;
 const save = () => { ensureDir(path.dirname(DB)); writeJsonAtomic(DB, state); };
@@ -46,7 +54,7 @@ const now = () => new Date().toISOString();
 // Step counts are JSON numbers; reject unsafe integers instead of silently
 // rounding learner-step boundaries. No arbitrary experiment-duration cap.
 const CURRICULUM_BUILTIN = path.join(__dirname, 'experiment-curriculum.json');
-const CURRICULUM_SAVED = path.join(paths.trainingRoot, 'Experiments', 'curriculum-default.json');
+const CURRICULUM_SAVED = path.join(DATA_ROOT, 'curriculum-default.json');
 
 function overridesForStage(raw, label) {
     if (!Array.isArray(raw) || raw.length > 64) throw Error(label + ': invalid environment arguments.');
@@ -85,7 +93,21 @@ function timeoutTarget(raw, label) {
 function stagesForDefinition(input, defaults, firstSteps) {
     const firstName = String(input.stage_name || 'Initial stage').trim();
     if (!firstName || firstName.length > 100) throw Error('Invalid initial stage name.');
-    let args = mergeEnvironmentArgs(defaults, overridesForStage(input.env_args, firstName));
+    const firstOverrides = overridesForStage(input.env_args, firstName);
+    if (input.scenario_seed !== undefined && input.scenario_seed !== null &&
+        input.scenario_seed !== '') {
+        const seed = Number(input.scenario_seed);
+        if (!Number.isSafeInteger(seed) || seed < 0 || seed > 2147483647) {
+            throw Error('Scenario root seed must be an integer from 0 to 2147483647.');
+        }
+        const flag = '--rl-scenario-seed=';
+        const previous = firstOverrides.find(arg => arg.startsWith(flag));
+        if (previous && previous !== flag + seed) {
+            throw Error('Conflicting --rl-scenario-seed in environment arguments.');
+        }
+        if (!previous) firstOverrides.push(flag + seed);
+    }
+    let args = mergeEnvironmentArgs(defaults, firstOverrides);
     const stages = [{
         name: firstName, end_step: firstSteps, env_args: args,
         timeout_target_pct: timeoutTarget(input.target_timeout_pct, firstName),
@@ -514,6 +536,14 @@ function measure(item, status, force = false, boundary = '') {
             ...(running ? { pipeline, ppo } : {}),
         };
         samples.push(observation);
+        try {
+            appendMetricSample(DATA_ROOT, item);
+            delete item.metric_archive_error;
+        } catch (error) {
+            // A measurement-storage failure must be visible but must not
+            // terminate an otherwise healthy distributed training run.
+            item.metric_archive_error = error.message;
+        }
         delete item.awaiting_resume_sample_step;
         const stage = stageFor(item);
         const windowTimeout = mean('timeout_pct');
@@ -541,8 +571,8 @@ function measure(item, status, force = false, boundary = '') {
     }
 }
 
-const BENCHMARK_SETTINGS = path.join(paths.trainingRoot, 'Experiments', 'benchmark-settings.json');
-const HELDOUT_BENCHMARK_SETTINGS = path.join(paths.trainingRoot, 'Experiments', 'heldout-benchmark-settings.json');
+const BENCHMARK_SETTINGS = path.join(DATA_ROOT, 'benchmark-settings.json');
+const HELDOUT_BENCHMARK_SETTINGS = path.join(DATA_ROOT, 'heldout-benchmark-settings.json');
 const BENCHMARK_RUNNER = path.join(__dirname, 'bees_experiment_benchmark.py');
 const SCRIPTED_OPPONENTS = path.join(__dirname, 'bees_experiment_scripted.py');
 const SCRIPTED_NAMES = new Set(['stationary', 'strafe', 'pursuit']);
@@ -618,13 +648,14 @@ function benchmarkPlan(settingsPath = BENCHMARK_SETTINGS) {
                 .update(scenario.opponent + ':' + hashes.scripted).digest('hex')
             : hashes['opponent_' + index];
     }
-    return {
+    return freezeEvaluator({
         python: path.resolve(settings.python), build_id: settings.build_id.trim(),
         files, hashes, scenarios,
-    };
+    }, path.join(DATA_ROOT, 'EvaluatorVersions'));
 }
 
 function verifyBenchmarkPlan(plan) {
+    freezeEvaluator(plan, path.join(DATA_ROOT, 'EvaluatorVersions'));
     for (const [key, file] of Object.entries(plan.files)) {
         if (hashFile(file) !== plan.hashes[key]) throw Error('Benchmark ' + key + ' changed since it was selected.');
     }
@@ -656,7 +687,7 @@ async function trainerConfiguration(overrides, basePath = null) {
     }
     const snapshot = await configTool(['prepare', '--base', basePath || path.join(runtime.runtime_root, 'rl_1v1_config.yaml'),
         '--overrides', JSON.stringify(overrides),
-        '--output', path.join(paths.trainingRoot, 'Experiments', 'Configurations')]);
+        '--output', path.join(DATA_ROOT, 'Configurations')]);
     return { ...snapshot, runtime_version: runtime.runtime_version };
 }
 
@@ -697,13 +728,15 @@ async function evaluateItem(item) {
         state.message = 'Evaluating checkpoint for ' + item.name;
         save();
         const plan = item.benchmark;
-        const args = [BENCHMARK_RUNNER, '--benchmark', plan.files.recipe,
+        const args = [plan.files.runner, '--benchmark', plan.files.recipe,
             '--candidate-run', item.run_id,
             '--registry', path.join(paths.trainingRoot, 'registry.sqlite3'),
             '--opponent', plan.scenarios?.[0]?.opponent || plan.files.opponent, '--env', plan.files.environment,
             '--build-id', plan.build_id, '--output-root', BENCHMARK_REPORTS];
         const output = await new Promise((resolve, reject) => {
-            execFile(plan.python, args, { windowsHide: true, maxBuffer: 65536 },
+            execFile(plan.python, args, { windowsHide: true, maxBuffer: 65536,
+                env: { ...process.env, PYTHONPATH: [__dirname,
+                    process.env.PYTHONPATH || ''].filter(Boolean).join(path.delimiter) } },
                 (error, stdout, stderr) => error
                     ? reject(Error(String(stderr || error.message).trim()))
                     : resolve(stdout));
@@ -733,7 +766,9 @@ async function evaluateItem(item) {
 
 function execBenchmark(python, args) {
     return new Promise((resolve, reject) => {
-        execFile(python, args, { windowsHide: true, maxBuffer: 65536 },
+        execFile(python, args, { windowsHide: true, maxBuffer: 65536,
+            env: { ...process.env, PYTHONPATH: [__dirname,
+                process.env.PYTHONPATH || ''].filter(Boolean).join(path.delimiter) } },
             (error, stdout, stderr) => error
                 ? reject(Error(String(stderr || error.message).trim()))
                 : resolve(String(stdout).trim()));
@@ -832,7 +867,7 @@ async function evaluateStageSuite(item, index, status, checkpointRecord = null,
         verifyBenchmarkPlan(plan);
         if (!record.evaluation) {
             const result = await execBenchmark(plan.python, [
-                BENCHMARK_RUNNER, '--resolve-candidate-run', item.run_id,
+                plan.files.runner, '--resolve-candidate-run', item.run_id,
                 '--registry', path.join(paths.trainingRoot, 'registry.sqlite3'),
             ]);
             const candidate = JSON.parse(result);
@@ -866,7 +901,7 @@ async function evaluateStageSuite(item, index, status, checkpointRecord = null,
                     ' for ' + item.name;
                 save();
                 const output = await execBenchmark(plan.python, [
-                    BENCHMARK_RUNNER, '--benchmark', scenario.recipe,
+                    plan.files.runner, '--benchmark', scenario.recipe,
                     '--candidate', evaluation.candidate.path,
                     '--candidate-sha256', evaluation.candidate.sha256,
                     '--candidate-training-step', String(evaluation.candidate.training_step),
@@ -874,7 +909,7 @@ async function evaluateStageSuite(item, index, status, checkpointRecord = null,
                     '--stage-index', String(index), '--stage-name', item.stages[index].name,
                     '--stage-step', String(evaluation.boundary_step),
                     '--evaluation-id', evaluationId,
-                    '--evaluation-purpose', purpose,
+                    ...(evaluatorSupportsPurpose(plan) ? ['--evaluation-purpose', purpose] : []),
                     '--opponent', scenario.opponent || plan.files.opponent, '--env', plan.files.environment,
                     '--build-id', plan.build_id, '--output-root', BENCHMARK_REPORTS,
                 ]);
@@ -1608,7 +1643,7 @@ async function launch() {
 }
 
 async function cycle() {
-    if (busy) return;
+    if (busy || storageMigrationPending) return;
     busy = true;
     try {
         if (state.active_id) {
@@ -1697,6 +1732,10 @@ async function definition(input, original = null) {
         evaluation_mode: evaluationMode,
         checkpoint_history: [], checkpoint_next_index: 1,
         env_args, stages, stage_index: 0, stage_history: [],
+        scenario_seed: (() => {
+            const arg = env_args.find(value => value.startsWith('--rl-scenario-seed='));
+            return arg ? Number(arg.split('=')[1]) : null;
+        })(),
         release_build: String(release.build_id), samples: [], step: null, run_id: null,
         benchmark: evaluationMode === 'final' ? benchmark : null,
         stage_benchmarks: ['periodic', 'each_stage'].includes(evaluationMode) ? benchmark : null,
@@ -1751,7 +1790,9 @@ function editableDefinition(item) {
         max_steps: item.first_stage_steps ?? stages[0].end_step,
         unlimited_steps: item.unlimited_steps === true,
         max_minutes: item.max_minutes, stall_minutes: item.stall_minutes,
-        env_args: savedStageOverrides(defaults, stages[0].env_args),
+        env_args: savedStageOverrides(defaults, stages[0].env_args)
+            .filter(arg => !arg.startsWith('--rl-scenario-seed=')),
+        scenario_seed: item.scenario_seed ?? null,
         stage_name: stages[0].name,
         target_timeout_pct: stages[0].timeout_target_pct,
         stages: stages.slice(1).map((stage, index) => ({
@@ -2039,7 +2080,12 @@ const server = http.createServer(async (req, res) => {
         if (req.method === 'GET' && route === '/api/state') {
             return json(res, 200, { ...state, busy, rebuild_progress: rebuildProgress,
                 benchmark_configured: fs.existsSync(BENCHMARK_SETTINGS),
-                heldout_configured: fs.existsSync(HELDOUT_BENCHMARK_SETTINGS) });
+                heldout_configured: fs.existsSync(HELDOUT_BENCHMARK_SETTINGS),
+                experiment_data_root: DATA_ROOT, storage_restart_required: storageMigrationPending });
+        }
+        if (req.method === 'GET' && route === '/api/storage') {
+            return json(res, 200, { root: DATA_ROOT,
+                restart_required: storageMigrationPending });
         }
         if (req.method === 'GET' && route === '/api/curriculum-default') {
             return json(res, 200, { curriculum: curriculumDefault() });
@@ -2079,8 +2125,39 @@ const server = http.createServer(async (req, res) => {
         if (req.method === 'GET' && route === '/api/benchmarks') {
             return json(res, 200, { reports: benchmarkReports() });
         }
+        if (req.method === 'GET' && route === '/api/metric-history') {
+            const item = state.items.find(entry => entry.id === url.searchParams.get('id'));
+            if (!item) return json(res, 404, { error: 'Experiment not found.' });
+            return json(res, 200, archivedMetricsChart(DATA_ROOT, item,
+                url.searchParams.get('metric') || 'group_reward',
+                url.searchParams.get('axis') || 'steps',
+                Number(url.searchParams.get('smoothing') || 1)));
+        }
+        if (req.method === 'GET' && route === '/api/metric-archive') {
+            const item = state.items.find(entry => entry.id === url.searchParams.get('id'));
+            if (!item) return json(res, 404, { error: 'Experiment not found.' });
+            const source = metricArchivePath(DATA_ROOT, item);
+            if (!fs.existsSync(source)) return json(res, 404, {
+                error: 'No full-resolution metric archive exists yet for this experiment.' });
+            const stats = fs.statSync(source);
+            res.writeHead(200, {
+                'Content-Type': 'application/x-ndjson; charset=utf-8',
+                'Content-Disposition': 'attachment; filename="bees-' + item.id + '-metrics.jsonl"',
+                'Content-Length': stats.size, 'Cache-Control': 'no-store',
+                'X-Content-Type-Options': 'nosniff',
+            });
+            fs.createReadStream(source).pipe(res);
+            return;
+        }
         if (req.method === 'GET' && route === '/api/research-summary') {
-            return json(res, 200, { groups: summarizeResearch(state.items, benchmarkReports(Infinity)) });
+            const threshold = Number(url.searchParams.get('threshold') || 0.5);
+            if (!Number.isFinite(threshold) || threshold < 0 || threshold > 1)
+                return json(res, 400, { error: 'Win-rate threshold must be 0–100%.' });
+            const groups = summarizeResearch(state.items, benchmarkReports(Infinity));
+            return json(res, 200, {
+                groups, comparisons: compareResearch(groups),
+                efficiency: researchEfficiency(groups, threshold),
+            });
         }
         if (req.method === 'GET' && route === '/api/queued') {
             const item = state.items.find(x => x.id === url.searchParams.get('id'));
@@ -2095,6 +2172,21 @@ const server = http.createServer(async (req, res) => {
         }
         if (req.method !== 'POST') return json(res, 404, { error: 'Not found.' });
         const value = await body(req);
+        if (storageMigrationPending) {
+            return json(res, 409, { error: 'Data-location switch prepared. Restart this manager before making other changes.' });
+        }
+        if (route === '/api/storage') {
+            if (busy || state.active_id || state.armed || state.stop_requested) {
+                return json(res, 409, { error: 'Stop and complete all active experiments before relocating data.' });
+            }
+            if (value.root === DATA_ROOT)
+                return json(res, 200, { root: DATA_ROOT, restart_required: false });
+            const root = copyAndSelect(paths.trainingRoot, DATA_ROOT,
+                value.root, state, writeJsonAtomic);
+            storageMigrationPending = true;
+            return json(res, 200, { root, restart_required: true,
+                message: 'Data copied and configured. Stop and restart the Experiment Manager. The old directory remains as a backup.' });
+        }
         if (route === '/api/worker-envs') {
             const target = value.envs;
             const trainerId = String(value.trainer_id || '');
