@@ -177,7 +177,9 @@ class LinuxSupervisor {
         try{result=await this.inspectUnit(record);}
         catch(error){result={state:'unverified',active:false,
             diagnostic:String(error.message||error).slice(0,220)};}
-        const updated={...record,state:result.state,
+        const state=record.stop_requested_at && !result.active &&
+            result.state==='finished'?'stopped':result.state;
+        const updated={...record,state,
             observed_at:new Date().toISOString(),
             diagnostic:result.diagnostic||null};
         this.commit(this.state.records.map(r=>r.job_id===jobId?updated:r));
@@ -222,6 +224,11 @@ class LinuxSupervisor {
         // Re-check exact unit identity AND quota properties before stopping.
         const existing=await this.inspectUnit(record);
         if(!existing.active)return this.reconcile(jobId);
+        if(!record.stop_requested_at) {
+            const updated={...record,state:'stop_requested',
+                stop_requested_at:new Date().toISOString()};
+            this.commit(this.state.records.map(r=>r.job_id===jobId?updated:r));
+        }
         await this.runner('systemctl',['--user','stop',record.unit],
             {timeout:30000,maxBuffer:16384,windowsHide:true});
         return this.reconcile(jobId);
