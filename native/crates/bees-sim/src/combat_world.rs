@@ -453,6 +453,25 @@ impl CombatWorld {
         self.add_projectile(metadata, body)
     }
 
+    /// Set the two authored Ship.Create values needed by
+    /// CollisionAsteroid.ShipCollision. The normal user and training spawn
+    /// paths must both provide these; training-adjusted MaxHealth is not a
+    /// substitute for OriginalHealth.
+    pub fn set_ship_collision_profile(
+        &mut self,
+        ship_id: i64,
+        profile: ShipCollisionProfile,
+    ) -> Result<(), CombatWorldError> {
+        if !profile.valid() {
+            return Err(CombatWorldError::InvalidShipCollisionProfile);
+        }
+        if !self.ship_by_id.contains_key(&ship_id) {
+            return Err(CombatWorldError::UnknownShip);
+        }
+        self.ship_collision_profiles.insert(ship_id, profile);
+        Ok(())
+    }
+
     /// Preserve the persistent FleetShip identity independently of pooled
     /// combat wrappers. Required before bomb launch to permit future damage
     /// attribution even if the shooter has since been killed.
@@ -1307,6 +1326,89 @@ impl CombatWorld {
         }
     }
 
+    /// The root asteroid script receives proximity and primary collider
+    /// trigger callbacks separately. Proximity establishes NearbyShips,
+    /// then a primary overlap applies CollisionAsteroid.ShipCollision's
+    /// shared asteroid and ship damage rules.
+    fn process_asteroid_ship_contacts(&mut self) -> Result<(), CombatWorldError> {
+        for index in 0..self.physics.proximity_ship_exits().len() {
+            let contact = self.physics.proximity_ship_exits()[index];
+            self.nearby_asteroid_ships.remove(&(
+                contact.obstacle_id, contact.ship_id,
+            ));
+        }
+        for index in 0..self.physics.proximity_ship_entries().len() {
+            let contact = self.physics.proximity_ship_entries()[index];
+            let (Some(&asteroid_index), Some(&ship_index)) = (
+                self.obstacle_by_id.get(&contact.obstacle_id),
+                self.ship_by_id.get(&contact.ship_id),
+            ) else { continue };
+            if self.obstacles[asteroid_index].kind == ObstacleKind::CollisionAsteroid &&
+                self.physics.obstacles()[asteroid_index].active &&
+                self.physics.ships()[ship_index].active {
+                self.nearby_asteroid_ships.insert((
+                    contact.obstacle_id, contact.ship_id,
+                ));
+            }
+        }
+        for index in 0..self.physics.ship_obstacle_entries().len() {
+            let contact = self.physics.ship_obstacle_entries()[index];
+            let asteroid_id = contact.obstacle_id;
+            let ship_id = contact.ship_id;
+            if !self.nearby_asteroid_ships.contains(&(asteroid_id, ship_id)) {
+                continue;
+            }
+            let (Some(&asteroid_index), Some(&ship_index)) = (
+                self.obstacle_by_id.get(&asteroid_id),
+                self.ship_by_id.get(&ship_id),
+            ) else { continue };
+            if self.obstacles[asteroid_index].kind != ObstacleKind::CollisionAsteroid ||
+                !self.physics.obstacles()[asteroid_index].active ||
+                !self.physics.ships()[ship_index].active ||
+                self.ships[ship_index].vitals.is_dead() {
+                continue;
+            }
+            let profile = *self.ship_collision_profiles.get(&ship_id)
+                .ok_or(CombatWorldError::MissingShipCollisionProfile)?;
+            let asteroid_size_class = self.obstacles[asteroid_index].size_class;
+            let ship_health = self.ships[ship_index].vitals.health();
+            let Some(asteroid_vitals) = self.obstacles[asteroid_index].vitals.as_mut() else {
+                continue;
+            };
+            let Some((asteroid_damage, requested_ship_damage)) =
+                resolve_asteroid_ship_damage(
+                    asteroid_vitals, asteroid_size_class, profile.size_class,
+                    profile.original_health, ship_health,
+                ) else { continue };
+            self.nearby_asteroid_ships.remove(&(asteroid_id, ship_id));
+            self.events.push(CombatEvent::AsteroidHitShip {
+                obstacle_id: asteroid_id, ship_id, asteroid_damage,
+            });
+            // Ship.LogDamage is unattributed and never respects the
+            // projectile-only shots_harmless flag.
+            if let Some(delta) = self.ships[ship_index].vitals
+                .apply_damage(requested_ship_damage, false)? {
+                self.reservations.target_health_changed(
+                    ship_id, self.ships[ship_index].vitals.health(),
+                );
+                self.events.push(CombatEvent::UnattributedDamage { target_id: ship_id, delta });
+                if delta.killed {
+                    self.physics.ships_mut()[ship_index].active = false;
+                    self.nearby_asteroid_ships.retain(|&(_, other_id)| other_id != ship_id);
+                    self.events.push(CombatEvent::ShipDied {
+                        victim_id: ship_id, killer_id: 0, command_outcome_id: 0,
+                    });
+                }
+            }
+            if asteroid_damage.killed {
+                // GotKilledInShipCollision uses the same 0.35s death timer.
+                self.asteroid_delayed_kills.entry(asteroid_id)
+                    .or_insert_with(|| ScaledTimer::new(0.35, false, false));
+            }
+        }
+        Ok(())
+    }
+
     /// CollisionAsteroid.GotKilledInCollision schedules DelayKill after 0.35s,
     /// unlike projectile damage which removes the asteroid immediately.
     /// Sort due IDs because HashMap iteration order must never change the
@@ -1494,6 +1596,7 @@ impl CombatWorld {
         self.pending_obstacle_contacts
             .extend_from_slice(self.physics.obstacle_trigger_entries());
         self.process_map_border_contacts();
+        self.process_asteroid_ship_contacts()?;
         self.process_asteroid_hull_contacts();
 
         Ok(StepCounts {
