@@ -1612,6 +1612,124 @@ impl CombatWorld {
         }
     }
 
+    /// Pieces are visual/non-colliding ObstacleType.AsteroidPiece entities.
+    /// They still have world-local IDs, motion, fade state and pooling.
+    fn advance_asteroid_pieces(&mut self, dt: f32) {
+        for index in 0..self.pieces.len() {
+            if !self.pieces[index].active { continue; }
+            self.pieces[index].advance(dt);
+            if !self.pieces[index].active {
+                let piece = &self.pieces[index];
+                self.pooled_piece_prototypes.push(piece.prototype);
+                self.free_piece_slots.push(index);
+                self.events.push(CombatEvent::AsteroidPieceEnded {
+                    piece_id: piece.entity_id,
+                });
+            }
+        }
+    }
+
+    /// Real child asteroids join this CombatWorld, using the SAME exact
+    /// polygon/health/physics path as ordinary collision asteroids. The
+    /// original prefab and speed are selected only on first pool creation;
+    /// reactivated shard and debris objects retain that immutable profile.
+    /// This runs after physics contacts so newly spawned objects take their
+    /// first movement step on the following fixed tick.
+    fn spawn_pending_asteroid_fragments(
+        &mut self,
+        rng: &mut RandomStream,
+    ) -> Result<(), CombatWorldError> {
+        if self.pending_asteroid_breakups.is_empty() {
+            return Ok(());
+        }
+        let config = self.fragmentation.as_ref()
+            .ok_or(CombatWorldError::InvalidFragmentationConfiguration)?;
+        let catalog = Arc::clone(&config.catalog);
+        let settings = config.settings;
+
+        // Avoid exhausting world IDs partway through a breakup. The same
+        // monotonically increasing ID sequence also includes visual pieces.
+        let needed = self.pending_asteroid_breakups.iter().try_fold(
+            0usize,
+            |used, breakup| {
+                let counts = AsteroidBreakup::for_size_class(breakup.size_class);
+                used.checked_add(usize::from(counts.collision_asteroid_shards) +
+                    usize::from(counts.asteroid_pieces))
+            },
+        ).ok_or(CombatWorldError::EntityIdExhausted)?;
+        let id_count = i64::try_from(needed)
+            .map_err(|_| CombatWorldError::EntityIdExhausted)?;
+        self.next_entity_id.checked_add(id_count)
+            .ok_or(CombatWorldError::EntityIdExhausted)?;
+
+        let pending = std::mem::take(&mut self.pending_asteroid_breakups);
+        for parent in pending {
+            let breakup = AsteroidBreakup::for_size_class(parent.size_class);
+            for _ in 0..breakup.collision_asteroid_shards {
+                let profile = if let Some(old) = self.pooled_shard_prototypes.pop() {
+                    old
+                } else {
+                    let palette = &self.fragmentation.as_ref()
+                        .expect("validated fragmentation config").palette;
+                    new_shard_prototype(palette, settings, rng)
+                };
+                let (pose, velocity, angular_velocity) = spawn_fragment_motion(
+                    rng, settings, parent.position,
+                    parent.angular_velocity_degrees, profile.speed,
+                );
+                let shard_id = self.next_entity_id;
+                self.spawn_collision_asteroid(
+                    &catalog, profile.prefab_number, shard_id,
+                    pose, velocity, angular_velocity, settings.effective_max_health,
+                )?;
+                self.register_asteroid_shard(shard_id, parent.parent_id)?;
+                // Unity's Split BreakAwayAsteroids marks both flags true even
+                // when the parent has not yet crossed a map border.
+                if let Some(border) = self.asteroid_border_states.get_mut(&shard_id) {
+                    border.has_entered_map = true;
+                    border.has_touched_map_border = true;
+                }
+                self.active_shard_prototypes.insert(shard_id, profile);
+                self.events.push(CombatEvent::AsteroidShardSpawned {
+                    parent_id: parent.parent_id,
+                    shard_id,
+                    prefab_number: profile.prefab_number,
+                });
+            }
+
+            for _ in 0..breakup.asteroid_pieces {
+                let profile = if let Some(old) = self.pooled_piece_prototypes.pop() {
+                    old
+                } else {
+                    let palette = &self.fragmentation.as_ref()
+                        .expect("validated fragmentation config").palette;
+                    new_piece_prototype(palette, settings, rng)
+                };
+                let (pose, velocity, angular_velocity) = spawn_fragment_motion(
+                    rng, settings, parent.position,
+                    parent.angular_velocity_degrees, profile.speed,
+                );
+                let piece_id = self.next_entity_id;
+                self.next_entity_id = piece_id.checked_add(1)
+                    .ok_or(CombatWorldError::EntityIdExhausted)?;
+                let piece = AsteroidPieceState::new(
+                    piece_id, profile, pose, velocity, angular_velocity,
+                );
+                if let Some(slot) = self.free_piece_slots.pop() {
+                    self.pieces[slot] = piece;
+                } else {
+                    self.pieces.push(piece);
+                }
+                self.events.push(CombatEvent::AsteroidPieceSpawned {
+                    parent_id: parent.parent_id,
+                    piece_id,
+                    prefab_number: profile.prefab_number,
+                });
+            }
+        }
+        Ok(())
+    }
+
     /// This is a real collision -> health -> event path for direct, piercing
     /// and explosion projectiles. It is NOT a complete game/episode step.
     /// Contacts generated during physics are queued for the following step.
