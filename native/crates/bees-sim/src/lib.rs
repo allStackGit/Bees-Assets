@@ -23,6 +23,7 @@ pub mod movement;
 pub mod obstacle;
 pub mod physics;
 pub mod policy;
+pub mod polygon_obstacle_assets;
 pub mod projectile;
 pub mod projectile_assets;
 pub mod projectile_rules;
