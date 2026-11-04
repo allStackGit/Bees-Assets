@@ -1365,7 +1365,9 @@ impl CombatWorld {
             if self.obstacles[asteroid_index].kind != ObstacleKind::CollisionAsteroid ||
                 !self.physics.obstacles()[asteroid_index].active ||
                 !self.physics.ships()[ship_index].active ||
-                self.ships[ship_index].vitals.is_dead() {
+                self.ships[ship_index].vitals.is_dead() ||
+                self.obstacles[asteroid_index].vitals
+                    .map_or(true, |vitals| vitals.is_dead || vitals.health <= 0) {
                 continue;
             }
             let profile = *self.ship_collision_profiles.get(&ship_id)
