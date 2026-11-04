@@ -928,7 +928,7 @@ function recordUnityMaintenanceBuild(item, release, status) {
 // an ambiguous attempt after partial promotion.
 function clearUnpublishedUnityRebuild(item, release, status) {
     const attempt = item.unity_rebuild_attempt;
-    if (!attempt || !release || !status?.desired) return false;
+    if (!attempt || attempt.requires_manual_repair || !release || !status?.desired) return false;
     if (release.build_id !== attempt.old_build ||
         release.run_id !== item.run_id ||
         release.training_runtime?.runtime_version !== item.trainer_config?.runtime_version ||
@@ -1822,6 +1822,10 @@ const server = http.createServer(async (req, res) => {
                 return json(res, 200, { ok: true, ...rebuilt });
             } catch (error) {
                 let reconciled = false, cleanOldRelease = false;
+                if (/bootstrap rollback failed/i.test(error.message) &&
+                    item.unity_rebuild_attempt) {
+                    item.unity_rebuild_attempt.requires_manual_repair = true;
+                }
                 try {
                     const current = readJson(paths.latestReleasePath);
                     const controlState = await control();
