@@ -338,7 +338,7 @@ export function createAsteroidManifest(baseContent, baseGuid, otherPrefabs,
         fail('Collision Asteroids', 'expected all 28 asteroid prefabs exactly once');
     }
     return {
-        schema_version: 1,
+        schema_version: 2,
         source: 'Prefabs/Entities/Obstacles/Collision Asteroids and ConfigData.Gameplay',
         collision_asteroid_health_increment: healthIncrement,
         asteroids: asteroidTypes,
