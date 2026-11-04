@@ -276,8 +276,12 @@ Before dispatch, the supervisor atomically writes a local launch-intent
 record to a separate restricted-permission `supervisor-v1.json` ledger.
 After dispatch it checks the exact unit name, description and reported
 CPU/memory properties using `systemctl --user show`. A service is not
-reported as running until those controls have been inspected. A launch
-timeout, missing unit, insufficient privileges, or mismatched limit is
+reported as running until those controls have been inspected. Read-only
+native status includes bounded current RAM, accumulated CPU time and task
+count when the unit reports them. These are live observations returned by
+the local API, **not** a high-volume metrics archive. Identical
+observations do not trigger repeated registry writes. A launch timeout,
+missing unit, insufficient privileges, or mismatched limit is
 **unverified**, not automatically retried. On restart, existing records
 may be reconciled with systemd; the module never relaunches them
 implicitly. Stopping targets only a recorded and verified service,
