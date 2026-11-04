@@ -176,8 +176,9 @@ impl CollisionAsteroidCatalog {
             .checked_mul(self.health_increment)
             .ok_or(AsteroidAssetError::InvalidHealth)?;
         let active_health = effective_max_health.unwrap_or(original_health);
-        let vitals = ObstacleVitals::new(active_health, active_health)
-            .ok_or(AsteroidAssetError::InvalidHealth)?;
+        let vitals = ObstacleVitals::with_original_health(
+            active_health, active_health, original_health,
+        ).ok_or(AsteroidAssetError::InvalidHealth)?;
         let mut body = ObstacleBody::new(
             entity_id, pose, asset.collision_layer, asset.shape.clone(),
             linear_velocity, angular_velocity_degrees,
