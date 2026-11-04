@@ -40,6 +40,7 @@ function trainingFormPayload() {
 document.addEventListener('DOMContentLoaded', () => {
     const $ = id => document.getElementById(id);
     let project = 'bees', tab = 'monitor', state = null, editing = null;
+    let envArgsTouched = false;
     const action = async (route, payload) => {
         const r = await fetch('/api/'+route,{
             method:'POST',
@@ -76,6 +77,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         $('bees-controls').hidden=project!=='bees' || !['train','monitor'].includes(tab);
         if(tab==='train'&&project==='bees') loadBeesControl();
+        if(tab==='machines') loadLiveBeesWorkers();
     }
     function resetEditor() {
         editing=null;
@@ -247,6 +249,28 @@ document.addEventListener('DOMContentLoaded', () => {
         }catch(e){feedback('hub-placements',e.message);}
     });
 
+    async function loadLiveBeesWorkers() {
+        try {
+            const r=await fetch('/api/hub/bees/workers',{cache:'no-store'});
+            const data=await r.json();
+            if(!r.ok)throw Error(data.error||'Bees workers unavailable.');
+            $('hub-live-bees-rows').replaceChildren();
+            for(const w of data.workers||[]) {
+                const tr=document.createElement('tr');
+                cell(tr,w.trainer_id);cell(tr,w.role);cell(tr,w.platform);
+                cell(tr,w.state);cell(tr,w.envs??'—');
+                cell(tr,w.cpu_pct??'—');cell(tr,w.ram_pct??'—');
+                cell(tr,w.accepted_s??'—');cell(tr,w.error||'');
+                $('hub-live-bees-rows').append(tr);
+            }
+            feedback('hub-live-bees-note',data.workers?.length
+                ?'Live Bees worker reports for run '+(data.run_id||'unknown')
+                :'No Bees trainers currently registered.');
+        }catch(err){feedback('hub-live-bees-note',err.message);}
+    }
+    $('hub-live-bees-refresh').addEventListener('click',loadLiveBeesWorkers);
+    $('hub-bees-env-args').addEventListener('input',()=>{envArgsTouched=true;});
+
     async function loadBeesControl(){
         if(project!=='bees'||tab!=='train')return;
         try {
@@ -254,15 +278,21 @@ document.addEventListener('DOMContentLoaded', () => {
             const data=await r.json();
             if(!r.ok)throw Error(data.error||'Bees control unavailable.');
             const op=data.operator_operation;
+            if(!envArgsTouched) $('hub-bees-env-args').value=
+                (data.env_args||[]).join('\n');
             feedback('hub-bees-control-status','Run: '+(data.run_id||'None')+' · '+
                 (data.training_enabled?'Training active':'Training stopped')+
                 (data.experiment_owned?' · Experiment manager owns this run':''));
             feedback('hub-operator-message',op?op.kind+' · '+op.status+' · '+op.message:'');
-            const blocked=data.experiment_owned||data.pending_release||op?.status==='running';
+            const blocked=data.experiment_owned||data.queue_armed||
+                data.pending_release||op?.status==='running';
             $('hub-bees-resume').disabled=blocked||data.training_enabled;
             $('hub-bees-new').disabled=blocked||data.training_enabled;
             $('hub-bees-build').disabled=blocked||data.training_enabled;
+            $('hub-bees-update-workers').disabled=blocked||data.training_enabled||
+                !data.run_id;
             $('hub-bees-stop').disabled=blocked||!data.training_enabled;
+            $('hub-bees-env-args').disabled=blocked||data.training_enabled;
         }catch(err){feedback('hub-bees-control-status',err.message);}
     }
     async function beesCommand(kind,params,question){
@@ -273,16 +303,28 @@ document.addEventListener('DOMContentLoaded', () => {
             await loadBeesControl();
         }catch(e){feedback('hub-operator-message',e.message);}
     }
-    $('hub-bees-resume').addEventListener('click',()=>beesCommand('start',{mode:'resume'},
-        'Start or resume the current Bees run, preserving its optimizer and run identity?'));
-    $('hub-bees-new').addEventListener('click',()=>beesCommand('start',{mode:'new',confirm_new_run:true},
-        'Create a NEW Bees run and optimizer lineage? Previous checkpoints are retained.'));
+    function currentEnvArgs() {
+        return $('hub-bees-env-args').value.split('\n').map(s=>s.trim()).filter(Boolean);
+    }
+    $('hub-bees-resume').addEventListener('click',()=>beesCommand('start',{
+        mode:'resume',env_args:currentEnvArgs(),confirm_environment_change:true,
+    },'Start or resume the current Bees run? Changing these environment arguments can affect its scientific comparability; the optimizer lineage will be preserved.'));
+    $('hub-bees-new').addEventListener('click',()=>beesCommand('start',{
+        mode:'new',confirm_new_run:true,env_args:currentEnvArgs(),
+    },'Create a NEW Bees run and optimizer using the entered Unity environment arguments? Previous checkpoints are retained.'));
     $('hub-bees-build').addEventListener('click',()=>beesCommand('build',{confirm_build:true},
         'Compile new Windows and Linux Unity RL builds? Compatibility changes may require a new run.'));
     $('hub-bees-stop').addEventListener('click',()=>beesCommand('stop',{confirm_stop:true},
         'Gracefully stop ordinary Bees training and preserve its checkpoints?'));
+    $('hub-bees-update-workers').addEventListener('click',()=>beesCommand(
+        'update-workers',{confirm_update:true},
+        'Publish updated remote worker software for this stopped Bees run? The worker release and run identity are verified by the existing operator.'));
 
     selectTab('monitor');
     reload();
-    setInterval(()=>{reload();if(tab==='train')loadBeesControl();},10000);
+    setInterval(()=>{
+        reload();
+        if(tab==='train')loadBeesControl();
+        if(tab==='machines')loadLiveBeesWorkers();
+    },10000);
 });
