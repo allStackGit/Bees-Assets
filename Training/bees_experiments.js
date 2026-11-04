@@ -90,7 +90,21 @@ function timeoutTarget(raw, label) {
 function stagesForDefinition(input, defaults, firstSteps) {
     const firstName = String(input.stage_name || 'Initial stage').trim();
     if (!firstName || firstName.length > 100) throw Error('Invalid initial stage name.');
-    let args = mergeEnvironmentArgs(defaults, overridesForStage(input.env_args, firstName));
+    const firstOverrides = overridesForStage(input.env_args, firstName);
+    if (input.scenario_seed !== undefined && input.scenario_seed !== null &&
+        input.scenario_seed !== '') {
+        const seed = Number(input.scenario_seed);
+        if (!Number.isSafeInteger(seed) || seed < 0 || seed > 2147483647) {
+            throw Error('Scenario root seed must be an integer from 0 to 2147483647.');
+        }
+        const flag = '--rl-scenario-seed=';
+        const previous = firstOverrides.find(arg => arg.startsWith(flag));
+        if (previous && previous !== flag + seed) {
+            throw Error('Conflicting --rl-scenario-seed in environment arguments.');
+        }
+        if (!previous) firstOverrides.push(flag + seed);
+    }
+    let args = mergeEnvironmentArgs(defaults, firstOverrides);
     const stages = [{
         name: firstName, end_step: firstSteps, env_args: args,
         timeout_target_pct: timeoutTarget(input.target_timeout_pct, firstName),
@@ -1707,6 +1721,10 @@ async function definition(input, original = null) {
         evaluation_mode: evaluationMode,
         checkpoint_history: [], checkpoint_next_index: 1,
         env_args, stages, stage_index: 0, stage_history: [],
+        scenario_seed: (() => {
+            const arg = env_args.find(value => value.startsWith('--rl-scenario-seed='));
+            return arg ? Number(arg.split('=')[1]) : null;
+        })(),
         release_build: String(release.build_id), samples: [], step: null, run_id: null,
         benchmark: evaluationMode === 'final' ? benchmark : null,
         stage_benchmarks: ['periodic', 'each_stage'].includes(evaluationMode) ? benchmark : null,
@@ -1761,7 +1779,9 @@ function editableDefinition(item) {
         max_steps: item.first_stage_steps ?? stages[0].end_step,
         unlimited_steps: item.unlimited_steps === true,
         max_minutes: item.max_minutes, stall_minutes: item.stall_minutes,
-        env_args: savedStageOverrides(defaults, stages[0].env_args),
+        env_args: savedStageOverrides(defaults, stages[0].env_args)
+            .filter(arg => !arg.startsWith('--rl-scenario-seed=')),
+        scenario_seed: item.scenario_seed ?? null,
         stage_name: stages[0].name,
         target_timeout_pct: stages[0].timeout_target_pct,
         stages: stages.slice(1).map((stage, index) => ({
