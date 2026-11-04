@@ -56,6 +56,7 @@ function localActorSettings(config) {
         maxEnvs: Number(value.maxEnvs ?? 64),
         autoTune: value.autoTune === true,
         torchDevice: String(value.torchDevice || 'cpu'),
+        torchThreads: value.torchThreads == null ? null : Number(value.torchThreads),
     };
     if (!enabled) return settings;
     for (const [name, number] of [
@@ -76,6 +77,12 @@ function localActorSettings(config) {
         throw new Error(
             'localActor env bounds must satisfy 1 <= minEnvs <= initialEnvs <= maxEnvs <= 64.'
         );
+    }
+    if (settings.torchThreads !== null && (
+        !Number.isInteger(settings.torchThreads) ||
+        settings.torchThreads < 1 || settings.torchThreads > 64
+    )) {
+        throw new Error('localActor.torchThreads must be an integer between 1 and 64.');
     }
     if (!settings.torchDevice.trim()) {
         throw new Error('localActor.torchDevice must be non-empty.');
@@ -119,7 +126,7 @@ function buildLocalActorLaunchCommand(config, preparedRuntime, actorKey) {
     const actor = path.join(runtimeRoot, LOCAL_ACTOR_ENTRYPOINT);
     if (!exists(python)) throw new Error('Local actor learner Python is missing: ' + python);
     if (!exists(actor)) throw new Error('Local actor runtime entrypoint is missing: ' + actor);
-    return [
+    const command = [
         python,
         actor,
         '--actor-key', actorKey,
@@ -130,6 +137,10 @@ function buildLocalActorLaunchCommand(config, preparedRuntime, actorKey) {
         '--auth-token-file', paths.wanTokenPath,
         '--torch-device', settings.torchDevice,
     ];
+    if (settings.torchThreads !== null) {
+        command.push('--torch-threads', String(settings.torchThreads));
+    }
+    return command;
 }
 
 function prepareLocalActorReleaseRuntime(config, release, preparedRuntime) {
