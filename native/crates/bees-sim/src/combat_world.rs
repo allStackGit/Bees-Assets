@@ -98,7 +98,7 @@ pub struct ShipCollisionProfile {
 
 impl ShipCollisionProfile {
     pub fn valid(self) -> bool {
-        self.size_class.is_finite() && self.size_class > 0.0 &&
+        self.size_class.is_finite() && self.size_class >= 0.0 &&
             self.original_health > 0
     }
 }
