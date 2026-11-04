@@ -10,6 +10,7 @@ const { invokeMaintenanceUnityRebuild } = require('./operator/build');
 const { summarize: summarizeResearch } = require('./bees_experiment_research');
 const { freezePlan: freezeEvaluator, supportsPurpose: evaluatorSupportsPurpose } =
     require('./bees_experiment_evaluator_versions');
+const { selectedRoot, copyAndSelect } = require('./bees_experiment_storage');
 const { getStatus } = require('./operator/control');
 const { getPendingForcedNewRunPlan } = require('./operator/runtime');
 const { assertRlEnvironmentArgsValid } = require('./operator/validation');
@@ -21,12 +22,12 @@ const { paths, readJson, writeJsonAtomic, ensureDir, loadConfig, resolvePython, 
 const HOST = '127.0.0.1';
 // A fixed port also prevents two coordinators from writing the same state file.
 const PORT = 7148;
-const DATA_ROOT = path.join(paths.trainingRoot, 'Experiments');
+const DATA_ROOT = selectedRoot(paths.trainingRoot);
 const DB = path.join(DATA_ROOT, 'experiments-v1.json');
 const HTML = path.join(__dirname, 'experiments.html');
 const LOG_EXPORTER = path.join(__dirname, 'bees_experiment_logs.py');
 const RESEARCH_EXPORTER = path.join(__dirname, 'bees_experiment_research_export.py');
-const BENCHMARK_REPORTS = path.join(paths.trainingRoot, 'Experiments', 'Benchmarks');
+const BENCHMARK_REPORTS = path.join(DATA_ROOT, 'Benchmarks');
 const empty = () => ({ version: 1, armed: false, stop_requested: false, active_id: null, message: '', items: [] });
 const state = fs.existsSync(DB) ? readJson(DB) : empty();
 if (!state || state.version !== 1 || !Array.isArray(state.items) || typeof state.armed !== 'boolean') {
@@ -40,6 +41,7 @@ for (const item of state.items) delete item.performance_clock;
 let busy = false;
 let rebuildProgress = null;
 let logExportBusy = false;
+let storageMigrationPending = false;
 const logExportSessions = new Map();
 let lastRoutineSaveMs = 0;
 const save = () => { ensureDir(path.dirname(DB)); writeJsonAtomic(DB, state); };
@@ -49,7 +51,7 @@ const now = () => new Date().toISOString();
 // Step counts are JSON numbers; reject unsafe integers instead of silently
 // rounding learner-step boundaries. No arbitrary experiment-duration cap.
 const CURRICULUM_BUILTIN = path.join(__dirname, 'experiment-curriculum.json');
-const CURRICULUM_SAVED = path.join(paths.trainingRoot, 'Experiments', 'curriculum-default.json');
+const CURRICULUM_SAVED = path.join(DATA_ROOT, 'curriculum-default.json');
 
 function overridesForStage(raw, label) {
     if (!Array.isArray(raw) || raw.length > 64) throw Error(label + ': invalid environment arguments.');
@@ -544,8 +546,8 @@ function measure(item, status, force = false, boundary = '') {
     }
 }
 
-const BENCHMARK_SETTINGS = path.join(paths.trainingRoot, 'Experiments', 'benchmark-settings.json');
-const HELDOUT_BENCHMARK_SETTINGS = path.join(paths.trainingRoot, 'Experiments', 'heldout-benchmark-settings.json');
+const BENCHMARK_SETTINGS = path.join(DATA_ROOT, 'benchmark-settings.json');
+const HELDOUT_BENCHMARK_SETTINGS = path.join(DATA_ROOT, 'heldout-benchmark-settings.json');
 const BENCHMARK_RUNNER = path.join(__dirname, 'bees_experiment_benchmark.py');
 const SCRIPTED_OPPONENTS = path.join(__dirname, 'bees_experiment_scripted.py');
 const SCRIPTED_NAMES = new Set(['stationary', 'strafe', 'pursuit']);
@@ -660,7 +662,7 @@ async function trainerConfiguration(overrides, basePath = null) {
     }
     const snapshot = await configTool(['prepare', '--base', basePath || path.join(runtime.runtime_root, 'rl_1v1_config.yaml'),
         '--overrides', JSON.stringify(overrides),
-        '--output', path.join(paths.trainingRoot, 'Experiments', 'Configurations')]);
+        '--output', path.join(DATA_ROOT, 'Configurations')]);
     return { ...snapshot, runtime_version: runtime.runtime_version };
 }
 
@@ -1616,7 +1618,7 @@ async function launch() {
 }
 
 async function cycle() {
-    if (busy) return;
+    if (busy || storageMigrationPending) return;
     busy = true;
     try {
         if (state.active_id) {
@@ -2047,7 +2049,12 @@ const server = http.createServer(async (req, res) => {
         if (req.method === 'GET' && route === '/api/state') {
             return json(res, 200, { ...state, busy, rebuild_progress: rebuildProgress,
                 benchmark_configured: fs.existsSync(BENCHMARK_SETTINGS),
-                heldout_configured: fs.existsSync(HELDOUT_BENCHMARK_SETTINGS) });
+                heldout_configured: fs.existsSync(HELDOUT_BENCHMARK_SETTINGS),
+                experiment_data_root: DATA_ROOT, storage_restart_required: storageMigrationPending });
+        }
+        if (req.method === 'GET' && route === '/api/storage') {
+            return json(res, 200, { root: DATA_ROOT,
+                restart_required: storageMigrationPending });
         }
         if (req.method === 'GET' && route === '/api/curriculum-default') {
             return json(res, 200, { curriculum: curriculumDefault() });
@@ -2103,6 +2110,21 @@ const server = http.createServer(async (req, res) => {
         }
         if (req.method !== 'POST') return json(res, 404, { error: 'Not found.' });
         const value = await body(req);
+        if (storageMigrationPending) {
+            return json(res, 409, { error: 'Data-location switch prepared. Restart this manager before making other changes.' });
+        }
+        if (route === '/api/storage') {
+            if (busy || state.active_id || state.armed || state.stop_requested) {
+                return json(res, 409, { error: 'Stop and complete all active experiments before relocating data.' });
+            }
+            if (value.root === DATA_ROOT)
+                return json(res, 200, { root: DATA_ROOT, restart_required: false });
+            const root = copyAndSelect(paths.trainingRoot, DATA_ROOT,
+                value.root, state, writeJsonAtomic);
+            storageMigrationPending = true;
+            return json(res, 200, { root, restart_required: true,
+                message: 'Data copied and configured. Stop and restart the Experiment Manager. The old directory remains as a backup.' });
+        }
         if (route === '/api/worker-envs') {
             const target = value.envs;
             const trainerId = String(value.trainer_id || '');
