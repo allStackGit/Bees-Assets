@@ -445,10 +445,12 @@ function measure(item, status, force = false, boundary = '') {
                 record.first_target_at = observation.at;
             }
         }
-        if (samples.length > 500) item.samples = samples.filter((sample, i) =>
-            i === 0 || i === samples.length - 1 || i % 2 === 0 ||
-            ['pre-evaluation', 'post-evaluation',
-                'pre-transition', 'post-transition'].includes(sample.sample_context));
+        // Retain original minute-resolution samples. Halving all samples
+        // every time the 500-entry threshold was crossed repeatedly thinned
+        // early training history into multi-million-step gaps.
+        // This much larger fixed cap keeps weeks of data per experiment
+        // without exponential loss of historical resolution.
+        if (samples.length > 20000) samples.shift();
     }
 }
 
@@ -1761,7 +1763,7 @@ if (require.main === module) {
         console.log('Bees experiments: http://' + HOST + ':' + PORT);
         console.log('Records: ' + DB);
         setImmediate(cycle);
-        setInterval(cycle, 30000);
+        setInterval(cycle, 10000);
     });
 }
 module.exports = { server, definition, measure, workerSnapshot, benchmarkReports, benchmarkPlan, verifyBenchmarkPlan };
