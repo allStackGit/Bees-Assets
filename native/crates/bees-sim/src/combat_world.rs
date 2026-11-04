@@ -18,6 +18,7 @@ use std::sync::Arc;
 use crate::collision::{Aabb, Pose};
 use crate::asteroid_assets::CollisionAsteroidCatalog;
 use crate::box_obstacle_assets::BoxObstacleCatalog;
+use crate::polygon_obstacle_assets::PolygonObstacleCatalog;
 use crate::explosion_lifecycle::{ExplosionAction, ExplosionEvent, ExplosionTimeline};
 use crate::bomb::{BombAction, StrikerBombFuse};
 use crate::combat::{CombatError, DamageSource, HitEvent, ShipVitals};
@@ -486,6 +487,19 @@ impl CombatWorld {
         let asset = catalog.by_name(name)
             .ok_or(CombatWorldError::InvalidObstacle)?;
         let (obstacle, body) = asset.prepare_spawn(entity_id, override_pose)?;
+        self.add_obstacle(obstacle, body)
+    }
+
+    /// Spawn the standalone authored concave Polygon Obstacle without
+    /// treating its proximity sensor as a second damage collider.
+    pub fn spawn_polygon_obstacle(
+        &mut self,
+        catalog: &PolygonObstacleCatalog,
+        entity_id: i64,
+        override_pose: Option<Pose>,
+    ) -> Result<(), CombatWorldError> {
+        let (obstacle, body) = catalog.prepare_spawn(entity_id, override_pose)
+            .map_err(|_| CombatWorldError::InvalidObstacle)?;
         self.add_obstacle(obstacle, body)
     }
 
