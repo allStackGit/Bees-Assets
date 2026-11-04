@@ -604,7 +604,8 @@ function benchmarkPlan(settingsPath = BENCHMARK_SETTINGS) {
         }
         return {
             id: entry.id, recipe, benchmark_id: recipeSpec.id,
-            benchmark_revision: recipeSpec.revision, opponent, opponent_kind,
+            benchmark_revision: recipeSpec.revision, seed: recipeSpec.seed,
+            opponent, opponent_kind,
         };
     });
     files.recipe = scenarios[0].recipe;
@@ -1681,9 +1682,12 @@ async function definition(input, original = null) {
         : null;
     const developmentRecipes = new Set((benchmark?.scenarios || []).map((scenario, i) =>
         benchmark.hashes['recipe_' + i]));
+    const developmentSeeds = new Set((benchmark?.scenarios || [])
+        .map(scenario => scenario.seed).filter(Number.isSafeInteger));
     if (heldoutPlan && heldoutPlan.scenarios.some((scenario, i) =>
-        developmentRecipes.has(heldoutPlan.hashes['recipe_' + i]))) {
-        throw Error('Held-out recipes must be different from development evaluation recipes.');
+        developmentRecipes.has(heldoutPlan.hashes['recipe_' + i]) ||
+        developmentSeeds.has(scenario.seed))) {
+        throw Error('Held-out benchmarks must use different recipes and evaluation seeds from development.');
     }
     return {
         id: crypto.randomUUID(), name, group, status: 'queued', created_at: now(),
