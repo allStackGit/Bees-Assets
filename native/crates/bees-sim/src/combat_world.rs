@@ -732,6 +732,11 @@ impl CombatWorld {
         dt: f32,
         collision_matrix: &CollisionMatrix,
     ) -> Result<StepCounts, CombatWorldError> {
+        // Reject bad deltas before advancing delayed timers or modifying
+        // health. Physics validates dt too, but that is too late here.
+        if !dt.is_finite() || dt <= 0.0 {
+            return Err(CombatWorldError::Physics(PhysicsError::InvalidStep));
+        }
         self.events.clear();
         if self.frozen_after_elimination {
             return Ok(StepCounts {
