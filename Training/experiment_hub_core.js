@@ -49,7 +49,12 @@ class ExperimentHub {
         if (!s.projects.some(p=>p.id==='bees' && p.adapter==='bees'))
             throw Error('Experiment Hub Bees project identity changed; refusing to start.');
     }
-    save() { writeAtomic(this.file, this.state); }
+    // Publish in-memory changes only after the complete registry is durably
+    // written. A full disk must not leave the API believing a draft was saved.
+    commit(next) {
+        writeAtomic(this.file, next);
+        this.state = next;
+    }
     snapshot() { return copy(this.state); }
     project(id) {
         const project = this.state.projects.find(p=>p.id===id);
@@ -64,16 +69,20 @@ class ExperimentHub {
             id:value.id, name:name(value.name,'Project name'), adapter:'unconfigured',
             description:String(value.description||'').slice(0,500), created_at:now(),
         };
-        this.state.projects.push(project); this.save(); return copy(project);
+        const next = copy(this.state);
+        next.projects.push(project);
+        this.commit(next);
+        return copy(project);
     }
     saveConfiguration(value) {
         if (!object(value)) throw Error('Missing configuration.');
         const project = this.project(value.project_id);
         const params = config(value.parameters);
         const time = now();
+        const next = copy(this.state);
         let item;
         if (value.id) {
-            item = this.state.configurations.find(c=>c.id===value.id && c.project_id===project.id);
+            item = next.configurations.find(c=>c.id===value.id && c.project_id===project.id);
             if (!item) throw Error('Configuration not found.');
             if (item.revision !== value.revision) throw Error('Configuration changed; reopen it before saving.');
             item.name = name(value.name,'Configuration name');
@@ -86,9 +95,10 @@ class ExperimentHub {
                 name:name(value.name,'Configuration name'), parameters:params,
                 revision:1, created_at:time, updated_at:time,
             };
-            this.state.configurations.push(item);
+            next.configurations.push(item);
         }
-        this.save(); return copy(item);
+        this.commit(next);
+        return copy(item);
     }
     queueConfiguration(value) {
         if (!object(value)) throw Error('Invalid job request.');
@@ -121,7 +131,10 @@ class ExperimentHub {
             status:'unverified', cpus:cpu, ram_mb:ram, gpus:copy(gpu),
             created_at:now(), last_seen_at:null,
         };
-        this.state.machines.push(machine); this.save(); return copy(machine);
+        const next = copy(this.state);
+        next.machines.push(machine);
+        this.commit(next);
+        return copy(machine);
     }
 }
 module.exports = {ExperimentHub, writeAtomic};
