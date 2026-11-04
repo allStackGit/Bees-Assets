@@ -24,6 +24,8 @@ pub struct ProjectileAsset {
     pub collision_layer: u8,
     pub has_body: bool,
     pub rocket_max_speed: Option<f32>,
+    pub shot_speed: Option<f64>,
+    pub split_count: Option<u8>,
     pub shape: Option<ShipShape>,
     /// Immutable gameplay animation events imported from the Unity clips.
     pub explosion_events: Arc<[ExplosionEvent]>, 
@@ -75,6 +77,8 @@ struct RawProjectile {
     layer: u8,
     has_body: bool,
     rocket_max_speed: Option<f32>,
+    shot_speed: Option<f64>,
+    split_count: Option<u8>,
     shape: Option<RawShape>,
     #[serde(default)]
     animation_events: Vec<RawAnimationEvent>,
@@ -112,7 +116,11 @@ impl ProjectileAssetCatalog {
             }
             if entry.name.is_empty() || entry.layer >= 32 ||
                 (entry.projectile_type == 5 && !entry.rocket_max_speed.is_some_and(|speed| speed.is_finite() && speed > 0.0)) ||
-                (entry.projectile_type != 5 && entry.rocket_max_speed.is_some()) {
+                (entry.projectile_type != 5 && entry.rocket_max_speed.is_some()) ||
+                (entry.projectile_type == 1 && !entry.shot_speed.is_some_and(|v| v.is_finite() && v > 0.0)) ||
+                (entry.projectile_type != 1 && entry.shot_speed.is_some()) ||
+                (entry.projectile_type == 9 && !entry.split_count.is_some_and(|n| n > 0)) ||
+                (entry.projectile_type != 9 && entry.split_count.is_some()) {
                 return Err(ProjectileAssetError::InvalidShape(entry.projectile_type as u8));
             }
             let shape = entry.shape
@@ -155,6 +163,8 @@ impl ProjectileAssetCatalog {
                 collision_layer: entry.layer,
                 has_body: entry.has_body,
                 rocket_max_speed: entry.rocket_max_speed,
+                shot_speed: entry.shot_speed,
+                split_count: entry.split_count,
                 shape,
                 explosion_events: Arc::from(animation_events.into_boxed_slice()),
             });
