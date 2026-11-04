@@ -215,11 +215,11 @@ An agent-port bind failure leaves the existing Bees coordinator operational;
 the Hub agent service reports the listener failure and machines remain
 unavailable until the port conflict is resolved.
 
-The agent has **no remote command interface** and does not start or stop
-Bees, Ants, or any third-party training process. Enrolled machines are still
-ineligible for Hub execution. It acknowledges coordination offers, but does not
-enforce CPU, RAM, or GPU limits; even a claimed placement may interfere
-with an existing untracked job.
+By default the agent is **observation-only**. With an explicit local
+opt-in and a trusted installed project adapter, it may process bounded
+machine-bound `start`, `inspect` and `stop` directives for CPU-only
+jobs. It never accepts a server-supplied executable, shell command or
+environment override, and it cannot take over existing Bees training.
 
 ## Native execution readiness (discovery, not enforcement)
 
@@ -240,20 +240,19 @@ machine's Native controls column distinguishes available OS facilities
 from an actually installed supervisor. Older agents without a report
 remain observable, but are likewise ineligible for execution.
 
-**No work may transition from `waiting_adapter` into running on the
-strength of a heartbeat, a detected cgroup, or a coordination lease.**
-Native process ownership, CPU and RAM control and validation, GPU
-visibility/isolation, and trusted installed per-project adapters must
-be implemented before enabling real execution. Merely installing
-systemd or recognizing a Windows OS is insufficient.
+A heartbeat, detected cgroup or coordination lease alone **never**
+permits execution. A locally opted-in installed project adapter, explicit
+administrator start authorization, and successful native service/limit
+verification are all required. GPU and Windows execution remain blocked.
 
-## Local Linux systemd process supervisor (not connected to dispatch)
+## Linux native supervisor and authenticated dispatch (CPU-only)
 
 `experiment_hub_linux_supervisor.js` now provides a **locally invoked**
 `LinuxSupervisor` API for executing a trusted adapter inside a transient
 **user systemd service**, not in an unmanaged Node child process. This module
-is not wired into the Hub's HTTP routes, agent heartbeat offers, or job state
-transitions. No queued job automatically starts because the module exists.
+is invoked by the machine-local execution bridge only after an operator
+explicitly authorizes the job from the dashboard. No queued job starts
+automatically because the module exists.
 
 The caller must install a **trusted adapter in local code** for a specific
 project. Only that adapter specifies an absolute executable path, optional
@@ -296,19 +295,68 @@ secrets are stored in that ledger. The trusted adapter must not put
 secrets in command-line arguments because systemd unit metadata and
 process listings can expose them.
 
-This is **not yet a dashboard-controlled execution feature**. An explicit,
-durable dispatch authorization and lifecycle handshake between the
-Hub's job registry, the authenticated agent, and this local supervisor
-must be developed before any pending job is allowed to run. Windows Job
-Objects, Linux physical GPU mapping, ROCm/CUDA GPU isolation, workload
-priority/rebalancing and cross-project production throughput are still
-unimplemented.
+### Operator-initiated CPU-only execution
+
+The manager accepts `POST /api/hub/jobs/start` with
+`{job_id,confirm_start:true}` only for a frozen non-Bees job holding a
+fresh acknowledged lease on a connected Linux agent that has explicitly
+advertised the matching *local* installed adapter and CPU/memory cgroup
+controllers. It atomically records `start_requested` and a unique
+dispatch identity before returning a typed directive through the
+restricted authenticated agent heartbeat on port 7149.
+
+Execution is disabled by default. On the Linux worker, the machine
+administrator must configure **all three local settings**:
+
+- `EXPERIMENT_HUB_ENABLE_EXECUTION=1`
+- `EXPERIMENT_HUB_LOCAL_ADAPTERS=/absolute/path/to/approved-adapters.js`
+- `EXPERIMENT_HUB_LOCAL_ROOT=/absolute/path/to/private-supervisor-state`
+
+The adapter file must export an object keyed by registered non-Bees
+project IDs. Each project has an absolute `executable`, optional
+absolute `cwd`, and an `args(frozenParameters)` function producing
+validated arguments. The machine administrator reviews and installs
+this executable separately. Saved experiment configurations never
+supply a program path or shell command. **This PR does not install
+working Ants, LLM, or other project runners on a machine.** Local
+adapter configuration and authentication secrets must not be committed.
+
+The agent sends a native report only after its local systemd supervisor
+inspects the exact service identity and `CPUQuota`/`MemoryMax` limits.
+Repeated launch instructions are reconciled against the durable local
+journal, never executed twice. One directive is delivered per heartbeat:
+stops take priority, then starts, then round-robin inspections. The
+manager records `running`, `finished`, `failed`, `stopped`, or
+`unverified` status from the authenticated machine and exposes
+current memory use, CPU time and task count without per-poll history
+duplication.
+
+`POST /api/hub/jobs/stop` with `{job_id,confirm_stop:true}` records
+`stop_requested`. If the worker is offline, the request persists
+until it reconnects. A verified native stop is required before the
+job can be marked `stopped`. For `finished`, `failed`, or `stopped`
+jobs, an operator can **Release completed capacity**; the original
+machine and lease IDs remain in the completed job history. Active or
+unverified jobs cannot release capacity through this route.
+
+Any unknown native unit, lost local ownership record, unmatched
+configuration hash, failed verification, or uncertain launch leaves
+the job `unverified` without relaunch or automatic capacity release.
+This design requires inspection before recovery, rather than treating
+a network disconnect as evidence the process ended.
+
+**Real deployment is still unverified.** The lifecycle has been
+exercised using isolated HTTP, filesystem, cryptography, and systemd
+simulations, not Halifax's Debian user service. Linux systemd
+delegation/permissions, real process termination and limits,
+Windows Job Objects, GPU device mapping/isolation, and cross-project
+throughput/rebalancing remain outstanding.
 
 ## Not yet implemented
 
-Hub-to-agent dispatch authorization, trusted installed project adapters,
-Windows Job Objects, production qualification of local Linux systemd control,
-GPU device verification and isolation, the multi-project job scheduler,
+Preinstalled trusted project adapters, Windows Job Objects, production
+qualification of native Linux systemd control, GPU device verification
+and isolation, automatic multi-project job scheduling,
 cross-project run history and metrics ingestion, safe live rebalancing, and
 comprehensive CLI parity for all runtime configuration controls remain
 future work. These
