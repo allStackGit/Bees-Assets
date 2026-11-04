@@ -194,7 +194,17 @@
           0
         ],
         "radius": 2.5
-      }
+      },
+      "explosion_events": [
+        {
+          "time_seconds": 0.5,
+          "action": "set_harmless"
+        },
+        {
+          "time_seconds": 0.8,
+          "action": "kill"
+        }
+      ]
     },
     {
       "name": "Fire Barge Explosion",
@@ -245,7 +255,42 @@
           0
         ],
         "radius": 1
-      }
+      },
+      "explosion_events": [
+        {
+          "time_seconds": 0,
+          "action": "set_radius",
+          "radius": 1
+        },
+        {
+          "time_seconds": 1.25,
+          "action": "set_radius",
+          "radius": 17
+        },
+        {
+          "time_seconds": 1.4166666,
+          "action": "set_radius",
+          "radius": 34
+        },
+        {
+          "time_seconds": 1.5,
+          "action": "set_radius",
+          "radius": 51
+        },
+        {
+          "time_seconds": 1.5833334,
+          "action": "set_radius",
+          "radius": 56
+        },
+        {
+          "time_seconds": 2.0833333,
+          "action": "set_harmless"
+        },
+        {
+          "time_seconds": 2.8333333,
+          "action": "kill"
+        }
+      ]
     },
     {
       "name": "Fire Tank Explosion",
