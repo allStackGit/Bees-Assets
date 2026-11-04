@@ -100,8 +100,15 @@ function fromEnvironment(env=process.env,options={}) {
     const adapters=(options.loadAdapters||require)(adapterFile);
     if(!adapters||typeof adapters!=='object'||Array.isArray(adapters)||
         !Object.keys(adapters).length||
-        Object.keys(adapters).some(p=>!ID.test(p)||p==='bees'))
-        throw Error('Install one or more locally trusted, non-Bees project adapters.');
+        Object.entries(adapters).some(([project,adapter])=>
+            !ID.test(project)||project==='bees'||
+            !adapter||typeof adapter!=='object'||
+            typeof adapter.executable!=='string'||
+            !path.isAbsolute(adapter.executable)||
+            typeof adapter.args!=='function'||
+            (adapter.cwd!=null&&
+                (typeof adapter.cwd!=='string'||!path.isAbsolute(adapter.cwd)))))
+        throw Error('Install one or more valid locally trusted, non-Bees project adapters.');
     const machineId=env.EXPERIMENT_HUB_MACHINE_ID;
     if(!ID.test(String(machineId||'')))throw Error('Invalid local machine identity.');
     const capabilities=(options.inspectHost||inspectHost)();
