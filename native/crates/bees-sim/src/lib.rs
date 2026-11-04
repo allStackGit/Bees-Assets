@@ -13,6 +13,7 @@ pub mod combat;
 pub mod combat_world;
 pub mod control;
 pub mod damage;
+pub mod damage_reservations;
 pub mod geometry;
 pub mod movement;
 pub mod physics;
