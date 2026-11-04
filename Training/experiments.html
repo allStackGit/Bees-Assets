@@ -1977,10 +1977,16 @@ function closeQueuedEditor() {
     $('create').querySelector('button[type=submit]').textContent = 'Add to queue';
     $('cancel-edit').hidden = true;
     $('create').reset();
+    $('replication-controls').hidden = false;
+    $('replicate-enabled').checked = false;
+    $('replicate-count').disabled = true;
     applyCurriculum(defaultCurriculum);
     loadTrainerDefaults();
 }
 $('cancel-edit').addEventListener('click', closeQueuedEditor);
+$('replicate-enabled').addEventListener('change', () => {
+    $('replicate-count').disabled = !$('replicate-enabled').checked;
+});
 
 async function openQueuedEditor(id) {
     try {
@@ -1993,6 +1999,7 @@ async function openQueuedEditor(id) {
         }
         editingId = data.id;
         editingRevision = data.revision;
+        $('replication-controls').hidden = true;
         editingDefaultsSha = data.defaults_sha256;
         $('name').value = def.name;
         $('group').value = def.group;
@@ -2046,6 +2053,8 @@ $('create').addEventListener('submit', async e => {
                     .map(x => x.trim()).filter(Boolean),
             })),
             evaluation_mode: $('evaluation-mode').value,
+            replicates: !editingId && $('replicate-enabled').checked
+                ? Number($('replicate-count').value) : 1,
             trainer: {
                 hyperparameters: Object.fromEntries(['beta','lambd','learning_rate','batch_size','buffer_size','num_epoch'].map(k => [k, Number($('trainer-' + k).value)])),
                 network_settings: { num_layers: Number($('trainer-num_layers').value), normalize: $('trainer-normalize').value === 'true' },
