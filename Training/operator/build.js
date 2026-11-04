@@ -532,7 +532,9 @@ async function invokeMaintenanceUnityRebuild(options = {}) {
     const again = await getStatus(config, admin);
     if (again.desired?.training_enabled || again.desired?.pending_release ||
         again.desired?.run_id !== release.run_id ||
-        again.desired?.canonical_build_id !== release.build_id) {
+        again.desired?.canonical_build_id !== release.build_id ||
+        again.desired?.compatibility_key !== release.compatibility_key ||
+        JSON.stringify(again.desired?.environment_args || []) !== JSON.stringify(envArgs)) {
         throw Error('Training control changed while compiling. The candidate was not published.');
     }
 
