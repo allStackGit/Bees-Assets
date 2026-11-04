@@ -578,6 +578,46 @@ impl CombatWorld {
         }
     }
 
+    /// Gameplay AnimationClip events operate on the same world-owned
+    /// collision shapes used by graphical gameplay and headless training.
+    /// All due events are consumed in clip order; callbacks can affect
+    /// broadphase contacts during the physics step immediately below.
+    fn update_explosion_timelines(&mut self, dt: f32) -> Result<(), CombatWorldError> {
+        for index in 0..self.projectiles.len() {
+            if !self.physics.projectiles()[index].active ||
+                !self.projectiles[index].is_explosion() {
+                continue;
+            }
+            self.projectiles[index].advance_explosion_timeline(dt);
+            while let Some(action) = self.projectiles[index].next_explosion_action() {
+                match action {
+                    ExplosionAction::SetRadius(radius) => {
+                        let offset = match self.physics.projectiles()[index].shape() {
+                            Some(ShipShape::Circle { offset, .. }) => *offset,
+                            _ => return Err(CombatWorldError::Physics(
+                                PhysicsError::InvalidCollider,
+                            )),
+                        };
+                        self.physics.projectiles_mut()[index].replace_shape(
+                            Some(ShipShape::Circle { offset, radius }),
+                        )?;
+                    }
+                    ExplosionAction::SetHarmless => {
+                        self.projectiles[index].set_explosion_harmless(true);
+                    }
+                    ExplosionAction::Kill => {
+                        // This is the same idempotent cleanup used for an
+                        // explicit end, including transferred reservations
+                        // and pooled physical/metadata storage.
+                        self.end_projectile(index);
+                        break;
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Advance script-driven bombs. Their physics bodies have no collider
     /// or velocity; the bomb remains allocated through both callback stages.
     fn update_striker_bombs(&mut self, dt: f32) -> Result<(), CombatWorldError> {
@@ -836,6 +876,7 @@ impl CombatWorld {
         }
         self.update_rocket_timers(dt);
         self.update_striker_bombs(dt)?;
+        self.update_explosion_timelines(dt)?;
         let new_contacts = self.physics.step(dt, collision_matrix)?;
         self.pending_contacts.extend_from_slice(new_contacts);
 
