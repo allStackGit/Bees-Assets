@@ -5,7 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { execFile } = require('node:child_process');
-const { invokeStart, invokeStop } = require('./operator/commands');
+const { invokeStart, invokeStop, invokeWorkerRuntime } = require('./operator/commands');
 const { getStatus } = require('./operator/control');
 const { getPendingForcedNewRunPlan } = require('./operator/runtime');
 const { assertRlEnvironmentArgsValid } = require('./operator/validation');
@@ -1718,6 +1718,48 @@ const server = http.createServer(async (req, res) => {
             save();
             setImmediate(cycle);
             return json(res, 202, { ok: true });
+        }
+        if (route === '/api/update-workers') {
+            const item = active();
+            if (busy || !item || item.status !== 'paused' ||
+                state.armed || state.stop_requested) {
+                return json(res, 409, { error: 'Pause the active experiment before updating its workers.' });
+            }
+            const status = await control();
+            assertMaintenanceOwnership(item, status);
+            if (status.desired.training_enabled) {
+                return json(res, 409, { error: 'Training is not stopped. Worker update refused.' });
+            }
+            assertSameLineageCheckpoint(item);
+            busy = true;
+            state.message = 'Preparing worker-only software update. Experiment remains paused.';
+            save();
+            try {
+                const published = await invokeWorkerRuntime({ expectedRunId: item.run_id });
+                const after = await control();
+                if (after.desired?.training_enabled ||
+                    after.desired?.run_id !== item.run_id ||
+                    after.desired?.canonical_build_id !== item.release_build) {
+                    throw Error('Worker runtime published, but training control ownership changed. Resume blocked.');
+                }
+                item.worker_software_updates = item.worker_software_updates || [];
+                item.worker_software_updates.push({
+                    at: now(), runtime_version: published.worker_runtime_version,
+                    learner_runtime_version: published.learner_runtime_version,
+                });
+                state.message = 'Worker-only runtime published for ' + item.name +
+                    '. Remote supervisors automatically adopt it. Resume the same experiment ' +
+                    'and check Worker Status for live-resize support.';
+                save();
+                return json(res, 200, { ok: true, ...published });
+            } catch (error) {
+                state.message = 'Worker software update failed: ' + error.message +
+                    '. The experiment remains paused; inspect the error before resuming.';
+                save();
+                return json(res, 409, { error: state.message });
+            } finally {
+                busy = false;
+            }
         }
         if (route === '/api/resume') {
             const item = active();
