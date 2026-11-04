@@ -886,49 +886,52 @@ impl CombatWorld {
         }
         let kind = self.obstacles[obstacle_index].kind;
         let power = self.projectiles[shot_index].power;
-        let behavior = &mut self.projectiles[shot_index].behavior;
-        match behavior {
-            ImpactBehavior::Explosion { contacts, .. } => {
-                // RocketExplosion.ContactObstacle skips dead/border obstacles,
-                // remembers the rest, and only damages collision asteroids.
-                let accepted = contacts.accept_obstacle(
+        if self.projectiles[shot_index].is_explosion() {
+            // RocketExplosion.ContactObstacle tracks each obstacle at most
+            // once, ignores map borders, and damages only collision asteroids.
+            let accepted = {
+                let ImpactBehavior::Explosion { contacts, .. } =
+                    &mut self.projectiles[shot_index].behavior else {
+                        unreachable!("checked explosion behavior")
+                    };
+                contacts.accept_obstacle(
                     contact.obstacle_id,
                     !self.obstacles[obstacle_index].live(),
                     kind == ObstacleKind::MapBorder,
-                );
-                if accepted && kind == ObstacleKind::CollisionAsteroid {
+                )
+            };
+            if accepted && kind == ObstacleKind::CollisionAsteroid {
+                self.damage_collision_asteroid(contact, obstacle_index, power);
+            }
+        } else if matches!(
+            &self.projectiles[shot_index].behavior,
+            ImpactBehavior::Rocket { .. }
+        ) {
+            // Rocket.ContactObstacle ends the rocket, but only non-border
+            // contacts continue into a new damage-dealing explosion.
+            if kind != ObstacleKind::MapBorder {
+                self.spawn_rocket_explosion(shot_index)?;
+            }
+            self.end_projectile(shot_index);
+        } else {
+            // Projectile.ContactObstacle skips already dead obstacles.
+            if !self.obstacles[obstacle_index].live() {
+                return Ok(());
+            }
+            match kind {
+                ObstacleKind::MapBorder => {}
+                ObstacleKind::CollisionAsteroid => {
                     self.damage_collision_asteroid(contact, obstacle_index, power);
                 }
-            }
-            ImpactBehavior::Rocket { .. } => {
-                // Rocket.ContactObstacle always ends the rocket. It creates
-                // the explosion on all obstacle kinds EXCEPT MapBorder and
-                // never directly damages the asteroid.
-                if kind != ObstacleKind::MapBorder {
-                    self.spawn_rocket_explosion(shot_index)?;
+                ObstacleKind::StaticObstacle => {
+                    self.events.push(CombatEvent::StaticObstacleImpact {
+                        projectile_id: contact.projectile_id,
+                        obstacle_id: contact.obstacle_id,
+                    });
                 }
-                self.end_projectile(shot_index);
+                ObstacleKind::MiningAsteroid | ObstacleKind::AsteroidPiece => {}
             }
-            _ => {
-                // Projectile.ContactObstacle skips already dead obstacles.
-                if !self.obstacles[obstacle_index].live() {
-                    return Ok(());
-                }
-                match kind {
-                    ObstacleKind::MapBorder => {}
-                    ObstacleKind::CollisionAsteroid => {
-                        self.damage_collision_asteroid(contact, obstacle_index, power);
-                    }
-                    ObstacleKind::StaticObstacle => {
-                        self.events.push(CombatEvent::StaticObstacleImpact {
-                            projectile_id: contact.projectile_id,
-                            obstacle_id: contact.obstacle_id,
-                        });
-                    }
-                    ObstacleKind::MiningAsteroid | ObstacleKind::AsteroidPiece => {}
-                }
-                self.end_projectile(shot_index);
-            }
+            self.end_projectile(shot_index);
         }
         Ok(())
     }
