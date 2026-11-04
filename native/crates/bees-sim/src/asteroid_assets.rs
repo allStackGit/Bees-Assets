@@ -26,6 +26,8 @@ pub struct CollisionAsteroidAsset {
     pub size_class: u8,
     pub collision_layer: u8,
     pub shape: ShipShape,
+    pub proximity_layer: u8,
+    pub proximity_shape: ShipShape,
 }
 
 #[derive(Debug)]
@@ -66,6 +68,8 @@ struct RawAsteroid {
     size_class: u8,
     layer: u8,
     shape: RawShape,
+    proximity_layer: u8,
+    proximity_shape: RawShape,
 }
 
 impl CollisionAsteroidCatalog {
@@ -76,7 +80,7 @@ impl CollisionAsteroidCatalog {
     pub fn parse(data: &str) -> Result<Self, AsteroidAssetError> {
         let raw: RawManifest = serde_json::from_str(data)
             .map_err(|error| AsteroidAssetError::Malformed(error.to_string()))?;
-        if raw.schema_version != 1 {
+        if raw.schema_version != 2 {
             return Err(AsteroidAssetError::InvalidSchema(raw.schema_version));
         }
         if raw.collision_asteroid_health_increment <= 0 {
@@ -100,7 +104,8 @@ impl CollisionAsteroidCatalog {
                 return Err(AsteroidAssetError::DuplicatePrefab(number));
             }
             if entry.name != format!("Asteroid {number}") ||
-                entry.layer >= 32 || entry.size_class == 0 {
+                entry.layer >= 32 || entry.proximity_layer >= 32 ||
+                entry.size_class == 0 {
                 return Err(AsteroidAssetError::InvalidGeometry(number));
             }
             let shape = entry.shape.into_shape()
@@ -111,12 +116,19 @@ impl CollisionAsteroidCatalog {
             if !matches!(&shape, ShipShape::Polygon(_)) {
                 return Err(AsteroidAssetError::InvalidGeometry(number));
             }
+            let proximity_shape = entry.proximity_shape.into_shape()
+                .ok_or(AsteroidAssetError::InvalidGeometry(number))?;
+            if !matches!(&proximity_shape, ShipShape::Polygon(_)) {
+                return Err(AsteroidAssetError::InvalidGeometry(number));
+            }
             slots[index] = Some(CollisionAsteroidAsset {
                 name: entry.name,
                 prefab_number: number,
                 size_class: entry.size_class,
                 collision_layer: entry.layer,
                 shape,
+                proximity_layer: entry.proximity_layer,
+                proximity_shape,
             });
         }
         let asteroids = slots.into_iter().enumerate()
@@ -166,9 +178,12 @@ impl CollisionAsteroidCatalog {
         let active_health = effective_max_health.unwrap_or(original_health);
         let vitals = ObstacleVitals::new(active_health, active_health)
             .ok_or(AsteroidAssetError::InvalidHealth)?;
-        let body = ObstacleBody::new(
+        let mut body = ObstacleBody::new(
             entity_id, pose, asset.collision_layer, asset.shape.clone(),
             linear_velocity, angular_velocity_degrees,
+        )?;
+        body.set_proximity_collider(
+            asset.proximity_layer, asset.proximity_shape.clone(),
         )?;
         Ok((
             CombatObstacle {
