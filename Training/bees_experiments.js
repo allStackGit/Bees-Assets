@@ -8,6 +8,8 @@ const { execFile } = require('node:child_process');
 const { invokeStart, invokeStop, invokeWorkerRuntime } = require('./operator/commands');
 const { invokeMaintenanceUnityRebuild } = require('./operator/build');
 const { summarize: summarizeResearch } = require('./bees_experiment_research');
+const { freezePlan: freezeEvaluator, supportsPurpose: evaluatorSupportsPurpose } =
+    require('./bees_experiment_evaluator_versions');
 const { getStatus } = require('./operator/control');
 const { getPendingForcedNewRunPlan } = require('./operator/runtime');
 const { assertRlEnvironmentArgsValid } = require('./operator/validation');
@@ -19,7 +21,8 @@ const { paths, readJson, writeJsonAtomic, ensureDir, loadConfig, resolvePython, 
 const HOST = '127.0.0.1';
 // A fixed port also prevents two coordinators from writing the same state file.
 const PORT = 7148;
-const DB = path.join(paths.trainingRoot, 'Experiments', 'experiments-v1.json');
+const DATA_ROOT = path.join(paths.trainingRoot, 'Experiments');
+const DB = path.join(DATA_ROOT, 'experiments-v1.json');
 const HTML = path.join(__dirname, 'experiments.html');
 const LOG_EXPORTER = path.join(__dirname, 'bees_experiment_logs.py');
 const RESEARCH_EXPORTER = path.join(__dirname, 'bees_experiment_research_export.py');
@@ -618,13 +621,14 @@ function benchmarkPlan(settingsPath = BENCHMARK_SETTINGS) {
                 .update(scenario.opponent + ':' + hashes.scripted).digest('hex')
             : hashes['opponent_' + index];
     }
-    return {
+    return freezeEvaluator({
         python: path.resolve(settings.python), build_id: settings.build_id.trim(),
         files, hashes, scenarios,
-    };
+    }, path.join(DATA_ROOT, 'EvaluatorVersions'));
 }
 
 function verifyBenchmarkPlan(plan) {
+    freezeEvaluator(plan, path.join(DATA_ROOT, 'EvaluatorVersions'));
     for (const [key, file] of Object.entries(plan.files)) {
         if (hashFile(file) !== plan.hashes[key]) throw Error('Benchmark ' + key + ' changed since it was selected.');
     }
@@ -697,13 +701,15 @@ async function evaluateItem(item) {
         state.message = 'Evaluating checkpoint for ' + item.name;
         save();
         const plan = item.benchmark;
-        const args = [BENCHMARK_RUNNER, '--benchmark', plan.files.recipe,
+        const args = [plan.files.runner, '--benchmark', plan.files.recipe,
             '--candidate-run', item.run_id,
             '--registry', path.join(paths.trainingRoot, 'registry.sqlite3'),
             '--opponent', plan.scenarios?.[0]?.opponent || plan.files.opponent, '--env', plan.files.environment,
             '--build-id', plan.build_id, '--output-root', BENCHMARK_REPORTS];
         const output = await new Promise((resolve, reject) => {
-            execFile(plan.python, args, { windowsHide: true, maxBuffer: 65536 },
+            execFile(plan.python, args, { windowsHide: true, maxBuffer: 65536,
+                env: { ...process.env, PYTHONPATH: [__dirname,
+                    process.env.PYTHONPATH || ''].filter(Boolean).join(path.delimiter) } },
                 (error, stdout, stderr) => error
                     ? reject(Error(String(stderr || error.message).trim()))
                     : resolve(stdout));
@@ -733,7 +739,9 @@ async function evaluateItem(item) {
 
 function execBenchmark(python, args) {
     return new Promise((resolve, reject) => {
-        execFile(python, args, { windowsHide: true, maxBuffer: 65536 },
+        execFile(python, args, { windowsHide: true, maxBuffer: 65536,
+            env: { ...process.env, PYTHONPATH: [__dirname,
+                process.env.PYTHONPATH || ''].filter(Boolean).join(path.delimiter) } },
             (error, stdout, stderr) => error
                 ? reject(Error(String(stderr || error.message).trim()))
                 : resolve(String(stdout).trim()));
@@ -832,7 +840,7 @@ async function evaluateStageSuite(item, index, status, checkpointRecord = null,
         verifyBenchmarkPlan(plan);
         if (!record.evaluation) {
             const result = await execBenchmark(plan.python, [
-                BENCHMARK_RUNNER, '--resolve-candidate-run', item.run_id,
+                plan.files.runner, '--resolve-candidate-run', item.run_id,
                 '--registry', path.join(paths.trainingRoot, 'registry.sqlite3'),
             ]);
             const candidate = JSON.parse(result);
@@ -866,7 +874,7 @@ async function evaluateStageSuite(item, index, status, checkpointRecord = null,
                     ' for ' + item.name;
                 save();
                 const output = await execBenchmark(plan.python, [
-                    BENCHMARK_RUNNER, '--benchmark', scenario.recipe,
+                    plan.files.runner, '--benchmark', scenario.recipe,
                     '--candidate', evaluation.candidate.path,
                     '--candidate-sha256', evaluation.candidate.sha256,
                     '--candidate-training-step', String(evaluation.candidate.training_step),
@@ -874,7 +882,7 @@ async function evaluateStageSuite(item, index, status, checkpointRecord = null,
                     '--stage-index', String(index), '--stage-name', item.stages[index].name,
                     '--stage-step', String(evaluation.boundary_step),
                     '--evaluation-id', evaluationId,
-                    '--evaluation-purpose', purpose,
+                    ...(evaluatorSupportsPurpose(plan) ? ['--evaluation-purpose', purpose] : []),
                     '--opponent', scenario.opponent || plan.files.opponent, '--env', plan.files.environment,
                     '--build-id', plan.build_id, '--output-root', BENCHMARK_REPORTS,
                 ]);
