@@ -942,7 +942,7 @@ function render(data) {
     const maintaining = ['pausing', 'paused', 'resuming'].includes(active?.status);
     $('start').disabled = data.busy || data.armed || maintaining ||
         (!items.some(x => x.status === 'queued') &&
-            !['transitioning', 'evaluating_final_stage'].includes(active?.status));
+            !['transitioning', 'checkpointing', 'evaluating_final_stage'].includes(active?.status));
     $('pause').hidden = !active || active.status !== 'running';
     $('pause').disabled = data.busy || Boolean(data.stop_requested);
     $('resume').hidden = active?.status !== 'paused';
