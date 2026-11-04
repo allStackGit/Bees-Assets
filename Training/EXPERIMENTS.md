@@ -373,6 +373,53 @@ For CLI selection from the same registry, replace `--candidate FILE` with
 `Training/registry.sqlite3`. This reads existing provenance without updating it.
 Evaluation does not change trainer settings.
 
+## Optional research-grade comparisons
+
+Ordinary experiments remain **one run, one seed**, with no research-replicate
+overhead. Check **Queue fresh independent-seed runs** to prepare 2–32 sequential
+fresh runs of the same frozen curriculum, settings and release with consecutive
+ML-Agents initialization seeds. All runs are linked by a study ID and execute
+through the ordinary queue, so no separate trainer service is introduced.
+These seeds do **not** make distributed training bit-for-bit deterministic:
+Unity's ordinary training scenario root is independently randomized and
+asynchronous scheduling can change experience order.
+
+Each independent benchmark saves its existing immutable summary report **plus
+a compact per-match CSV** containing the authoritative Unity side-channel
+outcome, timestamps/duration, shots, hits, damage and starting/final team
+strength. The report records the CSV filename, SHA-256 and row count.
+The benchmark seed initializes a scenario *stream*; per-match independent
+seeds and initial coordinates are not emitted and must not be inferred.
+
+Open **Research comparisons** to compare only training runs with the same
+study ID, effective curriculum, training configuration except seed, release,
+checkpoint target, Unity/evaluator build, recipe and opponent. The table shows
+win/timeout means, between-seed SD and (for at least two independent runs)
+approximate Student-t intervals **across trained networks**, not across
+correlated matches. One-run results have no between-seed interval. The summary
+is calculated on demand from immutable reports. **Save research CSV** exports
+the analysis-ready table and its provenance keys.
+
+A separately configured
+\`Training/Experiments/heldout-benchmark-settings.json\` can be **reserved**
+when queuing an experiment. Use the same schema as
+\`Training/Experiments/benchmark-settings.json\`, but with distinct benchmark
+recipes/seeds. The pinned suite never runs during development; after choosing
+the final configuration, use **Run held-out validation** on its finished run.
+The final evaluation is immutable, clearly tagged \`heldout\`, and separate
+from the development curves. Do not inspect and optimize against these final
+results repeatedly, or they cease to be genuinely held out.
+
+Use **Export study evidence ZIP** (or the single-run equivalent) for a compact
+snapshot of the frozen experiment definitions, sampled time-series, YAML
+configuration snapshots, available hashed benchmark source/recipes, result
+reports and individual-match CSVs. The archive manifest records file hashes.
+The ZIP intentionally excludes raw training trajectories and large ONNX/Unity
+binaries; it is **not a self-contained executable replication environment**.
+Preserve the separately identified model weights, Unity build, runtime and
+relevant Git revision when preparing a research release. Older reports may
+lack match-level CSVs because they were written before this enhancement.
+
 ## Independent trainer configurations
 
 Expand **Trainer configuration** when queuing an experiment. Defaults come from

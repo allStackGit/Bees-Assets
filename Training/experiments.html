@@ -281,7 +281,10 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
 <option value="none">No automatic evaluations</option>
 </select></label>
 <small id="benchmark-config">Loading evaluation settings…</small></p>
+<label><input id="reserve-heldout" type="checkbox" style="width:auto"> Reserve a separate held-out benchmark suite for optional final validation</label>
+<small id="heldout-config">Configure Training/Experiments/heldout-benchmark-settings.json before using this option. The suite is frozen when queued and never runs automatically.</small>
 <p class="muted">Evaluations pin an ONNX checkpoint, run the unchanged benchmark suite, and resume the same optimizer. Periodic evaluations can occur within a stage. For unlimited runs, evaluations occur every 100M steps. Evaluations require a configured frozen benchmark suite; failures disarm the queue.</p>
+<fieldset id="replication-controls"><legend>Optional scientific replication</legend><label><input id="replicate-enabled" type="checkbox" style="width:auto"> Queue fresh independent-seed runs</label><label>Run count <input id="replicate-count" type="number" min="2" max="32" step="1" value="3" disabled></label><p class="muted">Off by default. When enabled, queues fresh sequential training runs with consecutive ML-Agents initialization seeds. Unity's training scenario randomness is independently randomized.</p></fieldset>
 <button class="primary" type="submit">Add to queue</button> <button id="cancel-edit" type="button" hidden>Cancel editing</button>
 </form>
 </section>
@@ -296,6 +299,15 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
 <div id="chart-notes" class="muted"></div>
 <div id="aggregate" class="summary" style="margin:14px 0"></div>
 <div class="tablewrap"><table><thead><tr><th>Plot</th><th>Experiment</th><th>Status</th><th>Steps</th><th>Training hours</th><th>Effective steps/s</th><th>Timeout</th><th>Hit/shot</th><th>Run</th></tr></thead><tbody id="rows"></tbody></table></div>
+</section>
+<section>
+<details id="research-panel" class="worker-details">
+<summary class="worker-summary">Research comparisons <small>· independent training seeds and uncertainty</small></summary>
+<p class="muted">Results are grouped only when the study, frozen training settings, checkpoint target, Unity build, evaluator, opponent, and benchmark recipe agree. The unit of analysis is the independently trained network, not individual matches or shots. Confidence intervals across seeds use a Student-t calculation and do not establish causality. Development and held-out suites remain separate.</p>
+<div class="bar"><button id="research-refresh" type="button">Refresh comparisons</button><button id="research-csv" type="button">Save research CSV</button></div>
+<p id="research-message" class="muted">Expand to load research comparisons.</p>
+<div class="tablewrap"><table><thead><tr><th>Comparison</th><th>Configuration</th><th>Checkpoint</th><th>Benchmark</th><th>Runs</th><th>Mean win %</th><th>Win SD</th><th>95% interval (across seeds)</th><th>Mean timeout %</th><th>Validation</th></tr></thead><tbody id="research-rows"></tbody></table></div>
+</details>
 </section>
 <section>
 <details id="performance-panel" class="worker-details">
@@ -1026,6 +1038,10 @@ function render(data) {
         : rebuildRequestPending ? 'Checking paused run before Unity rebuild…' : data.message || '';
     $('message').classList.toggle('error', !progress && !rebuildRequestPending &&
         /failed|error|attention|interrupted|refusing|changed|not started/i.test(data.message || ''));
+    $('reserve-heldout').disabled = !data.heldout_configured && !editingId;
+    $('heldout-config').textContent = data.heldout_configured
+        ? 'Frozen independently from development evaluations when this experiment is queued; run only after choosing the final checkpoint.'
+        : 'Optional: configure Training/Experiments/heldout-benchmark-settings.json, with different recipes/seeds.';
     $('benchmark-config').textContent = data.benchmark_configured
         ? 'Uses frozen recipes, scripted or ONNX opponents, and evaluation build from benchmark-settings.json.'
         : 'Benchmark suite not configured. Set Training/Experiments/benchmark-settings.json or select no automatic evaluations.';
@@ -1108,6 +1124,46 @@ function render(data) {
                 txt('p', 'Worker environment changes during training: ' +
                     item.capacity_changes.length +
                     '. Compare speed before and after separately; worker capacity changed.'));
+        }
+        if (item.heldout_benchmarks) {
+            const research = document.createElement('div');
+            const status = item.heldout_validation?.status || 'reserved';
+            research.append(txt('p', 'Held-out final validation: ' + status +
+                (item.heldout_validation?.error ? ' · ' + item.heldout_validation.error : '') +
+                '. Reserved benchmarks remain separate from development checkpoints.'));
+            if (item.run_id && ['completed','stopped','ended_early'].includes(item.status) &&
+                status !== 'completed') {
+                const btn = txt('button', status === 'failed'
+                    ? 'Retry held-out validation' : 'Run held-out validation');
+                btn.type = 'button';
+                btn.disabled = Boolean(data.busy || data.armed || data.active_id);
+                btn.addEventListener('click', async () => {
+                    if (!confirm('Run the reserved held-out benchmark suite now? Use this only after selecting the final network/configuration. Results will be saved permanently and cannot be replaced.')) return;
+                    btn.disabled = true;
+                    try {
+                        await request('/api/research-heldout', { id: item.id });
+                        await refresh();
+                    } catch (error) {
+                        $('message').textContent = error.message;
+                        $('message').classList.add('error');
+                    }
+                });
+                research.append(btn);
+            }
+            details.append(research);
+        }
+        if (item.run_id) {
+            const exportResearch = txt('button', item.study_id
+                ? 'Export study evidence ZIP' : 'Export experiment evidence ZIP');
+            exportResearch.type = 'button';
+            exportResearch.title = 'Export frozen configurations, benchmark inputs, aggregated reports, individual-match CSVs and sampled training metrics. Model and Unity binaries are referenced by hash, not duplicated.';
+            exportResearch.addEventListener('click', () => {
+                const key = item.study_id ? 'study_id' : 'experiment_id';
+                const value = item.study_id || item.id;
+                window.location.href = '/api/research-bundle?' +
+                    key + '=' + encodeURIComponent(value);
+            });
+            details.append(exportResearch);
         }
         if (item.trainer_config) details.append(txt('pre', 'Initialization: fresh\nFrozen configuration SHA: ' + item.trainer_config.sha256 + '\nSettings:\n' + JSON.stringify(item.trainer_config.resolved, null, 2) + '\nVerified generated configurations: ' + (item.applied_configurations || []).length));
         if (item.stage_evaluation_error) {
@@ -1976,10 +2032,16 @@ function closeQueuedEditor() {
     $('create').querySelector('button[type=submit]').textContent = 'Add to queue';
     $('cancel-edit').hidden = true;
     $('create').reset();
+    $('replication-controls').hidden = false;
+    $('replicate-enabled').checked = false;
+    $('replicate-count').disabled = true;
     applyCurriculum(defaultCurriculum);
     loadTrainerDefaults();
 }
 $('cancel-edit').addEventListener('click', closeQueuedEditor);
+$('replicate-enabled').addEventListener('change', () => {
+    $('replicate-count').disabled = !$('replicate-enabled').checked;
+});
 
 async function openQueuedEditor(id) {
     try {
@@ -1992,6 +2054,7 @@ async function openQueuedEditor(id) {
         }
         editingId = data.id;
         editingRevision = data.revision;
+        $('replication-controls').hidden = true;
         editingDefaultsSha = data.defaults_sha256;
         $('name').value = def.name;
         $('group').value = def.group;
@@ -2006,6 +2069,7 @@ async function openQueuedEditor(id) {
         for (const stage of def.stages || []) addCurriculumStage(stage);
         $('prefix-stages').value = 1 + (def.stages || []).length;
         $('evaluation-mode').value = def.evaluation_mode || 'none';
+        $('reserve-heldout').checked = def.reserve_heldout === true;
         updateStageLabels();
         for (const [key, value] of Object.entries(trainer.hyperparameters)) {
             const input = $('trainer-' + key);
@@ -2045,6 +2109,9 @@ $('create').addEventListener('submit', async e => {
                     .map(x => x.trim()).filter(Boolean),
             })),
             evaluation_mode: $('evaluation-mode').value,
+            reserve_heldout: $('reserve-heldout').checked,
+            replicates: !editingId && $('replicate-enabled').checked
+                ? Number($('replicate-count').value) : 1,
             trainer: {
                 hyperparameters: Object.fromEntries(['beta','lambd','learning_rate','batch_size','buffer_size','num_epoch'].map(k => [k, Number($('trainer-' + k).value)])),
                 network_settings: { num_layers: Number($('trainer-num_layers').value), normalize: $('trainer-normalize').value === 'true' },
@@ -2141,6 +2208,92 @@ $('graph').addEventListener('mouseleave', () => {
 });
 $('axis').addEventListener('change', () => latest && chart(
     latest.items.filter(x => !$('filter').value || x.group === $('filter').value)));
+let researchGroups = [];
+async function loadResearchSummary() {
+    const button = $('research-refresh');
+    button.disabled = true;
+    try {
+        const response = await fetch('/api/research-summary', {cache:'no-store'});
+        const data = await response.json();
+        if (!response.ok) throw Error(data.error || 'Research statistics unavailable.');
+        researchGroups = data.groups || [];
+        const rows = $('research-rows');
+        rows.replaceChildren();
+        const percentage = number => number == null ? '—' : fmt(100 * number, 2) + '%';
+        for (const group of researchGroups) {
+            const row = document.createElement('tr');
+            cell(row, group.comparison_group + ' · ' + group.study_label);
+            cell(row, 'beta ' + (group.beta ?? '—'));
+            cell(row, group.checkpoint +
+                (typeof group.target_step === 'number'
+                    ? ' · ' + fmt(group.target_step) + ' steps' : ''));
+            cell(row, group.scenario);
+            cell(row, group.win_rate.n + '/' + group.expected_replicates);
+            cell(row, percentage(group.win_rate.mean));
+            cell(row, percentage(group.win_rate.sd));
+            cell(row, group.win_rate.ci95
+                ? group.win_rate.ci95.map(percentage).join(' to ') : '— (one seed)');
+            cell(row, percentage(group.timeout_rate.mean));
+            cell(row, group.purpose === 'heldout' ? 'Held-out' : 'Development');
+            rows.append(row);
+        }
+        $('research-message').textContent = researchGroups.length
+            ? researchGroups.length + ' comparable condition/benchmark/checkpoint groups. ' +
+                'Incomplete replicate sets remain descriptive; do not infer a treatment advantage from a single seed.'
+            : 'No completed benchmark evaluations with comparable provenance yet.';
+    } catch (error) {
+        $('research-message').textContent = 'Research summary failed: ' + error.message;
+    } finally {
+        button.disabled = false;
+    }
+}
+function saveResearchCsv() {
+    if (!researchGroups.length) {
+        $('research-message').textContent = 'Refresh the research summary before exporting.';
+        return;
+    }
+    const columns = ['comparison_group','study_label','study_id','condition_id',
+        'beta','purpose','scenario','checkpoint','target_step','benchmark_identity',
+        'independent_runs','expected_replicates','mean_win_rate','sd_win_rate',
+        'win_ci95_lower','win_ci95_upper','mean_timeout_rate','sd_timeout_rate',
+        'mean_score_rate','seeds','run_ids','actual_steps'];
+    const data = researchGroups.map(group => ({
+        ...group,
+        independent_runs: group.win_rate.n,
+        mean_win_rate: group.win_rate.mean,
+        sd_win_rate: group.win_rate.sd,
+        win_ci95_lower: group.win_rate.ci95?.[0],
+        win_ci95_upper: group.win_rate.ci95?.[1],
+        mean_timeout_rate: group.timeout_rate.mean,
+        sd_timeout_rate: group.timeout_rate.sd,
+        mean_score_rate: group.score_rate.mean,
+        seeds: group.runs.map(run => run.seed).join(';'),
+        run_ids: group.runs.map(run => run.run_id).join(';'),
+        actual_steps: group.runs.map(run => run.actual_step).join(';'),
+    }));
+    const cellText = value => {
+        if (value == null) return '';
+        let text = String(value);
+        if (typeof value === 'string' && /^\s*[=+@-]/.test(text))
+            text = "'" + text;
+        return '"' + text.replace(/"/g, '""') + '"';
+    };
+    const csv = '\uFEFF' + [columns, ...data.map(row => columns.map(key => row[key]))]
+        .map(row => row.map(cellText).join(',')).join('\r\n') + '\r\n';
+    const url = URL.createObjectURL(new Blob([csv], {type:'text/csv;charset=utf-8'}));
+    const link = document.createElement('a');
+    const stamp = new Date().toISOString().replace(/[-:]/g,'').replace(/\.\d{3}Z$/, 'Z');
+    link.download = 'bees-research-comparison-' + stamp + '.csv';
+    link.href = url;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+$('research-refresh').addEventListener('click', loadResearchSummary);
+$('research-csv').addEventListener('click', saveResearchCsv);
+$('research-panel').addEventListener('toggle', () => {
+    if ($('research-panel').open) loadResearchSummary();
+});
+
 async function loadTrainerDefaults() {
     const button = $('create').querySelector('button[type=submit]');
     button.disabled = true;

@@ -7,6 +7,7 @@ const crypto = require('node:crypto');
 const { execFile } = require('node:child_process');
 const { invokeStart, invokeStop, invokeWorkerRuntime } = require('./operator/commands');
 const { invokeMaintenanceUnityRebuild } = require('./operator/build');
+const { summarize: summarizeResearch } = require('./bees_experiment_research');
 const { getStatus } = require('./operator/control');
 const { getPendingForcedNewRunPlan } = require('./operator/runtime');
 const { assertRlEnvironmentArgsValid } = require('./operator/validation');
@@ -21,6 +22,7 @@ const PORT = 7148;
 const DB = path.join(paths.trainingRoot, 'Experiments', 'experiments-v1.json');
 const HTML = path.join(__dirname, 'experiments.html');
 const LOG_EXPORTER = path.join(__dirname, 'bees_experiment_logs.py');
+const RESEARCH_EXPORTER = path.join(__dirname, 'bees_experiment_research_export.py');
 const BENCHMARK_REPORTS = path.join(paths.trainingRoot, 'Experiments', 'Benchmarks');
 const empty = () => ({ version: 1, armed: false, stop_requested: false, active_id: null, message: '', items: [] });
 const state = fs.existsSync(DB) ? readJson(DB) : empty();
@@ -540,13 +542,14 @@ function measure(item, status, force = false, boundary = '') {
 }
 
 const BENCHMARK_SETTINGS = path.join(paths.trainingRoot, 'Experiments', 'benchmark-settings.json');
+const HELDOUT_BENCHMARK_SETTINGS = path.join(paths.trainingRoot, 'Experiments', 'heldout-benchmark-settings.json');
 const BENCHMARK_RUNNER = path.join(__dirname, 'bees_experiment_benchmark.py');
 const SCRIPTED_OPPONENTS = path.join(__dirname, 'bees_experiment_scripted.py');
 const SCRIPTED_NAMES = new Set(['stationary', 'strafe', 'pursuit']);
 const hashFile = file => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 
-function benchmarkPlan() {
-    const settings = readJson(BENCHMARK_SETTINGS);
+function benchmarkPlan(settingsPath = BENCHMARK_SETTINGS) {
+    const settings = readJson(settingsPath);
     for (const key of ['python', 'environment', 'build_id']) {
         if (typeof settings[key] !== 'string' || !settings[key].trim()) {
             throw Error('Benchmark settings require ' + key + '.');
@@ -747,7 +750,8 @@ function verifyStageCandidate(candidate, minimumStep) {
     }
 }
 
-function stageEvaluationKey(item, index, scenario, scenarioIndex, candidate, plan, checkpointTarget = null) {
+function stageEvaluationKey(item, index, scenario, scenarioIndex, candidate, plan,
+    checkpointTarget = null, purpose = 'development') {
     const identity = [
         item.id, item.run_id, index, scenario.id,
         plan.hashes['recipe_' + scenarioIndex],
@@ -756,11 +760,14 @@ function stageEvaluationKey(item, index, scenario, scenarioIndex, candidate, pla
         plan.build_id, candidate.sha256, candidate.training_step,
     ];
     if (checkpointTarget != null) identity.push(checkpointTarget);
+    if (purpose !== 'development') identity.push(purpose);
     return crypto.createHash('sha256').update(JSON.stringify(identity)).digest('hex');
 }
 
-function stageReportMatches(report, item, index, scenario, candidate, plan, evaluationId) {
+function stageReportMatches(report, item, index, scenario, candidate, plan,
+    evaluationId, purpose = 'development') {
     return report && report.schema_version === 1 &&
+        (report.evaluation_purpose || 'development') === purpose &&
         report.run_id === item.run_id &&
         report.candidate_sha256 === candidate.sha256 &&
         report.opponent_sha256 === (scenario.opponent_sha256 || plan.hashes.opponent) &&
@@ -780,7 +787,8 @@ function stageReportMatches(report, item, index, scenario, candidate, plan, eval
         report.metrics?.telemetry_validated === true;
 }
 
-function findStageReport(item, index, scenario, candidate, plan, evaluationId, savedName) {
+function findStageReport(item, index, scenario, candidate, plan, evaluationId, savedName,
+    purpose = 'development') {
     // A process can exit after the evaluator atomically creates its report but
     // before the coordinator stores the filename. Re-link that immutable result
     // instead of launching the same benchmark a second time.
@@ -795,7 +803,8 @@ function findStageReport(item, index, scenario, candidate, plan, evaluationId, s
         const target = path.join(BENCHMARK_REPORTS, name);
         if (!fs.existsSync(target)) continue;
         const report = readJson(target);
-        if (stageReportMatches(report, item, index, scenario, candidate, plan, evaluationId)) {
+        if (stageReportMatches(report, item, index, scenario, candidate, plan, evaluationId,
+            purpose)) {
             return name;
         }
         if (name === savedName) {
@@ -805,14 +814,17 @@ function findStageReport(item, index, scenario, candidate, plan, evaluationId, s
     return null;
 }
 
-async function evaluateStageSuite(item, index, status, checkpointRecord = null) {
-    const plan = item.stage_benchmarks;
+async function evaluateStageSuite(item, index, status, checkpointRecord = null,
+    planOverride = null, purpose = 'development') {
+    const plan = planOverride || item.stage_benchmarks;
     if (!plan) return true;
     const record = checkpointRecord || stageRecord(item, index);
     try {
         if (!status.desired || status.desired.training_enabled ||
-            status.desired.pending_release || status.desired.run_id !== item.run_id ||
-            status.desired.canonical_build_id !== item.release_build) {
+            status.desired.pending_release ||
+            (purpose !== 'heldout' &&
+                (status.desired.run_id !== item.run_id ||
+                 status.desired.canonical_build_id !== item.release_build))) {
             throw Error('Stage benchmark requires a stopped, unchanged training run.');
         }
         verifyTrainerSnapshot(item);
@@ -839,9 +851,9 @@ async function evaluateStageSuite(item, index, status, checkpointRecord = null) 
             verifyBenchmarkPlan(plan);
             const evaluationId = stageEvaluationKey(
                 item, index, scenario, scenarioIndex, evaluation.candidate, plan,
-                checkpointRecord?.target_step ?? null);
+                checkpointRecord?.target_step ?? null, purpose);
             let reportName = findStageReport(item, index, scenario, evaluation.candidate,
-                plan, evaluationId, evaluation.reports[scenario.id]);
+                plan, evaluationId, evaluation.reports[scenario.id], purpose);
             if (!reportName) {
                 state.message = (checkpointRecord
                     ? 'Checkpoint ' + checkpointRecord.ordinal + ' (' +
@@ -858,12 +870,13 @@ async function evaluateStageSuite(item, index, status, checkpointRecord = null) 
                     '--stage-index', String(index), '--stage-name', item.stages[index].name,
                     '--stage-step', String(evaluation.boundary_step),
                     '--evaluation-id', evaluationId,
+                    '--evaluation-purpose', purpose,
                     '--opponent', scenario.opponent || plan.files.opponent, '--env', plan.files.environment,
                     '--build-id', plan.build_id, '--output-root', BENCHMARK_REPORTS,
                 ]);
                 reportName = path.basename(output.split(/\r?\n/).pop());
                 if (!findStageReport(item, index, scenario, evaluation.candidate,
-                    plan, evaluationId, reportName)) {
+                    plan, evaluationId, reportName, purpose)) {
                     throw Error('Evaluator did not return a matching immutable stage report.');
                 }
             }
@@ -887,6 +900,43 @@ async function evaluateStageSuite(item, index, status, checkpointRecord = null) 
             ' evaluation failed; queue disarmed: ' + error.message;
         save();
         return false;
+    }
+}
+
+// Opt-in final validation never runs during training or while the queue is
+// armed. Reports remain immutable and use a separately frozen benchmark plan.
+// An interrupted run reuses its exact pinned candidate and finished reports.
+async function evaluateHeldout(item) {
+    const record = item.heldout_validation;
+    if (!record || !['pending', 'running'].includes(record.status)) return;
+    try {
+        const status = await control();
+        if (!status.desired || status.desired.training_enabled ||
+            status.desired.pending_release || state.armed) {
+            throw Error('Held-out evaluation requires idle training with no pending release.');
+        }
+        verifyBenchmarkPlan(item.heldout_benchmarks);
+        record.status = 'running';
+        save();
+        const done = await evaluateStageSuite(item, record.stage_index, status,
+            record, item.heldout_benchmarks, 'heldout');
+        if (done) {
+            record.status = 'completed';
+            record.finished_at = now();
+            delete record.error;
+            state.message = 'Held-out validation completed for ' + item.name;
+        } else {
+            record.status = 'failed';
+            record.error = item.stage_evaluation_error || 'Held-out evaluation failed.';
+        }
+    } catch (error) {
+        record.status = 'failed';
+        record.error = error.message;
+        state.message = 'Held-out validation failed: ' + error.message;
+    } finally {
+        state.active_id = null;
+        state.stop_requested = false;
+        save();
     }
 }
 
@@ -1372,6 +1422,10 @@ async function monitor() {
     const item = active();
     if (!item) { blocked(null, 'Active experiment record is missing.'); return; }
     if (item.status === 'paused') return;
+    if (['pending', 'running'].includes(item.heldout_validation?.status)) {
+        await evaluateHeldout(item);
+        return;
+    }
     if (['pending', 'running'].includes(item.benchmark_status)) {
         await evaluateItem(item);
         return;
@@ -1504,6 +1558,7 @@ async function launch() {
     }
     if (item.benchmark) verifyBenchmarkPlan(item.benchmark);
     if (item.stage_benchmarks) verifyBenchmarkPlan(item.stage_benchmarks);
+    if (item.heldout_benchmarks) verifyBenchmarkPlan(item.heldout_benchmarks);
     if (item.trainer_config) {
         verifyTrainerSnapshot(item);
         if (item.trainer_config.runtime_version && item.trainer_config.runtime_version !== latest.training_runtime.runtime_version) {
@@ -1618,6 +1673,15 @@ async function definition(input, original = null) {
     const pinnedBenchmarks = original?.stage_benchmarks || original?.benchmark || null;
     const benchmark = evaluationMode === 'none'
         ? null : (pinnedBenchmarks || benchmarkPlan());
+    const heldoutPlan = input.reserve_heldout === true
+        ? (original?.heldout_benchmarks || benchmarkPlan(HELDOUT_BENCHMARK_SETTINGS))
+        : null;
+    if (heldoutPlan && benchmark &&
+        heldoutPlan.scenarios.some(hold => benchmark.scenarios.some(dev =>
+            heldoutPlan.hashes['recipe_' + heldoutPlan.scenarios.indexOf(hold)] ===
+                benchmark.hashes['recipe_' + benchmark.scenarios.indexOf(dev)]))) {
+        throw Error('Held-out recipes must be different from development evaluation recipes.');
+    }
     return {
         id: crypto.randomUUID(), name, group, status: 'queued', created_at: now(),
         max_steps: input.unlimited_steps === true ? null : stages[stages.length - 1].end_step,
@@ -1629,6 +1693,7 @@ async function definition(input, original = null) {
         release_build: String(release.build_id), samples: [], step: null, run_id: null,
         benchmark: evaluationMode === 'final' ? benchmark : null,
         stage_benchmarks: ['periodic', 'each_stage'].includes(evaluationMode) ? benchmark : null,
+        heldout_benchmarks: heldoutPlan,
         trainer_config: await trainerConfiguration(input.trainer || {}, original?.trainer_config?.path),
         execution_options: original?.execution_options || executionOptions(config),
         queue_defaults: defaults,
@@ -1690,6 +1755,7 @@ function editableDefinition(item) {
         })),
         evaluation_mode: item.evaluation_mode ||
             (item.stage_benchmarks ? 'each_stage' : item.benchmark ? 'final' : 'none'),
+        reserve_heldout: Boolean(item.heldout_benchmarks),
         trainer: {
             hyperparameters: Object.fromEntries(
                 ['beta', 'lambd', 'learning_rate', 'batch_size', 'buffer_size', 'num_epoch']
@@ -1709,7 +1775,7 @@ function editableDefinition(item) {
     return input;
 }
 
-function benchmarkReports() {
+function benchmarkReports(limit = 1000) {
     if (!fs.existsSync(BENCHMARK_REPORTS)) return [];
     // Reports are small immutable JSON summaries. Never enumerate raw training
     // data, checkpoints or unrelated files to populate the UI.
@@ -1717,8 +1783,11 @@ function benchmarkReports() {
         .filter(entry => entry.isFile() &&
             /^\d{8}T\d{6}-[a-f0-9]{32}\.json$/.test(entry.name))
         .map(entry => entry.name)
-        .sort().reverse().slice(0, 1000)
-        .map(name => readJson(path.join(BENCHMARK_REPORTS, name)))
+        .sort().reverse().slice(0, limit)
+        .map(name => {
+            const report = readJson(path.join(BENCHMARK_REPORTS, name));
+            return report ? { ...report, _file: name } : null;
+        })
         .filter(report => report && report.schema_version === 1 && report.benchmark &&
             report.metrics);
 }
@@ -1741,6 +1810,44 @@ async function body(req) {
     return JSON.parse(raw || '{}');
 }
 
+
+// On-demand, compact scientific evidence export. It is intentionally read-only
+// and does not stop training, duplicate models, or modify frozen studies.
+async function exportResearchBundle(res, item, studyId = null) {
+    const directory = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bees-study-'));
+    const target = path.join(directory, 'research.zip');
+    try {
+        const python = resolvePython(loadConfig());
+        await new Promise((resolve, reject) => {
+            const args = [RESEARCH_EXPORTER, '--db', DB, '--benchmarks', BENCHMARK_REPORTS,
+                '--output', target, studyId ? '--study-id' : '--experiment-id',
+                studyId || item.id];
+            const child = execFile(python, args, { windowsHide: true, maxBuffer: 65536 },
+                (error, stdout, stderr) => error
+                    ? reject(Error(String(stderr || error.message).trim()))
+                    : resolve(stdout));
+            res.once('close', () => child.kill());
+        });
+        if (res.destroyed) return;
+        const stats = await fs.promises.stat(target);
+        if (!stats.isFile() || !stats.size) throw Error('No research bundle was produced.');
+        const name = 'bees-research-' +
+            String(studyId || item.run_id).replace(/[^A-Za-z0-9._-]/g, '_') + '.zip';
+        res.writeHead(200, {
+            'Content-Type': 'application/zip',
+            'Content-Disposition': 'attachment; filename="' + name + '"',
+            'Content-Length': stats.size,
+            'Cache-Control': 'no-store',
+            'X-Content-Type-Options': 'nosniff',
+        });
+        const stream = fs.createReadStream(target);
+        stream.on('error', () => res.destroy());
+        stream.pipe(res);
+        await new Promise(resolve => res.once('close', resolve));
+    } finally {
+        await fs.promises.rm(directory, { recursive: true, force: true });
+    }
+}
 
 // ZIP parts are prepared off the event loop and served independently. A
 // temporary download session retains them for one hour so browser download
@@ -1897,6 +2004,18 @@ const server = http.createServer(async (req, res) => {
         if (req.method === 'GET' && route === '/api/experiment-log-part') {
             return sendLogExportPart(res, url.searchParams.get('id'), url.searchParams.get('part'));
         }
+        if (req.method === 'GET' && route === '/api/research-bundle') {
+            const studyId = url.searchParams.get('study_id');
+            const experimentId = url.searchParams.get('experiment_id');
+            if (Boolean(studyId) === Boolean(experimentId)) {
+                return json(res, 400, { error: 'Select one research study or experiment.' });
+            }
+            const item = state.items.find(entry => studyId
+                ? entry.study_id === studyId && entry.run_id
+                : entry.id === experimentId && entry.run_id);
+            if (!item) return json(res, 404, { error: 'Selected research run is unavailable.' });
+            return await exportResearchBundle(res, item, studyId);
+        }
         if (req.method === 'GET' && route === '/api/experiment-logs') {
             const id = url.searchParams.get('experiment_id');
             const item = state.items.find(entry => entry.id === id);
@@ -1912,7 +2031,8 @@ const server = http.createServer(async (req, res) => {
         }
         if (req.method === 'GET' && route === '/api/state') {
             return json(res, 200, { ...state, busy, rebuild_progress: rebuildProgress,
-                benchmark_configured: fs.existsSync(BENCHMARK_SETTINGS) });
+                benchmark_configured: fs.existsSync(BENCHMARK_SETTINGS),
+                heldout_configured: fs.existsSync(HELDOUT_BENCHMARK_SETTINGS) });
         }
         if (req.method === 'GET' && route === '/api/curriculum-default') {
             return json(res, 200, { curriculum: curriculumDefault() });
@@ -1951,6 +2071,9 @@ const server = http.createServer(async (req, res) => {
         }
         if (req.method === 'GET' && route === '/api/benchmarks') {
             return json(res, 200, { reports: benchmarkReports() });
+        }
+        if (req.method === 'GET' && route === '/api/research-summary') {
+            return json(res, 200, { groups: summarizeResearch(state.items, benchmarkReports(Infinity)) });
         }
         if (req.method === 'GET' && route === '/api/queued') {
             const item = state.items.find(x => x.id === url.searchParams.get('id'));
@@ -2021,9 +2144,42 @@ const server = http.createServer(async (req, res) => {
             return json(res, 200, { ok: true, curriculum: template });
         }
         if (route === '/api/queue') {
-            const item = await definition(value);
-            state.items.push(item); save();
-            return json(res, 201, item);
+            // Ordinary requests still queue exactly one experiment. Replicates
+            // are an explicit opt-in and run sequentially through the existing
+            // queue, each with fresh policy/optimizer initialization.
+            const count = value.replicates == null ? 1 : Number(value.replicates);
+            if (!Number.isSafeInteger(count) || count < 1 || count > 32) {
+                throw Error('Replicate count must be 1–32.');
+            }
+            const baseSeed = Number(value.trainer?.seed);
+            if (count > 1 && (!Number.isInteger(baseSeed) || baseSeed < 0 ||
+                baseSeed + count - 1 >= 2 ** 31)) {
+                throw Error('Replicates require a valid starting initialization seed with room for all seeds.');
+            }
+            const studyId = count > 1 ? crypto.randomUUID() : null;
+            const prepared = [];
+            for (let i = 0; i < count; i++) {
+                const seed = baseSeed + i;
+                const suffix = count > 1 ? ' · seed ' + seed : '';
+                const input = {
+                    ...value,
+                    name: count > 1 ? String(value.name || '').slice(0, 100 - suffix.length) + suffix : value.name,
+                    trainer: count > 1 ? { ...value.trainer, seed } : (value.trainer || {}),
+                };
+                const item = await definition(input);
+                if (studyId) {
+                    item.study_id = studyId;
+                    item.study_label = String(value.name || '');
+                    item.replicate_number = i + 1;
+                    item.replicate_count = count;
+                    item.replicate_seed = seed;
+                }
+                prepared.push(item);
+            }
+            state.items.push(...prepared);
+            try { save(); }
+            catch (error) { state.items.splice(-prepared.length, prepared.length); throw error; }
+            return json(res, 201, { items: prepared, study_id: studyId });
         }
         if (route === '/api/edit-queued') {
             if (busy) return json(res, 409, { error: 'Queue manager is busy; retry after refresh.' });
@@ -2056,6 +2212,37 @@ const server = http.createServer(async (req, res) => {
                 busy = false;
                 if (state.armed && !state.active_id && !state.stop_requested) setImmediate(cycle);
             }
+        }
+        if (route === '/api/research-heldout') {
+            if (busy || state.active_id || state.armed || state.stop_requested) {
+                return json(res, 409, { error: 'Wait until the experiment queue and trainer are idle.' });
+            }
+            const item = state.items.find(entry => entry.id === value.id);
+            if (!item || !item.heldout_benchmarks ||
+                !item.run_id || !['completed', 'stopped', 'ended_early'].includes(item.status)) {
+                return json(res, 409, { error: 'Choose a finished run with a frozen held-out suite.' });
+            }
+            if (item.heldout_validation?.status === 'completed') {
+                return json(res, 409, { error: 'Held-out validation is already complete. Its results cannot be rerun or replaced.' });
+            }
+            const desired = await control();
+            if (!desired.desired || desired.desired.training_enabled ||
+                desired.desired.pending_release) {
+                return json(res, 409, { error: 'Training and pending releases must be stopped.' });
+            }
+            verifyBenchmarkPlan(item.heldout_benchmarks);
+            const record = item.heldout_validation || {
+                stage_index: item.stage_index || 0,
+                target_step: item.step,
+                started_at: now(),
+            };
+            record.status = 'pending';
+            item.heldout_validation = record;
+            state.active_id = item.id;
+            state.message = 'Starting held-out validation for ' + item.name;
+            save();
+            setImmediate(cycle);
+            return json(res, 202, { ok: true });
         }
         if (route === '/api/evaluate') {
             if (busy || state.active_id || state.armed) return json(res, 409, { error: 'Wait for the queue to be idle.' });
