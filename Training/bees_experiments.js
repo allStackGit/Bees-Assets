@@ -6,6 +6,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { execFile } = require('node:child_process');
 const { invokeStart, invokeStop, invokeWorkerRuntime } = require('./operator/commands');
+const { invokeMaintenanceUnityRebuild } = require('./operator/build');
 const { getStatus } = require('./operator/control');
 const { getPendingForcedNewRunPlan } = require('./operator/runtime');
 const { assertRlEnvironmentArgsValid } = require('./operator/validation');
@@ -894,6 +895,34 @@ function assertSameLineageCheckpoint(item) {
 }
 
 
+function recordUnityMaintenanceBuild(item, release, status) {
+    const attempt = item.unity_rebuild_attempt;
+    if (!attempt) return false;
+    if (!release || !release.unity_maintenance ||
+        release.unity_maintenance.previous_build_id !== attempt.old_build ||
+        release.run_id !== item.run_id ||
+        release.compatibility_key !== attempt.compatibility_key ||
+        release.training_runtime?.runtime_version !== item.trainer_config.runtime_version ||
+        release.experiment_config?.sha256 !== item.trainer_config.sha256 ||
+        status?.desired?.training_enabled || status?.desired?.pending_release ||
+        status?.desired?.canonical_build_id !== release.build_id ||
+        status?.desired?.run_id !== item.run_id) return false;
+    item.unity_rebuilds = item.unity_rebuilds || [];
+    if (!item.unity_rebuilds.some(record => record.build_id === release.build_id)) {
+        item.unity_rebuilds.push({
+            at: now(), step: item.step,
+            old_build_id: attempt.old_build, build_id: release.build_id,
+            compatibility_key: release.compatibility_key,
+            warning_acknowledged: true,
+        });
+    }
+    item.release_build = release.build_id;
+    item.build_id = release.build_id;
+    delete item.unity_rebuild_attempt;
+    save();
+    return true;
+}
+
 // Maintenance pause preserves the active experiment, run, checkpoint, and queue
 // position. Unlike a manual stop, it never finalizes a stage or advances a run.
 function assertMaintenanceOwnership(item, status, allowOffline = false) {
@@ -965,6 +994,12 @@ function completeMaintenanceResume(item) {
 }
 
 async function resumeActiveRun(item, status) {
+    if (item.unity_rebuild_attempt) {
+        const candidate = readJson(paths.latestReleasePath);
+        if (!recordUnityMaintenanceBuild(item, candidate, status)) {
+            throw Error('An interrupted Unity maintenance rebuild has not reached a verified canonical release. Remain paused and inspect the rebuild.');
+        }
+    }
     assertMaintenanceOwnership(item, status, !item.resume_attempted);
     assertSameLineageCheckpoint(item);
     await verifyEffectiveConfiguration(item);
@@ -1719,6 +1754,68 @@ const server = http.createServer(async (req, res) => {
             setImmediate(cycle);
             return json(res, 202, { ok: true });
         }
+        if (route === '/api/rebuild-unity') {
+            const item = active();
+            if (busy || !item || item.status !== 'paused' ||
+                state.armed || state.stop_requested) {
+                return json(res, 409, { error: 'Pause the active experiment before rebuilding Unity.' });
+            }
+            const before = await control();
+            assertMaintenanceOwnership(item, before);
+            if (before.desired.training_enabled) {
+                return json(res, 409, { error: 'Training is still enabled; Unity rebuild refused.' });
+            }
+            assertSameLineageCheckpoint(item);
+            if (item.unity_rebuild_attempt) {
+                const candidate = readJson(paths.latestReleasePath);
+                if (!recordUnityMaintenanceBuild(item, candidate, before)) {
+                    return json(res, 409, {
+                        error: 'An earlier Unity rebuild has not been reconciled. Do not overwrite it.',
+                    });
+                }
+            }
+            const release = readJson(paths.latestReleasePath);
+            busy = true;
+            item.unity_rebuild_attempt = {
+                started_at: now(), old_build: item.release_build,
+                compatibility_key: release.compatibility_key,
+            };
+            state.message = 'Compiling and validating Windows/Linux RL Unity builds. ' +
+                'Experiment paused; optimizer and frozen learner runtime unchanged.';
+            save();
+            try {
+                const rebuilt = await invokeMaintenanceUnityRebuild({
+                    expectedRunId: item.run_id,
+                    expectedBuildId: item.unity_rebuild_attempt.old_build,
+                    expectedConfigSha: item.trainer_config.sha256,
+                });
+                const updatedRelease = readJson(paths.latestReleasePath);
+                const after = await control();
+                if (!recordUnityMaintenanceBuild(item, updatedRelease, after) ||
+                    rebuilt.build_id !== item.release_build) {
+                    throw Error('Rebuilt release did not become canonical with the expected training identity.');
+                }
+                state.message = 'Unity rebuilt and activated on the same run. ' +
+                    'WARNING: the simulation may have changed; results before and after this ' +
+                    'build should be compared separately. Select Resume training.';
+                save();
+                return json(res, 200, { ok: true, ...rebuilt });
+            } catch (error) {
+                let reconciled = false;
+                try {
+                    reconciled = recordUnityMaintenanceBuild(
+                        item, readJson(paths.latestReleasePath), await control());
+                } catch (_) {}
+                state.message = 'Unity rebuild failed: ' + error.message +
+                    (reconciled
+                        ? ' A compatible new build became canonical; experiment remains paused.'
+                        : ' Experiment remains paused; inspect the build before resuming.');
+                save();
+                return json(res, 409, { error: state.message });
+            } finally {
+                busy = false;
+            }
+        }
         if (route === '/api/update-workers') {
             const item = active();
             if (busy || !item || item.status !== 'paused' ||
@@ -1766,6 +1863,10 @@ const server = http.createServer(async (req, res) => {
             if (busy || !item || item.status !== 'paused' || state.stop_requested ||
                 state.armed) {
                 return json(res, 409, { error: 'Only a confirmed paused experiment can be resumed.' });
+            }
+            if (item.unity_rebuild_attempt &&
+                !recordUnityMaintenanceBuild(item, readJson(paths.latestReleasePath), await control())) {
+                return json(res, 409, { error: 'Unity rebuild is incomplete or unreconciled. Remain paused.' });
             }
             item.status = 'resuming';
             item.resume_attempted = false;
