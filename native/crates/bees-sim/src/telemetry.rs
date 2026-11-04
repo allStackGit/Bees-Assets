@@ -16,6 +16,8 @@ pub struct Measurements {
     pub ticks: u64,
     pub decisions: u64,
     pub events: u64,
+    /// Rules updates that returned an error and invalidated their world.
+    pub failed_steps: u64,
     pub sampled_ticks: u64,
     pub sampled_wall_nanos: u128,
     pub last_active_ships: u32,
