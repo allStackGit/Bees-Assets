@@ -6,6 +6,7 @@
 // It never runs commands, launches jobs, or enforces hardware quotas.
 const http = require('node:http');
 const os = require('node:os');
+const crypto=require('node:crypto');
 const {inspectHost}=require('./experiment_hub_host');
 const {fromEnvironment}=require('./experiment_hub_execution');
 
@@ -79,6 +80,7 @@ function sendHeartbeat(url,machineId,token,observedLeaseIds=[],
         execution_reports:executionReports,
         local_executor:advertisement.local_executor===true,
         installed_projects:advertisement.installed_projects||[],
+        agent_instance_id:advertisement.instance_id||null,
     });
     return new Promise((resolve,reject)=>{
         const req=http.request(url,{
@@ -123,7 +125,10 @@ async function main() {
     // Disabled unless the operator explicitly configures local adapter code,
     // a private supervisor ledger and the opt-in execution environment flag.
     const executor=fromEnvironment(process.env);
-    const advertisement=executor?executor.advertisement():{};
+    const advertisement={
+        ...(executor?executor.advertisement():{}),
+        instance_id:crypto.randomUUID(),
+    };
     let active=false,last='initial',receipts=[],pendingReports=[];
     const poll=async()=>{
         if(active)return;
