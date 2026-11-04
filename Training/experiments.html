@@ -568,6 +568,36 @@ function chart(items) {
     if (evaluationMarkers.length)
         $('legend').append(txt('span',
             'E: actual checkpoint evaluation · T: actual stage transition (no separate planned-step lines)'));
+    const unityRebuildMarkers = [];
+    for (const dataset of datasets) {
+        for (const change of (dataset.item.unity_rebuilds || [])) {
+            const x = axis === 'time' ? change.training_s / 3600 : change.step;
+            if (!Number.isFinite(x) || x < 0 || x > xmax) continue;
+            const position = xx(x);
+            const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            for (const [key, value] of Object.entries({
+                x1: position, x2: position, y1: 20, y2: 210,
+            })) line.setAttribute(key, String(value));
+            line.setAttribute('stroke', '#111');
+            line.setAttribute('stroke-width', '1.5');
+            const tag = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+            tag.setAttribute('x', String(position - 5));
+            tag.setAttribute('y', '15');
+            tag.setAttribute('font-size', '10');
+            tag.setAttribute('fill', '#111');
+            tag.textContent = 'U';
+            const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+            const label = dataset.item.name + ': Unity rebuilt at ' +
+                fmt(change.step) + ' learner steps. Results before and after may not be comparable.';
+            title.textContent = label;
+            const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+            group.append(line, tag, title);
+            svg.append(group);
+            unityRebuildMarkers.push({ x, label });
+        }
+    }
+    if (unityRebuildMarkers.length) $('legend').append(txt('span',
+        'U: Unity simulation rebuilt · compare results before and after separately'));
     const envMarkers = [];
     if (isTrainingSpeedMetric(metric)) {
         for (const dataset of datasets) {
@@ -626,7 +656,7 @@ function chart(items) {
     hoverLayer.setAttribute('id', 'chart-hover-overlay');
     svg.append(hoverLayer);
     chartHover = { datasets, hoverLayer, xmax, xx, yy, metric, axis, smooth,
-        envMarkers, evaluationMarkers };
+        envMarkers, evaluationMarkers, unityRebuildMarkers };
     $('graph-inspect').textContent =
         'Hover for raw, rolling and running-mean values.' +
         (envMarkers.length ? ' Vertical ticks mark observed worker environment-count changes; historical requests are approximate.' : '') +
@@ -745,6 +775,8 @@ function inspectChart(event) {
         Math.abs(chartHover.xx(change.x) - pixelX) <= 7);
     const nearbyEvaluations = chartHover.evaluationMarkers.filter(event =>
         Math.abs(chartHover.xx(event.x) - pixelX) <= 7);
+    const nearbyUnityRebuilds = chartHover.unityRebuildMarkers.filter(event =>
+        Math.abs(chartHover.xx(event.x) - pixelX) <= 7);
     const text = [
         ...nearest.map(({ item, point }) =>
             item.name + ' · ' + (chartHover.axis === 'time'
@@ -756,6 +788,7 @@ function inspectChart(event) {
             'ENV COUNT · ' + change.run + ' · ' + change.label +
             ' · ' + new Date(change.at).toLocaleString()),
         ...nearbyEvaluations.map(event => 'STAGE EVENT · ' + event.label),
+        ...nearbyUnityRebuilds.map(event => 'UNITY REBUILD · ' + event.label),
     ].join('\n');
     $('graph-inspect').textContent = text.replaceAll('\n', ' ');
     const tooltip = $('graph-tooltip');
@@ -894,6 +927,12 @@ function render(data) {
             '\nBudget: ' + fmt(item.max_steps) + ' steps / ' + item.max_minutes + ' minutes' +
             '\nEnd reason: ' + (item.end_reason || '—') +
             '\nArguments:\n' + item.env_args.join('\n') + '\n' + (item.error || ''));
+        if (item.unity_rebuilds?.length) {
+            info.textContent += '\nWARNING: Unity was rebuilt during this training run. ' +
+                'Simulation changes may invalidate before/after comparisons.' +
+                '\nRebuild boundaries: ' +
+                item.unity_rebuilds.map(x => fmt(x.step) + ' learner steps').join(', ');
+        }
         details.append(summary,info);
         if (item.stages && item.stages.length) {
             const history = item.stage_history || [];
