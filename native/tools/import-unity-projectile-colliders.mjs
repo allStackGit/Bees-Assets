@@ -48,6 +48,71 @@ function vector(source, raw) {
     return values;
 }
 
+// These three projectiles use Animator events as GAMEPLAY callbacks.
+// The mapping is only the prefab -> controller -> clip asset path; the
+// actual event times and collider radii are always read from source clips.
+const explosionAnimations = new Map([
+    [13, {
+        controller: 'Sprites/Projectiles/Animation Controllers/Frigate Rocket Explosion_0.controller',
+        clip: 'Sprites/Projectiles/Animations/Frigate Rocket Explosion.anim',
+    }],
+    [14, {
+        controller: 'Sprites/Projectiles/Animation Controllers/Fireship Explosion.controller',
+        clip: 'Sprites/Projectiles/Animations/Fireship Explosion.anim',
+    }],
+    [15, {
+        controller: 'Sprites/Objects/Fire Tank Explosion.controller',
+        clip: 'Sprites/Objects/Fire Tank Explosion.anim',
+    }],
+]);
+
+function guidFromMeta(relativePath) {
+    const source = relativePath + '.meta';
+    const text = fs.readFileSync(path.join(root, source), 'utf8');
+    const guid = /^guid: ([0-9a-f]{32})$/m.exec(text)?.[1];
+    if (!guid) fail(source, 'missing Unity asset GUID');
+    return guid;
+}
+
+function projectileAnimationEvents(source, prefabText, type) {
+    const mapping = explosionAnimations.get(type);
+    if (!mapping) return null;
+    const controllerGuid = guidFromMeta(mapping.controller);
+    const clipGuid = guidFromMeta(mapping.clip);
+    const prefabController = /m_Controller: \{fileID: 9100000, guid: ([0-9a-f]{32}), type: 2\}/.exec(prefabText)?.[1];
+    if (prefabController !== controllerGuid) {
+        fail(source, 'projectile animator does not point to its expected controller');
+    }
+    const controller = fs.readFileSync(path.join(root, mapping.controller), 'utf8');
+    const motionGuid = /m_Motion: \{fileID: 7400000, guid: ([0-9a-f]{32}), type: 2\}/.exec(controller)?.[1];
+    if (motionGuid !== clipGuid || !/^\s+m_Speed: 1$/m.test(controller)) {
+        fail(source, 'unsupported animator state or mismatched clip');
+    }
+    const clip = fs.readFileSync(path.join(root, mapping.clip), 'utf8');
+    const eventBlock = clip.split(/^  m_Events:\s*$/m)[1];
+    if (!eventBlock) fail(mapping.clip, 'missing animation events');
+    const parts = eventBlock.split(/^  - time: /gm).slice(1);
+    const animation_events = parts.map(part => {
+        const time_seconds = Number(/^([^\r\n]+)/.exec(part)?.[1]);
+        const action = /^    functionName: (\w+)$/m.exec(part)?.[1];
+        const int_parameter = Number(/^    intParameter: (-?\d+)$/m.exec(part)?.[1]);
+        if (!Number.isFinite(time_seconds) || time_seconds < 0 ||
+            !Number.isInteger(int_parameter) ||
+            !['SetColliderSize', 'SetHarmless', 'Kill'].includes(action) ||
+            (action === 'SetColliderSize' && int_parameter <= 0)) {
+            fail(mapping.clip, 'unsupported or invalid gameplay animation event');
+        }
+        return { time_seconds, action, int_parameter };
+    });
+    if (animation_events.length === 0 ||
+        animation_events.filter(event => event.action === 'Kill').length !== 1 ||
+        animation_events.filter(event => event.action === 'SetHarmless').length !== 1 ||
+        animation_events.some((event, i) => i > 0 && event.time_seconds < animation_events[i - 1].time_seconds)) {
+        fail(mapping.clip, 'incomplete or unordered explosion lifecycle');
+    }
+    return animation_events;
+}
+
 function importProjectile(name, content) {
     const source = name + '.prefab';
     const docs = documents(source, content);
@@ -114,6 +179,10 @@ function importProjectile(name, content) {
             fail(source, 'Frigate Rocket requires a positive authored MaxSpeed');
         }
         return { name, projectile_type: type, layer, has_body, rocket_max_speed, shape };
+    }
+    const animation_events = projectileAnimationEvents(source, content, type);
+    if (animation_events) {
+        return { name, projectile_type: type, layer, has_body, animation_events, shape };
     }
     return { name, projectile_type: type, layer, has_body, shape };
 }
