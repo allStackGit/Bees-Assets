@@ -418,6 +418,19 @@ function chart(items) {
     const datasets = all.map((item, index) => ({
         item, color: colors[index % colors.length], points: seriesFor(item),
     }));
+    if (metric === 'group_reward') {
+        for (const { item, points: recorded } of datasets) {
+            const samples = item.samples || [];
+            if (!samples.length || recorded.length === samples.length) continue;
+            const first = samples.find(sample => Number.isFinite(sample.group_reward));
+            const coverage = recorded.length + '/' + samples.length;
+            $('legend').append(txt('span', item.name + ': Mean Group Reward available for ' +
+                coverage + ' recorded samples' +
+                (first?.step != null ? ' (first at ' + fmt(first.step) + ' steps)' : '') +
+                '. Older chart samples were saved before this metric was collected. ' +
+                'Choose Mean Reward (individual) to view the older reward history.'));
+        }
+    }
     const points = datasets.flatMap(series => series.points);
     chartHover = null;
     if (!points.length) {
@@ -480,8 +493,8 @@ function chart(items) {
             marker.setAttribute('y1', '20');
             marker.setAttribute('y2', '210');
             marker.setAttribute('stroke', '#000000');
-            marker.setAttribute('stroke-dasharray', '4 5');
-            marker.setAttribute('opacity', '0.6');
+            marker.setAttribute('stroke-dasharray', '2 6');
+            marker.setAttribute('opacity', '0.45');
             const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
             const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
             label.setAttribute('x', String(xx(boundary) - 4));
@@ -529,7 +542,7 @@ function chart(items) {
             })) marker.setAttribute(key, String(value));
             marker.setAttribute('stroke', '#555');
             marker.setAttribute('stroke-opacity', '0.5');
-            marker.setAttribute('stroke-dasharray', '5 4');
+            marker.setAttribute('stroke-dasharray', '7 4');
             const tag = document.createElementNS('http://www.w3.org/2000/svg', 'text');
             tag.setAttribute('x', String(position - 4));
             tag.setAttribute('y', '15');
@@ -537,8 +550,13 @@ function chart(items) {
             tag.setAttribute('font-size', '10');
             tag.textContent = 'E';
             const stageName = dataset.item.stages?.[index]?.name || 'Stage ' + (index + 1);
+            const threshold = dataset.item.stages?.[index]?.end_step;
+            const actualStep = record.evaluation.boundary_step ?? record.finished_step;
             const label = dataset.item.name + ' · ' + stageName +
-                ' checkpoint evaluation (learner stopped)';
+                ' checkpoint evaluation at ' + fmt(actualStep) + ' learner steps' +
+                (Number.isFinite(threshold)
+                    ? ' (scheduled threshold ' + fmt(threshold) + ' steps)' : '') +
+                ' · learner stopped';
             const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
             title.textContent = label;
             group.append(marker, tag, title);
