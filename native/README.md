@@ -102,8 +102,9 @@ The portable `bees-sim` crate currently contains:
   and asteroid/ship damage, with Unity's size comparison, health accounting
   and 0.35-second delayed destruction. Ship contacts require explicit
   authored SizeClass and OriginalHealth (never inferred from adjusted
-  training durability); missing profiles fail instead of applying guessed
-  damage. Trigger ordering still requires comparison with Unity.
+  training durability); original health comes from server-loaded ship stats
+  and SizeClass can legitimately be zero (Beacon and Human Target).
+  Missing profiles fail instead of applying guessed damage. Trigger ordering still requires comparison with Unity.
   Actual shard/piece spawning, sibling exclusions, pathfinder invalidation,
   observer cleanup and rendering remain unimplemented.
 - An optional tactical reward consumer using the current RL team's shared
