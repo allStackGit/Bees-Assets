@@ -27,6 +27,7 @@ const { paths, readJson, writeJsonAtomic, ensureDir, loadConfig, resolvePython, 
 const HOST = '127.0.0.1';
 // A fixed port also prevents two coordinators from writing the same state file.
 const PORT = 7148;
+const AGENT_PORT = 7149;
 const DATA_ROOT = selectedRoot(paths.trainingRoot);
 const DB = path.join(DATA_ROOT, 'experiments-v1.json');
 const HTML = path.join(__dirname, 'experiments.html');
@@ -2285,12 +2286,6 @@ const server = http.createServer(async (req, res) => {
         }
         if (req.method !== 'POST') return json(res, 404, { error: 'Not found.' });
         const value = await body(req);
-        if (route === '/api/hub/agent/heartbeat') {
-            // Bearer authentication plus short-lived, in-memory liveness.
-            // Never forward arbitrary commands or mutate Bees training state.
-            return json(res, 200, requireHub().heartbeat(value,
-                req.headers['x-hub-agent-token']));
-        }
         if (storageMigrationPending) {
             return json(res, 409, { error: 'Data-location switch prepared. Restart this manager before making other changes.' });
         }
@@ -2794,6 +2789,28 @@ const server = http.createServer(async (req, res) => {
         return json(res, err.status === 401 ? 401 : 400, { error: err.message });
     }
 });
+// Do not forward the administrator dashboard port to remote workers. The
+// dedicated agent port has no training, registry, lease, or read-only admin
+// routes; it accepts authenticated machine observations and receipts only.
+const agentServer = http.createServer(async (req, res) => {
+    const host=req.headers.host;
+    if (req.method !== 'POST' ||
+        req.url !== '/api/hub/agent/heartbeat' ||
+        (host !== HOST+':'+AGENT_PORT && host !== 'localhost:'+AGENT_PORT) ||
+        req.headers.origin) {
+        return json(res, 404, {error:'Agent endpoint only.'});
+    }
+    try {
+        const declaredSize=Number(req.headers['content-length'] || 0);
+        if (!Number.isFinite(declaredSize) || declaredSize>32768)
+            return json(res, 413, {error:'Agent request too large.'});
+        const value=await body(req);
+        return json(res, 200, requireHub().heartbeat(value,
+            req.headers['x-hub-agent-token']));
+    } catch (error) {
+        return json(res, error.status===401?401:400, {error:error.message});
+    }
+});
 if (require.main === module) {
     server.listen(PORT, HOST, () => {
         console.log('Bees experiments: http://' + HOST + ':' + PORT);
@@ -2801,5 +2818,8 @@ if (require.main === module) {
         setImmediate(cycle);
         setInterval(cycle, 10000);
     });
+    agentServer.listen(AGENT_PORT, HOST, () => {
+        console.log('Experiment Hub machine heartbeat port: ' + HOST+':'+AGENT_PORT);
+    });
 }
-module.exports = { server, definition, measure, workerSnapshot, benchmarkReports, benchmarkPlan, verifyBenchmarkPlan };
+module.exports = { server, agentServer, definition, measure, workerSnapshot, benchmarkReports, benchmarkPlan, verifyBenchmarkPlan };
