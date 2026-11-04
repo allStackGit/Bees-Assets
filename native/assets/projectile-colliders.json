@@ -175,6 +175,18 @@
       "projectile_type": 13,
       "layer": 18,
       "has_body": false,
+      "animation_events": [
+        {
+          "time_seconds": 0.5,
+          "action": "SetHarmless",
+          "int_parameter": 0
+        },
+        {
+          "time_seconds": 0.8,
+          "action": "Kill",
+          "int_parameter": 0
+        }
+      ],
       "shape": {
         "kind": "circle",
         "offset": [
@@ -189,6 +201,43 @@
       "projectile_type": 14,
       "layer": 20,
       "has_body": false,
+      "animation_events": [
+        {
+          "time_seconds": 0,
+          "action": "SetColliderSize",
+          "int_parameter": 1
+        },
+        {
+          "time_seconds": 1.25,
+          "action": "SetColliderSize",
+          "int_parameter": 17
+        },
+        {
+          "time_seconds": 1.4166666,
+          "action": "SetColliderSize",
+          "int_parameter": 34
+        },
+        {
+          "time_seconds": 1.5,
+          "action": "SetColliderSize",
+          "int_parameter": 51
+        },
+        {
+          "time_seconds": 1.5833334,
+          "action": "SetColliderSize",
+          "int_parameter": 56
+        },
+        {
+          "time_seconds": 2.0833333,
+          "action": "SetHarmless",
+          "int_parameter": 0
+        },
+        {
+          "time_seconds": 2.8333333,
+          "action": "Kill",
+          "int_parameter": 0
+        }
+      ],
       "shape": {
         "kind": "circle",
         "offset": [
@@ -203,6 +252,38 @@
       "projectile_type": 15,
       "layer": 20,
       "has_body": false,
+      "animation_events": [
+        {
+          "time_seconds": 0,
+          "action": "SetColliderSize",
+          "int_parameter": 7
+        },
+        {
+          "time_seconds": 0.1,
+          "action": "SetColliderSize",
+          "int_parameter": 8
+        },
+        {
+          "time_seconds": 0.2,
+          "action": "SetColliderSize",
+          "int_parameter": 9
+        },
+        {
+          "time_seconds": 0.3,
+          "action": "SetColliderSize",
+          "int_parameter": 18
+        },
+        {
+          "time_seconds": 0.9,
+          "action": "SetHarmless",
+          "int_parameter": 0
+        },
+        {
+          "time_seconds": 1.8,
+          "action": "Kill",
+          "int_parameter": 0
+        }
+      ],
       "shape": {
         "kind": "circle",
         "offset": [
