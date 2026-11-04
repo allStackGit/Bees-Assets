@@ -21,7 +21,7 @@ created from the current `feat/experiment-queue-ui` branch.
 
 ## Current status
 
-The dependency-free `bees-sim` crate currently contains:
+The portable `bees-sim` crate currently contains:
 
 - A fixed-step multi-world dispatcher, per-world deterministic RNG, explicit
   episode reset and sampled timing/failure counters.
