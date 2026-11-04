@@ -152,3 +152,68 @@ export function createBoxObstacleBatch(rootSources) {
         fail('box obstacles','duplicate prefab names');
     return outputs;
 }
+
+/** Decode a prefab variant of an already imported primary-box variant.
+ * The original Obstacle.Collider is on the root, so child art scale changes
+ * cannot change the physics outline. Root scale/collider edits are rejected.
+ */
+export function appendNestedBoxVariants(assets, nested) {
+    const result = [...assets];
+    for (const spec of nested) {
+        const {name, parentName, parentGuid, rootTransformId, source} = spec;
+        const parent = result.find(item => item.name === parentName);
+        if (!parent) fail(name, 'missing intermediate prefab ' + parentName);
+        if (!/^[0-9a-f]{32}$/.test(parentGuid))
+            fail(name, 'missing intermediate prefab GUID');
+        const mods = overrides(name, source, parentGuid);
+        for (const [key] of mods) {
+            const split = key.indexOf('/');
+            const id = key.slice(0, split);
+            const property = key.slice(split + 1);
+            if (id === rootTransformId &&
+                (property.startsWith('m_LocalScale.') ||
+                 property === 'm_Parent' ||
+                 property.startsWith('m_Father'))) {
+                fail(name, 'unexpected geometry-affecting root override: ' + property);
+            }
+            if (property === 'Collider' ||
+                property === 'ObstacleType' ||
+                property === 'm_Layer' ||
+                property === 'm_IsTrigger' ||
+                property.startsWith('m_Points.') ||
+                property.startsWith('m_Size.') ||
+                property.startsWith('m_Offset.')) {
+                fail(name, 'unsupported primary-collider override: ' + property);
+            }
+        }
+        const value = (prop, fallback) => num(
+            mods.get(rootTransformId + '/' + prop) ?? fallback, name + ' ' + prop);
+        const basePosition = parent.default_pose.position;
+        const position = [
+            value('m_LocalPosition.x', basePosition[0]),
+            value('m_LocalPosition.y', basePosition[1])
+        ];
+        const baseHalfRadians = parent.default_pose.rotation_degrees * Math.PI / 360;
+        const z = value('m_LocalRotation.z', Math.sin(baseHalfRadians));
+        const w = value('m_LocalRotation.w', Math.cos(baseHalfRadians));
+        if (Math.abs(value('m_LocalRotation.x', 0)) > 0.0001 ||
+            Math.abs(value('m_LocalRotation.y', 0)) > 0.0001 ||
+            Math.abs(z * z + w * w - 1) > 0.0003) {
+            fail(name, 'unsupported or invalid nested rotation');
+        }
+        const rotation_degrees = 2 * Math.atan2(z, w) * 180 / Math.PI;
+        if (result.some(item => item.name === name))
+            fail(name, 'duplicate inherited obstacle');
+        result.push({
+            ...parent,
+            name,
+            default_pose: {position, rotation_degrees},
+            shape: {
+                kind: 'box',
+                offset: [...parent.shape.offset],
+                half_extents: [...parent.shape.half_extents]
+            },
+        });
+    }
+    return result;
+}
