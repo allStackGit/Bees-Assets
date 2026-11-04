@@ -188,8 +188,9 @@ class ExperimentHub {
     allocateJobs(value) {
         if(!object(value)||value.confirm_allocate!==true)
             throw Error('Explicitly confirm the advisory allocation.');
-        const project=this.project(value.project_id);
-        if(project.adapter==='bees')
+        const allProjects=value.project_id==='all';
+        const project=allProjects?null:this.project(value.project_id);
+        if(project?.adapter==='bees')
             throw Error('Bees uses its existing coordinator, not Hub allocation.');
         const requested=value.job_ids;
         if(requested!==undefined && (!Array.isArray(requested) ||
@@ -198,9 +199,24 @@ class ExperimentHub {
             requested.some(id=>typeof id!=='string')))
             throw Error('Select 1–100 distinct pending job IDs.');
         const next=copy(this.state);
-        const jobs=next.jobs.filter(j=>j.project_id===project.id &&
+        const candidates=next.jobs.filter(j=>
+            (allProjects||j.project_id===project.id) &&
+            j.adapter==='unconfigured' &&
             j.status==='waiting_adapter' &&
             (requested===undefined || requested.includes(j.id)));
+        // Fair interleaving across project queues, preserving FIFO within
+        // each project. This is only a claim planner, not job execution.
+        const buckets=new Map();
+        for(const job of candidates) {
+            if(!buckets.has(job.project_id))buckets.set(job.project_id,[]);
+            buckets.get(job.project_id).push(job);
+        }
+        const jobs=[];
+        while([...buckets.values()].some(bucket=>bucket.length)) {
+            for(const bucket of buckets.values()) {
+                if(bucket.length)jobs.push(bucket.shift());
+            }
+        }
         if(requested && jobs.length!==requested.length)
             throw Error('One or more selected jobs are unavailable or no longer pending.');
         if(!jobs.length)throw Error('No pending jobs to allocate.');
@@ -231,7 +247,7 @@ class ExperimentHub {
                     status:'insufficient_capacity'});
                 continue;
             }
-            const lease=this.offerIn(next,project.id,chosen.machine_id,
+            const lease=this.offerIn(next,job.project_id,chosen.machine_id,
                 resourceRequest(job.resources),job.id);
             job.lease_id=lease.id;
             job.assigned_machine_id=lease.machine_id;
