@@ -356,10 +356,13 @@ class ExperimentHub {
         const snapshot=this.snapshot();
         // This does not run a scheduler: the planner may place an unconfigured
         // job purely hypothetically, and even connected hosts are not executable.
+        // Use bounded planner labels, then restore durable UUID identities
+        // using the planner's original-input-order result contract.
         return {jobs:plan(snapshot.machines,snapshot.reservations,
-            jobs.map(j=>({id:j.id,resources:j.resources}))).map(row=>{
-                const job=jobs.find(j=>j.id===row.id);
-                return {...row,project_id:job.project_id,
+            jobs.map((job,index)=>({id:'job_'+index,resources:job.resources})))
+            .map((row,index)=>{
+                const job=jobs[index];
+                return {...row,id:job.id,project_id:job.project_id,
                     configuration_name:job.configuration_name,
                     status:job.status,executable:false};
             }),note:'Advisory what-if only. No adapter, worker launch, or OS limits are enabled.'};
