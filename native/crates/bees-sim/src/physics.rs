@@ -357,6 +357,8 @@ pub struct ObstacleBody {
     /// expensive pair searches.
     pub tracks_body_contacts: bool,
     collider: WorldCollider,
+    proximity_layer: Option<u8>,
+    proximity_collider: Option<WorldCollider>,
 }
 
 impl ObstacleBody {
@@ -379,6 +381,7 @@ impl ObstacleBody {
             id, pose, linear_velocity, angular_velocity_degrees, layer,
             active: true, tracks_body_contacts: false,
             collider: WorldCollider::new(shape)?,
+            proximity_layer: None, proximity_collider: None,
         })
     }
 
@@ -386,8 +389,27 @@ impl ObstacleBody {
         &self.collider.shape
     }
 
+    /// Authored proximity is a distinct child trigger, not an enlarged
+    /// approximation of the primary collision hull.
+    pub fn set_proximity_collider(
+        &mut self,
+        layer: u8,
+        shape: ShipShape,
+    ) -> Result<(), PhysicsError> {
+        if layer >= 32 {
+            return Err(PhysicsError::InvalidCollider);
+        }
+        let collider = WorldCollider::new(shape)?;
+        self.proximity_layer = Some(layer);
+        self.proximity_collider = Some(collider);
+        Ok(())
+    }
+
     fn update_hull(&mut self) {
         self.collider.update(self.pose);
+        if let Some(proximity) = &mut self.proximity_collider {
+            proximity.update(self.pose);
+        }
     }
 }
 
