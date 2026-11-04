@@ -2,8 +2,9 @@
 //!
 //! The current Unity Wasp/Gunship and small laser-shot prefabs use kinematic
 //! Rigidbody2D with discrete collision detection and trigger colliders.
-//! Their authored collision polygons and projectile radii are ported in
-//! `hulls`. This layer integrates prescribed velocity and reports trigger
+//! Their authored primary ship colliders live in native/assets/ship-colliders.json
+//! and are loaded once through ship_assets. Projectile radii are still being
+//! migrated into their own native asset catalog. This layer integrates prescribed velocity and reports trigger
 //! *entries*; it does not implement game damage, blocking, or collision
 //! impulses. The gameplay core must consume the events, just as Projectile
 //! consumes Unity's OnTriggerEnter2D queue.
@@ -85,7 +86,7 @@ pub struct ShipBody {
     pub motion: ShipMotion,
     pub layer: u8,
     pub active: bool,
-    pub shape: ShipShape,
+    shape: ShipShape,
     hull_world: Vec<Vec2>,
     circle_world: Vec2,
     bounds: Option<Aabb>,
@@ -108,6 +109,20 @@ impl ShipBody {
             hull_world: Vec::new(), circle_world: Vec2::ZERO,
             bounds: None, cached_pose: None,
         })
+    }
+
+    pub fn shape(&self) -> &ShipShape {
+        &self.shape
+    }
+
+    /// Changing a collision shape invalidates its transformed geometry cache.
+    pub fn replace_shape(&mut self, shape: ShipShape) -> Result<(), PhysicsError> {
+        if !shape.valid() {
+            return Err(PhysicsError::InvalidCollider);
+        }
+        self.shape = shape;
+        self.cached_pose = None;
+        Ok(())
     }
 
     fn update_hull(&mut self) {
