@@ -20,7 +20,37 @@ function boundedReport(value) {
         typeof value.platform !== 'string' ||
         !/^[a-z0-9_-]{1,32}$/i.test(value.platform))
         throw Error('Invalid agent CPU, RAM, or platform report.');
-    return {cpus:value.cpus, ram_mb:value.ram_mb, platform:value.platform};
+    let execution={
+        protocol_version:0,backend:'none',process_supervision:false,
+        cpu_quota_enforced:false,memory_limit_enforced:false,
+        gpu_isolation_enforced:false,cgroup_v2_detected:false,
+        cgroup_controllers:[],reason:'Agent has not reported host isolation capabilities.',
+    };
+    if(value.execution!==undefined) {
+        const e=value.execution;
+        if(!object(e)||e.protocol_version!==1||e.platform!==value.platform||
+            e.backend!=='none'||e.process_supervision!==false||
+            e.cpu_quota_enforced!==false||e.memory_limit_enforced!==false||
+            e.gpu_isolation_enforced!==false||
+            typeof e.cgroup_v2_detected!=='boolean'||
+            !Array.isArray(e.cgroup_controllers)||e.cgroup_controllers.length>5||
+            e.cgroup_controllers.some(x=>
+                !['cpu','memory','io','pids','cpuset'].includes(x))||
+            new Set(e.cgroup_controllers).size!==e.cgroup_controllers.length||
+            typeof e.reason!=='string'||e.reason.length>220)
+            throw Error('Invalid agent execution capability report.');
+        // A reported cgroup hierarchy is discovery only. No credential
+        // or heartbeat can turn these flags into enforcement.
+        execution={
+            protocol_version:1,backend:'none',process_supervision:false,
+            cpu_quota_enforced:false,memory_limit_enforced:false,
+            gpu_isolation_enforced:false,
+            cgroup_v2_detected:e.cgroup_v2_detected,
+            cgroup_controllers:e.cgroup_controllers.slice(),reason:e.reason,
+        };
+    }
+    return {cpus:value.cpus,ram_mb:value.ram_mb,
+        platform:value.platform,execution};
 }
 
 function object(value) {
@@ -102,6 +132,7 @@ class ExperimentHub {
                 machine.reported_cpus = report.cpus;
                 machine.reported_ram_mb = report.ram_mb;
                 machine.agent_platform = report.platform;
+                machine.execution_capabilities = copy(report.execution);
             }
             return machine;
         });
