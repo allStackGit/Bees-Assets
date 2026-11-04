@@ -86,7 +86,7 @@ class ExperimentHub {
             delete machine.agent_key_sha256;
             machine.agent_enrolled = enrolled;
             machine.status = !enrolled ? 'unverified' : fresh ? 'connected' : 'offline';
-            machine.last_seen_at = fresh
+            machine.last_seen_at = report
                 ? new Date(report.received_ms).toISOString() : null;
             if (fresh) {
                 machine.reported_cpus = report.cpus;
