@@ -11,6 +11,8 @@ const { summarize: summarizeResearch } = require('./bees_experiment_research');
 const { freezePlan: freezeEvaluator, supportsPurpose: evaluatorSupportsPurpose } =
     require('./bees_experiment_evaluator_versions');
 const { selectedRoot, copyAndSelect } = require('./bees_experiment_storage');
+const { append: appendMetricSample, plot: archivedMetricsChart,
+    filename: metricArchivePath } = require('./bees_experiment_metrics');
 const { getStatus } = require('./operator/control');
 const { getPendingForcedNewRunPlan } = require('./operator/runtime');
 const { assertRlEnvironmentArgsValid } = require('./operator/validation');
@@ -533,6 +535,14 @@ function measure(item, status, force = false, boundary = '') {
             ...(running ? { pipeline, ppo } : {}),
         };
         samples.push(observation);
+        try {
+            appendMetricSample(DATA_ROOT, item);
+            delete item.metric_archive_error;
+        } catch (error) {
+            // A measurement-storage failure must be visible but must not
+            // terminate an otherwise healthy distributed training run.
+            item.metric_archive_error = error.message;
+        }
         delete item.awaiting_resume_sample_step;
         const stage = stageFor(item);
         const windowTimeout = mean('timeout_pct');
@@ -2113,6 +2123,30 @@ const server = http.createServer(async (req, res) => {
         }
         if (req.method === 'GET' && route === '/api/benchmarks') {
             return json(res, 200, { reports: benchmarkReports() });
+        }
+        if (req.method === 'GET' && route === '/api/metric-history') {
+            const item = state.items.find(entry => entry.id === url.searchParams.get('id'));
+            if (!item) return json(res, 404, { error: 'Experiment not found.' });
+            return json(res, 200, archivedMetricsChart(DATA_ROOT, item,
+                url.searchParams.get('metric') || 'group_reward',
+                url.searchParams.get('axis') || 'steps',
+                Number(url.searchParams.get('smoothing') || 1)));
+        }
+        if (req.method === 'GET' && route === '/api/metric-archive') {
+            const item = state.items.find(entry => entry.id === url.searchParams.get('id'));
+            if (!item) return json(res, 404, { error: 'Experiment not found.' });
+            const source = metricArchivePath(DATA_ROOT, item);
+            if (!fs.existsSync(source)) return json(res, 404, {
+                error: 'No full-resolution metric archive exists yet for this experiment.' });
+            const stats = fs.statSync(source);
+            res.writeHead(200, {
+                'Content-Type': 'application/x-ndjson; charset=utf-8',
+                'Content-Disposition': 'attachment; filename="bees-' + item.id + '-metrics.jsonl"',
+                'Content-Length': stats.size, 'Cache-Control': 'no-store',
+                'X-Content-Type-Options': 'nosniff',
+            });
+            fs.createReadStream(source).pipe(res);
+            return;
         }
         if (req.method === 'GET' && route === '/api/research-summary') {
             return json(res, 200, { groups: summarizeResearch(state.items, benchmarkReports(Infinity)) });
