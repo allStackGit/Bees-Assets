@@ -206,8 +206,10 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
 .log-export button { padding: 0 9px; font-size: 11px; }
 #chart-png { align-self: flex-end; }
 @media (min-width:1200px) { .graph-wrap { max-width:100%; } }
-#legend { display: flex; gap: 15px; flex-wrap: wrap; padding: 8px 0; font-size: 12px; font-weight: 800; }
-.dot { display: inline-block; width: 10px; height: 10px; border: 1px solid var(--ink); border-radius: 0; margin-right: 6px; }
+#legend { display: flex; gap: 8px 20px; flex-wrap: wrap; padding: 8px 0 4px; font-size: 12px; font-weight: 800; }
+.legend-series { display: inline-flex; align-items: center; gap: 6px; }
+.dot { display: inline-block; flex: 0 0 auto; width: 10px; height: 10px; border: 1px solid var(--ink); }
+#chart-notes { display: flex; flex-wrap: wrap; gap: 4px 16px; padding: 2px 0 8px; font-size: 11px; }
 @media (max-width: 650px) {
     body { width: calc(100% - 16px); margin: 8px auto; padding: 12px; border-width: 3px; }
     h1 { font-size: 40px; letter-spacing: -1.5px; }
@@ -273,6 +275,7 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
 <div class="graph-wrap"><svg id="graph" class="graph" viewBox="0 0 800 250" role="img" aria-label="Interactive training curves"></svg><div id="graph-tooltip" role="status"></div></div>
 <div id="graph-inspect">Hover over the graph for sample values. Latest and average values appear in the legend.</div>
 <div id="legend"></div>
+<div id="chart-notes" class="muted"></div>
 <div id="aggregate" class="summary" style="margin:14px 0"></div>
 <div class="tablewrap"><table><thead><tr><th>Plot</th><th>Experiment</th><th>Status</th><th>Steps</th><th>Training hours</th><th>Effective steps/s</th><th>Timeout</th><th>Hit/shot</th><th>Run</th></tr></thead><tbody id="rows"></tbody></table></div>
 </section>
@@ -403,7 +406,7 @@ function environmentMarkers(item, axis) {
 }
 let chartHover = null;
 function chart(items) {
-    const svg = $('graph'); svg.replaceChildren(); $('legend').replaceChildren();
+    const svg = $('graph'); svg.replaceChildren(); $('legend').replaceChildren(); $('chart-notes').replaceChildren();
     const tooltip = $('graph-tooltip');
     tooltip.style.display = 'none';
     const metric = $('metric').value, axis = $('axis').value;
@@ -433,29 +436,24 @@ function chart(items) {
     const datasets = all.map((item, index) => ({
         item, color: colors[index % colors.length], points: seriesFor(item),
     }));
+    const chartNotes = [];
+    const renderChartNotes = () => $('chart-notes').replaceChildren(
+        ...chartNotes.map(note => txt('span', note)));
     for (const dataset of datasets) {
         const samples = dataset.item.samples || [];
+        if (!samples.length) continue;
         const covered = samples.filter(sample =>
             Number.isFinite(xValue(sample)) && metricValue(sample, metric) != null &&
             Number.isFinite(Number(metricValue(sample, metric))));
-        if (!samples.length) continue;
         const firstSaved = samples[0];
         const firstPlotted = covered[0];
-        const notices = [];
-        if (covered.length !== samples.length) {
-            notices.push('available for ' + covered.length + '/' + samples.length +
-                ' stored samples' + (firstPlotted?.step != null
-                    ? ', first plotted at ' + fmt(firstPlotted.step) + ' steps' : ''));
+        if (covered.length !== samples.length ||
+            (Number.isFinite(firstSaved.step) && firstSaved.step > 1000000)) {
+            const firstStep = firstPlotted?.step ?? firstSaved.step;
+            chartNotes.push(dataset.item.name + ': partial history' +
+                (Number.isFinite(firstStep)
+                    ? ' (first plotted at ' + fmt(firstStep) + ' steps)' : ''));
         }
-        if (Number.isFinite(firstSaved.step) && firstSaved.step > 1000000) {
-            notices.push('earliest saved sample at ' +
-                fmt(firstSaved.step) + ' steps; no earlier samples in manager state');
-        }
-        if (notices.length) $('legend').append(txt('span',
-            dataset.item.name + ' · ' +
-            ($('metric').selectedOptions[0]?.textContent || metric) + ': ' +
-            notices.join(' · ') +
-            '. The chart cannot reconstruct omitted historical readings.'));
     }
     const points = datasets.flatMap(series => series.points);
     chartHover = null;
@@ -473,6 +471,7 @@ function chart(items) {
         $('graph-inspect').textContent = !all.length
             ? 'Select a run in the Plot column.'
             : 'Existing runs retain available metrics; newly added measurements cannot be reconstructed retroactively.';
+        renderChartNotes();
         return;
     }
     // Avoid spreading tens of thousands of points into Math.max/min:
@@ -566,8 +565,7 @@ function chart(items) {
         }
     }
     if (evaluationMarkers.length)
-        $('legend').append(txt('span',
-            'E: actual checkpoint evaluation · T: actual stage transition (no separate planned-step lines)'));
+        chartNotes.push('E = checkpoint evaluation · T = stage transition');
     const unityRebuildMarkers = [];
     for (const dataset of datasets) {
         for (const change of (dataset.item.unity_rebuilds || [])) {
@@ -596,8 +594,8 @@ function chart(items) {
             unityRebuildMarkers.push({ x, label });
         }
     }
-    if (unityRebuildMarkers.length) $('legend').append(txt('span',
-        'U: Unity simulation rebuilt · compare results before and after separately'));
+    if (unityRebuildMarkers.length)
+        chartNotes.push('U = Unity rebuilt (compare before and after separately)');
     const envMarkers = [];
     if (isTrainingSpeedMetric(metric)) {
         for (const dataset of datasets) {
@@ -644,14 +642,17 @@ function chart(items) {
         const latestPoint = dataset.points[dataset.points.length - 1];
         const label = txt('span', dataset.item.name +
             ' · latest ' + fmt(latestPoint.raw, 3) +
-            ' · rolling ' + fmt(latestPoint.y, 3) +
-            ' · running mean ' + fmt(latestPoint.mean, 3));
+            (smooth > 1 ? ' · ' + smooth + '-sample avg ' + fmt(latestPoint.y, 3) : '') +
+            ' · overall avg ' + fmt(latestPoint.mean, 3));
+        label.className = 'legend-series';
+        label.dataset.chartColor = dataset.color;
         const dot = document.createElement('span');
         dot.className = 'dot'; dot.style.background = dataset.color;
         label.prepend(dot); $('legend').append(label);
     }
-    if (envMarkers.length) $('legend').append(txt('span',
-        '○ Vertical ticks: ' + envMarkers.length + ' environment-count changes · hover for worker details'));
+    if (envMarkers.length)
+        chartNotes.push('○ = worker environment change (' + envMarkers.length + '; hover for details)');
+    renderChartNotes();
     const hoverLayer = document.createElementNS('http://www.w3.org/2000/svg', 'g');
     hoverLayer.setAttribute('id', 'chart-hover-overlay');
     svg.append(hoverLayer);
@@ -674,11 +675,10 @@ async function saveChartPng() {
         const metric = $('metric').value;
         const metricName = $('metric').selectedOptions[0]?.textContent || 'Training metric';
         const axisName = $('axis').selectedOptions[0]?.textContent || 'Learner steps';
-        const labels = [...$('legend').querySelectorAll('span')]
+        const labels = [...$('legend').querySelectorAll('.legend-series')]
+            .map(el => ({ text: el.textContent, color: el.dataset.chartColor }));
+        const notes = [...$('chart-notes').querySelectorAll('span')]
             .map(el => el.textContent);
-        const seriesColors = (chartHover?.datasets || []).map(dataset => ({
-            name: dataset.item.name, color: dataset.color,
-        }));
         const source = $('graph').cloneNode(true);
         source.querySelector('#chart-hover-overlay')?.remove();
         source.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
@@ -700,7 +700,7 @@ async function saveChartPng() {
         await loaded;
         const canvas = document.createElement('canvas');
         canvas.width = 1600;
-        canvas.height = 600 + Math.max(1, labels.length) * 44;
+        canvas.height = 600 + Math.max(1, labels.length) * 44 + notes.length * 32;
         const context = canvas.getContext('2d');
         if (!context) throw Error('PNG export requires canvas support.');
         context.fillStyle = '#fff';
@@ -712,19 +712,24 @@ async function saveChartPng() {
         context.font = '21px Arial, sans-serif';
         for (let i = 0; i < labels.length; i++) {
             const y = 585 + i * 44;
-            const series = seriesColors.find(dataset =>
-                labels[i].startsWith(dataset.name + ' ·'));
-            context.fillStyle = series ? series.color : '#111';
+            context.fillStyle = labels[i].color;
             context.fillRect(55, y - 15, 17, 17);
             context.fillStyle = '#111';
-            context.fillText(labels[i], 88, y, 1480);
+            context.fillText(labels[i].text, 88, y, 1480);
+        }
+        context.font = '18px Arial, sans-serif';
+        for (let i = 0; i < notes.length; i++) {
+            context.fillText(notes[i], 55,
+                585 + Math.max(1, labels.length) * 44 + i * 32, 1480);
         }
         const png = await new Promise((resolve, reject) =>
             canvas.toBlob(blob => blob ? resolve(blob) :
                 reject(Error('Browser could not encode the PNG.')), 'image/png'));
         const downloadUrl = URL.createObjectURL(png);
         const anchor = document.createElement('a');
-        anchor.download = 'bees-' + metric + '-chart.png';
+        const timestamp = new Date().toISOString()
+            .replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
+        anchor.download = 'bees-' + metric + '-chart-' + timestamp + '.png';
         anchor.href = downloadUrl;
         anchor.click();
         // The download is initiated synchronously. Revoke the object URL after
