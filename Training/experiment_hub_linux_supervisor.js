@@ -158,7 +158,8 @@ class LinuxSupervisor {
                 '--property=Id,Description,LoadState,ActiveState,SubState,Result,MainPID,MemoryMax,CPUQuotaPerSecUSec,MemoryCurrent,CPUUsageNSec,TasksCurrent'],
             {timeout:12000,maxBuffer:16384,windowsHide:true});
         const p=parseShow(out.stdout);
-        if(p.LoadState!=='loaded')return {state:'unverified',active:false};
+        if(p.LoadState!=='loaded')
+            return {state:'unverified',active:false,unit_exists:false};
         if(p.Id!==record.unit||p.Description!==descriptionFor(record.job_id))
             throw Error('Unit identity mismatch; refusing to control an unknown service.');
         const expectedMemory=record.ram_mb*1048576;
@@ -170,7 +171,7 @@ class LinuxSupervisor {
             const numeric=value=>/^[0-9]+$/.test(value||'')&&
                 Number.isSafeInteger(Number(value))?Number(value):null;
             const memoryBytes=numeric(p.MemoryCurrent);
-            return {state:'running',active:true,
+            return {state:'running',active:true,unit_exists:true,
                 pid:numeric(p.MainPID)||null,
                 memory_current_mb:memoryBytes==null?null:
                     Math.round(memoryBytes/1048576),
@@ -179,8 +180,8 @@ class LinuxSupervisor {
         }
         if(p.ActiveState==='inactive'||p.ActiveState==='failed')
             return {state:p.Result==='success'?'finished':'failed',
-                active:false,pid:null};
-        return {state:'unverified',active:false};
+                active:false,unit_exists:true,pid:null};
+        return {state:'unverified',active:false,unit_exists:true};
     }
     // Does not restart anything. A crash after the start request leaves a
     // durable record that must be inspected before an operator can proceed.
@@ -216,6 +217,14 @@ class LinuxSupervisor {
             this.adapters,this.hostOs);
         if(this.state.records.length>=MAX_RECORDS)
             throw Error('Supervisor history capacity reached; no launch permitted.');
+        // Refuse to create a service when a deterministic unit already
+        // exists but the local ledger has lost ownership of it.
+        const unit=unitFor(job.id);
+        const existing=await this.inspectUnit({
+            job_id:job.id,unit,cpus:invocation.cpus,ram_mb:invocation.ram_mb,
+        });
+        if(existing.unit_exists!==false)
+            throw Error('A matching systemd unit already exists without a local ownership record.');
         const record={
             job_id:job.id,lease_id:lease.id,project_id:job.project_id,
             unit:unitFor(job.id),state:'launch_requested',
