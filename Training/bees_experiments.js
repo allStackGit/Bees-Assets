@@ -2410,6 +2410,12 @@ const server = http.createServer(async (req, res) => {
         if (route === '/api/hub/jobs/allocate') {
             return json(res, 200, requireHub().allocateJobs(value));
         }
+        if (route === '/api/hub/jobs/start') {
+            return json(res, 200, requireHub().authorizeStart(value));
+        }
+        if (route === '/api/hub/jobs/stop') {
+            return json(res, 200, requireHub().authorizeStop(value));
+        }
         if (route === '/api/storage') {
             if (busy || state.active_id || state.armed || state.stop_requested) {
                 return json(res, 409, { error: 'Stop and complete all active experiments before relocating data.' });
