@@ -495,36 +495,6 @@ function chart(items) {
         zeroLabel.textContent = '0';
         svg.append(zeroLabel);
     }
-    const boundaries = all[0]?.stages?.slice(0, -1).map(stage => stage.end_step);
-    if (axis === 'steps' && boundaries && all.every(item => item.stages &&
-        JSON.stringify(item.stages.slice(0, -1).map(stage => stage.end_step)) ===
-            JSON.stringify(boundaries))) {
-        for (const boundary of boundaries) {
-            if (boundary >= xmax) continue;
-            const marker = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-            marker.setAttribute('x1', xx(boundary));
-            marker.setAttribute('x2', xx(boundary));
-            marker.setAttribute('y1', '20');
-            marker.setAttribute('y2', '210');
-            marker.setAttribute('stroke', '#000000');
-            marker.setAttribute('stroke-dasharray', '2 6');
-            marker.setAttribute('opacity', '0.45');
-            const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-            const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-            label.setAttribute('x', String(xx(boundary) - 4));
-            label.setAttribute('y', '15');
-            label.setAttribute('font-size', '10');
-            label.setAttribute('fill', '#000');
-            label.textContent = 'S';
-            const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
-            title.textContent = 'Curriculum stage threshold · ' + fmt(boundary) +
-                ' learner steps (evaluation may follow at a later finalized step)';
-            group.append(marker, label, title);
-            svg.append(group);
-        }
-        if (boundaries.length)
-            $('legend').append(txt('span', 'S: scheduled curriculum stage threshold · E: actual checkpoint evaluation'));
-    }
     const xLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
     xLabel.setAttribute('x', '640'); xLabel.setAttribute('y', '237');
     xLabel.setAttribute('fill', 'currentColor');
@@ -541,12 +511,12 @@ function chart(items) {
     for (const dataset of datasets) {
         if (!dataset.points.length) continue;
         for (const [index, record] of (dataset.item.stage_history || []).entries()) {
-            if (!record?.evaluation) continue;
+            if (record?.finished_step == null && !record?.evaluation) continue;
             const x = axis === 'time'
                 ? (record.finished_training_s != null
                     ? record.finished_training_s / 3600
                     : stagePerformanceThrough(dataset.item, index)?.hours)
-                : (record.evaluation.boundary_step ?? record.finished_step);
+                : (record.evaluation?.boundary_step ?? record.finished_step);
             if (!Number.isFinite(x) || x < 0 || x > xmax) continue;
             const position = xx(x);
             const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
@@ -562,15 +532,16 @@ function chart(items) {
             tag.setAttribute('y', '15');
             tag.setAttribute('fill', '#111');
             tag.setAttribute('font-size', '10');
-            tag.textContent = 'E';
+            tag.textContent = record.evaluation ? 'E' : 'T';
             const stageName = dataset.item.stages?.[index]?.name || 'Stage ' + (index + 1);
             const threshold = dataset.item.stages?.[index]?.end_step;
-            const actualStep = record.evaluation.boundary_step ?? record.finished_step;
+            const actualStep = record.evaluation?.boundary_step ?? record.finished_step;
             const label = dataset.item.name + ' · ' + stageName +
-                ' checkpoint evaluation at ' + fmt(actualStep) + ' learner steps' +
+                (record.evaluation ? ' checkpoint evaluation' : ' curriculum transition') +
+                ' at ' + fmt(actualStep) + ' learner steps' +
                 (Number.isFinite(threshold)
-                    ? ' (scheduled threshold ' + fmt(threshold) + ' steps)' : '') +
-                ' · learner stopped';
+                    ? ' (planned threshold ' + fmt(threshold) + ' steps)' : '') +
+                (record.evaluation ? ' · learner stopped' : '');
             const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
             title.textContent = label;
             group.append(marker, tag, title);
@@ -579,7 +550,8 @@ function chart(items) {
         }
     }
     if (evaluationMarkers.length)
-        $('legend').append(txt('span', 'E: benchmark evaluation · no training samples while stopped'));
+        $('legend').append(txt('span',
+            'E: actual checkpoint evaluation · T: actual stage transition (no separate planned-step lines)'));
     const envMarkers = [];
     if (isTrainingSpeedMetric(metric)) {
         for (const dataset of datasets) {
@@ -611,54 +583,18 @@ function chart(items) {
             }
         }
     }
-    const sampleGaps = [];
+    // The previous 500-sample compaction permanently reduced historical
+    // resolution. Do not split that old data into isolated dots based on an
+    // arbitrary step-distance threshold. The line connects known samples.
     for (const dataset of datasets) {
         if (!dataset.points.length) continue;
-        const drawSegment = segment => {
-            if (!segment.length) return;
-            if (segment.length === 1) {
-                const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-                dot.setAttribute('cx', String(xx(segment[0].x)));
-                dot.setAttribute('cy', String(yy(segment[0].y)));
-                dot.setAttribute('r', '2.5');
-                dot.setAttribute('fill', dataset.color);
-                svg.append(dot);
-                return;
-            }
-            const path = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
-            path.setAttribute('points', segment.map(p =>
-                xx(p.x) + ',' + yy(p.y)).join(' '));
-            path.setAttribute('stroke', dataset.color);
-            path.setAttribute('stroke-width', '1.2');
-            path.setAttribute('fill', 'none');
-            svg.append(path);
-        };
-        let segment = [dataset.points[0]];
-        for (let i = 1; i < dataset.points.length; i++) {
-            const previous = dataset.points[i - 1];
-            const current = dataset.points[i];
-            const delta = current.step - previous.step;
-            const missingMetric = current.sourceIndex > previous.sourceIndex + 1;
-            // A missing sequence in the persisted chart or more than a
-            // million steps without a sample is unknown, not an interpolated
-            // performance trend. The original 500-sample compaction may have
-            // discarded older points, so report missing *stored* readings.
-            const missingSteps = Number.isFinite(delta) && delta > 1000000;
-            if (missingMetric || missingSteps || current.x <= previous.x) {
-                drawSegment(segment);
-                if (current.x > previous.x) sampleGaps.push({
-                    run: dataset.item.name, from: previous.step, to: current.step,
-                    fromX: previous.x, toX: current.x,
-                    earlierAt: previous.at, laterAt: current.at,
-                    skippedMetrics: Math.max(0, current.sourceIndex - previous.sourceIndex - 1),
-                    metric,
-                });
-                segment = [current];
-            } else {
-                segment.push(current);
-            }
-        }
-        drawSegment(segment);
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+        path.setAttribute('points', dataset.points.map(p =>
+            xx(p.x) + ',' + yy(p.y)).join(' '));
+        path.setAttribute('stroke', dataset.color);
+        path.setAttribute('stroke-width', '1.2');
+        path.setAttribute('fill', 'none');
+        svg.append(path);
         const latestPoint = dataset.points[dataset.points.length - 1];
         const label = txt('span', dataset.item.name +
             ' · latest ' + fmt(latestPoint.raw, 3) +
@@ -668,27 +604,15 @@ function chart(items) {
         dot.className = 'dot'; dot.style.background = dataset.color;
         label.prepend(dot); $('legend').append(label);
     }
-    if (sampleGaps.length) {
-        const largest = sampleGaps.slice().sort((a, b) =>
-            (b.to - b.from) - (a.to - a.from)).slice(0, 3);
-        for (const gap of largest) $('legend').append(txt('span',
-            'NO STORED DATA · ' + gap.run + ' · ' + fmt(gap.from) +
-            '–' + fmt(gap.to) + ' steps (' + fmt(gap.to - gap.from) +
-            ' steps between consecutive plotted samples)' +
-            (gap.skippedMetrics ? ' · ' + gap.skippedMetrics +
-                ' intervening samples lack this metric' : '') +
-            '. Line intentionally disconnected.'));
-    }
     if (envMarkers.length) $('legend').append(txt('span',
         '○ Vertical ticks: ' + envMarkers.length + ' environment-count changes · hover for worker details'));
     const hoverLayer = document.createElementNS('http://www.w3.org/2000/svg', 'g');
     hoverLayer.setAttribute('id', 'chart-hover-overlay');
     svg.append(hoverLayer);
     chartHover = { datasets, hoverLayer, xmax, xx, yy, metric, axis, smooth,
-        envMarkers, evaluationMarkers, sampleGaps };
+        envMarkers, evaluationMarkers };
     $('graph-inspect').textContent =
         'Hover for raw, rolling and running-mean values.' +
-        (sampleGaps.length ? ' Disconnected lines indicate missing stored observations, not interpolated results.' : '') +
         (envMarkers.length ? ' Vertical ticks mark observed worker environment-count changes; historical requests are approximate.' : '') +
         ' Rolling averages use the last ' +
         smooth + ' recorded sample(s), not an independent evaluation.';
@@ -805,11 +729,8 @@ function inspectChart(event) {
         Math.abs(chartHover.xx(change.x) - pixelX) <= 7);
     const nearbyEvaluations = chartHover.evaluationMarkers.filter(event =>
         Math.abs(chartHover.xx(event.x) - pixelX) <= 7);
-    const missingHere = chartHover.sampleGaps.filter(gap =>
-        x > gap.fromX && x < gap.toX);
     const text = [
-        ...nearest.filter(({ item }) => !missingHere.some(gap =>
-            gap.run === item.name)).map(({ item, point }) =>
+        ...nearest.map(({ item, point }) =>
             item.name + ' · ' + (chartHover.axis === 'time'
                 ? fmt(point.x, 2) + ' training h' : fmt(point.x) + ' steps') +
             '\n  raw ' + fmt(point.raw, 3) +
@@ -818,14 +739,7 @@ function inspectChart(event) {
         ...nearbyChanges.map(change =>
             'ENV COUNT · ' + change.run + ' · ' + change.label +
             ' · ' + new Date(change.at).toLocaleString()),
-        ...nearbyEvaluations.map(event => 'EVALUATION · ' + event.label),
-        ...missingHere.map(gap => 'NO STORED ' + chartHover.metric.toUpperCase() +
-            ' DATA · ' + gap.run + ' · ' + fmt(gap.from) + '–' +
-            fmt(gap.to) + ' learner steps' +
-            (gap.earlierAt && gap.laterAt ? ' · samples dated ' +
-                new Date(gap.earlierAt).toLocaleString() + ' and ' +
-                new Date(gap.laterAt).toLocaleString() : '') +
-            ' · no measured trend between these endpoints'),
+        ...nearbyEvaluations.map(event => 'STAGE EVENT · ' + event.label),
     ].join('\n');
     $('graph-inspect').textContent = text.replaceAll('\n', ' ');
     const tooltip = $('graph-tooltip');
