@@ -152,9 +152,8 @@ pub fn resolve_asteroid_ship_damage(
 }
 
 /// Exact spawn counts from CollisionAsteroid.SpawnBreakAwayAsteroids.
-/// The consuming world must still supply pool-specific prefab geometry,
-/// inherited angular velocity, random velocity/heading, sibling exclusion,
-/// and piece fade/expiry before fragmentation is functionally complete.
+/// CombatWorld consumes these counts with its scene-specific prefab palette,
+/// pooled shard/piece identities and shared collision/lifecycle rules.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct AsteroidBreakup {
     pub collision_asteroid_shards: u8,
