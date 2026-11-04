@@ -85,7 +85,10 @@ def create_bundle(db: Path, benchmarks: Path, destination: Path,
             manifest["files"][name] = digest
             written.add(name)
 
-        archive.writestr("experiments.json", json.dumps(items, indent=2, sort_keys=True) + "\n")
+        experiment_snapshot = json.dumps(items, indent=2, sort_keys=True) + "\n"
+        archive.writestr("experiments.json", experiment_snapshot)
+        manifest["files"]["experiments.json"] = hashlib.sha256(
+            experiment_snapshot.encode("utf-8")).hexdigest()
         # This JSON is the one immutable snapshot of each selected item, including
         # its bounded time-series samples. Do not copy raw training histories.
         for item in items:
