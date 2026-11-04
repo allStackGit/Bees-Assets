@@ -2818,6 +2818,11 @@ if (require.main === module) {
         setImmediate(cycle);
         setInterval(cycle, 10000);
     });
+    // Optional Hub agent service must not prevent the existing Bees
+    // coordinator from recovering training if this secondary port is busy.
+    agentServer.on('error', error => {
+        console.error('[hub] agent heartbeat listener unavailable:', error.message);
+    });
     agentServer.listen(AGENT_PORT, HOST, () => {
         console.log('Experiment Hub machine heartbeat port: ' + HOST+':'+AGENT_PORT);
     });
