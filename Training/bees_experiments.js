@@ -134,6 +134,62 @@ function validateCurriculumTemplate(template) {
     }, [], template.first_steps);
 }
 
+// Four equal quarter-run checkpoints or every 100M steps, whichever is denser.
+// Unlimited runs have no percentage denominator and use 100M steps.
+function periodicEvaluationTarget(item, ordinal) {
+    if (item.evaluation_mode !== 'periodic' || !item.stage_benchmarks ||
+        !Number.isSafeInteger(ordinal) || ordinal < 1) return null;
+    const total = item.max_steps;
+    if (total != null && total <= 400_000_000) {
+        return ordinal <= 4 ? Math.ceil(total / 4 * ordinal) : null;
+    }
+    const milestone = ordinal * 100_000_000;
+    if (!Number.isSafeInteger(milestone)) return null;
+    if (total == null || milestone < total) return milestone;
+    return ordinal === Math.ceil(total / 100_000_000) ? total : null;
+}
+function periodicEvaluationDue(item) {
+    const step = periodicEvaluationTarget(item, item.checkpoint_next_index || 1);
+    return step != null && Number.isSafeInteger(item.step) && item.step >= step;
+}
+function stageSuiteAtBoundary(item) {
+    return Boolean(item.stage_benchmarks && item.evaluation_mode !== 'periodic');
+}
+function periodicCheckpointRecord(item) {
+    const ordinal = item.checkpoint_next_index || 1;
+    const target = periodicEvaluationTarget(item, ordinal);
+    if (target == null || item.step == null || item.step < target) return null;
+    item.checkpoint_history = item.checkpoint_history || [];
+    let record = item.checkpoint_history.find(entry => entry.ordinal === ordinal);
+    if (!record) {
+        record = {
+            ordinal, target_step: target, stage_index: item.stage_index || 0,
+            started_at: now(),
+        };
+        item.checkpoint_history.push(record);
+        save();
+    } else if (record.target_step !== target) {
+        throw Error('Saved checkpoint schedule differs from this experiment.');
+    }
+    return record;
+}
+async function evaluateDuePeriodic(item, status) {
+    const record = periodicCheckpointRecord(item);
+    if (!record) return true;
+    if (!(await evaluateStageSuite(item, record.stage_index, status, record))) return false;
+    record.finished_at = record.finished_at || now();
+    record.actual_step = record.evaluation?.boundary_step ?? item.step;
+    item.checkpoint_next_index = record.ordinal + 1;
+    // Avoid running multiple evaluations of the same network if a learner
+    // status update overshot several intended checkpoint thresholds.
+    while (periodicEvaluationTarget(item, item.checkpoint_next_index) != null &&
+        item.step >= periodicEvaluationTarget(item, item.checkpoint_next_index)) {
+        item.checkpoint_next_index++;
+    }
+    save();
+    return true;
+}
+
 function stageFor(item) {
     return item.stages ? item.stages[item.stage_index || 0] : null;
 }
@@ -690,7 +746,7 @@ function verifyStageCandidate(candidate, minimumStep) {
     }
 }
 
-function stageEvaluationKey(item, index, scenario, scenarioIndex, candidate, plan) {
+function stageEvaluationKey(item, index, scenario, scenarioIndex, candidate, plan, checkpointTarget = null) {
     const identity = [
         item.id, item.run_id, index, scenario.id,
         plan.hashes['recipe_' + scenarioIndex],
@@ -698,6 +754,7 @@ function stageEvaluationKey(item, index, scenario, scenarioIndex, candidate, pla
         plan.hashes.environment, plan.hashes.evaluator, plan.hashes.runner,
         plan.build_id, candidate.sha256, candidate.training_step,
     ];
+    if (checkpointTarget != null) identity.push(checkpointTarget);
     return crypto.createHash('sha256').update(JSON.stringify(identity)).digest('hex');
 }
 
@@ -747,10 +804,10 @@ function findStageReport(item, index, scenario, candidate, plan, evaluationId, s
     return null;
 }
 
-async function evaluateStageSuite(item, index, status) {
+async function evaluateStageSuite(item, index, status, checkpointRecord = null) {
     const plan = item.stage_benchmarks;
     if (!plan) return true;
-    const record = stageRecord(item, index);
+    const record = checkpointRecord || stageRecord(item, index);
     try {
         if (!status.desired || status.desired.training_enabled ||
             status.desired.pending_release || status.desired.run_id !== item.run_id ||
@@ -780,11 +837,15 @@ async function evaluateStageSuite(item, index, status) {
         for (const [scenarioIndex, scenario] of plan.scenarios.entries()) {
             verifyBenchmarkPlan(plan);
             const evaluationId = stageEvaluationKey(
-                item, index, scenario, scenarioIndex, evaluation.candidate, plan);
+                item, index, scenario, scenarioIndex, evaluation.candidate, plan,
+                checkpointRecord?.target_step ?? null);
             let reportName = findStageReport(item, index, scenario, evaluation.candidate,
                 plan, evaluationId, evaluation.reports[scenario.id]);
             if (!reportName) {
-                state.message = 'Stage ' + (index + 1) + ' evaluation: ' + scenario.id +
+                state.message = (checkpointRecord
+                    ? 'Checkpoint ' + checkpointRecord.ordinal + ' (' +
+                        checkpointRecord.target_step.toLocaleString() + ' steps)'
+                    : 'Stage ' + (index + 1)) + ' evaluation: ' + scenario.id +
                     ' for ' + item.name;
                 save();
                 const output = await execBenchmark(plan.python, [
@@ -821,7 +882,7 @@ async function evaluateStageSuite(item, index, status) {
         }
         item.stage_evaluation_error = error.message;
         state.armed = false;
-        state.message = 'Stage evaluation failed; queue disarmed: ' + error.message;
+        state.message = 'Checkpoint evaluation failed; queue disarmed: ' + error.message;
         save();
         return false;
     }
@@ -845,7 +906,9 @@ async function finishFinalStageEvaluation(item, status) {
         return;
     }
     if (!state.armed) return;
-    if (!(await evaluateStageSuite(item, item.stage_index || 0, status))) return;
+    if (!(item.evaluation_mode === 'periodic'
+        ? await evaluateDuePeriodic(item, status)
+        : await evaluateStageSuite(item, item.stage_index || 0, status))) return;
     item.status = 'completed';
     item.finished_at = item.finished_at || now();
     state.active_id = null;
@@ -1108,7 +1171,8 @@ async function transitionStage(item, status) {
         blocked(item, 'Previous curriculum stage restarted after its verified stop; refusing to evaluate or overwrite the pinned boundary.');
         return;
     }
-    if (matches(previous.env_args, next.env_args) && !item.stage_benchmarks) {
+    if (matches(previous.env_args, next.env_args) &&
+        !stageSuiteAtBoundary(item) && !periodicEvaluationDue(item)) {
         if (!d.training_enabled) {
             blocked(item, 'Training was disabled outside the manager at a metric-only stage boundary.');
             return;
@@ -1141,7 +1205,7 @@ async function transitionStage(item, status) {
         const finalized = getAuthoritativeLearnerStats(item.run_id);
         if (Number.isSafeInteger(finalized?.Step) &&
             (item.step == null || finalized.Step > item.step)) {
-            measure(item, status, true, item.stage_benchmarks
+            measure(item, status, true, stageSuiteAtBoundary(item) || periodicEvaluationDue(item)
                 ? 'pre-evaluation' : 'pre-transition');
         }
         item.stage_stop_confirmed = true;
@@ -1164,7 +1228,7 @@ async function transitionStage(item, status) {
         blocked(item, 'Curriculum stop ownership was not durably confirmed; inspect the stopped run before manual recovery.');
         return;
     }
-    if (status.desired.training_enabled && item.stage_benchmarks &&
+    if (status.desired.training_enabled && stageSuiteAtBoundary(item) &&
         stageRecord(item, index).evaluation?.status !== 'completed' &&
         matches(status.desired.environment_args, next.env_args)) {
         blocked(item, 'Next curriculum stage was started without verified stage evaluations.');
@@ -1172,7 +1236,8 @@ async function transitionStage(item, status) {
     }
     if (!status.desired.training_enabled) {
         assertSameLineageCheckpoint(item);
-        if (!(await evaluateStageSuite(item, index, status))) return;
+        if (stageSuiteAtBoundary(item) && !(await evaluateStageSuite(item, index, status))) return;
+        if (periodicEvaluationDue(item) && !(await evaluateDuePeriodic(item, status))) return;
         if (state.stop_requested || !state.armed) {
             item.end_reason = 'manual';
             item.status = 'stopping';
@@ -1249,6 +1314,10 @@ async function monitor() {
         await transitionStage(item, status);
         return;
     }
+    if (item.status === 'checkpointing') {
+        await checkpointPeriodic(item, status);
+        return;
+    }
     if (item.status === 'evaluating_final_stage') {
         await finishFinalStageEvaluation(item, status);
         return;
@@ -1291,9 +1360,9 @@ async function monitor() {
     const elapsed = Date.now() - Date.parse(item.started_at) - (item.paused_ms || 0);
     const stagnant = Date.now() - Date.parse(item.last_progress);
     const reason = configurationError ? 'configuration_mismatch' : state.stop_requested ? 'manual' :
-        item.step != null && item.step >= item.max_steps ? 'budget' :
-        elapsed >= item.max_minutes * 60000 ? 'time_limit' :
-        stagnant >= item.stall_minutes * 60000 ? 'no_progress' : '';
+        item.max_steps != null && item.step != null && item.step >= item.max_steps ? 'budget' :
+        item.max_minutes != null && elapsed >= item.max_minutes * 60000 ? 'time_limit' :
+        item.stall_minutes != null && stagnant >= item.stall_minutes * 60000 ? 'no_progress' : '';
     if (reason) {
         item.status = 'stopping';
         item.end_reason = reason;
@@ -1305,13 +1374,21 @@ async function monitor() {
         // The ordinary minute cadence often misses the last training window
         // when a long benchmark evaluation begins. Capture it while the
         // learner is still running, before changing the item to transitioning.
-        measure(item, status, true, item.stage_benchmarks
+        measure(item, status, true, stageSuiteAtBoundary(item) || periodicEvaluationDue(item)
             ? 'pre-evaluation' : 'pre-transition');
         item.status = 'transitioning';
         item.stage_transition_at = now();
         state.message = 'Switching ' + item.name + ' to ' + item.stages[item.stage_index + 1].name;
         save();
         await transitionStage(item, status);
+    } else if (periodicEvaluationDue(item)) {
+        measure(item, status, true, 'pre-evaluation');
+        item.status = 'checkpointing';
+        state.message = 'Evaluating ' + item.name + ' at ' +
+            periodicEvaluationTarget(item, item.checkpoint_next_index || 1).toLocaleString() +
+            ' learner steps, without changing the curriculum stage.';
+        save();
+        await checkpointPeriodic(item, status);
     } else if (Date.now() - lastRoutineSaveMs >= 30000) {
         // A 10-second threshold observation should not triple full-history
         // JSON rewrites. Retain the previous ~30-second durable snapshot cadence.
