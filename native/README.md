@@ -42,12 +42,20 @@ The dependency-free `bees-sim` crate currently contains:
 - Polygon, circular and box hulls (including concave polygon contact);
   reusable broadphase spatial grid; kinematic velocity integration; explicit
   layer-mask filtering; trigger-entry detection and per-step physics counters.
-- Source-matched direct-projectile and explosion-contact eligibility rules.
+- Source-matched direct-projectile and explosion-contact eligibility rules,
+  plus shared piercing/beam power budgets, Splitter Shot fragment generation,
+  rocket acceleration and explosion hit tracking.
+- A versioned asset catalog for **all 15 projectile types**, covering circles,
+  rotated boxes, stationary explosions and the script-driven (non-colliding)
+  Striker Bomb. The importer excludes visual-only impact animations.
+- A shared, cached world-collider path for both ship and projectile geometry,
+  including polygon-to-box and box-to-box trigger checks.
 - A physics-only world adapter wired into the shared scheduler. It explicitly
   rejects PPO actions until the complete gameplay rules are migrated.
 
-**Not yet implemented:** complete normal user/Hive Mind movement, all weapon
-and projectile variants, Unity-equivalent physics callback ordering and full
+**Not yet implemented:** complete normal user/Hive Mind movement,
+weapon-specific spawn/attack ownership, Striker Bomb delayed damage, rocket
+explosion spawning, Unity-equivalent physics callback ordering and full
 collision-layer matrix, complete damage/TSV/episode accounting, visibility and
 observations, rewards, game modes, presentation, server/persistence, PPO and
 experiment orchestration.
@@ -112,3 +120,21 @@ through native asset tooling rather than depending on Unity at runtime.
 The physics layer accepts a required collision-layer matrix, but no verified
 export of the existing Unity Physics2D matrix is yet available. Do not replace
 this missing contract with an allow-all default in gameplay or training.
+
+## Projectile collider migration
+
+`native/assets/projectile-colliders.json` records all 15 non-None
+`ConfigData.ProjectileTypes`. Its source importer is:
+
+```sh
+node native/tools/import-unity-projectile-colliders.mjs --check
+```
+
+Omit `--check` to regenerate from Unity prefabs. Both importers use an explicit
+serialized collider reference and reject shape assumptions. These are transition
+tools, not production runtime dependencies.
+
+The runtime shares one transformed-collider implementation between ships and
+projectiles. Source-based shape geometry is necessary but **does not establish
+Unity Physics2D callback/timestep parity**; validating that will require the
+full gameplay integration and the original runtime.
