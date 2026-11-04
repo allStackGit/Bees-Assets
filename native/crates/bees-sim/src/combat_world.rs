@@ -16,12 +16,13 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use crate::collision::{Aabb, Pose};
+use crate::explosion_lifecycle::{ExplosionAction, ExplosionEvent, ExplosionTimeline};
 use crate::bomb::{BombAction, StrikerBombFuse};
 use crate::combat::{CombatError, DamageSource, HitEvent, ShipVitals};
 use crate::damage::can_basic_projectile_damage;
 use crate::damage_reservations::{DamageReservations, DamageStatus, ReservationError};
 use crate::physics::{
-    CollisionMatrix, KinematicPhysics, PhysicsError, ProjectileBody, ShipBody, TriggerEnter,
+    CollisionMatrix, KinematicPhysics, PhysicsError, ProjectileBody, ShipBody, ShipShape, TriggerEnter,
 };
 use crate::policy::Decision;
 use crate::movement::ShipMotion;
@@ -107,16 +108,24 @@ enum ImpactBehavior {
     StrikerBomb(StrikerBombFuse),
     Rocket { acceleration_timer: ScaledTimer, max_speed: f32 },
     Penetrating(PiercingShot),
-    Explosion(ExplosionContacts),
+    Explosion { contacts: ExplosionContacts, timeline: ExplosionTimeline },
 }
 
 impl ImpactBehavior {
-    fn for_type(projectile_type: u8, power: i32, rocket_max_speed: Option<f32>) -> Result<Self, CombatWorldError> {
+    fn for_type(
+        projectile_type: u8,
+        power: i32,
+        rocket_max_speed: Option<f32>,
+        explosion_events: Arc<[ExplosionEvent]>,
+    ) -> Result<Self, CombatWorldError> {
         match projectile_type {
             1 | 2 | 3 | 6 | 7 | 10 | 11 => Ok(Self::Direct),
             4 => Ok(Self::Penetrating(PiercingShot::new(PiercingType::PowerShot, power))),
             8 => Ok(Self::Penetrating(PiercingShot::new(PiercingType::LaserBeam, power))),
-            13..=15 => Ok(Self::Explosion(ExplosionContacts::new())),
+            13..=15 => Ok(Self::Explosion {
+                contacts: ExplosionContacts::new(),
+                timeline: ExplosionTimeline::new(explosion_events),
+            }),
             5 => Ok(Self::Rocket {
                 acceleration_timer: ScaledTimer::new(0.1, true, true),
                 max_speed: rocket_max_speed.ok_or(CombatWorldError::MissingRocketStats)?,
@@ -128,7 +137,7 @@ impl ImpactBehavior {
     }
 
     fn drains_all_contacts(&self) -> bool {
-        matches!(self, Self::Explosion(_))
+        matches!(self, Self::Explosion { .. })
     }
 }
 
@@ -150,9 +159,12 @@ impl CombatProjectile {
         owner: ShotOwner,
         power: i32,
         rocket_max_speed: Option<f32>,
+        explosion_events: Arc<[ExplosionEvent]>,
     ) -> Result<Self, CombatWorldError> {
         if power < 0 { return Err(CombatWorldError::InvalidProjectilePower); }
-        let behavior = ImpactBehavior::for_type(projectile_type, power, rocket_max_speed)?;
+        let behavior = ImpactBehavior::for_type(
+            projectile_type, power, rocket_max_speed, explosion_events,
+        )?;
         Ok(Self {
             entity_id, projectile_type, owner, power,
             ignored_ships: HashSet::new(), behavior,
@@ -185,13 +197,27 @@ impl CombatProjectile {
     }
 
     pub fn set_explosion_harmless(&mut self, harmless: bool) {
-        if let ImpactBehavior::Explosion(explosion) = &mut self.behavior {
+        if let ImpactBehavior::Explosion { contacts: explosion, .. } = &mut self.behavior {
             explosion.harmless = harmless;
         }
     }
 
     fn is_explosion(&self) -> bool {
         self.behavior.drains_all_contacts()
+    }
+
+    fn advance_explosion_timeline(&mut self, dt: f32) {
+        if let ImpactBehavior::Explosion { timeline, .. } = &mut self.behavior {
+            timeline.advance(dt);
+        }
+    }
+
+    fn next_explosion_action(&mut self) -> Option<ExplosionAction> {
+        if let ImpactBehavior::Explosion { timeline, .. } = &mut self.behavior {
+            timeline.take_due()
+        } else {
+            None
+        }
     }
 }
 
@@ -300,6 +326,7 @@ impl CombatWorld {
     ) -> Result<(), CombatWorldError> {
         let metadata = CombatProjectile::new(
             entity_id, asset.projectile_type, owner, power, asset.rocket_max_speed,
+            asset.explosion_events.clone(),
         )?;
         let body = asset.spawn_physics_body(entity_id, motion, rotation_degrees)?;
         self.add_projectile(metadata, body)
@@ -663,7 +690,7 @@ impl CombatWorld {
 
         match &mut shot.behavior {
             ImpactBehavior::StrikerBomb(_) => {},
-            ImpactBehavior::Explosion(explosion) => {
+            ImpactBehavior::Explosion { contacts: explosion, .. } => {
                 if explosion.accept_ship(
                     target.entity_id, owner.shooter_side,
                     owner.shooter_is_fire_barge, target.side,
