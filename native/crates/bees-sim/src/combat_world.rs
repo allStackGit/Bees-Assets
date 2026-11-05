@@ -749,7 +749,7 @@ impl CombatWorld {
                 if self.discovery.has(side, kind, target_id) {
                     continue;
                 }
-                counts.live_obstacle_pairs += 1;
+                counts.unlearned_obstacle_pairs += 1;
                 let proximity = self.physics.obstacles_mut()[target]
                     .vision_proximity(origin, range_squared);
                 if counts.record_proximity(proximity) {
