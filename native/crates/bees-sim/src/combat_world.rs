@@ -34,7 +34,8 @@ use crate::physics::{
     ObstaclePairContact, ObstacleTriggerEnter, PhysicsError, ProjectileBody,
     ShipBody, ShipShape, TriggerEnter,
 };
-use crate::policy::Decision;
+use crate::policy::{ActionError, Decision};
+use crate::control::{PolicyControl, PolicyFrame};
 use crate::geometry::Vec2;
 use crate::level_discovery::{DiscoveryKind, LevelDiscovery};
 use crate::map_object::{CombatMapObject, MapObjectDamage, MapObjectError};
@@ -68,6 +69,8 @@ use crate::vision::{HiveMindObserver, VisionError, VisionSweepCounts};
 // the 140K+ combat gameplay implementation focused on authoritative state.
 mod vision;
 mod map_object;
+mod policy;
+use policy::PolicyShipRuntime;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CombatWorldError {
@@ -99,6 +102,9 @@ pub enum CombatWorldError {
     /// Never fabricate simplified behavior for unported weapons.
     UnportedProjectileType(u8),
     UnsupportedPolicyActions,
+    InvalidPolicyAction(ActionError),
+    UnknownPolicyAgent(u64),
+    DuplicatePolicyAgent(u64),
     MapObject(MapObjectError),
 }
 
@@ -496,6 +502,10 @@ pub struct CombatWorld {
     ship_by_id: HashMap<i64, usize>,
     navigation_requests: NavigationRequests,
     game_ship_steering: HashMap<i64, GameShipSteering>,
+    /// The Level-owned policy controller stores actual ongoing action
+    /// state for each bound ship; no secondary training-only movement world.
+    policy_ship_runtime: HashMap<i64, PolicyShipRuntime>,
+    policy_decision_seen: HashSet<u64>,
     pending_game_point_orders: HashMap<i64, GamePointOrder>,
     latest_game_point_orders: HashMap<i64, GamePointOrder>,
     ship_collision_profiles: HashMap<i64, ShipCollisionProfile>,
@@ -561,6 +571,8 @@ impl CombatWorld {
             ship_by_id: HashMap::new(),
             navigation_requests: NavigationRequests::new(),
             game_ship_steering: HashMap::new(),
+            policy_ship_runtime: HashMap::new(),
+            policy_decision_seen: HashSet::new(),
             pending_game_point_orders: HashMap::new(),
             latest_game_point_orders: HashMap::new(),
             ship_collision_profiles: HashMap::new(),
@@ -2823,9 +2835,11 @@ impl GameRules<CombatWorld> for CombatWorldRules {
         decisions: &[Decision],
         dt_seconds: f32,
     ) -> Result<StepCounts, Self::Error> {
-        if !decisions.is_empty() {
-            return Err(CombatWorldError::UnsupportedPolicyActions);
-        }
+        // The real combat world applies the supported policy movement and
+        // allied communication before its normal shared physics tick.
+        // Weapons and specials remain fail-closed until their game-side
+        // control implementation is available.
+        world.state.apply_policy_decisions(decisions)?;
         world.state.step_fixed_with_random(
             dt_seconds, &self.collision_matrix, &mut world.random,
         )
