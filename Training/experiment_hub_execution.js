@@ -1,0 +1,207 @@
+'use strict';
+
+// Machine-local bridge from authenticated, machine-bound job directives to
+// a separately installed trusted adapter. This module has no HTTP listener.
+const os=require('node:os');
+const path=require('node:path');
+const {LinuxSupervisor}=require('./experiment_hub_linux_supervisor');
+const {WindowsSupervisor}=require('./experiment_hub_windows_supervisor');
+const {inspectHost}=require('./experiment_hub_host');
+const {validateProgress}=require('./experiment_hub_progress');
+const ID=/^[a-z][a-z0-9_-]{0,47}$/;
+const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+class LocalExecution {
+    constructor({machineId,supervisor,projects}) {
+        if(!ID.test(String(machineId||''))||!supervisor||
+            !Array.isArray(projects)||!projects.length||
+            projects.some(p=>!ID.test(p)||p==='bees')||
+            new Set(projects).size!==projects.length)
+            throw Error('Invalid machine-local execution adapter configuration.');
+        this.machineId=machineId;
+        this.supervisor=supervisor;
+        this.projects=projects.slice();
+    }
+    advertisement(){
+        return {local_executor:true,installed_projects:this.projects.slice()};
+    }
+    async handle(order) {
+        if(!order||!['start','stop','inspect','qualify_gpu'].includes(order.action)||
+            !UUID.test(String(order.dispatch_id||''))||
+            !order.job||!order.lease||
+            !UUID.test(String(order.job.id||''))||
+            !UUID.test(String(order.lease.id||''))||
+            order.job.lease_id!==order.lease.id||
+            order.lease.job_id!==order.job.id||
+            order.lease.machine_id!==this.machineId||
+            order.lease.project_id!==order.job.project_id||
+            !this.projects.includes(order.job.project_id))
+            throw Error('Rejected invalid or unauthorized local dispatch instruction.');
+        const {job,lease}=order;
+        if(order.action==='qualify_gpu') {
+            // This is not a job launch. Linux device access is tested using
+            // a fixed inert helper; the native Start gate remains CPU-only.
+            if(typeof this.supervisor.qualifyGpuDeviceAccess!=='function'||
+                !this.supervisor.qualifiedAt||
+                job.status!=='waiting_adapter'||
+                job.resources?.gpu_mode!=='exclusive'||
+                job.resources?.gpu_count!==1||
+                lease.resources?.gpu_mode!=='exclusive'||
+                lease.resources?.gpu_count!==1||
+                lease.status!=='acknowledged'||lease.receipt_fresh!==true||
+                !Array.isArray(lease.gpu_bindings)||
+                lease.gpu_bindings.length!==1||
+                (job.resources.gpus?.length>0&&
+                    lease.gpu_bindings[0].id!==job.resources.gpus[0])||
+                lease.gpu_bindings[0].id!==lease.resources.gpus?.[0])
+                throw Error('GPU access probe requires a locally qualified, frozen exclusive Linux lease.');
+            // A previously launched process cannot be silently converted
+            // into a device policy inspection.
+            if(this.supervisor.snapshot().some(r=>r.job_id===job.id))
+                throw Error('GPU access probe refused for an already owned native service.');
+            try {
+                const result=await this.supervisor.qualifyGpuDeviceAccess(
+                    lease.gpu_bindings);
+                if(!Array.isArray(result?.selected)||
+                    result.selected.length!==1||
+                    result.selected[0]!==lease.gpu_bindings[0].pci_address)
+                    throw Error('GPU preflight returned a different physical device.');
+                return {kind:'gpu_qualification',
+                    job_id:job.id,lease_id:lease.id,
+                    dispatch_id:order.dispatch_id,
+                    result:'verified',
+                    selected_pci_addresses:result.selected};
+            }catch(error) {
+                return {kind:'gpu_qualification',
+                    job_id:job.id,lease_id:lease.id,
+                    dispatch_id:order.dispatch_id,
+                    result:'rejected',selected_pci_addresses:[],
+                    diagnostic:String(error.message||error).slice(0,160)};
+            }
+        }
+        let observed,diagnostic=null;
+        try {
+            const record=this.supervisor.snapshot().find(r=>r.job_id===job.id);
+            if(record&&(record.lease_id!==lease.id||
+                record.project_id!==job.project_id))
+                throw Error('Existing locally supervised service has different lease ownership.');
+            if(order.action==='start') {
+                // An ambiguous, previously issued launch is reconciled, never
+                // launched again, including after agent/coordinator restarts.
+                observed=record
+                    ?await this.supervisor.reconcile(job.id)
+                    :await this.supervisor.start(job,lease);
+            }else if(!record) {
+                // No journal is not proof that no process exists. The
+                // operator must inspect the deterministic native service.
+                observed={state:'unverified'};
+                diagnostic='Missing local ownership record; inspect systemd before recovery.';
+            }else if(order.action==='stop') {
+                observed=await this.supervisor.stop(job.id);
+            }else {
+                observed=await this.supervisor.reconcile(job.id);
+            }
+        }catch(error) {
+            diagnostic=String(error.message||error).slice(0,220);
+            const record=this.supervisor.snapshot().find(r=>r.job_id===job.id);
+            if(record&&record.lease_id===lease.id) {
+                try{observed=await this.supervisor.reconcile(job.id);}
+                catch{observed=null;}
+            }
+            if(!observed)observed={state:'unverified'};
+        }
+        const state=['launch_requested','running','stop_requested','finished','failed','stopped']
+            .includes(observed.state)?observed.state:'unverified';
+        const report={
+            job_id:job.id,lease_id:lease.id,
+            dispatch_id:order.dispatch_id,state,
+            ...(diagnostic?{diagnostic}:{}),
+            ...(Number.isSafeInteger(observed.memory_current_mb)&&
+                observed.memory_current_mb>=0
+                ?{memory_current_mb:observed.memory_current_mb}:{}),
+            ...(Number.isSafeInteger(observed.cpu_time_ns)&&
+                observed.cpu_time_ns>=0
+                ?{cpu_time_ns:observed.cpu_time_ns}:{}),
+            ...(Number.isSafeInteger(observed.process_tasks)&&
+                observed.process_tasks>=0
+                ?{process_tasks:observed.process_tasks}:{}),
+        };
+        // Optional adapter metrics are observational. A malformed or
+        // unavailable summary must never turn verified service state into
+        // an unverified start/stop or influence the policy/checkpoint.
+        const owned=this.supervisor.snapshot().find(r=>r.job_id===job.id);
+        const localAdapter=this.supervisor.adapters?.[job.project_id];
+        if(owned&&owned.lease_id===lease.id&&
+            (owned.artifact_lineage_root_id||owned.job_id)===
+                (job.artifact_lineage_root_id||job.id)&&
+            typeof localAdapter?.readProgress==='function'&&
+            ['running','stop_requested','finished','failed','stopped']
+                .includes(state)) {
+            try {
+                const result=await localAdapter.readProgress(Object.freeze({
+                    job_id:job.id,project_id:job.project_id,
+                    continuation_of_job_id:job.continuation_of_job_id||null,
+                    artifact_lineage_root_id:job.artifact_lineage_root_id||job.id,
+                }));
+                if(result!==null&&result!==undefined)
+                    report.progress=validateProgress(result,job.project_id);
+            }catch(error) {
+                report.progress_issue=String(error.message||error).slice(0,160);
+            }
+        }
+        return report;
+    }
+}
+function fromEnvironment(env=process.env,options={}) {
+    if(env.EXPERIMENT_HUB_ENABLE_EXECUTION!=='1')return null;
+    const hostOs=options.hostOs||os;
+    if(!['linux','win32'].includes(hostOs.platform()))
+        throw Error('Native execution is supported only on Linux and Windows.');
+    const adapterFile=env.EXPERIMENT_HUB_LOCAL_ADAPTERS;
+    const root=env.EXPERIMENT_HUB_LOCAL_ROOT;
+    if(typeof adapterFile!=='string'||!path.isAbsolute(adapterFile)||
+        typeof root!=='string'||!path.isAbsolute(root))
+        throw Error('Specify absolute local adapter module and supervisor state directory.');
+    // This module path is chosen by the machine administrator in local
+    // environment configuration, never by the Hub, a job or a heartbeat.
+    const adapters=(options.loadAdapters||require)(adapterFile);
+    if(!adapters||typeof adapters!=='object'||Array.isArray(adapters)||
+        !Object.keys(adapters).length||
+        Object.entries(adapters).some(([project,adapter])=>
+            !ID.test(project)||project==='bees'||
+            !adapter||typeof adapter!=='object'||
+            typeof adapter.executable!=='string'||
+            !path.isAbsolute(adapter.executable)||
+            typeof adapter.args!=='function'||
+            (adapter.cwd!=null&&
+                (typeof adapter.cwd!=='string'||!path.isAbsolute(adapter.cwd)))))
+        throw Error('Install one or more valid locally trusted, non-Bees project adapters.');
+    if(hostOs.platform()==='win32'&&Object.entries(adapters).some(
+        ([,adapter])=>adapter.stop_policy!=='terminate-group'))
+        throw Error('Windows adapters must explicitly opt into force-terminating Job Object stop semantics.');
+    const machineId=env.EXPERIMENT_HUB_MACHINE_ID;
+    if(!ID.test(String(machineId||'')))throw Error('Invalid local machine identity.');
+    let supervisor;
+    if(hostOs.platform()==='linux') {
+        const capabilities=(options.inspectHost||inspectHost)();
+        if(!capabilities.cgroup_v2_detected||
+            !['cpu','memory'].every(c=>capabilities.cgroup_controllers.includes(c)))
+            throw Error('Required Linux CPU and memory controllers are not available.');
+        supervisor=options.createSupervisor
+            ?options.createSupervisor({root,machineId,adapters})
+            :new LinuxSupervisor({root,machineId,adapters});
+    }else {
+        const helperPath=env.EXPERIMENT_HUB_WINDOWS_HELPER;
+        const helperSha256=env.EXPERIMENT_HUB_WINDOWS_HELPER_SHA256;
+        if(typeof helperPath!=='string'||!path.isAbsolute(helperPath)||
+            !/^[a-f0-9]{64}$/.test(String(helperSha256||'')))
+            throw Error('Specify a locally installed absolute Windows owner path and its SHA-256.');
+        supervisor=options.createSupervisor
+            ?options.createSupervisor({root,machineId,adapters,helperPath,helperSha256})
+            :new WindowsSupervisor({root,machineId,adapters,
+                helperPath,helperSha256});
+    }
+    return new LocalExecution({machineId,supervisor,
+        projects:Object.keys(adapters)});
+}
+module.exports={LocalExecution,fromEnvironment};
