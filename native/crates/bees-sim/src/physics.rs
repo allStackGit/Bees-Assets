@@ -825,9 +825,12 @@ impl KinematicPhysics {
     /// proximity or center distance. This on-demand query avoids paying
     /// for every ship/ship pair when no loaded Striker requests its special.
     /// It refreshes each cached collider, including newly spawned ships.
-    pub fn ship_hulls_overlap(&mut self, a: usize, b: usize) -> bool {
+    pub fn ship_hulls_overlap(
+        &mut self, a: usize, b: usize, collisions: &CollisionMatrix,
+    ) -> bool {
         if a == b || a >= self.ships.len() || b >= self.ships.len() ||
-            !self.ships[a].active || !self.ships[b].active {
+            !self.ships[a].active || !self.ships[b].active ||
+            !collisions.allows(self.ships[a].layer, self.ships[b].layer) {
             return false;
         }
         self.ships[a].update_hull();
