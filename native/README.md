@@ -57,15 +57,31 @@ Move and Stop use authored ship offsets, 20-step formation compression,
 nearest walkable-center fallback and each ship's shared A* path queue.
 
 The source-matched movement phases of HiveMind **Hold**, **Random**,
-**Patrol**, and **Retreat** are now wired. Random finishes at arrival or
-command timeout; Patrol samples Unity's four-corner route, rotates
-waypoints on its 3-second scaled callback, and uses the separate
-configured patrol timeout. Retreat uses the Level's live target squad
-position and weapon range to move directly away from a nearby enemy;
+**Patrol**, **Retreat**, and **Closest Friendly** are now wired. Random
+finishes at arrival or command timeout; Patrol samples Unity's four-corner
+route, rotates waypoints on its 3-second scaled callback, and uses the
+separate configured patrol timeout. Retreat uses the Level's live target
+squad position and weapon range to move directly away from a nearby enemy;
 when already sufficiently far away it stops and finalizes after 3 seconds.
 Unlike the other strategies, moving Retreat has no general timeout in Unity,
 and its timer ends when all squad ships arrive. Delayed server responses must
 still match the originally targeted enemy squad before activation.
+
+Closest Friendly selects the nearest eligible living same-side squad in
+Level registry order, excluding itself and squads already running Closest
+Friendly. It retains the selected squad's full lifecycle identity and
+rechecks the live target on each three-second scaled command callback
+(the first callback is delayed, unlike Patrol). It issues
+`MoveToTrackedPoint` formation orders instead of blindly invalidating
+pathfinding: active search and failed-search retries keep ownership, and
+endpoint drift less than Unity's eight-unit threshold does not restart
+navigation. Following ends when the original squad disappears or the
+configured follow time elapses. The three-second polling interval makes
+Unity's additional one-second path-replan throttle redundant for this
+specific command; the shared tracked-movement method is not yet suitable
+for arbitrary faster-following callers. Missing eligible targets leave
+both server OutcomeId reservations for explicit discard rather than
+recording invented command rewards.
 Commands update squads in stable lifecycle-ID order so independent worlds
 do not depend on randomized hash-table traversal.
 The game must supply real squad bounds, membership, configured speeds,
