@@ -451,6 +451,9 @@ pub struct CombatWorld {
     /// Reused across each native vision refresh so validating the live
     /// observer roster does not allocate for every training decision.
     vision_observer_ids: HashSet<i64>,
+    /// Source GameState.HiveMindLiveEnemyVisible: recalculated on every
+    /// vision refresh, never retained like the faction discovery cache.
+    vision_live_enemy_sides: HashSet<i32>,
     vision_measurements: VisionSweepCounts,
     projectiles: Vec<CombatProjectile>,
     obstacles: Vec<CombatObstacle>,
@@ -514,6 +517,7 @@ impl CombatWorld {
             ships: Vec::new(),
             discovery: LevelDiscovery::new(),
             vision_observer_ids: HashSet::new(),
+            vision_live_enemy_sides: HashSet::new(),
             vision_measurements: VisionSweepCounts::default(),
             projectiles: Vec::new(),
             obstacles: Vec::new(),
@@ -571,6 +575,12 @@ impl CombatWorld {
     /// integer counters and retains observer-validation scratch memory.
     pub fn vision_measurements(&self) -> VisionSweepCounts {
         self.vision_measurements
+    }
+
+    /// Source GameState.HasLiveEnemyVisibleToHiveMind. Unlike learned enemy
+    /// sightings, this transient flag is reset on each successful refresh.
+    pub fn has_live_enemy_visible_to_hivemind(&self, side: i32) -> bool {
+        self.vision_live_enemy_sides.contains(&side)
     }
 
     /// Unity's GameState.RecordHiveMindSighting is the sole transition from
@@ -664,6 +674,7 @@ impl CombatWorld {
                 return Err(VisionError::InvalidObserverState(observer.ship_id));
             }
         }
+        self.vision_live_enemy_sides.clear();
         let mut counts = VisionSweepCounts::default();
         counts.completed_sweeps = 1;
         if setup_suppressed {
@@ -701,6 +712,7 @@ impl CombatWorld {
                     .vision_proximity(origin, range_squared);
                 if counts.record_proximity(proximity) {
                     counts.visible_enemy_pairs += 1;
+                    self.vision_live_enemy_sides.insert(side);
                     // Both bodies were already verified live, opposite-side
                     // and owned by this Level. Only the first faction-wide
                     // sighting triggers a new discovery event.
