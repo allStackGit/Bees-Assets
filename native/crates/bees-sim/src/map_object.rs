@@ -122,16 +122,35 @@ mod tests {
     use super::*;
 
     #[test]
-    fn generic_map_object_uses_source_health_and_fire_tank_is_not_faked() {
+    fn map_object_health_and_explicit_fire_tank_configuration() {
         let mut object = CombatMapObject::new(5, MapObjectKind::Generic, 100).unwrap();
         let first = object.apply_projectile_damage(30).unwrap();
         assert_eq!((first.before, first.after, first.destroyed), (100, 70, false));
         let last = object.apply_projectile_damage(90).unwrap();
         assert_eq!((last.before, last.after, last.destroyed), (70, -20, true));
         assert!(object.apply_projectile_damage(1).is_none());
+        // The ordinary constructor still refuses to invent a Fire Tank's
+        // gameplay blast power or linked demolition target.
         assert_eq!(
             CombatMapObject::new(6, MapObjectKind::FireTank, 100),
             Err(MapObjectError::UnsupportedFireTank),
+        );
+        let tank = CombatMapObject::new_fire_tank(
+            6, 120, 40, Some(5),
+        ).unwrap();
+        assert_eq!(tank.kind, MapObjectKind::FireTank);
+        assert_eq!(tank.health, 120);
+        assert_eq!(tank.fire_tank, Some(FireTankConfig {
+            explosion_power: 40,
+            target_obstacle_id: Some(5),
+        }));
+        assert_eq!(
+            CombatMapObject::new_fire_tank(6, 120, -1, None),
+            Err(MapObjectError::InvalidFireTankPower),
+        );
+        assert_eq!(
+            CombatMapObject::new_fire_tank(6, 120, 40, Some(6)),
+            Err(MapObjectError::InvalidFireTankTarget),
         );
     }
 }
