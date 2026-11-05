@@ -208,14 +208,14 @@ function nativeStartReadiness(snapshot, job) {
     }
     if(job.after_job_id) {
         const parent=snapshot.jobs.find(j=>j.id===job.after_job_id);
-        const parentLease=snapshot.reservations.find(lease=>
-            lease.id===parent?.lease_id);
+        // Written by the same atomic commit that releases the finished
+        // predecessor, or after verifying an already-released lease at
+        // queue creation. Lease history is bounded and may later be pruned.
         if(!parent||parent.status!=='finished'||
             !parent.capacity_released_at||!parent.dispatch_id||
             !parent.execution_updated_at||
-            parentLease?.status!=='released'||
-            parentLease.job_id!==parent.id||
-            !parentLease.released_at||
+            typeof job.predecessor_ready_at!=='string'||
+            !Number.isFinite(Date.parse(job.predecessor_ready_at))||
             job.continuation_of_job_id||
             job.artifact_lineage_root_id!==job.id||
             job.continuation_machine_id)
@@ -1564,6 +1564,7 @@ class ExperimentHub {
         if(afterId!==null&&ancestorId!==null)
             throw Error('A job cannot both depend on an independent predecessor and continue its checkpoint.');
         let parent=null,dependency=null,waitingPredecessor=false;
+        let dependencyReady=false;
         if(ancestorId!==null) {
             if(typeof ancestorId!=='string'||!UUID.test(ancestorId))
                 throw Error('Select a valid predecessor job for continuation.');
@@ -1609,6 +1610,21 @@ class ExperimentHub {
                 throw Error('This predecessor already has a non-cancelled successor.');
             waitingPredecessor=dependency.status!=='finished'||
                 !dependency.capacity_released_at;
+            if(!waitingPredecessor) {
+                // A dependency selected after its parent was released must
+                // still prove terminal lease ownership before freezing an
+                // immediately eligible job. Pruned old history fails closed.
+                const released=next.reservations.find(l=>
+                    l.id===dependency.lease_id&&
+                    l.job_id===dependency.id&&
+                    l.project_id===dependency.project_id&&
+                    l.machine_id===dependency.assigned_machine_id&&
+                    l.issued_by==='experiment-hub'&&
+                    l.status==='released'&&Boolean(l.released_at));
+                if(!released)
+                    throw Error('Cannot queue against a finished dependency whose released native lease is no longer verifiable.');
+                dependencyReady=true;
+            }
         }
         if(project.id==='ants'&&
             (frozen.mode==='resume')!==Boolean(parent))
@@ -1624,6 +1640,7 @@ class ExperimentHub {
             project_id:project.id, adapter:project.adapter,
             continuation_of_job_id:parent?.id||null,
             after_job_id:dependency?.id||null,
+            predecessor_ready_at:dependencyReady?now():null,
             artifact_lineage_root_id:parent
                 ?(parent.artifact_lineage_root_id||parent.id):jobId,
             continuation_machine_id:parent
