@@ -4,7 +4,7 @@
 //! invokes the same shared physics world and formation navigation used by
 //! user orders, the render client, and headless evaluation.
 //!
-//! Hold, MoveToRandom and Patrol have their movement/timer phases ported here.
+//! Hold, MoveToRandom, Patrol and Retreat have source-matched movement/timer phases.
 //! Every other server strategy is explicitly unsupported until its Unity
 //! gameplay mechanics and reward effects are implemented. Caller-owned
 //! targeting/shooting and command reward accumulation are not fabricated.
@@ -47,6 +47,24 @@ pub struct NativeSquadOrder<'a> {
     /// Supply the actual bounding-box center; do not average ship centers.
     pub squad_center: Vec2,
     pub formation: SquadFormationOptions,
+    /// Live, command-targeted enemy squad obtained from the same Level.
+    /// The native core never invents an opponent from training data.
+    pub enemy: Option<NativeEnemySquad>,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct NativeEnemySquad {
+    pub squad_id: i64,
+    pub position: Vec2,
+    pub max_range: f32,
+    pub is_alive: bool,
+}
+
+impl NativeEnemySquad {
+    pub fn valid(self) -> bool {
+        self.squad_id > 0 && self.position.is_finite() &&
+            self.max_range.is_finite() && self.max_range >= 0.0
+    }
 }
 
 impl NativeSquadOrder<'_> {
@@ -86,6 +104,7 @@ pub enum GameCommandError {
     InvalidSquad,
     InvalidSettings,
     InvalidDelta,
+    InvalidEnemy,
     Squad(SquadOrderError),
 }
 
@@ -121,6 +140,8 @@ pub enum StrategyReceiptFailureCause {
 pub enum CommandFinishCause {
     Timeout,
     ReachedRandomDestination,
+    ReachedRetreatDestination,
+    AlreadySafe,
     Superseded,
     SquadRetired,
 }
@@ -193,7 +214,9 @@ struct PatrolRoute {
 
 struct ActiveNativeCommand {
     selection: ResolvedHiveMindCommand,
-    timeout: ScaledTimer,
+    // Retreat has no time limit while moving; other commands may have
+    // their own one-shot timeout or delayed finalization timer.
+    timeout: Option<ScaledTimer>,
     command_poll: Option<ScaledTimer>,
     patrol: Option<PatrolRoute>,
     /// Authoritative game-owned member snapshot at command issue.
@@ -228,13 +251,13 @@ impl NativeSquadCommandDirector {
         settings: HiveMindCommandSettings,
         receipt: StrategyReceipt,
     ) -> Result<StrategyReceiptAction, StrategyReceiptFailure> {
-        let (owner, selection) = match receipt {
+        let (owner, enemy_squad_id, selection) = match receipt {
             StrategyReceipt::Retired { reservation_ids, .. } =>
                 return Ok(StrategyReceiptAction::DiscardReservations(
                     reservation_ids,
                 )),
-            StrategyReceipt::Accepted { owner, selection, .. } =>
-                (owner, selection),
+            StrategyReceipt::Accepted { owner, enemy_squad_id, selection } =>
+                (owner, enemy_squad_id, selection),
         };
         if owner != squad.owner || !squad.valid() {
             return Ok(StrategyReceiptAction::DiscardReservations(vec![
@@ -261,6 +284,16 @@ impl NativeSquadCommandDirector {
                 selection: selection.clone(),
                 cause: StrategyReceiptFailureCause::InvalidStrategy(cause),
             })?;
+        // A strategy response may arrive after the originally targeted
+        // enemy was replaced. Retreat cannot silently use a new opponent.
+        if resolved.local_command == LocalCommandKind::Retreat &&
+            (enemy_squad_id.is_none() ||
+             squad.enemy.map(|enemy| enemy.squad_id) != enemy_squad_id) {
+            return Ok(StrategyReceiptAction::DiscardReservations(vec![
+                selection.command_outcome_id,
+                selection.shooting_outcome_id,
+            ]));
+        }
         self.activate_hivemind(
             world, navigation, random, squad, settings, resolved,
         ).map(StrategyReceiptAction::Applied)
@@ -287,6 +320,7 @@ impl NativeSquadCommandDirector {
         }
 
         let mut patrol = None;
+        let mut retreat_already_safe = false;
         let issued_move = match selection.local_command {
             LocalCommandKind::Hold => {
                 stop_squad_game_movement(world, squad.members)?;
@@ -326,23 +360,54 @@ impl NativeSquadCommandDirector {
                 // on its immediate callback, not during Execute itself.
                 false
             }
+            LocalCommandKind::Retreat => {
+                let enemy = squad.enemy.filter(|enemy| enemy.valid() && enemy.is_alive)
+                    .ok_or(GameCommandError::InvalidEnemy)?;
+                let delta = squad.squad_center - enemy.position;
+                let distance = delta.length_squared().sqrt();
+                let ideal_distance = enemy.max_range * 2.0;
+                if !distance.is_finite() || !ideal_distance.is_finite() {
+                    return Err(GameCommandError::InvalidEnemy);
+                }
+                if distance < ideal_distance {
+                    // Squad.AngleToPoint uses atan2(dx,dy), so the retreat
+                    // ray is measured FROM enemy toward the squad.
+                    let angle = delta.x.atan2(delta.y);
+                    let retreat_point = squad.squad_center +
+                        Vec2::new(angle.sin(), angle.cos()) *
+                            (ideal_distance - distance);
+                    issue_squad_move(
+                        world, navigation, squad.members,
+                        retreat_point, squad.formation,
+                    )?.is_some()
+                } else {
+                    // Retreat already has enough separation: stop now, then
+                    // finalize through its 3-second delayed timer.
+                    stop_squad_game_movement(world, squad.members)?;
+                    retreat_already_safe = true;
+                    true
+                }
+            }
             _ => return Ok(Activation::Unsupported(selection)),
         };
 
         // Native world action above has succeeded. Only now can this
         // command supersede an earlier one; a failed order leaves the
         // existing HiveMind command and its reserved IDs intact.
-        let timeout_seconds = if selection.local_command == LocalCommandKind::Patrol {
-            settings.ai_squad_patrol_seconds
-        } else {
-            settings.max_command_seconds
+        let timeout_seconds = match selection.local_command {
+            LocalCommandKind::Patrol => Some(settings.ai_squad_patrol_seconds),
+            LocalCommandKind::Retreat if retreat_already_safe => Some(3.0),
+            LocalCommandKind::Retreat => None,
+            _ => Some(settings.max_command_seconds),
         };
         let active = ActiveNativeCommand {
-            timeout: ScaledTimer::new(timeout_seconds, false, false),
+            timeout: timeout_seconds.map(|seconds|
+                ScaledTimer::new(seconds, false, false)),
             command_poll: if matches!(
                 selection.local_command,
                 LocalCommandKind::MoveToRandom | LocalCommandKind::Patrol
-            ) {
+            ) || (selection.local_command == LocalCommandKind::Retreat &&
+                !retreat_already_safe) {
                 Some(ScaledTimer::new(COMMAND_FREQUENCY_SECONDS, true, true))
             } else { None },
             patrol,
@@ -406,9 +471,13 @@ impl NativeSquadCommandDirector {
                             )?;
                             route.current = next;
                         } else {
-                            completed.push((
-                                owner, CommandFinishCause::ReachedRandomDestination,
-                            ));
+                            let cause = if command.selection.local_command ==
+                                LocalCommandKind::Retreat {
+                                CommandFinishCause::ReachedRetreatDestination
+                            } else {
+                                CommandFinishCause::ReachedRandomDestination
+                            };
+                            completed.push((owner, cause));
                             finished_by_poll = true;
                         }
                     }
@@ -416,9 +485,17 @@ impl NativeSquadCommandDirector {
                 }
             }
             if !finished_by_poll {
-                if let Some(due) = command.timeout.begin_update(dt) {
-                    command.timeout.finish_update(due);
-                    completed.push((owner, CommandFinishCause::Timeout));
+                if let Some(timeout) = command.timeout.as_mut() {
+                    if let Some(due) = timeout.begin_update(dt) {
+                        timeout.finish_update(due);
+                        let cause = if command.selection.local_command ==
+                            LocalCommandKind::Retreat {
+                            CommandFinishCause::AlreadySafe
+                        } else {
+                            CommandFinishCause::Timeout
+                        };
+                        completed.push((owner, cause));
+                    }
                 }
             }
         }
