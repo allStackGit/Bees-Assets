@@ -94,6 +94,7 @@ pub struct DamageShapingMeasurements {
     pub projectile_roots_completed: u64,
     pub projectile_roots_missed: u64,
     pub projectile_roots_near_missed: u64,
+    pub capability_outcomes: u64,
     pub emissions: u64,
 }
 
@@ -146,6 +147,23 @@ impl EpisodeShaping {
             side,
             amount: self.accumulators[index].apply(raw),
         })
+    }
+
+    /// Source RecordSuccessfulCapabilityOutcome for successful mining,
+    /// Beehive healing and WarpGate exit. Caller supplies the actual
+    /// positive fleet TSV change or preserved TSV from gameplay; this
+    /// method neither mutates the world nor creates capability events.
+    /// Positive and negative TSV sources share the SAME shaping cap.
+    pub fn record_successful_capability_outcome(
+        &mut self, side: i32, tsv_value: i32,
+    ) -> Option<RewardEmission> {
+        if tsv_value <= 0 || !self.sides.contains(&side) {
+            return None;
+        }
+        self.damage_measurements.capability_outcomes += 1;
+        let raw = (tsv_value as f32 /
+            self.combined_starting_tsv as f32) * TSV_REWARD_SCALE;
+        self.add_raw_for_side(side, raw)
     }
 
     /// Unity distinguishes fleet damage from lost mined cargo. A lethal hit

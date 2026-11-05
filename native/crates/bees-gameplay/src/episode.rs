@@ -35,6 +35,7 @@ pub enum NativeEpisodeRewardError {
     Damage(DamageShapingError),
     Discovery(DiscoveryError),
     DiscoveryNotConfigured,
+    InvalidCapabilitySide(i32),
     AlreadyComplete,
     /// An earlier source or metadata error may have partially consumed a
     /// tick's reward events. Only a fresh episode can resume safely.
@@ -217,6 +218,27 @@ impl NativeEpisodeRewardCoordinator {
                 Err(err.into())
             }
         }
+    }
+
+    /// Source RecordSuccessfulCapabilityOutcome. Only the actual native
+    /// gameplay action may report its audited TSV gain or preserved
+    /// exit value. This never fabricates healing/mining/warp behavior.
+    pub fn record_successful_capability_outcome(
+        &mut self, side: i32, tsv_value: i32,
+    ) -> Result<Option<RewardEmission>, NativeEpisodeRewardError> {
+        if self.failed {
+            return Err(NativeEpisodeRewardError::FailedEpisode);
+        }
+        if self.terminal.result().is_some() {
+            return Err(NativeEpisodeRewardError::AlreadyComplete);
+        }
+        if !self.sides().contains(&side) {
+            self.failed = true;
+            return Err(NativeEpisodeRewardError::InvalidCapabilitySide(side));
+        }
+        Ok(self.shaping.record_successful_capability_outcome(
+            side, tsv_value,
+        ))
     }
 
     /// Called by the Level's real mining/campaign integration whenever

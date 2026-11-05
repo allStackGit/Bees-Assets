@@ -289,6 +289,39 @@ impl NativeLevelEventProcessor {
                 return Err(NativeLevelEventError::Rewards(error));
             }
         };
+        self.queue_immediate_emission(emission)
+    }
+
+    /// Only a completed, source-observed native mining/healing/warp
+    /// gameplay action may call this. The TSV value is an authoritative
+    /// post-action delta/preserved ship value, not a policy prediction.
+    pub fn record_successful_capability_outcome(
+        &mut self, side: i32, tsv_value: i32,
+    ) -> Result<(), NativeLevelEventError> {
+        if self.is_failed() || self.completed() {
+            return Err(NativeLevelEventError::FailedLevel);
+        }
+        Self::reserve_output_records(
+            &mut self.pending_notifications, &mut self.failed, 1,
+        )?;
+        let emission = match self.episode
+            .record_successful_capability_outcome(side, tsv_value)
+        {
+            Ok(value) => value,
+            Err(error) => {
+                self.failed = true;
+                return Err(NativeLevelEventError::Rewards(error));
+            }
+        };
+        self.queue_immediate_emission(emission)
+    }
+
+    /// The only immediate-reward transport entry. Source rewards are
+    /// emitted through either configured group delivery OR raw side
+    /// reward notifications, never through both.
+    fn queue_immediate_emission(
+        &mut self, emission: Option<RewardEmission>,
+    ) -> Result<(), NativeLevelEventError> {
         let group_event = if let (Some(event), Some(group)) = (
             emission, self.group_delivery.as_mut(),
         ) {
