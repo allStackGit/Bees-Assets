@@ -330,6 +330,11 @@ impl NativeLevelEventProcessor {
         self.episode.result().is_some()
     }
 
+    /// Canonical episode Bee/Human side IDs for all training adapters.
+    pub fn sides(&self) -> [i32; 2] {
+        self.episode.sides()
+    }
+
     /// Immutable view after Simulation::step_world; no per-frame copies.
     /// Must be consumed before the next successful world step.
     pub fn latest_squad_changes(&self) -> &[SquadRosterChange] {

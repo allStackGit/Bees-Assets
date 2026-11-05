@@ -31,6 +31,7 @@ use crate::level_rules::NativeLevelState;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NativeWorldPerceptionError {
     MissingAuthoredShip(i64),
+    InvalidEpisodeSide(i32),
     Combat(CombatPerceptionError),
     Inference(NativeInferenceError),
 }
@@ -53,7 +54,6 @@ pub struct NativeLevelPerceptionInputs<'a> {
     pub level_bounds: Aabb,
     pub controller: ControlledShipPerception,
     pub capability: CapabilitySource,
-    pub bee_side: bool,
     pub normalized_episode_progress: f32,
     /// Original living carrier, if the observer is its child. Its
     /// episode-scoped identity is assigned before ordinary ally slots.
@@ -199,6 +199,10 @@ impl NativeWorldPerceptionAssembler {
                 CombatPerceptionError::MissingShip(ship_id),
             ),
         )?.side;
+        let sides = owning_world.state.events.sides();
+        if !sides.contains(&side) {
+            return Err(NativeWorldPerceptionError::InvalidEpisodeSide(side));
+        }
         let epoch = EnvironmentEpoch {
             world: owning_world.id,
             episode: owning_world.episode_revision(),
@@ -218,7 +222,7 @@ impl NativeWorldPerceptionAssembler {
             ship,
             capability,
             side,
-            bee_side: inputs.bee_side,
+            bee_side: side == sides[0],
             normalized_episode_progress: inputs.normalized_episode_progress,
             parent_carrier,
             same_side_ships: &self.allies,
