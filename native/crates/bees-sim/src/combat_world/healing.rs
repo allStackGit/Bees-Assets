@@ -115,15 +115,6 @@ impl CombatWorld {
         self.touching_beehive(ship_id).is_some()
     }
 
-    pub(super) fn advance_policy_healing_cooldowns(&mut self, dt: f32) {
-        for runtime in self.policy_ship_runtime.values_mut() {
-            if let Some(healing) = runtime.healing.as_mut() {
-                healing.cooldown_remaining =
-                    (healing.cooldown_remaining - dt).max(0.0);
-            }
-        }
-    }
-
     /// Called once during the authoritative fixed step, after
     /// cooldown advancement and before projectile physics. All
     /// requests and event IDs remain in stable ship-ID order.
