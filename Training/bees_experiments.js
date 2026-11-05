@@ -13,6 +13,7 @@ const { freezePlan: freezeEvaluator, supportsPurpose: evaluatorSupportsPurpose }
     require('./bees_experiment_evaluator_versions');
 const { selectedRoot, copyAndSelect } = require('./bees_experiment_storage');
 const { ExperimentHub } = require('./experiment_hub_core');
+const { createAgentServer } = require('./experiment_hub_agent_listener');
 const { placements: hubPlacements, plan: hubPlan } = require('./experiment_hub_resources');
 const { append: appendMetricSample, plot: archivedMetricsChart,
     filename: metricArchivePath } = require('./bees_experiment_metrics');
@@ -2823,28 +2824,9 @@ const server = http.createServer(async (req, res) => {
         return json(res, err.status === 401 ? 401 : 400, { error: err.message });
     }
 });
-// Do not forward the administrator dashboard port to remote workers. The
-// dedicated agent port has no training, registry, lease, or read-only admin
-// routes; it accepts authenticated machine observations and receipts only.
-const agentServer = http.createServer(async (req, res) => {
-    const host=req.headers.host;
-    if (req.method !== 'POST' ||
-        req.url !== '/api/hub/agent/heartbeat' ||
-        (host !== HOST+':'+AGENT_PORT && host !== 'localhost:'+AGENT_PORT) ||
-        req.headers.origin) {
-        return json(res, 404, {error:'Agent endpoint only.'});
-    }
-    try {
-        const declaredSize=Number(req.headers['content-length'] || 0);
-        if (!Number.isFinite(declaredSize) || declaredSize>32768)
-            return json(res, 413, {error:'Agent request too large.'});
-        const value=await body(req,32768);
-        return json(res, 200, requireHub().heartbeat(value,
-            req.headers['x-hub-agent-token']));
-    } catch (error) {
-        return json(res, error.status===401?401:400, {error:error.message});
-    }
-});
+// The dedicated worker-only HTTP boundary is shared with the isolated
+// transport smoke. It cannot serve Hub administration or Bees training.
+const agentServer=createAgentServer(requireHub);
 if (require.main === module) {
     server.listen(PORT, HOST, () => {
         console.log('Bees experiments: http://' + HOST + ':' + PORT);
