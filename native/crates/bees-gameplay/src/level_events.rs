@@ -9,6 +9,7 @@ use bees_hivemind::session::{HiveMindSession, SquadLifetime};
 use bees_sim::combat_world::CombatWorld;
 use bees_sim::navigation_runtime::NavigationRuntime;
 use bees_sim::rl_shaping::{DamageRewardMetadata, RewardEmission};
+use bees_sim::rl_discovery::DiscoveryKind;
 
 use crate::commands::{
     CommandMeasurements, FinishedNativeCommand, GameCommandError,
@@ -19,7 +20,8 @@ use crate::episode::{
     NativeEpisodeRewardError, NativeEpisodeRewardMeasurements,
 };
 use crate::group_rewards::{
-    GroupRewardError, GroupRewardEvent, NativeGroupRewardDelivery,
+    GroupRewardError, GroupRewardEvent, GroupRewardMeasurements,
+    NativeGroupRewardDelivery,
 };
 use crate::squads::{
     NativeSquadRoster, SquadEventBridgeError, SquadRosterChange,
@@ -52,11 +54,20 @@ pub struct NativeLevelTick<'a> {
     pub finalized: Option<NativeEpisodeFinal>,
 }
 
+/// Deliver this immediately through the host transport; it is not
+/// replayed from the next fixed-step reward buffer.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct NativeImmediateReward {
+    pub emission: Option<RewardEmission>,
+    pub group_event: Option<GroupRewardEvent>,
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct NativeLevelEventMeasurements {
     pub squads: SquadRosterMeasurements,
     pub commands: CommandMeasurements,
     pub rewards: NativeEpisodeRewardMeasurements,
+    pub group_delivery: Option<GroupRewardMeasurements>,
     pub ticks_integrated: u64,
 }
 
@@ -143,6 +154,46 @@ impl NativeLevelEventProcessor {
         self.group_delivery.as_mut()
     }
 
+    /// Source-verified HiveMind sighting between fixed ticks. This is the
+    /// same bounded shaping budget as projectile hits and misses, but
+    /// must be sent immediately (not silently merged into the next
+    /// physics-tick event buffer). Only one group reward is generated
+    /// regardless of how many agents are currently participating.
+    pub fn record_verified_discovery(
+        &mut self,
+        side: i32,
+        kind: DiscoveryKind,
+        entity_id: i64,
+        authored_value: i32,
+    ) -> Result<NativeImmediateReward, NativeLevelEventError> {
+        if self.is_failed() || self.completed() {
+            return Err(NativeLevelEventError::FailedLevel);
+        }
+        let emission = match self.episode.record_verified_discovery(
+            side, kind, entity_id, authored_value,
+        ) {
+            Ok(value) => value,
+            Err(error) => {
+                self.failed = true;
+                return Err(NativeLevelEventError::Rewards(error));
+            }
+        };
+        let group_event = if let (Some(event), Some(group)) = (
+            emission, self.group_delivery.as_mut(),
+        ) {
+            match group.immediate_event(event) {
+                Ok(value) => value,
+                Err(error) => {
+                    self.failed = true;
+                    return Err(NativeLevelEventError::Group(error));
+                }
+            }
+        } else {
+            None
+        };
+        Ok(NativeImmediateReward { emission, group_event })
+    }
+
     pub fn is_failed(&self) -> bool {
         self.failed || self.roster.is_failed() || self.episode.is_failed()
     }
@@ -167,6 +218,15 @@ impl NativeLevelEventProcessor {
 
     pub fn latest_finalized_episode(&self) -> Option<NativeEpisodeFinal> {
         self.last_finalized
+    }
+
+    /// The multi-world Simulation.step_world returns StepCounts, so
+    /// adapters retrieve the current completed tick's group commands
+    /// here before allowing the next world step to clear scratch.
+    pub fn latest_group_events(&self) -> Option<&[GroupRewardEvent]> {
+        self.group_delivery.as_ref().map(
+            NativeGroupRewardDelivery::events,
+        )
     }
 
     /// Unity scaled timer callbacks are advanced on every Level tick,
@@ -218,6 +278,9 @@ impl NativeLevelEventProcessor {
             squads: self.roster.measurements(),
             commands: self.commands.measurements(),
             rewards: self.episode.measurements(),
+            group_delivery: self.group_delivery.as_ref().map(
+                NativeGroupRewardDelivery::measurements,
+            ),
             ticks_integrated: self.next_tick - 1,
         }
     }
