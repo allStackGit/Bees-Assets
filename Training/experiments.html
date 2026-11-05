@@ -230,6 +230,13 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
 .hub-controls button { flex: 0 1 auto; }
 .hub-tabs label select { min-width: 150px; }
 #hub-placements, #hub-plan-result { white-space: pre-line; }
+.hub-progress-plot { margin: 12px 0; width: 100%; border: 2px solid var(--ink); background: var(--paper); padding: 8px; }
+.hub-progress-plot svg { display: block; width: 100%; height: auto; max-height: 350px; }
+.hub-progress-plot text { font: 13px Arial, Helvetica, sans-serif; fill: #000; }
+.hub-progress-plot .plot-axis { stroke: #000; stroke-width: 2; }
+.hub-progress-plot .plot-grid { stroke: #ddd; stroke-width: 1; }
+.hub-progress-plot .plot-line { fill: none; stroke-width: 3; }
+.hub-progress-plot .plot-point { stroke: #fff; stroke-width: 1.5; }
 </style>
 </head>
 <body>
@@ -335,7 +342,34 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
 </section>
 <section data-hub-tab="compare" data-project="other">
   <h2>Project comparisons</h2>
-  <p class="hub-notice">Saved configurations are available in Design. Comparable execution metrics require an installed project adapter and completed runs.</p>
+  <p id="hub-compare-notice" class="hub-notice">Select two or more jobs to compare reported learning progress. A chart describes progress; it does not establish experimental equivalence.</p>
+  <div class="formgrid">
+    <label>Metric
+      <select id="hub-compare-metric">
+        <option value="curriculum_window_success_rate">Current curriculum-window success</option>
+        <option value="segment_success_rate">Segment success rate</option>
+        <option value="curriculum_level">Curriculum level</option>
+        <option value="policy_version">Policy version</option>
+        <option value="simulation_steps_per_second">Last-episode simulation steps/s</option>
+        <option value="ppo_unique_samples_per_second">Last-episode PPO unique samples/s</option>
+      </select>
+    </label>
+    <label>Run A<select id="hub-compare-a"></select></label>
+    <label>Run B<select id="hub-compare-b"></select></label>
+    <label>Run C<select id="hub-compare-c"></select></label>
+    <label>Run D<select id="hub-compare-d"></select></label>
+  </div>
+  <div class="hub-progress-plot">
+    <svg id="hub-compare-svg" xmlns="http://www.w3.org/2000/svg"
+      role="img" aria-label="Run progress by cumulative training episodes"
+      viewBox="0 0 900 320" preserveAspectRatio="xMidYMid meet"></svg>
+  </div>
+  <p id="hub-compare-chart-note" class="muted">Live chart points are sampled in memory. A coordinator restart clears curves; final job summaries remain.</p>
+  <div class="tablewrap hub-table"><table>
+    <thead><tr><th>Run</th><th>Status / host</th><th>Episodes / level</th><th>Window success</th><th>Segment success</th><th>Policy</th><th>Latest summary</th></tr></thead>
+    <tbody id="hub-compare-rows"></tbody>
+  </table></div>
+  <p class="muted">The chart uses cumulative episodes from each Ants experiment on the horizontal axis. Window success and segment success have different denominators. Continuation jobs share a checkpoint, experiment ID, and episode history with their predecessor, so they are not independent replicates. Comparisons are descriptive; matching configurations, seeds, scenarios, hardware and evaluation cohorts are required before drawing learning-quality conclusions.</p>
 </section>
 <section data-hub-tab="machines">
   <h2>Machine inventory and resource admission</h2>
