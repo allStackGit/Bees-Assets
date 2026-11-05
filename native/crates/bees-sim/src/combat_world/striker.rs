@@ -83,7 +83,7 @@ impl CombatWorld {
             return Ok(false);
         }
         let side = self.ships[ship_index].side;
-        let mut target = None;
+        let mut target: Option<i64> = None;
         for index in 0..self.ships.len() {
             if index == ship_index || self.ships[index].side == side ||
                 self.ships[index].vitals.is_dead() ||
@@ -92,7 +92,7 @@ impl CombatWorld {
             }
             if self.physics.ship_hulls_overlap(ship_index, index) {
                 let id = self.ships[index].entity_id;
-                if target.is_none_or(|previous| id < previous) {
+                if target.map_or(true, |previous| id < previous) {
                     target = Some(id);
                 }
             }
