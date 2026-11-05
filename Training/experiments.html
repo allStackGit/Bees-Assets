@@ -428,6 +428,19 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
     </form>
   </div>
   <div class="hub-standalone">
+    <h3>Adjust Hub scheduling budget</h3>
+    <p class="muted">Use a smaller CPU/RAM budget than the machine's physical capacity to leave room for existing Bees training, Ants, or other workloads. These are scheduling admission limits, not measured utilization, CPU pinning, or a guarantee that unmanaged workloads will stay within their share. Disarm native automation before changing them. Existing native jobs are not stopped or resized, and claimed capacity cannot be reduced away.</p>
+    <form id="hub-budget-form">
+      <div class="formgrid">
+        <label>Registered machine<select id="hub-budget-machine"></select></label>
+        <label>Hub CPU slots<input id="hub-budget-cpus" type="number" min="1" max="4096" required></label>
+        <label>Hub RAM MiB<input id="hub-budget-ram" type="number" min="128" max="100000000" required></label>
+      </div>
+      <button type="submit" id="hub-budget-save">Save scheduling budget</button>
+    </form>
+    <p id="hub-budget-message" class="hub-notice" role="status"></p>
+  </div>
+  <div class="hub-standalone">
     <h3>Bind physical AMD GPUs</h3>
     <p class="muted">Only a connected Linux agent with fresh AMDGPU sysfs observations can bind a logical GPU ID to a PCI address. Bindings must match the observed devices. Existing GPU coordination leases must be released first. Binding improves identity-aware capacity planning; it does not enable GPU execution, VRAM enforcement or device isolation.</p>
     <form id="hub-gpu-bind-form">
