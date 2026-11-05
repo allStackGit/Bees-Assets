@@ -667,9 +667,25 @@ document.addEventListener('DOMContentLoaded', () => {
         $('hub-machine-rows').replaceChildren();
         for(const m of state.machines) {
             const tr=document.createElement('tr');
-            cell(tr,m.name+' ('+m.id+')');cell(tr,m.status);
-            cell(tr,m.cpus+(m.reported_cpus!=null?' / agent '+m.reported_cpus:''));
-            cell(tr,m.ram_mb+(m.reported_ram_mb!=null?' / agent '+m.reported_ram_mb:''));
+            // These are Hub ledger reservations, not observed CPU/RAM usage.
+            const claims=state.reservations.filter(l=>l.machine_id===m.id&&
+                ['active','offered','acknowledged'].includes(l.status));
+            const claimedCpus=claims.reduce((sum,l)=>sum+(l.resources?.cpus||0),0);
+            const claimedRam=claims.reduce((sum,l)=>sum+(l.resources?.ram_mb||0),0);
+            const overClaimed=m.status==='connected'&&(
+                claimedCpus>(m.reported_cpus??m.cpus)||
+                claimedRam>(m.reported_ram_mb??m.ram_mb));
+            cell(tr,m.name+' ('+m.id+')');
+            const status=cell(tr,m.status+
+                (overClaimed?' · Claims exceed reported capacity':''));
+            if(overClaimed)
+                status.title='Hub claims exceed fresh agent CPU/RAM capacity; new starts require renewed receipts. Existing processes are not stopped.';
+            cell(tr,m.cpus+' configured'+
+                (m.reported_cpus!=null?' / '+m.reported_cpus+' reported':'')+
+                ' / '+claimedCpus+' claimed');
+            cell(tr,m.ram_mb+' MiB configured'+
+                (m.reported_ram_mb!=null?' / '+m.reported_ram_mb+' MiB reported':'')+
+                ' / '+claimedRam+' MiB claimed');
             const verified=new Map((m.verified_gpus||[]).map(g=>[g.id,g]));
             const configured=(m.gpus||[]).map(g=>{
                 const matched=verified.get(g.id);
