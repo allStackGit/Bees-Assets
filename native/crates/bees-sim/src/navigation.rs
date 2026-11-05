@@ -168,7 +168,11 @@ impl NavigationGrid {
             }
         }
 
-        let nearest = asteroid.navigation_closest_point(to_world(center))
+        let world_center = to_world(center);
+        if !world_center.is_finite() {
+            return Err(NavigationError::NonFiniteMapTransform);
+        }
+        let nearest = asteroid.navigation_closest_point(world_center)
             .expect("live body has authored navigation collider");
         let nearest = to_level(nearest);
         if !nearest.is_finite() {
