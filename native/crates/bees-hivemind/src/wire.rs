@@ -6,9 +6,10 @@
 //! TLS/WebSocket authentication remains the transport adapter's job.
 
 use crate::protocol::{
-    GetStrategyRequest, GetStrategyResponse, StoreCommandsRequest,
-    StoreCommandsResponse, MAX_SAFE_REQUEST_HASH, STORE_COMMANDS_TYPE,
-    STRATEGY_REQUEST_TYPE, LOCAL_MOVE_TO_POINT_NAME,
+    GetStrategyRequest, GetStrategyResponse, GetTargetingRequest,
+    GetTargetingResponse, StoreCommandsRequest, StoreCommandsResponse,
+    MAX_SAFE_REQUEST_HASH, STORE_COMMANDS_TYPE, STRATEGY_REQUEST_TYPE,
+    TARGETING_REQUEST_TYPE, LOCAL_MOVE_TO_POINT_NAME,
 };
 
 /// BeesServer security admission caps production messages at 8 MiB.
@@ -59,6 +60,30 @@ pub fn decode_strategy_response(
     within_limit(data)?;
     let response: GetStrategyResponse = serde_json::from_slice(data)?;
     if response.message_type != STRATEGY_REQUEST_TYPE ||
+        !valid_hash(response.hash) {
+        return Err(HiveMindWireError::InvalidMessageType);
+    }
+    Ok(response)
+}
+
+pub fn encode_targeting_request(
+    request: &GetTargetingRequest,
+) -> Result<Vec<u8>, HiveMindWireError> {
+    if request.message_type != TARGETING_REQUEST_TYPE ||
+        !valid_hash(request.hash) || request.ships.is_empty() {
+        return Err(HiveMindWireError::InvalidRequest);
+    }
+    let encoded = serde_json::to_vec(request)?;
+    within_limit(&encoded)?;
+    Ok(encoded)
+}
+
+pub fn decode_targeting_response(
+    data: &[u8],
+) -> Result<GetTargetingResponse, HiveMindWireError> {
+    within_limit(data)?;
+    let response: GetTargetingResponse = serde_json::from_slice(data)?;
+    if response.message_type != TARGETING_REQUEST_TYPE ||
         !valid_hash(response.hash) {
         return Err(HiveMindWireError::InvalidMessageType);
     }
