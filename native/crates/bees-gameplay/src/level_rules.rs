@@ -47,59 +47,54 @@ pub trait NativeLevelCommandContext {
     fn navigation(&self) -> &NavigationRuntime;
 }
 
-/// Unity Agent.FixedUpdate increments each participating agent's own
-/// decision counter and requests a new action only after DecisionPeriod
-/// fixed steps. New agents begin at zero, not the global frame modulo.
+/// Unity Agent.FixedUpdate requests a decision after each controller's
+/// own DecisionPeriod successful fixed steps, not every simulation tick.
+/// One clock is enough: the owning World tick plus each ship's bind tick.
 pub struct NativeDecisionCadence {
     period: NonZeroU32,
-    next_due_by_ship: BTreeMap<i64, u64>,
+    bound_at_tick: BTreeMap<i64, u64>,
 }
 
 impl NativeDecisionCadence {
     pub fn new(period: NonZeroU32) -> Self {
-        Self { period, next_due_by_ship: BTreeMap::new() }
+        Self { period, bound_at_tick: BTreeMap::new() }
     }
 
-    /// Reconcile live policy registration at the fixed-step boundary.
-    /// Adding a new controller starts its first decision countdown
-    /// without restarting any existing controller's schedule.
+    /// Reconcile the single authoritative policy roster at a decision
+    /// boundary. New controllers start at 0; retiring a ship removes its
+    /// counter. No independent timer advances on failed simulation steps.
     pub fn synchronize(
         &mut self, combat: &CombatWorld, completed_ticks: u64,
-    ) -> Result<(), NativeLevelStepError> {
-        let first_due = completed_ticks.checked_add(
-            u64::from(self.period.get()),
-        ).ok_or(NativeLevelStepError::TickExhausted)?;
-        self.next_due_by_ship.retain(|&id, _|
+    ) {
+        self.bound_at_tick.retain(|&id, _|
             combat.policy_frame(id).is_some(),
         );
         for ship_id in combat.bound_policy_agent_ids() {
-            self.next_due_by_ship.entry(ship_id).or_insert(first_due);
+            self.bound_at_tick.entry(ship_id).or_insert(completed_ticks);
         }
-        Ok(())
+    }
+
+    fn due_from_binding(&self, bound_at: u64, next_tick: u64) -> bool {
+        next_tick > bound_at &&
+            (next_tick - bound_at) % u64::from(self.period.get()) == 0
     }
 
     pub fn is_due(&self, ship_id: i64, next_tick: u64) -> bool {
-        self.next_due_by_ship.get(&ship_id).copied() == Some(next_tick)
+        self.bound_at_tick.get(&ship_id).is_some_and(|&at|
+            self.due_from_binding(at, next_tick),
+        )
+    }
+
+    /// Sorted, allocation-free per-agent selection for the Level's
+    /// v26 observation builder.
+    pub fn due_agent_ids(&self, next_tick: u64) -> impl Iterator<Item=i64> + '_ {
+        self.bound_at_tick.iter().filter_map(move |(&id, &at)|
+            self.due_from_binding(at, next_tick).then_some(id),
+        )
     }
 
     pub fn due_count(&self, next_tick: u64) -> usize {
-        self.next_due_by_ship.values()
-            .filter(|&&due| due == next_tick).count()
-    }
-
-    /// Advance due clocks only AFTER the shared game step and Level
-    /// event handoff succeeded; a failed physics tick cannot consume
-    /// neural action decisions.
-    pub fn complete_step(
-        &mut self, completed_tick: u64,
-    ) -> Result<(), NativeLevelStepError> {
-        let next = completed_tick.checked_add(
-            u64::from(self.period.get()),
-        ).ok_or(NativeLevelStepError::TickExhausted)?;
-        for due in self.next_due_by_ship.values_mut() {
-            if *due == completed_tick { *due = next; }
-        }
-        Ok(())
+        self.due_agent_ids(next_tick).count()
     }
 }
 
@@ -192,7 +187,8 @@ where
         decisions: &[Decision],
         dt_seconds: f32,
     ) -> Result<StepCounts, Self::Error> {
-        let completed_tick = world.tick().checked_add(1)
+        let prior_tick = world.tick();
+        let completed_tick = prior_tick.checked_add(1)
             .ok_or(NativeLevelStepError::TickExhausted)?;
         let state = &mut world.state;
         if state.events.completed() {
@@ -203,7 +199,7 @@ where
                 NativeLevelEventError::FailedLevel,
             ));
         }
-        state.decisions.synchronize(&state.combat, world.tick())?;
+        state.decisions.synchronize(&state.combat, prior_tick);
         let due = state.decisions.due_count(completed_tick);
         if due != decisions.len() || decisions.iter().any(|decision| {
             let Ok(id) = i64::try_from(decision.agent_id) else {
@@ -244,7 +240,6 @@ where
                 &state.command_friendlies, dt_seconds,
             )?;
         }
-        state.decisions.complete_step(completed_tick)?;
         Ok(counts)
     }
 }

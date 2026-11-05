@@ -35,6 +35,7 @@ pub enum NativeBatchedStepError<SourceError, BackendError> {
         index: usize, expected: usize, actual: usize,
     },
     WrongObservationWorld { index: usize },
+    UnexpectedDecisionAgent { index: usize, agent: u64 },
     Inference(NativeInferenceRunError<BackendError>),
     Dispatch { index: usize, error: NativeInferenceError },
     /// Earlier indexed worlds may already have stepped. The caller
@@ -86,10 +87,7 @@ where
                 !world.state.events.completed() {
                 let tick = world.tick();
                 let state = &mut world.state;
-                state.decisions.synchronize(&state.combat, tick)
-                    .map_err(|_| NativeBatchedStepError::Dispatch {
-                        index, error: NativeInferenceError::WorldUnavailable,
-                    })?;
+                state.decisions.synchronize(&state.combat, tick);
             }
         }
         let world = simulation.world(index)
@@ -120,6 +118,18 @@ where
         }
         if added.iter().any(|key| !key.is_current_for(world)) {
             return Err(NativeBatchedStepError::WrongObservationWorld { index });
+        }
+        for key in added {
+            let Ok(agent_id) = i64::try_from(key.agent) else {
+                return Err(NativeBatchedStepError::UnexpectedDecisionAgent {
+                    index, agent: key.agent,
+                });
+            };
+            if !world.state.decisions.is_due(agent_id, next_tick) {
+                return Err(NativeBatchedStepError::UnexpectedDecisionAgent {
+                    index, agent: key.agent,
+                });
+            }
         }
         // Every pushed agent is checked against the real world's
         // action mask by push_agent(), which rejects unregistered
