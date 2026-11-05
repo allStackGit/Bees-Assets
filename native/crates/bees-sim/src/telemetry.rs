@@ -69,4 +69,54 @@ impl Measurements {
         }
         Some(self.sampled_ticks as f64 * 1e9 / self.sampled_wall_nanos as f64)
     }
+
+    /// Approximate sampled step latency: upper inclusive nanosecond bound
+    /// of the logarithmic bucket containing the requested percentile.
+    /// This is deliberately not presented as an exact percentile.
+    pub fn sampled_step_percentile_upper_nanos(&self, percentile: u32) -> Option<u128> {
+        if self.sampled_ticks == 0 || !(1..=100).contains(&percentile) {
+            return None;
+        }
+        let rank = (u128::from(self.sampled_ticks) *
+            u128::from(percentile) + 99) / 100;
+        let mut seen = 0_u128;
+        for (bucket, &count) in self.sampled_step_latency_log2_ns.iter().enumerate() {
+            seen += u128::from(count);
+            if seen >= rank {
+                return Some((1_u128 << (bucket + 1)) - 1);
+            }
+        }
+        None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sampled_latency_and_physics_work_are_bounded_aggregates() {
+        let mut measurements = Measurements::default();
+        measurements.record(StepCounts {
+            active_ships: 2, active_projectiles: 7,
+            integrated_bodies: 11, broadphase_candidates: 22,
+            narrowphase_tests: 5, trigger_enters: 3,
+            ..StepCounts::default()
+        }, Some(Duration::from_nanos(100)));
+        measurements.record(StepCounts {
+            active_ships: 3, integrated_bodies: 15,
+            broadphase_candidates: 9, narrowphase_tests: 2,
+            ..StepCounts::default()
+        }, Some(Duration::from_nanos(1000)));
+        assert_eq!(measurements.ticks, 2);
+        assert_eq!(measurements.integrated_bodies, 26);
+        assert_eq!(measurements.broadphase_candidates, 31);
+        assert_eq!(measurements.narrowphase_tests, 7);
+        assert_eq!(measurements.trigger_enters, 3);
+        assert_eq!(measurements.last_active_ships, 3);
+        assert_eq!(measurements.sampled_ticks, 2);
+        assert_eq!(measurements.sampled_step_percentile_upper_nanos(50), Some(127));
+        assert_eq!(measurements.sampled_step_percentile_upper_nanos(95), Some(1023));
+        assert_eq!(measurements.sampled_step_percentile_upper_nanos(0), None);
+    }
 }
