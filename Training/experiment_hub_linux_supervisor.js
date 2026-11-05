@@ -11,6 +11,7 @@ const {promisify}=require('node:util');
 const {execFile}=require('node:child_process');
 const {inspectHost}=require('./experiment_hub_host');
 const {verifyKernelLimits}=require('./experiment_hub_linux_cgroup');
+const {resolveRocmDevices}=require('./experiment_hub_linux_gpu_devices');
 const runDefault=promisify(execFile);
 // Use known system binaries, not the agent's PATH.
 const SYSTEMD_RUN='/usr/bin/systemd-run';
@@ -152,6 +153,7 @@ class LinuxSupervisor {
         // Qualification is process-local. No persisted historical probe
         // can authorize a launch after the agent or OS has restarted.
         this.qualifiedAt=null;
+        this.gpuDeviceQualifications=new Map();
         fsApi.mkdirSync(root,{recursive:true,mode:0o700});
         this.state=fsApi.existsSync(this.file)
             ?JSON.parse(fsApi.readFileSync(this.file,'utf8'))
@@ -251,6 +253,97 @@ class LinuxSupervisor {
         if(!verified)throw Error('Native preflight did not verify kernel controls.');
         this.qualifiedAt=new Date().toISOString();
         return {qualified_at:this.qualifiedAt};
+    }
+
+    // This is an on-demand, inert device-cgroup qualification API.
+    // It does NOT authorize or start a GPU workload. Hub GPU starts remain
+    // blocked until deployment-specific ROCm and isolation verification.
+    async qualifyGpuDeviceAccess(bindings) {
+        if(!this.qualifiedAt)
+            throw Error('CPU/RAM preflight must pass before GPU device checks.');
+        const plan=resolveRocmDevices(bindings,{fsApi:this.fs});
+        // A proof of denial requires a second GPU render node that the same
+        // unconfined account can open. Do not mistake a UNIX ACL failure for
+        // a working eBPF device filter.
+        const denied=plan.unselected[0];
+        if(!denied||plan.selected.length!==1)
+            throw Error('GPU access qualification needs one selected and one excluded AMD render node.');
+        const openable=[plan.kfd.node,plan.selected[0].node,denied.node];
+        for(const node of openable) {
+            let handle;
+            try{handle=this.fs.openSync(node,'r+');}
+            catch{throw Error('GPU probe baseline cannot open device '+node);}
+            finally{if(handle!==undefined)this.fs.closeSync(handle);}
+        }
+        const key=JSON.stringify({selected:plan.selected.map(g=>({
+            pci_address:g.pci_address,major:g.major,minor:g.minor
+        })),denied:denied.pci_address,minor:denied.minor,
+        kfd:plan.kfd});
+        if(this.gpuDeviceQualifications.has(key))
+            return {qualified_at:this.gpuDeviceQualifications.get(key),
+                selected:plan.selected.map(g=>g.pci_address)};
+        const nonce=crypto.randomUUID(),unit=
+            'experiment-hub-gpu-preflight-'+nonce.replace(/-/g,'')+'.service';
+        const description='Experiment Hub GPU device preflight '+nonce;
+        const args=['--user','--quiet','--pipe','--collect',
+            '--service-type=exec','--unit='+unit,
+            '--description='+description,
+            '--property=CPUQuota=100%',
+            '--property=MemoryMax=268435456',
+            '--property=DevicePolicy=closed',
+            ...plan.device_properties.slice(1).map(p=>'--property='+p),
+            '--',process.execPath,
+            path.join(__dirname,'experiment_hub_linux_gpu_probe.js'),
+            plan.kfd.node,plan.selected[0].node,denied.node];
+        let failure=null;
+        try {
+            const response=await this.runner(SYSTEMD_RUN,args,
+                {timeout:20000,maxBuffer:8192,windowsHide:true});
+            const actual=JSON.parse(response.stdout.trim());
+            if(actual.kfd!==plan.kfd.node||
+                actual.allowed!==plan.selected[0].node||
+                actual.denied!==denied.node||
+                actual.kfd_access!==true||
+                actual.allowed_access!==true||
+                actual.denied_access!==false)
+                throw Error('Linux device filter did not prove allowed and denied GPU access.');
+        }catch(error){failure=error;}
+        // A timed-out device probe may still be running. Only control the
+        // uniquely named, exactly matching service, never an arbitrary PID.
+        try {
+            const show=await this.runner(SYSTEMCTL,
+                ['--user','show',unit,'--no-pager',
+                    '--property=Id,Description,LoadState,ActiveState'],
+                {timeout:12000,maxBuffer:16384,windowsHide:true});
+            const state=parseShow(show.stdout);
+            if(state.LoadState!=='not-found') {
+                if(state.Id!==unit||state.Description!==description)
+                    throw Error('GPU preflight unit identity is ambiguous.');
+                if(['active','activating','deactivating'].includes(state.ActiveState)) {
+                    await this.runner(SYSTEMCTL,
+                        ['--user','stop',unit],
+                        {timeout:12000,maxBuffer:16384,windowsHide:true});
+                    const ended=await this.runner(SYSTEMCTL,
+                        ['--user','show',unit,'--no-pager',
+                            '--property=Id,Description,LoadState,ActiveState'],
+                        {timeout:12000,maxBuffer:16384,windowsHide:true});
+                    const after=parseShow(ended.stdout);
+                    if(!['inactive','failed'].includes(after.ActiveState)&&
+                        after.LoadState!=='not-found')
+                        throw Error('GPU preflight cleanup was not confirmed.');
+                }
+            }
+        }catch(cleanup) {
+            throw Error('GPU device access preflight cleanup not verified: '+
+                String(cleanup.message||cleanup).slice(0,160));
+        }
+        if(failure)
+            throw Error('GPU device access preflight failed: '+
+                String(failure.message||failure).slice(0,160));
+        const qualifiedAt=new Date().toISOString();
+        this.gpuDeviceQualifications.set(key,qualifiedAt);
+        return {qualified_at:qualifiedAt,
+            selected:plan.selected.map(g=>g.pci_address)};
     }
 
     async inspectUnit(record,{requireKernel=true}={}) {
