@@ -194,14 +194,21 @@ missing mounts and unported subclasses/specials fail the full decision
 batch before any motion or communications are applied.
 `PolicyAgentKey::is_current_for` is still required at the inference host.
 
-**Supported:** source-based rotating turrets (LightCannon, Turret,
-RocketTurret, Eye, QueenEye) and DualCannon using compatible projectile
-types. `NativeFirePattern::DualCannon` requires the two authored barrel
-offsets; each targeting pass launches two HumanSmall shots with integer
-`Power / 2`, rotating both muzzle positions around the ship's pivot.
-Both shots use the ship-center aim angle, retain independent shot-root
-IDs, and emit one firing event each. **Not yet implemented:** BeamCannon,
-LaserBuilder/SplitShot, FullShipTurret and Bomb firing continuations;
+**Supported:** rotating turrets (LightCannon, Turret,
+RocketTurret, Eye, QueenEye), DualCannon, LaserBuilder/SplitShot, and
+FullShipTurret using their compatible projectile types.
+`NativeFirePattern::DualCannon` requires the two authored barrel offsets;
+each volley launches two HumanSmall shots with integer `Power / 2`, both
+aimed from the ship center, each with its own shot-root ID.
+LaserBuilder/SplitShot and FullShipTurret use their actual Unity clip
+`Fire` animation event times (Leaf Cutter Shot Form: 0.8 seconds;
+Flagship Laser Charging: 2.75 seconds), after the normal three targeting
+passes. Shots remain queued after the policy stops requesting fire;
+cease-fire prevents actual launch. FullShipTurret never turns the hull on
+the policy's behalf and samples the current physical cannon heading at
+the Fire event, not the earlier aim command. `policy_weapon_charge`
+reports that same world-owned charge progress to a renderer.
+**Not yet implemented:** BeamCannon and Bomb firing continuations;
 real Level-to-perception snapshot collection, special abilities, GPU
 inference, and an ML-Agents-compatible learner. Unity targeting timers
 run on the Level's scaled update clock; this native implementation
