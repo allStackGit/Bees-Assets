@@ -1107,7 +1107,14 @@ curriculum, or modify its source files.
 The coordinator now samples the already-validated Ants production
 progress projection into `experiment_hub_history.js`, with a fixed
 one-minute sampling bucket, a maximum of **96 points per job**, and a
-maximum of **24 jobs** in memory. Repeated reads of an unchanged
+maximum of **24 jobs** in memory and in a separately bounded
+`hub-chart-v1.json` visualization archive. Accepted new samples are saved
+at most once per minute, or when a job finishes; a sudden stop can lose
+recent unsaved chart points. The archive is atomic, capped at 4 MiB,
+validated on restore and never used for training or scheduling decisions.
+An invalid archive is preserved for inspection rather than overwritten;
+storage failures leave agent heartbeats and training lifecycle unaffected
+and are reported in Compare. Repeated reads of an unchanged
 source summary do not create artificial points. On saturation, older
 points are decimated to preserve a useful overview; when the episode
 clock or policy version decreases, or a segment changes, the graph
@@ -1117,10 +1124,11 @@ breaks the line rather than fabricating uninterrupted learning.
 **read-only** chart endpoint. It transmits bounded ephemeral samples
 only when the Compare tab requests them, instead of copying series into
 every ten-second Hub status response. No chart series is written to
-`hub-v1.json`, and a coordinator restart intentionally clears it.
+`hub-v1.json`. The separately bounded chart archive survives coordinator
+restarts, while unsaved samples remain ephemeral.
 The latest job metrics and one final persisted snapshot remain usable
-after restart; historical curves are not reconstructed from unrelated
-metrics files.
+after restart; saved bounded visualization curves are restored from the
+separate chart archive, not reconstructed from unrelated metrics files.
 
 The Compare tab supports up to four manually selected jobs, an
 X-axis choice of cumulative experiment episodes or environment steps,
