@@ -682,6 +682,120 @@ mod tests {
     use crate::simulation::{World, WorldId};
 
     #[test]
+    fn beam_cannon_grows_with_shooter_and_pierces_before_releasing_owner() {
+        let projectiles = Arc::new(ProjectileAssetCatalog::embedded().unwrap());
+        let hulls = ShipAssetCatalog::embedded().unwrap();
+        let mut world = CombatWorld::new(
+            Aabb {
+                min: Vec2::new(-500.0, -500.0),
+                max: Vec2::new(500.0, 500.0),
+            }, 8.0, projectiles,
+        ).unwrap();
+        for (id, side, position) in [
+            (1, 1, Vec2::ZERO),
+            (2, 2, Vec2::new(0.0, 60.0)),
+            (3, 2, Vec2::new(0.0, 90.0)),
+        ] {
+            world.spawn_ship(
+                hulls.by_type(6).unwrap(), id, side,
+                ShipVitals::new(100, 100, 1000, 0).unwrap(),
+                ShipMotion::new(position, 0.0, 0.0, 0.0, 3.0),
+            ).unwrap();
+        }
+        world.bind_policy_ship(1, PolicyFrame::new(0), false).unwrap();
+        world.configure_policy_turret(1, 0, NativeTurretSpec {
+            weapon_type: 1,
+            projectile_type: 8,
+            mount_offset: Vec2::ZERO,
+            initial_rotation_degrees: 0.0,
+            rotation_rate: 90.0,
+            range: 400.0,
+            power: 60,
+            rate_of_fire: 0.3,
+            projectile_value: 1.0,
+            projectile_speed: 0.0, // actual Laser Beam prefab Speed: 0
+            fire_pattern: NativeFirePattern::BeamCannon,
+        }).unwrap();
+
+        let mut action = Action::ZERO;
+        action.continuous[3] = 1.0; // aim +Y
+        action.discrete[0] = 1;
+        world.apply_policy_decisions(&[Decision { agent_id: 1, action }])
+            .unwrap();
+        let mut shot_id = None;
+        for _ in 0..16 {
+            world.advance_policy_turrets(0.02).unwrap();
+            world.advance_beam_projectiles().unwrap();
+            shot_id = world.events().iter().find_map(|event| match event {
+                CombatEvent::PolicyWeaponFired {
+                    ship_id: 1, slot: 0, projectile_id,
+                } => Some(*projectile_id),
+                _ => None,
+            });
+            if shot_id.is_some() { break; }
+        }
+        let id = shot_id.expect("beam cannon fires after three timer passes");
+        let index = *world.projectile_by_id.get(&id).unwrap();
+        assert_eq!(world.projectiles()[index].projectile_type, 8);
+        assert_eq!(world.physics().projectiles()[index].motion.velocity, Vec2::ZERO);
+        assert_eq!(world.policy_ship_runtime.get(&1).unwrap().turrets[0]
+            .as_ref().unwrap().active_beam_projectile_id, Some(id));
+        // The first simulation frame after spawn uses the prefab's
+        // initial 1x0.5 box; subsequent frames extend X by two.
+        assert!(matches!(world.physics().projectiles()[index].shape(),
+            Some(ShipShape::Box { half_extents, .. })
+                if *half_extents == Vec2::new(1.0, 0.5)));
+        world.advance_beam_projectiles().unwrap();
+        let body = &world.physics().projectiles()[index];
+        assert!(matches!(body.shape(), Some(ShipShape::Box {
+            half_extents, ..
+        }) if *half_extents == Vec2::new(3.0, 0.5)));
+        assert!((body.motion.position.x).abs() < 0.001);
+        assert!((body.motion.position.y - 3.0).abs() < 0.001);
+        assert!((body.rotation_degrees - 90.0).abs() < 0.001);
+
+        world.physics.ships_mut()[0].motion.position = Vec2::new(3.0, 2.0);
+        world.physics.ships_mut()[0].motion.body_velocity = Vec2::new(2.0, 1.0);
+        world.physics.ships_mut()[0].motion.rotation_degrees = 45.0;
+        world.advance_policy_turrets(0.02).unwrap();
+        world.advance_beam_projectiles().unwrap();
+        let rotation = world.policy_ship_runtime.get(&1).unwrap().turrets[0]
+            .as_ref().unwrap().state.rotation_degrees.to_radians();
+        let expected_center = Vec2::new(3.0, 2.0) +
+            Vec2::new(-rotation.sin(), rotation.cos()) * 5.0;
+        let body = &world.physics().projectiles()[index];
+        assert!((body.motion.position.x - expected_center.x).abs() < 0.001);
+        assert!((body.motion.position.y - expected_center.y).abs() < 0.001);
+        assert_eq!(body.motion.velocity, Vec2::new(2.0, 1.0));
+
+        // A second policy fire request cannot launch another projectile
+        // until LaserBeam.Kill releases BeamCannon.IsFiringLaserBeam.
+        for _ in 0..20 {
+            world.advance_policy_turrets(0.02).unwrap();
+        }
+        assert_eq!(world.events().iter().filter(|event|
+            matches!(event, CombatEvent::PolicyWeaponFired { .. })
+        ).count(), 1);
+
+        // LaserBeam.ContactTarget consumes half of the *target's health*
+        // as piercing budget. Each unique target receives the full power
+        // available at its contact, and repeat contacts do not damage again.
+        world.resolve_contact(TriggerEnter { projectile_id: id, ship_id: 2 })
+            .unwrap();
+        assert_eq!(world.ship(2).unwrap().vitals.health(), 40);
+        assert_eq!(world.projectiles()[index].power, 10);
+        world.resolve_contact(TriggerEnter { projectile_id: id, ship_id: 2 })
+            .unwrap();
+        assert_eq!(world.ship(2).unwrap().vitals.health(), 40);
+        world.resolve_contact(TriggerEnter { projectile_id: id, ship_id: 3 })
+            .unwrap();
+        assert_eq!(world.ship(3).unwrap().vitals.health(), 90);
+        assert!(!world.physics().projectiles()[index].active);
+        assert_eq!(world.policy_ship_runtime.get(&1).unwrap().turrets[0]
+            .as_ref().unwrap().active_beam_projectile_id, None);
+    }
+
+    #[test]
     fn leafcutter_charge_queues_then_fires_only_at_the_authored_animation_event() {
         let projectiles = Arc::new(ProjectileAssetCatalog::embedded().unwrap());
         let hulls = ShipAssetCatalog::embedded().unwrap();
