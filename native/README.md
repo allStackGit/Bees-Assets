@@ -115,6 +115,29 @@ totals and unused shooting/targeting settlement still belong to gameplay
 attribution, then the separate HiveMind durable StoreCommands pipeline.
 No native full-game client, server adapter or executable loop is wired yet.
 
+## Low-overhead performance and command measurements
+
+`Simulation.measurements()` provides cumulative per-fixed-step counters
+(ticks, decisions, events, active-body snapshots), plus integrated body
+counts, broadphase candidates, narrowphase tests and contact entries
+already counted by the shared physics core. Wall-clock timings are collected
+**only** when the caller enables a nonzero sample period; the fixed-size
+log2-nanosecond histogram provides bounded-memory approximate latency
+percentiles via `sampled_step_percentile_upper_nanos`. Snapshots can be
+subtracted for experiment windows; the histogram can be aggregated without
+storing every frame. Sampled timing does not yet include an attached native
+HiveMind command update or an end-to-end PPO training pass.
+
+`NativeSquadCommandDirector.measurements()` independently reports update
+calls, active commands examined, recurring and timeout callbacks, started,
+completed, superseded and retired command counts, and peak active commands.
+The director reuses its deterministic squad-order scratch buffer across
+ticks rather than allocating a new list on every update. These are
+**instrumentation and removed-allocation claims**, not measured speedups:
+runtime comparisons between 1v1 and large-battle configurations remain
+necessary once a native executable loop is available. The shared simulation
+stays platform-independent for Windows and Linux.
+
 ## Current status
 
 The portable `bees-sim` crate currently contains:
