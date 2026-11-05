@@ -88,11 +88,16 @@ impl CombatWorld {
         if enemy_delta.killed {
             self.retire_dead_ship(target_index, ship_id, 0)?;
         }
-        if self_delta.killed {
-            // YellowJacket.HasCompletedRun marks this as self-detonation
-            // for RL death attribution despite the historical killer ID.
-            self.retire_dead_ship(ship_index, target_id, 0)?;
+        // Source YellowJacket.Detonate always calls Kill after both
+        // direct hits. It is NOT conditional on Bomb.Power exceeding
+        // its own remaining health. No third attributed hit is generated.
+        if !self_delta.killed {
+            self.ships[ship_index].vitals.kill_without_hit();
+            self.reservations.target_health_changed(ship_id, 0);
         }
+        // YellowJacket.HasCompletedRun marks this as self-detonation
+        // for RL death attribution despite the historical killer ID.
+        self.retire_dead_ship(ship_index, target_id, 0)?;
         Ok(true)
     }
 }
@@ -152,7 +157,7 @@ mod tests {
 
         world.state.physics.ships_mut()[1].motion.position = Vec2::ZERO;
         rules.step(&mut world, &[decision], 0.02).unwrap();
-        assert_eq!(world.state.ship(1).unwrap().vitals.health(), 40);
+        assert_eq!(world.state.ship(1).unwrap().vitals.health(), 0);
         assert_eq!(world.state.ship(2).unwrap().vitals.health(), 40);
         assert_eq!(world.state.projectile_storage_metrics().active_projectiles, 0);
         let bomb_hits: Vec<_> = world.state.events().iter().filter_map(|event| {
@@ -167,9 +172,6 @@ mod tests {
         assert_eq!(bomb_hits[1].target_id, 1);
         assert!(bomb_hits[1].self_inflicted);
 
-        rules.step(&mut world, &[decision], 0.02).unwrap();
-        assert_eq!(world.state.ship(1).unwrap().vitals.health(), 0);
-        assert_eq!(world.state.ship(2).unwrap().vitals.health(), 0);
         assert!(world.state.events().iter().any(|event|
             matches!(event, CombatEvent::YellowJacketDetonated {
                 ship_id: 1, target_id: 2,
@@ -178,6 +180,7 @@ mod tests {
             matches!(event, CombatEvent::ShipDied {
                 victim_id: 1, killer_id: 2, ..
             })));
-        assert_eq!(world.state.policy_special_measurements().yellow_jacket_detonations, 2);
+        assert!(!world.state.physics.ships()[0].active);
+        assert_eq!(world.state.policy_special_measurements().yellow_jacket_detonations, 1);
     }
 }

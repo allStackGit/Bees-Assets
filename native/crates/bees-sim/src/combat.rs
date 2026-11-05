@@ -63,6 +63,16 @@ impl ShipVitals {
     pub fn is_dead(&self) -> bool { self.health <= 0 }
     pub fn mined_cargo(&self) -> i32 { self.mined_cargo }
 
+    /// End a ship's lifecycle without inventing another attributed hit.
+    /// Unity's YellowJacket.Detonate calls Ship.Kill unconditionally after
+    /// recording its two direct Bomb.Power hits. Native alive membership is
+    /// health-based, so the remaining health must be retired here; it must
+    /// NOT create a third HitEvent or reward. This is not an attack.
+    pub fn kill_without_hit(&mut self) {
+        self.health = 0;
+        self.tsv = 0;
+    }
+
     /// Utilities.CalculateHealthFactor:
     /// alive: (MaxHealth + Health) / (MaxHealth * 2), else 0.
     /// C# computes the integer numerator and denominator before the
