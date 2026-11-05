@@ -33,6 +33,7 @@ pub struct VisionSweepCounts {
     pub first_ship_discoveries: u64,
     pub first_obstacle_discoveries: u64,
     pub first_mining_discoveries: u64,
+    pub first_map_object_discoveries: u64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -78,5 +79,6 @@ impl VisionSweepCounts {
         self.first_ship_discoveries += other.first_ship_discoveries;
         self.first_obstacle_discoveries += other.first_obstacle_discoveries;
         self.first_mining_discoveries += other.first_mining_discoveries;
+        self.first_map_object_discoveries += other.first_map_object_discoveries;
     }
 }
