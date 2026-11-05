@@ -116,7 +116,7 @@ async function qualifyQueue({hub,executor,url,token,advertisement,firstJob,
     assert.equal(done.automation.managed_jobs,0);
     assert.equal(done.automation.enabled,true);
     hub.configureAutomation({enabled:false,confirm_disarm:true});
-    const restored=new ExperimentHub(hub.file.slice(0,-'/hub-v1.json'.length));
+    const restored=new ExperimentHub(path.dirname(hub.file));
     assert.equal(restored.automationStatus().enabled,false);
     assert.equal(restored.state.jobs.filter(j=>
         cpuJobs.some(x=>x.id===j.id)&&j.capacity_released_at!=null).length,3);
