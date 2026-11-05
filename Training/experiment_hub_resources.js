@@ -113,7 +113,7 @@ function placements(machines,reservations,input) {
             suggested_gpus:capacityFits?selected.map(g=>g.id):[],
             reason:!online?'No currently authenticated agent; capacity preview only'
                 :capacityFits?'Agent connected; physical GPU identity matches, but resource isolation unavailable'
-                :wanted.gpu_count&&!verified.length
+                :wanted.gpu_count&&!available.gpu_capacity.length
                     ?'No physical GPU matched registered PCI identity on this connected agent'
                     :'Insufficient CPU, RAM, verified GPU VRAM, or advisory GPU compute budget'};
     });
