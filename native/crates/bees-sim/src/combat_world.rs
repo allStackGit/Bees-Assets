@@ -107,6 +107,7 @@ pub enum CombatWorldError {
     InvalidBombTarget,
     DuplicateEntity,
     InvalidSide,
+    InvalidLiveShipSpawn,
     InvalidProjectilePower,
     InvalidProjectileType(u8),
     /// Never fabricate simplified behavior for unported weapons.
@@ -1704,6 +1705,13 @@ impl CombatWorld {
         body: ShipBody,
     ) -> Result<(), CombatWorldError> {
         if ship.side <= 0 { return Err(CombatWorldError::InvalidSide); }
+        // Ship.Setup spawns living active hulls. Dead/despawned wrappers
+        // may be represented by ShipVitals but cannot join the live world:
+        // otherwise cached live counts, RL caps and side elimination are
+        // incorrect from their first frame.
+        if ship.vitals.is_dead() || !body.active {
+            return Err(CombatWorldError::InvalidLiveShipSpawn);
+        }
         if body.id != ship.entity_id || body.id < self.next_entity_id ||
             self.ship_by_id.contains_key(&ship.entity_id) ||
             self.projectile_by_id.contains_key(&ship.entity_id) ||
@@ -3077,10 +3085,12 @@ impl GameRules<CombatWorld> for CombatWorldRules {
         decisions: &[Decision],
         dt_seconds: f32,
     ) -> Result<StepCounts, Self::Error> {
-        // The real combat world applies movement, allied communication and
-        // authored turret requests before its shared physics tick.
-        // Unsupported weapon subclasses and specials remain fail-closed.
-        world.state.apply_policy_decisions(decisions)?;
+        // A completed episode is immutable until an explicit world reset.
+        // Do not accept post-terminal movement, turret shots or specials
+        // when a late inference batch arrives before the controller resets.
+        if !world.state.frozen_after_elimination {
+            world.state.apply_policy_decisions(decisions)?;
+        }
         world.state.step_fixed_with_random(
             dt_seconds, &self.collision_matrix, &mut world.random,
         )
