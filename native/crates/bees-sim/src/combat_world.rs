@@ -826,6 +826,42 @@ impl CombatWorld {
         Ok(())
     }
 
+    /// Ship.NearbyAsteroidDoubleCheck, one shared recurring timer per ship.
+    /// An active A* worker must not be invalidated by each one-second sensor
+    /// tick. When it completes, the next refresh can reassess the route from
+    /// live asteroid positions and the last Level-issued destination.
+    fn advance_asteroid_navigation_refresh(
+        &mut self, dt: f32,
+    ) -> Result<(), CombatWorldError> {
+        self.asteroid_navigation_refresh.retain(|&ship_id, _| {
+            self.nearby_asteroid_ships.iter()
+                .any(|&(_, nearby_ship)| nearby_ship == ship_id)
+        });
+        let mut ready = Vec::new();
+        for (&ship_id, timer) in &mut self.asteroid_navigation_refresh {
+            if let Some(due) = timer.begin_update(dt) {
+                timer.finish_update(due);
+                ready.push(ship_id);
+            }
+        }
+        ready.sort_unstable();
+        for ship_id in ready {
+            let Some(&index) = self.ship_by_id.get(&ship_id) else { continue };
+            let body = &self.physics.ships()[index];
+            if !body.active || !body.motion.mobile ||
+                self.ships[index].ship_type == 17 ||
+                (body.motion.is_policy_controlled && !body.motion.user_controlled) ||
+                self.navigation_requests.is_pathfinding(ship_id) {
+                continue;
+            }
+            let Some(mut order) = self.latest_game_point_orders.get(&ship_id).copied()
+                else { continue };
+            order.newly_found_obstacle = false;
+            self.move_ship_to_point(ship_id, order)?;
+        }
+        Ok(())
+    }
+
     /// The equivalent of Unity's WaitingTargetCoordinates release after a
     /// movement lock. Resolve at most one (latest) command per unlocked ship.
     /// Sorting by immutable ship ID keeps re-issued orders deterministic.
@@ -2455,6 +2491,7 @@ impl CombatWorld {
 
         self.apply_unlocked_game_point_orders()?;
         self.advance_failed_game_paths(dt)?;
+        self.advance_asteroid_navigation_refresh(dt)?;
         for ship in self.physics.ships_mut() {
             if !ship.active { continue; }
             // A switch to neural-policy ownership must drop stale gameplay
