@@ -1383,9 +1383,19 @@ async function checkpointPeriodic(item, status) {
             return;
         }
         if(item.benchmark_target_met) {
-            // The native trainer has already completed its verified graceful
-            // stop and the frozen development suite passed. Do not restart
-            // the same optimizer simply to stop it again.
+            // A saved success decision cannot authorize completion after a
+            // restart until every pinned report and candidate hash matches
+            // again. Do not restart or stop the already-idle optimizer.
+            const winning=(item.checkpoint_history||[]).find(record=>
+                record.ordinal===item.benchmark_target_met.checkpoint_ordinal);
+            if(!winning||winning.ordinal!==item.checkpoint_active_ordinal||
+                winning.stage_index!==(item.stage_index||0))
+                throw Error('Benchmark completion checkpoint lineage changed.');
+            evaluatePeriodicTarget(item,winning);
+            if(!winning.benchmark_target_result?.passed||
+                winning.benchmark_target_result.consecutive_passes<
+                    item.benchmark_target.consecutive_passes)
+                throw Error('Frozen benchmark evidence no longer supports completion.');
             assertSameLineageCheckpoint(item);
             const stage=stageRecord(item);
             stage.finished_at=stage.finished_at||now();
