@@ -509,5 +509,36 @@ mod tests {
         assert_eq!(observed.linear_velocity, Vec2::new(3.0, 0.0));
         assert_eq!(live_ship_position(&world, 1).unwrap(),
             own.position);
+
+        let mut discovered = LevelDiscovery::new();
+        assert_eq!(
+            discovered.record(1, crate::level_discovery::DiscoveryKind::Ship, 2),
+            Ok(true),
+        );
+        let mut collector = LiveShipCandidateCollector::new();
+        let mut known_enemies = Vec::new();
+        let count = collector.collect_learned_enemies(
+            &world, &discovered, 1, &mut identities,
+            |_| Some(metadata), &mut known_enemies,
+        ).unwrap();
+        assert_eq!(count, 1);
+        assert_eq!(known_enemies[0].entity_id, 2);
+        assert_eq!(known_enemies[0].side, 2);
+
+        let mut nav = LocalNavigationOccupancy::new();
+        assert_eq!(navigation_from_world(
+            &world, bounds, own.position, &mut nav,
+            |id| discovered.has(1, crate::level_discovery::DiscoveryKind::Obstacle, id),
+        ).unwrap(), 0);
+        assert_eq!(nav.occupancy().len(), 21 * 21);
+
+        let mut exploration = TeamExplorationGrid::new();
+        let mut explorers = Vec::new();
+        assert_eq!(update_exploration_from_world(
+            &world, 1, bounds, 0.5,
+            &mut exploration, &mut explorers,
+            |_| Some(50),
+        ).unwrap(), 1);
+        assert!(exploration.last_seen().iter().any(|&seen| seen == 0.5));
     }
 }
