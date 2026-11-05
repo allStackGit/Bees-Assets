@@ -1018,12 +1018,24 @@ class ExperimentHub {
                 job.execution_updated_at=now();
                 changed=true;
             }
-            // A single terminal progress projection survives a coordinator
-            // restart. No per-heartbeat/history archive is persisted.
-            if(['finished','failed','stopped'].includes(job.status)&&progress&&
+            // Keep the last accepted source version if the terminal report
+            // omitted progress or supplied an older/unrelated summary.
+            // This observation never authorizes an execution transition.
+            if(['finished','failed','stopped'].includes(job.status)&&
                 !job.final_progress) {
-                job.final_progress=progress;
-                changed=true;
+                const previous=this.executionTelemetry.get(job.id);
+                const latest=previous?.dispatch_id===job.dispatch_id&&
+                    previous.progress?.source==='ants-summary-v1'
+                    ?previous.progress:null;
+                const selected=latest&&(!progress||
+                    progress.experiment_id!==latest.experiment_id||
+                    Date.parse(progress.source_modified_at)<
+                        Date.parse(latest.source_modified_at))
+                    ?latest:progress;
+                if(selected) {
+                    job.final_progress=selected;
+                    changed=true;
+                }
             }
         }
         return changed;
