@@ -120,6 +120,10 @@ mod tests {
     use crate::ship_assets::ShipAssetCatalog;
     use crate::policy::Action;
     use crate::simulation::WorldId;
+    use crate::episode_ship_identity::EpisodeShipIdentities;
+    use crate::combat_perception_bridge::{
+        observed_ship_from_world, AuthoredShipPerception,
+    };
 
     fn world_with_one_ship() -> CombatWorld {
         let projectiles = Arc::new(ProjectileAssetCatalog::embedded().unwrap());
@@ -155,6 +159,22 @@ mod tests {
         assert_ne!(motion.movement_direction, STOP_MOVEMENT);
         assert_eq!(world.state.policy_communication(1),
             Some([0.6, -0.4, 0.0, 0.0]));
+        let mut identities = EpisodeShipIdentities::new(5, 100).unwrap();
+        let observed = observed_ship_from_world(
+            &world.state, 1,
+            AuthoredShipPerception {
+                longest_side: 5.0,
+                max_weapon_range: 0.0,
+                firepower: 0.0,
+                is_bomber: false,
+                is_carrier_ship: false,
+                minerals_mined_this_level: 0,
+                observed_weapons: [None; 5],
+                allied_communication: None,
+            },
+            &mut identities,
+        ).unwrap();
+        assert_eq!(observed.communication, Some([0.6, -0.4, 0.0, 0.0]));
     }
 
     #[test]
