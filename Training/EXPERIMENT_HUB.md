@@ -464,10 +464,34 @@ selected render device remain openable **while the excluded,
 previously openable GPU becomes inaccessible**. Failure, unavailable
 systemd eBPF device filtering, an ambiguous unit or unconfirmed
 cleanup leaves qualification blocked. The probe opens and closes
-device files but does not submit GPU work or run training. Its
-success is stored only in local process memory. This first version
-requires at least two openable AMD render nodes and one selected
-GPU per proof.
+device files but does not submit GPU work or run training. Every
+explicit job request runs a **fresh** device-access proof, not a
+cached pass from a different job. An ambiguous cleanup blocks further
+probes in the same local supervisor session until the machine's
+service ownership has been inspected. This first version requires
+at least two openable AMD render nodes and one selected GPU per proof.
+
+The Train tab now offers **Check GPU device access** for an unstarted
+non-Bees job with an acknowledged, exclusive single-GPU lease on a
+qualified Linux agent. The operator must explicitly confirm the
+action. `POST /api/hub/jobs/qualify-gpu` records a request identity
+bound to that job, lease and machine; the authenticated agent receives
+`qualify_gpu` as a separate non-executable order with the lease's
+frozen PCI mapping. The agent sends a bounded
+`gpu_qualification_reports` heartbeat result independently of all
+native execution reports. A negative result, wrong PCI mapping,
+released lease, missing agent or stale request cannot authorize a
+new process. Releasing or cancelling an unstarted job cancels a
+pending request, and a late matching report cannot restore it.
+
+The job's historical probe outcome is durable and visible on the
+dashboard, but `gpu_qualification.current` is a computed display-only
+indicator requiring the same live agent process instance, currently
+acknowledged matching lease and physical device, and passing native
+CPU/RAM preflight. It expires if the coordinator restarts, agent
+restarts, agent goes offline or hardware/lease evidence becomes stale.
+A fresh explicit probe is required to obtain current evidence for a
+different job; a result for one job never qualifies another.
 
 **These controls are not yet connected to native GPU launching.**
 The Hub still refuses GPU-bearing Start requests, even for an
