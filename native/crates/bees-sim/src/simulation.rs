@@ -210,6 +210,12 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
         self.sample_every = every;
     }
 
+    /// Common timing sampling policy for the simulation's world steps
+    /// and the caller's batched rollout phases. None adds no clock reads.
+    pub fn timing_sample_period(&self) -> Option<NonZeroU32> {
+        self.sample_every
+    }
+
     pub fn add_world(&mut self, world: World<S>) -> Result<usize, &'static str> {
         if self.worlds.iter().any(|existing| existing.id == world.id) {
             return Err("world IDs must be unique within a simulation");
