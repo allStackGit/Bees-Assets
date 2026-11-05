@@ -57,6 +57,7 @@ function hubComparisonPoints(run,level='') {
 function hubComparisonCsv(exported) {
     const fields=[
         'slot','job_id','configuration_name','configuration_sha256',
+        'selected_x_axis','selected_metric','selected_curriculum_level',
         'assigned_machine_id','artifact_lineage_root_id',
         'continuation_of_job_id','status','observed_at','source_modified_at',
         'experiment_id','segment_id','break_before','episodes_completed',
@@ -70,7 +71,8 @@ function hubComparisonCsv(exported) {
         let str=String(value);
         // Prevent spreadsheet software from interpreting user-supplied
         // configuration labels as formulas.
-        if(str.length&&'=+-@'.includes(str[0]))str="'"+str;
+        if(str.trimStart().length&&'=+-@'.includes(str.trimStart()[0]))
+            str="'"+str;
         const quote=str.includes(',')||str.includes('"')||
             str.includes(String.fromCharCode(10))||
             str.includes(String.fromCharCode(13));
@@ -80,6 +82,9 @@ function hubComparisonCsv(exported) {
         slot:run.slot,job_id:run.job_id,
         configuration_name:run.configuration_name,
         configuration_sha256:run.configuration_sha256,
+        selected_x_axis:exported.x_axis,
+        selected_metric:exported.metric,
+        selected_curriculum_level:exported.curriculum_level,
         assigned_machine_id:run.assigned_machine_id,
         artifact_lineage_root_id:run.artifact_lineage_root_id,
         continuation_of_job_id:run.continuation_of_job_id,
