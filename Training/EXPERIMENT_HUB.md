@@ -426,6 +426,13 @@ duplicate or malformed addresses and refuses to rebind a machine while
 it has outstanding GPU-bearing leases. It never silently changes a
 running job's GPU selection or existing lease identity.
 
+GPU-bearing coordination leases now persist their exact logical-ID-
+to-PCI mapping and observed VRAM capacity at allocation time. Older
+leases without a pinned physical identity cannot become trusted merely
+because a machine registration was edited later. The frozen device
+binding survives coordinator restarts and must still match the
+current authenticated hardware report for each acknowledgement.
+
 Only connected machines with a fresh matching AMDGPU report expose
 \`verified_gpus\` to the Hub's capacity planner. The available per-device
 budget is capped at the **smaller** of registered and reported VRAM;
@@ -437,6 +444,38 @@ and tracks exclusive/shared claim budgets before acknowledging. A
 missing, moved or mismatched device invalidates the coordinator's
 existing fresh receipt immediately. Reappearance alone does not
 restore receipt freshness; another matching acknowledgement is needed.
+
+### Linux GPU device-filter qualification (GPU execution still disabled)
+
+The local AMDGPU device resolver maps the frozen PCI identity to
+a kernel DRM render character node under /dev/dri. It verifies the
+current sysfs PCI address, driver/vendor, exact character-device
+major/minor, and current total VRAM. Missing nodes, ambiguous GPU
+partitions, moved PCI devices and insufficient VRAM are rejected.
+
+The Linux supervisor now has an optional, **locally invoked**
+`qualifyGpuDeviceAccess(bindings)` method. It first proves that the
+same ordinary user account can open the selected render device,
+an excluded render device, and /dev/kfd. It then starts an inert,
+uniquely named systemd user service with DevicePolicy=closed and
+DeviceAllow entries for only /dev/kfd and the selected render node.
+The fixed Node probe must demonstrate that /dev/kfd and the
+selected render device remain openable **while the excluded,
+previously openable GPU becomes inaccessible**. Failure, unavailable
+systemd eBPF device filtering, an ambiguous unit or unconfirmed
+cleanup leaves qualification blocked. The probe opens and closes
+device files but does not submit GPU work or run training. Its
+success is stored only in local process memory. This first version
+requires at least two openable AMD render nodes and one selected
+GPU per proof.
+
+**These controls are not yet connected to native GPU launching.**
+The Hub still refuses GPU-bearing Start requests, even for an
+acknowledged exclusive lease. Before enabling them, Halifax must
+prove the device filter in its actual systemd user session and
+demonstrate ROCm cannot reach excluded hardware through another
+interface. Access filtering is not a per-process VRAM limit, a
+compute-share guarantee or isolation from unrelated host jobs.
 
 **Identity is not isolation.** The physical VRAM-used counter may
 include unrelated host workloads, while the planner's reserved VRAM
