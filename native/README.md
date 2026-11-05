@@ -144,6 +144,37 @@ performance needs profiling at 1v1 and large-battle sizes. These are
 runtime comparisons remain necessary once a native executable loop exists. The shared simulation
 stays platform-independent for Windows and Linux.
 
+## v26 batched policy interface
+
+`bees-sim::policy_batch::PolicyBatch` provides a reusable, row-major
+inference boundary for the exact v26 policy shape: 7,743 observation
+floats, 16 continuous outputs and six discrete branches per agent.
+A game-side observation encoder can fill a row **directly** using
+`push_encoded` without constructing an intermediate 7,743-float vector;
+each unwritten feature remains NaN and invalidates the row. Batches
+preserve insertion order and explicit `(WorldId, agent_id)` identities,
+so an inference backend can share one invocation across many worlds.
+
+The batch exposes contiguous output buffers for the actual model backend
+and validates **every** returned action before publishing decisions:
+finite continuous values, discrete branch ranges, available weapon slots,
+and current executable special-action masks. Missing/partial outputs are
+never silently replaced with zero actions. Both observations and output
+storage retain capacity across decisions, and all action choices must be
+provided by an actual model or explicit user control.
+
+The exact Unity `RlPolicySchema.Signature` and ABI version are available
+through `validate_model_abi`, to reject incompatible checkpoints even
+when their tensor dimensions happen to match. The native policy module
+also ports the source-defined episode progress, signed faction indicator
+and 19 reserved observation features; inactive trajectories use zeros
+except for the faction discriminator.
+
+**Not yet implemented:** the remaining 7,722 perception features,
+full ship/weapon/special-action execution, GPU model loading/inference,
+and the ML-Agents-compatible learner/rollout loop. The new batch interface
+is not a substitute for those gameplay or training contracts.
+
 ## Independent CPU rollout windows
 
 `Simulation::run_parallel_window` advances each world through the **same**
