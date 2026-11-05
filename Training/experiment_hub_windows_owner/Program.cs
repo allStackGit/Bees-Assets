@@ -498,6 +498,14 @@ internal static class Program
         try
         {
             if(args.Length==1&&args[0]=="--probe-child")return 0;
+            // Fixed inert workload for an explicitly invoked, isolated
+            // Windows native Start/Stop smoke. No arguments, file I/O,
+            // network work or project runner are permitted in this mode.
+            if(args.Length==1&&args[0]=="--smoke-child")
+            {
+                Thread.Sleep(TimeSpan.FromSeconds(30));
+                return 0;
+            }
             if(args.Length==1&&args[0]=="--probe")return Probe();
             if(args.Length!=2||args[0]!="--run")
                 throw new ArgumentException("Usage: --probe or --run <local-job-spec>");
