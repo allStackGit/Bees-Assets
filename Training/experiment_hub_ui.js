@@ -221,6 +221,19 @@ document.addEventListener('DOMContentLoaded', () => {
             return job?{job,color:chartPalette[i],slot:slot.toUpperCase(),
                 points:history.get(id)||[]}:null;
         }).filter(Boolean);
+        const levelSelect=$('hub-compare-level');
+        const oldLevel=levelSelect.value;
+        const levels=[...new Set(runs.flatMap(run=>
+            hubComparisonPoints(run).map(p=>p.curriculum_level)
+                .filter(Number.isSafeInteger)))].sort((a,b)=>a-b);
+        levelSelect.replaceChildren(new Option('All curriculum levels',''),
+            ...levels.map(level=>new Option('Level '+level,String(level))));
+        if(levels.some(level=>String(level)===oldLevel))
+            levelSelect.value=oldLevel;
+        const level=levelSelect.value;
+        const hasExportData=runs.some(run=>hubComparisonPoints(run,level).length);
+        $('hub-compare-export-csv').disabled=!hasExportData;
+        $('hub-compare-export-json').disabled=!hasExportData;
         const note=comparisonError&&comparisonProject===project
             ?'Unable to load comparison history: '+comparisonError
             :project!=='ants'
@@ -274,6 +287,8 @@ document.addEventListener('DOMContentLoaded', () => {
             warnings.join(' ')+(warnings.length?' ':'')+
             'Horizontal axis: '+(chartAxes[$('hub-compare-x-axis').value]?.label||
                 chartAxes.episodes_completed.label)+'. Not wall-clock time. '+
+            (level!==''?'Showing curriculum level '+level+
+                ' only; axes remain cumulative, not stage-relative. ':'')+
             'Source timestamps show when Ants last published a summary. No training decisions use chart data.');
         const table=$('hub-compare-rows');
         table.replaceChildren();
@@ -326,12 +341,9 @@ document.addEventListener('DOMContentLoaded', () => {
             Number.isFinite(p[key])&&
             !(key==='ppo_unique_samples_per_second'&&
                 p.latest_episode_policy_updated===false);
-        const series=runs.map(run=>{
-            const points=run.points.length?run.points:
-                [run.job.live_execution?.progress||run.job.final_progress]
-                    .filter(Boolean);
-            return {...run,valid:points};
-        });
+        const series=runs.map(run=>({
+            ...run,valid:hubComparisonPoints(run,$('hub-compare-level').value),
+        }));
         const values=series.flatMap(r=>r.valid
             .filter(usable)
             .map(p=>({x:p[xKey],y:p[key]})));
@@ -391,6 +403,59 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             flush();
         }
+    }
+    function exportComparison(format) {
+        if(!state||project==='bees')
+            throw Error('Select an available project comparison.');
+        const jobs=state.jobs.filter(job=>job.project_id===project);
+        const samples=comparisonProject===project&&comparisonData?.samples||[];
+        const byJob=new Map(samples.map(sample=>
+            [sample.job_id,sample.points||[]]));
+        const level=$('hub-compare-level').value;
+        const runs=compareSlots.map(slot=>{
+            const id=$('hub-compare-'+slot).value;
+            const job=jobs.find(item=>item.id===id);
+            if(!job)return null;
+            return {
+                slot:slot.toUpperCase(),job_id:job.id,
+                configuration_name:job.configuration_name,
+                configuration_sha256:job.configuration_sha256||null,
+                assigned_machine_id:job.assigned_machine_id||null,
+                artifact_lineage_root_id:job.artifact_lineage_root_id||job.id,
+                continuation_of_job_id:job.continuation_of_job_id||null,
+                status:job.status,
+                points:hubComparisonPoints({job,points:byJob.get(id)||[]},level),
+            };
+        }).filter(Boolean);
+        if(!runs.some(run=>run.points.length))
+            throw Error('No recorded samples for the selected runs and level.');
+        const exported={
+            schema_version:1,project_id:project,
+            exported_at:new Date().toISOString(),
+            x_axis:$('hub-compare-x-axis').value,
+            metric:$('hub-compare-metric').value,
+            curriculum_level:level===''?null:Number(level),
+            source:'Experiment Hub validated Ants training summaries',
+            interpretation:'Observational curves, not benchmark or qualification evidence; cumulative X axes are not stage-normalized.',
+            runs,
+        };
+        const content=format==='csv'?hubComparisonCsv(exported):
+            JSON.stringify(exported,null,2)+String.fromCharCode(10);
+        const blob=new Blob([content],{type:format==='csv'
+            ?'text/csv;charset=utf-8':'application/json;charset=utf-8'});
+        const url=URL.createObjectURL(blob);
+        const link=document.createElement('a');
+        link.href=url;
+        link.download='ants-comparison-'+
+            exported.exported_at.replace(/[:.]/g,'-')+'.'+format;
+        document.body.append(link);
+        try{link.click();}finally{
+            link.remove();
+            setTimeout(()=>URL.revokeObjectURL(url),1000);
+        }
+        feedback('hub-compare-export-message','Exported '+runs.length+
+            ' selected runs as '+format.toUpperCase()+
+            '. This is observational progress, not independent evaluation.');
     }
     function resetEditor() {
         editing=null;
@@ -991,6 +1056,14 @@ document.addEventListener('DOMContentLoaded', () => {
         $('hub-compare-'+slot).addEventListener('change',renderComparison);
     $('hub-compare-metric').addEventListener('change',renderComparison);
     $('hub-compare-x-axis').addEventListener('change',renderComparison);
+    $('hub-compare-level').addEventListener('change',renderComparison);
+    for(const format of ['csv','json'])
+        $('hub-compare-export-'+format).addEventListener('click',()=>{
+            try{exportComparison(format);}
+            catch(error){
+                feedback('hub-compare-export-message',String(error.message||error));
+            }
+        });
     $('hub-project').addEventListener('change',()=>{
         project=$('hub-project').value;resetEditor();display();selectTab(tab);
     });
