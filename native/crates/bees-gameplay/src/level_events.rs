@@ -18,6 +18,9 @@ use crate::episode::{
     NativeEpisodeFinal, NativeEpisodeRewardCoordinator,
     NativeEpisodeRewardError, NativeEpisodeRewardMeasurements,
 };
+use crate::group_rewards::{
+    GroupRewardError, GroupRewardEvent, NativeGroupRewardDelivery,
+};
 use crate::squads::{
     NativeSquadRoster, SquadEventBridgeError, SquadRosterChange,
     SquadRosterError, SquadRosterMeasurements,
@@ -29,6 +32,8 @@ pub enum NativeLevelEventError {
     Roster(SquadEventBridgeError),
     Rewards(NativeEpisodeRewardError),
     Commands(GameCommandError),
+    Group(GroupRewardError),
+    InvalidGroupConfiguration,
     FailedLevel,
 }
 
@@ -41,6 +46,9 @@ pub struct NativeLevelTick<'a> {
     /// Source-order bounded shaping plus separate uncapped economics.
     /// Reward delivery to team/agent groups belongs to the host adapter.
     pub reward_emissions: &'a [RewardEmission],
+    /// Optional source MA-POCA wire commands, emitted once per side.
+    /// EloMarker is transport-only and must be stripped before PPO.
+    pub group_events: Option<&'a [GroupRewardEvent]>,
     pub finalized: Option<NativeEpisodeFinal>,
 }
 
@@ -60,6 +68,7 @@ pub struct NativeLevelEventProcessor {
     commands: NativeSquadCommandDirector,
     hive_mind: HiveMindSession,
     episode: NativeEpisodeRewardCoordinator,
+    group_delivery: Option<NativeGroupRewardDelivery>,
     next_tick: u64,
     last_advanced_command_tick: Option<u64>,
     failed: bool,
@@ -77,6 +86,7 @@ impl NativeLevelEventProcessor {
             commands: NativeSquadCommandDirector::new(),
             hive_mind: HiveMindSession::new(),
             episode,
+            group_delivery: None,
             next_tick: 1,
             last_advanced_command_tick: None,
             failed: false,
@@ -111,6 +121,26 @@ impl NativeLevelEventProcessor {
 
     pub fn episode_mut(&mut self) -> &mut NativeEpisodeRewardCoordinator {
         &mut self.episode
+    }
+
+    /// Opt in to native MA-POCA delivery before the first fixed tick.
+    /// Graphical non-RL Levels may leave the adapter unconfigured.
+    /// Agent participation is registered directly on this group object
+    /// as controllers bind/unbind during the episode.
+    pub fn configure_group_delivery(
+        &mut self,
+        delivery: NativeGroupRewardDelivery,
+    ) -> Result<(), NativeLevelEventError> {
+        if self.next_tick != 1 || self.group_delivery.is_some() ||
+            delivery.sides() != self.episode.sides() {
+            return Err(NativeLevelEventError::InvalidGroupConfiguration);
+        }
+        self.group_delivery = Some(delivery);
+        Ok(())
+    }
+
+    pub fn group_delivery_mut(&mut self) -> Option<&mut NativeGroupRewardDelivery> {
+        self.group_delivery.as_mut()
     }
 
     pub fn is_failed(&self) -> bool {
@@ -239,6 +269,23 @@ impl NativeLevelEventProcessor {
                 return Err(NativeLevelEventError::Rewards(error));
             }
         };
+        // The group's side/episode membership is registered by the
+        // actual policy controllers. This single event boundary delivers
+        // immediate combat/economic shaping and terminal rewards without
+        // duplicating them for each participating agent.
+        let group_events = if let Some(group) = self.group_delivery.as_mut() {
+            match group.consume_tick(
+                completed_tick, reward.emissions, reward.finalized,
+            ) {
+                Ok(events) => Some(events),
+                Err(error) => {
+                    self.failed = true;
+                    return Err(NativeLevelEventError::Group(error));
+                }
+            }
+        } else {
+            None
+        };
         self.next_tick = self.next_tick.checked_add(1)
             .expect("monotonic native Level tick exhausted");
         self.last_finalized = reward.finalized;
@@ -246,6 +293,7 @@ impl NativeLevelEventProcessor {
             squad_changes: &self.changes,
             finished_commands: &self.finished,
             reward_emissions: reward.emissions,
+            group_events,
             finalized: reward.finalized,
         })
     }

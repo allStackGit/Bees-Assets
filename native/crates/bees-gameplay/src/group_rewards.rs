@@ -120,6 +120,10 @@ impl NativeGroupRewardDelivery {
         self.completed
     }
 
+    pub fn sides(&self) -> [i32; 2] {
+        self.sides
+    }
+
     fn side_index(&self, side: i32) -> Result<usize, GroupRewardError> {
         self.sides.iter().position(|&x| x == side)
             .ok_or(GroupRewardError::UnknownSide)

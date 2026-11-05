@@ -155,6 +155,10 @@ impl NativeEpisodeRewardCoordinator {
         self.terminal.result()
     }
 
+    pub fn sides(&self) -> [i32; 2] {
+        [self.bee_side, self.human_side]
+    }
+
     pub fn latest_emissions(&self) -> &[RewardEmission] {
         &self.merged_emissions
     }
