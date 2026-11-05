@@ -57,7 +57,7 @@ Move and Stop use authored ship offsets, 20-step formation compression,
 nearest walkable-center fallback and each ship's shared A* path queue.
 
 The source-matched movement phases of HiveMind **Hold**, **Random**,
-**Patrol**, **Retreat**, and **Closest Friendly** are now wired. Random
+**Patrol**, **Retreat**, **Closest Friendly**, and **Guard** are now wired. Random
 finishes at arrival or command timeout; Patrol samples Unity's four-corner
 route, rotates waypoints on its 3-second scaled callback, and uses the
 separate configured patrol timeout. Retreat uses the Level's live target
@@ -82,12 +82,32 @@ specific command; the shared tracked-movement method is not yet suitable
 for arbitrary faster-following callers. Missing eligible targets leave
 both server OutcomeId reservations for explicit discard rather than
 recording invented command rewards.
+Guard picks the nearest eligible non-guarding same-side squad once and
+retains its exact lifecycle identity. It assigns one of four guarding slots
+(up, left, right, down) based on the number of current guards of that target,
+then tracks the protected squad's center plus the guard's live bounds width
+or height and four units. Its timer starts immediately and expires at the
+configured guard duration; death of the protected squad ends guarding early.
+Within 1.5 units of the guard destination, the native command sets speed to
+the protected squad's slowest authored ship speed, clamped per ship to its own
+base speed. Guard finalization, replacement and retirement restore the
+surviving ships to their authored speed cap. The Level's current squad
+registry supplies the active command, protected target, bounds, and speed;
+this includes user/scripted Guard commands, not only native HiveMind orders.
+When no eligible protected squad exists, the host must both discard the
+server reservations and ban Guard for subsequent strategy requests. These
+live relationships are not inferred from ship proximity or invented by the
+training simulator.
+
 Commands update squads in stable lifecycle-ID order so independent worlds
 do not depend on randomized hash-table traversal.
 The game must supply real squad bounds, membership, configured speeds,
 live enemy squad identity/position/range where required, shooting/targeting
-state and scaled update time; the director does not invent missing game state. Unported command types return an explicit
-Unsupported result with their server reservations intact. Command reward
+state and scaled update time; the director does not invent missing game state.
+Squad movement and command polling use the world's canonical indexed ship
+lookups instead of rescanning every ship for each member.
+Unported command types return an explicit Unsupported result with their
+server reservations intact. Command reward
 totals and unused shooting/targeting settlement still belong to gameplay
 attribution, then the separate HiveMind durable StoreCommands pipeline.
 No native full-game client, server adapter or executable loop is wired yet.
