@@ -470,8 +470,12 @@ document.addEventListener('DOMContentLoaded', () => {
             if(['start_requested','launch_requested','running','unverified']
                 .includes(j.status))
                 actions.append(button('Stop managed job',async()=>{
+                    const windows=machine?.agent_platform==='win32';
                     if(!confirm('Request native stop for '+j.configuration_name+
-                        '? The agent must authenticate and verify the local systemd unit. An offline agent may leave stop pending.'))return;
+                        '? '+(windows
+                            ?'Windows will FORCE-TERMINATE the owned Job Object process tree, without a checkpoint-aware interrupt. '
+                            :'Linux will use the locally installed systemd stop policy. ')+
+                        'An offline agent may leave the stop request pending.'))return;
                     try{
                         await action('hub/jobs/stop',{
                             job_id:j.id,confirm_stop:true,
