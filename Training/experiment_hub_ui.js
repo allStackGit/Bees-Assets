@@ -127,6 +127,59 @@ document.addEventListener('DOMContentLoaded', () => {
         b.type='button';b.textContent=label;b.addEventListener('click',onClick);
         return b;
     }
+    // The visual pipeline editor only selects saved configurations. It
+    // cannot supply executable paths or authorize a native process.
+    function addPipelineStage() {
+        const container=$('hub-pipeline-rows');
+        if(container.children.length>=16)return;
+        const row=document.createElement('div');
+        row.className='hub-pipeline-stage';
+        const configLabel=document.createElement('label');
+        const select=document.createElement('select');
+        select.className='hub-pipeline-config';
+        configLabel.append(select);
+        const resourceLabel=document.createElement('label');
+        resourceLabel.textContent='Requested CPU/RAM/GPU resources (JSON)';
+        const resources=document.createElement('input');
+        resources.type='text';
+        resources.className='hub-pipeline-resources';
+        try {
+            resources.value=JSON.stringify(JSON.parse($('hub-job-resources').value));
+        }catch(error){
+            resources.value='{"cpus":2,"ram_mb":2048,"gpu_count":0}';
+        }
+        resourceLabel.append(resources);
+        const remove=button('Remove',()=>{
+            if(container.children.length<=2)return;
+            row.remove();
+            renderPipelineStages();
+        });
+        row.append(configLabel,resourceLabel,remove);
+        container.append(row);
+    }
+    function renderPipelineStages() {
+        const rows=[...$('hub-pipeline-rows').children];
+        const configs=(state?.configurations||[]).filter(c=>c.project_id==='ants');
+        const hasPredecessor=Boolean($('hub-pipeline-predecessor').value);
+        for(const [i,row] of rows.entries()) {
+            const label=row.firstElementChild;
+             const select=row.querySelector('select');
+            label.textContent='Stage '+(i+1)+' saved configuration';
+            label.append(select);
+            const old=select.value;
+            select.replaceChildren(...configs.map(c=>new Option(
+                c.name+' · revision '+c.revision,c.id)));
+            const expectedResume=i>0||hasPredecessor;
+            const suggested=configs.find(c=>
+                (c.parameters?.mode==='resume')===expectedResume);
+            if(configs.some(c=>c.id===old))select.value=old;
+            else if(suggested)select.value=suggested.id;
+            row.querySelector('button').disabled=rows.length<=2;
+        }
+        $('hub-pipeline-add').disabled=project!=='ants'||rows.length>=16;
+        $('hub-pipeline-queue').disabled=project!=='ants'||
+            rows.length<2||!configs.length;
+    }
     // Only a fresh, authenticated native report can distinguish a Stop
     // still awaiting delivery from a service already shutting down.
     function nativeJobLabel(job, fallback) {
@@ -566,8 +619,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     project==='ants'&&(
                         ['start_requested','launch_requested','running'].includes(j.status)||
                         j.status==='finished'&&!j.capacity_released_at))||
-                project==='ants'&&j.continuation_of_job_id&&
-                    j.continuation_machine_id&&
+                project==='ants'&&
                     ['waiting_adapter','waiting_predecessor'].includes(j.status)));
         predecessorSelect.replaceChildren(
             new Option('New experiment (no predecessor)',''),
@@ -576,10 +628,29 @@ document.addEventListener('DOMContentLoaded', () => {
                 (!j.capacity_released_at?' · stage will wait':'')+' on '+
                 (state.machines.find(m=>m.id===(j.assigned_machine_id||
                     j.continuation_machine_id))?.name||
-                    j.assigned_machine_id||j.continuation_machine_id)+
+                    j.assigned_machine_id||j.continuation_machine_id||
+                    'machine not assigned yet')+
                 ' · '+j.id.slice(-8),j.id)));
         if(availableParents.some(j=>j.id===previousParent))
             predecessorSelect.value=previousParent;
+        const pipeline=$('hub-pipeline-panel');
+        pipeline.hidden=project!=='ants';
+        const pipelinePredecessor=$('hub-pipeline-predecessor');
+        const formerPipelineParent=pipelinePredecessor.value;
+        pipelinePredecessor.replaceChildren(
+            new Option('New experiment (no predecessor)',''),
+            ...availableParents.map(j=>new Option(
+                j.configuration_name+' · '+j.status+' · '+j.id.slice(-8),
+                j.id)));
+        if(availableParents.some(j=>j.id===formerPipelineParent))
+            pipelinePredecessor.value=formerPipelineParent;
+        if(project==='ants') {
+            if(!$('hub-pipeline-rows').children.length) {
+                addPipelineStage();
+                addPipelineStage();
+            }
+            renderPipelineStages();
+        }
         $('hub-job-queue').disabled=project==='bees'||!configs.length;
         const previousMachine=$('hub-job-machine').value;
         $('hub-job-machine').replaceChildren(new Option('Automatic best fit',''),
@@ -1329,6 +1400,50 @@ document.addEventListener('DOMContentLoaded', () => {
         }catch(e){feedback('hub-plan-result',e.message);}
     });
 
+    $('hub-pipeline-add').addEventListener('click',()=>{
+        addPipelineStage();
+        renderPipelineStages();
+    });
+    $('hub-pipeline-predecessor').addEventListener('change',renderPipelineStages);
+    $('hub-pipeline-queue').addEventListener('click',async()=>{
+        if(project!=='ants'||!state)return;
+        try {
+            const configs=state.configurations.filter(c=>c.project_id==='ants');
+            const rows=[...$('hub-pipeline-rows').children];
+            if(rows.length<2||rows.length>16)
+                throw Error('Choose 2–16 stages for this pipeline.');
+            const stages=rows.map(row=>{
+                const selected=configs.find(c=>
+                    c.id===row.querySelector('select').value);
+                if(!selected)throw Error('Select a saved configuration for every stage.');
+                return {configuration_id:selected.id,
+                    expected_revision:selected.revision,
+                    resources:JSON.parse(row.querySelector('input').value)};
+            });
+            const predecessor=$('hub-pipeline-predecessor').value;
+            for(let i=0;i<stages.length;i++) {
+                const selected=configs.find(c=>c.id===stages[i].configuration_id);
+                const requiresResume=i>0||Boolean(predecessor);
+                if((selected.parameters?.mode==='resume')!==requiresResume)
+                    throw Error('Stage '+(i+1)+' needs '+
+                        (requiresResume?'a resume':'a new-run')+
+                        ' Ants configuration.');
+            }
+            if(!confirm('Queue '+stages.length+' frozen Ants stages as one atomic pipeline? '+
+                'Future stages remain blocked until their immediate predecessor finishes and releases capacity. '+
+                'This does not start training or bypass native execution qualification.'))return;
+            const result=await action('hub/pipelines',{
+                confirm_queue:true,stages,
+                ...(predecessor?{continuation_of_job_id:predecessor}:{}),
+            });
+            feedback('hub-pipeline-message',
+                'Queued '+result.jobs.length+' stages atomically; no work started. '+
+                'The first eligible stage may be allocated separately.');
+            await reload();
+        }catch(error){
+            feedback('hub-pipeline-message',String(error.message||error));
+        }
+    });
     $('hub-job-queue').addEventListener('click',async()=>{
         const selected=state?.configurations.find(c=>
             c.project_id===project&&c.id===$('hub-job-configuration').value);
