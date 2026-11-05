@@ -56,8 +56,12 @@ for bomber-only squads or Charge for barge-only squads). Ordinary squad
 Move and Stop use authored ship offsets, 20-step formation compression,
 nearest walkable-center fallback and each ship's shared A* path queue.
 
-The source-matched movement phases of HiveMind **Hold** and **Random** are
-now wired with their command timeout and 3-second recurring arrival check.
+The source-matched movement phases of HiveMind **Hold**, **Random**, and
+**Patrol** are now wired. Random finishes at arrival or command timeout;
+Patrol samples Unity's four-corner route, rotates waypoints on its 3-second
+scaled callback, and uses the separate configured patrol timeout.
+Commands update squads in stable lifecycle-ID order so independent worlds
+do not depend on randomized hash-table traversal.
 The game must supply real squad bounds, membership, configured speeds,
 shooting/targeting state and scaled update time; the director does not
 invent missing game state. Unported command types return an explicit
