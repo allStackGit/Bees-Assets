@@ -367,6 +367,10 @@ pub struct ObstacleBody {
     collider: WorldCollider,
     proximity_layer: Option<u8>,
     proximity_collider: Option<WorldCollider>,
+    /// Navigation-only collider. Never enter it into gameplay contact pairs.
+    /// Unity Pathfinder.GetObstaclePoints uses this shape preferentially.
+    clearance_layer: Option<u8>,
+    clearance_collider: Option<WorldCollider>,
 }
 
 impl ObstacleBody {
@@ -390,6 +394,7 @@ impl ObstacleBody {
             active: true, tracks_body_contacts: false,
             collider: WorldCollider::new(shape)?,
             proximity_layer: None, proximity_collider: None,
+            clearance_layer: None, clearance_collider: None,
         })
     }
 
@@ -413,10 +418,39 @@ impl ObstacleBody {
         Ok(())
     }
 
+    pub fn set_clearance_mapping_collider(
+        &mut self,
+        layer: u8,
+        shape: ShipShape,
+    ) -> Result<(), PhysicsError> {
+        if layer >= 32 {
+            return Err(PhysicsError::InvalidCollider);
+        }
+        self.clearance_layer = Some(layer);
+        self.clearance_collider = Some(WorldCollider::new(shape)?);
+        Ok(())
+    }
+
+    /// Source of truth for dynamic pathfinding obstacle bounds after the
+    /// latest physics step. Physics keeps the collider updated alongside
+    /// its primary hull without adding a second collision pair stream.
+    pub fn navigation_bounds(&self) -> Option<Aabb> {
+        if !self.active { return None; }
+        self.clearance_collider.as_ref().or(Some(&self.collider))
+            .and_then(|collider| collider.bounds)
+    }
+
+    pub fn navigation_shape(&self) -> &ShipShape {
+        &self.clearance_collider.as_ref().unwrap_or(&self.collider).shape
+    }
+
     fn update_hull(&mut self) {
         self.collider.update(self.pose);
         if let Some(proximity) = &mut self.proximity_collider {
             proximity.update(self.pose);
+        }
+        if let Some(clearance) = &mut self.clearance_collider {
+            clearance.update(self.pose);
         }
     }
 }
