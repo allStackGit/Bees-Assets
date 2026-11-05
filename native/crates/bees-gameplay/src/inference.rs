@@ -7,6 +7,7 @@
 //! The model backend is external; no guessed action or network here.
 
 use std::collections::HashMap;
+use std::num::NonZeroU32;
 use std::time::Instant;
 
 use bees_sim::combat_world::CombatWorldError;
@@ -118,6 +119,8 @@ pub struct NativeLevelInferenceBatch {
     finalized: bool,
     failed: bool,
     measurements: NativeInferenceMeasurements,
+    /// Never reset by clear(): the sampling schedule spans batch reuse.
+    rollout_calls: u64,
 }
 
 impl NativeLevelInferenceBatch {
@@ -153,6 +156,21 @@ impl NativeLevelInferenceBatch {
 
     pub fn measurements(&self) -> NativeInferenceMeasurements {
         self.measurements
+    }
+
+    /// Use Simulation's existing optional timing sample period for
+    /// complete rollout phases, not a separate always-on profiler.
+    /// One counter increment per call when timing is disabled; the
+    /// clock is queried only on selected calls.
+    pub(crate) fn sample_rollout_phase_timing(
+        &mut self,
+        every: Option<NonZeroU32>,
+    ) -> bool {
+        let sequence = self.rollout_calls;
+        self.rollout_calls = self.rollout_calls.wrapping_add(1);
+        every.is_some_and(|period|
+            sequence % u64::from(period.get()) == 0
+        )
     }
 
     pub fn perceptions(&self) -> PerceptionWork {
