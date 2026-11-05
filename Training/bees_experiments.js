@@ -2419,6 +2419,9 @@ const server = http.createServer(async (req, res) => {
         if (route === '/api/hub/jobs/allocate') {
             return json(res, 200, requireHub().allocateJobs(value));
         }
+        if (route === '/api/hub/jobs/qualify-gpu') {
+            return json(res, 200, requireHub().requestGpuQualification(value));
+        }
         if (route === '/api/hub/jobs/start') {
             return json(res, 200, requireHub().authorizeStart(value));
         }
