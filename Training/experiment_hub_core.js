@@ -725,9 +725,16 @@ class ExperimentHub {
             }),
         };
         if(jobId!==null)lease.job_id=jobId;
-        const released=next.reservations.filter(r=>r.status==='released').slice(-100);
-        next.reservations=next.reservations.filter(r=>r.status!=='released')
-            .concat(released,lease);
+        // Terminal jobs still need their original lease to prove native
+        // ownership on continuation, dependency creation and report replay.
+        const retainedJobLeases=new Set(next.jobs
+            .filter(job=>job.capacity_released_at&&job.lease_id)
+            .map(job=>job.lease_id));
+        const standaloneHistory=next.reservations.filter(r=>
+            r.status==='released'&&!retainedJobLeases.has(r.id)).slice(-100);
+        next.reservations=next.reservations.filter(r=>
+            r.status!=='released'||retainedJobLeases.has(r.id))
+            .concat(standaloneHistory,lease);
         return lease;
     }
     requestLease(value) {
