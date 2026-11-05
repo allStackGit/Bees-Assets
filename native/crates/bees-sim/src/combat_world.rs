@@ -833,9 +833,9 @@ impl CombatWorld {
     fn advance_asteroid_navigation_refresh(
         &mut self, dt: f32,
     ) -> Result<(), CombatWorldError> {
+        let nearby_ships = &self.nearby_asteroid_ships;
         self.asteroid_navigation_refresh.retain(|&ship_id, _| {
-            self.nearby_asteroid_ships.iter()
-                .any(|&(_, nearby_ship)| nearby_ship == ship_id)
+            nearby_ships.iter().any(|&(_, nearby_ship)| nearby_ship == ship_id)
         });
         let mut ready = Vec::new();
         for (&ship_id, timer) in &mut self.asteroid_navigation_refresh {
