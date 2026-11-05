@@ -61,8 +61,10 @@ class ProgressHistory {
             point.policy_version<previous.policy_version));
         if(previous&&entry.points.length>1&&!point.break_before&&
             receivedMs-entry.bucket_started_ms<MIN_SAMPLE_INTERVAL_MS) {
-            // Replace a very recent sample instead of growing history at the
-            // 10-second agent/dashboard refresh cadence.
+            // Coalesce a recent sample without losing the discontinuity
+            // carried by the point being replaced. A segment transition or
+            // rollback must remain visually distinct after later updates.
+            point.break_before=point.break_before||previous.break_before;
             entry.points[entry.points.length-1]=point;
         }else {
             entry.points.push(point);
