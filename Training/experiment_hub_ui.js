@@ -39,7 +39,8 @@ function trainingFormPayload() {
 
 document.addEventListener('DOMContentLoaded', () => {
     const $ = id => document.getElementById(id);
-    let project = 'bees', tab = 'monitor', state = null, editing = null;
+    let project = document.documentElement.dataset.hubDefaultProject || 'bees';
+    let tab = 'monitor', state = null, editing = null;
     let comparisonData = null,comparisonProject = null;
     let comparisonRequest = 0,selectionProject = null;
     let comparisonDefaultsApplied = false;
