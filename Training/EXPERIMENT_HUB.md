@@ -483,9 +483,40 @@ or automatically adjust Ants' rollout/evaluation worker counts.
 Size the CPU/RAM request for the qualified production configuration
 to avoid oversubscribed on-policy training and throughput collapse.
 
+### Read-only production progress
+
+The Ants adapter now reads the exact production
+`<artifact-lineage>/experiments/<experiment-id>/summary.json` generated
+atomically by Ants. A job lineage must contain one unambiguous experiment
+directory; canonical filesystem paths must remain inside its approved
+artifact root. Missing summaries are shown as awaiting progress;
+ambiguous roots, malformed summaries and invalid metrics are rejected
+without changing native job lifecycle status.
+
+The agent sends a bounded, validated projection of Ants' own
+`episodes_completed`, `latest_policy_version`, current curriculum
+level, **current curriculum rolling-window success rate** and its
+episode count, **segment success rate**, cumulative environment and
+optimization steps, and last-episode simulation/PPO throughput. The
+success rates have deliberately different denominators and must not
+be treated as interchangeable, qualification evidence, or promotion
+decisions. The source summary modification timestamp is displayed to
+distinguish fresh observations from data last written before a long
+episode. Continuations report the same experiment's cumulative
+episodes, not episodes begun since the latest Hub job.
+
+Live observations remain in coordinator memory and expire with the
+authenticated agent's heartbeat. **Only one bounded final progress
+snapshot** is retained in the durable Hub job ledger after a native
+terminal report; no Ants CSV/JSONL, grouped histories, checkpoint data
+or event logs are copied over the agent transport. The Train and
+Monitor tabs use the same formatting. This integration has no
+authority to start/stop work, release capacity, alter Ants PPO/
+curriculum, or modify its source files.
+
 The adapter/native lifecycle has been exercised only with bounded
-simulations of filesystem, qualification pinning and systemd status.
-**No real Ants training or Linux service qualification has run here.**
+simulations of filesystem, qualification pinning, metrics and systemd
+status. **No real Ants training or Linux service qualification has run here.**
 
 ## Not yet implemented
 
