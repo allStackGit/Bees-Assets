@@ -16,6 +16,8 @@ use crate::combat::HitEvent;
 use crate::combat_world::{CombatEvent, CombatWorld};
 
 pub const TSV_REWARD_SCALE: f32 = 0.1;
+pub const RAW_MISS_PENALTY: f32 = 0.02;
+pub const RAW_NEAR_MISS_REWARD: f32 = 0.03;
 pub const MAX_POSITIVE_SHAPING: f32 = 0.2;
 pub const MAX_NEGATIVE_SHAPING: f32 = 0.2;
 
@@ -273,6 +275,16 @@ impl EpisodeShaping {
             }
         }
         Ok(())
+    }
+
+    /// Source RecordResolvedProjectileMiss. The physical projectile-root
+    /// tracker calls exactly once per resolved root, never per fragment.
+    pub fn record_resolved_projectile_miss(
+        &mut self, side: i32, near: bool,
+    ) -> Option<RewardEmission> {
+        self.add_raw_for_side(
+            side, if near { RAW_NEAR_MISS_REWARD } else { -RAW_MISS_PENALTY },
+        )
     }
 
     /// Port of RecordUnattributedTsvLoss. The source only emits a negative
