@@ -234,8 +234,19 @@ uses the lowest enemy runtime ID rather than Unity's last-entered
 TouchingShip; the rendered bomb's random cosmetic attachment point also
 remains a Level integration detail.
 
+**Fire Barge policy special:** native ShipTypes=10 uses its configured
+Bomb.Power to create the real type-14 Fire Barge Explosion at the live
+ship's position, then deals the ship's remaining health as unattributed
+self-damage and retires the same physical ship. The shared projectile
+collider/timeline owns growing radius, friendly fire, hit attribution and
+expiry; the action cannot be used twice. The caller must provide the
+authoritative Bomb.Power and stable FleetShip identity. Automatic death
+explosions from other causes and squad/game-state cleanup still need
+Level integration, and no benchmarked throughput claim follows from
+this new path.
+
 **Not yet implemented:** scripted BombingRun command coordination,
-the remaining ship specials, complete Level-to-perception snapshot
+Yellow Jacket, Scout and Barge ship specials, complete Level-to-perception snapshot
 collection, GPU inference, and an ML-Agents-compatible learner. Unity targeting timers
 run on the Level's scaled update clock; this native implementation
 currently advances the same timer semantics on the game fixed-step delta,

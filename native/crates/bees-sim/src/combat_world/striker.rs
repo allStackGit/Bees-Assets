@@ -64,21 +64,6 @@ impl CombatWorld {
             .striker.as_ref().map(|striker| striker.ready)
     }
 
-    /// Commit only the validated Striker special requests, during the
-    /// actual game tick. Ordering by stable entity ID makes one pending
-    /// action batch independent of the inference host's input order.
-    pub(super) fn apply_pending_policy_striker_specials(
-        &mut self, collisions: &CollisionMatrix,
-    ) -> Result<(), CombatWorldError> {
-        self.policy_pending_striker_specials.sort_unstable();
-        for index in 0..self.policy_pending_striker_specials.len() {
-            let ship_id = self.policy_pending_striker_specials[index];
-            self.try_drop_policy_striker_bomb(ship_id, collisions)?;
-        }
-        self.policy_pending_striker_specials.clear();
-        Ok(())
-    }
-
     /// Striker.TryToDropBombs is a contact-triggered ship special. Find an
     /// enemy physically touching the *real* collider, never one merely
     /// within an invented radius. Unity caches its most recent TouchingShip;

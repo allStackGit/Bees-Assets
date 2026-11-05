@@ -72,6 +72,7 @@ mod map_object;
 mod policy;
 mod weapons;
 mod striker;
+mod fire_barge;
 use self::policy::PolicyShipRuntime;
 use self::weapons::PendingPolicyShot;
 pub use self::weapons::{NativeFirePattern, NativeTurretSpec};
@@ -111,6 +112,7 @@ pub enum CombatWorldError {
     DuplicatePolicyAgent(u64),
     InvalidPolicyTurret,
     InvalidPolicyStriker,
+    InvalidPolicyFireBarge,
     UnsupportedPolicyTurret { weapon_type: u8, projectile_type: u8 },
     DuplicatePolicyTurret { ship_id: i64, slot: usize },
     MapObject(MapObjectError),
@@ -228,6 +230,8 @@ pub enum CombatEvent {
         ship_id: i64, target_id: i64, projectile_id: i64,
     },
     StrikerBombReloaded { ship_id: i64, carrier_id: i64 },
+    /// FireBarge.Detonate created the real type-14 explosion before self-death.
+    FireBargeDetonated { ship_id: i64, projectile_id: i64 },
     /// Emitted for projectile impacts against static geometry; the
     /// dedicated RL coordinator determines the corresponding reward.
     StaticObstacleImpact { projectile_id: i64, obstacle_id: i64 },
@@ -533,9 +537,9 @@ pub struct CombatWorld {
     policy_ship_runtime: BTreeMap<i64, PolicyShipRuntime>,
     policy_decision_seen: HashSet<u64>,
     policy_pending_shots: Vec<PendingPolicyShot>,
-    /// Validated ship specials are committed inside the gameplay step,
-    /// after event clearing and before physics, in stable ship-ID order.
-    policy_pending_striker_specials: Vec<i64>,
+    /// Validated ship specials use one queue across different authored ships.
+    /// Commit after event clearing and before physics, in stable ship-ID order.
+    policy_pending_ship_specials: Vec<i64>,
     pending_game_point_orders: HashMap<i64, GamePointOrder>,
     latest_game_point_orders: HashMap<i64, GamePointOrder>,
     ship_collision_profiles: HashMap<i64, ShipCollisionProfile>,
@@ -604,7 +608,7 @@ impl CombatWorld {
             policy_ship_runtime: BTreeMap::new(),
             policy_decision_seen: HashSet::new(),
             policy_pending_shots: Vec::new(),
-            policy_pending_striker_specials: Vec::new(),
+            policy_pending_ship_specials: Vec::new(),
             pending_game_point_orders: HashMap::new(),
             latest_game_point_orders: HashMap::new(),
             ship_collision_profiles: HashMap::new(),
@@ -636,6 +640,29 @@ impl CombatWorld {
             shots_harmless: false,
             frozen_after_elimination: false,
         })
+    }
+
+    /// All direct and projectile deaths share one world-owned retirement
+    /// boundary: physics, sight, policy, path and collision-sensor membership
+    /// cannot retain a dead ship. This does not impersonate Level's squad,
+    /// economy or presentation cleanup, which belongs to the game adapter.
+    fn retire_dead_ship(
+        &mut self, index: usize, killer_id: i64, command_outcome_id: i64,
+    ) {
+        debug_assert!(self.ships[index].vitals.is_dead());
+        let victim_id = self.ships[index].entity_id;
+        self.physics.ships_mut()[index].active = false;
+        self.discovery.retire(DiscoveryKind::Ship, victim_id);
+        self.policy_ship_runtime.remove(&victim_id);
+        self.navigation_requests.retire_ship(victim_id);
+        self.game_ship_steering.remove(&victim_id);
+        self.pending_game_point_orders.remove(&victim_id);
+        self.latest_game_point_orders.remove(&victim_id);
+        self.asteroid_navigation_refresh.remove(&victim_id);
+        self.nearby_asteroid_ships.retain(|&(_, id)| id != victim_id);
+        self.events.push(CombatEvent::ShipDied {
+            victim_id, killer_id, command_outcome_id,
+        });
     }
 
     pub fn physics(&self) -> &KinematicPhysics { &self.physics }
@@ -1973,21 +2000,11 @@ impl CombatWorld {
                                 self.events.push(CombatEvent::UnattributedDamage { target_id, delta });
                             }
                             if delta.killed {
-                                self.physics.ships_mut()[target_index].active = false;
-                                self.discovery.retire(DiscoveryKind::Ship, target_id);
-                                self.policy_ship_runtime.remove(&target_id);
-                                self.navigation_requests.retire_ship(target_id);
-                                self.game_ship_steering.remove(&target_id);
-                                self.pending_game_point_orders.remove(&target_id);
-                                self.latest_game_point_orders.remove(&target_id);
-                                self.asteroid_navigation_refresh.remove(&target_id);
-                                self.events.push(CombatEvent::ShipDied {
-                                    victim_id: target_id,
-                                    killer_id: if identity_valid { owner.shooter_id } else { 0 },
-                                    command_outcome_id: if identity_valid {
-                                        attribution.command_outcome_id
-                                    } else { 0 },
-                                });
+                                self.retire_dead_ship(
+                                    target_index,
+                                    if identity_valid { owner.shooter_id } else { 0 },
+                                    if identity_valid { attribution.command_outcome_id } else { 0 },
+                                );
                             }
                         }
                     }
@@ -2110,19 +2127,9 @@ impl CombatWorld {
                     source, delta, false,
                 )));
                 if delta.killed {
-                    self.physics.ships_mut()[ship_index].active = false;
-                    self.discovery.retire(DiscoveryKind::Ship, target.entity_id);
-                    self.policy_ship_runtime.remove(&target.entity_id);
-                    self.navigation_requests.retire_ship(target.entity_id);
-                    self.game_ship_steering.remove(&target.entity_id);
-                    self.pending_game_point_orders.remove(&target.entity_id);
-                    self.latest_game_point_orders.remove(&target.entity_id);
-                    self.asteroid_navigation_refresh.remove(&target.entity_id);
-                    self.events.push(CombatEvent::ShipDied {
-                        victim_id: target.entity_id,
-                        killer_id: owner.shooter_id,
-                        command_outcome_id: attribution.command_outcome_id,
-                    });
+                    self.retire_dead_ship(
+                        ship_index, owner.shooter_id, attribution.command_outcome_id,
+                    );
                 }
             }
         }
@@ -2430,18 +2437,7 @@ impl CombatWorld {
                 );
                 self.events.push(CombatEvent::UnattributedDamage { target_id: ship_id, delta });
                 if delta.killed {
-                    self.physics.ships_mut()[ship_index].active = false;
-                    self.discovery.retire(DiscoveryKind::Ship, ship_id);
-                    self.policy_ship_runtime.remove(&ship_id);
-                    self.navigation_requests.retire_ship(ship_id);
-                    self.game_ship_steering.remove(&ship_id);
-                    self.pending_game_point_orders.remove(&ship_id);
-                    self.latest_game_point_orders.remove(&ship_id);
-                    self.asteroid_navigation_refresh.remove(&ship_id);
-                    self.nearby_asteroid_ships.retain(|&(_, other_id)| other_id != ship_id);
-                    self.events.push(CombatEvent::ShipDied {
-                        victim_id: ship_id, killer_id: 0, command_outcome_id: 0,
-                    });
+                    self.retire_dead_ship(ship_index, 0, 0);
                 }
             }
             if asteroid_damage.killed {
@@ -2745,7 +2741,7 @@ impl CombatWorld {
                 ..StepCounts::default()
             });
         }
-        self.apply_pending_policy_striker_specials(collision_matrix)?;
+        self.apply_pending_policy_ship_specials(collision_matrix)?;
         self.advance_asteroid_deaths(dt);
         self.advance_asteroid_pieces(dt);
         // Swap buffers instead of allocating a queue for every frame.

@@ -24,8 +24,10 @@ pub(super) struct PolicyShipRuntime {
     pub(super) last_hull_rotation: f32,
     /// Forwarded from the live gameplay ship's cease-fire state.
     pub(super) cease_fire: bool,
-    /// Authoritative Striker.Bomb readiness/reload state. Not a turret slot.
+    /// Striker has a reloadable contact bomb; Fire Barge owns an irreversible
+    /// self-detonation. Both are ship specials, never turret fire branches.
     pub(super) striker: Option<PolicyStrikerRuntime>,
+    pub(super) fire_barge_power: Option<i32>,
 }
 
 impl CombatWorld {
@@ -51,6 +53,7 @@ impl CombatWorld {
             last_hull_rotation: rotation,
             cease_fire: false,
             striker: None,
+            fire_barge_power: None,
         });
         Ok(())
     }
@@ -84,7 +87,8 @@ impl CombatWorld {
             fire: std::array::from_fn(|slot| runtime.turrets[slot].is_some()),
             special: [
                 true,
-                runtime.striker.as_ref().is_some_and(|striker| striker.ready),
+                runtime.striker.as_ref().is_some_and(|striker| striker.ready) ||
+                    runtime.fire_barge_power.is_some(),
                 false, false, false,
             ],
         })
@@ -136,7 +140,7 @@ impl CombatWorld {
         // Apply the whole preflight first; only then replace this tick's
         // pending specials. World execution happens after fixed-step event
         // clearing, so UI, telemetry and RL receive the drop event.
-        self.policy_pending_striker_specials.clear();
+        self.policy_pending_ship_specials.clear();
         for decision in decisions {
             let id = decision.agent_id as i64;
             let (decoded, disabled) = {
@@ -161,11 +165,36 @@ impl CombatWorld {
                 motion.accept_policy_movement(decoded.movement_world);
             }
             if decision.action.discrete[5] == 1 {
-                // The Unity RL ShipSpecialAction dispatches Striker's
-                // TryToDropBombs, not Bomb as a turret fire branch.
-                self.policy_pending_striker_specials.push(id);
+                // One source-defined special branch, with the ship's actual
+                // subclass determining its gameplay behavior during the tick.
+                self.policy_pending_ship_specials.push(id);
             }
         }
+        Ok(())
+    }
+
+    /// Commit all validated ship specials inside the shared fixed tick, not
+    /// the inference callback. A single sorted queue preserves deterministic
+    /// ordering across Fire Barges and Strikers irrespective of batch order.
+    pub(super) fn apply_pending_policy_ship_specials(
+        &mut self, collisions: &CollisionMatrix,
+    ) -> Result<(), CombatWorldError> {
+        self.policy_pending_ship_specials.sort_unstable();
+        for index in 0..self.policy_pending_ship_specials.len() {
+            let ship_id = self.policy_pending_ship_specials[index];
+            let Some(runtime) = self.policy_ship_runtime.get(&ship_id) else {
+                // An earlier action in this tick may have killed the ship.
+                continue;
+            };
+            if runtime.fire_barge_power.is_some() {
+                self.try_detonate_policy_fire_barge(ship_id)?;
+            } else if runtime.striker.is_some() {
+                self.try_drop_policy_striker_bomb(ship_id, collisions)?;
+            } else {
+                return Err(CombatWorldError::UnsupportedPolicyActions);
+            }
+        }
+        self.policy_pending_ship_specials.clear();
         Ok(())
     }
 }
