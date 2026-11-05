@@ -121,6 +121,70 @@ mod tests {
     use crate::collision::Pose;
     use crate::projectile_assets::ProjectileAssetCatalog;
     use crate::projectile::ProjectileMotion;
+    use crate::combat::ShipVitals;
+    use crate::movement::ShipMotion;
+    use crate::ship_assets::ShipAssetCatalog;
+    use crate::combat_perception_bridge::collect_learned_map_objects;
+    use crate::vision::HiveMindObserver;
+
+    #[test]
+    fn real_map_object_collider_is_seen_by_edge_and_projected_from_world() {
+        let assets = Arc::new(ProjectileAssetCatalog::embedded().unwrap());
+        let ships = ShipAssetCatalog::embedded().unwrap();
+        let mut world = CombatWorld::new(
+            Aabb {
+                min: Vec2::new(-100.0, -100.0),
+                max: Vec2::new(100.0, 100.0),
+            },
+            8.0,
+            assets,
+        ).unwrap();
+        world.spawn_ship(
+            ships.by_type(21).unwrap(), 1, 1,
+            ShipVitals::new(100, 100, 1000, 0).unwrap(),
+            ShipMotion::new(Vec2::ZERO, 0.0, 90.0, 0.0, 3.0),
+        ).unwrap();
+        world.add_map_object(
+            CombatMapObject::new(2, MapObjectKind::Generic, 50).unwrap(),
+            ObstacleBody::new(
+                2,
+                Pose {
+                    position: Vec2::new(20.0, 0.0),
+                    rotation_degrees: 0.0,
+                },
+                0,
+                ShipShape::Box {
+                    offset: Vec2::ZERO,
+                    half_extents: Vec2::new(18.0, 2.0),
+                },
+                Vec2::ZERO,
+                0.0,
+            ).unwrap(),
+        ).unwrap();
+        let observer = [HiveMindObserver {
+            ship_id: 1,
+            effective_range: 5,
+            registered: true,
+            enabled: true,
+        }];
+        let sweep = world.refresh_hivemind_vision(&observer, false).unwrap();
+        assert_eq!(sweep.first_map_object_discoveries, 1);
+        assert!(world.discovery().has(1, DiscoveryKind::MapObject, 2));
+        assert!(!world.discovery().has(1, DiscoveryKind::Obstacle, 2));
+        let mut observed = Vec::new();
+        assert_eq!(collect_learned_map_objects(
+            &world, 1, &mut observed,
+        ).unwrap(), 1);
+        assert_eq!(observed[0].position, Vec2::new(20.0, 0.0));
+        assert_eq!(observed[0].half_extents, Vec2::new(18.0, 2.0));
+        assert_eq!(observed[0].health_fraction, 1.0);
+        assert!(world.retire_map_object(2));
+        assert!(!world.retire_map_object(2));
+        assert_eq!(collect_learned_map_objects(
+            &world, 1, &mut observed,
+        ).unwrap(), 0);
+        assert!(!world.discovery().has(1, DiscoveryKind::MapObject, 2));
+    }
 
     #[test]
     fn ordinary_map_object_damage_and_discovery_use_the_shared_combat_world() {
