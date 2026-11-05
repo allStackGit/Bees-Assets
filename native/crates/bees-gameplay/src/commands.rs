@@ -410,6 +410,12 @@ impl NativeSquadCommandDirector {
             LocalCommandKind::ClosestFriendly => {
                 let mut side = None;
                 for member in squad.members {
+                    // This command does not move until its first timer tick;
+                    // preflight the current squad before reserving it.
+                    world.validate_ship_game_order(member.ship_id)
+                        .map_err(|err| GameCommandError::Squad(
+                            SquadOrderError::Ship(err),
+                        ))?;
                     let ship = world.ships().iter().find(
                         |ship| ship.entity_id == member.ship_id,
                     ).ok_or(GameCommandError::InvalidSquad)?;
@@ -420,7 +426,7 @@ impl NativeSquadCommandDirector {
                 }
                 let side = side.ok_or(GameCommandError::InvalidSquad)?;
                 let mut nearest = None;
-                let mut best_squared = f32::MAX;
+                let mut best_distance = f32::MAX;
                 for &candidate in friendlies {
                     if !candidate.valid() {
                         return Err(GameCommandError::InvalidFriendlies);
@@ -430,10 +436,10 @@ impl NativeSquadCommandDirector {
                         !candidate.is_alive || candidate.is_following_friend {
                         continue;
                     }
-                    let squared = (candidate.position - squad.squad_center)
-                        .length_squared();
-                    if squared < best_squared {
-                        best_squared = squared;
+                    let distance = (candidate.position - squad.squad_center)
+                        .length_squared().sqrt();
+                    if distance < best_distance {
+                        best_distance = distance;
                         nearest = Some(candidate);
                     }
                 }
@@ -579,23 +585,23 @@ impl NativeSquadCommandDirector {
                         });
                         if all_arrived {
                             if let Some(route) = command.patrol.as_mut() {
-                            // Patrol rotates the queue before calling Move;
-                            // a blocked move still advances the queue.
-                            let next = (route.current + 1) % route.corners.len();
-                            issue_squad_move(
-                                world, navigation, &route.members,
-                                route.corners[next], route.formation,
-                            )?;
-                            route.current = next;
-                        } else {
-                            let cause = if command.selection.local_command ==
-                                LocalCommandKind::Retreat {
-                                CommandFinishCause::ReachedRetreatDestination
+                                // Rotate before moving, matching Unity Patrol.
+                                // A blocked formation still advances the route.
+                                let next = (route.current + 1) % route.corners.len();
+                                issue_squad_move(
+                                    world, navigation, &route.members,
+                                    route.corners[next], route.formation,
+                                )?;
+                                route.current = next;
                             } else {
-                                CommandFinishCause::ReachedRandomDestination
-                            };
-                            completed.push((owner, cause));
-                            finished_by_poll = true;
+                                let cause = if command.selection.local_command ==
+                                    LocalCommandKind::Retreat {
+                                    CommandFinishCause::ReachedRetreatDestination
+                                } else {
+                                    CommandFinishCause::ReachedRandomDestination
+                                };
+                                completed.push((owner, cause));
+                                finished_by_poll = true;
                             }
                         }
                     }
