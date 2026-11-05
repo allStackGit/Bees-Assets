@@ -97,7 +97,10 @@ this includes user/scripted Guard commands, not only native HiveMind orders.
 When no eligible protected squad exists, the host must both discard the
 server reservations and ban Guard for subsequent strategy requests. These
 live relationships are not inferred from ship proximity or invented by the
-training simulator.
+training simulator. Unity's per-fixed-step movement speed reset and
+Squad.IsMatchingSpeed behavior still need end-to-end parity work when the
+full native Level update loop is implemented; the command's speed-setting
+and restoration paths alone do not prove full Guard parity.
 
 Commands update squads in stable lifecycle-ID order so independent worlds
 do not depend on randomized hash-table traversal.
