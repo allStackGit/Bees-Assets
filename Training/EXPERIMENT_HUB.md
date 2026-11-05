@@ -164,6 +164,25 @@ and rejects the entire pipeline if any configuration, revision, mode,
 resource request, or predecessor is invalid. Stage one must use new
 mode unless resuming an eligible predecessor; later stages must use
 resume mode. The Train tab provides a visual pipeline builder.
+
+For **independent experiments**, including mixed Ants and other
+non-Bees projects, the same Train editor offers
+`POST /api/hub/sequences` with
+`{"confirm_queue":true,"stages":[...],"after_job_id":"optional-existing-job-id"}`.
+All 2–16 stages freeze their saved-configuration revisions and requested
+resources atomically. Their `after_job_id` dependencies are separate
+from checkpoint `continuation_of_job_id`: each stage has its own
+artifact lineage, with **no inherited weights, optimizer, checkpoint,
+machine affinity or evaluation result**. Ants configurations in an
+independent sequence must use `mode:"new"`. Jobs may run on different
+qualified hosts. Only a verified native `finished` predecessor plus
+durable capacity release unblocks the next job; stopped, failed and
+unverified predecessors never advance. Native success is not an
+independent benchmark pass. Every stage still needs separate CPU/RAM
+capacity admission and authorized native execution, and the automation
+session must be explicitly armed for unattended CPU-only starts.
+Each parent permits one non-cancelled successor across both sequence
+types; cancel unfinished chains from the end backward.
 `POST /api/hub/jobs/cancel` with `{job_id,confirm_cancel:true}`,
 `GET /api/hub/jobs/plan` for a read-only view, and
 `POST /api/hub/jobs/allocate` to claim Hub capacity. Jobs are queued
