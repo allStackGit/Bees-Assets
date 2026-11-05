@@ -218,9 +218,25 @@ spends half the contacted target's health as power budget, permits only
 one accepted hit per ship, and releases BeamCannon ownership through
 the common projectile-end path. A renderer and training worker both
 observe the same projectile/weapon state.
-**Not yet implemented:** Bomb delivery and firing continuations,
-real Level-to-perception snapshot collection, special abilities, GPU
-inference, and an ML-Agents-compatible learner. Unity targeting timers
+**Striker Bomb policy special:** this is not a turret fire branch.
+After `bind_policy_ship` and `set_ship_fleet_identity`,
+`configure_policy_striker(striker_id, carrier_id, bomb_power)` binds the
+real Striker (ShipTypes=19), its living same-side carrier, and authored
+Bomb.Power. `policy_action_mask` enables ship-special choice 1 only
+when loaded. A requested drop is resolved inside the shared fixed tick,
+using actual authored ship collider overlap and the fixed-step collision
+matrix; a distant enemy cannot be bombed. The created type-12
+StrikerBomb uses the existing world-owned 1.5+0.5-second fuse,
+target-lifecycle check, and snapshot shooter/fleet attribution. Loaded
+state replenishes only on the recurring one-second check when the ship
+returns within 15 units of its living carrier. Native contact tie-breaking
+uses the lowest enemy runtime ID rather than Unity's last-entered
+TouchingShip; the rendered bomb's random cosmetic attachment point also
+remains a Level integration detail.
+
+**Not yet implemented:** scripted BombingRun command coordination,
+the remaining ship specials, complete Level-to-perception snapshot
+collection, GPU inference, and an ML-Agents-compatible learner. Unity targeting timers
 run on the Level's scaled update clock; this native implementation
 currently advances the same timer semantics on the game fixed-step delta,
 so live frame-scheduling parity still needs validation.
