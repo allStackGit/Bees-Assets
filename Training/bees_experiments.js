@@ -297,8 +297,13 @@ function evaluatePeriodicTarget(item, checkpoint) {
         scenario.id,hashFile(path.join(BENCHMARK_REPORTS,
             evaluation.reports[scenario.id])),
     ]));
-    const previous=(item.checkpoint_history||[]).find(
-        record=>record.ordinal===checkpoint.ordinal-1);
+    // Scheduled milestone numbers may have gaps when a slow learner
+    // overshoots more than one evaluation target. Consecutive means
+    // consecutive *performed evaluations*, never consecutive ordinals.
+    const previous=(item.checkpoint_history||[])
+        .filter(record=>record.ordinal<checkpoint.ordinal)
+        .reduce((latest,record)=>!latest||record.ordinal>latest.ordinal
+            ?record:latest,null);
     const consecutive=result.passed
         ?(previous?.benchmark_target_result?.consecutive_passes||0)+1:0;
     const decision={...result,consecutive_passes:consecutive,
