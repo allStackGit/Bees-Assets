@@ -344,3 +344,158 @@ impl CombatWorld {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+    use crate::collision::Aabb;
+    use crate::combat::ShipVitals;
+    use crate::movement::ShipMotion;
+    use crate::policy::{Action, Decision};
+    use crate::ship_assets::ShipAssetCatalog;
+    use crate::simulation::{World, WorldId};
+
+    #[test]
+    fn authored_turret_fires_via_real_projectiles_after_three_timer_passes() {
+        let projectiles = Arc::new(ProjectileAssetCatalog::embedded().unwrap());
+        let speed = projectiles.by_type(1).unwrap().shot_speed.unwrap();
+        let hulls = ShipAssetCatalog::embedded().unwrap();
+        let mut combat = CombatWorld::new(
+            Aabb {
+                min: Vec2::new(-100.0, -100.0),
+                max: Vec2::new(100.0, 100.0),
+            },
+            8.0, projectiles,
+        ).unwrap();
+        combat.spawn_ship(
+            hulls.by_type(21).unwrap(), 1, 1,
+            ShipVitals::new(100, 100, 1000, 0).unwrap(),
+            ShipMotion::new(Vec2::ZERO, 0.0, 120.0, 8.0, 3.0),
+        ).unwrap();
+        combat.spawn_ship(
+            hulls.by_type(13).unwrap(), 2, 2,
+            ShipVitals::new(100, 100, 1000, 0).unwrap(),
+            ShipMotion::new(Vec2::new(0.0, 30.0), 0.0, 120.0, 8.0, 3.0),
+        ).unwrap();
+        combat.bind_policy_ship(1, PolicyFrame::new(0), false).unwrap();
+        let spec = NativeTurretSpec {
+            weapon_type: 3,
+            projectile_type: 1,
+            mount_offset: Vec2::new(1.0, 0.0),
+            initial_rotation_degrees: 0.0,
+            rotation_rate: 120.0,
+            range: 80.0,
+            power: 20,
+            rate_of_fire: 0.3,
+            projectile_value: 1.0,
+            projectile_speed: speed,
+        };
+        combat.configure_policy_turret(1, 0, spec).unwrap();
+        assert_eq!(
+            combat.policy_action_mask(1).unwrap().fire,
+            [true, false, false, false, false],
+        );
+        assert_eq!(combat.policy_action_mask(2),
+            Err(CombatWorldError::UnknownShip));
+        assert_eq!(combat.policy_self_weapons(1).unwrap()[0]
+            .unwrap().position, Vec2::new(1.0, 0.0));
+
+        let mut action = Action::ZERO;
+        action.continuous[3] = 1.0; // slot 0 aims physical +Y
+        action.discrete[0] = 1; // fire on the next authored ready pass
+        let decision = Decision { agent_id: 1, action };
+        let rules = CombatWorldRules {
+            collision_matrix: CollisionMatrix::from_rows([0; 32]),
+        };
+        let mut world = World::new(WorldId(42), 7, combat);
+        let mut shot_id = None;
+        for tick in 0..24 {
+            let decisions = if tick == 0 { &[decision][..] } else { &[][..] };
+            rules.step(&mut world, decisions, 0.02).unwrap();
+            if let Some(event) = world.state.events().iter().find_map(|event|
+                match event {
+                    CombatEvent::PolicyWeaponFired {
+                        ship_id: 1, slot: 0, projectile_id,
+                    } => Some(*projectile_id),
+                    _ => None,
+                }
+            ) {
+                shot_id = Some(event);
+                break;
+            }
+        }
+        let fired_id = shot_id.expect("source targeting timer must commit shot");
+        let idx = *world.state.projectile_by_id.get(&fired_id).unwrap();
+        let shot = &world.state.projectiles()[idx];
+        let body = &world.state.physics().projectiles()[idx];
+        assert_eq!(shot.projectile_type, 1);
+        assert_eq!(shot.power, 20);
+        assert_eq!(shot.owner.shooter_id, 1);
+        assert_eq!(shot.owner.shooter_side, 1);
+        assert_eq!(body.motion.attribution.root_shot_id, fired_id);
+        assert_eq!(body.motion.attribution.command_outcome_id, 0);
+        assert_eq!(body.motion.starting_position, Vec2::new(1.0, 0.0));
+        assert!(body.motion.velocity.y > 0.0);
+        assert_eq!(world.state.policy_self_weapons(1).unwrap()[0]
+            .unwrap().turret.unwrap().ready_to_fire, false);
+
+        // Existing direct projectile damage executes normally rather than
+        // a training-only hit shortcut. Physics collision tests remain
+        // separate; this explicitly supplies an actual queued contact.
+        world.state.resolve_contact(TriggerEnter {
+            projectile_id: fired_id, ship_id: 2,
+        }).unwrap();
+        assert_eq!(world.state.ship(2).unwrap().vitals.health(), 80);
+    }
+
+    #[test]
+    fn original_shot_geometry_and_cease_fire_are_world_owned() {
+        let projectiles = Arc::new(ProjectileAssetCatalog::embedded().unwrap());
+        let speed = projectiles.by_type(1).unwrap().shot_speed.unwrap();
+        let hulls = ShipAssetCatalog::embedded().unwrap();
+        let mut world = CombatWorld::new(
+            Aabb {
+                min: Vec2::new(-100.0, -100.0),
+                max: Vec2::new(100.0, 100.0),
+            },
+            8.0, projectiles,
+        ).unwrap();
+        world.spawn_ship(
+            hulls.by_type(21).unwrap(), 1, 1,
+            ShipVitals::new(100, 100, 1000, 0).unwrap(),
+            ShipMotion::new(Vec2::new(10.0, 20.0),
+                90.0, 120.0, 8.0, 3.0),
+        ).unwrap();
+        world.bind_policy_ship(1, PolicyFrame::new(0), false).unwrap();
+        let spec = NativeTurretSpec {
+            weapon_type: 7, projectile_type: 1,
+            mount_offset: Vec2::new(2.0, 0.0),
+            initial_rotation_degrees: 90.0,
+            rotation_rate: 90.0,
+            range: 70.0, power: 12, rate_of_fire: 0.5,
+            projectile_value: 1.0, projectile_speed: speed,
+        };
+        world.configure_policy_turret(1, 3, spec).unwrap();
+        assert_eq!(world.policy_self_weapons(1).unwrap()[3]
+            .unwrap().position, Vec2::new(10.0, 22.0));
+        world.set_policy_ship_cease_fire(1, true).unwrap();
+        let mut action = Action::ZERO;
+        action.discrete[3] = 1;
+        action.continuous[8] = 1.0; // slot 3 aim +X, but cease-fired
+        world.apply_policy_decisions(&[Decision { agent_id: 1, action }])
+            .unwrap();
+        for _ in 0..100 {
+            world.advance_policy_turrets(0.02).unwrap();
+        }
+        assert_eq!(world.projectile_storage_metrics().active_projectiles, 0);
+        assert!(world.policy_self_weapons(1).unwrap()[3]
+            .unwrap().turret.unwrap().ready_to_fire);
+        assert_eq!(
+            world.configure_policy_turret(1, 3, spec),
+            Err(CombatWorldError::DuplicatePolicyTurret {
+                ship_id: 1, slot: 3,
+            }),
+        );
+    }
+}
