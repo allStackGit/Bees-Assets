@@ -1,14 +1,17 @@
-//! Authoritative ordinary MapObject gameplay in the existing combat world.
+//! Authoritative MapObject and Fire Tank gameplay in the shared combat world.
 //!
 //! Unity MapObject.OnTriggerEnter2D subtracts projectile power, kills at
 //! health <= 0, then calls LastHitProjectile.KillSequence. We reuse the
 //! already-ported rocket and splitter continuation paths, physical collider
-//! slots, and GameState-style learned-visibility removal. Fire Tank remains
-//! deliberately unavailable: CanisterBomb.Kill requires its own attributed
-//! FireTankExplosion and map-debris breakup mechanics.
+//! slots, and GameState-style learned-visibility removal. The Fire Tank
+//! continues the original incoming projectile's ownership and attribution
+//! through a separate authored type-15 explosion. Its linked obstacle is
+//! removed from gameplay; debris particles stay cosmetic in the renderer.
 
 use super::*;
-use crate::map_object::MapObjectKind;
+use crate::map_object::{FireTankConfig, MapObjectKind};
+
+const FIRE_TANK_EXPLOSION_TYPE: u8 = 15;
 
 impl CombatWorld {
     /// Register a real MapObject collider in the same KinematicPhysics as
@@ -20,10 +23,9 @@ impl CombatWorld {
         object: CombatMapObject,
         body: ObstacleBody,
     ) -> Result<(), CombatWorldError> {
-        if object.kind != MapObjectKind::Generic {
-            return Err(CombatWorldError::MapObject(
-                MapObjectError::UnsupportedFireTank,
-            ));
+        if (object.kind == MapObjectKind::Generic && object.fire_tank.is_some()) ||
+            (object.kind == MapObjectKind::FireTank && object.fire_tank.is_none()) {
+            return Err(CombatWorldError::InvalidObstacle);
         }
         if object.entity_id <= 0 || object.max_health <= 0 ||
             object.health != object.max_health ||
@@ -64,6 +66,68 @@ impl CombatWorld {
         true
     }
 
+    /// The source CanisterBomb.TargetObstacle.BreakApart removes the linked
+    /// static obstacle from gameplay and marks navigation dirty. The particle
+    /// debris is emitted by the rendering client, not by the headless world.
+    /// Missing IDs are already-destroyed Unity objects and are ignored.
+    fn break_fire_tank_obstacle(&mut self, tank_id: i64, linked_id: i64)
+        -> Result<(), CombatWorldError>
+    {
+        let Some(&index) = self.obstacle_by_id.get(&linked_id) else {
+            return Ok(());
+        };
+        if !self.physics.obstacles()[index].active {
+            return Ok(());
+        }
+        if self.obstacles[index].kind != ObstacleKind::StaticObstacle {
+            return Err(CombatWorldError::InvalidObstacle);
+        }
+        self.physics.obstacles_mut()[index].active = false;
+        self.obstacle_by_id.remove(&linked_id);
+        self.discovery.retire(DiscoveryKind::Obstacle, linked_id);
+        self.free_obstacle_slots.push(index);
+        self.events.push(CombatEvent::FireTankObstacleBrokenApart {
+            object_id: tank_id,
+            obstacle_id: linked_id,
+        });
+        Ok(())
+    }
+
+    /// Uses CanisterBomb.Kill's source shot attribution. Unlike a Rocket
+    /// explosion, this is an EXTRA blast with its own projectile entity and
+    /// no transferred damage reservation; original shot KillSequence runs
+    /// afterward. Projectile type 15 retains source friendly-fire rules.
+    fn spawn_fire_tank_explosion(
+        &mut self,
+        tank_id: i64,
+        tank_position: Vec2,
+        shot_index: usize,
+        config: FireTankConfig,
+    ) -> Result<(), CombatWorldError> {
+        let source = &self.projectiles[shot_index];
+        let source_id = source.entity_id;
+        let owner = source.owner;
+        let attribution = self.physics.projectiles()[shot_index].motion.attribution;
+        let explosion_id = self.next_entity_id;
+        let asset = self.projectile_assets.by_type(FIRE_TANK_EXPLOSION_TYPE)
+            .ok_or(CombatWorldError::InvalidProjectileType(
+                FIRE_TANK_EXPLOSION_TYPE,
+            ))?.clone();
+        let motion = ProjectileMotion::new(
+            tank_position, 0.0, 0.0, 0.0,
+            attribution.root_shot_id, attribution.command_outcome_id,
+        );
+        self.spawn_projectile(
+            &asset, explosion_id, owner, config.explosion_power, motion, 0.0,
+        )?;
+        self.events.push(CombatEvent::FireTankExploded {
+            object_id: tank_id,
+            triggering_projectile_id: source_id,
+            explosion_projectile_id: explosion_id,
+        });
+        Ok(())
+    }
+
     /// An actual physics contact with a registered MapObject. We deliberately
     /// do not dispatch this through StaticObstacleImpact: unlike an ordinary
     /// wall, MapObject is destructible and calls projectile KillSequence.
@@ -75,18 +139,42 @@ impl CombatWorld {
     ) -> Result<(), CombatWorldError> {
         let object_id = self.obstacles[obstacle_index].entity_id;
         let power = self.projectiles[shot_index].power;
-        let Some(object) = self.map_objects.get_mut(&object_id) else {
+        let Some(object) = self.map_objects.get(&object_id) else {
             return Err(CombatWorldError::InvalidObstacle);
         };
-        let Some(damage) = object.apply_projectile_damage(power) else {
-            return Ok(());
-        };
+        if !object.alive() || power < 0 { return Ok(()); }
+
+        let fatal = power >= object.health;
+        // Source CanisterBomb.Kill spawns its explosion before returning
+        // the incoming shot to the projectile pool. Preflight a linked
+        // obstacle's kind before changing health or spawning anything.
+        let fire_tank = if fatal { object.fire_tank } else { None };
+        if let Some(config) = fire_tank {
+            if let Some(linked_id) = config.target_obstacle_id {
+                if let Some(&index) = self.obstacle_by_id.get(&linked_id) {
+                    if self.physics.obstacles()[index].active &&
+                        self.obstacles[index].kind != ObstacleKind::StaticObstacle {
+                        return Err(CombatWorldError::InvalidObstacle);
+                    }
+                }
+            }
+            let origin = self.physics.obstacles()[obstacle_index].pose.position;
+            self.spawn_fire_tank_explosion(object_id, origin, shot_index, config)?;
+        }
+
+        let damage = self.map_objects.get_mut(&object_id)
+            .expect("validated object").apply_projectile_damage(power)
+            .expect("validated live object and power");
         self.events.push(CombatEvent::MapObjectDamaged {
             projectile_id: contact.projectile_id,
             object_id,
             damage,
         });
         if damage.destroyed {
+            if let Some(linked_id) = fire_tank.and_then(|config|
+                config.target_obstacle_id) {
+                self.break_fire_tank_obstacle(object_id, linked_id)?;
+            }
             self.retire_map_object(object_id);
             self.events.push(CombatEvent::MapObjectDestroyed {
                 object_id,
