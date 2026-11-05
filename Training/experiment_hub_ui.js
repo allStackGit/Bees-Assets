@@ -863,6 +863,31 @@ document.addEventListener('DOMContentLoaded', () => {
             cell(tr,summary.completed+' of '+summary.chain.length+
                 ' jobs finished and capacity released');
             cell(tr,summary.reason);
+            const actions=cell(tr,'');
+            const future=summary.chain.slice(position);
+            if(future.length&&future.every(job=>
+                ['waiting_adapter','waiting_predecessor'].includes(job.status)&&
+                !job.dispatch_id)) {
+                actions.append(button('Cancel future queued jobs',async()=>{
+                    if(!confirm('Cancel '+future.length+' unstarted future jobs across '+
+                        [...new Set(future.map(job=>job.project_id))].join(', ')+
+                        '? The current job '+summary.current.configuration_name+
+                        ' will not be stopped. Claims for cancelled unstarted jobs will be released.'))return;
+                    try {
+                        const result=await action('hub/jobs/cancel-future',{
+                            after_job_id:summary.current.id,confirm_cancel:true,
+                        });
+                        feedback('hub-sequence-message',
+                            'Cancelled '+result.cancelled_count+
+                            ' future queued jobs. Current native jobs were not stopped.');
+                        await reload();
+                    }catch(error){
+                        feedback('hub-sequence-message',String(error.message||error));
+                    }
+                }));
+            }else if(future.length) {
+                actions.textContent='A downstream job has started or needs inspection.';
+            }
             sequenceTable.append(tr);
         }
         const pipeline=$('hub-pipeline-panel');
