@@ -243,6 +243,21 @@ impl NavigationRequests {
         Ok(NavigationCompletion::Accepted { request: job, path })
     }
 
+    /// A search failed at the engine boundary (invalid map/geometry), not
+    /// because its destination was unreachable. Release its CPU slot and
+    /// clear any pending continuation. Never report such an engine error as
+    /// an ordinary Unity "path not found" response.
+    pub fn abandon_failed_job(&mut self, job: NavigationRequest) {
+        let Some(owner) = self.ships.get_mut(&job.ship_id) else { return };
+        if owner.lifecycle_id != job.lifecycle_id ||
+            owner.running != Some(job) {
+            return;
+        }
+        owner.running = None;
+        owner.waiting = None;
+        owner.deferred = None;
+    }
+
     fn reserve_request_id(&mut self) -> Result<u64, NavigationRequestError> {
         let next = self.next_request_id.checked_add(1)
             .ok_or(NavigationRequestError::IdExhausted)?;
