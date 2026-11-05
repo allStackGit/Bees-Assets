@@ -38,7 +38,11 @@ Windows browser qualification; the existing Bees-specific routes remain separate
   agent on Windows or Linux. Fresh heartbeats cap CPU/RAM placement previews
   to observed values. The Machines table shows configured, freshly reported
   and outstanding claimed CPU/RAM side by side, and flags claims exceeding
-  a connected agent's report. These are ledger claims, not measured usage.
+  a connected agent's report. Claims are scheduling ledger entries, not
+  measured usage. The same table separately sums fresh CPU-core-rate and
+  RAM-use samples from reporting Hub-managed native jobs, including the
+  number of contributing jobs; these **exclude Bees, the OS, and other
+  untracked software**, so they are not total host utilization.
   GPU inventory remains manually declared; no agent reserves or isolates
   resources yet.
 
@@ -128,7 +132,12 @@ and its identity propagates to the next eligible stage at successful
 terminal capacity release. This supports a linear chain, not an arbitrary DAG;
 only one non-cancelled successor is allowed per parent. Blocked stages
 carry no capacity claims, and a parent with a non-cancelled child must
-be cancelled from the end of the chain backward.
+be cancelled from the end of the chain backward. Train and Monitor
+trace the earliest non-waiting ancestor of a blocked pipeline, showing
+the stage responsible for the delay and whether it is still running,
+waiting for a release, needs checkpoint-risk approval, or requires
+operator review. This is a read-only projection and never alters
+execution ownership or automatically recovers failed work.
 The read-only queued-job placement preview now rehearses the **same
 round-robin project fairness, FIFO ordering, connected-agent requirement,
 continuation host affinity and best-fit resource selection** as the actual
