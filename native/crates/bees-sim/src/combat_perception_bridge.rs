@@ -13,6 +13,7 @@ use crate::combat_world::{CombatShip, CombatWorld};
 use crate::episode_ship_identity::{EpisodeShipIdentities, ShipIdentityError};
 use crate::geometry::Vec2;
 use crate::local_navigation_observation::{LocalNavigationError, LocalNavigationOccupancy};
+use crate::level_discovery::LevelDiscovery;
 use crate::obstacle::ObstacleKind;
 use crate::perception::{SelfSource, ship_type_scalar};
 use crate::team_exploration::{Explorer, ExplorationError, TeamExplorationGrid};
@@ -31,6 +32,7 @@ pub enum CombatPerceptionError {
     InvalidObstacleStorage,
     MissingNavigationBounds(i64),
     MissingEffectiveVision(i64),
+    MissingShipMetadata(i64),
     Navigation(LocalNavigationError),
     Exploration(ExplorationError),
 }
@@ -331,6 +333,110 @@ pub fn update_exploration_from_world(
     }
     grid.update(bounds, explorers, episode_progress)?;
     Ok(explorers.len())
+}
+
+/// Read-only Level ship candidate staging. Sorting real live ships BEFORE
+/// assigning episode identity scalars preserves Unity's source order:
+/// squared distance, ship type, fleet ID, runtime ID. The buffer retains
+/// capacity across policy decisions; no per-ship allocation is needed.
+#[derive(Default)]
+pub struct LiveShipCandidateCollector {
+    ordered_ids: Vec<i64>,
+}
+
+impl LiveShipCandidateCollector {
+    pub fn new() -> Self { Self::default() }
+
+    fn sort_and_project(
+        &mut self,
+        world: &CombatWorld,
+        observer_position: Vec2,
+        identities: &mut EpisodeShipIdentities,
+        mut metadata_for: impl FnMut(i64) -> Option<AuthoredShipPerception>,
+        output: &mut Vec<ObservedShip>,
+    ) -> Result<usize, CombatPerceptionError> {
+        self.ordered_ids.sort_unstable_by(|left_id, right_id| {
+            let left = world.ship(*left_id).expect("validated live ship");
+            let right = world.ship(*right_id).expect("validated live ship");
+            let left_body = world.ship_body(*left_id).expect("validated ship body");
+            let right_body = world.ship_body(*right_id).expect("validated ship body");
+            (left_body.motion.position - observer_position).length_squared()
+                .total_cmp(&(right_body.motion.position - observer_position).length_squared())
+                .then_with(|| left.ship_type.cmp(&right.ship_type))
+                .then_with(|| world.ship_fleet_identity(*left_id).unwrap_or(i64::MAX)
+                    .cmp(&world.ship_fleet_identity(*right_id).unwrap_or(i64::MAX)))
+                .then_with(|| left_id.cmp(right_id))
+        });
+
+        output.clear();
+        // Unity writes at most 64 allies and 64 enemies. Assigning identities
+        // for farther unused candidates would change first-use ordinals.
+        for &id in self.ordered_ids.iter().take(64) {
+            let metadata = metadata_for(id)
+                .ok_or(CombatPerceptionError::MissingShipMetadata(id))?;
+            output.push(observed_ship_from_world(world, id, metadata, identities)?);
+        }
+        Ok(output.len())
+    }
+
+    /// Source: GameState.GetShips(side), minus the observer and dead ships.
+    /// The writer's zero padding is the only representation of unused slots.
+    pub fn collect_allies(
+        &mut self,
+        world: &CombatWorld,
+        observer_id: i64,
+        identities: &mut EpisodeShipIdentities,
+        metadata_for: impl FnMut(i64) -> Option<AuthoredShipPerception>,
+        output: &mut Vec<ObservedShip>,
+    ) -> Result<usize, CombatPerceptionError> {
+        let (observer, observer_body) = live_ship(world, observer_id)?;
+        let origin = observer_body.motion.position;
+        self.ordered_ids.clear();
+        for candidate in world.ships() {
+            if candidate.side != observer.side || candidate.entity_id == observer_id {
+                continue;
+            }
+            match live_ship(world, candidate.entity_id) {
+                Ok(_) => self.ordered_ids.push(candidate.entity_id),
+                Err(CombatPerceptionError::InactiveShip(_)) => continue,
+                Err(error) => return Err(error),
+            }
+        }
+        self.sort_and_project(world, origin, identities, metadata_for, output)
+    }
+
+    /// Source: GameState.VisionCache[observer.Side - 1]. Previously learned
+    /// enemy ships remain eligible even when outside current sight.
+    /// Dead/removed entries are ignored as Unity CollectVisibleEnemies does.
+    pub fn collect_learned_enemies(
+        &mut self,
+        world: &CombatWorld,
+        discoveries: &LevelDiscovery,
+        observer_id: i64,
+        identities: &mut EpisodeShipIdentities,
+        metadata_for: impl FnMut(i64) -> Option<AuthoredShipPerception>,
+        output: &mut Vec<ObservedShip>,
+    ) -> Result<usize, CombatPerceptionError> {
+        let (observer, observer_body) = live_ship(world, observer_id)?;
+        let origin = observer_body.motion.position;
+        self.ordered_ids.clear();
+        if let Some(known) = discoveries.ship_ids(observer.side) {
+            for &id in known {
+                let Some(candidate) = world.ship(id) else {
+                    continue; // a target retired before cache cleanup
+                };
+                if candidate.side == observer.side {
+                    continue;
+                }
+                match live_ship(world, id) {
+                    Ok(_) => self.ordered_ids.push(id),
+                    Err(CombatPerceptionError::InactiveShip(_)) => continue,
+                    Err(error) => return Err(error),
+                }
+            }
+        }
+        self.sort_and_project(world, origin, identities, metadata_for, output)
+    }
 }
 
 #[cfg(test)]
