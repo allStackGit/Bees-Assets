@@ -686,6 +686,26 @@ impl CombatWorld {
         Ok(())
     }
 
+    /// Preflight a game/squad point order without mutating any controller.
+    /// A whole squad must be checked before issuing its first ship command,
+    /// otherwise a missing asset profile or policy-owned ship could leave
+    /// a half-issued formation.
+    pub fn validate_ship_game_order(&self, ship_id: i64) -> Result<(), CombatWorldError> {
+        let &index = self.ship_by_id.get(&ship_id)
+            .ok_or(CombatWorldError::UnknownShip)?;
+        if !self.physics.ships()[index].active || self.ships[index].vitals.is_dead() {
+            return Err(CombatWorldError::UnknownShip);
+        }
+        if !self.game_ship_steering.contains_key(&ship_id) {
+            return Err(CombatWorldError::MissingGameMovementProfile);
+        }
+        let motion = &self.physics.ships()[index].motion;
+        if motion.is_policy_controlled && !motion.user_controlled {
+            return Err(CombatWorldError::UnsupportedPolicyActions);
+        }
+        Ok(())
+    }
+
     /// Unity Ship.Geometry.GetObstacleInPath:
     /// BoxCastNonAlloc(origin, GetSize(), GetDegreesTowardsPoint(destination),
     /// -DirectionToPoint(destination), DistanceToPoint(destination), layer 19).
