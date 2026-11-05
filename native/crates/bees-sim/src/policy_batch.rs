@@ -216,7 +216,7 @@ impl PolicyBatch {
     /// directly, including through a platform-specific accelerator adapter.
     /// No GPU, ROCm, CUDA, ONNX or operating-system dependency belongs here.
     pub fn output_buffers_mut(&mut self) -> (&mut [f32], &mut [u8]) {
-        (&mut self.continuous, &mut self.discrete)
+        (self.continuous.as_mut_slice(), self.discrete.as_mut_slice())
     }
 
     /// Validate every model result before publishing ANY decisions. This
