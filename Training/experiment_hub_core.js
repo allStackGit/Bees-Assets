@@ -408,6 +408,8 @@ class ExperimentHub {
             };
             return this.automationStatus();
         }
+        if(this.automation.enabled)
+            throw Error('Native automation is already armed; disarm explicitly before starting another session.');
         const ids=value.machine_ids;
         if(value.confirm_arm!==true||value.confirm_untracked_load!==true||
             !Array.isArray(ids)||ids.length<1||ids.length>16||
