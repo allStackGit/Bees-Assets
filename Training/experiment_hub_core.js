@@ -206,6 +206,21 @@ function nativeStartReadiness(snapshot, job) {
             job.continuation_machine_id!==job.assigned_machine_id)
             return block('Continuation lineage, completed parent, or original machine is not verified.');
     }
+    if(job.after_job_id) {
+        const parent=snapshot.jobs.find(j=>j.id===job.after_job_id);
+        const parentLease=snapshot.reservations.find(lease=>
+            lease.id===parent?.lease_id);
+        if(!parent||parent.status!=='finished'||
+            !parent.capacity_released_at||!parent.dispatch_id||
+            !parent.execution_updated_at||
+            parentLease?.status!=='released'||
+            parentLease.job_id!==parent.id||
+            !parentLease.released_at||
+            job.continuation_of_job_id||
+            job.artifact_lineage_root_id!==job.id||
+            job.continuation_machine_id)
+            return block('Independent dependency has not finished and released verified native capacity.');
+    }
     return {eligible:true,reason:'Eligible for explicit CPU-only native Start authorization.'};
 }
 // Match the operator's cross-project FIFO fairness in both the read-only
@@ -233,7 +248,7 @@ function fairPending(jobs,lastProjectId=null) {
 // Read-only pipeline diagnosis, never an execution authorization.
 function waitingStageReason(job,byId) {
     const visited=new Set([job.id]);
-    let parentId=job.continuation_of_job_id;
+    let parentId=job.continuation_of_job_id||job.after_job_id;
     for(let depth=1;depth<=1000;depth++) {
         const parent=byId.get(parentId);
         if(!parent||visited.has(parentId))
@@ -241,7 +256,7 @@ function waitingStageReason(job,byId) {
                 reason:'Prequeued stage has missing or cyclic predecessor lineage; operator review required.'};
         visited.add(parentId);
         if(parent.status==='waiting_predecessor') {
-            parentId=parent.continuation_of_job_id;
+            parentId=parent.continuation_of_job_id||parent.after_job_id;
             continue;
         }
         const label=parent.configuration_name||parent.id.slice(-8);
@@ -257,9 +272,12 @@ function waitingStageReason(job,byId) {
         }else if(parent.status==='finished'&&!parent.capacity_released_at) {
             status='release_pending';explanation='finished; capacity release is required';
         }else if(parent.status==='stopped') {
-            status='operator_approval';explanation=parent.capacity_released_at
-                ?'stopped; explicit checkpoint-risk approval is required'
-                :'stopped; capacity release and explicit checkpoint-risk approval are required';
+            status=job.after_job_id?'needs_review':'operator_approval';
+            explanation=job.after_job_id
+                ?'stopped without finishing; independent dependent jobs will not auto-advance'
+                :parent.capacity_released_at
+                    ?'stopped; explicit checkpoint-risk approval is required'
+                    :'stopped; capacity release and explicit checkpoint-risk approval are required';
         }else {
             status='needs_review';explanation=
                 'is '+parent.status+'; pipeline will not auto-advance without operator review';
@@ -733,14 +751,19 @@ class ExperimentHub {
                 // Retain historical machine and lease IDs for provenance after
                 // a native terminal report has been received and reviewed.
                 job.capacity_released_at=now();
-                // Advance a previously frozen Ants continuation only after
-                // successful native completion AND durable capacity release.
-                // A stopped or failed parent cannot auto-advance a stage.
+                // Successful native completion and capacity release are
+                // the only automatic dependency advancement authorities.
+                // Checkpoint-continuations preserve lineage and host;
+                // independent sequences preserve neither.
                 if(job.status==='finished') {
-                    const child=next.jobs.find(j=>
-                        j.continuation_of_job_id===job.id&&
-                        j.status==='waiting_predecessor');
-                    if(child) {
+                    const children=next.jobs.filter(j=>
+                        j.status==='waiting_predecessor'&&
+                        (j.continuation_of_job_id===job.id||
+                         j.after_job_id===job.id));
+                    if(children.length>1)throw Error(
+                        'Multiple successor jobs claim one predecessor; refusing release.');
+                    const child=children[0];
+                    if(child?.continuation_of_job_id) {
                         if(child.project_id!==job.project_id||
                             child.artifact_lineage_root_id!==
                                 (job.artifact_lineage_root_id||job.id)||
@@ -749,11 +772,17 @@ class ExperimentHub {
                             (child.continuation_machine_id&&
                                 child.continuation_machine_id!==job.assigned_machine_id))
                             throw Error('Prequeued stage lineage changed; refusing capacity release.');
-                        // The original machine becomes immutable when the
-                        // first stage actually runs, not when it is queued.
                         child.continuation_machine_id=job.assigned_machine_id;
+                    }else if(child) {
+                        if(child.after_job_id!==job.id||
+                            child.continuation_of_job_id||
+                            child.artifact_lineage_root_id!==child.id||
+                            child.continuation_machine_id)
+                            throw Error('Independent sequence identity changed; refusing capacity release.');
+                    }
+                    if(child) {
                         child.status='waiting_adapter';
-                        child.status_reason='Predecessor finished and released capacity; stage is eligible for separate resource allocation.';
+                        child.status_reason='Predecessor finished and released capacity; job is eligible for separate allocation and native authorization.';
                         child.predecessor_ready_at=now();
                     }
                 }
@@ -1462,8 +1491,33 @@ class ExperimentHub {
         this.commit(next);
         return copy(job);
     }
-    // One durable write for the full linear Ants pipeline: either every
-    // frozen stage exists with validated lineage, or none do.
+    // Independent jobs may be chained across non-Bees projects. These
+    // dependencies do not imply checkpoint inheritance, machine affinity,
+    // shared experiments, or evaluation success.
+    queueSequence(value) {
+        if(!object(value)||value.confirm_queue!==true||
+            !Array.isArray(value.stages)||value.stages.length<2||
+            value.stages.length>16||
+            (value.after_job_id!=null&&!UUID.test(String(value.after_job_id))))
+            throw Error('Explicitly confirm 2–16 independent sequential jobs.');
+        const next=copy(this.state),jobs=[];
+        let predecessor=value.after_job_id??null;
+        for(const stage of value.stages) {
+            if(!object(stage)||Object.keys(stage).some(key=>
+                !['configuration_id','expected_revision','resources'].includes(key)))
+                throw Error('Each sequential job must select a saved configuration and resources.');
+            const job=this.queueIn(next,{
+                ...stage,...(predecessor?{after_job_id:predecessor}:{})
+            });
+            jobs.push(copy(job));
+            predecessor=job.id;
+        }
+        this.commit(next);
+        return {jobs,executable:false,
+            note:'Independent jobs frozen together; each native Start still needs separately authorized CPU-only execution.'};
+    }
+    // One durable write for the full linear Ants checkpoint-continuation
+    // pipeline: either all stages have validated lineage, or none do.
     queuePipeline(value) {
         if(!object(value)||value.confirm_queue!==true||
             !Array.isArray(value.stages)||value.stages.length<2||
@@ -1506,7 +1560,10 @@ class ExperimentHub {
         const resources = resourceRequest(value.resources);
         const ancestorId=value.continuation_of_job_id==null
             ?null:value.continuation_of_job_id;
-        let parent=null,waitingPredecessor=false;
+        const afterId=value.after_job_id==null?null:value.after_job_id;
+        if(afterId!==null&&ancestorId!==null)
+            throw Error('A job cannot both depend on an independent predecessor and continue its checkpoint.');
+        let parent=null,dependency=null,waitingPredecessor=false;
         if(ancestorId!==null) {
             if(typeof ancestorId!=='string'||!UUID.test(ancestorId))
                 throw Error('Select a valid predecessor job for continuation.');
@@ -1530,8 +1587,28 @@ class ExperimentHub {
                  !parent.capacity_released_at))
                 throw Error('Continuation requires a finished, capacity-released predecessor (or an eligible active or prequeued Ants predecessor).');
             if(next.jobs.some(j=>
-                j.continuation_of_job_id===parent.id&&j.status!=='cancelled'))
-                throw Error('This predecessor already has a non-cancelled continuation.');
+                (j.continuation_of_job_id===parent.id||
+                 j.after_job_id===parent.id)&&j.status!=='cancelled'))
+                throw Error('This predecessor already has a non-cancelled successor.');
+        }
+        if(afterId!==null) {
+            if(!UUID.test(String(afterId)))
+                throw Error('Select a valid independent predecessor.');
+            dependency=next.jobs.find(j=>j.id===afterId);
+            if(!dependency||dependency.project_id==='bees'||
+                !['waiting_adapter','waiting_predecessor',
+                  'start_requested','launch_requested','running',
+                  'finished'].includes(dependency.status)||
+                (dependency.status==='finished'&&
+                    (!dependency.dispatch_id||!dependency.execution_updated_at||
+                     !dependency.assigned_machine_id)))
+                throw Error('Independent dependency needs an eligible non-Bees predecessor.');
+            if(next.jobs.some(j=>
+                (j.continuation_of_job_id===afterId||
+                 j.after_job_id===afterId)&&j.status!=='cancelled'))
+                throw Error('This predecessor already has a non-cancelled successor.');
+            waitingPredecessor=dependency.status!=='finished'||
+                !dependency.capacity_released_at;
         }
         if(project.id==='ants'&&
             (frozen.mode==='resume')!==Boolean(parent))
@@ -1546,6 +1623,7 @@ class ExperimentHub {
             id:jobId,
             project_id:project.id, adapter:project.adapter,
             continuation_of_job_id:parent?.id||null,
+            after_job_id:dependency?.id||null,
             artifact_lineage_root_id:parent
                 ?(parent.artifact_lineage_root_id||parent.id):jobId,
             continuation_machine_id:parent
@@ -1613,7 +1691,8 @@ class ExperimentHub {
         if (job.status==='cancelled') return copy(job);
         if (!['waiting_adapter','waiting_predecessor'].includes(job.status))
             throw Error('Only unstarted jobs can be cancelled without an execution adapter.');
-        if(next.jobs.some(j=>j.continuation_of_job_id===job.id&&
+        if(next.jobs.some(j=>
+            (j.continuation_of_job_id===job.id||j.after_job_id===job.id)&&
             j.status!=='cancelled'))
             throw Error('Cancel the queued successor stage before cancelling its predecessor.');
         if(job.lease_id) {
