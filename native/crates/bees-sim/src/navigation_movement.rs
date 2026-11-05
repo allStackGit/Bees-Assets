@@ -129,6 +129,7 @@ impl GameShipSteering {
             self.target_direction.is_some() ||
             self.deferred_direct_destination.is_some() ||
             self.is_following_path ||
+            self.failed_path_retry_timer.is_some() ||
             !self.next_waypoints.is_empty()
     }
 
