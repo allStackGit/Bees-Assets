@@ -77,6 +77,7 @@ mod yellow_jacket;
 mod barge;
 mod scout;
 mod healing;
+mod mining;
 mod shot_outcomes;
 pub use self::shot_outcomes::{ProjectileRootOutcome, ProjectileOutcomeMeasurements};
 use self::shot_outcomes::{ProjectileOutcomeTracker, NEAR_MISS_DISTANCE};
