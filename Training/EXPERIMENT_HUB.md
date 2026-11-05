@@ -688,15 +688,21 @@ it into a **temporary directory outside the repository**, so no large
 binary becomes part of a commit. From the checkout root in PowerShell:
 
 ```powershell
-$publish = Join-Path $env:TEMP 'experiment-hub-owner-qualification'
+$ErrorActionPreference = 'Stop'
+$publish = Join-Path $env:TEMP ('experiment-hub-owner-' + [guid]::NewGuid().ToString('N'))
 dotnet publish .\Training\experiment_hub_windows_owner\ExperimentHubWindowsOwner.csproj -c Release -r win-x64 --self-contained true -o $publish
+if ($LASTEXITCODE -ne 0) { throw 'Windows helper build failed.' }
 $env:EXPERIMENT_HUB_WINDOWS_HELPER = Join-Path $publish 'ExperimentHubWindowsOwner.exe'
 $env:EXPERIMENT_HUB_WINDOWS_HELPER_SHA256 = (Get-FileHash $env:EXPERIMENT_HUB_WINDOWS_HELPER -Algorithm SHA256).Hash.ToLowerInvariant()
 
 node .\Training\experiment_hub_smoke.js
+if ($LASTEXITCODE -ne 0) { throw 'Worker HTTP qualification failed.' }
 node .\Training\experiment_hub_native_smoke_windows.js --preflight
+if ($LASTEXITCODE -ne 0) { throw 'Windows Job Object preflight failed.' }
 node .\Training\experiment_hub_native_smoke_windows.js --run-inert
+if ($LASTEXITCODE -ne 0) { throw 'Windows Start/Stop qualification failed.' }
 node .\Training\experiment_hub_windows_end_to_end_smoke.js --run-inert
+if ($LASTEXITCODE -ne 0) { throw 'Integrated Windows qualification failed.' }
 ```
 
 Run them **in order** and stop on the first error. The first exercises
