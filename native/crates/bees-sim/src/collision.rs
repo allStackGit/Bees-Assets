@@ -192,6 +192,158 @@ pub fn polygons_overlap(a: &[Vec2], b: &[Vec2]) -> bool {
         || circle_overlaps_polygon(b[0], 0.0, a)
 }
 
+/// The first distance along a *unit* movement direction at which a
+/// rotated rectangular ship-sized box intersects an authored obstacle
+/// polygon. This is the geometric contract of Unity's BoxCastNonAlloc,
+/// implemented continuously (no fixed-distance stepping), and supports
+/// the concave PolygonCollider2D outlines used by Bees.
+pub fn swept_box_polygon_distance(
+    box_corners: &[Vec2; 4],
+    unit_direction: Vec2,
+    distance: f32,
+    polygon: &[Vec2],
+) -> Option<f32> {
+    if polygon.len() < 3 || !unit_direction.is_finite() ||
+        !distance.is_finite() || distance < 0.0 {
+        return None;
+    }
+    if polygons_overlap(box_corners, polygon) {
+        return Some(0.0);
+    }
+    let mut nearest: Option<f32> = None;
+    let mut edge_start = *polygon.last()?;
+    for &edge_end in polygon {
+        for &corner in box_corners {
+            if let Some(hit) = moving_point_segment_contact(
+                corner, unit_direction, distance, edge_start, edge_end,
+            ) {
+                nearest = Some(nearest.map_or(hit, |value| value.min(hit)));
+            }
+        }
+        edge_start = edge_end;
+    }
+    // The obstacle can meet a *moving box edge* even if none of its edges
+    // meets a moving box vertex. In the box's moving reference frame,
+    // each obstacle vertex instead traces the opposite translation.
+    let relative_direction = unit_direction * -1.0;
+    for &vertex in polygon {
+        let mut first = box_corners[3];
+        for &second in box_corners {
+            if let Some(hit) = moving_point_segment_contact(
+                vertex, relative_direction, distance, first, second,
+            ) {
+                nearest = Some(nearest.map_or(hit, |value| value.min(hit)));
+            }
+            first = second;
+        }
+    }
+    nearest
+}
+
+/// Continuous rectangle sweep against a circle, without approximating the
+/// circle as an N-sided polygon. Equivalently, cast the circle center through
+/// the four stationary box-edge capsules in the box's moving reference frame.
+pub fn swept_box_circle_distance(
+    box_corners: &[Vec2; 4],
+    unit_direction: Vec2,
+    distance: f32,
+    circle_center: Vec2,
+    radius: f32,
+) -> Option<f32> {
+    if !circle_center.is_finite() || !radius.is_finite() || radius < 0.0 ||
+        !unit_direction.is_finite() || !distance.is_finite() || distance < 0.0 {
+        return None;
+    }
+    if circle_overlaps_polygon(circle_center, radius, box_corners) {
+        return Some(0.0);
+    }
+    let relative_direction = unit_direction * -1.0;
+    let mut nearest: Option<f32> = None;
+    let mut start = box_corners[3];
+    for &end in box_corners {
+        if let Some(hit) = moving_point_capsule_contact(
+            circle_center, relative_direction, distance, start, end, radius,
+        ) {
+            nearest = Some(nearest.map_or(hit, |value| value.min(hit)));
+        }
+        start = end;
+    }
+    nearest
+}
+
+fn moving_point_segment_contact(
+    point: Vec2,
+    direction: Vec2,
+    max_distance: f32,
+    start: Vec2,
+    end: Vec2,
+) -> Option<f32> {
+    const EPS: f32 = 1.0e-6;
+    let edge = end - start;
+    let relative = start - point;
+    let denominator = cross(direction, edge);
+    if denominator.abs() <= EPS {
+        if cross(relative, direction).abs() > EPS { return None; }
+        let entry = dot(relative, direction)
+            .min(dot(end - point, direction));
+        let exit = dot(relative, direction)
+            .max(dot(end - point, direction));
+        let candidate = entry.max(0.0);
+        return (candidate <= exit && candidate <= max_distance).then_some(candidate);
+    }
+    let travel = cross(relative, edge) / denominator;
+    let segment_fraction = cross(relative, direction) / denominator;
+    if travel >= -EPS && travel <= max_distance + EPS &&
+        segment_fraction >= -EPS && segment_fraction <= 1.0 + EPS {
+        return Some(travel.clamp(0.0, max_distance));
+    }
+    None
+}
+
+fn moving_point_capsule_contact(
+    point: Vec2,
+    direction: Vec2,
+    max_distance: f32,
+    start: Vec2,
+    end: Vec2,
+    radius: f32,
+) -> Option<f32> {
+    let edge = end - start;
+    let edge_len_sq = dot(edge, edge);
+    if edge_len_sq <= 0.0 { return None; }
+    let mut nearest = None;
+    // Two semicircular end caps. The first positive quadratic root is
+    // the entry time along the moving point's straight trajectory.
+    for endpoint in [start, end] {
+        let offset = point - endpoint;
+        let b = dot(offset, direction);
+        let c = dot(offset, offset) - radius * radius;
+        let discriminant = b * b - c;
+        if discriminant >= 0.0 {
+            let t = -b - discriminant.sqrt();
+            if t >= 0.0 && t <= max_distance {
+                nearest = Some(nearest.map_or(t, |v: f32| v.min(t)));
+            }
+        }
+    }
+    let edge_len = edge_len_sq.sqrt();
+    let normal = Vec2::new(-edge.y / edge_len, edge.x / edge_len);
+    let signed_distance = dot(point - start, normal);
+    let rate = dot(direction, normal);
+    if rate.abs() > 1.0e-7 {
+        for sign in [-1.0f32, 1.0f32] {
+            let t = (sign * radius - signed_distance) / rate;
+            if t < 0.0 || t > max_distance { continue; }
+            let point_at_hit = point + direction * t;
+            let projected = dot(point_at_hit - start, edge) / edge_len_sq;
+            if (0.0..=1.0).contains(&projected) {
+                nearest = Some(nearest.map_or(t, |v: f32| v.min(t)));
+            }
+        }
+    }
+    nearest
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
