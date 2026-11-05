@@ -402,9 +402,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         const thresholdRows=$('hub-compare-threshold-rows');
         thresholdRows.replaceChildren();
-        const targetPct=Number($('hub-compare-threshold-rate').value);
-        const minWindow=Number($('hub-compare-threshold-window').value);
-        const validTarget=Number.isFinite(targetPct)&&targetPct>=0&&
+        const rateInput=$('hub-compare-threshold-rate').value.trim();
+        const windowInput=$('hub-compare-threshold-window').value.trim();
+        const targetPct=Number(rateInput),minWindow=Number(windowInput);
+        const validTarget=rateInput!==''&&windowInput!==''&&
+            Number.isFinite(targetPct)&&targetPct>=0&&
             targetPct<=100&&Number.isSafeInteger(minWindow)&&
             minWindow>=1&&minWindow<=1000000;
         feedback('hub-compare-threshold-note',project!=='ants'
