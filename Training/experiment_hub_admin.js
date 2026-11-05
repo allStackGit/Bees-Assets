@@ -1,9 +1,8 @@
 'use strict';
 
-// Project-neutral dashboard API for an isolated browser qualification.
-// Mirrors the existing Bees manager's Hub routes while using the same Hub
-// core admission and lifecycle methods. It cannot invoke Bees training or
-// open a network listener. Production route consolidation is separate.
+// Shared project-neutral dashboard API used by the production Bees manager
+// and the isolated native qualification dashboard. Bees training actions stay
+// with the existing operator; this module cannot invoke them or bind a listener.
 const {placements,plan}=require('./experiment_hub_resources');
 
 function route(hub,method,pathname,query,value,bees) {
