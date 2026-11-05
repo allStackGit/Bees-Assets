@@ -273,7 +273,7 @@ function evaluatePeriodicTarget(item, checkpoint) {
     const result=scoreTarget(target,plan.scenarios.map((scenario,i)=>{
         const name=evaluation.reports?.[scenario.id];
         if(typeof name!=='string'||
-            !/^\\d{8}T\\d{6}-[a-f0-9]{32}\\.json$/.test(name))
+            !/^\d{8}T\d{6}-[a-f0-9]{32}\.json$/.test(name))
             throw Error('Benchmark target is missing a frozen scenario report.');
         const identity=stageEvaluationKey(item,checkpoint.stage_index,
             scenario,i,candidate,plan,checkpoint.target_step,'development');
