@@ -300,7 +300,7 @@ impl NativeEpisodeRewardCoordinator {
         }
         // Both consumers inspect the same world-owned event store. Scratch
         // buffers survive across ticks to avoid allocations in quiet steps.
-        self.shaping.consume_damage_events(
+        self.shaping.consume_combat_shaping_events(
             world, world.events(), damage_metadata,
             &mut self.damage_emissions,
         )?;

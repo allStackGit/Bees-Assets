@@ -91,6 +91,9 @@ pub enum DamageShapingError {
 pub struct DamageShapingMeasurements {
     pub attributed_hits: u64,
     pub unattributed_damage: u64,
+    pub projectile_roots_completed: u64,
+    pub projectile_roots_missed: u64,
+    pub projectile_roots_near_missed: u64,
     pub emissions: u64,
 }
 
@@ -195,14 +198,15 @@ impl EpisodeShaping {
     }
 
     /// Consume the *same* CombatWorld event queue used by the renderer
-    /// and physical combat. Only events with real TSV loss need metadata,
+    /// and physical combat, including ordered projectile-root outcomes.
+    /// Only events with real TSV loss need authored fleet metadata,
     /// avoiding any lookup on harmless/zero-damage hits. The caller supplies
     /// source FleetShip values (never guessed from ShipVitals) and a reusable
     /// emissions buffer for the MA-POCA reward adapter.
     ///
     /// An error invalidates the partial emissions and episode. The caller
     /// must not continue a partially processed tick or emit training samples.
-    pub fn consume_damage_events(
+    pub fn consume_combat_shaping_events(
         &mut self,
         world: &CombatWorld,
         events: &[CombatEvent],
@@ -268,6 +272,22 @@ impl EpisodeShaping {
                         if reward.amount != 0.0 {
                             emissions.push(reward);
                             self.damage_measurements.emissions += 1;
+                        }
+                    }
+                }
+                CombatEvent::ProjectileRootCompleted(root) => {
+                    self.damage_measurements.projectile_roots_completed += 1;
+                    if !root.enemy_contact {
+                        self.damage_measurements.projectile_roots_missed += 1;
+                        self.damage_measurements.projectile_roots_near_missed +=
+                            u64::from(root.near_enemy);
+                        if let Some(reward) = self.record_resolved_projectile_miss(
+                            root.shooter_side, root.near_enemy,
+                        ) {
+                            if reward.amount != 0.0 {
+                                emissions.push(reward);
+                                self.damage_measurements.emissions += 1;
+                            }
                         }
                     }
                 }
