@@ -85,13 +85,11 @@ pub fn plan_squad_formation(
     for &member in members {
         if member.ship_id <= 0 ||
             !member.offset_from_center.is_finite() ||
-            member.clearance < 0 ||
-            !unique_ids.insert(member.ship_id) {
-            return Err(if unique_ids.contains(&member.ship_id) {
-                SquadFormationError::DuplicateShip
-            } else {
-                SquadFormationError::InvalidRequest
-            });
+            member.clearance < 0 {
+            return Err(SquadFormationError::InvalidRequest);
+        }
+        if !unique_ids.insert(member.ship_id) {
+            return Err(SquadFormationError::DuplicateShip);
         }
         if member.mobile {
             mobile_members.push(member);
