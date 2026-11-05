@@ -263,7 +263,7 @@ class ExperimentHub {
         this.leaseReceipts = new Map();
         // Native process usage observations are ephemeral, not registry history.
         this.executionTelemetry = new Map();
-        this.progressHistory = new ProgressHistory();
+        this.progressHistory = new ProgressHistory(path.join(root,'hub-chart-v1.json'));
         this.executionOrderCursor = new Map();
         // Native queue automation is an explicitly armed, process-local
         // session. Restarting the coordinator never restores permission to
@@ -1213,6 +1213,7 @@ class ExperimentHub {
             else if(lease.status==='acknowledged')
                 this.leaseReceipts.set(lease.id,received);
         }
+        let changedHistory=false,terminalHistory=false;
         for(const item of reports) {
             if(!acceptedReports.has(item.job_id))continue;
             const progress=acceptedReports.get(item.job_id);
@@ -1223,6 +1224,11 @@ class ExperimentHub {
             // progress visible while fresh native process metrics arrive.
             const progressAccepted=progress&&this.progressHistory.record(
                 job.id,job.project_id,progress,received);
+            if(progressAccepted){
+                changedHistory=true;
+                if(['finished','failed','stopped'].includes(job.status))
+                    terminalHistory=true;
+            }
             this.executionTelemetry.set(item.job_id,{
                 at:new Date(received).toISOString(),state:item.state,
                 memory_current_mb:item.memory_current_mb??null,
@@ -1232,6 +1238,7 @@ class ExperimentHub {
                 progress_issue:item.progress_issue||null,
             });
         }
+        if(changedHistory)this.progressHistory.persist(received,terminalHistory);
         return {machine_id:machine.id,status:'connected',
             heartbeat_ttl_seconds:Math.floor(AGENT_HEARTBEAT_TTL_MS/1000),
             lease_offers:this.state.reservations.filter(x=>
