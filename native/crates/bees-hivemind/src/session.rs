@@ -60,6 +60,7 @@ pub enum HiveMindSessionError {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum HiveMindProtocolErrorCode {
     InvalidRequest,
+    RequestHashExhausted,
     UnknownStrategy,
     StrategyIdentityMismatch,
     BannedStrategy,
@@ -73,6 +74,7 @@ impl From<&HiveMindProtocolError> for HiveMindProtocolErrorCode {
     fn from(value: &HiveMindProtocolError) -> Self {
         match value {
             HiveMindProtocolError::InvalidRequest => Self::InvalidRequest,
+            HiveMindProtocolError::RequestHashExhausted => Self::RequestHashExhausted,
             HiveMindProtocolError::UnknownStrategy => Self::UnknownStrategy,
             HiveMindProtocolError::StrategyIdentityMismatch =>
                 Self::StrategyIdentityMismatch,
