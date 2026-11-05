@@ -12,12 +12,16 @@
 use std::collections::HashMap;
 
 use bees_hivemind::dispatch::{
-    LocalCommandKind, ResolvedHiveMindCommand,
+    resolve_hivemind_command, LocalCommandKind, ResolvedHiveMindCommand,
+    SquadCommandComposition,
 };
 use bees_hivemind::outcomes::{
     FinalizedCommand, OutcomeSettlement,
 };
-use bees_hivemind::protocol::ValidatedTargetingSelection;
+use bees_hivemind::protocol::{
+    HiveMindProtocolError, ValidatedStrategySelection, ValidatedTargetingSelection,
+};
+use bees_hivemind::session::StrategyReceipt;
 use bees_hivemind::session::SquadLifetime;
 use bees_sim::collision::Aabb;
 use bees_sim::combat_world::CombatWorld;
@@ -79,6 +83,30 @@ pub enum GameCommandError {
 
 impl From<SquadOrderError> for GameCommandError {
     fn from(value: SquadOrderError) -> Self { Self::Squad(value) }
+}
+
+/// The only safe outcome of receiving a strategy for a dead/superseded
+/// squad is explicit reservation settlement. The shared HiveMind session
+/// has already checked the request hash and lifecycle identity.
+#[derive(Debug)]
+pub enum StrategyReceiptAction {
+    Applied(Activation),
+    DiscardReservations(Vec<i64>),
+}
+
+#[derive(Debug)]
+pub struct StrategyReceiptFailure {
+    /// Transport/client must retain the original server reservations if
+    /// gameplay execution could not be installed. Do not silently lose
+    /// these OutcomeIds on an error path.
+    pub selection: ValidatedStrategySelection,
+    pub cause: StrategyReceiptFailureCause,
+}
+
+#[derive(Debug)]
+pub enum StrategyReceiptFailureCause {
+    InvalidSquad(GameCommandError),
+    InvalidStrategy(HiveMindProtocolError),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -166,6 +194,61 @@ impl NativeSquadCommandDirector {
 
     pub fn has_active(&self, owner: SquadLifetime) -> bool {
         self.active.contains_key(&owner)
+    }
+
+    /// Connect a validated HiveMindSession response directly to the
+    /// game's squad executor, retaining exact outcome identities on every
+    /// successful, stale and failed path. The server-selected strategy
+    /// remains distinct from its Unity composition-specific command kind.
+    pub fn apply_strategy_receipt(
+        &mut self,
+        world: &mut CombatWorld,
+        navigation: &NavigationRuntime,
+        random: &mut RandomStream,
+        squad: NativeSquadOrder<'_>,
+        settings: HiveMindCommandSettings,
+        receipt: StrategyReceipt,
+    ) -> Result<StrategyReceiptAction, StrategyReceiptFailure> {
+        let (owner, selection) = match receipt {
+            StrategyReceipt::Retired { reservation_ids, .. } =>
+                return Ok(StrategyReceiptAction::DiscardReservations(
+                    reservation_ids,
+                )),
+            StrategyReceipt::Accepted { owner, selection, .. } =>
+                (owner, selection),
+        };
+        if owner != squad.owner || !squad.valid() {
+            return Ok(StrategyReceiptAction::DiscardReservations(vec![
+                selection.command_outcome_id,
+                selection.shooting_outcome_id,
+            ]));
+        }
+        let mut ship_types = Vec::with_capacity(squad.members.len());
+        for member in squad.members {
+            let Some(ship) = world.ships().iter()
+                .find(|ship| ship.entity_id == member.ship_id) else {
+                return Err(StrategyReceiptFailure {
+                    selection,
+                    cause: StrategyReceiptFailureCause::InvalidSquad(
+                        GameCommandError::Squad(SquadOrderError::MissingShip),
+                    ),
+                });
+            };
+            ship_types.push(i32::from(ship.ship_type));
+        }
+        let composition = SquadCommandComposition::from_unity_ship_types(ship_types);
+        let resolved = resolve_hivemind_command(&selection, composition)
+            .map_err(|cause| StrategyReceiptFailure {
+                selection: selection.clone(),
+                cause: StrategyReceiptFailureCause::InvalidStrategy(cause),
+            })?;
+        self.activate_hivemind(
+            world, navigation, random, squad, settings, resolved,
+        ).map(StrategyReceiptAction::Applied)
+            .map_err(|cause| StrategyReceiptFailure {
+                selection,
+                cause: StrategyReceiptFailureCause::InvalidSquad(cause),
+            })
     }
 
     pub fn activate_hivemind(
