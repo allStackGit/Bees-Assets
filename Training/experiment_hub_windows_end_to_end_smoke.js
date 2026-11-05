@@ -43,9 +43,12 @@ async function main(argv=process.argv.slice(2),env=process.env) {
         }},
     };
     let server=null,clean=false,jobId=null;
+    const began=Date.now(),durations={};
     try {
         const supervisor=new WindowsSupervisor(localOptions);
+        const preflightBegan=Date.now();
         await supervisor.qualify();
+        durations.preflight_ms=Date.now()-preflightBegan;
         assert(supervisor.qualifiedAt,'Windows resource preflight must pass.');
         const executor=new LocalExecution({
             machineId:'smoke',supervisor,projects:['smoke'],
@@ -103,8 +106,10 @@ async function main(argv=process.argv.slice(2),env=process.env) {
         const startResponse=await send(receipts);
         assert.equal(startResponse.execution_orders?.length,1);
         assert.equal(startResponse.execution_orders[0].action,'start');
+        const launchBegan=Date.now();
         const runningReport=await executor.handle(
             startResponse.execution_orders[0]);
+        durations.native_start_ms=Date.now()-launchBegan;
         assert(['running','finished'].includes(runningReport.state),
             'Only verified native running or completed work is accepted.');
         const runningAck=await send(receipts,[runningReport]);
@@ -112,6 +117,7 @@ async function main(argv=process.argv.slice(2),env=process.env) {
         console.log('PASS: authenticated worker accepted lease and dispatched');
         console.log('      exactly one locally verified native Windows Start.');
 
+        const shutdownBegan=Date.now();
         if(runningReport.state==='running') {
             hub.authorizeStop({job_id:job.id,confirm_stop:true});
             const stopResponse=await send(receipts);
@@ -136,6 +142,7 @@ async function main(argv=process.argv.slice(2),env=process.env) {
                 throw Error('Windows job did not report a verified terminal state.');
         }
         await waitForSignedTerminal(localRoot,job.id,localOptions);
+        durations.shutdown_receipt_ms=Date.now()-shutdownBegan;
         assert(terminal(hub.snapshot().jobs[0].status),
             'Hub did not persist the final authenticated native report.');
         const leaseId=hub.state.jobs[0].lease_id;
@@ -148,6 +155,8 @@ async function main(argv=process.argv.slice(2),env=process.env) {
         clean=true;
         console.log('PASS: authenticated Stop/terminal receipt, explicit');
         console.log('      capacity release and coordinator restart.');
+        durations.total_ms=Date.now()-began;
+        console.log('Qualification timings: '+JSON.stringify(durations));
         console.log('No Bees or Ants training was started.');
     }catch(error) {
         console.error('Isolated Windows lifecycle not qualified: '+
