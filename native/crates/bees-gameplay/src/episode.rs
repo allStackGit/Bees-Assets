@@ -36,6 +36,9 @@ pub enum NativeEpisodeRewardError {
     Discovery(DiscoveryError),
     DiscoveryNotConfigured,
     AlreadyComplete,
+    /// An earlier source or metadata error may have partially consumed a
+    /// tick's reward events. Only a fresh episode can resume safely.
+    FailedEpisode,
 }
 
 impl From<EpisodeTerminalError> for NativeEpisodeRewardError {
@@ -97,6 +100,7 @@ pub struct NativeEpisodeRewardCoordinator {
     shaping: EpisodeShaping,
     economy: EpisodeEconomicLedger,
     discovery: Option<EpisodeDiscoveryLedger>,
+    failed: bool,
     damage_emissions: Vec<RewardEmission>,
     economic_emissions: Vec<RewardEmission>,
     merged_emissions: Vec<RewardEmission>,
@@ -128,6 +132,7 @@ impl NativeEpisodeRewardCoordinator {
             bee_starting_tsv, human_starting_tsv,
             terminal, attribution, shaping, economy,
             discovery: None,
+            failed: false,
             damage_emissions: Vec::new(),
             economic_emissions: Vec::new(),
             merged_emissions: Vec::new(),
@@ -150,6 +155,10 @@ impl NativeEpisodeRewardCoordinator {
         self.terminal.result()
     }
 
+    pub fn is_failed(&self) -> bool {
+        self.failed
+    }
+
     /// Capture exact source initial discovery totals before any first
     /// sightings can receive reward. Category order is enemy ships,
     /// mining asteroids, static obstacles, map objects. Dynamic collision
@@ -157,6 +166,9 @@ impl NativeEpisodeRewardCoordinator {
     pub fn configure_discovery(
         &mut self, baselines: [[i32; 4]; 2],
     ) -> Result<(), NativeEpisodeRewardError> {
+        if self.failed {
+            return Err(NativeEpisodeRewardError::FailedEpisode);
+        }
         if self.terminal.result().is_some() || self.discovery.is_some() {
             return Err(NativeEpisodeRewardError::AlreadyComplete);
         }
@@ -177,11 +189,22 @@ impl NativeEpisodeRewardCoordinator {
         if self.terminal.result().is_some() {
             return Err(NativeEpisodeRewardError::AlreadyComplete);
         }
-        let ledger = self.discovery.as_mut()
-            .ok_or(NativeEpisodeRewardError::DiscoveryNotConfigured)?;
-        Ok(ledger.first_sighting(
+        if self.failed {
+            return Err(NativeEpisodeRewardError::FailedEpisode);
+        }
+        let Some(ledger) = self.discovery.as_mut() else {
+            self.failed = true;
+            return Err(NativeEpisodeRewardError::DiscoveryNotConfigured);
+        };
+        match ledger.first_sighting(
             &mut self.shaping, side, kind, entity_id, authored_value,
-        )?)
+        ) {
+            Ok(emission) => Ok(emission),
+            Err(err) => {
+                self.failed = true;
+                Err(err.into())
+            }
+        }
     }
 
     /// Source RecordResolvedProjectileMiss: exactly one completed root
@@ -191,6 +214,9 @@ impl NativeEpisodeRewardCoordinator {
     ) -> Result<Option<RewardEmission>, NativeEpisodeRewardError> {
         if self.terminal.result().is_some() {
             return Err(NativeEpisodeRewardError::AlreadyComplete);
+        }
+        if self.failed {
+            return Err(NativeEpisodeRewardError::FailedEpisode);
         }
         Ok(self.shaping.record_resolved_projectile_miss(shooter_side, near))
     }
@@ -207,10 +233,18 @@ impl NativeEpisodeRewardCoordinator {
         if self.terminal.result().is_some() {
             return Err(NativeEpisodeRewardError::AlreadyComplete);
         }
-        self.economy.update_mined_value(
+        if self.failed {
+            return Err(NativeEpisodeRewardError::FailedEpisode);
+        }
+        match self.economy.update_mined_value(
             world, ship_id, fleet_ship_mined_tsv,
-        )?;
-        Ok(())
+        ) {
+            Ok(()) => Ok(()),
+            Err(error) => {
+                self.failed = true;
+                Err(error.into())
+            }
+        }
     }
 
     /// Called after the native Level processes the current CombatWorld
@@ -229,6 +263,33 @@ impl NativeEpisodeRewardCoordinator {
         damage_metadata: impl FnMut(i64) -> Option<DamageRewardMetadata>,
         current_mined_tsv: impl FnMut(i64) -> Option<i32>,
     ) -> Result<NativeTickReward<'_>, NativeEpisodeRewardError> {
+        if self.failed {
+            return Err(NativeEpisodeRewardError::FailedEpisode);
+        }
+        let finalized = match self.consume_combat_tick_inner(
+            world, dt_seconds, squad_changes,
+            damage_metadata, current_mined_tsv,
+        ) {
+            Ok(finalized) => finalized,
+            Err(error) => {
+                self.failed = true;
+                return Err(error);
+            }
+        };
+        Ok(NativeTickReward {
+            emissions: &self.merged_emissions,
+            finalized,
+        })
+    }
+
+    fn consume_combat_tick_inner(
+        &mut self,
+        world: &mut CombatWorld,
+        dt_seconds: f32,
+        squad_changes: &[SquadRosterChange],
+        damage_metadata: impl FnMut(i64) -> Option<DamageRewardMetadata>,
+        current_mined_tsv: impl FnMut(i64) -> Option<i32>,
+    ) -> Result<Option<NativeEpisodeFinal>, NativeEpisodeRewardError> {
         if self.terminal.result().is_some() {
             return Err(NativeEpisodeRewardError::AlreadyComplete);
         }
@@ -270,9 +331,6 @@ impl NativeEpisodeRewardCoordinator {
         } else {
             None
         };
-        Ok(NativeTickReward {
-            emissions: &self.merged_emissions,
-            finalized,
-        })
+        Ok(finalized)
     }
 }
