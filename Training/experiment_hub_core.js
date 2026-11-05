@@ -484,7 +484,9 @@ class ExperimentHub {
             machine.native_preflight_passed!==true||
             !machine.installed_projects?.includes(job.project_id)||
             job.resources.gpu_mode!=='exclusive'||
-            job.resources.gpu_count!==1||job.resources.gpus?.length!==1||
+            job.resources.gpu_count!==1||
+            (job.resources.gpus?.length>0&&
+                job.resources.gpus[0]!==lease?.resources.gpus?.[0])||
             lease.resources.gpu_mode!=='exclusive'||
             lease.resources.gpu_count!==1||lease.resources.gpus?.length!==1||
             physicalGpuBindings(machine,{
