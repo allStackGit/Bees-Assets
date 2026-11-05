@@ -279,7 +279,16 @@ CPU/RAM budget for an unassigned non-Bees job. Jobs completed under
 older/manual sessions require explicit capacity release. A machine cannot
 receive a second automatic Start authorization while another Start is
 awaiting its native running/terminal acknowledgement. Project queues are
-interleaved fairly (FIFO within each project). An agent must first
+interleaved fairly (FIFO within each project). Because automation makes
+only one transition per tick, its CPU/RAM claim and native Start passes
+retain **separate per-session round-robin project cursors**. A
+continuously ready earlier project therefore cannot take every
+successive allocation or Start ahead of another ready project. The
+cursors are ephemeral, reset on disarm or coordinator restart, and
+never override capacity, preflight, machine affinity, or pending-Start
+safety gates. The manual allocation pass and read-only queue preview
+keep their stable per-project interleave rather than guessing what a
+future armed scheduler session will choose. An agent must first
 acknowledge each fresh claim. Jobs requesting any GPU remain outside
 this automation; existing Bees training remains under its own operator.
 
