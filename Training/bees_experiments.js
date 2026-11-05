@@ -266,6 +266,7 @@ function targetCheckpointEvidence(item,checkpoint,target,plan) {
     if(!evaluation||evaluation.status!=='completed')
         throw Error('Benchmark target needs a completed frozen checkpoint evaluation.');
     const candidate=evaluation.candidate;
+    const reportHashes={};
     const reports=plan.scenarios.map((scenario,i)=>{
         const name=evaluation.reports?.[scenario.id];
         if(typeof name!=='string'||
@@ -274,7 +275,12 @@ function targetCheckpointEvidence(item,checkpoint,target,plan) {
         const identity=stageEvaluationKey(item,checkpoint.stage_index,
             scenario,i,candidate,plan,checkpoint.target_step,'development');
         const file=path.join(BENCHMARK_REPORTS,name);
-        const report=readJson(file);
+        // Score and SHA-256 must describe the exact same immutable bytes.
+        // One read also avoids hashing each report twice per verification.
+        const bytes=fs.readFileSync(file);
+        const report=JSON.parse(bytes.toString('utf8'));
+        reportHashes[scenario.id]=crypto.createHash('sha256')
+            .update(bytes).digest('hex');
         if(!stageReportMatches(report,item,checkpoint.stage_index,
             scenario,candidate,plan,identity,'development'))
             throw Error('Benchmark target report provenance changed.');
@@ -289,13 +295,7 @@ function targetCheckpointEvidence(item,checkpoint,target,plan) {
             throw Error('Benchmark target report settings differ from frozen recipe.');
         return {id:scenario.id,expected_matches:recipe.matches,report};
     });
-    return {
-        ...scoreTarget(target,reports),
-        report_sha256:Object.fromEntries(plan.scenarios.map(scenario=>[
-            scenario.id,hashFile(path.join(BENCHMARK_REPORTS,
-                evaluation.reports[scenario.id])),
-        ])),
-    };
+    return {...scoreTarget(target,reports),report_sha256:reportHashes};
 }
 
 function priorCheckpoint(item,ordinal) {
