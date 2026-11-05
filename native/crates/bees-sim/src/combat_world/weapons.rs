@@ -257,6 +257,25 @@ impl CombatWorld {
         Ok(())
     }
 
+    /// Read the same active charging state used by gameplay. A renderer
+    /// can animate the real Leafcutter/flagship charge without owning a
+    /// second timer; a headless runner reads precisely the same state.
+    /// Returns (elapsed_seconds, Fire animation event time).
+    pub fn policy_weapon_charge(
+        &self, ship_id: i64, slot: usize,
+    ) -> Result<Option<(f32, f32)>, CombatWorldError> {
+        if slot >= 5 {
+            return Err(CombatWorldError::InvalidPolicyTurret);
+        }
+        let runtime = self.policy_ship_runtime.get(&ship_id)
+            .ok_or(CombatWorldError::UnknownShip)?;
+        Ok(runtime.turrets[slot].as_ref().and_then(|mount| {
+            mount.charge_elapsed_seconds.and_then(|elapsed|
+                mount.spec.fire_pattern.fire_event_seconds()
+                    .map(|event| (elapsed, event)))
+        }))
+    }
+
     pub fn policy_self_weapons(
         &self, ship_id: i64,
     ) -> Result<[Option<SelfWeapon>; 5], CombatWorldError> {
@@ -562,8 +581,9 @@ mod tests {
             world.advance_policy_turrets(0.02).unwrap();
         }
         assert_eq!(world.projectile_storage_metrics().active_projectiles, 0);
-        assert!(world.policy_ship_runtime.get(&1).unwrap()
-            .turrets[0].as_ref().unwrap().charge_elapsed_seconds.is_some());
+        let (elapsed, event) = world.policy_weapon_charge(1, 0).unwrap().unwrap();
+        assert!(elapsed > 0.0 && elapsed < event);
+        assert_eq!(event, 0.8);
         for _ in 0..30 {
             world.advance_policy_turrets(0.02).unwrap();
         }
@@ -615,8 +635,9 @@ mod tests {
             world.advance_policy_turrets(0.02).unwrap();
         }
         assert_eq!(world.projectile_storage_metrics().active_projectiles, 0);
-        assert!(world.policy_ship_runtime.get(&1).unwrap()
-            .turrets[0].as_ref().unwrap().charge_elapsed_seconds.is_some());
+        let (elapsed, event) = world.policy_weapon_charge(1, 0).unwrap().unwrap();
+        assert!(elapsed < event);
+        assert_eq!(event, 2.75);
 
         // The Unity animation event retains the queued shot even after
         // a subsequent policy decision drops fire_requested.
