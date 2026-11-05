@@ -2132,15 +2132,18 @@ const server = http.createServer(async (req, res) => {
         }
         if(req.method==='GET'&&route.startsWith('/api/hub/')&&
             !route.startsWith('/api/hub/bees/')) {
+            // Only the full state endpoint needs Bees history. Keep planning
+            // and monitor polling independent of its potentially large queue.
+            const bees=route==='/api/hub/state'?{
+                active_id:state.active_id,
+                queue_armed:state.armed,
+                runs:state.items.map(x=>({
+                    id:x.id,name:x.name,status:x.status,
+                    run_id:x.run_id,step:x.step,group:x.group,
+                })),
+            }:null;
             const result=hubAdminRoute(requireHub(),'GET',route,
-                url.searchParams,null,{
-                    active_id:state.active_id,
-                    queue_armed:state.armed,
-                    runs:state.items.map(x=>({
-                        id:x.id,name:x.name,status:x.status,
-                        run_id:x.run_id,step:x.step,group:x.group,
-                    })),
-                });
+                url.searchParams,null,bees);
             if(result)return json(res,result.status,result.data);
         }
         if (req.method === 'GET' && route === '/api/hub/bees/workers') {
