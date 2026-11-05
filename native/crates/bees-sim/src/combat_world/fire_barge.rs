@@ -213,4 +213,87 @@ mod tests {
         assert!(saw_hit);
         assert_eq!(world.state.ship(2).unwrap().vitals.health(), 65);
     }
+
+
+    #[test]
+    fn non_policy_fire_barge_hit_by_enemy_launches_authored_death_explosion() {
+        let projectiles = Arc::new(ProjectileAssetCatalog::embedded().unwrap());
+        let hulls = ShipAssetCatalog::embedded().unwrap();
+        let mut world = CombatWorld::new(Aabb {
+            min: Vec2::new(-100.0, -100.0),
+            max: Vec2::new(100.0, 100.0),
+        }, 8.0, projectiles.clone()).unwrap();
+        // Ship 1 has no policy controller. Its death must still execute
+        // the same FireBarge.Kill mechanics as a policy-controlled unit.
+        for (id, kind, side, pos, hp) in [
+            (1, 10, 1, Vec2::ZERO, 20),
+            (2, 21, 2, Vec2::new(20.0, 0.0), 100),
+            (3, 21, 1, Vec2::new(12.0, 0.0), 100),
+        ] {
+            world.spawn_ship(
+                hulls.by_type(kind).unwrap(), id, side,
+                ShipVitals::new(hp, 100, 1000, 0).unwrap(),
+                ShipMotion::new(pos, 0.0, 0.0, 0.0, 3.0),
+            ).unwrap();
+        }
+        world.set_ship_fleet_identity(1, 1001).unwrap();
+        world.configure_fire_barge_bomb(1, 40).unwrap();
+
+        let hit_asset = projectiles.by_type(2).unwrap();
+        world.spawn_projectile(
+            hit_asset, 20,
+            ShotOwner {
+                shooter_id: 2, shooter_side: 2,
+                shooter_is_fire_barge: false, self_detonation: false,
+            },
+            25, ProjectileMotion::new(Vec2::ZERO, 0.0, 0.0, 50.0, 20, 9),
+            0.0,
+        ).unwrap();
+        let explosion_asset = projectiles.by_type(14).unwrap();
+        let mut rows = [0u32; 32];
+        rows[usize::from(hit_asset.collision_layer)] |=
+            1u32 << world.physics.ships()[0].layer;
+        rows[usize::from(explosion_asset.collision_layer)] |=
+            1u32 << world.physics.ships()[1].layer;
+        let matrix = CollisionMatrix::from_rows(rows);
+
+        // First tick generates the contact, next tick resolves the hit.
+        world.step_fixed(0.02, &matrix).unwrap();
+        world.step_fixed(0.02, &matrix).unwrap();
+        assert_eq!(world.ship(1).unwrap().vitals.health(), 0);
+        let shot = world.events().iter().find_map(|event| match event {
+            CombatEvent::FireBargeDetonated { ship_id: 1, projectile_id } =>
+                Some(*projectile_id),
+            _ => None,
+        }).expect("ordinary Fire Barge death creates a real explosion");
+        assert!(world.events().iter().any(|event| matches!(
+            event, CombatEvent::ShipDied {
+                victim_id: 1, killer_id: 2, command_outcome_id: 9,
+            }
+        )));
+        let index = *world.projectile_by_id.get(&shot).unwrap();
+        assert_eq!(world.projectiles()[index].projectile_type, 14);
+        assert!(!world.projectiles()[index].owner.self_detonation);
+        assert_eq!(world.policy_special_measurements().fire_barge_detonations, 0);
+        assert_eq!(world.policy_special_measurements().fire_barge_death_explosions, 1);
+
+        let mut enemy_hit = false;
+        let mut friendly_hit = false;
+        for _ in 0..110 {
+            world.step_fixed(0.02, &matrix).unwrap();
+            for event in world.events() {
+                if let CombatEvent::Hit(hit) = event {
+                    if hit.projectile_id == shot &&
+                        hit.source == DamageSource::DeathExplosion {
+                        enemy_hit |= hit.target_id == 2;
+                        friendly_hit |= hit.target_id == 3;
+                    }
+                }
+            }
+        }
+        assert!(enemy_hit && friendly_hit);
+        assert_eq!(world.ship(2).unwrap().vitals.health(), 60);
+        assert_eq!(world.ship(3).unwrap().vitals.health(), 60);
+        assert_eq!(world.policy_special_measurements().fire_barge_death_explosions, 1);
+    }
 }
