@@ -414,7 +414,9 @@ slow shutdown from monopolizing observations of unrelated jobs. The
 manager records `running`, `finished`, `failed`, `stopped`, or
 `unverified` status from the authenticated machine and exposes
 current memory use, CPU time and task count without per-poll history
-duplication.
+duplication. Only lifecycle reports accepted by the coordinator update live
+telemetry or Ants comparison samples; late state regressions and duplicate
+terminal reports cannot overwrite a completed job's last valid metrics.
 
 If the coordinator commits a terminal native report but its HTTP response
 is lost, the agent retries that same report. An operator may have already
