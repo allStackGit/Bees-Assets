@@ -572,8 +572,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     :'Observation only'+(capability?.cgroup_v2_detected
                         ?' · Linux cgroup v2 detected':'')
                 :'Offline or not verified');
-            control.title=m.native_preflight_reason||
-                capability?.reason||'No authenticated native capability report.';
+            control.title=m.native_preflight_passed
+                ?'Authenticated local native preflight passed; verify limits for each launched job. GPU not isolated.'
+                :m.native_preflight_reason||
+                    capability?.reason||'No authenticated native capability report.';
             cell(tr,m.last_seen_at?.replace('T',' ').slice(0,19)||'—');
             const actions=cell(tr,'');
             actions.append(button(m.agent_enrolled?'Rotate':'Enroll',async()=>{
