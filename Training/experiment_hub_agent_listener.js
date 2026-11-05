@@ -1,0 +1,61 @@
+'use strict';
+
+// Restricted, worker-only loopback listener shared by the Bees coordinator
+// and isolated Hub transport qualification. The caller binds to loopback;
+// neither project administration nor Bees training routes are available here.
+const http=require('node:http');
+const AGENT_HOST='127.0.0.1';
+const AGENT_PORT=7149;
+const MAX_BODY_BYTES=32768;
+
+function respond(res,status,value) {
+    const payload=JSON.stringify(value);
+    res.writeHead(status,{
+        'Content-Type':'application/json; charset=utf-8',
+        'Content-Length':Buffer.byteLength(payload),
+        'Cache-Control':'no-store',
+        'X-Content-Type-Options':'nosniff',
+    });
+    res.end(payload);
+}
+
+async function readBody(req) {
+    if(!String(req.headers['content-type']||'')
+        .startsWith('application/json'))
+        throw Error('JSON requests only.');
+    let raw='',received=0;
+    for await(const chunk of req) {
+        received+=chunk.length;
+        if(received>MAX_BODY_BYTES)
+            throw Error('JSON request exceeds allowed byte limit.');
+        raw+=chunk.toString('utf8');
+    }
+    return JSON.parse(raw||'{}');
+}
+
+function createAgentServer(getHub) {
+    if(typeof getHub!=='function')
+        throw Error('Agent endpoint requires a local Hub provider.');
+    return http.createServer(async(req,res)=>{
+        const host=req.headers.host;
+        if(req.method!=='POST'||
+            req.url!=='/api/hub/agent/heartbeat'||
+            (host!==AGENT_HOST+':'+AGENT_PORT&&
+                host!=='localhost:'+AGENT_PORT)||
+            req.headers.origin)
+            return respond(res,404,{error:'Agent endpoint only.'});
+        try {
+            const size=Number(req.headers['content-length']||0);
+            if(!Number.isFinite(size)||size<0||size>MAX_BODY_BYTES)
+                return respond(res,413,{error:'Agent request too large.'});
+            const value=await readBody(req);
+            return respond(res,200,getHub().heartbeat(value,
+                req.headers['x-hub-agent-token']));
+        }catch(error) {
+            return respond(res,error.status===401?401:400,{
+                error:String(error.message||error),
+            });
+        }
+    });
+}
+module.exports={createAgentServer,AGENT_HOST,AGENT_PORT};
