@@ -6,7 +6,7 @@
 //! physics for Unity's behavior.
 
 use std::num::{NonZeroU32, NonZeroUsize};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use crate::policy::Decision;
 use crate::telemetry::{Measurements, StepCounts};
@@ -133,6 +133,18 @@ pub struct ParallelWindow<E> {
     pub measurements: Measurements,
     pub failed_worlds: Vec<StepError<E>>,
     pub skipped_failed_worlds: usize,
+    /// Actual host wall elapsed, including worker startup and decision
+    /// generation. Unlike summed per-step timings, this measures observed
+    /// multi-core throughput for this specific window.
+    pub wall_elapsed: Duration,
+}
+
+impl<E> ParallelWindow<E> {
+    pub fn steps_per_second(&self) -> Option<f64> {
+        let seconds = self.wall_elapsed.as_secs_f64();
+        if seconds == 0.0 { return None; }
+        Some(self.measurements.ticks as f64 / seconds)
+    }
 }
 
 impl<E> Default for ParallelWindow<E> {
@@ -141,6 +153,7 @@ impl<E> Default for ParallelWindow<E> {
             measurements: Measurements::default(),
             failed_worlds: Vec::new(),
             skipped_failed_worlds: 0,
+            wall_elapsed: Duration::ZERO,
         }
     }
 }
@@ -244,8 +257,10 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
         R::Error: Send,
         F: Fn(&World<S>, &mut Vec<Decision>) + Sync,
     {
+        let started = Instant::now();
         let mut result = ParallelWindow::default();
         if self.worlds.is_empty() {
+            result.wall_elapsed = started.elapsed();
             return result;
         }
 
@@ -258,31 +273,53 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
         if workers == 1 {
             let part = run_partition(rules, dt, sample, &mut self.worlds, steps, decide);
             self.measurements.merge(&part.measurements);
+            let mut part = part;
+            part.wall_elapsed = started.elapsed();
             return part;
         }
 
-        // Consecutive world ranges preserve stable aggregation order.
-        // World's mutable storage remains owned by its scoped worker.
-        let chunk_size = self.worlds.len() / workers +
-            usize::from(self.worlds.len() % workers != 0);
-        let worlds = &mut self.worlds;
-        std::thread::scope(|scope| {
+        // Exactly `workers` consecutive ranges, balanced within one
+        // arena. Chunks keep full ownership of each world and its RNG.
+        let base = self.worlds.len() / workers;
+        let extras = self.worlds.len() % workers;
+        let outcomes = std::thread::scope(|scope| {
+            let mut remaining = self.worlds.as_mut_slice();
             let mut handles = Vec::with_capacity(workers);
-            for chunk in worlds.chunks_mut(chunk_size) {
+            for index in 0..workers {
+                let size = base + usize::from(index < extras);
+                let (chunk, rest) = remaining.split_at_mut(size);
+                remaining = rest;
                 handles.push(scope.spawn(move || {
                     run_partition(rules, dt, sample, chunk, steps, decide)
                 }));
             }
-            for handle in handles {
-                // A worker panic aborts this window rather than pretending
-                // its potentially partially updated worlds are still usable.
-                let part = handle.join().expect("native world worker panicked");
-                self.measurements.merge(&part.measurements);
-                result.measurements.merge(&part.measurements);
-                result.skipped_failed_worlds += part.skipped_failed_worlds;
-                result.failed_worlds.extend(part.failed_worlds);
-            }
+            // Join in world-index order, independent of thread scheduling.
+            handles.into_iter().map(|handle| handle.join())
+                .collect::<Vec<_>>()
         });
+
+        let mut panicked = false;
+        for outcome in outcomes {
+            match outcome {
+                Ok(part) => {
+                    self.measurements.merge(&part.measurements);
+                    result.measurements.merge(&part.measurements);
+                    result.skipped_failed_worlds += part.skipped_failed_worlds;
+                    result.failed_worlds.extend(part.failed_worlds);
+                }
+                Err(_) => panicked = true,
+            }
+        }
+        if panicked {
+            // A panicking policy or rules callback may have partially
+            // mutated its world. Invalidate the whole window. Never let a
+            // caught panic cause a silent continuation from corrupt state.
+            for world in &mut self.worlds {
+                world.failed = true;
+            }
+            panic!("native world rollout worker panicked");
+        }
+        result.wall_elapsed = started.elapsed();
         result
     }
 }
