@@ -218,6 +218,19 @@ pub enum CombatEvent {
         damage: MapObjectDamage,
     },
     MapObjectDestroyed { object_id: i64, projectile_id: i64 },
+    /// CanisterBomb.Kill spawns a separate type-15 RocketExplosion,
+    /// attributed to the incoming projectile's original shooter/shot.
+    FireTankExploded {
+        object_id: i64,
+        triggering_projectile_id: i64,
+        explosion_projectile_id: i64,
+    },
+    /// The linked obstacle is removed from gameplay; the render client
+    /// may spawn the authored cosmetic debris without affecting RL RNG.
+    FireTankObstacleBrokenApart {
+        object_id: i64,
+        obstacle_id: i64,
+    },
     AsteroidDamaged {
         projectile_id: i64,
         obstacle_id: i64,
