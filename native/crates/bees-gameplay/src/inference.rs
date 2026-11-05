@@ -16,9 +16,10 @@ use bees_sim::full_perception::{
 };
 use bees_sim::policy::Decision;
 use bees_sim::policy_batch::{
-    PolicyActionMask, PolicyAgentKey, PolicyBatch, PolicyBatchError,
-    PolicyBatchFootprint,
+    PocaActivityBatchError, PolicyActionMask, PolicyAgentKey, PolicyBatch,
+    PolicyBatchError, PolicyBatchFootprint,
 };
+use bees_sim::ppo_activity::PolicyDimensionActivity;
 use bees_sim::simulation::{World, WorldId};
 
 use crate::level_rules::NativeLevelState;
@@ -76,6 +77,12 @@ pub trait NativePolicyInference {
         continuous: &mut [f32],
         discrete: &mut [u8],
     ) -> Result<(), Self::Error>;
+}
+
+#[derive(Debug)]
+pub enum NativePocaExportError {
+    Boundary(NativeInferenceError),
+    Activity(PocaActivityBatchError),
 }
 
 #[derive(Debug)]
@@ -312,6 +319,30 @@ impl NativeLevelInferenceBatch {
             return Err(NativeInferenceRunError::Backend(error));
         }
         self.finalize().map_err(NativeInferenceRunError::Boundary)
+    }
+
+    /// Export the complete source-defined PPO action activity weights
+    /// after one inference batch has been validated. The caller supplies
+    /// the actual POCA live-groupmate count for each action row, including
+    /// zero for a truly isolated agent. No implicit group or fabricated
+    /// critic estimate is created by this method.
+    pub fn poca_dimension_activity(
+        &self,
+        groupmate_counts: &[u32],
+        output: &mut Vec<PolicyDimensionActivity>,
+    ) -> Result<(), NativePocaExportError> {
+        if self.failed {
+            return Err(NativePocaExportError::Boundary(
+                NativeInferenceError::FailedBatch,
+            ));
+        }
+        if !self.finalized {
+            return Err(NativePocaExportError::Boundary(
+                NativeInferenceError::NotFinalized,
+            ));
+        }
+        self.batch.poca_dimension_activity(groupmate_counts, output)
+            .map_err(NativePocaExportError::Activity)
     }
 
     /// Dispatch only this world's indexed rows. Check all keys against
