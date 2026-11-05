@@ -533,6 +533,9 @@ pub struct CombatWorld {
     policy_ship_runtime: BTreeMap<i64, PolicyShipRuntime>,
     policy_decision_seen: HashSet<u64>,
     policy_pending_shots: Vec<PendingPolicyShot>,
+    /// Validated ship specials are committed inside the gameplay step,
+    /// after event clearing and before physics, in stable ship-ID order.
+    policy_pending_striker_specials: Vec<i64>,
     pending_game_point_orders: HashMap<i64, GamePointOrder>,
     latest_game_point_orders: HashMap<i64, GamePointOrder>,
     ship_collision_profiles: HashMap<i64, ShipCollisionProfile>,
@@ -601,6 +604,7 @@ impl CombatWorld {
             policy_ship_runtime: BTreeMap::new(),
             policy_decision_seen: HashSet::new(),
             policy_pending_shots: Vec::new(),
+            policy_pending_striker_specials: Vec::new(),
             pending_game_point_orders: HashMap::new(),
             latest_game_point_orders: HashMap::new(),
             ship_collision_profiles: HashMap::new(),
@@ -2741,6 +2745,7 @@ impl CombatWorld {
                 ..StepCounts::default()
             });
         }
+        self.apply_pending_policy_striker_specials()?;
         self.advance_asteroid_deaths(dt);
         self.advance_asteroid_pieces(dt);
         // Swap buffers instead of allocating a queue for every frame.
