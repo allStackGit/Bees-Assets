@@ -4,12 +4,15 @@
 //! External Level-only values (authored weapon stats, static occupancy,
 //! mining, exploration and campaign data) MUST be provided, never guessed.
 
+use std::collections::HashMap;
+
 use bees_sim::collision::Aabb;
 use bees_sim::combat_perception_bridge::{
     AuthoredShipPerception, CombatPerceptionError,
     ControlledShipPerception, LiveShipCandidateCollector,
     observed_ship_from_world, self_source_from_world,
-    capability_source_from_world,
+    capability_source_from_world, collect_learned_map_objects,
+    collect_learned_collision_asteroids,
 };
 use bees_sim::combat_world::CombatWorld;
 use bees_sim::episode_ship_identity::EpisodeShipIdentities;
@@ -20,7 +23,9 @@ use bees_sim::perception_environment::{
     CollisionAsteroid, MapObject, MiningAsteroid,
 };
 use bees_sim::perception_weapons::SelfWeapon;
-use bees_sim::simulation::RandomStream;
+use bees_sim::simulation::{RandomStream, World, WorldId};
+
+use crate::level_rules::NativeLevelState;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NativeWorldPerceptionError {
@@ -48,20 +53,40 @@ pub struct NativeLevelPerceptionInputs<'a> {
     pub parent_carrier_id: Option<i64>,
     pub own_weapons: &'a [Option<SelfWeapon>; 5],
     pub visible_mining: &'a [MiningAsteroid],
-    pub visible_map_objects: &'a [MapObject],
-    pub visible_collision_asteroids: &'a [CollisionAsteroid],
+    // Learned map objects and collision asteroids are projected from
+    // CombatWorld's discovery and physical obstacle registries, not
+    // supplied by an external observation-only collection.
     pub navigation_world_grid: &'a [f32; NAV_LEN],
     pub exploration_last_seen: Option<&'a [f32; EXPLORATION_LEN]>,
 }
 
-/// Construct ONE assembler per world and episode. All candidate and
-/// output vectors are reused across agents and ticks. Identity
-/// permutation state is per-episode, not shared across environments.
+/// The actual world identity, episode and fixed tick associated with a
+/// shared side's learned environment snapshot.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct EnvironmentEpoch {
+    world: WorldId,
+    episode: u64,
+    tick: u64,
+}
+
+#[derive(Default)]
+struct SideEnvironment {
+    epoch: Option<EnvironmentEpoch>,
+    objects: Vec<MapObject>,
+    asteroids: Vec<CollisionAsteroid>,
+}
+
+/// Construct ONE assembler per world and episode. Identity and candidate
+/// scratch belong to that world. Environment registries are cached only
+/// for the same world+episode+tick and the same observing side, reducing
+/// dense-battle cost from every agent scanning all map obstacles to one
+/// scan per side and fixed-step decision boundary.
 pub struct NativeWorldPerceptionAssembler {
     identities: EpisodeShipIdentities,
     candidates: LiveShipCandidateCollector,
     allies: Vec<ObservedShip>,
     enemies: Vec<ObservedShip>,
+    environment_by_side: HashMap<i32, SideEnvironment>,
 }
 
 impl NativeWorldPerceptionAssembler {
@@ -71,6 +96,7 @@ impl NativeWorldPerceptionAssembler {
             candidates: LiveShipCandidateCollector::new(),
             allies: Vec::new(),
             enemies: Vec::new(),
+            environment_by_side: HashMap::new(),
         }
     }
 
@@ -83,10 +109,24 @@ impl NativeWorldPerceptionAssembler {
         self.identities.reset(random);
         self.allies.clear();
         self.enemies.clear();
+        // Retain storage for recurring episode resets but never reuse
+        // old discovery data under a new identity permutation.
+        for environment in self.environment_by_side.values_mut() {
+            environment.epoch = None;
+        }
     }
 
     pub fn assigned_identity_count(&self) -> usize {
         self.identities.assigned_count()
+    }
+
+    /// Call when a source Level changes its discovery or obstacle
+    /// registry between inference boundaries without a fixed step.
+    /// Normal fixed-step changes invalidate automatically via tick.
+    pub fn invalidate_environment(&mut self) {
+        for environment in self.environment_by_side.values_mut() {
+            environment.epoch = None;
+        }
     }
 
     /// Observer FIRST, optional parent carrier SECOND, then source-sorted
@@ -94,13 +134,14 @@ impl NativeWorldPerceptionAssembler {
     /// permutation assignment order while returning slices into reused
     /// per-world scratch. The snapshot must be encoded before the next
     /// `assemble` call reuses those buffers.
-    pub fn assemble<'a>(
+    pub fn assemble<'a, M, A>(
         &'a mut self,
-        world: &CombatWorld,
+        owning_world: &World<NativeLevelState<M, A>>,
         ship_id: i64,
         inputs: NativeLevelPerceptionInputs<'a>,
         mut authored_ship: impl FnMut(i64) -> Option<AuthoredShipPerception>,
     ) -> Result<PolicyPerceptionSnapshot<'a>, NativeWorldPerceptionError> {
+        let world: &CombatWorld = &owning_world.state.combat;
         let metadata = authored_ship(ship_id)
             .ok_or(NativeWorldPerceptionError::MissingAuthoredShip(ship_id))?;
         let ship = self_source_from_world(
@@ -132,6 +173,21 @@ impl NativeWorldPerceptionAssembler {
                 CombatPerceptionError::MissingShip(ship_id),
             ),
         )?.side;
+        let epoch = EnvironmentEpoch {
+            world: owning_world.id,
+            episode: owning_world.episode_revision(),
+            tick: owning_world.tick(),
+        };
+        let environment = self.environment_by_side.entry(side).or_default();
+        if environment.epoch != Some(epoch) {
+            collect_learned_map_objects(
+                world, side, &mut environment.objects,
+            )?;
+            collect_learned_collision_asteroids(
+                world, side, &mut environment.asteroids,
+            )?;
+            environment.epoch = Some(epoch);
+        }
         Ok(PolicyPerceptionSnapshot {
             ship,
             capability,
@@ -143,8 +199,8 @@ impl NativeWorldPerceptionAssembler {
             vision_cache_enemies: &self.enemies,
             own_weapons: inputs.own_weapons,
             visible_mining: inputs.visible_mining,
-            visible_map_objects: inputs.visible_map_objects,
-            visible_collision_asteroids: inputs.visible_collision_asteroids,
+            visible_map_objects: &environment.objects,
+            visible_collision_asteroids: &environment.asteroids,
             navigation_world_grid: inputs.navigation_world_grid,
             exploration_last_seen: inputs.exploration_last_seen,
             self_entity_id: ship_id,
