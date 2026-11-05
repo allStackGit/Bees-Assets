@@ -34,7 +34,8 @@ function respond(res,status,data) {
     res.end(payload);
 }
 function renderQualificationPage() {
-    const html=fs.readFileSync(path.join(__dirname,'experiments.html'),'utf8');
+    const html=fs.readFileSync(path.join(__dirname,'experiments.html'),'utf8')
+        .replace(/\r\n/g,'\n');
     // Omit the embedded legacy Bees browser script altogether; keep the
     // same Hub markup, CSS and production experiment_hub_ui.js controls.
     const boundary='<script src="/experiment-hub-ui.js"></script>\n<script>';
