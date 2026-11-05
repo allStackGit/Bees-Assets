@@ -155,6 +155,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let comparisonData = null,comparisonProject = null,comparisonError = null;
     let comparisonRequest = 0,selectionProject = null;
     let comparisonDefaultsApplied = false;
+    let pipelineKindProject = null;
     let envArgsTouched = false;
     let lastGpuBindingMachine = null, budgetDraft = null;
     const action = async (route, payload) => {
@@ -211,8 +212,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     function renderPipelineStages() {
         const rows=[...$('hub-pipeline-rows').children];
+        const antsPipeline=project==='ants'&&
+            $('hub-pipeline-kind').value==='continuation';
         const configs=(state?.configurations||[]).filter(c=>
-            project==='ants'?c.project_id==='ants':
+            antsPipeline?c.project_id==='ants':
                 c.project_id!=='bees'&&
                 (c.project_id!=='ants'||c.parameters?.mode==='new'));
         const hasPredecessor=Boolean($('hub-pipeline-predecessor').value);
@@ -223,10 +226,10 @@ document.addEventListener('DOMContentLoaded', () => {
             label.append(select);
             const old=select.value;
             select.replaceChildren(...configs.map(c=>new Option(
-                (project==='ants'?'':c.project_id+' · ')+
+                (antsPipeline?'':c.project_id+' · ')+
                     c.name+' · revision '+c.revision,c.id)));
             const expectedResume=i>0||hasPredecessor;
-            const suggested=configs.find(c=>project==='ants'
+            const suggested=configs.find(c=>antsPipeline
                 ?(c.parameters?.mode==='resume')===expectedResume
                 :c.project_id===project);
             if(configs.some(c=>c.id===old))select.value=old;
@@ -798,7 +801,19 @@ document.addEventListener('DOMContentLoaded', () => {
             predecessorSelect.value=previousParent;
         const pipeline=$('hub-pipeline-panel');
         pipeline.hidden=project==='bees';
-        const antsPipeline=project==='ants';
+        const kind=$('hub-pipeline-kind'),oldKind=kind.value;
+        kind.replaceChildren(
+            new Option('Independent fresh jobs (no shared checkpoint)','independent'),
+            ...(project==='ants'
+                ?[new Option('Ants checkpoint-continuation stages','continuation')]
+                :[]));
+        if(pipelineKindProject===project&&
+            ['independent','continuation'].includes(oldKind)&&
+            (oldKind!=='continuation'||project==='ants'))
+            kind.value=oldKind;
+        else kind.value=project==='ants'?'continuation':'independent';
+        pipelineKindProject=project;
+        const antsPipeline=project==='ants'&&kind.value==='continuation';
         $('hub-pipeline-title').textContent=antsPipeline
             ?'Prequeue Ants checkpoint-continuation stages'
             :'Queue independent project jobs in sequence';
@@ -1645,10 +1660,12 @@ document.addEventListener('DOMContentLoaded', () => {
         renderPipelineStages();
     });
     $('hub-pipeline-predecessor').addEventListener('change',renderPipelineStages);
+    $('hub-pipeline-kind').addEventListener('change',display);
     $('hub-pipeline-queue').addEventListener('click',async()=>{
         if(project==='bees'||!state)return;
         try {
-            const antsPipeline=project==='ants';
+            const antsPipeline=project==='ants'&&
+                $('hub-pipeline-kind').value==='continuation';
             const configs=state.configurations.filter(c=>antsPipeline
                 ?c.project_id==='ants'
                 :c.project_id!=='bees'&&
