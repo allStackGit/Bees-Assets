@@ -706,6 +706,12 @@ node .\Training\experiment_hub_native_smoke_windows.js --run-inert
 if ($LASTEXITCODE -ne 0) { throw 'Windows Start/Stop qualification failed.' }
 node .\Training\experiment_hub_windows_end_to_end_smoke.js --run-inert
 if ($LASTEXITCODE -ne 0) { throw 'Integrated Windows qualification failed.' }
+
+# Run only after the preceding independent Windows qualifications pass.
+node .\Training\experiment_hub_windows_end_to_end_smoke.js --run-queue
+if ($LASTEXITCODE -ne 0) { throw 'Windows concurrent queue qualification failed.' }
+node .\Training\experiment_hub_windows_end_to_end_smoke.js --run-recovery
+if ($LASTEXITCODE -ne 0) { throw 'Windows in-flight coordinator recovery qualification failed.' }
 ```
 
 Run them **in order** and stop on the first error. The first exercises
@@ -717,8 +723,23 @@ inside the Job Object, then verifies the signed terminal receipt after
 reopening the Windows supervisor. The final test connects a disposable
 Hub registry and real agent HTTP transport to a *single* manual
 allocation, authenticated native Start, Stop, terminal receipt,
-explicit capacity release and coordinator restart. **Automation remains
-disarmed, and Bees/Ants training is never launched by these commands.**
+explicit capacity release and coordinator restart.
+
+`--run-queue` explicitly arms the isolated CPU-only scheduler for two
+fixed inert project adapters, constrains the registered machine to **2 CPUs
+and 512 MiB RAM**, and proves two concurrent native jobs fit while a third
+waits. It then requests controlled native Stops, checks authenticated
+terminal reporting and automatic capacity reuse, and confirms a queued
+GPU request never executes. The host must report at least 2 logical CPUs
+and 512 MiB RAM. The mode always disarms automation on success.
+
+`--run-recovery` runs a single inert Job Object, restarts **only the
+disposable Hub coordinator** while that native service is running, and
+checks that a reauthenticated agent **inspects** the already-owned process
+instead of relaunching it. Then it explicitly stops the service, verifies
+the terminal receipt and releases the claim. All modes run on randomly
+selected ephemeral loopback ports and private temporary registries.
+**No Bees/Ants training or production registry is touched.**
 
 These are controlled local tests, not production deployment. A failing
 native smoke retains its private journal and prints the location; do
