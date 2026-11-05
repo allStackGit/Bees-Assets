@@ -70,7 +70,7 @@ use crate::vision::{HiveMindObserver, VisionError, VisionSweepCounts};
 mod vision;
 mod map_object;
 mod policy;
-use policy::PolicyShipRuntime;
+use self::policy::PolicyShipRuntime;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CombatWorldError {
