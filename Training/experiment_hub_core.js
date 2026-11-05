@@ -475,7 +475,8 @@ class ExperimentHub {
                     l.issued_by==='experiment-hub'&&l.status==='acknowledged'));
             if(complete) {
                 this.releaseLease({lease_id:complete.lease_id,confirm_release:true});
-                return transitioned('Released verified terminal capacity for '+complete.id+'.');
+                return transitioned('Released verified capacity: '+complete.project_id+
+                    ' / '+(complete.configuration_name||complete.id.slice(-8))+'.');
             }
             const pending=fairPending(snapshot.jobs.filter(j=>
                 j.adapter==='unconfigured'&&j.status==='waiting_adapter'&&
@@ -488,7 +489,8 @@ class ExperimentHub {
                     blockedMachines.has(job.assigned_machine_id)||
                     job.native_start_readiness?.eligible!==true)continue;
                 this.authorizeStart({job_id:job.id,confirm_start:true});
-                return transitioned('Authorized one qualified CPU-only native Start: '+job.id+'.');
+                return transitioned('Authorized CPU-only Start: '+job.project_id+
+                    ' / '+(job.configuration_name||job.id.slice(-8))+'.');
             }
             const capable=selected.filter(m=>!blockedMachines.has(m.id)&&
                 ['linux','win32'].includes(m.agent_platform)&&
@@ -510,7 +512,8 @@ class ExperimentHub {
                 });
                 if(result.results[0]?.status!=='claimed')
                     throw Error('Selected placement did not produce an atomic claim.');
-                return transitioned('Claimed CPU/RAM budget for '+job.id+
+                return transitioned('Claimed CPU/RAM: '+job.project_id+' / '+
+                    (job.configuration_name||job.id.slice(-8))+
                     ' on '+chosen.machine_id+'; awaiting agent receipt.');
             }
             session.waiting_reason='No eligible CPU-only transition; awaiting agent receipts or available capacity.';
