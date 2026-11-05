@@ -21,6 +21,12 @@ function trainingFormPayload() {
             env_args:row.querySelector('.stage-args').value.split('\n').map(s=>s.trim()).filter(Boolean),
         })),
         evaluation_mode:$('evaluation-mode').value,
+        benchmark_target:$('benchmark-target-enabled').checked?{
+            min_win_rate_pct:Number($('benchmark-target-wins').value),
+            max_timeout_rate_pct:Number($('benchmark-target-timeouts').value),
+            min_matches:Number($('benchmark-target-matches').value),
+            consecutive_passes:Number($('benchmark-target-passes').value),
+        }:null,
         reserve_heldout:$('reserve-heldout').checked,
         replicates:(typeof editingId === 'undefined' || !editingId) && $('replicate-enabled').checked
             ?Number($('replicate-count').value):1,
@@ -1159,6 +1165,11 @@ document.addEventListener('DOMContentLoaded', () => {
         for(const st of p.stages||[])addCurriculumStage(st);
         if(typeof updateStageLabels==='function')updateStageLabels();
         $('evaluation-mode').value=p.evaluation_mode||'none';
+        $('benchmark-target-enabled').checked=Boolean(p.benchmark_target);
+        $('benchmark-target-wins').value=p.benchmark_target?.min_win_rate_pct??70;
+        $('benchmark-target-timeouts').value=p.benchmark_target?.max_timeout_rate_pct??5;
+        $('benchmark-target-matches').value=p.benchmark_target?.min_matches??100;
+        $('benchmark-target-passes').value=p.benchmark_target?.consecutive_passes??2;
         $('reserve-heldout').checked=p.reserve_heldout===true;
         $('replicate-enabled').checked=Number(p.replicates||1)>1;
         $('replicate-count').value=p.replicates||3;
