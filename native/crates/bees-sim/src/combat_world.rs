@@ -2913,6 +2913,63 @@ mod tests {
     use crate::projectile_assets::ProjectileAssetCatalog;
 
     #[test]
+    fn live_hivemind_geometry_records_only_first_sightings_and_keeps_memory() {
+        let projectile_assets = Arc::new(
+            ProjectileAssetCatalog::embedded().unwrap(),
+        );
+        let ship_assets = ShipAssetCatalog::embedded().unwrap();
+        let mut world = CombatWorld::new(
+            Aabb {
+                min: Vec2::new(-250.0, -100.0),
+                max: Vec2::new(250.0, 100.0),
+            }, 8.0, projectile_assets,
+        ).unwrap();
+        for (id, side, x) in [(1, 1, -100.0), (2, 2, 0.0), (3, 1, -10.0)] {
+            world.spawn_ship(
+                ship_assets.by_type(21).unwrap(), id, side,
+                ShipVitals::new(100, 100, 1000, 0).unwrap(),
+                ShipMotion::new(Vec2::new(x, 0.0), 0.0, 100.0, 0.0, 4.0),
+            ).unwrap();
+        }
+        let seen = [
+            HiveMindObserver {
+                ship_id: 1, effective_range: 1,
+                registered: true, enabled: true,
+            },
+            HiveMindObserver {
+                ship_id: 3, effective_range: 30,
+                registered: true, enabled: true,
+            },
+        ];
+        let skipped = world.refresh_hivemind_vision(&seen, true).unwrap();
+        assert_eq!(skipped.first_ship_discoveries, 0);
+        assert!(world.discovery().ship_ids(1).is_none());
+
+        let first = world.refresh_hivemind_vision(&seen, false).unwrap();
+        assert_eq!(first.active_observers, 2);
+        assert_eq!(first.first_ship_discoveries, 1);
+        assert!(first.visible_enemy_pairs >= 1);
+        assert!(first.aabb_rejections >= 1);
+        assert!(world.discovery().has(1, DiscoveryKind::Ship, 2));
+
+        // Leaving range, disabling or retiring the observer never removes
+        // the faction's already learned enemy memory.
+        let disabled = [HiveMindObserver {
+            ship_id: 3, effective_range: 0,
+            registered: false, enabled: false,
+        }];
+        let second = world.refresh_hivemind_vision(&disabled, false).unwrap();
+        assert_eq!(second.first_ship_discoveries, 0);
+        assert!(world.discovery().has(1, DiscoveryKind::Ship, 2));
+
+        let duplicates = [seen[0], seen[0]];
+        assert_eq!(
+            world.refresh_hivemind_vision(&duplicates, false),
+            Err(VisionError::DuplicatedObserver(1)),
+        );
+    }
+
+    #[test]
     fn striker_bomb_resolves_delayed_damage_and_releases_weapon_lease() {
         let assets = Arc::new(ProjectileAssetCatalog::embedded().unwrap());
         let ships = ShipAssetCatalog::embedded().unwrap();
