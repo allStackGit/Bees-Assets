@@ -14,6 +14,9 @@ use bees_sim::episode_terminal::{
 use bees_sim::rl_economy::{
     EconomicLedgerError, EconomicLedgerMeasurements, EpisodeEconomicLedger,
 };
+use bees_sim::rl_discovery::{
+    DiscoveryError, DiscoveryKind, DiscoveryMeasurements, EpisodeDiscoveryLedger,
+};
 use bees_sim::rl_shaping::{
     DamageRewardMetadata, DamageShapingError, DamageShapingMeasurements,
     EpisodeShaping, RewardEmission,
@@ -29,6 +32,8 @@ pub enum NativeEpisodeRewardError {
     Terminal(EpisodeTerminalError),
     Economic(EconomicLedgerError),
     Damage(DamageShapingError),
+    Discovery(DiscoveryError),
+    DiscoveryNotConfigured,
     AlreadyComplete,
 }
 
@@ -45,6 +50,11 @@ impl From<EconomicLedgerError> for NativeEpisodeRewardError {
 impl From<DamageShapingError> for NativeEpisodeRewardError {
     fn from(error: DamageShapingError) -> Self {
         Self::Damage(error)
+    }
+}
+impl From<DiscoveryError> for NativeEpisodeRewardError {
+    fn from(error: DiscoveryError) -> Self {
+        Self::Discovery(error)
     }
 }
 
@@ -67,6 +77,7 @@ pub struct NativeTickReward<'a> {
 pub struct NativeEpisodeRewardMeasurements {
     pub combat_damage: DamageShapingMeasurements,
     pub mining_economy: EconomicLedgerMeasurements,
+    pub discovery: DiscoveryMeasurements,
     pub termination: EpisodeTerminalMeasurements,
 }
 
@@ -79,6 +90,7 @@ pub struct NativeEpisodeRewardCoordinator {
     attribution: EpisodeDeathAttribution,
     shaping: EpisodeShaping,
     economy: EpisodeEconomicLedger,
+    discovery: Option<EpisodeDiscoveryLedger>,
     damage_emissions: Vec<RewardEmission>,
     economic_emissions: Vec<RewardEmission>,
     merged_emissions: Vec<RewardEmission>,
@@ -109,6 +121,7 @@ impl NativeEpisodeRewardCoordinator {
             bee_side, human_side,
             bee_starting_tsv, human_starting_tsv,
             terminal, attribution, shaping, economy,
+            discovery: None,
             damage_emissions: Vec::new(),
             economic_emissions: Vec::new(),
             merged_emissions: Vec::new(),
@@ -119,12 +132,61 @@ impl NativeEpisodeRewardCoordinator {
         NativeEpisodeRewardMeasurements {
             combat_damage: self.shaping.damage_measurements(),
             mining_economy: self.economy.measurements(),
+            discovery: self.discovery.as_ref().map_or(
+                DiscoveryMeasurements::default(),
+                EpisodeDiscoveryLedger::measurements,
+            ),
             termination: self.terminal.measurements(),
         }
     }
 
     pub fn result(&self) -> Option<EpisodeTerminalResult> {
         self.terminal.result()
+    }
+
+    /// Capture exact source initial discovery totals before any first
+    /// sightings can receive reward. Category order is enemy ships,
+    /// mining asteroids, static obstacles, map objects. Dynamic collision
+    /// asteroids use the Unity convergent sequence, not a baseline.
+    pub fn configure_discovery(
+        &mut self, baselines: [[i32; 4]; 2],
+    ) -> Result<(), NativeEpisodeRewardError> {
+        if self.terminal.result().is_some() || self.discovery.is_some() {
+            return Err(NativeEpisodeRewardError::AlreadyComplete);
+        }
+        self.discovery = Some(EpisodeDiscoveryLedger::new(
+            [self.bee_side, self.human_side], baselines,
+        )?);
+        Ok(())
+    }
+
+    /// Call only from source-verified learned sightings, never ordinary
+    /// nearby geometry. Native encounters, misses and weapon hits all
+    /// consume the SAME bounded positive/negative shaping budget.
+    /// Return the immediate emission for MA-POCA delivery by the host.
+    pub fn record_verified_discovery(
+        &mut self, side: i32, kind: DiscoveryKind,
+        entity_id: i64, authored_value: i32,
+    ) -> Result<Option<RewardEmission>, NativeEpisodeRewardError> {
+        if self.terminal.result().is_some() {
+            return Err(NativeEpisodeRewardError::AlreadyComplete);
+        }
+        let ledger = self.discovery.as_mut()
+            .ok_or(NativeEpisodeRewardError::DiscoveryNotConfigured)?;
+        Ok(ledger.first_sighting(
+            &mut self.shaping, side, kind, entity_id, authored_value,
+        )?)
+    }
+
+    /// Source RecordResolvedProjectileMiss: exactly one completed root
+    /// shot, after the physical near-miss classification is finalized.
+    pub fn record_resolved_projectile_miss(
+        &mut self, shooter_side: i32, near: bool,
+    ) -> Result<Option<RewardEmission>, NativeEpisodeRewardError> {
+        if self.terminal.result().is_some() {
+            return Err(NativeEpisodeRewardError::AlreadyComplete);
+        }
+        Ok(self.shaping.record_resolved_projectile_miss(shooter_side, near))
     }
 
     /// Called by the Level's real mining/campaign integration whenever
