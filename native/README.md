@@ -35,9 +35,12 @@ reservation-discard obligation rather than an executable command.
 For completed commands, the game must settle every issued primary/shooting
 OutcomeId, independently decide whether a targeting reservation earned TSV,
 and persist a StoreCommands submission before sending it. Native
-`PendingStoreCommands` retains that submission until the authoritative
-server confirms durable success; a stale or failed acknowledgement does not
-silently release ownership. Transport authentication, reconnection, durable
+`PendingStoreCommands` holds submissions until the authoritative server
+responds. Status 200 acknowledges durable commit. A status-409 response
+with `StaleOutcomeIds` is **partially committed** in the deployed server:
+valid siblings have been written, so the native ledger retires that batch
+and reports the stale IDs for separate reconciliation rather than retrying
+already-committed outcomes. Other failures retain their pending submission. Transport authentication, reconnection, durable
 client retry storage, the native squad-command executor, and the server-side
 learning/persistence implementation remain separate work. **The existing
 BeesServer production behavior has not been replaced in this increment.**
