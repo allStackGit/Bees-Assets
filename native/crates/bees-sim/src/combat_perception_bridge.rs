@@ -186,7 +186,11 @@ pub fn observed_ship_from_world(
         is_alive: true,
         mined_tsv: metadata.minerals_mined_this_level,
         weapons: metadata.observed_weapons,
-        communication: metadata.allied_communication,
+        // A bound RL ship's actual private communication lives on the
+        // canonical world controller. External authored controllers continue
+        // to provide the fallback when no native policy is bound.
+        communication: world.policy_communication(entity_id)
+            .or(metadata.allied_communication),
     })
 }
 
