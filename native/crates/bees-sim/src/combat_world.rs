@@ -589,6 +589,10 @@ pub struct CombatWorld {
     /// Updated at the exact same registration/retirement boundary.
     /// Eliminates another full roster scan per agent self-observation.
     live_ship_total: usize,
+    /// Unity GameState.IsSideKilled checks any living IsMobile ship.
+    /// Barge charging/cooldown changes CurrentSpeed, NOT IsMobile;
+    /// this count tracks the immutable authored base mobility flag.
+    live_mobile_ships_by_side: HashMap<i32, usize>,
     /// Each temporary Beacon has its own runtime ID and records the source
     /// Scout. The physical squad formation remains a Level adapter concern.
     beacon_parent_by_id: HashMap<i64, i64>,
@@ -681,6 +685,7 @@ impl CombatWorld {
             ship_by_id: HashMap::new(),
             live_ships_by_side: HashMap::new(),
             live_ship_total: 0,
+            live_mobile_ships_by_side: HashMap::new(),
             beacon_parent_by_id: HashMap::new(),
             scout_beacon_specs: HashMap::new(),
             navigation_requests: NavigationRequests::new(),
@@ -780,7 +785,14 @@ impl CombatWorld {
         }
         let victim_id = self.ships[index].entity_id;
         let side = self.ships[index].side;
+        let was_mobile = self.physics.ships()[index].motion.mobile;
         self.physics.ships_mut()[index].active = false;
+        if was_mobile {
+            if let Some(live) = self.live_mobile_ships_by_side.get_mut(&side) {
+                debug_assert!(*live > 0, "mobile roster decrement underflow");
+                *live = live.saturating_sub(1);
+            }
+        }
         if let Some(live) = self.live_ships_by_side.get_mut(&side) {
             debug_assert!(*live > 0, "side roster decrement underflow");
             *live = live.saturating_sub(1);
@@ -892,6 +904,12 @@ impl CombatWorld {
 
     pub fn total_living_ships(&self) -> usize {
         self.live_ship_total
+    }
+
+    /// Source GameState.IsSideKilled: immobile living targets/minions do
+    /// not preserve a side's ability to continue fighting.
+    pub fn living_mobile_ships_on_side(&self, side: i32) -> usize {
+        self.live_mobile_ships_by_side.get(&side).copied().unwrap_or(0)
     }
 
     pub fn scout_beacon_parent(&self, beacon_id: i64) -> Option<i64> {
@@ -1702,6 +1720,9 @@ impl CombatWorld {
         debug_assert_eq!(index, self.ships.len());
         self.ship_by_id.insert(ship.entity_id, index);
         *self.live_ships_by_side.entry(ship.side).or_insert(0) += 1;
+        if self.physics.ships()[index].motion.mobile {
+            *self.live_mobile_ships_by_side.entry(ship.side).or_insert(0) += 1;
+        }
         self.live_ship_total += 1;
         self.ships.push(ship);
         Ok(())

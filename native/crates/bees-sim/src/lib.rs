@@ -21,6 +21,7 @@ pub mod damage;
 pub mod damage_reservations;
 pub mod explosion_lifecycle;
 pub mod episode_ship_identity;
+pub mod episode_terminal;
 pub mod geometry;
 pub mod full_perception;
 pub mod level_discovery;

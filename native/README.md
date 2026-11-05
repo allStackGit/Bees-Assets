@@ -540,6 +540,12 @@ The portable `bees-sim` crate currently contains:
 - An optional tactical reward consumer using the current RL team's shared
   positive/negative asymptotic shaping budgets, with mined cargo excluded
   from persistent-fleet damage reward on death.
+- A separate, optional native episode-terminal controller uses source
+  GameState.IsSideKilled mobile-roster counts, squad-death-triggered
+  elimination and elapsed simulated time. Immobile Beacons/targets do not
+  prevent elimination; timeout remains an unconditional draw. No game or
+  training runner is entitled to infer a terminal winner from TSV.
+  Full terminal rewards/MA-POCA delivery remain incomplete.
 
 **Not yet implemented:** complete normal user/Hive Mind movement,
 weapon-specific targeting and projectile spawning, remaining authored
