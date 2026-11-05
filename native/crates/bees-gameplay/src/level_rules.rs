@@ -11,7 +11,7 @@ use std::collections::BTreeMap;
 use std::num::NonZeroU32;
 
 use bees_hivemind::session::SquadLifetime;
-use bees_sim::combat_world::{CombatWorld, CombatWorldError};
+use bees_sim::combat_world::{CombatEvent, CombatWorld, CombatWorldError};
 use bees_sim::navigation_runtime::NavigationRuntime;
 use bees_sim::physics::CollisionMatrix;
 use bees_sim::policy::Decision;
@@ -30,6 +30,12 @@ use crate::squads::{NativeSquadRoster, SquadRosterError};
 pub trait NativeLevelRewardMetadata {
     fn damage_metadata(&self, ship_id: i64) -> Option<DamageRewardMetadata>;
     fn current_mined_tsv(&self, ship_id: i64) -> Option<i32>;
+
+    /// Add the exact native mining yield to the saved
+    /// FleetShip.MineralsMinedThisLevel and return its new absolute value.
+    /// No default implementation: a Level without persisted fleet state
+    /// must not silently acknowledge an action and lose mined resources.
+    fn credit_mined_minerals(&mut self, ship_id: i64, amount: i32) -> Option<i32>;
 }
 
 /// Source-facing gameplay inputs for timed Hive Mind commands.
@@ -149,6 +155,8 @@ pub enum NativeLevelStepError {
     EpisodeComplete,
     TickExhausted,
     InvalidDecisionCadence,
+    MissingMiningFleetValue(i64),
+    InvalidMiningFleetValue(i64),
 }
 
 impl From<CombatWorldError> for NativeLevelStepError {
@@ -215,6 +223,36 @@ where
             decisions, dt_seconds, &self.collision_matrix,
             &mut world.random,
         )?;
+        // Source TryApplyMiningAction modifies the owning FleetShip before
+        // RecordMiningValueUpdated. Commit each physical mining event to
+        // persistent Level metadata exactly once, before reward processing.
+        // Indexing avoids a temporary Vec on quiet or busy physics ticks.
+        for row in 0..state.combat.events().len() {
+            let mined = match &state.combat.events()[row] {
+                CombatEvent::CapabilityMined {
+                    ship_id, amount_mined, ..
+                } => Some((*ship_id, *amount_mined)),
+                _ => None,
+            };
+            let Some((ship_id, amount)) = mined else { continue; };
+            let old_total = state.combat.ship(ship_id)
+                .ok_or(NativeLevelStepError::InvalidMiningFleetValue(ship_id))?
+                .vitals.mined_cargo();
+            let minimum = old_total.checked_add(amount)
+                .ok_or(NativeLevelStepError::InvalidMiningFleetValue(ship_id))?;
+            let total = state.metadata.credit_mined_minerals(ship_id, amount)
+                .ok_or(NativeLevelStepError::MissingMiningFleetValue(ship_id))?;
+            if total < minimum {
+                return Err(NativeLevelStepError::InvalidMiningFleetValue(ship_id));
+            }
+            state.combat.sync_mined_fleet_value(ship_id, total)?;
+            if state.combat.ship(ship_id)
+                .is_some_and(|ship| !ship.vitals.is_dead()) {
+                state.events.record_mined_value(
+                    &state.combat, ship_id, total,
+                )?;
+            }
+        }
         let metadata = &state.metadata;
         let allocate = &mut state.allocate_minion;
         state.events.process_completed_tick(
