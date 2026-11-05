@@ -151,6 +151,48 @@ impl NavigationScheduler {
         self.workers.iter().filter(|worker| worker.running.is_some()).count()
     }
 
+    fn drain_completed(
+        &mut self,
+        world: &mut CombatWorld,
+        step: &mut NavigationSchedulerStep,
+    ) -> Result<(), NavigationSchedulerError> {
+        loop {
+            let reply = match self.replies.try_recv() {
+                Ok(reply) => reply,
+                Err(mpsc::TryRecvError::Empty) => break,
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    return Err(NavigationSchedulerError::WorkerUnavailable);
+                }
+            };
+            let worker = self.workers.get_mut(reply.worker_index)
+                .ok_or(NavigationSchedulerError::WorkerProtocol)?;
+            if worker.running != Some(reply.request) {
+                return Err(NavigationSchedulerError::WorkerProtocol);
+            }
+            worker.running = None;
+            step.completed += 1;
+            match reply.outcome {
+                Outcome::Completed(Ok(path)) => {
+                    match world.complete_path_job(reply.request, path)? {
+                        NavigationCompletion::Accepted { .. } => step.applied += 1,
+                        NavigationCompletion::Requeued { .. } => step.requeued += 1,
+                        NavigationCompletion::Discarded => step.discarded += 1,
+                    }
+                }
+                Outcome::Completed(Err(error)) => {
+                    world.abandon_path_job(reply.request);
+                    return Err(error.into());
+                }
+                Outcome::Panicked => {
+                    worker.alive = false;
+                    world.abandon_path_job(reply.request);
+                    return Err(NavigationSchedulerError::WorkerPanicked);
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Call on the world's owning thread, after physics moves obstacles
     /// for this fixed frame. All completed worker results are handled before
     /// allocating fresh slots, exactly like Unity Pathfinder.Update.
@@ -176,30 +218,22 @@ impl NavigationScheduler {
             self.clearance_snapshot = None;
         }
         let mut step = NavigationSchedulerStep::default();
-        while let Ok(reply) = self.replies.try_recv() {
-            let worker = self.workers.get_mut(reply.worker_index)
-                .ok_or(NavigationSchedulerError::WorkerProtocol)?;
-            if worker.running != Some(reply.request) {
-                return Err(NavigationSchedulerError::WorkerProtocol);
-            }
-            worker.running = None;
-            step.completed += 1;
-            match reply.outcome {
-                Outcome::Completed(Ok(path)) => {
-                    match world.complete_path_job(reply.request, path)? {
-                        NavigationCompletion::Accepted { .. } => step.applied += 1,
-                        NavigationCompletion::Requeued { .. } => step.requeued += 1,
-                        NavigationCompletion::Discarded => step.discarded += 1,
-                    }
-                }
-                Outcome::Completed(Err(error)) => {
-                    world.abandon_path_job(reply.request);
-                    return Err(error.into());
-                }
-                Outcome::Panicked => {
+        self.drain_completed(world, &mut step)?;
+
+        // If a worker unexpectedly exited outside the search unwind guard,
+        // its owner must not remain busy forever. A second drain avoids
+        // racing a reply sent just before the worker thread exited.
+        if self.workers.iter().any(|worker|
+            worker.alive && worker.thread.as_ref().is_some_and(|t| t.is_finished())) {
+            self.drain_completed(world, &mut step)?;
+            for worker in &mut self.workers {
+                if worker.alive &&
+                    worker.thread.as_ref().is_some_and(|t| t.is_finished()) {
                     worker.alive = false;
-                    world.abandon_path_job(reply.request);
-                    return Err(NavigationSchedulerError::WorkerPanicked);
+                    if let Some(request) = worker.running.take() {
+                        world.abandon_path_job(request);
+                        return Err(NavigationSchedulerError::WorkerUnavailable);
+                    }
                 }
             }
         }
