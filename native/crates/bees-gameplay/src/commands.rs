@@ -319,6 +319,8 @@ pub struct NativeSquadCommandDirector {
     /// native ordering while avoiding a per-frame key sort.
     active: BTreeMap<SquadLifetime, ActiveNativeCommand>,
     measurements: CommandMeasurements,
+    /// Reused callback completions for timer-driven command updates.
+    completed_scratch: Vec<(SquadLifetime, CommandFinishCause)>,
 }
 
 impl NativeSquadCommandDirector {
@@ -690,17 +692,33 @@ impl NativeSquadCommandDirector {
         friendlies: &[NativeFriendlySquad],
         dt: f32,
     ) -> Result<Vec<FinishedNativeCommand>, GameCommandError> {
+        let mut out = Vec::new();
+        self.advance_into(world, navigation, friendlies, dt, &mut out)?;
+        Ok(out)
+    }
+
+    /// Preferred high-throughput Level path. Reuses both the timer
+    /// completion workspace and the caller's finished-command buffer.
+    /// Every command still executes against CombatWorld's real movement.
+    pub fn advance_into(
+        &mut self,
+        world: &mut CombatWorld,
+        navigation: &NavigationRuntime,
+        friendlies: &[NativeFriendlySquad],
+        dt: f32,
+        finished: &mut Vec<FinishedNativeCommand>,
+    ) -> Result<(), GameCommandError> {
         if !dt.is_finite() || dt < 0.0 {
             return Err(GameCommandError::InvalidDelta);
         }
+        finished.clear();
+        self.completed_scratch.clear();
         self.measurements.updates += 1;
         if self.active.is_empty() {
-            // The common idle world has no keys to sort or allocations to make.
-            return Ok(Vec::new());
+            return Ok(());
         }
-        let mut completed = Vec::new();
-        // BTreeMap stores exact lifecycle order. Iteration is linear,
-        // stable, and allocation-free on each fixed step.
+        // BTreeMap stores exact lifecycle order. Iteration is linear
+        // and stable; completion storage is retained between ticks.
         self.measurements.commands_examined += self.active.len() as u64;
         for (&owner, command) in self.active.iter_mut() {
             let mut finished_by_poll = false;
@@ -755,7 +773,7 @@ impl NativeSquadCommandDirector {
                             } else {
                                 CommandFinishCause::FriendlyGone
                             };
-                            completed.push((owner, cause));
+                            self.completed_scratch.push((owner, cause));
                             finished_by_poll = true;
                         }
                     } else {
@@ -783,7 +801,7 @@ impl NativeSquadCommandDirector {
                                 } else {
                                     CommandFinishCause::ReachedRandomDestination
                                 };
-                                completed.push((owner, cause));
+                                self.completed_scratch.push((owner, cause));
                                 finished_by_poll = true;
                             }
                         }
@@ -801,16 +819,15 @@ impl NativeSquadCommandDirector {
                             LocalCommandKind::Guard => CommandFinishCause::GuardFinished,
                             _ => CommandFinishCause::Timeout,
                         };
-                        completed.push((owner, cause));
+                        self.completed_scratch.push((owner, cause));
                     }
                 }
             }
         }
-        completed.sort_unstable_by_key(|(owner, _)| (
+        self.completed_scratch.sort_unstable_by_key(|(owner, _)| (
             owner.level_id, owner.squad_id, owner.lifecycle_id,
         ));
-        let mut finished = Vec::with_capacity(completed.len());
-        for (owner, cause) in completed {
+        for (owner, cause) in self.completed_scratch.drain(..) {
             // Source Guard.SetFinalize must release its speed override,
             // regardless of whether it ended normally or its target died.
             if let Some(guard) = self.active.get(&owner)
@@ -825,7 +842,7 @@ impl NativeSquadCommandDirector {
             }
         }
         self.measurements.completed += finished.len() as u64;
-        Ok(finished)
+        Ok(())
     }
 
     /// Unity command finalization queues a fresh HiveMind request when the
