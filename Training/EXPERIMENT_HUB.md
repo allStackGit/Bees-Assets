@@ -3,7 +3,9 @@
 The dashboard remains at `http://127.0.0.1:7148` and now has Design, Train,
 Monitor, Compare, and Machines tabs. The existing Bees experiment coordinator,
 operator, queue, checkpoint history, release compatibility checks, and evaluations
-remain authoritative.
+remain authoritative. Project-neutral HTTP administration uses the same
+`experiment_hub_admin.js` router in the Bees manager and the disposable
+Windows browser qualification; the existing Bees-specific routes remain separate.
 
 ## Currently available
 
@@ -241,12 +243,13 @@ this automation; existing Bees training remains under its own operator.
 A failed or unverified managed job, disappearing/replaced agent, or
 failed coordinator operation disarms the session without retrying an
 uncertain native launch or freeing uncertain capacity. Stop/recovery of
-failed jobs remains manual. This is **implemented orchestration logic,
-not qualified unattended execution**: real Linux/Windows host limits,
-subprocess ownership, networking, and coexistence must be verified before
-arming it for meaningful production work. It does not implement
-benchmark-based completion criteria, dynamic live rebalancing, or measured
-CPU/GPU performance shares.
+failed jobs remains manual. Isolated Windows qualifications have verified
+native Job Object CPU/RAM enforcement, concurrent automatic scheduling,
+terminal receipt/release, dashboard controls, and heartbeat-loss disarming
+on a real host. **Production Bees/Ants coexistence and unattended project
+training are still unverified**; real Linux services and GPU isolation remain
+unqualified. The scheduler does not implement benchmark-based completion
+criteria, dynamic live rebalancing, or measured CPU/GPU performance shares.
 
 ## Coordinated resource leases (not process isolation)
 
@@ -1081,12 +1084,15 @@ status. **No real Ants training or Linux service qualification has run here.**
 
 ## Not yet implemented
 
-Installed project-specific Windows and Linux adapters, real-machine
-qualification of Windows Job Objects and Linux systemd execution, GPU isolation
-and runtime device-selection enforcement, live qualification of the opt-in
+Production installation and qualification of project-specific adapters,
+real-machine Linux systemd qualification, GPU isolation and runtime
+device-selection enforcement, production coexistence qualification of the
 CPU-only scheduler, benchmark- and capability-driven stop criteria, metrics
 ingestion for additional projects, safe live rebalancing, and comprehensive
-CLI parity for all runtime configuration controls remain future work. These
+CLI parity for all runtime configuration controls remain future work.
+Isolated Windows Job Object and browser-controlled CPU-only queue/disconnect
+qualifications have passed on real hardware; these do not establish
+production Bees/Ants execution safety. These
 must not create a second owner of the Bees training lifecycle or treat
 reporting a worker as proof of exclusive host ownership.
 
