@@ -436,8 +436,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 :(labels[j.status]||j.status)+usage+
                     (j.capacity_released_at?' · Capacity released':'')+
                     (machine?.status==='offline'?' · Agent offline':'');
+            const proof=j.gpu_qualification;
+            const gpuProof=proof
+                ?proof.status==='requested'
+                    ?' · GPU access probe requested (no training)'
+                    :proof.status==='verified'
+                        ?proof.current
+                            ?' · GPU device allow/deny probe passed this agent session (no GPU Start)'
+                            :' · GPU device probe previously passed, now stale'
+                        :' · GPU device access probe rejected'
+                :'';
             const detail=j.execution_diagnostic?' · '+j.execution_diagnostic:'';
-            const statusCell=cell(tr,status+lineage);
+            const statusCell=cell(tr,status+lineage+gpuProof);
             statusCell.title=detail||j.status_reason||status;
             cell(tr,j.resources.cpus+' CPU / '+j.resources.ram_mb+' MiB / '+
                 j.resources.gpu_count+' GPUs');
@@ -445,6 +455,31 @@ document.addEventListener('DOMContentLoaded', () => {
             const actions=cell(tr,'');
             if(j.status==='waiting_adapter'&&!j.lease_id)
                 actions.append(button('Coordinate capacity',()=>allocateJob([j.id])));
+            if(j.status==='waiting_adapter'&&linked?.receipt_fresh&&
+                machine?.status==='connected'&&machine.agent_platform==='linux'&&
+                machine.local_executor_enabled===true&&
+                machine.native_preflight_passed===true&&
+                machine.installed_projects?.includes(j.project_id)&&
+                j.resources.gpu_count===1&&
+                j.resources.gpu_mode==='exclusive'&&
+                proof?.status!=='requested')
+                actions.append(button(proof?.status==='verified'
+                    ?'Recheck GPU device access':'Check GPU device access',async()=>{
+                    if(!confirm('Run an inert Linux GPU access probe for '+
+                        j.configuration_name+' on '+machine.name+
+                        '? It opens the selected and excluded render devices, '+
+                        'and starts a short isolated systemd probe. '+
+                        'It does NOT train, reserve VRAM, authorize GPU execution, '+
+                        'or guarantee isolation from other host processes.'))return;
+                    try{
+                        await action('hub/jobs/qualify-gpu',{
+                            job_id:j.id,confirm_qualify:true,
+                        });
+                        feedback('hub-job-message',
+                            'Inert GPU device probe requested. No training started.');
+                        await reload();
+                    }catch(e){feedback('hub-job-message',e.message);}
+                }));
             if(j.status==='waiting_adapter'&&linked?.receipt_fresh&&
                 machine?.status==='connected'&&
                 machine.local_executor_enabled===true&&
