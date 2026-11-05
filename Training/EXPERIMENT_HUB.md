@@ -182,7 +182,16 @@ independent benchmark pass. Every stage still needs separate CPU/RAM
 capacity admission and authorized native execution, and the automation
 session must be explicitly armed for unattended CPU-only starts.
 Each parent permits one non-cancelled successor across both sequence
-types; cancel unfinished chains from the end backward.
+types. The Train tab shows a read-only cross-project chain overview and
+can cancel **all unstarted future jobs** from a selected current
+predecessor in one atomic action:
+`POST /api/hub/jobs/cancel-future` with
+`{"after_job_id":"...","confirm_cancel":true}`. This cancels queued
+descendants from the end backward, releases their unstarted Hub claims
+and leaves the selected predecessor and any native process untouched.
+If any downstream job has started, is unverified or has conflicting
+ownership, the entire cancellation is refused without a partial write.
+Individual cancellation remains available after clearing children.
 `POST /api/hub/jobs/cancel` with `{job_id,confirm_cancel:true}`,
 `GET /api/hub/jobs/plan` for a read-only view, and
 `POST /api/hub/jobs/allocate` to claim Hub capacity. Jobs are queued
