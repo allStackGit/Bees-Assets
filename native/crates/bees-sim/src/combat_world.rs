@@ -307,6 +307,9 @@ enum ImpactBehavior {
     StrikerBomb(StrikerBombFuse),
     Rocket { acceleration_timer: ScaledTimer, max_speed: f32 },
     Penetrating(PiercingShot),
+    /// LaserBeam is a persistent, growing collider driven by its real
+    /// BeamCannon mount. Its piercing ledger survives every fixed step.
+    Beam { piercing: PiercingShot, length_scale: f32, just_spawned: bool },
     Explosion { contacts: ExplosionContacts, timeline: ExplosionTimeline },
 }
 
@@ -321,7 +324,11 @@ impl ImpactBehavior {
         match projectile_type {
             1 | 2 | 3 | 6 | 7 | 10 | 11 => Ok(Self::Direct),
             4 => Ok(Self::Penetrating(PiercingShot::new(PiercingType::PowerShot, power))),
-            8 => Ok(Self::Penetrating(PiercingShot::new(PiercingType::LaserBeam, power))),
+            8 => Ok(Self::Beam {
+                piercing: PiercingShot::new(PiercingType::LaserBeam, power),
+                length_scale: 1.0,
+                just_spawned: true,
+            }),
             13..=15 => Ok(Self::Explosion {
                 contacts: ExplosionContacts::new(),
                 timeline: ExplosionTimeline::new(explosion_events),
@@ -1705,6 +1712,20 @@ impl CombatWorld {
     /// reservation, and notify other gameplay systems in Unity's order.
     /// Rockets transfer their lease to the explosion before calling this.
     fn end_projectile(&mut self, index: usize) {
+        // LaserBeam.Kill clears BeamCannon.IsFiringLaserBeam. Centralizing
+        // this in the ordinary projectile end path also covers range expiry,
+        // shooter death, collider contact, and pooled-slot replacement.
+        if matches!(&self.projectiles[index].behavior, ImpactBehavior::Beam { .. }) {
+            let shooter_id = self.projectiles[index].owner.shooter_id;
+            let id = self.projectiles[index].entity_id;
+            if let Some(runtime) = self.policy_ship_runtime.get_mut(&shooter_id) {
+                for mount in runtime.turrets.iter_mut().flatten() {
+                    if mount.active_beam_projectile_id == Some(id) {
+                        mount.active_beam_projectile_id = None;
+                    }
+                }
+            }
+        }
         let projectile = &mut self.physics.projectiles_mut()[index];
         if !projectile.active {
             return;
@@ -2032,7 +2053,8 @@ impl CombatWorld {
                     ends_projectile = true;
                 }
             }
-            ImpactBehavior::Penetrating(piercing) => {
+            ImpactBehavior::Penetrating(piercing) |
+            ImpactBehavior::Beam { piercing, .. } => {
                 if can_basic_projectile_damage(
                     owner.shooter_side, owner.shooter_is_fire_barge,
                     target.side, shot.ignored_ships.contains(&target.entity_id),
@@ -2806,6 +2828,9 @@ impl CombatWorld {
         // Turrets use the same ship pose updated above, and create real
         // projectile bodies before the subsequent shared physics step.
         self.advance_policy_turrets(dt)?;
+        // LaserBeam.ExtendBeam follows the same real shooter/turret and
+        // resizes the physical beam collider before the native broadphase.
+        self.advance_beam_projectiles()?;
         self.update_rocket_timers(dt);
         self.update_striker_bombs(dt)?;
         self.update_explosion_timelines(dt)?;
