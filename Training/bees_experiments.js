@@ -2132,6 +2132,9 @@ const server = http.createServer(async (req, res) => {
         if (req.method === 'GET' && route === '/api/hub/jobs/plan') {
             return json(res, 200, requireHub().plannedJobs());
         }
+        if (req.method === 'GET' && route === '/api/hub/automation') {
+            return json(res, 200, requireHub().automationStatus());
+        }
         if (req.method === 'GET' && route === '/api/hub/progress') {
             const projectId=url.searchParams.get('project_id');
             return json(res, 200, requireHub().progressComparison(projectId));
@@ -2419,6 +2422,9 @@ const server = http.createServer(async (req, res) => {
         if (route === '/api/hub/jobs/allocate') {
             return json(res, 200, requireHub().allocateJobs(value));
         }
+        if (route === '/api/hub/automation') {
+            return json(res, 200, requireHub().configureAutomation(value));
+        }
         if (route === '/api/hub/jobs/qualify-gpu') {
             return json(res, 200, requireHub().requestGpuQualification(value));
         }
@@ -2429,8 +2435,9 @@ const server = http.createServer(async (req, res) => {
             return json(res, 200, requireHub().authorizeStop(value));
         }
         if (route === '/api/storage') {
-            if (busy || state.active_id || state.armed || state.stop_requested) {
-                return json(res, 409, { error: 'Stop and complete all active experiments before relocating data.' });
+            if (busy || state.active_id || state.armed || state.stop_requested ||
+                hub?.automation?.enabled) {
+                return json(res, 409, { error: 'Disarm native automation and stop active experiments before relocating data.' });
             }
             if (value.root === DATA_ROOT)
                 return json(res, 200, { root: DATA_ROOT, restart_required: false });
@@ -2844,6 +2851,15 @@ if (require.main === module) {
         console.log('Records: ' + DB);
         setImmediate(cycle);
         setInterval(cycle, 10000);
+        // The separate Hub scheduler is inert until an operator explicitly
+        // arms named native-capable machines. Native service state and Bees
+        // training ownership remain separate; faults disarm Hub automation.
+        setInterval(() => {
+            if(!hub?.automation?.enabled)return;
+            const status=hub.tickAutomation();
+            if(status.last_error)
+                console.error('[hub] native automation disarmed: '+status.last_error);
+        }, 10000);
     });
     // Optional Hub agent service must not prevent the existing Bees
     // coordinator from recovering training if this secondary port is busy.
