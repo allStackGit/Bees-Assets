@@ -12,7 +12,9 @@
 use std::collections::HashSet;
 
 use crate::collision::Aabb;
-use crate::combat_world::GamePointOrder;
+use crate::combat_world::{
+    CombatWorld, CombatWorldError, GamePointOrder, GamePointOrderResult,
+};
 use crate::geometry::Vec2;
 use crate::navigation_runtime::NavigationRuntime;
 
@@ -159,4 +161,96 @@ fn formation_compression(
         if all_valid { return Some(compression); }
     }
     None
+}
+
+#[derive(Debug)]
+pub enum SquadOrderError {
+    Formation(SquadFormationError),
+    Ship(CombatWorldError),
+    MissingShip,
+    MembershipMismatch,
+}
+
+impl From<SquadFormationError> for SquadOrderError {
+    fn from(error: SquadFormationError) -> Self { Self::Formation(error) }
+}
+
+impl From<CombatWorldError> for SquadOrderError {
+    fn from(error: CombatWorldError) -> Self { Self::Ship(error) }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct SquadFormationExecution {
+    pub center: Vec2,
+    pub compression: f32,
+    pub results: Vec<(i64, GamePointOrderResult)>,
+}
+
+/// Run Unity Squad.Move via a single shared CombatWorld. Order planning
+/// finishes before mutating the first ship, and all referenced ship
+/// controllers are preflighted so a missing/dead/policy-owned member cannot
+/// silently leave half the formation executing.
+pub fn issue_squad_move(
+    world: &mut CombatWorld,
+    navigation: &NavigationRuntime,
+    members: &[SquadFormationMember],
+    destination: Vec2,
+    options: SquadFormationOptions,
+) -> Result<Option<SquadFormationExecution>, SquadOrderError> {
+    let Some(plan) = plan_squad_formation(
+        members, destination, options, navigation,
+    )? else { return Ok(None) };
+    for &(ship_id, _) in &plan.orders {
+        let game_ship = world.ships().iter().find(|ship| ship.entity_id == ship_id)
+            .ok_or(SquadOrderError::MissingShip)?;
+        let physics_ship = world.physics().ships().iter()
+            .find(|ship| ship.id == ship_id)
+            .ok_or(SquadOrderError::MissingShip)?;
+        if !physics_ship.motion.mobile || !physics_ship.active ||
+            game_ship.vitals.is_dead() {
+            return Err(SquadOrderError::MembershipMismatch);
+        }
+        world.validate_ship_game_order(ship_id)?;
+    }
+
+    let mut results = Vec::with_capacity(plan.orders.len());
+    for &(ship_id, order) in &plan.orders {
+        let outcome = world.move_ship_to_point(ship_id, order)?;
+        results.push((ship_id, outcome));
+    }
+    Ok(Some(SquadFormationExecution {
+        center: plan.center, compression: plan.compression, results,
+    }))
+}
+
+/// Unity Squad.StopMoving only stops members that are mobile. A Hold
+/// command invokes this path, rather than issuing a zero-distance order
+/// that could accidentally leave an A* job or pending waypoint active.
+pub fn stop_squad_game_movement(
+    world: &mut CombatWorld,
+    members: &[SquadFormationMember],
+) -> Result<Vec<i64>, SquadOrderError> {
+    let mut seen = HashSet::new();
+    let mut to_stop = Vec::new();
+    for member in members {
+        if member.ship_id <= 0 ||
+            !seen.insert(member.ship_id) {
+            return Err(SquadOrderError::Formation(
+                SquadFormationError::InvalidRequest,
+            ));
+        }
+        if !member.mobile { continue; }
+        let body = world.physics().ships().iter()
+            .find(|body| body.id == member.ship_id)
+            .ok_or(SquadOrderError::MissingShip)?;
+        if !body.motion.mobile {
+            return Err(SquadOrderError::MembershipMismatch);
+        }
+        world.validate_ship_game_order(member.ship_id)?;
+        to_stop.push(member.ship_id);
+    }
+    for &ship_id in &to_stop {
+        world.stop_ship_game_movement(ship_id)?;
+    }
+    Ok(to_stop)
 }
