@@ -28,6 +28,10 @@ pub struct Measurements {
     pub trigger_enters: u64,
     /// Rules updates that returned an error and invalidated their world.
     pub failed_steps: u64,
+    /// Sampled failed updates are accounted separately so unsuccessful
+    /// frames cannot bias successful-step throughput or latency percentiles.
+    pub sampled_failed_steps: u64,
+    pub sampled_failed_wall_nanos: u128,
     pub sampled_ticks: u64,
     pub sampled_wall_nanos: u128,
     /// Log2 nanosecond histogram, recorded only on opted-in sampled steps.
@@ -60,6 +64,15 @@ impl Measurements {
                 (u128::BITS - 1 - nanos.leading_zeros()) as usize
             }.min(self.sampled_step_latency_log2_ns.len() - 1);
             self.sampled_step_latency_log2_ns[index] += 1;
+        }
+    }
+
+    #[inline]
+    pub fn record_failure(&mut self, sampled: Option<Duration>) {
+        self.failed_steps += 1;
+        if let Some(duration) = sampled {
+            self.sampled_failed_steps += 1;
+            self.sampled_failed_wall_nanos += duration.as_nanos();
         }
     }
 
