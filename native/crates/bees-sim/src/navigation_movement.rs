@@ -114,6 +114,17 @@ impl GameShipSteering {
         motion.stop_moving();
     }
 
+    /// Used when the game's controller hands ownership back to the neural
+    /// policy. Clear only orders issued through this gameplay route
+    /// controller, not arbitrary RL movement/target state.
+    pub fn has_game_order(&self) -> bool {
+        self.final_destination.is_some() ||
+            self.target_direction.is_some() ||
+            self.deferred_direct_destination.is_some() ||
+            self.is_following_path ||
+            !self.next_waypoints.is_empty()
+    }
+
     /// Unity ClearPreviousDesintation when an actual path request begins.
     /// The old physics velocity is deliberately retained: Unity clears
     /// movement orders but does not immediately zero Rigidbody velocity.
