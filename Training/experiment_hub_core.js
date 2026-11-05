@@ -641,8 +641,14 @@ class ExperimentHub {
                         if(child.project_id!==job.project_id||
                             child.artifact_lineage_root_id!==
                                 (job.artifact_lineage_root_id||job.id)||
-                            child.continuation_machine_id!==job.assigned_machine_id)
+                            (job.continuation_machine_id&&
+                                job.continuation_machine_id!==job.assigned_machine_id)||
+                            (child.continuation_machine_id&&
+                                child.continuation_machine_id!==job.assigned_machine_id))
                             throw Error('Prequeued stage lineage changed; refusing capacity release.');
+                        // The original machine becomes immutable when the
+                        // first stage actually runs, not when it is queued.
+                        child.continuation_machine_id=job.assigned_machine_id;
                         child.status='waiting_adapter';
                         child.status_reason='Predecessor finished and released capacity; stage is eligible for separate resource allocation.';
                         child.predecessor_ready_at=now();
@@ -1316,11 +1322,43 @@ class ExperimentHub {
         return copy(item);
     }
     queueConfiguration(value) {
+        const next=copy(this.state);
+        const job=this.queueIn(next,value);
+        this.commit(next);
+        return copy(job);
+    }
+    // One durable write for the full linear Ants pipeline: either every
+    // frozen stage exists with validated lineage, or none do.
+    queuePipeline(value) {
+        if(!object(value)||value.confirm_queue!==true||
+            !Array.isArray(value.stages)||value.stages.length<2||
+            value.stages.length>16)
+            throw Error('Explicitly confirm a 2–16-stage pipeline.');
+        const next=copy(this.state),jobs=[];
+        let predecessor=value.continuation_of_job_id??null;
+        for(const stage of value.stages) {
+            if(!object(stage)||Object.keys(stage).some(key=>
+                !['configuration_id','expected_revision','resources'].includes(key)))
+                throw Error('Each pipeline stage must select one saved configuration and resource request.');
+            const job=this.queueIn(next,{
+                ...stage,continuation_of_job_id:predecessor,
+            });
+            if(job.project_id!=='ants')
+                throw Error('Linear automatic-stage pipelines currently require the Ants adapter.');
+            jobs.push(copy(job));
+            predecessor=job.id;
+        }
+        this.commit(next);
+        return {jobs,executable:false,
+            note:'Frozen pipeline only; native execution remains subject to separate authorization.'};
+    }
+    queueIn(next,value) {
         if (!object(value) || typeof value.configuration_id !== 'string')
             throw Error('Select a saved configuration to queue.');
-        const selected = this.state.configurations.find(x=>x.id===value.configuration_id);
+        const selected = next.configurations.find(x=>x.id===value.configuration_id);
         if (!selected) throw Error('Saved configuration not found.');
-        const project = this.project(selected.project_id);
+        const project=next.projects.find(p=>p.id===selected.project_id);
+        if(!project)throw Error('Unknown project.');
         if (project.adapter === 'bees')
             throw Error('Bees jobs use the existing validated Bees experiment queue.');
         if (project.adapter !== 'unconfigured')
@@ -1337,40 +1375,36 @@ class ExperimentHub {
         if(ancestorId!==null) {
             if(typeof ancestorId!=='string'||!UUID.test(ancestorId))
                 throw Error('Select a valid predecessor job for continuation.');
-            parent=this.state.jobs.find(j=>j.id===ancestorId);
-            const pinnedMachine=parent?.assigned_machine_id||
-                parent?.continuation_machine_id;
+            parent=next.jobs.find(j=>j.id===ancestorId);
             const pinnedRoot=parent?.artifact_lineage_root_id||parent?.id;
-            const frozenFutureStage=project.id==='ants'&&
-                Boolean(parent?.continuation_of_job_id)&&
-                ['waiting_adapter','waiting_predecessor'].includes(parent?.status)&&
-                Boolean(parent?.continuation_machine_id);
+            const futureStage=project.id==='ants'&&
+                ['waiting_adapter','waiting_predecessor'].includes(parent?.status);
             if(!parent||parent.project_id!==project.id||
-                !UUID.test(String(pinnedRoot||''))||!pinnedMachine||
-                !(parent.dispatch_id&&parent.assigned_machine_id||frozenFutureStage))
-                throw Error('Continuation requires a dispatched predecessor or a prequeued Ants stage with frozen machine lineage.');
+                !UUID.test(String(pinnedRoot||''))||
+                !(parent.dispatch_id&&parent.assigned_machine_id||futureStage))
+                throw Error('Continuation requires a dispatched predecessor or an eligible prequeued Ants stage.');
             // Ants supports a bounded, linear sequence of prequeued stages.
             // Future stages inherit the original host and artifact root
             // without claiming capacity or launching any process.
             waitingPredecessor=project.id==='ants'&&(
                 ['start_requested','launch_requested','running'].includes(parent.status)||
                 (parent.status==='finished'&&!parent.capacity_released_at)||
-                frozenFutureStage);
+                futureStage);
             if(!waitingPredecessor&&
                 (!['finished','stopped'].includes(parent.status)||
                  !parent.capacity_released_at))
                 throw Error('Continuation requires a finished, capacity-released predecessor (or an eligible active or prequeued Ants predecessor).');
-            if(this.state.jobs.some(j=>
+            if(next.jobs.some(j=>
                 j.continuation_of_job_id===parent.id&&j.status!=='cancelled'))
                 throw Error('This predecessor already has a non-cancelled continuation.');
         }
         if(project.id==='ants'&&
             (frozen.mode==='resume')!==Boolean(parent))
             throw Error('Ants resume mode requires a linked, completed predecessor job.');
-        if (this.state.jobs.filter(j=>['waiting_adapter',
+        if (next.jobs.filter(j=>['waiting_adapter',
             'waiting_predecessor'].includes(j.status)).length >= 100)
             throw Error('Too many pending jobs; cancel unused jobs first.');
-        if (this.state.jobs.length >= 1000)
+        if (next.jobs.length >= 1000)
             throw Error('Job history limit reached. Export or archive older jobs before queueing more.');
         const jobId=crypto.randomUUID();
         const job = {
@@ -1380,7 +1414,8 @@ class ExperimentHub {
             artifact_lineage_root_id:parent
                 ?(parent.artifact_lineage_root_id||parent.id):jobId,
             continuation_machine_id:parent
-                ?(parent.assigned_machine_id||parent.continuation_machine_id):null,
+                ?(parent.continuation_machine_id||
+                    (parent.dispatch_id?parent.assigned_machine_id:null)):null,
             configuration_id:selected.id,
             configuration_revision:selected.revision,
             configuration_name:selected.name,
@@ -1393,10 +1428,8 @@ class ExperimentHub {
                 :'Queued; a separate machine claim and explicit native start authorization are required.',
             created_at:now(), cancelled_at:null,
         };
-        const next=copy(this.state);
         next.jobs.push(job);
-        this.commit(next);
-        return copy(job);
+        return job;
     }
     cancelJob(value) {
         if (!object(value) || typeof value.job_id!=='string' ||
