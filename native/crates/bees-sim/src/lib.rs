@@ -15,6 +15,7 @@ mod collider_asset_shape;
 pub mod collision;
 pub mod combat;
 pub mod combat_world;
+pub mod combat_perception_bridge;
 pub mod control;
 pub mod damage;
 pub mod damage_reservations;
