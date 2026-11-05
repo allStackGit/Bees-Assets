@@ -42,6 +42,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let project = 'bees', tab = 'monitor', state = null, editing = null;
     let comparisonData = null,comparisonProject = null;
     let comparisonRequest = 0,selectionProject = null;
+    let comparisonDefaultsApplied = false;
     let envArgsTouched = false;
     const action = async (route, payload) => {
         const r = await fetch('/api/'+route,{
@@ -122,24 +123,28 @@ document.addEventListener('DOMContentLoaded', () => {
             j.final_progress||history.get(j.id)?.length).slice(-80).reverse();
         const previous=compareSlots.map(slot=>$('hub-compare-'+slot).value);
         const changedProject=selectionProject!==project;
+        if(changedProject)comparisonDefaultsApplied=false;
         selectionProject=project;
+        const chooseDefaults=!comparisonDefaultsApplied&&chartable.length>0;
         const selected=new Set();
         for(let i=0;i<compareSlots.length;i++) {
             const select=$('hub-compare-'+compareSlots[i]);
             select.replaceChildren(new Option('No run',''),
                 ...chartable.map(j=>new Option(
                     j.configuration_name+
+                    ' · job '+(jobs.indexOf(j)+1)+
                     (j.continuation_of_job_id?' · continuation':' · initial run')+
                     ' · '+j.status+
                     ' · '+new Date(j.created_at).toLocaleDateString(),j.id)));
-            const desired=!changedProject?previous[i]:
-                (i<2?chartable[i]?.id:null);
+            const desired=chooseDefaults&&i<2
+                ?chartable[i]?.id:(!changedProject?previous[i]:null);
             if(desired&&chartable.some(j=>j.id===desired)&&
                 !selected.has(desired)){
                 select.value=desired;
                 selected.add(desired);
             }
         }
+        if(chooseDefaults)comparisonDefaultsApplied=true;
         const runs=compareSlots.map((slot,i)=>{
             const id=$('hub-compare-'+slot).value;
             const job=jobs.find(j=>j.id===id);
@@ -206,6 +211,10 @@ document.addEventListener('DOMContentLoaded', () => {
         };
         svg.setAttribute('aria-label',metric.label+
             ' by cumulative Ants experiment episodes for selected runs');
+        const usable=p=>Number.isFinite(p.episodes_completed)&&
+            Number.isFinite(p[key])&&
+            !(key==='ppo_unique_samples_per_second'&&
+                p.latest_episode_policy_updated===false);
         const series=runs.map(run=>{
             const points=run.points.length?run.points:
                 [run.job.live_execution?.progress||run.job.final_progress]
@@ -214,7 +223,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 Number.isFinite(p.episodes_completed))};
         });
         const values=series.flatMap(r=>r.valid
-            .filter(p=>Number.isFinite(p[key]))
+            .filter(usable)
             .map(p=>({x:p.episodes_completed,y:p[key]})));
         if(!values.length) {
             node('text',{x:450,y:160,'text-anchor':'middle'},
@@ -248,8 +257,7 @@ document.addEventListener('DOMContentLoaded', () => {
         node('text',{x:450,y:313,'text-anchor':'middle'},
             'Cumulative training episodes');
         for(const run of series) {
-            const legendIndex=runs.indexOf(run);
-            // run objects are cloned into series; color/slot remain stable.
+            // Run slots provide stable colors even as selections change.
             const i=runs.findIndex(r=>r.job.id===run.job.id);
             node('line',{x1:100+i*195,y1:29,x2:128+i*195,y2:29,
                 stroke:run.color,'stroke-width':4});
@@ -265,8 +273,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 part=[];
             };
             for(const point of run.valid) {
-                if(point.break_before||!Number.isFinite(point[key]))flush();
-                if(!Number.isFinite(point[key]))continue;
+                if(point.break_before||!usable(point))flush();
+                if(!usable(point))continue;
                 part.push(point);
                 node('circle',{cx:x(point.episodes_completed),cy:y(point[key]),
                     r:3.5,fill:run.color,class:'plot-point'});
