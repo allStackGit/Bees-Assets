@@ -920,6 +920,106 @@ impl KinematicPhysics {
         rebuilt
     }
 
+    /// Source RlProjectileNearMissTelemetry.Travel broadphase:
+    /// sweep the real projectile's collider bounds from its last pose
+    /// to its present pose, padded by the authored 2-unit near distance.
+    /// This uses the same ship grid as physical contacts and Barge charges.
+    /// Output is caller-owned and reused across every shot and tick.
+    pub fn projectile_near_candidates(
+        &mut self, shot_index: usize, dt: f32, near_distance: f32,
+        output: &mut Vec<usize>,
+    ) -> bool {
+        output.clear();
+        let Some(shot) = self.projectiles.get(shot_index) else {
+            return false;
+        };
+        if !shot.active { return false; }
+        let Some(bounds) = shot.collider.as_ref()
+            .and_then(|collider| collider.bounds) else { return false };
+        let position = shot.motion.position;
+        let previous = if shot.has_body {
+            position - shot.motion.velocity * dt
+        } else { position };
+        let half_width = (bounds.max.x - bounds.min.x) * 0.5;
+        let half_height = (bounds.max.y - bounds.min.y) * 0.5;
+        let sweep = Aabb {
+            min: Vec2::new(
+                bounds.min.x.min(previous.x - half_width) - near_distance,
+                bounds.min.y.min(previous.y - half_height) - near_distance,
+            ),
+            max: Vec2::new(
+                bounds.max.x.max(previous.x + half_width) + near_distance,
+                bounds.max.y.max(previous.y + half_height) + near_distance,
+            ),
+        };
+        let mut rebuilt = false;
+        if !self.grid_contains_ships {
+            self.grid.rebuild_with(self.ships.len(), |index| {
+                let ship = &self.ships[index];
+                if ship.active { ship.collider.bounds } else { None }
+            });
+            self.grid_contains_ships = true;
+            rebuilt = true;
+        }
+        self.grid.candidates(sweep, output);
+        output.sort_unstable();
+        output.dedup();
+        rebuilt
+    }
+
+    /// Source swept centerline with Collider2D.ClosestPoint and shot
+    /// collider-radius padding. A second current-collider check catches
+    /// near stationary beams and non-circular shot shapes. All hulls are
+    /// the real imported transformed physics shapes, not sprite AABBs.
+    pub fn projectile_passed_near_ship(
+        &self, shot_index: usize, ship_index: usize,
+        dt: f32, near_distance: f32,
+    ) -> bool {
+        let Some(shot) = self.projectiles.get(shot_index) else {
+            return false;
+        };
+        let Some(ship) = self.ships.get(ship_index) else {
+            return false;
+        };
+        if !shot.active || !ship.active { return false; }
+        let (Some(projectile), Some(bounds), Some(enemy_bounds)) = (
+            shot.collider.as_ref(),
+            shot.collider.as_ref().and_then(|c| c.bounds),
+            ship.collider.bounds,
+        ) else { return false };
+        let end = shot.motion.position;
+        let start = if shot.has_body {
+            end - shot.motion.velocity * dt
+        } else { end };
+        let travel = end - start;
+        let squared = travel.length_squared();
+        let center = Vec2::new(
+            (enemy_bounds.min.x + enemy_bounds.max.x) * 0.5,
+            (enemy_bounds.min.y + enemy_bounds.max.y) * 0.5,
+        );
+        let t = if squared > 0.000001 {
+            let delta = center - start;
+            ((delta.x * travel.x + delta.y * travel.y) / squared)
+                .clamp(0.0, 1.0)
+        } else { 0.0 };
+        let closest_pass = start + travel * t;
+        let hull = ship.collider.closest_point(closest_pass);
+        let radius = ((bounds.max.x - bounds.min.x) * 0.5)
+            .min((bounds.max.y - bounds.min.y) * 0.5);
+        let threshold = near_distance + radius;
+        if (closest_pass - hull).length_squared() <= threshold * threshold {
+            return true;
+        }
+        // Approximation of Unity Collider2D.Distance at the current
+        // transformed pose; exact closest-point behavior is provided by
+        // the shared native hulls. Full polygon-pair minimum separation
+        // still requires cross-engine qualification.
+        let projectile_point = projectile.closest_point(center);
+        let enemy_point = ship.collider.closest_point(projectile_point);
+        (projectile_point - enemy_point).length_squared()
+            <= near_distance * near_distance
+    }
+
     pub fn ships(&self) -> &[ShipBody] { &self.ships }
     pub fn ships_mut(&mut self) -> &mut [ShipBody] { &mut self.ships }
     pub fn projectiles(&self) -> &[ProjectileBody] { &self.projectiles }

@@ -657,6 +657,8 @@ pub struct CombatWorld {
     projectile_by_id: HashMap<i64, usize>,
     /// Per-world RL root-shot lifetime, not per-projectile hit telemetry.
     shot_outcomes: ProjectileOutcomeTracker,
+    /// Reused near-pass candidates from the shared ship spatial grid.
+    projectile_near_candidates: Vec<usize>,
     reservations: DamageReservations,
     pending_contacts: Vec<TriggerEnter>,
     processing_contacts: Vec<TriggerEnter>,
@@ -729,6 +731,7 @@ impl CombatWorld {
             fire_barge_bomb_powers: HashMap::new(),
             projectile_by_id: HashMap::new(),
             shot_outcomes: ProjectileOutcomeTracker::default(),
+            projectile_near_candidates: Vec::new(),
             reservations: DamageReservations::new(),
             pending_contacts: Vec::new(),
             processing_contacts: Vec::new(),
@@ -1925,6 +1928,44 @@ impl CombatWorld {
         self.shot_outcomes.measurements()
     }
 
+    /// Source RlProjectileNearMissTelemetry.Travel, called only for real
+    /// active policy projectile roots that have neither contacted an enemy
+    /// nor already marked a near miss. It shares the physical ship grid
+    /// with Barge contact work; there is no per-shot full-ship scan.
+    fn update_policy_projectile_near_passes(&mut self, dt: f32) {
+        if self.shot_outcomes.measurements().in_flight_roots == 0 {
+            return;
+        }
+        for index in 0..self.projectiles.len() {
+            if !self.physics.projectiles()[index].active { continue; }
+            let root = self.physics.projectiles()[index]
+                .motion.attribution.root_shot_id;
+            if !self.shot_outcomes.needs_nearness(root) { continue; }
+            let shooter_side = self.projectiles[index].owner.shooter_side;
+            if self.physics.projectile_near_candidates(
+                index, dt, 2.0, &mut self.projectile_near_candidates,
+            ) {
+                self.shot_outcomes.record_ship_grid_rebuild();
+            }
+            self.shot_outcomes.record_near_candidates(
+                self.projectile_near_candidates.len(),
+            );
+            for &candidate in &self.projectile_near_candidates {
+                let target = &self.ships[candidate];
+                if target.side == shooter_side || target.vitals.is_dead() {
+                    continue;
+                }
+                self.shot_outcomes.record_near_hull_check();
+                if self.physics.projectile_passed_near_ship(
+                    index, candidate, dt, 2.0,
+                ) {
+                    self.shot_outcomes.near_enemy(root);
+                    break;
+                }
+            }
+        }
+    }
+
     /// Bind the existing weapon's outgoing-damage reservation exactly once.
     /// Projectile.Setup only captures this handle; it never creates a second
     /// reservation. The final weapon port will call this when firing.
@@ -3089,6 +3130,7 @@ impl CombatWorld {
         self.update_explosion_timelines(dt)?;
         let new_contacts = self.physics.step(dt, collision_matrix)?;
         self.pending_contacts.extend_from_slice(new_contacts);
+        self.update_policy_projectile_near_passes(dt);
         self.resolve_policy_barge_contacts(collision_matrix)?;
         // Striker.CheckCarrierReload runs on the same Level timer clock.
         // A policy can request another bomb only after a real carrier

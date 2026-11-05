@@ -24,6 +24,9 @@ pub struct ProjectileOutcomeMeasurements {
     pub missed: u64,
     pub near_missed: u64,
     pub in_flight_roots: usize,
+    pub near_grid_rebuilds: u64,
+    pub near_broadphase_candidates: u64,
+    pub near_hull_checks: u64,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -65,6 +68,18 @@ impl ProjectileOutcomeTracker {
         if let Some(shot) = self.active.get_mut(&root) {
             shot.contact = true;
         }
+    }
+
+    pub(super) fn record_ship_grid_rebuild(&mut self) {
+        self.totals.near_grid_rebuilds += 1;
+    }
+
+    pub(super) fn record_near_candidates(&mut self, count: usize) {
+        self.totals.near_broadphase_candidates += count as u64;
+    }
+
+    pub(super) fn record_near_hull_check(&mut self) {
+        self.totals.near_hull_checks += 1;
     }
 
     pub(super) fn near_enemy(&mut self, root: i64) {
