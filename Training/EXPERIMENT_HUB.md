@@ -30,7 +30,9 @@ Windows browser qualification; the existing Bees-specific routes remain separate
   reports and research charts remain intact. Non-experiment training is shown
   as distinct from experiment-owned training. For Ants, Compare can plot up to
   four selected Hub jobs against cumulative experiment episodes or environment
-  steps and show their most recent learning summaries. These plots are observational only.
+  steps. Other trusted project adapters can publish unit-typed metrics for a
+  cumulative project-step chart. Train, Monitor and Compare show these
+  summaries without treating them as independent evaluations or stopping criteria.
 - **Machines:** Show read-only Bees worker reports from the existing control
   plane. Manually register project-independent machines (CPU, RAM, GPU capacity)
   and preview CPU/RAM, GPU count, and per-GPU VRAM requirements. A machine
