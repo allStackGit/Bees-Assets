@@ -680,6 +680,25 @@ hash. The existing machine-local execution opt-in, adapter module
 and private journal root settings remain required. There is **no
 PowerShell dependency** in the Windows process supervisor.
 
+Before installing any Windows production adapter or contacting the Hub,
+perform the isolated **Windows-native preflight** on a host with the reviewed
+and locally built helper:
+
+```powershell
+$env:EXPERIMENT_HUB_WINDOWS_HELPER = 'C:\\Approved\\ExperimentHubWindowsOwner.exe'
+$env:EXPERIMENT_HUB_WINDOWS_HELPER_SHA256 = (Get-FileHash $env:EXPERIMENT_HUB_WINDOWS_HELPER -Algorithm SHA256).Hash.ToLowerInvariant()
+node Training/experiment_hub_native_smoke_windows.js --preflight
+```
+
+The helper path is illustrative; use the actual reviewed, installed
+binary. This command verifies its SHA-256 and executes the helper's
+fixed inert `--probe` against real Windows Job Object controls in an
+isolated temporary journal. It starts no project runner and does not
+connect to the dashboard or Bees coordinator. A failure preserves the
+private journal location for inspection. A passing probe **does not**
+qualify full live Windows job launch/stop, recovery or multi-project
+scheduling; those require a separate controlled host test.
+
 A Windows-local project adapter must return a reviewed executable,
 bounded argv, and explicitly specify \`stop_policy:'terminate-group'\`.
 The Hub never accepts a path or shell command from configuration JSON.
