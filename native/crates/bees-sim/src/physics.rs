@@ -211,6 +211,57 @@ impl WorldCollider {
         self.cached_pose = Some(pose);
     }
 
+    /// Unity Collider2D.OverlapPoint / ClosestPoint semantics on the
+    /// *authored* transformed shape. Pathfinder's dynamic clearance cells
+    /// query both of these, rather than a bounding rectangle approximation.
+    #[inline]
+    fn contains_point(&self, point: Vec2) -> bool {
+        if !self.bounds.is_some_and(|bounds|
+            bounds.min.x <= point.x && point.x <= bounds.max.x &&
+            bounds.min.y <= point.y && point.y <= bounds.max.y) {
+            return false;
+        }
+        match &self.shape {
+            ShipShape::Circle { radius, .. } => {
+                (point - self.circle_world).length_squared() <= radius * radius
+            }
+            _ => crate::collision::circle_overlaps_polygon(point, 0.0, &self.polygon_world),
+        }
+    }
+
+    fn closest_point(&self, point: Vec2) -> Vec2 {
+        if self.contains_point(point) { return point; }
+        match &self.shape {
+            ShipShape::Circle { radius, .. } => {
+                self.circle_world +
+                    (point - self.circle_world).normalized_or_zero() * *radius
+            }
+            _ => {
+                if self.polygon_world.is_empty() { return point; }
+                let mut previous = *self.polygon_world.last()
+                    .expect("nonempty polygon hull");
+                let mut closest = previous;
+                let mut best_distance = f32::INFINITY;
+                for &next in &self.polygon_world {
+                    let edge = next - previous;
+                    let offset = point - previous;
+                    let length_sq = edge.length_squared();
+                    let t = if length_sq > 0.0 {
+                        ((offset.x * edge.x + offset.y * edge.y) / length_sq).clamp(0.0, 1.0)
+                    } else { 0.0 };
+                    let candidate = previous + edge * t;
+                    let distance = (candidate - point).length_squared();
+                    if distance < best_distance {
+                        best_distance = distance;
+                        closest = candidate;
+                    }
+                    previous = next;
+                }
+                closest
+            }
+        }
+    }
+
     #[inline]
     fn overlaps(&self, other: &Self) -> bool {
         if !self.bounds.zip(other.bounds)
@@ -446,6 +497,18 @@ impl ObstacleBody {
 
     pub fn navigation_shape(&self) -> &ShipShape {
         &self.clearance_collider.as_ref().unwrap_or(&self.collider).shape
+    }
+
+    pub fn navigation_contains_point(&self, point: Vec2) -> bool {
+        self.active &&
+            self.clearance_collider.as_ref().unwrap_or(&self.collider)
+                .contains_point(point)
+    }
+
+    pub fn navigation_closest_point(&self, point: Vec2) -> Option<Vec2> {
+        if !self.active { return None; }
+        Some(self.clearance_collider.as_ref().unwrap_or(&self.collider)
+            .closest_point(point))
     }
 
     fn update_hull(&mut self) {
