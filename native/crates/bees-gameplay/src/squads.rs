@@ -8,7 +8,7 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use bees_hivemind::session::{HiveMindSession, SquadLifetime};
+use bees_hivemind::session::SquadLifetime;
 use bees_sim::combat_world::{CombatEvent, CombatWorld};
 use bees_sim::episode_terminal::{
     EpisodeDeathAttribution, EpisodeTerminalError, EpisodeTerminalResult,
@@ -327,24 +327,22 @@ impl NativeSquadRoster {
 /// an in-flight Hive Mind decision. The outstanding OutcomeIds are NOT
 /// dropped, credited or forged here: the returned FinishedNativeCommand
 /// must be settled by the authoritative game/TSV accounting layer, and
-/// HiveMindSession keeps in-flight requests as explicit discards when
-/// their responses eventually arrive.
+/// The *connection-owned* HiveMindSession must be notified by the native
+/// transport, using the Level's persistent squad-retirement outbox.
+/// An in-flight response then becomes an explicit discard obligation.
 ///
 /// MemberLost and MinionCreated do not kill their still-living squads.
 pub fn reconcile_retired_squad(
     change: SquadRosterChange,
     world: &mut CombatWorld,
     commands: &mut NativeSquadCommandDirector,
-    session: &mut HiveMindSession,
 ) -> Result<Option<FinishedNativeCommand>, GameCommandError> {
     let SquadRosterChange::SquadRetired { squad } = change else {
         return Ok(None);
     };
-    // Keep the session usable on a command-director failure; that error
-    // must be surfaced so the caller can reconcile the outstanding order.
-    let finished = commands.retire_squad(world, squad)?;
-    session.retire_squad(squad);
-    Ok(finished)
+    // A dead Level retires its local execution immediately; the network
+    // session belongs to the shared connection, not the Level or world.
+    commands.retire_squad(world, squad)
 }
 
 /// A native fixed step must project the one CombatWorld event stream into
@@ -380,7 +378,6 @@ impl NativeSquadRoster {
         &mut self,
         world: &mut CombatWorld,
         commands: &mut NativeSquadCommandDirector,
-        session: &mut HiveMindSession,
         allocate_minion: impl FnMut(SquadLifetime, i64)
             -> Result<SquadLifetime, SquadRosterError>,
         changes: &mut Vec<SquadRosterChange>,
@@ -390,7 +387,7 @@ impl NativeSquadRoster {
             return Err(SquadEventBridgeError::FailedRoster);
         }
         let result = self.reconcile_combat_tick_inner(
-            world, commands, session, allocate_minion, changes, finished,
+            world, commands, allocate_minion, changes, finished,
         );
         if result.is_err() {
             // The event pass may have already registered a minion or
@@ -404,7 +401,6 @@ impl NativeSquadRoster {
         &mut self,
         world: &mut CombatWorld,
         commands: &mut NativeSquadCommandDirector,
-        session: &mut HiveMindSession,
         mut allocate_minion: impl FnMut(SquadLifetime, i64)
             -> Result<SquadLifetime, SquadRosterError>,
         changes: &mut Vec<SquadRosterChange>,
@@ -446,7 +442,7 @@ impl NativeSquadRoster {
         for &change in changes.iter() {
             if let SquadRosterChange::SquadRetired { .. } = change {
                 if let Some(command) = reconcile_retired_squad(
-                    change, world, commands, session,
+                    change, world, commands,
                 )? {
                     finished.push(command);
                 }

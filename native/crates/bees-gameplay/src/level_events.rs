@@ -5,7 +5,7 @@
 //! scheduler, reward model or a substitute for the Unity/MA-POCA adapter.
 //! All mutable scratch is reused per Level, never process-global.
 
-use bees_hivemind::session::{HiveMindSession, SquadLifetime};
+use bees_hivemind::session::SquadLifetime;
 use bees_sim::combat_world::CombatWorld;
 use bees_sim::navigation_runtime::NavigationRuntime;
 use bees_sim::rl_shaping::{DamageRewardMetadata, RewardEmission};
@@ -36,6 +36,7 @@ pub enum NativeLevelEventError {
     Commands(GameCommandError),
     Group(GroupRewardError),
     InvalidGroupConfiguration,
+    InvalidRetirementAcknowledgement,
     FailedLevel,
 }
 
@@ -45,6 +46,9 @@ pub struct NativeLevelTick<'a> {
     /// The authoritative game must settle real TSV and unmatched
     /// OutcomeIds; these command reservations are NOT silently dropped.
     pub finished_commands: &'a [FinishedNativeCommand],
+    /// Pending instructions for the ONE connection-owned HiveMindSession.
+    /// May include earlier ticks not yet acknowledged by the transport.
+    pub pending_session_retirements: &'a [SquadLifetime],
     /// Source-order bounded shaping plus separate uncapped economics.
     /// Reward delivery to team/agent groups belongs to the host adapter.
     pub reward_emissions: &'a [RewardEmission],
@@ -69,15 +73,20 @@ pub struct NativeLevelEventMeasurements {
     pub rewards: NativeEpisodeRewardMeasurements,
     pub group_delivery: Option<GroupRewardMeasurements>,
     pub ticks_integrated: u64,
+    pub pending_session_retirements: usize,
 }
 
-/// Owns the authoritative native Level's squad/Hive Mind/episode state.
+/// Owns the authoritative native Level's squad/command/episode state.
+    /// HiveMindSession belongs to the WebSocket transport and may serve
+    /// several Levels; this processor only publishes retirement messages.
 /// It does not own a second CombatWorld: the caller passes the same world
 /// used by graphics and the Simulation fixed-step rules.
 pub struct NativeLevelEventProcessor {
     roster: NativeSquadRoster,
     commands: NativeSquadCommandDirector,
-    hive_mind: HiveMindSession,
+    /// Persistent until acknowledged by the connection-owned transport.
+    /// Never discard squad retirement obligations at the next fixed tick.
+    pending_session_retirements: Vec<SquadLifetime>,
     episode: NativeEpisodeRewardCoordinator,
     group_delivery: Option<NativeGroupRewardDelivery>,
     next_tick: u64,
@@ -95,7 +104,7 @@ impl NativeLevelEventProcessor {
         Self {
             roster: NativeSquadRoster::new(),
             commands: NativeSquadCommandDirector::new(),
-            hive_mind: HiveMindSession::new(),
+            pending_session_retirements: Vec::new(),
             episode,
             group_delivery: None,
             next_tick: 1,
@@ -126,8 +135,21 @@ impl NativeLevelEventProcessor {
         &mut self.commands
     }
 
-    pub fn session_mut(&mut self) -> &mut HiveMindSession {
-        &mut self.hive_mind
+    /// All pending retirements, including ones from earlier ticks. The
+    /// shared connection must call HiveMindSession::retire_squad for
+    /// each, then acknowledge the processed prefix only after success.
+    pub fn pending_session_retirements(&self) -> &[SquadLifetime] {
+        &self.pending_session_retirements
+    }
+
+    pub fn acknowledge_session_retirements(
+        &mut self, count: usize,
+    ) -> Result<(), NativeLevelEventError> {
+        if count > self.pending_session_retirements.len() {
+            return Err(NativeLevelEventError::InvalidRetirementAcknowledgement);
+        }
+        self.pending_session_retirements.drain(..count);
+        Ok(())
     }
 
     pub fn episode_mut(&mut self) -> &mut NativeEpisodeRewardCoordinator {
@@ -282,6 +304,7 @@ impl NativeLevelEventProcessor {
                 NativeGroupRewardDelivery::measurements,
             ),
             ticks_integrated: self.next_tick - 1,
+            pending_session_retirements: self.pending_session_retirements.len(),
         }
     }
 
@@ -317,11 +340,20 @@ impl NativeLevelEventProcessor {
         // commands; the episode consumer sees the same authoritative
         // physical world and the source-order immutable event buffer.
         if let Err(error) = self.roster.reconcile_combat_tick(
-            world, &mut self.commands, &mut self.hive_mind,
+            world, &mut self.commands,
             allocate_minion, &mut self.changes, &mut self.finished,
         ) {
             self.failed = true;
             return Err(NativeLevelEventError::Roster(error));
+        }
+        // Preserve retirements across multi-step parallel rollout
+        // windows. The shared WebSocket connection may not run until
+        // after an entire world window completes. Late replies are
+        // rejected by the connection's live-owner validation meanwhile.
+        for &change in &self.changes {
+            if let SquadRosterChange::SquadRetired { squad } = change {
+                self.pending_session_retirements.push(squad);
+            }
         }
         let reward = match self.episode.consume_combat_tick(
             world, dt_seconds, &self.changes, damage_metadata, mined_tsv,
@@ -355,6 +387,7 @@ impl NativeLevelEventProcessor {
         Ok(NativeLevelTick {
             squad_changes: &self.changes,
             finished_commands: &self.finished,
+            pending_session_retirements: &self.pending_session_retirements,
             reward_emissions: reward.emissions,
             group_events,
             finalized: reward.finalized,
