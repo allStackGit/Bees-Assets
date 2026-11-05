@@ -490,6 +490,24 @@ impl CombatWorld {
         )
     }
 
+    /// Only StaticObstacle participates in Unity's baked static clearance.
+    /// MapBorder is excluded: pathfinder grid edges supply the border
+    /// clearance cap. Geometry uses the same live ObstacleBody storage as
+    /// physics, never a second persistent navigation obstacle list.
+    pub fn static_navigation_obstacles(
+        &self,
+    ) -> impl Iterator<Item = (i64, &ObstacleBody)> + '_ {
+        self.obstacles.iter().zip(self.physics.obstacles()).filter_map(
+            |(obstacle, body)| {
+                if body.active && obstacle.kind == ObstacleKind::StaticObstacle {
+                    Some((obstacle.entity_id, body))
+                } else {
+                    None
+                }
+            },
+        )
+    }
+
     /// A game stage enables authored breakup behavior once, before its
     /// simulation starts. Explicit configuration avoids accidentally using
     /// the RL scene's shard selection for unrelated game modes.
