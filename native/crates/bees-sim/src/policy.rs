@@ -146,3 +146,35 @@ pub struct Decision {
     pub agent_id: u64,
     pub action: Action,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn active_and_inactive_observation_tails_match_v26_contract() {
+        assert_eq!(RESERVED_OBSERVATION_START + RESERVED_OBSERVATION_FLOATS,
+            OBSERVATION_FLOATS);
+        let mut observation = [f32::NAN; OBSERVATION_FLOATS];
+        write_active_observation_tail(&mut observation, 0.75, true).unwrap();
+        assert!(observation[..PERCEPTION_OBSERVATION_FLOATS]
+            .iter().all(|value| value.is_nan()));
+        assert_eq!(observation[EPISODE_PROGRESS_INDEX], 0.75);
+        assert_eq!(observation[FACTION_OBSERVATION_INDEX], 1.0);
+        assert!(observation[RESERVED_OBSERVATION_START..]
+            .iter().all(|value| *value == 0.0));
+        write_inactive_observation(&mut observation, -1.0).unwrap();
+        assert!(observation.iter().enumerate().all(|(index, &value)|
+            value == if index == FACTION_OBSERVATION_INDEX { -1.0 } else { 0.0 }
+        ));
+    }
+
+    #[test]
+    fn model_signature_must_match_frozen_v26_identity() {
+        assert_eq!(validate_model_abi(ABI_VERSION, POLICY_SIGNATURE), Ok(()));
+        assert_eq!(validate_model_abi(ABI_VERSION - 1, POLICY_SIGNATURE),
+            Err(PolicyAbiError::VersionMismatch { actual: ABI_VERSION - 1 }));
+        assert_eq!(validate_model_abi(ABI_VERSION, "shape-only compatibility"),
+            Err(PolicyAbiError::SignatureMismatch));
+    }
+}
