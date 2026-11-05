@@ -8,7 +8,7 @@
 //! FireTankExplosion and map-debris breakup mechanics.
 
 use super::*;
-use crate::perception_environment::MapObjectKind;
+use crate::map_object::MapObjectKind;
 
 impl CombatWorld {
     /// Register a real MapObject collider in the same KinematicPhysics as
