@@ -14,7 +14,10 @@
 
 use std::sync::Arc;
 
-use crate::collision::{circle_overlaps_polygon, circles_overlap, polygons_overlap, Aabb, Pose};
+use crate::collision::{
+    circle_overlaps_polygon, circles_overlap, polygons_overlap,
+    swept_box_circle_distance, swept_box_polygon_distance, Aabb, Pose,
+};
 use crate::geometry::Vec2;
 use crate::movement::ShipMotion;
 use crate::projectile::ProjectileMotion;
@@ -522,6 +525,13 @@ impl ObstacleBody {
     }
 }
 
+/// Closest collider reached by a moving ship-sized rectangular cast.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MovementObstacleHit {
+    pub obstacle_id: i64,
+    pub distance: f32,
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct PhysicsStepCounts {
     pub integrated_bodies: u64,
@@ -738,6 +748,82 @@ impl KinematicPhysics {
     pub fn obstacle_trigger_entries(&self) -> &[ObstacleTriggerEnter] { &self.obstacle_entries }
     pub fn obstacles(&self) -> &[ObstacleBody] { &self.obstacles }
     pub fn obstacles_mut(&mut self) -> &mut [ObstacleBody] { &mut self.obstacles }
+
+    /// Exact shape sweep of the same rotated sprite-sized rectangle that
+    /// Ship.Geometry.GetObstacleInPath passes to Physics2D.BoxCastNonAlloc.
+    /// The caller filters gameplay kind and IsDead, as ShouldAvoidObstacle
+    /// does in Unity. Only primary layer-19 obstacle hulls are consulted:
+    /// map borders, child proximity and pathfinder clearance are not casts.
+    /// Collider ordering ties are broken by stable entity ID.
+    pub fn cast_ship_movement_box(
+        &self,
+        origin: Vec2,
+        size: Vec2,
+        angle_degrees: f32,
+        destination: Vec2,
+        mut should_avoid: impl FnMut(&ObstacleBody) -> bool,
+    ) -> Result<Option<MovementObstacleHit>, PhysicsError> {
+        if !origin.is_finite() || !destination.is_finite() ||
+            !size.is_finite() || size.x <= 0.0 || size.y <= 0.0 ||
+            !angle_degrees.is_finite() {
+            return Err(PhysicsError::InvalidCollider);
+        }
+        let delta = destination - origin;
+        let distance = delta.length_squared().sqrt();
+        if !distance.is_finite() { return Err(PhysicsError::InvalidCollider); }
+        let direction = if distance > 0.0 {
+            delta * (1.0 / distance)
+        } else { Vec2::ZERO };
+        let half = size * 0.5;
+        let pose = Pose { position: origin, rotation_degrees: angle_degrees };
+        let corners = [
+            pose.transform_point(Vec2::new(-half.x, -half.y)),
+            pose.transform_point(Vec2::new(half.x, -half.y)),
+            pose.transform_point(Vec2::new(half.x, half.y)),
+            pose.transform_point(Vec2::new(-half.x, half.y)),
+        ];
+        let Some(initial_bounds) = Aabb::from_points(&corners) else {
+            return Err(PhysicsError::InvalidCollider);
+        };
+        let sweep_bounds = Aabb {
+            min: Vec2::new(
+                initial_bounds.min.x.min(initial_bounds.min.x + delta.x),
+                initial_bounds.min.y.min(initial_bounds.min.y + delta.y),
+            ),
+            max: Vec2::new(
+                initial_bounds.max.x.max(initial_bounds.max.x + delta.x),
+                initial_bounds.max.y.max(initial_bounds.max.y + delta.y),
+            ),
+        };
+        let mut closest: Option<MovementObstacleHit> = None;
+        for obstacle in &self.obstacles {
+            if !obstacle.active || obstacle.layer != 19 ||
+                !should_avoid(obstacle) { continue; }
+            let collider = &obstacle.collider;
+            if !collider.bounds.is_some_and(|bounds| bounds.overlaps(sweep_bounds)) {
+                continue;
+            }
+            let distance_to_hit = match &collider.shape {
+                ShipShape::Circle { radius, .. } => swept_box_circle_distance(
+                    &corners, direction, distance, collider.circle_world, *radius,
+                ),
+                _ => swept_box_polygon_distance(
+                    &corners, direction, distance, &collider.polygon_world,
+                ),
+            };
+            if let Some(hit) = distance_to_hit {
+                let choose = closest.is_none_or(|prior|
+                    hit < prior.distance ||
+                    (hit == prior.distance && obstacle.id < prior.obstacle_id));
+                if choose {
+                    closest = Some(MovementObstacleHit {
+                        obstacle_id: obstacle.id, distance: hit,
+                    });
+                }
+            }
+        }
+        Ok(closest)
+    }
     pub fn ship_obstacle_entries(&self) -> &[ShipObstacleContact] { &self.ship_obstacle_enters }
     pub fn ship_obstacle_exits(&self) -> &[ShipObstacleContact] { &self.ship_obstacle_exits }
     pub fn obstacle_pair_entries(&self) -> &[ObstaclePairContact] { &self.obstacle_pair_enters }
