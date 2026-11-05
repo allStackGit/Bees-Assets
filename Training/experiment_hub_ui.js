@@ -471,7 +471,6 @@ document.addEventListener('DOMContentLoaded', () => {
         automationOptions.replaceChildren();
         for(const machine of automationCandidates) {
             const label=document.createElement('label');
-            label.style.display='block';
             const input=document.createElement('input');
             input.type='checkbox';input.value=machine.id;
             input.checked=selectedAutomation.has(machine.id);
