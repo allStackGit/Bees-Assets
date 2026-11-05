@@ -39,8 +39,9 @@ and persist a StoreCommands submission before sending it. Native
 responds. Status 200 acknowledges durable commit. A status-409 response
 with `StaleOutcomeIds` is **partially committed** in the deployed server:
 valid siblings have been written, so the native ledger retires that batch
-and reports the stale IDs for separate reconciliation rather than retrying
-already-committed outcomes. Other failures retain their pending submission. Transport authentication, reconnection, durable
+but persists the unresolved stale IDs in a separate reconciliation record
+rather than retrying already-committed outcomes. Only explicit reconciliation
+retires that record. Other failures retain their pending submission. Transport authentication, reconnection, durable
 client retry storage, the native squad-command executor, and the server-side
 learning/persistence implementation remain separate work. **The existing
 BeesServer production behavior has not been replaced in this increment.**
