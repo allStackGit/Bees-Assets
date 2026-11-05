@@ -264,6 +264,10 @@ hit is marked self_inflicted for RL shaping, and the
 YellowJacketDetonated event exposes the self-death cause even when
 historical gameplay names the enemy as killer. Striker and Yellow Jacket
 share the same exact, matrix-gated contact search and stable tie-breaking.
+Their separate distance-rejection and exact-hull counters expose actual
+collision work. Each agent now owns one tagged ship-special state rather
+than independent optional Striker, Fire Barge and Yellow Jacket fields,
+making unsupported combinations impossible by construction.
 Scripted auto-BombingRun behavior and full command-stat persistence are
 still separate Level integration work.
 

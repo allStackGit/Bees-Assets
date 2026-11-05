@@ -18,11 +18,10 @@ impl CombatWorld {
         }
         let runtime = self.policy_ship_runtime.get_mut(&ship_id)
             .ok_or(CombatWorldError::UnknownShip)?;
-        if runtime.yellow_jacket_power.is_some() ||
-            runtime.striker.is_some() || runtime.fire_barge_power.is_some() {
+        if runtime.special.is_some() {
             return Err(CombatWorldError::InvalidPolicyYellowJacket);
         }
-        runtime.yellow_jacket_power = Some(bomb_power);
+        runtime.special = Some(PolicyShipSpecial::YellowJacket { bomb_power });
         Ok(())
     }
 
@@ -38,11 +37,18 @@ impl CombatWorld {
             return Ok(false);
         }
         let power = self.policy_ship_runtime.get(&ship_id)
-            .and_then(|runtime| runtime.yellow_jacket_power)
+            .and_then(|runtime| match runtime.special {
+                Some(PolicyShipSpecial::YellowJacket { bomb_power }) => Some(bomb_power),
+                _ => None,
+            })
             .ok_or(CombatWorldError::InvalidPolicyYellowJacket)?;
         let contact = self.find_touching_enemy_ship(ship_index, collisions);
         self.policy_special_measurements.yellow_jacket_hull_checks +=
             contact.candidates;
+        self.policy_special_measurements.yellow_jacket_distance_rejections +=
+            contact.distance_rejections;
+        self.policy_special_measurements.yellow_jacket_exact_overlap_tests +=
+            contact.exact_tests;
         let Some(target_id) = contact.target_id else {
             self.policy_special_measurements.yellow_jacket_contact_misses += 1;
             return Ok(false);
@@ -139,7 +145,10 @@ mod tests {
         let decision = Decision { agent_id: 1, action };
         rules.step(&mut world, &[decision], 0.02).unwrap();
         assert_eq!(world.state.ship(2).unwrap().vitals.health(), 100);
-        assert_eq!(world.state.policy_special_measurements().yellow_jacket_contact_misses, 1);
+        let far = world.state.policy_special_measurements();
+        assert_eq!(far.yellow_jacket_contact_misses, 1);
+        assert_eq!(far.yellow_jacket_distance_rejections, 1);
+        assert_eq!(far.yellow_jacket_exact_overlap_tests, 0);
 
         world.state.physics.ships_mut()[1].motion.position = Vec2::ZERO;
         rules.step(&mut world, &[decision], 0.02).unwrap();

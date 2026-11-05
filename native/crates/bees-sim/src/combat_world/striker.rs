@@ -46,22 +46,24 @@ impl CombatWorld {
         }
         let runtime = self.policy_ship_runtime.get_mut(&striker_id)
             .ok_or(CombatWorldError::UnknownShip)?;
-        if runtime.striker.is_some() {
+        if runtime.special.is_some() {
             return Err(CombatWorldError::InvalidPolicyStriker);
         }
-        runtime.striker = Some(PolicyStrikerRuntime {
+        runtime.special = Some(PolicyShipSpecial::Striker(PolicyStrikerRuntime {
             carrier_id,
             bomb_power,
             ready: true, // Striker.ClearData: IsBombReady = true
             reload_timer: ScaledTimer::new(1.0, true, false),
-        });
+        }));
         Ok(())
     }
 
     /// Current authoritative loaded state for UI and RL observations.
     pub fn policy_striker_bomb_ready(&self, striker_id: i64) -> Option<bool> {
-        self.policy_ship_runtime.get(&striker_id)?
-            .striker.as_ref().map(|striker| striker.ready)
+        match self.policy_ship_runtime.get(&striker_id)?.special {
+            Some(PolicyShipSpecial::Striker(striker)) => Some(striker.ready),
+            _ => None,
+        }
     }
 
     /// Striker.TryToDropBombs is a contact-triggered ship special. Find an
@@ -75,7 +77,7 @@ impl CombatWorld {
             .ok_or(CombatWorldError::UnknownShip)?;
         let runtime = self.policy_ship_runtime.get(&striker_id)
             .ok_or(CombatWorldError::UnknownShip)?;
-        let Some(profile) = runtime.striker else {
+        let Some(PolicyShipSpecial::Striker(profile)) = runtime.special else {
             return Err(CombatWorldError::InvalidPolicyStriker);
         };
         if !profile.ready || !self.physics.ships()[ship_index].active ||
@@ -120,9 +122,13 @@ impl CombatWorld {
             ProjectileMotion::new(position, 0.0, 0.0, 0.0, shot_id, 0),
         )?;
         // Do not consume readiness unless the real bomb/fuse was created.
-        self.policy_ship_runtime.get_mut(&striker_id)
-            .expect("validated Striker runtime").striker.as_mut()
-            .expect("validated bomb profile").ready = false;
+        if let Some(PolicyShipSpecial::Striker(profile)) =
+            self.policy_ship_runtime.get_mut(&striker_id)
+                .expect("validated Striker runtime").special.as_mut() {
+            profile.ready = false;
+        } else {
+            unreachable!("validated Striker bomb profile");
+        }
         self.events.push(CombatEvent::StrikerBombDropped {
             ship_id: striker_id,
             target_id,
@@ -137,7 +143,8 @@ impl CombatWorld {
     /// its still-living Carrier. No magical replenishment by cooldown alone.
     pub(super) fn advance_policy_striker_reloads(&mut self, dt: f32) {
         for (&ship_id, runtime) in &mut self.policy_ship_runtime {
-            let Some(profile) = runtime.striker.as_mut() else { continue };
+            let Some(PolicyShipSpecial::Striker(profile)) =
+                runtime.special.as_mut() else { continue };
             let Some(due) = profile.reload_timer.begin_update(dt) else {
                 continue;
             };

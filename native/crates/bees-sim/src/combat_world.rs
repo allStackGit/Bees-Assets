@@ -74,7 +74,7 @@ mod weapons;
 mod striker;
 mod fire_barge;
 mod yellow_jacket;
-use self::policy::PolicyShipRuntime;
+use self::policy::{PolicyShipRuntime, PolicyShipSpecial};
 use self::weapons::PendingPolicyShot;
 pub use self::weapons::{NativeFirePattern, NativeTurretSpec};
 
@@ -460,6 +460,8 @@ pub struct PolicySpecialMeasurements {
     pub fire_barge_detonations: u64,
     pub yellow_jacket_contact_misses: u64,
     pub yellow_jacket_hull_checks: u64,
+    pub yellow_jacket_distance_rejections: u64,
+    pub yellow_jacket_exact_overlap_tests: u64,
     pub yellow_jacket_detonations: u64,
 }
 

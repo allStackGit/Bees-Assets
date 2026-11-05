@@ -13,6 +13,14 @@ use crate::policy_batch::PolicyActionMask;
 use super::weapons::PolicyTurretMount;
 use super::striker::PolicyStrikerRuntime;
 
+/// Exactly one authored ship special can own an agent at a time.
+#[derive(Clone, Copy, Debug)]
+pub(super) enum PolicyShipSpecial {
+    Striker(PolicyStrikerRuntime),
+    FireBarge { bomb_power: i32 },
+    YellowJacket { bomb_power: i32 },
+}
+
 #[derive(Clone, Debug)]
 pub(super) struct PolicyShipRuntime {
     pub(super) frame: PolicyFrame,
@@ -24,11 +32,8 @@ pub(super) struct PolicyShipRuntime {
     pub(super) last_hull_rotation: f32,
     /// Forwarded from the live gameplay ship's cease-fire state.
     pub(super) cease_fire: bool,
-    /// Striker has a reloadable contact bomb; Fire Barge owns an irreversible
-    /// self-detonation. Both are ship specials, never turret fire branches.
-    pub(super) striker: Option<PolicyStrikerRuntime>,
-    pub(super) fire_barge_power: Option<i32>,
-    pub(super) yellow_jacket_power: Option<i32>,
+    /// This is a single native owner, not overlapping optional subclasses.
+    pub(super) special: Option<PolicyShipSpecial>,
 }
 
 impl CombatWorld {
@@ -53,9 +58,7 @@ impl CombatWorld {
             turrets: [None; 5],
             last_hull_rotation: rotation,
             cease_fire: false,
-            striker: None,
-            fire_barge_power: None,
-            yellow_jacket_power: None,
+            special: None,
         });
         Ok(())
     }
@@ -89,9 +92,12 @@ impl CombatWorld {
             fire: std::array::from_fn(|slot| runtime.turrets[slot].is_some()),
             special: [
                 true,
-                runtime.striker.as_ref().is_some_and(|striker| striker.ready) ||
-                    runtime.fire_barge_power.is_some() ||
-                    runtime.yellow_jacket_power.is_some(),
+                match runtime.special {
+                    None => false,
+                    Some(PolicyShipSpecial::Striker(striker)) => striker.ready,
+                    Some(PolicyShipSpecial::FireBarge { .. }) |
+                    Some(PolicyShipSpecial::YellowJacket { .. }) => true,
+                },
                 false, false, false,
             ],
         })
@@ -190,14 +196,16 @@ impl CombatWorld {
                 // An earlier action in this tick may have killed the ship.
                 continue;
             };
-            if runtime.fire_barge_power.is_some() {
-                self.try_detonate_policy_fire_barge(ship_id)?;
-            } else if runtime.striker.is_some() {
-                self.try_drop_policy_striker_bomb(ship_id, collisions)?;
-            } else if runtime.yellow_jacket_power.is_some() {
-                self.try_detonate_policy_yellow_jacket(ship_id, collisions)?;
-            } else {
+            let Some(special) = runtime.special else {
                 return Err(CombatWorldError::UnsupportedPolicyActions);
+            };
+            match special {
+                PolicyShipSpecial::FireBarge { .. } =>
+                    { self.try_detonate_policy_fire_barge(ship_id)?; }
+                PolicyShipSpecial::Striker(_) =>
+                    { self.try_drop_policy_striker_bomb(ship_id, collisions)?; }
+                PolicyShipSpecial::YellowJacket { .. } =>
+                    { self.try_detonate_policy_yellow_jacket(ship_id, collisions)?; }
             }
         }
         self.policy_pending_ship_specials.clear();

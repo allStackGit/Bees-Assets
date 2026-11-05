@@ -23,10 +23,10 @@ impl CombatWorld {
         }
         let runtime = self.policy_ship_runtime.get_mut(&ship_id)
             .ok_or(CombatWorldError::UnknownShip)?;
-        if runtime.fire_barge_power.is_some() || runtime.striker.is_some() {
+        if runtime.special.is_some() {
             return Err(CombatWorldError::InvalidPolicyFireBarge);
         }
-        runtime.fire_barge_power = Some(bomb_power);
+        runtime.special = Some(PolicyShipSpecial::FireBarge { bomb_power });
         Ok(())
     }
 
@@ -43,7 +43,10 @@ impl CombatWorld {
             return Ok(false);
         }
         let power = self.policy_ship_runtime.get(&ship_id)
-            .and_then(|runtime| runtime.fire_barge_power)
+            .and_then(|runtime| match runtime.special {
+                Some(PolicyShipSpecial::FireBarge { bomb_power }) => Some(bomb_power),
+                _ => None,
+            })
             .ok_or(CombatWorldError::InvalidPolicyFireBarge)?;
         let shot_id = self.next_entity_id;
         if shot_id == i64::MAX {
