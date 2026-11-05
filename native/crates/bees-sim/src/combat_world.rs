@@ -469,6 +469,27 @@ impl CombatWorld {
     pub fn obstacles(&self) -> &[CombatObstacle] { &self.obstacles }
     pub fn asteroid_pieces(&self) -> &[AsteroidPieceState] { &self.pieces }
 
+    /// Unity Pathfinder.UpdateDynamicObstacleLayer enumerates live
+    /// CollisionAsteroids from Level.State.Obstacles every fixed update.
+    /// Deriving this view directly from world ownership avoids retaining
+    /// dead asteroid coordinates in a second pathfinder registry. It keeps
+    /// zero-health collision asteroids until Kill(false) actually removes
+    /// them after the authored 0.35-second delay.
+    pub fn dynamic_navigation_asteroids(
+        &self,
+    ) -> impl Iterator<Item = (i64, &ObstacleBody)> + '_ {
+        self.obstacles.iter().zip(self.physics.obstacles()).filter_map(
+            |(obstacle, body)| {
+                if body.active && obstacle.kind == ObstacleKind::CollisionAsteroid &&
+                    obstacle.live() {
+                    Some((obstacle.entity_id, body))
+                } else {
+                    None
+                }
+            },
+        )
+    }
+
     /// A game stage enables authored breakup behavior once, before its
     /// simulation starts. Explicit configuration avoids accidentally using
     /// the RL scene's shard selection for unrelated game modes.
