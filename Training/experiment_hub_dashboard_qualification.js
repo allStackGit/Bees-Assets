@@ -3,7 +3,7 @@
 
 // Deliberately separate from bees_experiments.js. Uses the real Hub API,
 // existing dashboard markup/client, real worker-only HTTP listener and real
-// Windows native owner with one fixed inert local adapter. No Bees operator,
+// Linux systemd or Windows Job Object owner. No Bees operator,
 // live registry, Unity build, Ants runner, or production listener is imported.
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
@@ -18,6 +18,8 @@ const {endpoint,observations,observedOffers,sendHeartbeat}=
     require('./experiment_hub_agent');
 const {LocalExecution}=require('./experiment_hub_execution');
 const {WindowsSupervisor}=require('./experiment_hub_windows_supervisor');
+const {LinuxSupervisor}=require('./experiment_hub_linux_supervisor');
+const linuxAdapters=require('./experiment_hub_smoke_adapter_linux');
 
 const HOST='127.0.0.1';
 const MAX_BODY_BYTES=65536;
@@ -33,7 +35,9 @@ function respond(res,status,data) {
     });
     res.end(payload);
 }
-function renderQualificationPage() {
+function renderQualificationPage(platform='win32') {
+    if(!['win32','linux'].includes(platform))
+        throw Error('Unsupported native dashboard qualification platform.');
     const html=fs.readFileSync(path.join(__dirname,'experiments.html'),'utf8')
         .replace(/\r\n/g,'\n');
     // Omit the embedded legacy Bees browser script altogether; keep the
@@ -46,8 +50,8 @@ function renderQualificationPage() {
         .replace('<html lang="en">',
             '<html lang="en" data-hub-default-project="smoke">')
         .replace('<body>','<body>\n<div class="hub-standalone" role="status">'+
-            '<strong>ISOLATED WINDOWS QUALIFICATION</strong> — '+
-            'Only the fixed 30-second inert Windows helper is executable. '+
+            '<strong>ISOLATED '+(platform==='win32'?'WINDOWS':'LINUX')+' QUALIFICATION</strong> — '+
+            'Only a locally fixed 30-second inert native program is executable. '+
             'No Bees or Ants workloads, production experiments, or training controls are connected. '+
             'This session uses a temporary Hub registry and local agent.</div>'+
             '<section id="hub-qual-panel"><h2>Isolated worker and resource qualification</h2>'+
@@ -84,40 +88,49 @@ async function readJson(req) {
 async function main(argv=process.argv.slice(2),env=process.env) {
     if(argv.length!==1||argv[0]!=='--run-inert-ui')
         throw Error('Specify --run-inert-ui for the isolated Windows browser qualification.');
-    if(os.platform()!=='win32')
-        throw Error('Native browser qualification requires Windows.');
+    const platform=os.platform();
+    if(!['win32','linux'].includes(platform))
+        throw Error('Native browser qualification requires Linux or Windows.');
     const helper=env.EXPERIMENT_HUB_WINDOWS_HELPER;
     const sha=env.EXPERIMENT_HUB_WINDOWS_HELPER_SHA256;
-    if(!path.win32.isAbsolute(helper||'')||!/^[a-f0-9]{64}$/.test(String(sha||'')))
+    if(platform==='win32'&&
+        (!path.win32.isAbsolute(helper||'')||
+            !/^[a-f0-9]{64}$/.test(String(sha||''))))
         throw Error('Set the locally built absolute Windows helper path and SHA-256 pin first.');
-    const page=renderQualificationPage();
+    const page=renderQualificationPage(platform);
     const root=fs.mkdtempSync(path.join(os.tmpdir(),'hub-dashboard-qualification-'));
     let admin=null,worker=null,heartbeatTimer=null,schedulerTimer=null,
         closing=false,active=false,heartbeatPaused=false;
     let receipts=[],reports=[],lastError=null,lastHeartbeatAt=null,token;
     const nativeRoot=path.join(root,'native');
     try {
-        const supervisor=new WindowsSupervisor({
-            root:nativeRoot,machineId:'smoke',
-            helperPath:helper,helperSha256:sha,
-            adapters:{smoke:{
-                executable:helper,stop_policy:'terminate-group',
-                args:()=>['--smoke-child'],
-            }},
-        });
+        const supervisor=platform==='win32'
+            ?new WindowsSupervisor({
+                root:nativeRoot,machineId:'smoke',
+                helperPath:helper,helperSha256:sha,
+                adapters:{smoke:{
+                    executable:helper,stop_policy:'terminate-group',
+                    args:()=>['--smoke-child'],
+                }},
+            })
+            :new LinuxSupervisor({
+                root:nativeRoot,machineId:'smoke',
+                adapters:linuxAdapters,
+            });
         await supervisor.qualify();
-        assert(supervisor.qualifiedAt,'Windows native preflight did not pass.');
+        assert(supervisor.qualifiedAt,'Native CPU/RAM preflight did not pass.');
         const executor=new LocalExecution({
             machineId:'smoke',supervisor,projects:['smoke'],
         });
         const hub=new ExperimentHub(path.join(root,'hub'));
-        hub.addProject({id:'smoke',name:'Windows qualification',
-            description:'Only a fixed 30-second inert Windows child may execute.'});
+        const platformName=platform==='win32'?'Windows':'Linux';
+        hub.addProject({id:'smoke',name:platformName+' qualification',
+            description:'Only a fixed 30-second inert native child may execute.'});
         const available=observations('smoke');
         if(available.cpus<2||available.ram_mb<512)
-            throw Error('Windows qualification requires two logical CPUs and 512 MiB RAM.');
+            throw Error('Native qualification requires two logical CPUs and 512 MiB RAM.');
         hub.addMachine({
-            id:'smoke',name:'Isolated local Windows agent',
+            id:'smoke',name:'Isolated local '+platformName+' agent',
             cpus:2,ram_mb:512,gpus:[],
         });
         token=hub.enrollMachine({machine_id:'smoke',confirm_enroll:true}).agent_token;
@@ -322,7 +335,7 @@ async function main(argv=process.argv.slice(2),env=process.env) {
         heartbeatTimer=setInterval(poll,REPORT_INTERVAL_MS);
         schedulerTimer=setInterval(tickScheduler,REPORT_INTERVAL_MS);
         const url='http://'+HOST+':'+admin.address().port+'/';
-        console.log('ISOLATED Experiment Hub browser qualification: '+url);
+        console.log('ISOLATED '+platformName+' Experiment Hub browser qualification: '+url);
         console.log('Project: Windows qualification (smoke); machine: smoke');
         console.log('Private qualification registry: '+root);
         console.log('The normal Bees dashboard on port 7148 is not used.');
