@@ -1141,11 +1141,15 @@ class ExperimentHub {
         // decisions as allocateJobs, but do not mint leases or mutate state.
         // The separate POST /api/hub/plan remains a general GPU-first
         // what-if optimizer and is not a prediction of the queue pass.
-        const pending=fairPending(jobs.filter(j=>!j.lease_id));
+        // Claimed jobs still occupy their position in each project's
+        // FIFO queue. Skipping them *before* interleaving would give
+        // a project extra priority compared with allocateJobs.
+        const ordered=fairPending(jobs);
         const reservations=copy(snapshot.reservations);
         const machines=snapshot.machines.filter(m=>m.status==='connected');
         const proposed=[];
-        for(const job of pending) {
+        for(const job of ordered) {
+            if(job.lease_id)continue;
             const claimCount=reservations.filter(r=>
                 ['active','offered','acknowledged'].includes(r.status)).length;
             const chosen=claimCount<100
