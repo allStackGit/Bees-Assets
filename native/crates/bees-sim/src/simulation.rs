@@ -63,6 +63,9 @@ pub struct World<S> {
     pub random: RandomStream,
     tick: u64,
     failed: bool,
+    /// Episode-local counts and sampled timings, independent for each arena.
+    /// The Simulation also retains cumulative totals across all episodes.
+    measurements: Measurements,
 }
 
 impl<S> World<S> {
@@ -73,6 +76,7 @@ impl<S> World<S> {
             random: RandomStream::new(seed),
             tick: 0,
             failed: false,
+            measurements: Measurements::default(),
         }
     }
 
@@ -84,6 +88,10 @@ impl<S> World<S> {
         self.failed
     }
 
+    pub fn measurements(&self) -> Measurements {
+        self.measurements
+    }
+
     /// Explicit episode reset clears a failed/finished world; simply calling
     /// step again after an error is intentionally prohibited.
     pub fn reset_episode(&mut self, seed: u64, state: S) {
@@ -91,6 +99,7 @@ impl<S> World<S> {
         self.random = RandomStream::new(seed);
         self.tick = 0;
         self.failed = false;
+        self.measurements = Measurements::default();
     }
 }
 
@@ -198,13 +207,16 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
                 // A failing rules update may have partially mutated world state.
                 // Never resume the same world silently from that state.
                 world.failed = true;
+                world.measurements.failed_steps += 1;
                 self.measurements.failed_steps += 1;
                 return Err(StepError::Rules { id: world.id, source });
             }
         };
 
         world.tick += 1;
-        self.measurements.record(counts, start.map(|start| start.elapsed()));
+        let duration = start.map(|start| start.elapsed());
+        world.measurements.record(counts, duration);
+        self.measurements.record(counts, duration);
         Ok(counts)
     }
 }
@@ -248,6 +260,8 @@ mod tests {
         assert_eq!(simulation.world(0).unwrap().tick(), 0);
         assert_eq!(simulation.world(1).unwrap().tick(), 1);
         assert_eq!(simulation.measurements().ticks, 3);
+        assert_eq!(simulation.world(0).unwrap().measurements().ticks, 0);
+        assert_eq!(simulation.world(1).unwrap().measurements().ticks, 1);
     }
 
     #[test]
