@@ -99,7 +99,10 @@ pub enum NativeInferenceRunError<E> {
 pub struct NativeInferenceMeasurements {
     pub model_calls: u64,
     pub model_rows: u64,
+    /// Wall time of calls selected for timing, not the sum of all calls.
     pub model_forward_nanos: u128,
+    pub model_forward_timed_calls: u64,
+    pub model_forward_timed_rows: u64,
     pub backend_failures: u64,
     pub invalid_action_batches: u64,
 }
@@ -300,13 +303,24 @@ impl NativeLevelInferenceBatch {
         Ok(&self.keyed_decisions)
     }
 
-    /// Execute one model inference against the contiguous v26 buffers.
-    /// A backend failure invalidates the whole batch, including any
-    /// partially written actions; only clear() permits another attempt.
-    /// The same final validation as the manual-output path applies.
+    /// Standalone inference records model forward elapsed time as before.
+    /// A multi-world rollout can instead use its shared timing sampling
+    /// policy via infer_with_timing to avoid a clock read on every call.
     pub fn infer<B: NativePolicyInference>(
         &mut self,
         backend: &mut B,
+    ) -> Result<&[(PolicyAgentKey, Decision)], NativeInferenceRunError<B::Error>> {
+        self.infer_with_timing(backend, true)
+    }
+
+    /// Execute one complete model inference against the v26 buffers.
+    /// Failure invalidates the whole batch, including partially written
+    /// actions. All calls count model rows; only selected calls contribute
+    /// wall time, with their own sample denominators.
+    pub(crate) fn infer_with_timing<B: NativePolicyInference>(
+        &mut self,
+        backend: &mut B,
+        sample_timing: bool,
     ) -> Result<&[(PolicyAgentKey, Decision)], NativeInferenceRunError<B::Error>> {
         if self.finalized {
             return Err(NativeInferenceRunError::Boundary(
@@ -321,16 +335,20 @@ impl NativeLevelInferenceBatch {
         let (keys, observations, action_masks, continuous, discrete) =
             self.batch.inference_buffers_mut();
         debug_assert_eq!(keys.len(), self.routes.len());
-        let started = Instant::now();
+        let started = sample_timing.then(Instant::now);
         let result = backend.forward(
             keys, &self.routes, observations, action_masks,
             continuous, discrete,
         );
         self.measurements.model_calls += 1;
         self.measurements.model_rows += keys.len() as u64;
-        self.measurements.model_forward_nanos =
-            self.measurements.model_forward_nanos
-                .saturating_add(started.elapsed().as_nanos());
+        if let Some(started) = started {
+            self.measurements.model_forward_timed_calls += 1;
+            self.measurements.model_forward_timed_rows += keys.len() as u64;
+            self.measurements.model_forward_nanos =
+                self.measurements.model_forward_nanos
+                    .saturating_add(started.elapsed().as_nanos());
+        }
         if let Err(error) = result {
             self.failed = true;
             self.measurements.backend_failures += 1;
