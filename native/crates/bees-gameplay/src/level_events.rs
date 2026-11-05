@@ -221,31 +221,29 @@ impl NativeLevelEventProcessor {
         Ok(())
     }
 
-    fn reserve_output_records(&mut self, count: usize)
-        -> Result<(), NativeLevelEventError>
-    {
-        let total = self.pending_notifications.len()
-            .checked_add(count)
-            .ok_or(NativeLevelEventError::OutputBackpressure {
-                pending: self.pending_notifications.len(),
-                new_events: count,
-            })?;
-        if total > MAX_PENDING_NOTIFICATIONS {
-            self.failed = true;
+    fn reserve_output_records(
+        pending: &mut Vec<NativeLevelNotification>,
+        failed: &mut bool,
+        count: usize,
+    ) -> Result<(), NativeLevelEventError> {
+        let Some(total) = pending.len().checked_add(count) else {
+            *failed = true;
             return Err(NativeLevelEventError::OutputBackpressure {
-                pending: self.pending_notifications.len(),
-                new_events: count,
+                pending: pending.len(), new_events: count,
+            });
+        };
+        if total > MAX_PENDING_NOTIFICATIONS {
+            *failed = true;
+            return Err(NativeLevelEventError::OutputBackpressure {
+                pending: pending.len(), new_events: count,
             });
         }
-        // Growth is amortized; event records are created only when an
-        // actual squad/command/reward/terminal notification exists.
-        self.pending_notifications.reserve(count);
+        pending.reserve(count);
         Ok(())
     }
 
-    fn update_output_peak(&mut self) {
-        self.peak_pending_notifications = self.peak_pending_notifications
-            .max(self.pending_notifications.len());
+    fn update_output_peak(peak: &mut usize, size: usize) {
+        *peak = (*peak).max(size);
     }
 
     pub fn episode_mut(&mut self) -> &mut NativeEpisodeRewardCoordinator {
@@ -287,7 +285,9 @@ impl NativeLevelEventProcessor {
         if self.is_failed() || self.completed() {
             return Err(NativeLevelEventError::FailedLevel);
         }
-        self.reserve_output_records(1)?;
+        Self::reserve_output_records(
+            &mut self.pending_notifications, &mut self.failed, 1,
+        )?;
         let emission = match self.episode.record_verified_discovery(
             side, kind, entity_id, authored_value,
         ) {
@@ -322,7 +322,10 @@ impl NativeLevelEventProcessor {
                 tick: self.next_tick.saturating_sub(1),
                 kind,
             });
-            self.update_output_peak();
+            Self::update_output_peak(
+                &mut self.peak_pending_notifications,
+                self.pending_notifications.len(),
+            );
         }
         Ok(NativeImmediateReward { emission, group_event })
     }
@@ -401,7 +404,10 @@ impl NativeLevelEventProcessor {
             self.failed = true;
             return Err(NativeLevelEventError::Commands(error));
         }
-        self.reserve_output_records(self.timed_finished.len())?;
+        Self::reserve_output_records(
+            &mut self.pending_notifications, &mut self.failed,
+            self.timed_finished.len(),
+        )?;
         for finished in &self.timed_finished {
             self.pending_notifications.push(NativeLevelNotification {
                 tick: completed_tick,
@@ -410,7 +416,10 @@ impl NativeLevelEventProcessor {
                 ),
             });
         }
-        self.update_output_peak();
+        Self::update_output_peak(
+            &mut self.peak_pending_notifications,
+            self.pending_notifications.len(),
+        );
         self.finished.append(&mut self.timed_finished);
         self.last_advanced_command_tick = Some(completed_tick);
         Ok(())
@@ -515,7 +524,11 @@ impl NativeLevelEventProcessor {
             .saturating_add(self.finished.len())
             .saturating_add(reward_count)
             .saturating_add(usize::from(reward.finalized.is_some()));
-        self.reserve_output_records(new_count)?;
+        // Only the notification outbox is mutated here: the reward and
+        // group slices remain borrowed from other independent fields.
+        Self::reserve_output_records(
+            &mut self.pending_notifications, &mut self.failed, new_count,
+        )?;
         for &change in &self.changes {
             self.pending_notifications.push(NativeLevelNotification {
                 tick: completed_tick,
@@ -551,7 +564,10 @@ impl NativeLevelEventProcessor {
                 kind: NativeLevelNotificationKind::EpisodeFinal(finalized),
             });
         }
-        self.update_output_peak();
+        Self::update_output_peak(
+            &mut self.peak_pending_notifications,
+            self.pending_notifications.len(),
+        );
         self.next_tick = self.next_tick.checked_add(1)
             .expect("monotonic native Level tick exhausted");
         self.last_finalized = reward.finalized;
