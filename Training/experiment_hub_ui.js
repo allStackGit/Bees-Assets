@@ -140,6 +140,23 @@ document.addEventListener('DOMContentLoaded', () => {
         jobSelect.replaceChildren(...configs.map(c=>new Option(
             c.name+' · revision '+c.revision,c.id)));
         if(configs.some(c=>c.id===former)) jobSelect.value=former;
+        const predecessorSelect=$('hub-job-predecessor');
+        const previousParent=predecessorSelect.value;
+        const successors=new Set((state.jobs||[])
+            .filter(j=>j.continuation_of_job_id&&j.status!=='cancelled')
+            .map(j=>j.continuation_of_job_id));
+        const availableParents=(state.jobs||[]).filter(j=>
+            j.project_id===project&&['finished','stopped'].includes(j.status)&&
+            j.capacity_released_at&&j.assigned_machine_id&&
+            !successors.has(j.id));
+        predecessorSelect.replaceChildren(
+            new Option('New experiment (no predecessor)',''),
+            ...availableParents.map(j=>new Option(
+                j.configuration_name+' · '+j.status+' on '+
+                (state.machines.find(m=>m.id===j.assigned_machine_id)?.name||
+                    j.assigned_machine_id)+' · '+j.id.slice(-8),j.id)));
+        if(availableParents.some(j=>j.id===previousParent))
+            predecessorSelect.value=previousParent;
         $('hub-job-queue').disabled=project==='bees'||!configs.length;
         const previousMachine=$('hub-job-machine').value;
         $('hub-job-machine').replaceChildren(new Option('Automatic best fit',''),
@@ -172,6 +189,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 ' · '+(live.memory_current_mb==null?'RAM ?':live.memory_current_mb+' MiB RAM')+
                 (live.cpu_time_ns==null?'':' · '+Math.round(live.cpu_time_ns/1e9)+' CPU seconds')
                 :'';
+            const lineage=j.continuation_of_job_id
+                ?' · Resumes '+(state.jobs.find(p=>
+                    p.id===j.continuation_of_job_id)?.configuration_name||
+                    'prior experiment')+' on original machine':'';
             const status=j.status==='waiting_adapter'
                 ?linked?('Hub budget claim on '+linked.machine_id+' · '+
                     (linked.receipt_fresh?'Receipt fresh':linked.status)+
@@ -181,7 +202,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     (j.capacity_released_at?' · Capacity released':'')+
                     (machine?.status==='offline'?' · Agent offline':'');
             const detail=j.execution_diagnostic?' · '+j.execution_diagnostic:'';
-            const statusCell=cell(tr,status);
+            const statusCell=cell(tr,status+lineage);
             statusCell.title=detail||j.status_reason||status;
             cell(tr,j.resources.cpus+' CPU / '+j.resources.ram_mb+' MiB / '+
                 j.resources.gpu_count+' GPUs');
@@ -585,12 +606,22 @@ document.addEventListener('DOMContentLoaded', () => {
             feedback('hub-job-message','Save a configuration in Design first.');
             return;
         }
+        const predecessor=$('hub-job-predecessor').value;
+        if(project==='ants'&&
+            (selected.parameters?.mode==='resume')!==Boolean(predecessor)){
+            feedback('hub-job-message',
+                'For Ants, resume mode needs a completed predecessor, and new mode must not select one.');
+            return;
+        }
         if(!confirm('Freeze '+selected.name+' revision '+selected.revision+
-            ' as a pending '+project+' job? This cannot start training or reserve hardware.'))return;
+            (predecessor?' as a continuation of the selected completed job':
+                ' as a new job')+
+            '? This queues work; execution still needs separate authorization.'))return;
         try{
             const job=await action('hub/jobs',{
                 configuration_id:selected.id,expected_revision:selected.revision,
                 resources:JSON.parse($('hub-job-resources').value),
+                ...(predecessor?{continuation_of_job_id:predecessor}:{}),
             });
             feedback('hub-job-message',
                 'Saved immutable job '+job.id+'. Waiting for a trusted execution adapter.');
