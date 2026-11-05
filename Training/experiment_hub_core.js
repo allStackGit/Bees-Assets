@@ -905,6 +905,22 @@ class ExperimentHub {
             throw Error('GPU access reports require a qualified Linux executor.');
         if(this.recordGpuQualifications(next,machine,gpuReports,instance))
             changed=true;
+        // A GPU that disappeared or changed after a successful access
+        // proof may be reenumerated with different render-node identity.
+        // Re-acknowledging the same PCI address must never revive that
+        // old cgroup access proof. An explicit new probe is required.
+        for(const job of next.jobs) {
+            const proof=job.gpu_qualification;
+            if(proof?.status!=='verified'||proof.machine_id!==machine.id)
+                continue;
+            const lease=next.reservations.find(l=>l.id===proof.lease_id);
+            if(!lease||physicalGpuBindings(machine,report,
+                lease.resources,lease.gpu_bindings)===null) {
+                proof.status='stale';
+                proof.diagnostic='Physical GPU identity changed or disappeared; request a fresh device access probe.';
+                changed=true;
+            }
+        }
         if (changed) this.commit(next);
         // Do not mark receipt or liveness until the durable acknowledgement
         // succeeds. A disk failure leaves the previous lease available.
