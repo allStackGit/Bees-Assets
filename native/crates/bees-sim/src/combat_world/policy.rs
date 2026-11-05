@@ -67,6 +67,12 @@ impl CombatWorld {
         self.policy_ship_runtime.len()
     }
 
+    /// Stable live policy roster: registration and ship death update this
+    /// one BTreeMap, without creating a second training ship inventory.
+    pub fn bound_policy_agent_ids(&self) -> impl Iterator<Item = i64> + '_ {
+        self.policy_ship_runtime.keys().copied()
+    }
+
     /// Use the controller's actual episode frame for both observation
     /// encoding and action execution. External callers must never
     /// supply a second independently stored frame.

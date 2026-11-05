@@ -79,6 +79,19 @@ where
     batch.clear();
     let mut counts = NativeBatchedStepCounts::default();
     for index in 0..simulation.world_count() {
+        {
+            let world = simulation.world_mut(index)
+                .ok_or(NativeBatchedStepError::MissingWorld { index })?;
+            if !world.is_failed() && !world.state.events.is_failed() &&
+                !world.state.events.completed() {
+                let tick = world.tick();
+                let state = &mut world.state;
+                state.decisions.synchronize(&state.combat, tick)
+                    .map_err(|_| NativeBatchedStepError::Dispatch {
+                        index, error: NativeInferenceError::WorldUnavailable,
+                    })?;
+            }
+        }
         let world = simulation.world(index)
             .ok_or(NativeBatchedStepError::MissingWorld { index })?;
         if world.is_failed() || world.state.events.completed() {
@@ -95,7 +108,11 @@ where
             NativeBatchedStepError::Source { index, error }
         )?;
         let added = &batch.keys()[start..];
-        let expected = world.state.combat.bound_policy_agent_count();
+        let next_tick = world.tick().checked_add(1)
+            .ok_or(NativeBatchedStepError::Dispatch {
+                index, error: NativeInferenceError::WorldUnavailable,
+            })?;
+        let expected = world.state.decisions.due_count(next_tick);
         if added.len() != expected {
             return Err(NativeBatchedStepError::IncompleteObservations {
                 index, expected, actual: added.len(),
