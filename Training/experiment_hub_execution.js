@@ -135,6 +135,9 @@ function fromEnvironment(env=process.env,options={}) {
             (adapter.cwd!=null&&
                 (typeof adapter.cwd!=='string'||!path.isAbsolute(adapter.cwd)))))
         throw Error('Install one or more valid locally trusted, non-Bees project adapters.');
+    if(hostOs.platform()==='win32'&&Object.entries(adapters).some(
+        ([,adapter])=>adapter.stop_policy!=='terminate-group'))
+        throw Error('Windows adapters must explicitly opt into force-terminating Job Object stop semantics.');
     const machineId=env.EXPERIMENT_HUB_MACHINE_ID;
     if(!ID.test(String(machineId||'')))throw Error('Invalid local machine identity.');
     let supervisor;
