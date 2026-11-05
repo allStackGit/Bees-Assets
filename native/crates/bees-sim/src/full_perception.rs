@@ -139,9 +139,9 @@ impl NativePerceptionWriter {
             row, source.normalized_episode_progress, source.bee_side,
         ).map_err(|_| PerceptionError::InvalidSource)?;
 
-        if row.iter().any(|feature| !feature.is_finite()) {
-            return Err(PerceptionError::InvalidSource);
-        }
+        // Every block writes exactly its source-defined span. The batch
+        // performs the single full-row finite scan before GPU submission;
+        // repeating that scan here would double the observation hot-path work.
         self.measurements.observations += 1;
         self.measurements.allies_encoded += allies as u64;
         self.measurements.enemies_encoded += enemies as u64;
