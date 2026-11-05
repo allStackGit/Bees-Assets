@@ -8,8 +8,12 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use bees_hivemind::session::SquadLifetime;
+use bees_hivemind::session::{HiveMindSession, SquadLifetime};
 use bees_sim::combat_world::{CombatEvent, CombatWorld};
+
+use crate::commands::{
+    FinishedNativeCommand, GameCommandError, NativeSquadCommandDirector,
+};
 
 const SCOUT_TYPE: u8 = 18;
 const BEACON_TYPE: u8 = 14;
@@ -247,4 +251,29 @@ impl NativeSquadRoster {
             self.on_ship_death(*victim_id, changes);
         }
     }
+}
+
+/// Invoke on a SquadRetired transition after the combat callback unwinds.
+/// A dead Squad must cease executing commands and may no longer receive
+/// an in-flight Hive Mind decision. The outstanding OutcomeIds are NOT
+/// dropped, credited or forged here: the returned FinishedNativeCommand
+/// must be settled by the authoritative game/TSV accounting layer, and
+/// HiveMindSession keeps in-flight requests as explicit discards when
+/// their responses eventually arrive.
+///
+/// MemberLost and MinionCreated do not kill their still-living squads.
+pub fn reconcile_retired_squad(
+    change: SquadRosterChange,
+    world: &mut CombatWorld,
+    commands: &mut NativeSquadCommandDirector,
+    session: &mut HiveMindSession,
+) -> Result<Option<FinishedNativeCommand>, GameCommandError> {
+    let SquadRosterChange::SquadRetired { squad } = change else {
+        return Ok(None);
+    };
+    // Keep the session usable on a command-director failure; that error
+    // must be surfaced so the caller can reconcile the outstanding order.
+    let finished = commands.retire_squad(world, squad)?;
+    session.retire_squad(squad);
+    Ok(finished)
 }
