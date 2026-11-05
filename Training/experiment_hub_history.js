@@ -60,12 +60,13 @@ class ProgressHistory {
             point.episodes_completed<previous.episodes_completed||
             point.policy_version<previous.policy_version));
         if(previous&&!point.break_before&&
-            receivedMs-Date.parse(previous.observed_at)<MIN_SAMPLE_INTERVAL_MS) {
+            receivedMs-entry.bucket_started_ms<MIN_SAMPLE_INTERVAL_MS) {
             // Replace a very recent sample instead of growing history at the
             // 10-second agent/dashboard refresh cadence.
             entry.points[entry.points.length-1]=point;
         }else {
             entry.points.push(point);
+            entry.bucket_started_ms=receivedMs;
         }
         if(entry.points.length>MAX_POINTS) {
             // Keep the first reference point and decimate the older samples
