@@ -74,6 +74,16 @@ pub enum PolicyBatchError {
     AllocationFailed,
 }
 
+/// Exact sizes for contiguous numeric inference buffers, excluding the
+/// small agent-key/mask maps and inference backend's GPU allocations.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct PolicyBatchFootprint {
+    pub agents: usize,
+    pub observation_payload_bytes: usize,
+    pub action_output_payload_bytes: usize,
+    pub reserved_numeric_capacity_bytes: usize,
+}
+
 /// All arrays grow only when the maximum requested batch size grows.
 /// Observation rows are row-major [agent][7743 features]; action outputs are
 /// [agent][16 floats] and [agent][6 branch choices]. No per-row heap object.
@@ -129,6 +139,26 @@ impl PolicyBatch {
     pub fn keys(&self) -> &[PolicyAgentKey] { &self.keys }
     pub fn masks(&self) -> &[PolicyActionMask] { &self.masks }
     pub fn observations(&self) -> &[f32] { &self.observations }
+
+    /// Read this at dashboard/export boundaries without introducing per-step
+    /// histograms, allocation tracing or extra copies.
+    pub fn footprint(&self) -> PolicyBatchFootprint {
+        let f32_bytes = std::mem::size_of::<f32>();
+        let observation_payload_bytes =
+            self.observations.len() * f32_bytes;
+        let action_output_payload_bytes =
+            self.continuous.len() * f32_bytes + self.discrete.len();
+        let reserved_numeric_capacity_bytes =
+            self.observations.capacity() * f32_bytes +
+            self.continuous.capacity() * f32_bytes +
+            self.discrete.capacity();
+        PolicyBatchFootprint {
+            agents: self.keys.len(),
+            observation_payload_bytes,
+            action_output_payload_bytes,
+            reserved_numeric_capacity_bytes,
+        }
+    }
 
     pub fn push_observation(
         &mut self,
@@ -268,6 +298,14 @@ mod tests {
         assert!(batch.is_empty());
         batch.push_encoded(key, mask, |row| row.fill(0.0)).unwrap();
         assert_eq!(batch.observations().len(), OBSERVATION_FLOATS);
+        let footprint = batch.footprint();
+        assert_eq!(footprint.agents, 1);
+        assert_eq!(footprint.observation_payload_bytes, OBSERVATION_FLOATS * 4);
+        assert_eq!(footprint.action_output_payload_bytes,
+            CONTINUOUS_ACTIONS * 4 + DISCRETE_BRANCHES.len());
+        assert!(footprint.reserved_numeric_capacity_bytes >=
+            footprint.observation_payload_bytes +
+            footprint.action_output_payload_bytes);
         assert!(matches!(
             batch.push_encoded(key, mask, |row| row.fill(0.0)),
             Err(PolicyBatchError::DuplicateAgent(_))
