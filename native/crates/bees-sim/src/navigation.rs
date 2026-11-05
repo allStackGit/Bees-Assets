@@ -62,7 +62,7 @@ impl NavigationGrid {
         self.width * self.height
     }
 
-    fn to_cell(self, level: Vec2) -> (usize, usize) {
+    pub(crate) fn to_cell(self, level: Vec2) -> (usize, usize) {
         let x = ((self.half_map_width + level.x) / NAVIGATION_CELL_SCALE).floor();
         let y = ((self.half_map_height - level.y) / NAVIGATION_CELL_SCALE).floor();
         (
@@ -71,7 +71,7 @@ impl NavigationGrid {
         )
     }
 
-    fn cell_center(self, x: usize, y: usize) -> Vec2 {
+    pub(crate) fn cell_center(self, x: usize, y: usize) {
         Vec2::new(
             -self.half_map_width + x as f32 * NAVIGATION_CELL_SCALE +
                 NAVIGATION_CELL_SCALE * 0.5,
