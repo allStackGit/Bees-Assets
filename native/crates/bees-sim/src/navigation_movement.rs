@@ -108,6 +108,18 @@ impl GameShipSteering {
         motion.stop_moving();
     }
 
+    /// Unity ClearPreviousDesintation when an actual path request begins.
+    /// The old physics velocity is deliberately retained: Unity clears
+    /// movement orders but does not immediately zero Rigidbody velocity.
+    pub fn await_path(&mut self, motion: &mut ShipMotion) {
+        self.next_waypoints.clear();
+        self.target_direction = None;
+        self.final_destination = None;
+        self.remaining_egress_waypoints = 0;
+        self.is_following_path = false;
+        motion.has_target_coordinates = false;
+    }
+
     /// Called only after request and lifecycle validation. The returned
     /// path excludes its original start cell, as in Unity. Empty search
     /// results cannot become valid movement orders.
