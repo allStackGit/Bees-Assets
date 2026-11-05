@@ -9,6 +9,7 @@ const FIELDS=new Set([
     'curriculum_window_success_rate','segment_success_rate',
     'total_environment_steps','total_optimization_steps',
     'simulation_steps_per_second','ppo_unique_samples_per_second',
+    'latest_episode_policy_updated',
 ]);
 const safeInt=n=>Number.isSafeInteger(n)&&n>=0;
 const boundedRate=n=>typeof n==='number'&&Number.isFinite(n)&&n>=0&&n<=1e12;
@@ -38,6 +39,7 @@ function validateProgress(value,projectId) {
         total_optimization_steps:safeInt,
         simulation_steps_per_second:boundedRate,
         ppo_unique_samples_per_second:boundedRate,
+        latest_episode_policy_updated:x=>typeof x==='boolean',
     };
     for(const [field,valid] of Object.entries(optional))
         if(value[field]!==null&&value[field]!==undefined&&!valid(value[field]))
