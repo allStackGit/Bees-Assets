@@ -182,6 +182,35 @@ full ship/weapon/special-action execution, GPU model loading/inference,
 and the ML-Agents-compatible learner/rollout loop. The new batch interface
 is not a substitute for those gameplay or training contracts.
 
+## Source-matched v26 perception encoder
+
+`NativePerceptionWriter` now writes a **complete 7,743-float v26
+observation row** into `PolicyBatch` with no intermediate row allocation.
+Its sections follow `RlCombatPerception.cs`: self and capabilities,
+parent carrier, 64 allies, 64 enemies, five self weapon mounts, eight mining
+asteroids, 64 map objects, 48 moving collision asteroids, 16 reserved
+objective channels, 21×21 local navigation occupancy, 16×16 team-shared
+exploration freshness, and the episode/faction/reserved tail.
+Per-world `EpisodeShipIdentities` generates stable permuted ship scalars;
+`TeamExplorationGrid` tracks actual allied sight history; and
+`LocalNavigationOccupancy` rasterizes Level borders and discovered
+static obstacle bounds. Observation ordering, normalization, per-team
+rotations, padding and weapon status channels follow the source code.
+Reusable sorting scratch and compile-time grid rotations avoid per-feature
+allocations. A few cumulative encoder counters describe how many source
+entities actually occupied the policy slots. Failures are returned rather
+than silently making a partial row usable for inference.
+
+**Integration boundary:** the native Level/episode adapter must still
+collect the *real* faction-wide discovery caches, ship identity/lifetime,
+weapon readiness, authored ship properties, and local collider geometry.
+These source snapshots are accepted explicitly rather than reconstructed
+from guessed proximity or placeholder objects. Without the native Level
+adapter, complete action execution, and GPU learner/inference integration,
+this is an **encoder implementation**, not a working or parity-certified
+training loop. Its new Rust feature tests have not been executed in this
+environment.
+
 ## Independent CPU rollout windows
 
 `Simulation::run_parallel_window` advances each world through the **same**
