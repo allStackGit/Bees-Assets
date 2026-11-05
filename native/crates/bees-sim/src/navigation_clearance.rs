@@ -54,10 +54,7 @@ impl NavigationClearance {
         for (base, &blocked) in self.base.iter_mut().zip(blocked) {
             *base = if blocked { 0 } else { 1 };
         }
-        calculate_clearance(self.grid, &mut self.base);
-        build_signed_static(self.grid, &self.base, &mut self.signed_static);
-        self.dynamic.copy_from_slice(&self.base);
-        self.moving_blocked.fill(false);
+        self.rebuild_static_fields();
         Ok(())
     }
 
@@ -79,17 +76,20 @@ impl NavigationClearance {
         let counts = self.grid.rasterize_obstacles(
             obstacles, to_world, to_level, &mut self.moving_blocked,
         )?;
-        // The raster mask is the exact static blocking input; setting it
-        // refreshes the base, signed static and dynamic clearance maps.
-        // set_static_blocked clears the scratch only after reading the mask.
+        // Static rasterization uses the same source polygon geometry and
+        // clearance transform as the blocked-mask initialization path.
         for (base, &blocked) in self.base.iter_mut().zip(&self.moving_blocked) {
             *base = if blocked { 0 } else { 1 };
         }
+        self.rebuild_static_fields();
+        Ok(counts)
+    }
+
+    fn rebuild_static_fields(&mut self) {
         calculate_clearance(self.grid, &mut self.base);
         build_signed_static(self.grid, &self.base, &mut self.signed_static);
         self.dynamic.copy_from_slice(&self.base);
         self.moving_blocked.fill(false);
-        Ok(counts)
     }
 
     /// Unity's UpdateDynamicObstacleLayer: start from the static base,
