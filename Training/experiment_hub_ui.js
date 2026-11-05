@@ -457,8 +457,15 @@ document.addEventListener('DOMContentLoaded', () => {
                                 :' · GPU device access probe rejected'
                 :'';
             const detail=j.execution_diagnostic?' · '+j.execution_diagnostic:'';
-            const statusCell=cell(tr,status+lineage+gpuProof);
-            statusCell.title=proof?.diagnostic||detail||j.status_reason||status;
+            const readiness=j.native_start_readiness;
+            const readinessText=readiness
+                ?readiness.eligible
+                    ?' · Ready for explicit CPU-only Start'
+                    :' · Start blocked: '+readiness.reason
+                :'';
+            const statusCell=cell(tr,status+lineage+gpuProof+readinessText);
+            statusCell.title=readiness?.reason||
+                proof?.diagnostic||detail||j.status_reason||status;
             cell(tr,j.resources.cpus+' CPU / '+j.resources.ram_mb+' MiB / '+
                 j.resources.gpu_count+' GPUs');
             cell(tr,learningSummary(j));
@@ -490,12 +497,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         await reload();
                     }catch(e){feedback('hub-job-message',e.message);}
                 }));
-            if(j.status==='waiting_adapter'&&linked?.receipt_fresh&&
-                machine?.status==='connected'&&
-                machine.local_executor_enabled===true&&
-                machine.native_preflight_passed===true&&
-                machine.installed_projects?.includes(j.project_id)&&
-                j.resources.gpu_count===0)
+            if(j.status==='waiting_adapter'&&readiness?.eligible===true)
                 actions.append(button('Start native job',async()=>{
                     const windows=machine.agent_platform==='win32';
                     if(!confirm('Authorize native CPU/RAM-limited execution of '+
