@@ -34,7 +34,7 @@ use bees_sim::squad_movement::{
 };
 use bees_sim::timer::ScaledTimer;
 
-const RANDOM_COMMAND_POLL_SECONDS: f32 = 3.0;
+const COMMAND_FREQUENCY_SECONDS: f32 = 3.0;
 const RANDOM_POSITION_ATTEMPTS: usize = 35;
 const RANDOM_MIN_DISTANCE: f32 = 32.0;
 
@@ -343,7 +343,7 @@ impl NativeSquadCommandDirector {
                 selection.local_command,
                 LocalCommandKind::MoveToRandom | LocalCommandKind::Patrol
             ) {
-                Some(ScaledTimer::new(RANDOM_COMMAND_POLL_SECONDS, true, true))
+                Some(ScaledTimer::new(COMMAND_FREQUENCY_SECONDS, true, true))
             } else { None },
             patrol,
             member_ids: squad.members.iter().map(|m| m.ship_id).collect(),
@@ -374,12 +374,17 @@ impl NativeSquadCommandDirector {
             return Err(GameCommandError::InvalidDelta);
         }
         let mut completed = Vec::new();
-        for (&owner, command) in &mut self.active {
-            if let Some(due) = command.timeout.begin_update(dt) {
-                command.timeout.finish_update(due);
-                completed.push((owner, CommandFinishCause::Timeout));
-                continue;
-            }
+        // Stable order matters when several squads issue movement on the
+        // same fixed frame. HashMap iteration is intentionally not used.
+        let mut owners: Vec<_> = self.active.keys().copied().collect();
+        owners.sort_unstable_by_key(|owner| (
+            owner.level_id, owner.squad_id, owner.lifecycle_id,
+        ));
+        for owner in owners {
+            let command = self.active.get_mut(&owner).expect("active owner");
+            let mut finished_by_poll = false;
+            // Unity registers the recurring command timer before its
+            // timeout: on a shared due frame, command completion wins.
             if let Some(timer) = command.command_poll.as_mut() {
                 if let Some(due) = timer.begin_update(dt) {
                     // Unity Ship.HasReachedDestination means exactly
@@ -404,9 +409,16 @@ impl NativeSquadCommandDirector {
                             completed.push((
                                 owner, CommandFinishCause::ReachedRandomDestination,
                             ));
+                            finished_by_poll = true;
                         }
                     }
                     timer.finish_update(due);
+                }
+            }
+            if !finished_by_poll {
+                if let Some(due) = command.timeout.begin_update(dt) {
+                    command.timeout.finish_update(due);
+                    completed.push((owner, CommandFinishCause::Timeout));
                 }
             }
         }
@@ -433,7 +445,7 @@ impl NativeSquadCommandDirector {
     }
 }
 
-/// Utilities.RandomCoordinate(Level, Squad.GetPosition(), range, 32):
+/// Utilities.RandomCoordinate(Level, Squad.GetPosition(), range, minimum):
 /// up to 35 attempts; a final out-of-bounds sample is returned as-is and
 /// Squad.Move will apply Level.ForceBounds. Random draws deliberately use
 /// the world-local RandomStream instead of an unrelated global RNG.
