@@ -1,0 +1,325 @@
+//! Native gameplay command execution at the HiveMind / CombatWorld boundary.
+//!
+//! This is NOT a second simulation implementation. The command director
+//! invokes the same shared physics world and formation navigation used by
+//! user orders, the render client, and headless evaluation.
+//!
+//! Only Hold and MoveToRandom have their movement/timer phases ported here.
+//! Every other server strategy is explicitly unsupported until its Unity
+//! gameplay mechanics and reward effects are implemented. Caller-owned
+//! targeting/shooting and command reward accumulation are not fabricated.
+
+use std::collections::HashMap;
+
+use bees_hivemind::dispatch::{
+    LocalCommandKind, ResolvedHiveMindCommand,
+};
+use bees_hivemind::outcomes::{
+    FinalizedCommand, OutcomeSettlement,
+};
+use bees_hivemind::protocol::ValidatedTargetingSelection;
+use bees_hivemind::session::SquadLifetime;
+use bees_sim::collision::Aabb;
+use bees_sim::combat_world::CombatWorld;
+use bees_sim::geometry::Vec2;
+use bees_sim::navigation_runtime::NavigationRuntime;
+use bees_sim::simulation::RandomStream;
+use bees_sim::squad_movement::{
+    issue_squad_move, stop_squad_game_movement, SquadFormationMember,
+    SquadFormationOptions, SquadOrderError,
+};
+use bees_sim::timer::ScaledTimer;
+
+const RANDOM_COMMAND_POLL_SECONDS: f32 = 3.0;
+const RANDOM_POSITION_ATTEMPTS: usize = 35;
+const RANDOM_MIN_DISTANCE: f32 = 32.0;
+
+#[derive(Clone, Copy, Debug)]
+pub struct NativeSquadOrder<'a> {
+    /// Captured exact squad lifecycle (distinct from numeric entity ID).
+    pub owner: SquadLifetime,
+    pub members: &'a [SquadFormationMember],
+    /// Unity Squad.GetPosition: world-coordinate center of live bounds.
+    /// Supply the actual bounding-box center; do not average ship centers.
+    pub squad_center: Vec2,
+    pub formation: SquadFormationOptions,
+}
+
+impl NativeSquadOrder<'_> {
+    pub fn valid(self) -> bool {
+        self.owner.valid() && self.squad_center.is_finite() &&
+        self.formation.valid() && !self.members.is_empty()
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct HiveMindCommandSettings {
+    /// From server-loaded ConfigData.StandardMaxCommandTime.
+    pub max_command_seconds: f32,
+    /// From ConfigData.Configuration.AIRandomMovementMaxDistance.
+    pub ai_random_max_distance: f32,
+}
+
+impl HiveMindCommandSettings {
+    pub fn valid(self) -> bool {
+        self.max_command_seconds.is_finite() &&
+        self.max_command_seconds > 0.0 &&
+        self.ai_random_max_distance.is_finite() &&
+        self.ai_random_max_distance > 0.0
+    }
+}
+
+#[derive(Debug)]
+pub enum GameCommandError {
+    InvalidSquad,
+    InvalidSettings,
+    InvalidDelta,
+    Squad(SquadOrderError),
+}
+
+impl From<SquadOrderError> for GameCommandError {
+    fn from(value: SquadOrderError) -> Self { Self::Squad(value) }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CommandFinishCause {
+    Timeout,
+    ReachedRandomDestination,
+    Superseded,
+    SquadRetired,
+}
+
+#[derive(Clone, Debug)]
+pub struct FinishedNativeCommand {
+    pub owner: SquadLifetime,
+    pub selection: ResolvedHiveMindCommand,
+    pub cause: CommandFinishCause,
+}
+
+impl FinishedNativeCommand {
+    /// The actual gameplay and damage-accounting layer decides whether
+    /// shooting/targeting influenced the outcome. Inactive reservations
+    /// are explicitly discarded; they must not gain synthetic zero TSV.
+    pub fn settle(
+        self,
+        command_tsv: i64,
+        shooting_tsv: Option<i64>,
+        targeting: Option<(&ValidatedTargetingSelection, Option<i64>)>,
+    ) -> FinalizedCommand {
+        FinalizedCommand {
+            command: OutcomeSettlement::Credit {
+                outcome_id: self.selection.command_outcome_id,
+                tsv: command_tsv,
+            },
+            shooting: match shooting_tsv {
+                Some(tsv) => OutcomeSettlement::Credit {
+                    outcome_id: self.selection.shooting_outcome_id, tsv,
+                },
+                None => OutcomeSettlement::Discard {
+                    outcome_id: self.selection.shooting_outcome_id,
+                },
+            },
+            targeting: targeting.map(|(selection, tsv)| match tsv {
+                Some(tsv) => OutcomeSettlement::Credit {
+                    outcome_id: selection.outcome_id, tsv,
+                },
+                None => OutcomeSettlement::Discard {
+                    outcome_id: selection.outcome_id,
+                },
+            }),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum Activation {
+    /// All supported movement effects applied; the caller still owns the
+    /// separate shooting/targeting setup and learning-data attribution.
+    Applied {
+        command: LocalCommandKind,
+        issued_move: bool,
+        superseded: Option<FinishedNativeCommand>,
+    },
+    /// No side effects. The native caller MUST discard or otherwise
+    /// reconcile this validated server selection's reservations.
+    Unsupported(ResolvedHiveMindCommand),
+}
+
+struct ActiveNativeCommand {
+    selection: ResolvedHiveMindCommand,
+    timeout: ScaledTimer,
+    random_poll: Option<ScaledTimer>,
+    /// Authoritative game-owned member snapshot at command issue.
+    /// The Level must retire/reissue on squad composition changes.
+    member_ids: Vec<i64>,
+}
+
+#[derive(Default)]
+pub struct NativeSquadCommandDirector {
+    active: HashMap<SquadLifetime, ActiveNativeCommand>,
+}
+
+impl NativeSquadCommandDirector {
+    pub fn new() -> Self { Self::default() }
+
+    pub fn active_count(&self) -> usize { self.active.len() }
+
+    pub fn has_active(&self, owner: SquadLifetime) -> bool {
+        self.active.contains_key(&owner)
+    }
+
+    pub fn activate_hivemind(
+        &mut self,
+        world: &mut CombatWorld,
+        navigation: &NavigationRuntime,
+        random: &mut RandomStream,
+        squad: NativeSquadOrder<'_>,
+        settings: HiveMindCommandSettings,
+        selection: ResolvedHiveMindCommand,
+    ) -> Result<Activation, GameCommandError> {
+        if !squad.valid() {
+            return Err(GameCommandError::InvalidSquad);
+        }
+        if !settings.valid() {
+            return Err(GameCommandError::InvalidSettings);
+        }
+
+        let issued_move = match selection.local_command {
+            LocalCommandKind::Hold => {
+                stop_squad_game_movement(world, squad.members)?;
+                true
+            }
+            LocalCommandKind::MoveToRandom => {
+                let requested = choose_random_coordinate(
+                    random, squad.squad_center, squad.formation.map_bounds,
+                    settings.ai_random_max_distance,
+                );
+                issue_squad_move(
+                    world, navigation, squad.members,
+                    requested, squad.formation,
+                )?.is_some()
+            }
+            _ => return Ok(Activation::Unsupported(selection)),
+        };
+
+        // Native world action above has succeeded. Only now can this
+        // command supersede an earlier one; a failed order leaves the
+        // existing HiveMind command and its reserved IDs intact.
+        let active = ActiveNativeCommand {
+            timeout: ScaledTimer::new(settings.max_command_seconds, false, false),
+            random_poll: if selection.local_command == LocalCommandKind::MoveToRandom {
+                Some(ScaledTimer::new(RANDOM_COMMAND_POLL_SECONDS, true, true))
+            } else { None },
+            member_ids: squad.members.iter().map(|m| m.ship_id).collect(),
+            selection,
+        };
+        let superseded = self.active.insert(squad.owner, active).map(|old| {
+            FinishedNativeCommand {
+                owner: squad.owner, selection: old.selection,
+                cause: CommandFinishCause::Superseded,
+            }
+        });
+        Ok(Activation::Applied {
+            command: self.active[&squad.owner].selection.local_command,
+            issued_move, superseded,
+        })
+    }
+
+    /// Called in the owning Level's scaled update (Unity timers do NOT run
+    /// only at PPO decision times). The caller subsequently settles each
+    /// FinishedNativeCommand with real TSV and explicit unused reserves.
+    pub fn advance(
+        &mut self,
+        world: &CombatWorld,
+        dt: f32,
+    ) -> Result<Vec<FinishedNativeCommand>, GameCommandError> {
+        if !dt.is_finite() || dt < 0.0 {
+            return Err(GameCommandError::InvalidDelta);
+        }
+        let mut completed = Vec::new();
+        for (&owner, command) in &mut self.active {
+            if let Some(due) = command.timeout.begin_update(dt) {
+                command.timeout.finish_update(due);
+                completed.push((owner, CommandFinishCause::Timeout));
+                continue;
+            }
+            if let Some(timer) = command.random_poll.as_mut() {
+                if let Some(due) = timer.begin_update(dt) {
+                    timer.finish_update(due);
+                    // Unity Ship.HasReachedDestination means exactly
+                    // !HasTargetCoordinates (not "velocity nearly zero").
+                    let all_arrived = command.member_ids.iter().all(|id| {
+                        world.physics().ships().iter()
+                            .find(|ship| ship.id == *id)
+                            .is_some_and(|ship| ship.active &&
+                                !ship.motion.has_target_coordinates)
+                    });
+                    if all_arrived {
+                        completed.push((
+                            owner, CommandFinishCause::ReachedRandomDestination,
+                        ));
+                    }
+                }
+            }
+        }
+        completed.sort_unstable_by_key(|(owner, _)| (
+            owner.level_id, owner.squad_id, owner.lifecycle_id,
+        ));
+        Ok(completed.into_iter().filter_map(|(owner, cause)| {
+            self.active.remove(&owner).map(|active| FinishedNativeCommand {
+                owner, selection: active.selection, cause,
+            })
+        }).collect())
+    }
+
+    /// Unity command finalization queues a fresh HiveMind request when the
+    /// squad is still eligible; that request scheduling belongs to the
+    /// caller, because it is bound to the live authenticated WebSocket.
+    pub fn retire_squad(
+        &mut self, owner: SquadLifetime,
+    ) -> Option<FinishedNativeCommand> {
+        self.active.remove(&owner).map(|active| FinishedNativeCommand {
+            owner, selection: active.selection,
+            cause: CommandFinishCause::SquadRetired,
+        })
+    }
+}
+
+/// Utilities.RandomCoordinate(Level, Squad.GetPosition(), range, 32):
+/// up to 35 attempts; a final out-of-bounds sample is returned as-is and
+/// Squad.Move will apply Level.ForceBounds. Random draws deliberately use
+/// the world-local RandomStream instead of an unrelated global RNG.
+/// This preserves gameplay sampling distribution and sequence ownership,
+/// but does not claim bit-exact System.Random state compatibility.
+fn choose_random_coordinate(
+    random: &mut RandomStream,
+    position: Vec2,
+    bounds: Aabb,
+    max_distance: f32,
+) -> Vec2 {
+    let mut location = Vec2::ZERO;
+    for _ in 0..RANDOM_POSITION_ATTEMPTS {
+        let x = position.x +
+            (next_unit(random) * max_distance + RANDOM_MIN_DISTANCE) *
+                next_sign(random);
+        let y = position.y +
+            (next_unit(random) * max_distance + RANDOM_MIN_DISTANCE) *
+                next_sign(random);
+        location = Vec2::new(x, y);
+        if location != Vec2::ZERO &&
+            x > bounds.min.x && x < bounds.max.x &&
+            y > bounds.min.y && y < bounds.max.y {
+            break;
+        }
+    }
+    location
+}
+
+fn next_unit(random: &mut RandomStream) -> f32 {
+    let high = random.next_u64() >> 11;
+    (high as f64 / ((1_u64 << 53) as f64)) as f32
+}
+
+fn next_sign(random: &mut RandomStream) -> f32 {
+    if random.next_below(2) != 0 { 1.0 } else { -1.0 }
+}
