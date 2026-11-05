@@ -677,6 +677,10 @@ impl CombatWorld {
         if !self.physics.ships()[index].active || self.ships[index].vitals.is_dead() {
             return Err(CombatWorldError::UnknownShip);
         }
+        let motion = &self.physics.ships()[index].motion;
+        if motion.is_policy_controlled && !motion.user_controlled {
+            return Err(CombatWorldError::UnsupportedPolicyActions);
+        }
         let controller = self.game_ship_steering.get_mut(&ship_id)
             .ok_or(CombatWorldError::MissingGameMovementProfile)?;
         self.navigation_requests.invalidate(ship_id)?;
@@ -762,7 +766,8 @@ impl CombatWorld {
         if let NavigationCompletion::Accepted { path, .. } = &completion {
             if let Some(steering) = self.game_ship_steering.get_mut(&job.ship_id) {
                 let motion = &mut self.physics.ships_mut()[index].motion;
-                if !path.as_ref().is_some_and(|route| steering.install_path(motion, route)) {
+                if !(motion.is_policy_controlled && !motion.user_controlled) &&
+                    !path.as_ref().is_some_and(|route| steering.install_path(motion, route)) {
                     // Unity stops moving on an empty/failed path; the
                     // caller owns its retry schedule and associated limits.
                     steering.stop(motion);
