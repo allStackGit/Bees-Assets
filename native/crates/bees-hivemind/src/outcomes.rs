@@ -201,6 +201,14 @@ enum OutcomeCategory { Strategic, Shooting, Targeting }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum StoreAcknowledgement {
     DurableCommit,
+    /// The deployed server commits valid rows before returning 409 with
+    /// StaleOutcomeIds. These rows are terminal, not retryable as a batch.
+    /// Report stale IDs separately for reconciliation; never interpret a
+    /// partially committed batch as a failed all-or-nothing write.
+    PartiallyCommitted {
+        committed_outcome_ids: Vec<i64>,
+        stale_outcome_ids: Vec<i64>,
+    },
     Rejected { status: i32, stale_outcome_ids: Vec<i64> },
 }
 
@@ -235,25 +243,55 @@ impl PendingStoreCommands {
         self.submissions.get(&hash)
     }
 
-    /// Only the successful server response may remove the pending write.
-    /// Non-success and stale-reservation results keep the submission for
-    /// reconciliation, not silent deletion or duplicate local credit.
+    /// Status 200 confirms durable commit. The server's 409 is unusual:
+    /// outcomeReservations.matchUpdatesWithInsertsAndCommit first commits
+    /// every valid row, THEN reports the IDs whose reservations were stale.
+    /// Retrying the whole 409 batch would re-submit already committed
+    /// rewards. Report the terminal partial result instead, with the exact
+    /// uncommitted IDs; the transport must reconcile them separately.
+    ///
+    /// Other failures retain the original request because their database
+    /// commit outcome is not established. No network operation is performed
+    /// by this ownership ledger.
     pub fn acknowledge(
         &mut self,
         response: &StoreCommandsResponse,
     ) -> Result<StoreAcknowledgement, HiveMindProtocolError> {
-        if response.message_type != crate::protocol::STORE_COMMANDS_TYPE ||
-            !self.submissions.contains_key(&response.hash) {
+        if response.message_type != crate::protocol::STORE_COMMANDS_TYPE {
             return Err(HiveMindProtocolError::RequestIdentityMismatch);
         }
+        let request = self.submissions.get(&response.hash)
+            .ok_or(HiveMindProtocolError::RequestIdentityMismatch)?;
         if response.acknowledges_durable_commit(response.hash) {
             self.submissions.remove(&response.hash);
-            Ok(StoreAcknowledgement::DurableCommit)
-        } else {
-            Ok(StoreAcknowledgement::Rejected {
-                status: response.status,
-                stale_outcome_ids: response.stale_outcome_ids.clone(),
-            })
+            return Ok(StoreAcknowledgement::DurableCommit);
         }
+        if response.status == 409 && !response.stale_outcome_ids.is_empty() {
+            // A stale ID must refer to a credited reservation from this
+            // particular request. Otherwise the message is untrustworthy
+            // and cannot retire local ownership.
+            let credited: std::collections::BTreeSet<i64> = request.commands.iter()
+                .chain(request.shooting_commands.iter())
+                .chain(request.targeting_commands.iter())
+                .filter(|entry| !entry.discard_reservation && entry.outcome_id > 0)
+                .map(|entry| entry.outcome_id).collect();
+            let stale: std::collections::BTreeSet<i64> =
+                response.stale_outcome_ids.iter().copied().collect();
+            if stale.len() != response.stale_outcome_ids.len() ||
+                !stale.is_subset(&credited) {
+                return Err(HiveMindProtocolError::InvalidResponse);
+            }
+            let committed_outcome_ids = credited.difference(&stale)
+                .copied().collect();
+            self.submissions.remove(&response.hash);
+            return Ok(StoreAcknowledgement::PartiallyCommitted {
+                committed_outcome_ids,
+                stale_outcome_ids: response.stale_outcome_ids.clone(),
+            });
+        }
+        Ok(StoreAcknowledgement::Rejected {
+            status: response.status,
+            stale_outcome_ids: response.stale_outcome_ids.clone(),
+        })
     }
 }
