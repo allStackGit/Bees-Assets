@@ -9,12 +9,19 @@
 
 use super::*;
 use crate::policy_batch::PolicyActionMask;
+use super::weapons::PolicyTurretMount;
 
 #[derive(Clone, Debug)]
 pub(super) struct PolicyShipRuntime {
-    frame: PolicyFrame,
-    movement_disabled: bool,
-    control: PolicyControl,
+    pub(super) frame: PolicyFrame,
+    pub(super) movement_disabled: bool,
+    pub(super) control: PolicyControl,
+    /// Real physical turret mounts, in the exact five authored weapon slots.
+    pub(super) turrets: [Option<PolicyTurretMount>; 5],
+    /// Last physical hull angle used to rotate attached turrets.
+    pub(super) last_hull_rotation: f32,
+    /// Forwarded from the live gameplay ship's cease-fire state.
+    pub(super) cease_fire: bool,
 }
 
 impl CombatWorld {
@@ -33,8 +40,12 @@ impl CombatWorld {
             self.ships[index].vitals.is_dead() {
             return Err(CombatWorldError::UnknownShip);
         }
+        let rotation = self.physics.ships()[index].motion.rotation_degrees;
         self.policy_ship_runtime.insert(ship_id, PolicyShipRuntime {
             frame, movement_disabled, control: PolicyControl::new(),
+            turrets: [None; 5],
+            last_hull_rotation: rotation,
+            cease_fire: false,
         });
         Ok(())
     }
@@ -62,8 +73,10 @@ impl CombatWorld {
             !self.policy_ship_runtime.contains_key(&ship_id) {
             return Err(CombatWorldError::UnknownShip);
         }
+        let runtime = self.policy_ship_runtime.get(&ship_id)
+            .expect("validated bound policy ship");
         Ok(PolicyActionMask {
-            fire: [false; 5],
+            fire: std::array::from_fn(|slot| runtime.turrets[slot].is_some()),
             special: [true, false, false, false, false],
         })
     }
@@ -113,15 +126,23 @@ impl CombatWorld {
 
         for decision in decisions {
             let id = decision.agent_id as i64;
-            let runtime = self.policy_ship_runtime.get_mut(&id)
-                .expect("prevalidated policy controller");
-            let decoded = runtime.control.decode(
-                &decision.action, runtime.frame, &[false; 5],
-            ).expect("prevalidated v26 action");
+            let (decoded, disabled) = {
+                let runtime = self.policy_ship_runtime.get_mut(&id)
+                    .expect("prevalidated policy controller");
+                let available = std::array::from_fn(|slot|
+                    runtime.turrets[slot].is_some());
+                (
+                    runtime.control.decode(
+                        &decision.action, runtime.frame, &available,
+                    ).expect("prevalidated v26 action"),
+                    runtime.movement_disabled,
+                )
+            };
+            self.apply_policy_turret_requests(id, &decoded.weapons);
             let &index = self.ship_by_id.get(&id)
                 .expect("prevalidated live ship ID");
             let motion = &mut self.physics.ships_mut()[index].motion;
-            if runtime.movement_disabled {
+            if disabled {
                 motion.disable_policy_movement();
             } else {
                 motion.accept_policy_movement(decoded.movement_world);
