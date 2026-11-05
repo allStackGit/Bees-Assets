@@ -114,8 +114,10 @@ impl NavigationRequests {
         Ok(lifecycle)
     }
 
-    /// Invalidating a request is not the same as cancelling its CPU work.
-    /// The old result is ignored even when another request is later issued.
+    /// Invalidating a request does not free the running worker slot. Unity
+    /// still occupies a worker thread until its old search returns, even
+    /// after StopMoving invalidates the result. Keep that ownership until
+    /// completion; otherwise repeated orders can launch duplicate searches.
     pub fn invalidate(&mut self, ship_id: i64) -> Result<(), NavigationRequestError> {
         if !self.ships.contains_key(&ship_id) {
             return Err(NavigationRequestError::UnknownShip);
@@ -124,15 +126,16 @@ impl NavigationRequests {
         let owner = self.ships.get_mut(&ship_id).expect("checked");
         owner.request_id = new_id;
         owner.waiting = None;
-        owner.running = None;
+        // Never clear owner.running here: CPU work still owns its slot.
         owner.deferred = None;
         Ok(())
     }
 
     pub fn is_pathfinding(&self, ship_id: i64) -> bool {
         self.ships.get(&ship_id).is_some_and(|owner|
-            owner.waiting.is_some() || owner.running.is_some() ||
-                owner.deferred.is_some())
+            owner.waiting.is_some() || owner.deferred.is_some() ||
+            owner.running.is_some_and(|job|
+                job.request_id == owner.request_id))
     }
 
     pub fn lifecycle_id(&self, ship_id: i64) -> Option<u64> {
