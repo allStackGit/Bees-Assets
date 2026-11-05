@@ -14,10 +14,11 @@ impl CombatWorld {
     ///
     /// Source: GameState.RefreshHiveMindMapObjectVision. Ship sightings are
     /// faction memory, not transient line-of-sight: newly observed targets
-    /// remain learned after the observer moves or dies. Moving asteroid and
-    /// static-obstacle sightings enter the same faction cache. MapObjects
-    /// still require the authored map-object runtime, which is not present
-    /// in CombatWorld. No surrogate objects are generated here.
+    /// remain learned after the observer moves or dies. Moving asteroids,
+    /// static obstacles, and ordinary native MapObjects all use the same
+    /// faction cache with distinct discovery categories. MapObjects use
+    /// their primary collider; Fire Tank objects remain unsupported until
+    /// their attributed explosion gameplay is available.
     ///
     /// Validate roster and dense physics storage BEFORE any discovery
     /// mutations. Missing observer data is an error, not a silent no-op.
