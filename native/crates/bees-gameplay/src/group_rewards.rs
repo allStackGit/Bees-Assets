@@ -25,6 +25,8 @@ pub enum GroupRewardError {
     UnknownSide,
     DuplicateAgent,
     AlreadyComplete,
+    InvalidReward,
+    TickExhausted,
     MissingOrRepeatedTick { expected: u64, actual: u64 },
 }
 
@@ -188,7 +190,31 @@ impl NativeGroupRewardDelivery {
         // batch; the owning Level discards a failed source frame.
         for emission in emissions {
             self.side_index(emission.side)?;
+            if !emission.amount.is_finite() {
+                return Err(GroupRewardError::InvalidReward);
+            }
         }
+        if let Some(done) = finalized {
+            if ![0, self.sides[0], self.sides[1]]
+                .contains(&done.result.winner_side) ||
+                !done.result.duration_seconds.is_finite() ||
+                done.result.duration_seconds < 0.0 ||
+                [
+                    done.terminal_rewards.bee_terminal,
+                    done.terminal_rewards.human_terminal,
+                    done.terminal_rewards.bee_time,
+                    done.terminal_rewards.human_time,
+                    done.economic_rewards.bee_retained_reward,
+                    done.economic_rewards.human_retained_reward,
+                ].iter().any(|value| !value.is_finite())
+            {
+                return Err(GroupRewardError::InvalidReward);
+            }
+        }
+        // Exhaustion is checked before side effects, not after group
+        // events are queued or a terminal state is committed.
+        let next_tick = self.next_tick.checked_add(1)
+            .ok_or(GroupRewardError::TickExhausted)?;
         self.events.clear();
         for emission in emissions {
             let index = self.side_index(emission.side)?;
@@ -224,7 +250,7 @@ impl NativeGroupRewardDelivery {
             }
             self.completed = true;
         }
-        self.next_tick += 1;
+        self.next_tick = next_tick;
         Ok(&self.events)
     }
 
@@ -237,6 +263,9 @@ impl NativeGroupRewardDelivery {
         &mut self, emission: RewardEmission,
     ) -> Result<Option<GroupRewardEvent>, GroupRewardError> {
         if self.completed { return Err(GroupRewardError::AlreadyComplete) }
+        if !emission.amount.is_finite() {
+            return Err(GroupRewardError::InvalidReward);
+        }
         let index = self.side_index(emission.side)?;
         if self.participants[index].is_empty() {
             self.measurements.skipped_without_participant += 1;
