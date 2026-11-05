@@ -1338,20 +1338,28 @@ class ExperimentHub {
             if(typeof ancestorId!=='string'||!UUID.test(ancestorId))
                 throw Error('Select a valid predecessor job for continuation.');
             parent=this.state.jobs.find(j=>j.id===ancestorId);
+            const pinnedMachine=parent?.assigned_machine_id||
+                parent?.continuation_machine_id;
+            const pinnedRoot=parent?.artifact_lineage_root_id||parent?.id;
+            const frozenFutureStage=project.id==='ants'&&
+                Boolean(parent?.continuation_of_job_id)&&
+                ['waiting_adapter','waiting_predecessor'].includes(parent?.status)&&
+                Boolean(parent?.continuation_machine_id);
             if(!parent||parent.project_id!==project.id||
-                !parent.dispatch_id||!parent.assigned_machine_id||
-                !UUID.test(String(parent.artifact_lineage_root_id||parent.id)))
-                throw Error('Continuation requires a dispatched predecessor with verified machine lineage.');
-            // Only Ants' checkpoint-aware resume adapter supports prequeueing.
-            // The parent must already be dispatched to a real machine; a
-            // stopped/failed/unknown parent cannot promise an automatic stage.
+                !UUID.test(String(pinnedRoot||''))||!pinnedMachine||
+                !(parent.dispatch_id&&parent.assigned_machine_id||frozenFutureStage))
+                throw Error('Continuation requires a dispatched predecessor or a prequeued Ants stage with frozen machine lineage.');
+            // Ants supports a bounded, linear sequence of prequeued stages.
+            // Future stages inherit the original host and artifact root
+            // without claiming capacity or launching any process.
             waitingPredecessor=project.id==='ants'&&(
                 ['start_requested','launch_requested','running'].includes(parent.status)||
-                (parent.status==='finished'&&!parent.capacity_released_at));
+                (parent.status==='finished'&&!parent.capacity_released_at)||
+                frozenFutureStage);
             if(!waitingPredecessor&&
                 (!['finished','stopped'].includes(parent.status)||
                  !parent.capacity_released_at))
-                throw Error('Continuation requires a finished, capacity-released predecessor (or an eligible active Ants predecessor).');
+                throw Error('Continuation requires a finished, capacity-released predecessor (or an eligible active or prequeued Ants predecessor).');
             if(this.state.jobs.some(j=>
                 j.continuation_of_job_id===parent.id&&j.status!=='cancelled'))
                 throw Error('This predecessor already has a non-cancelled continuation.');
@@ -1371,7 +1379,8 @@ class ExperimentHub {
             continuation_of_job_id:parent?.id||null,
             artifact_lineage_root_id:parent
                 ?(parent.artifact_lineage_root_id||parent.id):jobId,
-            continuation_machine_id:parent?.assigned_machine_id||null,
+            continuation_machine_id:parent
+                ?(parent.assigned_machine_id||parent.continuation_machine_id):null,
             configuration_id:selected.id,
             configuration_revision:selected.revision,
             configuration_name:selected.name,
@@ -1399,6 +1408,9 @@ class ExperimentHub {
         if (job.status==='cancelled') return copy(job);
         if (!['waiting_adapter','waiting_predecessor'].includes(job.status))
             throw Error('Only unstarted jobs can be cancelled without an execution adapter.');
+        if(next.jobs.some(j=>j.continuation_of_job_id===job.id&&
+            j.status!=='cancelled'))
+            throw Error('Cancel the queued successor stage before cancelling its predecessor.');
         if(job.lease_id) {
             const lease=next.reservations.find(l=>l.id===job.lease_id &&
                 l.job_id===job.id && ['offered','acknowledged'].includes(l.status));
