@@ -32,27 +32,35 @@ function configuredGpus(input,requirePci=false) {
         ...(g.pci_address?{pci_address:g.pci_address}:{}),
     }));
 }
-function physicalGpuBindings(machine,report,resources) {
+function physicalGpuBindings(machine,report,resources,pinned) {
     if(!resources||resources.gpu_count===0)return [];
     const ids=resources.gpus;
+    // A lease freezes logical ID -> physical PCI identity at allocation.
+    // Never reconstruct a missing old pin from a later machine registration.
     if(!Number.isSafeInteger(resources.gpu_count)||resources.gpu_count<1||
         !Array.isArray(ids)||ids.length!==resources.gpu_count||
+        !Array.isArray(pinned)||pinned.length!==ids.length||
         report.gpu_inventory_source!=='amdgpu-sysfs-v1')
         return null;
     const bindings=[];
     for(const id of ids) {
         const config=machine.gpus.find(g=>g.id===id);
-        if(!config?.pci_address)return null;
-        const physical=report.gpu_devices.find(g=>
-            g.pci_address===config.pci_address);
-        if(!physical)return null;
-        const total=Math.min(config.vram_mb,physical.vram_mb);
-        if(total<(resources.min_gpu_vram_mb||0)||
-            (resources.gpu_mode==='shared'&&
-                total<(resources.gpu_vram_mb||0)))
+        const bound=pinned.find(g=>g?.id===id);
+        if(!config?.pci_address||!bound||
+            !PCI.test(String(bound.pci_address))||
+            bound.pci_address!==config.pci_address||
+            !Number.isSafeInteger(bound.vram_mb)||bound.vram_mb<1||
+            bound.vram_mb>config.vram_mb)
             return null;
-        bindings.push({id,pci_address:config.pci_address,
-            vram_mb:total});
+        const physical=report.gpu_devices.find(g=>
+            g.pci_address===bound.pci_address);
+        if(!physical||physical.vram_mb<bound.vram_mb||
+            bound.vram_mb<(resources.min_gpu_vram_mb||0)||
+            (resources.gpu_mode==='shared'&&
+                bound.vram_mb<(resources.gpu_vram_mb||0)))
+            return null;
+        bindings.push({id,pci_address:bound.pci_address,
+            vram_mb:bound.vram_mb});
     }
     return bindings;
 }
@@ -286,6 +294,13 @@ class ExperimentHub {
             status:'offered',created_at:now(),acknowledged_at:null,
             released_at:null,
             resources:{...wanted,gpus:place.suggested_gpus},
+            gpu_bindings:place.suggested_gpus.map(id=>{
+                const observed=machine.verified_gpus?.find(g=>g.id===id);
+                if(!observed||!PCI.test(observed.pci_address))
+                    throw Error('Cannot freeze physical GPU identity at lease allocation.');
+                return {id,pci_address:observed.pci_address,
+                    vram_mb:observed.vram_mb};
+            }),
         };
         if(jobId!==null)lease.job_id=jobId;
         const released=next.reservations.filter(r=>r.status==='released').slice(-100);
@@ -724,7 +739,7 @@ class ExperimentHub {
             const lease=next.reservations.find(x=>x.id===id &&
                 x.machine_id===machine.id && x.issued_by==='experiment-hub');
             if (!lease || !['offered','acknowledged'].includes(lease.status)) continue;
-            if(physicalGpuBindings(machine,report,lease.resources)===null)
+            if(physicalGpuBindings(machine,report,lease.resources,lease.gpu_bindings)===null)
                 continue;
             if (lease.status==='offered') {
                 lease.status='acknowledged';
@@ -750,14 +765,14 @@ class ExperimentHub {
             if(lease.machine_id===machine.id&&
                 lease.status==='acknowledged'&&
                 lease.resources?.gpu_count>0&&
-                physicalGpuBindings(machine,report,lease.resources)===null)
+                physicalGpuBindings(machine,report,lease.resources,lease.gpu_bindings)===null)
                 this.leaseReceipts.delete(lease.id);
         }
         for (const id of ids) {
             const lease=this.state.reservations.find(x=>x.id===id &&
                 x.machine_id===machine.id && x.status==='acknowledged' &&
                 x.issued_by==='experiment-hub');
-            if (lease&&physicalGpuBindings(machine,report,lease.resources)!==null)
+            if (lease&&physicalGpuBindings(machine,report,lease.resources,lease.gpu_bindings)!==null)
                 this.leaseReceipts.set(id,received);
         }
         for(const item of reports) {
@@ -786,7 +801,7 @@ class ExperimentHub {
                 id:x.id,status:x.status,resources:copy(x.resources),
                 // This is an expected PCI binding, not GPU isolation or
                 // a process launch token. The agent checks it against sysfs.
-                gpu_bindings:physicalGpuBindings(machine,report,x.resources)||[],
+                gpu_bindings:physicalGpuBindings(machine,report,x.resources,x.gpu_bindings)||[],
             })),
             execution_orders:this.executionOrders(machine.id)};
     }
