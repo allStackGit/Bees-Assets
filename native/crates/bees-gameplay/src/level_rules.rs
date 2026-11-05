@@ -102,6 +102,12 @@ where
 {
     type Error = NativeLevelStepError;
 
+    fn is_complete(
+        &self, world: &World<NativeLevelState<M, A>>,
+    ) -> bool {
+        world.state.events.completed()
+    }
+
     fn step(
         &self,
         world: &mut World<NativeLevelState<M, A>>,

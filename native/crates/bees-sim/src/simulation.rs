@@ -126,12 +126,18 @@ pub trait GameRules<S> {
         decisions: &[Decision],
         dt_seconds: f32,
     ) -> Result<StepCounts, Self::Error>;
+
+    /// A normal terminal episode is not a failed world. The scheduler
+    /// must stop advancing it until the owner explicitly resets it.
+    /// Physics-only worlds can use the default never-completed rule.
+    fn is_complete(&self, _world: &World<S>) -> bool { false }
 }
 
 #[derive(Debug)]
 pub enum StepError<E> {
     MissingWorld { index: usize },
     FailedWorld { id: WorldId },
+    CompletedWorld { id: WorldId },
     Rules { id: WorldId, source: E },
 }
 
@@ -143,6 +149,9 @@ pub struct ParallelWindow<E> {
     pub measurements: Measurements,
     pub failed_worlds: Vec<StepError<E>>,
     pub skipped_failed_worlds: usize,
+    /// Worlds that finished normally (or were already complete) in
+    /// this window; no failed-step measurement is recorded for them.
+    pub completed_worlds: usize,
     /// Actual host wall elapsed, including worker startup and decision
     /// generation. Unlike summed per-step timings, this measures observed
     /// multi-core throughput for this specific window.
@@ -163,6 +172,7 @@ impl<E> Default for ParallelWindow<E> {
             measurements: Measurements::default(),
             failed_worlds: Vec::new(),
             skipped_failed_worlds: 0,
+            completed_worlds: 0,
             wall_elapsed: Duration::ZERO,
         }
     }
@@ -324,6 +334,7 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
                     self.measurements.merge(&part.measurements);
                     result.measurements.merge(&part.measurements);
                     result.skipped_failed_worlds += part.skipped_failed_worlds;
+                    result.completed_worlds += part.completed_worlds;
                     result.failed_worlds.extend(part.failed_worlds);
                 }
                 Err(_) => panicked = true,
@@ -356,6 +367,9 @@ fn step_one<S, R: GameRules<S>>(
 ) -> Result<StepCounts, StepError<R::Error>> {
     if world.failed {
         return Err(StepError::FailedWorld { id: world.id });
+    }
+    if rules.is_complete(world) {
+        return Err(StepError::CompletedWorld { id: world.id });
     }
     let sampled = sample_every.is_some_and(|period|
         world.tick % u64::from(period.get()) == 0
@@ -400,6 +414,10 @@ where
             report.skipped_failed_worlds += 1;
             continue;
         }
+        if rules.is_complete(world) {
+            report.completed_worlds += 1;
+            continue;
+        }
         for _ in 0..steps {
             decisions.clear();
             decide(world, &mut decisions);
@@ -408,6 +426,10 @@ where
                 &mut report.measurements,
             ) {
                 report.failed_worlds.push(error);
+                break;
+            }
+            if rules.is_complete(world) {
+                report.completed_worlds += 1;
                 break;
             }
         }
