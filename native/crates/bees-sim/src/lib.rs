@@ -38,6 +38,7 @@ pub mod projectile_rules;
 pub mod rl_shaping;
 pub mod simulation;
 pub mod ship_assets;
+pub mod squad_movement;
 pub mod telemetry;
 pub mod timer;
 pub mod turret;
