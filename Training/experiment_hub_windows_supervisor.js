@@ -222,8 +222,23 @@ class WindowsSupervisor {
     async observe(record) {
         const receipt=this.verifyReceipt(record);
         if(receipt)return receipt;
-        const report=await this.send(record,'inspect');
-        return this.verifyReply(record,report);
+        try {
+            return this.verifyReply(record,await this.send(record,'inspect'));
+        }catch(error) {
+            // An owner closing its control pipe and atomically publishing
+            // a signed terminal receipt are separate events. This affects
+            // both requested Stops and natural child completion. Only a
+            // previously verified running owner can enter this handoff;
+            // an unverified launch must not be mistaken for a clean exit.
+            if(!['running','stop_requested'].includes(record.state))
+                throw error;
+            for(let attempt=0;attempt<20;attempt++) {
+                const completed=this.verifyReceipt(record);
+                if(completed)return completed;
+                await new Promise(resolve=>setTimeout(resolve,100));
+            }
+            throw error;
+        }
     }
     async reconcile(jobId) {
         const record=this.state.records.find(r=>r.job_id===jobId);
@@ -355,17 +370,8 @@ class WindowsSupervisor {
             // A lost reply could mean that termination already happened.
             // Never issue a second TerminateJobObject command automatically.
         }
-        // The independent owner stops accepting pipe connections before
-        // it atomically publishes its signed terminal receipt. An immediate
-        // new inspection can hit that handoff gap and falsely quarantine an
-        // otherwise completed Stop. Wait only for the ownership proof; do
-        // not resend Stop, guess a PID or release capacity without a receipt.
-        for(let attempt=0;attempt<20;attempt++) {
-            if(this.verifyReceipt(updated))return this.reconcile(jobId);
-            await new Promise(resolve=>setTimeout(resolve,100));
-        }
-        // A genuinely missing or invalid receipt remains unverified and
-        // requires manual inspection. This wait never grants authority.
+        // The common inspection path waits for signed owner handoff,
+        // whether the child was stopped or finished on its own.
         return this.reconcile(jobId);
     }
 }
