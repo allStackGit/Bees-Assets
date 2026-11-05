@@ -310,7 +310,10 @@ function allocationChoice(machines,reservations,job,preferredMachineId=null,
         }
         return lost;
     };
-    options.sort((a,b)=>remainingOptionLoss(a)-remainingOptionLoss(b));
+    const loss=new Map(options.map(option=>[
+        option.machine_id,remainingOptionLoss(option),
+    ]));
+    options.sort((a,b)=>loss.get(a.machine_id)-loss.get(b.machine_id));
     return options[0];
 }
 function writeAtomic(file, value) {
