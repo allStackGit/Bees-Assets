@@ -31,6 +31,10 @@ pub struct NativeBatchedStepCounts {
 pub enum NativeBatchedStepError<SourceError, BackendError> {
     MissingWorld { index: usize },
     Source { index: usize, error: SourceError },
+    IncompleteObservations {
+        index: usize, expected: usize, actual: usize,
+    },
+    WrongObservationWorld { index: usize },
     Inference(NativeInferenceRunError<BackendError>),
     Dispatch { index: usize, error: NativeInferenceError },
     /// Earlier indexed worlds may already have stepped. The caller
@@ -86,9 +90,24 @@ where
                 index, error: NativeInferenceError::WorldUnavailable,
             });
         }
+        let start = batch.keys().len();
         build_observations(world, batch).map_err(|error|
             NativeBatchedStepError::Source { index, error }
         )?;
+        let added = &batch.keys()[start..];
+        let expected = world.state.combat.bound_policy_agent_count();
+        if added.len() != expected {
+            return Err(NativeBatchedStepError::IncompleteObservations {
+                index, expected, actual: added.len(),
+            });
+        }
+        if added.iter().any(|key| !key.is_current_for(world)) {
+            return Err(NativeBatchedStepError::WrongObservationWorld { index });
+        }
+        // Every pushed agent is checked against the real world's
+        // action mask by push_agent(), which rejects unregistered
+        // agents and duplicate keys. Equal counts therefore establish
+        // a complete one-to-one roster for this world.
     }
     counts.policy_agents_inferred = batch.keys().len();
     if batch.keys().is_empty() {

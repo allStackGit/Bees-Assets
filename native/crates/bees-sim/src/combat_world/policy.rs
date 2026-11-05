@@ -59,6 +59,14 @@ pub(super) struct PolicyShipRuntime {
 }
 
 impl CombatWorld {
+    /// The registry contains exactly one bound policy controller per
+    /// living controlled ship. Retirement removes it atomically with
+    /// death, so this is the complete input roster at decision time.
+    /// The inference host must submit one observation for each member.
+    pub fn bound_policy_agent_count(&self) -> usize {
+        self.policy_ship_runtime.len()
+    }
+
     /// Bind a real living ship to its episode-specific policy frame.
     /// Call only when the episode controller is bound to this ship. A new
     /// CombatWorld owns fresh controllers when an episode resets.
