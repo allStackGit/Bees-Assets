@@ -249,11 +249,35 @@ Level-local grid coordinates. The destination-clearance check and
 nearest-walkable ring search are also available; the Level retains
 responsibility for its exact ForceBounds behavior.
 
-**Integration is still incomplete:** native ship movement does not yet
-request or follow these paths. Source-equivalent asynchronous request
-ownership, result invalidation, dynamic frame scheduling, the Unity
-five-second wall-clock search cap, and map-specific/static-clearance
-refresh triggers are not yet connected to the gameplay loop.
+`NavigationClearance.are_statically_connected` caches source-equivalent
+static connectivity regions by ship clearance. It permits blocked starts
+through to static-egress recovery and clears cached components when static
+geometry changes.
+
+`CombatWorld` owns per-ship `NavigationRequests`: repeated requests
+coalesce, changed destinations invalidate existing work, and old search
+results are rejected by request and ship-lifecycle identity. A superseded
+running job requeues only the most recent destination, using the ship's
+current position once its prior worker completes. The synchronous
+`solve_next_path_job` entrypoint uses the shared `NavigationSearch`; a
+future threaded scheduler can use `claim_next_path_job` and
+`complete_path_job` without changing these rules.
+
+For normal gameplay, callers supply a `GameMovementProfile` with the
+actual configured `ShipTurningRadius` and rendered ship half-extents.
+Then `move_ship_direct`, `move_ship_in_direction`, and accepted paths
+use `GameShipSteering` in the *same* pre-physics fixed step as RL-controlled
+`ShipMotion`. Path followers use Unity waypoint skipping, egress counts,
+turning dead band, variable speed and StopMoving semantics. No guess from
+sprite size or a new RL-only movement core is introduced.
+
+**Integration still incomplete:** the game/squad command system must
+issue destinations, choose direct movement vs obstruction-triggered
+path searches, supply authored movement profiles and level/map transforms,
+orchestrate static/dynamic navigation-map refreshes and job scheduling,
+and port failed-path retry timers and the native equivalent of Unity's
+five-second wall-clock worker limit. Gameplay and rendering parity are
+not established; the above functionality has not been compiled or run.
 
 The catalog stores normal `SizeClass × CollisionAsteroidHealthIncrement` durability;
 training must still pass its effective-health override when spawning, while
