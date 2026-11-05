@@ -5,6 +5,7 @@
 const os=require('node:os');
 const path=require('node:path');
 const {LinuxSupervisor}=require('./experiment_hub_linux_supervisor');
+const {WindowsSupervisor}=require('./experiment_hub_windows_supervisor');
 const {inspectHost}=require('./experiment_hub_host');
 const {validateProgress}=require('./experiment_hub_progress');
 const ID=/^[a-z][a-z0-9_-]{0,47}$/;
@@ -113,8 +114,8 @@ class LocalExecution {
 function fromEnvironment(env=process.env,options={}) {
     if(env.EXPERIMENT_HUB_ENABLE_EXECUTION!=='1')return null;
     const hostOs=options.hostOs||os;
-    if(hostOs.platform()!=='linux')
-        throw Error('Local native execution is supported only on Linux.');
+    if(!['linux','win32'].includes(hostOs.platform()))
+        throw Error('Native execution is supported only on Linux and Windows.');
     const adapterFile=env.EXPERIMENT_HUB_LOCAL_ADAPTERS;
     const root=env.EXPERIMENT_HUB_LOCAL_ROOT;
     if(typeof adapterFile!=='string'||!path.isAbsolute(adapterFile)||
@@ -136,13 +137,26 @@ function fromEnvironment(env=process.env,options={}) {
         throw Error('Install one or more valid locally trusted, non-Bees project adapters.');
     const machineId=env.EXPERIMENT_HUB_MACHINE_ID;
     if(!ID.test(String(machineId||'')))throw Error('Invalid local machine identity.');
-    const capabilities=(options.inspectHost||inspectHost)();
-    if(!capabilities.cgroup_v2_detected||
-        !['cpu','memory'].every(c=>capabilities.cgroup_controllers.includes(c)))
-        throw Error('Required Linux CPU and memory controllers are not available.');
-    const supervisor=options.createSupervisor
-        ?options.createSupervisor({root,machineId,adapters})
-        :new LinuxSupervisor({root,machineId,adapters});
+    let supervisor;
+    if(hostOs.platform()==='linux') {
+        const capabilities=(options.inspectHost||inspectHost)();
+        if(!capabilities.cgroup_v2_detected||
+            !['cpu','memory'].every(c=>capabilities.cgroup_controllers.includes(c)))
+            throw Error('Required Linux CPU and memory controllers are not available.');
+        supervisor=options.createSupervisor
+            ?options.createSupervisor({root,machineId,adapters})
+            :new LinuxSupervisor({root,machineId,adapters});
+    }else {
+        const helperPath=env.EXPERIMENT_HUB_WINDOWS_HELPER;
+        const helperSha256=env.EXPERIMENT_HUB_WINDOWS_HELPER_SHA256;
+        if(typeof helperPath!=='string'||!path.isAbsolute(helperPath)||
+            !/^[a-f0-9]{64}$/.test(String(helperSha256||'')))
+            throw Error('Specify a locally installed absolute Windows owner path and its SHA-256.');
+        supervisor=options.createSupervisor
+            ?options.createSupervisor({root,machineId,adapters,helperPath,helperSha256})
+            :new WindowsSupervisor({root,machineId,adapters,
+                helperPath,helperSha256});
+    }
     return new LocalExecution({machineId,supervisor,
         projects:Object.keys(adapters)});
 }
