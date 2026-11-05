@@ -197,6 +197,30 @@ pub fn issue_squad_move(
     destination: Vec2,
     options: SquadFormationOptions,
 ) -> Result<Option<SquadFormationExecution>, SquadOrderError> {
+    execute_squad_move(world, navigation, members, destination, options, false)
+}
+
+/// The same formation planning and preflight as ordinary Move, but each ship
+/// uses its shared tracked destination controller. This is called by commands
+/// following moving squads, never by a separate AI navigation implementation.
+pub fn issue_squad_tracked_move(
+    world: &mut CombatWorld,
+    navigation: &NavigationRuntime,
+    members: &[SquadFormationMember],
+    destination: Vec2,
+    options: SquadFormationOptions,
+) -> Result<Option<SquadFormationExecution>, SquadOrderError> {
+    execute_squad_move(world, navigation, members, destination, options, true)
+}
+
+fn execute_squad_move(
+    world: &mut CombatWorld,
+    navigation: &NavigationRuntime,
+    members: &[SquadFormationMember],
+    destination: Vec2,
+    options: SquadFormationOptions,
+    tracked: bool,
+) -> Result<Option<SquadFormationExecution>, SquadOrderError> {
     let Some(plan) = plan_squad_formation(
         members, destination, options, navigation,
     )? else { return Ok(None) };
@@ -215,7 +239,11 @@ pub fn issue_squad_move(
 
     let mut results = Vec::with_capacity(plan.orders.len());
     for &(ship_id, order) in &plan.orders {
-        let outcome = world.move_ship_to_point(ship_id, order)?;
+        let outcome = if tracked {
+            world.move_ship_to_tracked_point(ship_id, order)?
+        } else {
+            world.move_ship_to_point(ship_id, order)?
+        };
         results.push((ship_id, outcome));
     }
     Ok(Some(SquadFormationExecution {
