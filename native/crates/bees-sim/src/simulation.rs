@@ -210,8 +210,8 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
         self.sample_every = every;
     }
 
-    /// Common timing sampling policy for the simulation's world steps
-    /// and the caller's batched rollout phases. None adds no clock reads.
+    /// Common sampling policy for per-world step timing and the host's
+    /// batched rollout timings. None disables both timing paths.
     pub fn timing_sample_period(&self) -> Option<NonZeroU32> {
         self.sample_every
     }
