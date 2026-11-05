@@ -56,15 +56,21 @@ for bomber-only squads or Charge for barge-only squads). Ordinary squad
 Move and Stop use authored ship offsets, 20-step formation compression,
 nearest walkable-center fallback and each ship's shared A* path queue.
 
-The source-matched movement phases of HiveMind **Hold**, **Random**, and
-**Patrol** are now wired. Random finishes at arrival or command timeout;
-Patrol samples Unity's four-corner route, rotates waypoints on its 3-second
-scaled callback, and uses the separate configured patrol timeout.
+The source-matched movement phases of HiveMind **Hold**, **Random**,
+**Patrol**, and **Retreat** are now wired. Random finishes at arrival or
+command timeout; Patrol samples Unity's four-corner route, rotates
+waypoints on its 3-second scaled callback, and uses the separate
+configured patrol timeout. Retreat uses the Level's live target squad
+position and weapon range to move directly away from a nearby enemy;
+when already sufficiently far away it stops and finalizes after 3 seconds.
+Unlike the other strategies, moving Retreat has no general timeout in Unity,
+and its timer ends when all squad ships arrive. Delayed server responses must
+still match the originally targeted enemy squad before activation.
 Commands update squads in stable lifecycle-ID order so independent worlds
 do not depend on randomized hash-table traversal.
 The game must supply real squad bounds, membership, configured speeds,
-shooting/targeting state and scaled update time; the director does not
-invent missing game state. Unported command types return an explicit
+live enemy squad identity/position/range where required, shooting/targeting
+state and scaled update time; the director does not invent missing game state. Unported command types return an explicit
 Unsupported result with their server reservations intact. Command reward
 totals and unused shooting/targeting settlement still belong to gameplay
 attribution, then the separate HiveMind durable StoreCommands pipeline.
