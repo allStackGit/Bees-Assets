@@ -13,7 +13,6 @@ use crate::combat_world::{CombatShip, CombatWorld};
 use crate::episode_ship_identity::{EpisodeShipIdentities, ShipIdentityError};
 use crate::geometry::Vec2;
 use crate::local_navigation_observation::{LocalNavigationError, LocalNavigationOccupancy};
-use crate::level_discovery::LevelDiscovery;
 use crate::obstacle::ObstacleKind;
 use crate::perception::{SelfSource, ship_type_scalar};
 use crate::team_exploration::{Explorer, ExplorationError, TeamExplorationGrid};
@@ -411,7 +410,6 @@ impl LiveShipCandidateCollector {
     pub fn collect_learned_enemies(
         &mut self,
         world: &CombatWorld,
-        discoveries: &LevelDiscovery,
         observer_id: i64,
         identities: &mut EpisodeShipIdentities,
         metadata_for: impl FnMut(i64) -> Option<AuthoredShipPerception>,
@@ -420,7 +418,7 @@ impl LiveShipCandidateCollector {
         let (observer, observer_body) = live_ship(world, observer_id)?;
         let origin = observer_body.motion.position;
         self.ordered_ids.clear();
-        if let Some(known) = discoveries.ship_ids(observer.side) {
+        if let Some(known) = world.discovery().ship_ids(observer.side) {
             for &id in known {
                 let Some(candidate) = world.ship(id) else {
                     continue; // a target retired before cache cleanup
@@ -510,15 +508,14 @@ mod tests {
         assert_eq!(live_ship_position(&world, 1).unwrap(),
             own.position);
 
-        let mut discovered = LevelDiscovery::new();
         assert_eq!(
-            discovered.record(1, crate::level_discovery::DiscoveryKind::Ship, 2),
+            world.discovery_mut().record(1, crate::level_discovery::DiscoveryKind::Ship, 2),
             Ok(true),
         );
         let mut collector = LiveShipCandidateCollector::new();
         let mut known_enemies = Vec::new();
         let count = collector.collect_learned_enemies(
-            &world, &discovered, 1, &mut identities,
+            &world, 1, &mut identities,
             |_| Some(metadata), &mut known_enemies,
         ).unwrap();
         assert_eq!(count, 1);
@@ -528,7 +525,7 @@ mod tests {
         let mut nav = LocalNavigationOccupancy::new();
         assert_eq!(navigation_from_world(
             &world, bounds, own.position, &mut nav,
-            |id| discovered.has(1, crate::level_discovery::DiscoveryKind::Obstacle, id),
+            |id| world.discovery().has(1, crate::level_discovery::DiscoveryKind::Obstacle, id),
         ).unwrap(), 0);
         assert_eq!(nav.occupancy().len(), 21 * 21);
 
