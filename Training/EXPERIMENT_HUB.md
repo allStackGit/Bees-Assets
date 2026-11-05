@@ -399,8 +399,55 @@ a network disconnect as evidence the process ended.
 exercised using isolated HTTP, filesystem, cryptography, and systemd
 simulations, not Halifax's Debian user service. Linux systemd
 delegation/permissions, real process termination and limits,
-Windows Job Objects, GPU device mapping/isolation, and cross-project
-throughput/rebalancing remain outstanding.
+Windows Job Objects, enforceable GPU isolation, and cross-project
+throughput/rebalancing remain unqualified.
+
+## Physical AMDGPU identity and bounded advisory allocation
+
+The Linux agent now observes AMDGPU cards directly from the kernel's
+\`/sys/class/drm/card*/device\` sysfs hierarchy. Reports contain only a
+PCI bus/device/function address, total VRAM MiB and (when available)
+currently used VRAM MiB. Missing drivers, missing VRAM counters and
+disappearing devices are treated as **unavailable**, not inferred from
+model names or manually registered nominal capacity. PCI slot addresses
+are stable labels only while the machine's hardware topology remains
+unchanged; they are not permanent GPU serial numbers. Windows GPU
+discovery is not implemented by this Linux-specific probe.
+
+Registration may include a GPU's \`pci_address\`, for example:
+
+    [{"id":"gpu0","vram_mb":32768,"pci_address":"0000:03:00.0"}]
+
+For an already registered machine, the Machines tab provides
+**Bind physical AMD GPUs**. The operator selects a connected Linux
+machine, reviews the actual observed PCI addresses, and confirms a
+complete logical-ID-to-PCI mapping. The server rejects unknown,
+duplicate or malformed addresses and refuses to rebind a machine while
+it has outstanding GPU-bearing leases. It never silently changes a
+running job's GPU selection or existing lease identity.
+
+Only connected machines with a fresh matching AMDGPU report expose
+\`verified_gpus\` to the Hub's capacity planner. The available per-device
+budget is capped at the **smaller** of registered and reported VRAM;
+manual names without matching PCI evidence contribute **zero GPU
+allocation capacity**. Each lease freezes its selected logical GPU IDs.
+The coordinator sends their expected physical PCI mapping back to the
+authenticated agent, which independently verifies the requested device
+and tracks exclusive/shared claim budgets before acknowledging. A
+missing, moved or mismatched device invalidates the coordinator's
+existing fresh receipt immediately. Reappearance alone does not
+restore receipt freshness; another matching acknowledgement is needed.
+
+**Identity is not isolation.** The physical VRAM-used counter may
+include unrelated host workloads, while the planner's reserved VRAM
+and GPU compute percentages represent only the Hub's own advisory
+budget ledger. No kernel-enforced per-process GPU VRAM limit,
+exclusive device node restriction, guaranteed GPU compute partition,
+or ROCm execution device selection has been qualified. The Hub
+therefore still **refuses to start GPU-bearing jobs**, even when both
+PCI identity and advisory capacity match. These observations make
+future scheduling safer; they do not demonstrate that Bees, Ants and
+LLM jobs can share a GPU without slowdown.
 
 ## Windows native Job Object owner (opt-in, CPU/RAM only)
 
@@ -657,8 +704,8 @@ status. **No real Ants training or Linux service qualification has run here.**
 ## Not yet implemented
 
 Installed project-specific Windows and Linux adapters, real-machine
-qualification of Windows Job Objects and Linux systemd execution, GPU device
-verification and isolation, automatic multi-project job scheduling,
+qualification of Windows Job Objects and Linux systemd execution, GPU isolation
+and runtime device-selection enforcement, automatic multi-project job scheduling,
 metrics ingestion for additional projects, safe live rebalancing, and
 comprehensive CLI parity for all runtime configuration controls remain
 future work. These
