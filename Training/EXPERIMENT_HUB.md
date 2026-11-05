@@ -93,9 +93,10 @@ its predecessor; its status and cancellation time are retained. It cannot
 cancel running or unknown jobs through this route.
 To continue an experiment, save a resume-mode configuration, select its
 eligible predecessor in Train, and queue with `continuation_of_job_id` in
-`POST /api/hub/jobs`. The Hub keeps the original machine affinity and
-artifact lineage. For Ants, the predecessor may already be dispatched
-and running (or may have finished but not yet released capacity). The
+`POST /api/hub/jobs`. The Hub retains the original artifact lineage, and pins subsequent
+execution to the first successfully dispatched machine. For Ants, the
+predecessor can be waiting, dispatched, running, or finished pending
+capacity release. The
 frozen continuation then has `status: "waiting_predecessor"` and **cannot
 claim CPU/RAM, be started manually, or be started by automation**.
 When a verified `finished` predecessor's Hub capacity is released, the
@@ -110,8 +111,11 @@ eligible. The Ants adapter independently checks checkpoint viability
 and qualification on every launch. This is completion-based stage
 readiness, **not benchmark-driven early stopping**. Further continuation
 stages can be prequeued against an already blocked Ants continuation
-while its original machine affinity and artifact lineage remain frozen.
-This supports a linear chain of future stages, not an arbitrary DAG;
+while its artifact lineage stays frozen. A complete Ants pipeline
+can also be queued before the first stage is assigned to any machine:
+the original host is pinned only when that initial stage actually runs,
+and its identity propagates to the next eligible stage at successful
+terminal capacity release. This supports a linear chain, not an arbitrary DAG;
 only one non-cancelled successor is allowed per parent. Blocked stages
 carry no capacity claims, and a parent with a non-cancelled child must
 be cancelled from the end of the chain backward.
@@ -128,7 +132,15 @@ The Bees project is deliberately
 rejected by this generic queue and continues to use its existing coordinator.
 
 The API is `POST /api/hub/jobs` with
-`{configuration_id, expected_revision, resources}`,
+`{configuration_id, expected_revision, resources}`, and
+`POST /api/hub/pipelines` with
+`{"confirm_queue":true,"stages":[{"configuration_id":"...","expected_revision":1,"resources":{"cpus":2,"ram_mb":2048,"gpu_count":0}},...]}`.
+The latter freezes **2–16 Ants stages in one atomic registry write**,
+accepts an optional `continuation_of_job_id` for the initial stage,
+and rejects the entire pipeline if any configuration, revision, mode,
+resource request, or predecessor is invalid. Stage one must use new
+mode unless resuming an eligible predecessor; later stages must use
+resume mode. The Train tab provides a visual pipeline builder.
 `POST /api/hub/jobs/cancel` with `{job_id,confirm_cancel:true}`,
 `GET /api/hub/jobs/plan` for a read-only view, and
 `POST /api/hub/jobs/allocate` to claim Hub capacity. Jobs are queued
