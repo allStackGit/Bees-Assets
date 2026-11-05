@@ -210,15 +210,21 @@ function nativeStartReadiness(snapshot, job) {
 }
 // Match the operator's cross-project FIFO fairness in both the read-only
 // preview and the actual advisory claim pass.
-function fairPending(jobs) {
+function fairPending(jobs,lastProjectId=null) {
     const buckets=new Map();
     for(const job of jobs) {
         if(!buckets.has(job.project_id))buckets.set(job.project_id,[]);
         buckets.get(job.project_id).push(job);
     }
+    // The read-only preview and manual allocation retain their stable order.
+    // A one-transition automation tick resumes after the previously served
+    // project instead of resetting its priority on every invocation.
+    const rotated=[...buckets];
+    const after=rotated.findIndex(([id])=>id===lastProjectId);
+    if(after>=0)rotated.push(...rotated.splice(0,after+1));
     const ordered=[];
-    while([...buckets.values()].some(bucket=>bucket.length)) {
-        for(const bucket of buckets.values()) {
+    while(rotated.some(([,bucket])=>bucket.length)) {
+        for(const [,bucket] of rotated) {
             if(bucket.length)ordered.push(bucket.shift());
         }
     }
@@ -273,6 +279,7 @@ class ExperimentHub {
             session_id:null,
             armed_at:null,last_tick_at:null,last_action:null,last_error:null,
             last_transition_at:null,waiting_reason:null,
+            last_claimed_project_id:null,last_started_project_id:null,
         };
         const s = this.state;
         if (!object(s) || s.version !== 1 ||
@@ -405,6 +412,7 @@ class ExperimentHub {
                 last_action:'Disarmed by operator.',last_error:null,
                 last_transition_at:this.automation.last_transition_at,
                 waiting_reason:null,
+                last_claimed_project_id:null,last_started_project_id:null,
             };
             return this.automationStatus();
         }
@@ -443,6 +451,7 @@ class ExperimentHub {
             armed_at:now(),last_tick_at:null,
             last_action:'Armed for qualified CPU-only jobs; no job dispatched yet.',
             last_error:null,last_transition_at:null,waiting_reason:null,
+            last_claimed_project_id:null,last_started_project_id:null,
         };
         return this.automationStatus();
     }
@@ -492,9 +501,13 @@ class ExperimentHub {
                 return transitioned('Released verified capacity: '+complete.project_id+
                     ' / '+(complete.configuration_name||complete.id.slice(-8))+'.');
             }
-            const pending=fairPending(snapshot.jobs.filter(j=>
+            const pending=snapshot.jobs.filter(j=>
                 j.adapter==='unconfigured'&&j.status==='waiting_adapter'&&
-                j.project_id!=='bees'));
+                j.project_id!=='bees');
+            // Claims and starts can become eligible at different times,
+            // so fairness needs an independent cursor for each operation.
+            const pendingStarts=fairPending(pending,session.last_started_project_id);
+            const pendingClaims=fairPending(pending,session.last_claimed_project_id);
             const blockedMachines=new Set(snapshot.jobs.filter(j=>
                 ['stop_requested','unverified','failed'].includes(j.status)&&
                 !j.capacity_released_at).map(j=>j.assigned_machine_id));
@@ -504,13 +517,14 @@ class ExperimentHub {
             const startingMachines=new Set(snapshot.jobs.filter(j=>
                 ['start_requested','launch_requested'].includes(j.status)&&
                 !j.capacity_released_at).map(j=>j.assigned_machine_id));
-            for(const job of pending) {
+            for(const job of pendingStarts) {
                 if(!job.lease_id||!session.machine_ids.includes(job.assigned_machine_id)||
                     blockedMachines.has(job.assigned_machine_id)||
                     startingMachines.has(job.assigned_machine_id)||
                     job.native_start_readiness?.eligible!==true)continue;
                 this.authorizeStart({job_id:job.id,confirm_start:true},'automation');
                 session.managed_job_ids.push(job.id);
+                session.last_started_project_id=job.project_id;
                 return transitioned('Authorized CPU-only Start: '+job.project_id+
                     ' / '+(job.configuration_name||job.id.slice(-8))+'.');
             }
@@ -520,7 +534,7 @@ class ExperimentHub {
                     (m.execution_capabilities?.cgroup_v2_detected===true&&
                      ['cpu','memory'].every(c=>
                         m.execution_capabilities?.cgroup_controllers.includes(c)))));
-            for(const job of pending) {
+            for(const job of pendingClaims) {
                 if(job.lease_id||job.resources.gpu_count!==0||
                     (job.resources.gpus||[]).length||job.resources.ram_mb<128)
                     continue;
@@ -534,6 +548,7 @@ class ExperimentHub {
                 });
                 if(result.results[0]?.status!=='claimed')
                     throw Error('Selected placement did not produce an atomic claim.');
+                session.last_claimed_project_id=job.project_id;
                 return transitioned('Claimed CPU/RAM: '+job.project_id+' / '+
                     (job.configuration_name||job.id.slice(-8))+
                     ' on '+chosen.machine_id+'; awaiting agent receipt.');
