@@ -15,7 +15,7 @@ use crate::physics::ObstacleBody;
 
 const UNREACHABLE_SIGNED: i32 = i32::MAX / 4;
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct NavigationClearance {
     grid: NavigationGrid,
     base: Vec<i32>,
@@ -50,6 +50,20 @@ impl NavigationClearance {
     pub fn static_clearance(&self) -> &[i32] { &self.base }
     pub fn static_signed_clearance(&self) -> &[i32] { &self.signed_static }
     pub fn dynamic_clearance(&self) -> &[i32] { &self.dynamic }
+
+    /// A search worker owns an immutable copy captured at dispatch time.
+    /// Static region caches do not participate in A* and need not be
+    /// replicated for each new worker snapshot.
+    pub fn search_snapshot(&self) -> Self {
+        Self {
+            grid: self.grid,
+            base: self.base.clone(),
+            signed_static: self.signed_static.clone(),
+            dynamic: self.dynamic.clone(),
+            moving_blocked: vec![false; self.moving_blocked.len()],
+            static_components_by_clearance: HashMap::new(),
+        }
+    }
 
     /// Unity CanOccupyDestination's clearance criterion, after the owning
     /// Level has enforced ForceBounds and HasObstacles. The caller must still
