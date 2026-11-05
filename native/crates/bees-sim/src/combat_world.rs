@@ -600,6 +600,86 @@ impl CombatWorld {
         self.add_projectile(metadata, body)
     }
 
+    /// World-owned source of truth for an active ship's pathfinding job.
+    /// The caller decides whether direct movement is obstructed; this does
+    /// not infer a substitute Unity GetObstacleInPath raycast.
+    pub fn request_ship_path(
+        &mut self,
+        ship_id: i64,
+        destination: Vec2,
+        ship_clearance: i32,
+        newly_found_obstacle: bool,
+    ) -> Result<NavigationRequestDisposition, CombatWorldError> {
+        let &index = self.ship_by_id.get(&ship_id)
+            .ok_or(CombatWorldError::UnknownShip)?;
+        if self.ships[index].vitals.is_dead() ||
+            !self.physics.ships()[index].active {
+            return Err(CombatWorldError::UnknownShip);
+        }
+        let position = self.physics.ships()[index].motion.position;
+        Ok(self.navigation_requests.request(
+            ship_id, position, destination, ship_clearance,
+            newly_found_obstacle,
+        )?)
+    }
+
+    /// Explicit StopMoving or command replacement invalidates any queued
+    /// or running job. It does not cancel the worker's CPU work: its later
+    /// completion will simply be discarded.
+    pub fn invalidate_ship_path(
+        &mut self, ship_id: i64,
+    ) -> Result<(), CombatWorldError> {
+        if !self.ship_by_id.contains_key(&ship_id) {
+            return Err(CombatWorldError::UnknownShip);
+        }
+        Ok(self.navigation_requests.invalidate(ship_id)?)
+    }
+
+    pub fn ship_is_pathfinding(&self, ship_id: i64) -> bool {
+        self.navigation_requests.is_pathfinding(ship_id)
+    }
+
+    pub fn claim_next_path_job(&mut self) -> Option<NavigationRequest> {
+        self.navigation_requests.next()
+    }
+
+    /// A path job's result is delivered only to the same live ship and
+    /// newest request owner. A superseding order is requeued from the
+    /// ship's current physics position, rather than a stale snapshot.
+    pub fn complete_path_job(
+        &mut self,
+        job: NavigationRequest,
+        path: Option<crate::navigation_search::NavigationPath>,
+    ) -> Result<NavigationCompletion, CombatWorldError> {
+        let Some(&index) = self.ship_by_id.get(&job.ship_id) else {
+            self.navigation_requests.retire_ship(job.ship_id);
+            return Ok(NavigationCompletion::Discarded);
+        };
+        if self.ships[index].vitals.is_dead() ||
+            !self.physics.ships()[index].active {
+            self.navigation_requests.retire_ship(job.ship_id);
+            return Ok(NavigationCompletion::Discarded);
+        }
+        let position = self.physics.ships()[index].motion.position;
+        Ok(self.navigation_requests.complete(job, path, position)?)
+    }
+
+    /// Synchronous world-local worker entrypoint. A future native scheduler
+    /// can dispatch claim_next_path_job on worker threads and deliver the
+    /// same tokens via complete_path_job, without copying gameplay rules.
+    /// Processing a job here does not by itself issue a new movement order.
+    pub fn solve_next_path_job(
+        &mut self,
+        layers: &NavigationClearance,
+        search: &mut NavigationSearch,
+    ) -> Result<Option<NavigationCompletion>, CombatWorldError> {
+        let Some(job) = self.claim_next_path_job() else { return Ok(None); };
+        let path = search.find_level_path(
+            layers, job.start, job.destination, job.ship_clearance,
+        )?;
+        Ok(Some(self.complete_path_job(job, path)?))
+    }
+
     /// Set the two authored Ship.Create values needed by
     /// CollisionAsteroid.ShipCollision. The normal user and training spawn
     /// paths must both provide these; training-adjusted MaxHealth is not a
@@ -1146,6 +1226,7 @@ impl CombatWorld {
                             }
                             if delta.killed {
                                 self.physics.ships_mut()[target_index].active = false;
+                                self.navigation_requests.retire_ship(target_id);
                                 self.events.push(CombatEvent::ShipDied {
                                     victim_id: target_id,
                                     killer_id: if identity_valid { owner.shooter_id } else { 0 },
@@ -1275,6 +1356,7 @@ impl CombatWorld {
                 )));
                 if delta.killed {
                     self.physics.ships_mut()[ship_index].active = false;
+                    self.navigation_requests.retire_ship(target.entity_id);
                     self.events.push(CombatEvent::ShipDied {
                         victim_id: target.entity_id,
                         killer_id: owner.shooter_id,
@@ -1573,6 +1655,7 @@ impl CombatWorld {
                 self.events.push(CombatEvent::UnattributedDamage { target_id: ship_id, delta });
                 if delta.killed {
                     self.physics.ships_mut()[ship_index].active = false;
+                    self.navigation_requests.retire_ship(ship_id);
                     self.nearby_asteroid_ships.retain(|&(_, other_id)| other_id != ship_id);
                     self.events.push(CombatEvent::ShipDied {
                         victim_id: ship_id, killer_id: 0, command_outcome_id: 0,
