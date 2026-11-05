@@ -2839,9 +2839,10 @@ impl CombatWorld {
     }
 }
 
-/// This is still a deliberately incomplete gameplay adapter. It refuses
-/// neural actions until observations, rewards and full actuation are ported
-/// into this same game world.
+/// Shared native gameplay adapter. Valid policy actions drive real
+/// movement and supported authored rotating turrets in this same world;
+/// unported weapon subclasses and special abilities remain masked.
+
 pub struct CombatWorldRules {
     pub collision_matrix: CollisionMatrix,
 }
@@ -2855,10 +2856,9 @@ impl GameRules<CombatWorld> for CombatWorldRules {
         decisions: &[Decision],
         dt_seconds: f32,
     ) -> Result<StepCounts, Self::Error> {
-        // The real combat world applies the supported policy movement and
-        // allied communication before its normal shared physics tick.
-        // Weapons and specials remain fail-closed until their game-side
-        // control implementation is available.
+        // The real combat world applies movement, allied communication and
+        // authored turret requests before its shared physics tick.
+        // Unsupported weapon subclasses and specials remain fail-closed.
         world.state.apply_policy_decisions(decisions)?;
         world.state.step_fixed_with_random(
             dt_seconds, &self.collision_matrix, &mut world.random,
