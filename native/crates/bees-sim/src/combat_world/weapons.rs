@@ -438,6 +438,101 @@ mod tests {
     use crate::simulation::{World, WorldId};
 
     #[test]
+    fn dual_cannon_launches_two_half_power_shots_from_rotated_ship_pivot_muzzles() {
+        let projectiles = Arc::new(ProjectileAssetCatalog::embedded().unwrap());
+        let hulls = ShipAssetCatalog::embedded().unwrap();
+        let mut combat = CombatWorld::new(
+            Aabb {
+                min: Vec2::new(-200.0, -200.0),
+                max: Vec2::new(200.0, 200.0),
+            },
+            8.0, Arc::clone(&projectiles),
+        ).unwrap();
+        let ship_position = Vec2::new(5.0, 8.0);
+        combat.spawn_ship(
+            hulls.by_type(13).unwrap(), 1, 1,
+            ShipVitals::new(100, 100, 1000, 0).unwrap(),
+            ShipMotion::new(ship_position, 90.0, 0.0, 0.0, 3.0),
+        ).unwrap();
+        combat.bind_policy_ship(1, PolicyFrame::new(0), false).unwrap();
+        let spec = NativeTurretSpec {
+            weapon_type: 6,
+            projectile_type: 6, // HumanSmall; never the generic turret type
+            mount_offset: Vec2::ZERO,
+            initial_rotation_degrees: 90.0,
+            rotation_rate: 90.0,
+            range: 80.0,
+            power: 21, // C# 21 / 2 = 10 per shot, not 10.5 or 11
+            rate_of_fire: 0.3,
+            projectile_value: 1.0,
+            projectile_speed: 100.0,
+            fire_pattern: NativeFirePattern::DualCannon {
+                left_offset: Vec2::new(-1.1, 0.5),
+                right_offset: Vec2::new(1.1, 0.5),
+            },
+        };
+        combat.configure_policy_turret(1, 0, spec).unwrap();
+        assert_eq!(combat.policy_action_mask(1).unwrap().fire[0], true);
+        assert_eq!(combat.policy_self_weapons(1).unwrap()[0]
+            .unwrap().weapon_type, 6);
+        let invalid_pattern = NativeTurretSpec {
+            fire_pattern: NativeFirePattern::Single,
+            ..spec
+        };
+        assert!(matches!(
+            combat.configure_policy_turret(1, 1, invalid_pattern),
+            Err(CombatWorldError::UnsupportedPolicyTurret { .. }),
+        ));
+
+        let mut action = Action::ZERO;
+        action.continuous[2] = -1.0; // aim physical -X, aligned at 90°
+        action.discrete[0] = 1;
+        let decision = Decision { agent_id: 1, action };
+        let rules = CombatWorldRules {
+            collision_matrix: CollisionMatrix::from_rows([0; 32]),
+        };
+        let mut world = World::new(WorldId(44), 9, combat);
+        let mut fired = Vec::new();
+        for tick in 0..30 {
+            let decisions = if tick == 0 { &[decision][..] } else { &[][..] };
+            rules.step(&mut world, decisions, 0.02).unwrap();
+            for event in world.state.events() {
+                if let CombatEvent::PolicyWeaponFired {
+                    ship_id: 1, slot: 0, projectile_id,
+                } = event {
+                    fired.push(*projectile_id);
+                }
+            }
+            if fired.len() >= 2 { break; }
+        }
+        assert_eq!(fired.len(), 2);
+        assert_eq!(fired[1], fired[0] + 1);
+        let mut bodies = Vec::new();
+        for &id in &fired {
+            let index = *world.state.projectile_by_id.get(&id).unwrap();
+            let shot = &world.state.projectiles()[index];
+            assert_eq!(shot.projectile_type, 6);
+            assert_eq!(shot.power, 10);
+            assert_eq!(shot.owner.shooter_id, 1);
+            let body = &world.state.physics().projectiles()[index];
+            assert!(body.active);
+            assert_eq!(body.motion.attribution.root_shot_id, id);
+            bodies.push(body.motion);
+        }
+        // Unity RotatePointAroundPoint(Ship.GetPosition(),
+        // turret.GetPosition()+barrelOffset, turret.Rotation).
+        let left = Vec2::new(4.5, 6.9);
+        let right = Vec2::new(4.5, 9.1);
+        for (body, muzzle) in bodies.iter().zip([left, right]) {
+            assert!((body.starting_position.x - muzzle.x).abs() < 1e-4);
+            assert!((body.starting_position.y - muzzle.y).abs() < 1e-4);
+            assert!(body.velocity.x < 0.0);
+        }
+        assert!((bodies[0].velocity.x - bodies[1].velocity.x).abs() < 1e-5);
+        assert!((bodies[0].velocity.y - bodies[1].velocity.y).abs() < 1e-5);
+    }
+
+    #[test]
     fn authored_turret_fires_via_real_projectiles_after_three_timer_passes() {
         let projectiles = Arc::new(ProjectileAssetCatalog::embedded().unwrap());
         let speed = projectiles.by_type(1).unwrap().shot_speed.unwrap();
