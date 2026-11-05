@@ -1,0 +1,174 @@
+//! Policy-driven YellowJacket.TryToDetonate and Detonate.
+//! Source: Scripts/Entities/Ships/YellowJacket.cs.
+//! These are direct simultaneous health hits, not physical projectiles.
+
+use super::*;
+
+impl CombatWorld {
+    /// Bind actual Bomb.Power for ShipTypes.YellowJacket=22.
+    pub fn configure_policy_yellow_jacket(
+        &mut self, ship_id: i64, bomb_power: i32,
+    ) -> Result<(), CombatWorldError> {
+        let &index = self.ship_by_id.get(&ship_id)
+            .ok_or(CombatWorldError::UnknownShip)?;
+        if self.ships[index].ship_type != 22 ||
+            self.ships[index].vitals.is_dead() ||
+            !self.physics.ships()[index].active || bomb_power < 0 {
+            return Err(CombatWorldError::InvalidPolicyYellowJacket);
+        }
+        let runtime = self.policy_ship_runtime.get_mut(&ship_id)
+            .ok_or(CombatWorldError::UnknownShip)?;
+        if runtime.yellow_jacket_power.is_some() ||
+            runtime.striker.is_some() || runtime.fire_barge_power.is_some() {
+            return Err(CombatWorldError::InvalidPolicyYellowJacket);
+        }
+        runtime.yellow_jacket_power = Some(bomb_power);
+        Ok(())
+    }
+
+    /// V26's explicit special uses Unity's live TouchingShip enemy guard.
+    /// Separately commanded automatic BombingRun remains Level work.
+    pub(super) fn try_detonate_policy_yellow_jacket(
+        &mut self, ship_id: i64, collisions: &CollisionMatrix,
+    ) -> Result<bool, CombatWorldError> {
+        let &ship_index = self.ship_by_id.get(&ship_id)
+            .ok_or(CombatWorldError::UnknownShip)?;
+        if self.ships[ship_index].vitals.is_dead() ||
+            !self.physics.ships()[ship_index].active {
+            return Ok(false);
+        }
+        let power = self.policy_ship_runtime.get(&ship_id)
+            .and_then(|runtime| runtime.yellow_jacket_power)
+            .ok_or(CombatWorldError::InvalidPolicyYellowJacket)?;
+        let contact = self.find_touching_enemy_ship(ship_index, collisions);
+        self.policy_special_measurements.yellow_jacket_hull_checks +=
+            contact.candidates;
+        let Some(target_id) = contact.target_id else {
+            self.policy_special_measurements.yellow_jacket_contact_misses += 1;
+            return Ok(false);
+        };
+        let target_index = *self.ship_by_id.get(&target_id)
+            .ok_or(CombatWorldError::UnknownShip)?;
+        let ship_side = self.ships[ship_index].side;
+        let target_side = self.ships[target_index].side;
+
+        // Source computes BOTH hit deltas before calling either Ship.Kill.
+        // ShotsHarmless is a projectile flag and must not mask direct damage.
+        let enemy_delta = self.ships[target_index].vitals
+            .apply_damage(power, false)?.expect("contacted living enemy");
+        let self_delta = self.ships[ship_index].vitals
+            .apply_damage(power, false)?.expect("living Yellow Jacket");
+        self.reservations.target_health_changed(
+            target_id, self.ships[target_index].vitals.health(),
+        );
+        self.reservations.target_health_changed(
+            ship_id, self.ships[ship_index].vitals.health(),
+        );
+        self.events.push(CombatEvent::YellowJacketDetonated {
+            ship_id, target_id,
+        });
+        self.policy_special_measurements.yellow_jacket_detonations += 1;
+        // Direct hits carry no invented shot or command identity.
+        self.events.push(CombatEvent::Hit(HitEvent::new(
+            0, 0, ship_id, target_id, ship_side, target_side,
+            0, DamageSource::Bomb, enemy_delta, false,
+        )));
+        // Unity's historical LogHitStats credits the contacted ship, but
+        // RL RecordUnattributedTsvLoss suppresses its attacker reward.
+        self.events.push(CombatEvent::Hit(HitEvent::new(
+            0, 0, target_id, ship_id, target_side, ship_side,
+            0, DamageSource::Bomb, self_delta, true,
+        )));
+        if enemy_delta.killed {
+            self.retire_dead_ship(target_index, ship_id, 0);
+        }
+        if self_delta.killed {
+            // YellowJacket.HasCompletedRun marks this as self-detonation
+            // for RL death attribution despite the historical killer ID.
+            self.retire_dead_ship(ship_index, target_id, 0);
+        }
+        Ok(true)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+    use crate::collision::Aabb;
+    use crate::combat::ShipVitals;
+    use crate::movement::ShipMotion;
+    use crate::policy::Action;
+    use crate::projectile_assets::ProjectileAssetCatalog;
+    use crate::ship_assets::ShipAssetCatalog;
+    use crate::simulation::{World, WorldId};
+
+    #[test]
+    fn contact_special_applies_both_direct_bomb_hits_without_a_projectile() {
+        let projectiles = Arc::new(ProjectileAssetCatalog::embedded().unwrap());
+        let assets = ShipAssetCatalog::embedded().unwrap();
+        let mut state = CombatWorld::new(Aabb {
+            min: Vec2::new(-100.0, -100.0),
+            max: Vec2::new(100.0, 100.0),
+        }, 8.0, projectiles).unwrap();
+        for (id, kind, side, position) in [
+            (1, 22, 1, Vec2::ZERO),
+            (2, 21, 2, Vec2::new(50.0, 0.0)),
+        ] {
+            state.spawn_ship(
+                assets.by_type(kind).unwrap(), id, side,
+                ShipVitals::new(100, 100, 1000, 0).unwrap(),
+                ShipMotion::new(position, 0.0, 0.0, 0.0, 3.0),
+            ).unwrap();
+        }
+        state.bind_policy_ship(1, PolicyFrame::new(0), false).unwrap();
+        assert!(!state.policy_action_mask(1).unwrap().special[1]);
+        state.configure_policy_yellow_jacket(1, 60).unwrap();
+        assert!(state.policy_action_mask(1).unwrap().special[1]);
+        let a = state.physics.ships()[0].layer;
+        let b = state.physics.ships()[1].layer;
+        let mut rows = [0u32; 32];
+        rows[usize::from(a)] |= 1u32 << b;
+        rows[usize::from(b)] |= 1u32 << a;
+        let rules = CombatWorldRules {
+            collision_matrix: CollisionMatrix::from_rows(rows),
+        };
+        let mut world = World::new(WorldId(41), 3, state);
+        let mut action = Action::ZERO;
+        action.discrete[5] = 1;
+        let decision = Decision { agent_id: 1, action };
+        rules.step(&mut world, &[decision], 0.02).unwrap();
+        assert_eq!(world.state.ship(2).unwrap().vitals.health(), 100);
+        assert_eq!(world.state.policy_special_measurements().yellow_jacket_contact_misses, 1);
+
+        world.state.physics.ships_mut()[1].motion.position = Vec2::ZERO;
+        rules.step(&mut world, &[decision], 0.02).unwrap();
+        assert_eq!(world.state.ship(1).unwrap().vitals.health(), 40);
+        assert_eq!(world.state.ship(2).unwrap().vitals.health(), 40);
+        assert_eq!(world.state.projectile_storage_metrics().active_projectiles, 0);
+        let bomb_hits: Vec<_> = world.state.events().iter().filter_map(|event| {
+            if let CombatEvent::Hit(hit) = event {
+                if hit.source == DamageSource::Bomb { return Some(*hit); }
+            }
+            None
+        }).collect();
+        assert_eq!(bomb_hits.len(), 2);
+        assert_eq!(bomb_hits[0].target_id, 2);
+        assert!(!bomb_hits[0].self_inflicted);
+        assert_eq!(bomb_hits[1].target_id, 1);
+        assert!(bomb_hits[1].self_inflicted);
+
+        rules.step(&mut world, &[decision], 0.02).unwrap();
+        assert_eq!(world.state.ship(1).unwrap().vitals.health(), 0);
+        assert_eq!(world.state.ship(2).unwrap().vitals.health(), 0);
+        assert!(world.state.events().iter().any(|event|
+            matches!(event, CombatEvent::YellowJacketDetonated {
+                ship_id: 1, target_id: 2,
+            })));
+        assert!(world.state.events().iter().any(|event|
+            matches!(event, CombatEvent::ShipDied {
+                victim_id: 1, killer_id: 2, ..
+            })));
+        assert_eq!(world.state.policy_special_measurements().yellow_jacket_detonations, 2);
+    }
+}

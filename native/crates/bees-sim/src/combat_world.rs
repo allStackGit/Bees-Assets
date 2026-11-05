@@ -32,7 +32,7 @@ use crate::damage_reservations::{DamageReservations, DamageStatus, ReservationEr
 use crate::physics::{
     CollisionMatrix, KinematicPhysics, MovementObstacleHit, ObstacleBody,
     ObstaclePairContact, ObstacleTriggerEnter, PhysicsError, ProjectileBody,
-    ShipBody, ShipShape, TriggerEnter,
+    ShipBody, ShipHullOverlap, ShipShape, TriggerEnter,
 };
 use crate::policy::{ActionError, Decision};
 use crate::control::{PolicyControl, PolicyFrame};
@@ -73,6 +73,7 @@ mod policy;
 mod weapons;
 mod striker;
 mod fire_barge;
+mod yellow_jacket;
 use self::policy::PolicyShipRuntime;
 use self::weapons::PendingPolicyShot;
 pub use self::weapons::{NativeFirePattern, NativeTurretSpec};
@@ -113,6 +114,7 @@ pub enum CombatWorldError {
     InvalidPolicyTurret,
     InvalidPolicyStriker,
     InvalidPolicyFireBarge,
+    InvalidPolicyYellowJacket,
     UnsupportedPolicyTurret { weapon_type: u8, projectile_type: u8 },
     DuplicatePolicyTurret { ship_id: i64, slot: usize },
     MapObject(MapObjectError),
@@ -232,6 +234,8 @@ pub enum CombatEvent {
     StrikerBombReloaded { ship_id: i64, carrier_id: i64 },
     /// FireBarge.Detonate created the real type-14 explosion before self-death.
     FireBargeDetonated { ship_id: i64, projectile_id: i64 },
+    /// Yellow Jacket's direct reciprocal Bomb hits have no projectile.
+    YellowJacketDetonated { ship_id: i64, target_id: i64 },
     /// Emitted for projectile impacts against static geometry; the
     /// dedicated RL coordinator determines the corresponding reward.
     StaticObstacleImpact { projectile_id: i64, obstacle_id: i64 },
@@ -454,6 +458,9 @@ pub struct PolicySpecialMeasurements {
     pub striker_bombs_dropped: u64,
     pub striker_reloads: u64,
     pub fire_barge_detonations: u64,
+    pub yellow_jacket_contact_misses: u64,
+    pub yellow_jacket_hull_checks: u64,
+    pub yellow_jacket_detonations: u64,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -518,6 +525,14 @@ struct PendingAsteroidBreakup {
 /// State and scratch are owned per arena. No process globals, no cross-world
 /// static dictionaries. Dense arrays use identical indices to physics bodies;
 /// ID maps are only used when routing collision results.
+#[derive(Clone, Copy, Debug, Default)]
+struct EnemyShipContact {
+    target_id: Option<i64>,
+    candidates: u64,
+    distance_rejections: u64,
+    exact_tests: u64,
+}
+
 pub struct CombatWorld {
     physics: KinematicPhysics,
     projectile_assets: Arc<ProjectileAssetCatalog>,
@@ -656,6 +671,40 @@ impl CombatWorld {
             shots_harmless: false,
             frozen_after_elimination: false,
         })
+    }
+
+    /// One source-defined contact query for both Striker and Yellow Jacket.
+    /// Match only real, collision-layer-permitted authored hull intersections.
+    /// Lowest living enemy ID breaks otherwise unspecified contact ties.
+    fn find_touching_enemy_ship(
+        &mut self, ship_index: usize, collisions: &CollisionMatrix,
+    ) -> EnemyShipContact {
+        let side = self.ships[ship_index].side;
+        let mut result = EnemyShipContact::default();
+        for index in 0..self.ships.len() {
+            if index == ship_index || self.ships[index].side == side ||
+                self.ships[index].vitals.is_dead() ||
+                !self.physics.ships()[index].active {
+                continue;
+            }
+            result.candidates += 1;
+            match self.physics.ship_hulls_overlap_detailed(
+                ship_index, index, collisions,
+            ) {
+                ShipHullOverlap::Ineligible => {}
+                ShipHullOverlap::RejectedByDistance =>
+                    result.distance_rejections += 1,
+                ShipHullOverlap::ExactMiss => result.exact_tests += 1,
+                ShipHullOverlap::Contact => {
+                    result.exact_tests += 1;
+                    let id = self.ships[index].entity_id;
+                    if result.target_id.map_or(true, |previous| id < previous) {
+                        result.target_id = Some(id);
+                    }
+                }
+            }
+        }
+        result
     }
 
     /// All direct and projectile deaths share one world-owned retirement

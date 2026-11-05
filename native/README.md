@@ -256,8 +256,19 @@ Separate distance-rejection and exact-test counters measure how much
 polygon work this saves during real large-battle runs. A speedup has
 not yet been benchmarked.
 
+**Yellow Jacket ship special:** native ShipTypes=22 resolves a physical
+enemy-hull contact and applies the authored Bomb.Power directly to the
+enemy and reciprocally to itself. The two Bomb HitEvents carry zero
+projectile/root IDs because Unity does not spawn a shot. The reciprocal
+hit is marked self_inflicted for RL shaping, and the
+YellowJacketDetonated event exposes the self-death cause even when
+historical gameplay names the enemy as killer. Striker and Yellow Jacket
+share the same exact, matrix-gated contact search and stable tie-breaking.
+Scripted auto-BombingRun behavior and full command-stat persistence are
+still separate Level integration work.
+
 **Not yet implemented:** scripted BombingRun command coordination,
-Yellow Jacket, Scout and Barge ship specials, complete Level-to-perception snapshot
+Scout and Barge ship specials, complete Level-to-perception snapshot
 collection, GPU inference, and an ML-Agents-compatible learner. Unity targeting timers
 run on the Level's scaled update clock; this native implementation
 currently advances the same timer semantics on the game fixed-step delta,

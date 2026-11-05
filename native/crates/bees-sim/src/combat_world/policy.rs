@@ -28,6 +28,7 @@ pub(super) struct PolicyShipRuntime {
     /// self-detonation. Both are ship specials, never turret fire branches.
     pub(super) striker: Option<PolicyStrikerRuntime>,
     pub(super) fire_barge_power: Option<i32>,
+    pub(super) yellow_jacket_power: Option<i32>,
 }
 
 impl CombatWorld {
@@ -54,6 +55,7 @@ impl CombatWorld {
             cease_fire: false,
             striker: None,
             fire_barge_power: None,
+            yellow_jacket_power: None,
         });
         Ok(())
     }
@@ -88,7 +90,8 @@ impl CombatWorld {
             special: [
                 true,
                 runtime.striker.as_ref().is_some_and(|striker| striker.ready) ||
-                    runtime.fire_barge_power.is_some(),
+                    runtime.fire_barge_power.is_some() ||
+                    runtime.yellow_jacket_power.is_some(),
                 false, false, false,
             ],
         })
@@ -175,7 +178,7 @@ impl CombatWorld {
 
     /// Commit all validated ship specials inside the shared fixed tick, not
     /// the inference callback. A single sorted queue preserves deterministic
-    /// ordering across Fire Barges and Strikers irrespective of batch order.
+    /// ordering across supported ship classes irrespective of batch order.
     pub(super) fn apply_pending_policy_ship_specials(
         &mut self, collisions: &CollisionMatrix,
     ) -> Result<(), CombatWorldError> {
@@ -191,6 +194,8 @@ impl CombatWorld {
                 self.try_detonate_policy_fire_barge(ship_id)?;
             } else if runtime.striker.is_some() {
                 self.try_drop_policy_striker_bomb(ship_id, collisions)?;
+            } else if runtime.yellow_jacket_power.is_some() {
+                self.try_detonate_policy_yellow_jacket(ship_id, collisions)?;
             } else {
                 return Err(CombatWorldError::UnsupportedPolicyActions);
             }

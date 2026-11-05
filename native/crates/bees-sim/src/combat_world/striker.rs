@@ -7,7 +7,6 @@
 //! original shooter-fleet attribution, even after the Striker is destroyed.
 
 use super::*;
-use crate::physics::ShipHullOverlap;
 
 /// The RL special repeatedly attempts an actual contact drop. There is no
 /// BombingRun command in native policy control, just as in Unity's RL path.
@@ -84,34 +83,13 @@ impl CombatWorld {
             return Ok(false);
         }
         let side = self.ships[ship_index].side;
-        let mut target: Option<i64> = None;
-        for index in 0..self.ships.len() {
-            if index == ship_index || self.ships[index].side == side ||
-                self.ships[index].vitals.is_dead() ||
-                !self.physics.ships()[index].active {
-                continue;
-            }
-            self.policy_special_measurements.striker_hull_checks += 1;
-            match self.physics.ship_hulls_overlap_detailed(
-                ship_index, index, collisions,
-            ) {
-                ShipHullOverlap::Ineligible => {}
-                ShipHullOverlap::RejectedByDistance => {
-                    self.policy_special_measurements.striker_distance_rejections += 1;
-                }
-                ShipHullOverlap::ExactMiss => {
-                    self.policy_special_measurements.striker_exact_overlap_tests += 1;
-                }
-                ShipHullOverlap::Contact => {
-                    self.policy_special_measurements.striker_exact_overlap_tests += 1;
-                    let id = self.ships[index].entity_id;
-                    if target.map_or(true, |previous| id < previous) {
-                        target = Some(id);
-                    }
-                }
-            }
-        }
-        let Some(target_id) = target else {
+        let contact = self.find_touching_enemy_ship(ship_index, collisions);
+        self.policy_special_measurements.striker_hull_checks += contact.candidates;
+        self.policy_special_measurements.striker_distance_rejections +=
+            contact.distance_rejections;
+        self.policy_special_measurements.striker_exact_overlap_tests +=
+            contact.exact_tests;
+        let Some(target_id) = contact.target_id else {
             self.policy_special_measurements.striker_contact_misses += 1;
             return Ok(false);
         };
