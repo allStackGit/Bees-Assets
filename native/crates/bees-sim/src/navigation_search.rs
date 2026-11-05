@@ -134,7 +134,9 @@ impl NavigationSearch {
         if !start.is_finite() || !end.is_finite() {
             return Err(NavigationError::InvalidMap);
         }
-        self.find_path(layers, self.grid.to_cell(start), self.grid.to_cell(end), ship_clearance)
+        let from = self.grid.to_cell(start);
+        let to = self.grid.to_cell(end);
+        self.find_path(layers, from, to, ship_clearance)
     }
 
     fn find_normal(
