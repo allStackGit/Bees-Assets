@@ -34,8 +34,11 @@ remain authoritative.
   and preview CPU/RAM, GPU count, and per-GPU VRAM requirements. A machine
   can be enrolled with a one-time credential and run a read-only heartbeat
   agent on Windows or Linux. Fresh heartbeats cap CPU/RAM placement previews
-  to observed values. GPU inventory remains manually declared; no agent
-  reserves or isolates resources yet.
+  to observed values. The Machines table shows configured, freshly reported
+  and outstanding claimed CPU/RAM side by side, and flags claims exceeding
+  a connected agent's report. These are ledger claims, not measured usage.
+  GPU inventory remains manually declared; no agent reserves or isolates
+  resources yet.
 
 ## Data ownership
 
