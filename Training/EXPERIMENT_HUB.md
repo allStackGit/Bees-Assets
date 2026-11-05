@@ -466,10 +466,17 @@ systemd eBPF device filtering, an ambiguous unit or unconfirmed
 cleanup leaves qualification blocked. The probe opens and closes
 device files but does not submit GPU work or run training. Every
 explicit job request runs a **fresh** device-access proof, not a
-cached pass from a different job. An ambiguous cleanup blocks further
-probes in the same local supervisor session until the machine's
-service ownership has been inspected. This first version requires
-at least two openable AMD render nodes and one selected GPU per proof.
+cached pass from a different job. Before launching a probe, the local
+supervisor records its unique systemd unit and description in
+`<EXPERIMENT_HUB_LOCAL_ROOT>/gpu-preflight-pending.json`. A confirmed
+stopped or absent unit clears this record; ambiguous cleanup or an agent
+crash leaves it in place and blocks further probes **across agent restarts**.
+To recover, inspect the recorded unit with `systemctl --user show <unit>`
+from the same Linux account, verify its exact identity and that it is
+stopped/absent (stop the matching unit if necessary), and only then
+remove the pending JSON record manually. Never clear it on the strength
+of a stale agent heartbeat. This first version requires at least two
+openable AMD render nodes and one selected GPU per proof.
 
 The Train tab now offers **Check GPU device access** for an unstarted
 non-Bees job with an acknowledged, exclusive single-GPU lease on a
