@@ -817,6 +817,18 @@ impl CombatWorld {
                 self.navigation_requests.is_pathfinding(ship_id) {
                 continue;
             }
+            let policy_owned = {
+                let motion = &self.physics.ships()[index].motion;
+                motion.is_policy_controlled && !motion.user_controlled
+            };
+            if policy_owned {
+                if let Some(steering) = self.game_ship_steering.get_mut(&ship_id) {
+                    steering.await_path(&mut self.physics.ships_mut()[index].motion);
+                }
+                self.latest_game_point_orders.remove(&ship_id);
+                self.pending_game_point_orders.remove(&ship_id);
+                continue;
+            }
             // Retry from the current position, checking current obstacles.
             // Unity's TryToFindPathAgain invokes MoveToPoint without the
             // FoundNearbyAsteroid override.
@@ -876,6 +888,14 @@ impl CombatWorld {
         }
         ready.sort_unstable_by_key(|(ship_id, _)| *ship_id);
         for (ship_id, order) in ready {
+            let &index = self.ship_by_id.get(&ship_id)
+                .ok_or(CombatWorldError::UnknownShip)?;
+            let motion = &self.physics.ships()[index].motion;
+            if motion.is_policy_controlled && !motion.user_controlled {
+                self.pending_game_point_orders.remove(&ship_id);
+                self.latest_game_point_orders.remove(&ship_id);
+                continue;
+            }
             self.move_ship_to_point(ship_id, order)?;
         }
         Ok(())
@@ -2499,6 +2519,9 @@ impl CombatWorld {
             // HasTargetCoordinates. Do not stop the ship or clear its
             // policy direction: game and training share this same motion.
             if ship.motion.is_policy_controlled && !ship.motion.user_controlled {
+                self.pending_game_point_orders.remove(&ship.id);
+                self.latest_game_point_orders.remove(&ship.id);
+                self.asteroid_navigation_refresh.remove(&ship.id);
                 if self.navigation_requests.is_pathfinding(ship.id) {
                     self.navigation_requests.invalidate(ship.id)?;
                 }
