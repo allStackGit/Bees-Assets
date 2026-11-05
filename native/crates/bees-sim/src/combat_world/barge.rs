@@ -2,7 +2,6 @@
 //! Phases, health, movement and collision all live in the normal combat world.
 
 use super::*;
-use crate::geometry::ship_velocity;
 use crate::movement::STOP_MOVEMENT;
 
 const WINDUP: f32 = 2.0;
@@ -27,7 +26,7 @@ impl CombatWorld {
     ) -> Result<(), CombatWorldError> {
         let &index = self.ship_by_id.get(&ship_id)
             .ok_or(CombatWorldError::UnknownShip)?;
-        if self.ships[index].ship_type != 1 ||
+        if self.ships[index].ship_type != 0 ||
             self.ships[index].vitals.is_dead() ||
             !self.physics.ships()[index].active || charge_power < 0 {
             return Err(CombatWorldError::InvalidPolicyBarge);
@@ -167,13 +166,16 @@ impl CombatWorld {
     pub(super) fn resolve_policy_barge_contacts(
         &mut self, collisions: &CollisionMatrix,
     ) -> Result<(), CombatWorldError> {
-        // Iterate the stable policy roster without borrowing it across
-        // damage callbacks that can retire ships.
-        let mut offset = 0;
+        // Advance by stable ship ID, not a mutable roster offset.
+        // A lethal charge may remove this or another policy controller.
+        let mut after_id = 0_i64;
         loop {
-            let Some((&ship_id, _)) = self.policy_ship_runtime.iter().nth(offset)
-            else { break };
-            offset += 1;
+            use std::ops::Bound::{Excluded, Unbounded};
+            let next = self.policy_ship_runtime
+                .range((Excluded(after_id), Unbounded))
+                .next().map(|(&ship_id, _)| ship_id);
+            let Some(ship_id) = next else { break };
+            after_id = ship_id;
             let Some(PolicyShipSpecial::Barge(barge)) =
                 self.policy_ship_runtime.get(&ship_id).and_then(|r| r.special)
             else { continue };
