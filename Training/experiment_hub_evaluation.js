@@ -29,4 +29,16 @@ function evaluationEvidence(value,policy,dispatchId) {
         checkpoint_sha256:value.checkpoint_sha256,trials:value.trials,
         successes:value.successes};
 }
-module.exports={evaluationPolicy,evaluationEvidence};
+function suiteIds(value) {
+    if(!Array.isArray(value)||value.length<1||value.length>8||
+        new Set(value).size!==value.length||
+        value.some(id=>typeof id!=='string'||!SUITE.test(id)))
+        throw Error('Evaluation capability needs 1–8 distinct valid suite IDs.');
+    return value.slice();
+}
+function supportsEvaluation(suites,job) {
+    return !job.evaluation_stop||
+        (suites&&Object.hasOwn(suites,job.project_id)&&
+         suites[job.project_id].includes(job.evaluation_stop.suite_id));
+}
+module.exports={evaluationPolicy,evaluationEvidence,suiteIds,supportsEvaluation};

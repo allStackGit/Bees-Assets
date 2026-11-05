@@ -8,7 +8,8 @@ const {LinuxSupervisor}=require('./experiment_hub_linux_supervisor');
 const {WindowsSupervisor}=require('./experiment_hub_windows_supervisor');
 const {inspectHost}=require('./experiment_hub_host');
 const {validateProgress}=require('./experiment_hub_progress');
-const {evaluationEvidence}=require('./experiment_hub_evaluation');
+const {evaluationEvidence,suiteIds,supportsEvaluation}=
+    require('./experiment_hub_evaluation');
 const ID=/^[a-z][a-z0-9_-]{0,47}$/;
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
@@ -22,11 +23,17 @@ class LocalExecution {
         this.machineId=machineId;
         this.supervisor=supervisor;
         this.projects=projects.slice();
+        this.evaluationSuites=Object.fromEntries(projects.flatMap(project=>{
+            const adapter=supervisor.adapters?.[project];
+            if(adapter?.evaluation_suites==null)return [];
+            if(typeof adapter.readEvaluation!=='function')
+                throw Error('Advertised evaluation suites require a local reader.');
+            return [[project,suiteIds(adapter.evaluation_suites)]];
+        }));
     }
     advertisement(){
         return {local_executor:true,installed_projects:this.projects.slice(),
-            evaluation_projects:this.projects.filter(project=>
-                typeof this.supervisor.adapters?.[project]?.readEvaluation==='function')};
+            evaluation_suites:structuredClone(this.evaluationSuites)};
     }
     async handle(order) {
         if(!order||!['start','stop','inspect','qualify_gpu'].includes(order.action)||
@@ -42,9 +49,8 @@ class LocalExecution {
             throw Error('Rejected invalid or unauthorized local dispatch instruction.');
         const {job,lease}=order;
         const localAdapter=this.supervisor.adapters?.[job.project_id];
-        if(order.action==='start'&&job.evaluation_stop&&
-            typeof localAdapter?.readEvaluation!=='function')
-            throw Error('Local adapter cannot evaluate this job’s stopping rule.');
+        if(order.action==='start'&&!supportsEvaluation(this.evaluationSuites,job))
+            throw Error('Local adapter does not support the requested evaluation suite.');
         if(order.action==='qualify_gpu') {
             // This is not a job launch. Linux device access is tested using
             // a fixed inert helper; the native Start gate remains CPU-only.
@@ -158,7 +164,7 @@ class LocalExecution {
             }
         }
         if(ownsArtifacts&&state==='running'&&job.evaluation_stop&&
-            typeof localAdapter?.readEvaluation==='function') {
+            supportsEvaluation(this.evaluationSuites,job)) {
             try {
                 const result=localAdapter.readEvaluation(Object.freeze({
                     job_id:job.id,project_id:job.project_id,

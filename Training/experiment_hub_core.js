@@ -7,7 +7,8 @@ const crypto = require('node:crypto');
 const {request: resourceRequest,placements: resourcePlacements} =
     require('./experiment_hub_resources');
 const {validateProgress}=require('./experiment_hub_progress');
-const {evaluationPolicy,evaluationEvidence}=require('./experiment_hub_evaluation');
+const {evaluationPolicy,evaluationEvidence,suiteIds,supportsEvaluation}=
+    require('./experiment_hub_evaluation');
 const {ProgressHistory}=require('./experiment_hub_history');
 const ID = /^[a-z][a-z0-9_-]{0,47}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -133,11 +134,12 @@ function boundedReport(value) {
         new Set(installed).size!==installed.length||
         (!localExecutor&&installed.length))
         throw Error('Invalid locally installed execution adapters.');
-    const evaluators=value.evaluation_projects??[];
-    if(!Array.isArray(evaluators)||evaluators.length>installed.length||
-        new Set(evaluators).size!==evaluators.length||
-        evaluators.some(project=>!installed.includes(project)))
+    const evaluators=value.evaluation_suites??{};
+    if(!object(evaluators)||Object.keys(evaluators).length>installed.length||
+        Object.keys(evaluators).some(project=>!installed.includes(project)))
         throw Error('Evaluation capability requires a corresponding installed adapter.');
+    const evaluationSuites=Object.fromEntries(Object.entries(evaluators)
+        .map(([project,ids])=>[project,suiteIds(ids)]));
     return {cpus:value.cpus,ram_mb:value.ram_mb,
         platform:value.platform,execution,
         gpu_inventory_source:gpuSource,gpu_devices:observedGpus,
@@ -145,7 +147,7 @@ function boundedReport(value) {
         native_preflight_passed:localExecutor&&
             ['linux','win32'].includes(value.platform)&&preflight,
         native_preflight_reason:reason||null,
-        evaluation_projects:localExecutor?evaluators.slice():[],
+        evaluation_suites:localExecutor?evaluationSuites:{},
         installed_projects:['linux','win32'].includes(value.platform)&&
             localExecutor?installed.slice():[]};
 }
@@ -196,8 +198,8 @@ function nativeStartReadiness(snapshot, job) {
         return block('Linux cgroup v2 CPU and memory controllers are unavailable.');
     if(!machine.installed_projects?.includes(job.project_id))
         return block('The assigned machine has no trusted adapter for this project.');
-    if(job.evaluation_stop&&!machine.evaluation_projects?.includes(job.project_id))
-        return block('The assigned adapter does not advertise independent evaluation.');
+    if(!supportsEvaluation(machine.evaluation_suites,job))
+        return block('The assigned adapter does not advertise evaluation suite '+job.evaluation_stop.suite_id+'.');
     const r=job.resources;
     if(!r||r.ram_mb<128||r.gpu_count!==0||
         (r.gpus||[]).length||lease.resources.gpu_count!==0)
@@ -300,10 +302,9 @@ function waitingStageReason(job,byId) {
 }
 function allocationChoice(machines,reservations,job,preferredMachineId=null,
     following=[],futureMachinesFor=()=>machines) {
-    const supportsEvaluation=(machine,selected)=>!selected.evaluation_stop||
-        machine.evaluation_projects?.includes(selected.project_id);
     const options=resourcePlacements(
-        machines.filter(machine=>supportsEvaluation(machine,job)),reservations,job.resources)
+        machines.filter(machine=>supportsEvaluation(machine.evaluation_suites,job)),
+        reservations,job.resources)
         .filter(p=>p.capacity_fits&&
             (!preferredMachineId||p.machine_id===preferredMachineId)&&
             (!job.continuation_machine_id||
@@ -318,7 +319,7 @@ function allocationChoice(machines,reservations,job,preferredMachineId=null,
     const soleOptions=following.filter(next=>!next.lease_id)
         .map(next=>{
             const places=resourcePlacements(
-                futureMachinesFor(next).filter(machine=>supportsEvaluation(machine,next)),
+                futureMachinesFor(next).filter(machine=>supportsEvaluation(machine.evaluation_suites,next)),
                 reservations,next.resources)
                 .filter(p=>p.capacity_fits&&
                     (!next.continuation_machine_id||
@@ -447,7 +448,7 @@ class ExperimentHub {
                 machine.native_preflight_passed = report.native_preflight_passed;
                 machine.native_preflight_reason = report.native_preflight_reason;
                 machine.installed_projects = report.installed_projects.slice();
-                machine.evaluation_projects = report.evaluation_projects.slice();
+                machine.evaluation_suites = copy(report.evaluation_suites);
             }
             return machine;
         });
@@ -1042,7 +1043,7 @@ class ExperimentHub {
     // The report is authenticated by the machine-token heartbeat. A second
     // machine, retired dispatch ID or unrelated lease cannot update the job.
     recordExecution(next,machine,items,installedProjects=[],accepted=new Map(),
-        evaluationProjects=[]) {
+        evaluationSuites={}) {
         if(!Array.isArray(items)||items.length>50)
             throw Error('Invalid execution reports.');
         const seen=new Set();
@@ -1100,7 +1101,7 @@ class ExperimentHub {
             // must not make a terminal job appear to be running again.
             let evaluation=null,evaluationIssue=null;
             if(state==='running'&&job.evaluation_stop&&
-                evaluationProjects.includes(job.project_id)) {
+                supportsEvaluation(evaluationSuites,job)) {
                 evaluationIssue=typeof report.evaluation_issue==='string'
                     ?report.evaluation_issue.slice(0,160):null;
                 if(report.evaluation!=null) {
@@ -1214,7 +1215,7 @@ class ExperimentHub {
             if((action==='start'||action==='qualify_gpu')&&!lease.receipt_fresh)
                 continue;
             if(action==='start'&&(machine.native_preflight_passed!==true||
-                job.evaluation_stop&&!machine.evaluation_projects?.includes(job.project_id)))
+                !supportsEvaluation(machine.evaluation_suites,job)))
                 continue;
             if(action==='qualify_gpu'&&(
                 machine.agent_platform!=='linux'||
@@ -1387,7 +1388,7 @@ class ExperimentHub {
             throw Error('Native lifecycle reports require a locally enabled supported executor.');
         const acceptedReports=new Map();
         if(this.recordExecution(next,machine,reports,
-            report.installed_projects,acceptedReports,report.evaluation_projects))
+            report.installed_projects,acceptedReports,report.evaluation_suites))
             changed=true;
         const gpuReports=value.gpu_qualification_reports==null
             ?[]:value.gpu_qualification_reports;
