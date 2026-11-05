@@ -230,6 +230,47 @@ function fairPending(jobs,lastProjectId=null) {
     }
     return ordered;
 }
+// Read-only pipeline diagnosis, never an execution authorization.
+function waitingStageReason(job,byId) {
+    const visited=new Set([job.id]);
+    let parentId=job.continuation_of_job_id;
+    for(let depth=1;depth<=1000;depth++) {
+        const parent=byId.get(parentId);
+        if(!parent||visited.has(parentId))
+            return {status:'broken_lineage',depth,
+                reason:'Prequeued stage has missing or cyclic predecessor lineage; operator review required.'};
+        visited.add(parentId);
+        if(parent.status==='waiting_predecessor') {
+            parentId=parent.continuation_of_job_id;
+            continue;
+        }
+        const label=parent.configuration_name||parent.id.slice(-8);
+        let status,explanation;
+        if(parent.status==='waiting_adapter') {
+            status='queued';explanation='has not started';
+        }else if(['start_requested','launch_requested'].includes(parent.status)) {
+            status='starting';explanation='is starting';
+        }else if(parent.status==='running') {
+            status='running';explanation='is still running';
+        }else if(parent.status==='stop_requested') {
+            status='stopping';explanation='has a pending Stop request; automatic advancement is blocked';
+        }else if(parent.status==='finished'&&!parent.capacity_released_at) {
+            status='release_pending';explanation='finished; capacity release is required';
+        }else if(parent.status==='stopped') {
+            status='operator_approval';explanation=parent.capacity_released_at
+                ?'stopped; explicit checkpoint-risk approval is required'
+                :'stopped; capacity release and explicit checkpoint-risk approval are required';
+        }else {
+            status='needs_review';explanation=
+                'is '+parent.status+'; pipeline will not auto-advance without operator review';
+        }
+        return {status,depth,blocked_by_job_id:parent.id,
+            blocked_by_status:parent.status,
+            reason:'Stage '+label+' '+explanation+'.'};
+    }
+    return {status:'broken_lineage',depth:1000,
+        reason:'Prequeued pipeline depth exceeds the job-history bound; operator review required.'};
+}
 function allocationChoice(machines,reservations,job,preferredMachineId=null) {
     return resourcePlacements(machines,reservations,job.resources)
         .filter(p=>p.capacity_fits&&
@@ -381,7 +422,10 @@ class ExperimentHub {
                 report?.instance_id===proof.agent_instance_id&&stillMatched);
             return job;
         });
+        const jobsById=new Map(snapshot.jobs.map(job=>[job.id,job]));
         for(const job of snapshot.jobs) {
+            if(job.status==='waiting_predecessor')
+                job.predecessor_wait=waitingStageReason(job,jobsById);
             if(job.status==='waiting_adapter'&&job.project_id!=='bees')
                 job.native_start_readiness=nativeStartReadiness(snapshot,job);
             if(job.status==='start_requested'&&job.automation_start_session_id)
