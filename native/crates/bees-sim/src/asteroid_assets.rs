@@ -28,6 +28,10 @@ pub struct CollisionAsteroidAsset {
     pub shape: ShipShape,
     pub proximity_layer: u8,
     pub proximity_shape: ShipShape,
+    /// Separate navigation clearance-mapping hull, distinct from gameplay
+    /// collision and proximity. Unity's Pathfinder uses this shape.
+    pub clearance_layer: u8,
+    pub clearance_shape: ShipShape,
 }
 
 #[derive(Debug)]
@@ -70,6 +74,8 @@ struct RawAsteroid {
     shape: RawShape,
     proximity_layer: u8,
     proximity_shape: RawShape,
+    clearance_layer: u8,
+    clearance_shape: RawShape,
 }
 
 impl CollisionAsteroidCatalog {
@@ -80,7 +86,7 @@ impl CollisionAsteroidCatalog {
     pub fn parse(data: &str) -> Result<Self, AsteroidAssetError> {
         let raw: RawManifest = serde_json::from_str(data)
             .map_err(|error| AsteroidAssetError::Malformed(error.to_string()))?;
-        if raw.schema_version != 2 {
+        if raw.schema_version != 3 {
             return Err(AsteroidAssetError::InvalidSchema(raw.schema_version));
         }
         if raw.collision_asteroid_health_increment <= 0 {
@@ -105,7 +111,7 @@ impl CollisionAsteroidCatalog {
             }
             if entry.name != format!("Asteroid {number}") ||
                 entry.layer >= 32 || entry.proximity_layer >= 32 ||
-                entry.size_class == 0 {
+                entry.clearance_layer >= 32 || entry.size_class == 0 {
                 return Err(AsteroidAssetError::InvalidGeometry(number));
             }
             let shape = entry.shape.into_shape()
@@ -121,6 +127,11 @@ impl CollisionAsteroidCatalog {
             if !matches!(&proximity_shape, ShipShape::Polygon(_)) {
                 return Err(AsteroidAssetError::InvalidGeometry(number));
             }
+            let clearance_shape = entry.clearance_shape.into_shape()
+                .ok_or(AsteroidAssetError::InvalidGeometry(number))?;
+            if !matches!(&clearance_shape, ShipShape::Polygon(_)) {
+                return Err(AsteroidAssetError::InvalidGeometry(number));
+            }
             slots[index] = Some(CollisionAsteroidAsset {
                 name: entry.name,
                 prefab_number: number,
@@ -129,6 +140,8 @@ impl CollisionAsteroidCatalog {
                 shape,
                 proximity_layer: entry.proximity_layer,
                 proximity_shape,
+                clearance_layer: entry.clearance_layer,
+                clearance_shape,
             });
         }
         let asteroids = slots.into_iter().enumerate()
@@ -185,6 +198,9 @@ impl CollisionAsteroidCatalog {
         )?;
         body.set_proximity_collider(
             asset.proximity_layer, asset.proximity_shape.clone(),
+        )?;
+        body.set_clearance_mapping_collider(
+            asset.clearance_layer, asset.clearance_shape.clone(),
         )?;
         Ok((
             CombatObstacle {
