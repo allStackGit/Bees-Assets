@@ -396,7 +396,9 @@ inspects exact service identity, systemd `CPUQuota`/`MemoryMax`
 properties, kernel `cpu.max`/`memory.max` limits, and process membership.
 Repeated launch instructions are reconciled against the durable local
 journal, never executed twice. One directive is delivered per heartbeat:
-stops take priority, then starts, then round-robin inspections. The
+stops take priority, then starts, then GPU device probes, then
+inspections. Jobs rotate fairly within each priority level, even when
+one requested Stop remains pending. The
 manager records `running`, `finished`, `failed`, `stopped`, or
 `unverified` status from the authenticated machine and exposes
 current memory use, CPU time and task count without per-poll history
