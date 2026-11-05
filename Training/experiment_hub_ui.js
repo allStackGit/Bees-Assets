@@ -157,6 +157,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let comparisonDefaultsApplied = false;
     let pipelineKindProject = null;
     let pipelineStageProject = null;
+    let pipelineStageKind = null;
     let envArgsTouched = false;
     let lastGpuBindingMachine = null, budgetDraft = null;
     const action = async (route, payload) => {
@@ -220,7 +221,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 c.project_id!=='bees'&&
                 (c.project_id!=='ants'||c.parameters?.mode==='new'));
         const hasPredecessor=Boolean($('hub-pipeline-predecessor').value);
-        const sameProject=pipelineStageProject===project;
+        const relationship=antsPipeline?'continuation':'independent';
+        const sameSelection=pipelineStageProject===project&&
+            pipelineStageKind===relationship;
         for(const [i,row] of rows.entries()) {
             const label=row.firstElementChild;
              const select=row.querySelector('select');
@@ -234,12 +237,13 @@ document.addEventListener('DOMContentLoaded', () => {
             const suggested=configs.find(c=>antsPipeline
                 ?(c.parameters?.mode==='resume')===expectedResume
                 :c.project_id===project);
-            if(sameProject&&configs.some(c=>c.id===old))
+            if(sameSelection&&configs.some(c=>c.id===old))
                 select.value=old;
             else if(suggested)select.value=suggested.id;
             row.querySelector('button').disabled=rows.length<=2;
         }
         pipelineStageProject=project;
+        pipelineStageKind=relationship;
         $('hub-pipeline-add').disabled=project==='bees'||rows.length>=16;
         $('hub-pipeline-queue').disabled=project==='bees'||
             rows.length<2||!configs.length;
