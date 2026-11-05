@@ -74,9 +74,12 @@ combines multiple world observations into one validated model call.
 neural network. `NativeLevelInferenceBatch::poca_dimension_activity`
 exports the source PPO's 22 activity weights from the *same* validated
 observations, masks and selected actions, requiring live POCA groupmate
-counts. It does not generate old log-probabilities, policy versions,
-centralized group-critic estimates or advantages; those must come from
-the real trainer/model rather than being reconstructed from actions. The host still must supply an actual CPU/GPU model. **This is not yet a runnable game or distributed
+counts. `poca_normalize_advantages` separately normalizes genuine
+trainer-computed advantages using inverse live group-size weights; it does
+not construct them from rewards or actions. Its returned moments and
+effective sample weight support learner diagnostics. Native code does not
+generate old log-probabilities, policy versions or centralized group-critic
+estimates; those must come from the real trainer/model. The host still must supply an actual CPU/GPU model. **This is not yet a runnable game or distributed
 RL training replacement.** Renderer/input, full remaining gameplay,
 model execution, policy optimization/checkpoints, transport, and
 cross-engine/Windows/Linux qualification remain outstanding. No
@@ -191,7 +194,10 @@ not the simulation's cumulative totals. Wall-clock timings are collected
 log2-nanosecond histogram provides bounded-memory approximate latency
 percentiles via `sampled_step_percentile_upper_nanos`. Failed updates
 track sampled elapsed time separately so they cannot bias successful-step
-throughput. Snapshots can be
+throughput. Successful batched gameplay steps also measure host time
+separately for observation assembly, inference/validation and world stepping;
+asynchronous GPU time is included only if the model backend synchronizes.
+Snapshots can be
 subtracted for experiment windows; the histogram can be aggregated without
 storing every frame. Sampled timing does not yet include an attached native
 HiveMind command update or an end-to-end PPO training pass.
