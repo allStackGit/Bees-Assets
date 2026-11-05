@@ -6,6 +6,8 @@
 //! The Unity 5-second wall-clock abort and async task dispatch belong to the
 //! game scheduler, not the deterministic per-world navigation algorithm.
 
+use std::time::Instant;
+
 use crate::geometry::Vec2;
 use crate::navigation::{NavigationError, NavigationGrid};
 use crate::navigation_clearance::NavigationClearance;
@@ -81,6 +83,19 @@ impl NavigationSearch {
         end: (usize, usize),
         ship_clearance: i32,
     ) -> Result<Option<NavigationPath>, NavigationError> {
+        self.find_path_until(layers, start, end, ship_clearance, None)
+    }
+
+    /// The interactive search worker enforces Unity's five-second limit.
+    /// Headless/synchronous route queries use None for deterministic work.
+    pub fn find_path_until(
+        &mut self,
+        layers: &NavigationClearance,
+        start: (usize, usize),
+        end: (usize, usize),
+        ship_clearance: i32,
+        deadline: Option<Instant>,
+    ) -> Result<Option<NavigationPath>, NavigationError> {
         if self.grid != layers.grid() ||
             start.0 >= self.grid.width || start.1 >= self.grid.height ||
             end.0 >= self.grid.width || end.1 >= self.grid.height {
@@ -97,13 +112,13 @@ impl NavigationSearch {
         let mut egress = None;
         if dynamic[start_index] < hard {
             let Some(points) = self.find_static_egress(
-                start_index, hard, dynamic, layers.static_signed_clearance(),
+                start_index, hard, dynamic, layers.static_signed_clearance(), deadline,
             ) else { return Ok(None) };
             start_index = *points.last().expect("an egress always has its start");
             egress = Some(points);
         }
 
-        let Some(regular) = self.find_normal(start_index, end_index, dynamic, hard, preferred)
+        let Some(regular) = self.find_normal(start_index, end_index, dynamic, hard, preferred, deadline)
         else { return Ok(None) };
         let regular = self.smooth(&regular, dynamic, hard, preferred);
         let egress_point_count = egress.as_ref().map_or(0, |x| x.len().saturating_sub(1));
@@ -139,6 +154,22 @@ impl NavigationSearch {
         self.find_path(layers, from, to, ship_clearance)
     }
 
+    pub fn find_level_path_until(
+        &mut self,
+        layers: &NavigationClearance,
+        start: Vec2,
+        end: Vec2,
+        ship_clearance: i32,
+        deadline: Option<Instant>,
+    ) -> Result<Option<NavigationPath>, NavigationError> {
+        if !start.is_finite() || !end.is_finite() {
+            return Err(NavigationError::InvalidMap);
+        }
+        let from = self.grid.to_cell(start);
+        let to = self.grid.to_cell(end);
+        self.find_path_until(layers, from, to, ship_clearance, deadline)
+    }
+
     fn find_normal(
         &mut self,
         start: usize,
@@ -146,6 +177,7 @@ impl NavigationSearch {
         clearance: &[i32],
         hard: i32,
         preferred: i32,
+        deadline: Option<Instant>,
     ) -> Option<Vec<usize>> {
         let stamp = self.begin_search();
         self.cost_to_here[start] = 0;
@@ -156,6 +188,9 @@ impl NavigationSearch {
         self.push(start);
 
         while let Some(current) = self.pop() {
+            if deadline.is_some_and(|limit| Instant::now() >= limit) {
+                return None;
+            }
             if self.closed_stamp[current] == stamp { continue; }
             if current == end {
                 return self.reconstruct(start, end);
@@ -200,6 +235,7 @@ impl NavigationSearch {
         hard: i32,
         dynamic: &[i32],
         signed: &[i32],
+        deadline: Option<Instant>,
     ) -> Option<Vec<usize>> {
         if signed[start] >= hard { return None; }
         let stamp = self.begin_search();
@@ -211,6 +247,9 @@ impl NavigationSearch {
         self.push(start);
 
         while let Some(current) = self.pop() {
+            if deadline.is_some_and(|limit| Instant::now() >= limit) {
+                return None;
+            }
             if self.closed_stamp[current] == stamp { continue; }
             if signed[current] >= hard && dynamic[current] >= hard {
                 return self.reconstruct(start, current);
