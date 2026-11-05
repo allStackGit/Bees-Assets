@@ -152,8 +152,11 @@ floats, 16 continuous outputs and six discrete branches per agent.
 A game-side observation encoder can fill a row **directly** using
 `push_encoded` without constructing an intermediate 7,743-float vector;
 each unwritten feature remains NaN and invalidates the row. Batches
-preserve insertion order and explicit `(WorldId, agent_id)` identities,
-so an inference backend can share one invocation across many worlds.
+preserve insertion order and exact world/agent **episode revision and
+fixed-tick identities**, so an inference backend can share one invocation
+across many worlds. `PolicyAgentKey::from_world` captures the identity;
+`is_current_for` rejects delayed responses from retired episodes, advanced
+ticks, or failed worlds before an action reaches gameplay.
 
 The batch exposes contiguous output buffers for the actual model backend
 and validates **every** returned action before publishing decisions:
