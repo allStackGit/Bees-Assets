@@ -37,6 +37,7 @@ use crate::physics::{
 use crate::policy::Decision;
 use crate::geometry::Vec2;
 use crate::level_discovery::{DiscoveryKind, LevelDiscovery};
+use crate::map_object::{CombatMapObject, MapObjectDamage, MapObjectError};
 use crate::movement::ShipMotion;
 use crate::navigation_clearance::NavigationClearance;
 use crate::navigation_runtime::NavigationRuntime;
@@ -66,6 +67,7 @@ use crate::vision::{HiveMindObserver, VisionError, VisionSweepCounts};
 // Child module owns the complete live collider-vision refresh and keeps
 // the 140K+ combat gameplay implementation focused on authoritative state.
 mod vision;
+mod map_object;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CombatWorldError {
@@ -97,8 +99,12 @@ pub enum CombatWorldError {
     /// Never fabricate simplified behavior for unported weapons.
     UnportedProjectileType(u8),
     UnsupportedPolicyActions,
+    MapObject(MapObjectError),
 }
 
+impl From<MapObjectError> for CombatWorldError {
+    fn from(value: MapObjectError) -> Self { Self::MapObject(value) }
+}
 impl From<PhysicsError> for CombatWorldError {
     fn from(value: PhysicsError) -> Self { Self::Physics(value) }
 }
@@ -206,6 +212,12 @@ pub enum CombatEvent {
     /// Emitted for projectile impacts against static geometry; the
     /// dedicated RL coordinator determines the corresponding reward.
     StaticObstacleImpact { projectile_id: i64, obstacle_id: i64 },
+    MapObjectDamaged {
+        projectile_id: i64,
+        object_id: i64,
+        damage: MapObjectDamage,
+    },
+    MapObjectDestroyed { object_id: i64, projectile_id: i64 },
     AsteroidDamaged {
         projectile_id: i64,
         obstacle_id: i64,
@@ -449,6 +461,9 @@ pub struct CombatWorld {
     projectile_assets: Arc<ProjectileAssetCatalog>,
     next_entity_id: i64,
     ships: Vec<CombatShip>,
+    /// Actual live MapObjects: paired with ObstacleBody collider slots in
+    /// the same KinematicPhysics world, not perception-only replicas.
+    map_objects: HashMap<i64, CombatMapObject>,
     /// Same Level-owned learned visibility in gameplay, evaluation and
     /// training. Replaced with the world on episode reset.
     discovery: LevelDiscovery,
@@ -519,6 +534,7 @@ impl CombatWorld {
             projectile_assets,
             next_entity_id: 1,
             ships: Vec::new(),
+            map_objects: HashMap::new(),
             discovery: LevelDiscovery::new(),
             vision_observer_ids: HashSet::new(),
             vision_live_enemy_sides: HashSet::new(),
@@ -568,6 +584,10 @@ impl CombatWorld {
     pub fn physics(&self) -> &KinematicPhysics { &self.physics }
     pub fn events(&self) -> &[CombatEvent] { &self.events }
     pub fn ships(&self) -> &[CombatShip] { &self.ships }
+    pub fn map_object(&self, entity_id: i64) -> Option<&CombatMapObject> {
+        self.map_objects.get(&entity_id)
+    }
+    pub fn map_object_count(&self) -> usize { self.map_objects.len() }
     /// Learned faction vision belongs to this Level's game state. Sight
     /// events must be validated by the authoritative vision detector before
     /// insertion, and removed entities retired via Level teardown.
@@ -2053,6 +2073,9 @@ impl CombatWorld {
             return Ok(());
         }
         let kind = self.obstacles[obstacle_index].kind;
+        if kind == ObstacleKind::MapObject {
+            return self.resolve_map_object_contact(contact, shot_index, obstacle_index);
+        }
         let power = self.projectiles[shot_index].power;
         if self.projectiles[shot_index].is_explosion() {
             // RocketExplosion.ContactObstacle tracks each obstacle at most
@@ -2098,6 +2121,8 @@ impl CombatWorld {
                     });
                 }
                 ObstacleKind::MiningAsteroid | ObstacleKind::AsteroidPiece => {}
+                // Routed to the authoritative MapObject handler above.
+                ObstacleKind::MapObject => unreachable!("handled MapObject contact"),
             }
             if kind != ObstacleKind::MapBorder &&
                 matches!(&self.projectiles[shot_index].behavior, ImpactBehavior::Splitter { .. })
