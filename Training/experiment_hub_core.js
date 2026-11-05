@@ -265,6 +265,13 @@ class ExperimentHub {
         this.executionTelemetry = new Map();
         this.progressHistory = new ProgressHistory();
         this.executionOrderCursor = new Map();
+        // Native queue automation is an explicitly armed, process-local
+        // session. Restarting the coordinator never restores permission to
+        // start unattended workloads, even though claims/jobs persist.
+        this.automation = {
+            enabled:false,machine_ids:[],agent_instances:{},
+            armed_at:null,last_tick_at:null,last_action:null,last_error:null,
+        };
         const s = this.state;
         if (!object(s) || s.version !== 1 ||
             !['projects','configurations','jobs','machines','reservations'].every(key=>Array.isArray(s[key])))
@@ -369,7 +376,147 @@ class ExperimentHub {
             if(job.status==='waiting_adapter'&&job.project_id!=='bees')
                 job.native_start_readiness=nativeStartReadiness(snapshot,job);
         }
+        snapshot.automation=this.automationStatus();
         return snapshot;
+    }
+    automationStatus() {
+        const {agent_instances,...publicState}=this.automation;
+        return copy(publicState);
+    }
+    configureAutomation(value) {
+        if(!object(value)||typeof value.enabled!=='boolean')
+            throw Error('Choose whether to arm or disarm native queue automation.');
+        if(value.enabled===false) {
+            if(value.confirm_disarm!==true)
+                throw Error('Explicitly confirm disarming native automation.');
+            this.automation={
+                enabled:false,machine_ids:[],agent_instances:{},
+                armed_at:null,last_tick_at:this.automation.last_tick_at,
+                last_action:'Disarmed by operator.',last_error:null,
+            };
+            return this.automationStatus();
+        }
+        const ids=value.machine_ids;
+        if(value.confirm_arm!==true||value.confirm_untracked_load!==true||
+            !Array.isArray(ids)||ids.length<1||ids.length>16||
+            ids.some(id=>typeof id!=='string'||!ID.test(id))||
+            new Set(ids).size!==ids.length)
+            throw Error('Explicitly confirm 1–16 distinct machines and responsibility for untracked host workloads.');
+        const snapshot=this.snapshot();
+        const agentInstances={};
+        for(const id of ids) {
+            const machine=snapshot.machines.find(m=>m.id===id);
+            const report=this.agentReports.get(id);
+            if(!machine||machine.status!=='connected'||
+                !['linux','win32'].includes(machine.agent_platform)||
+                machine.local_executor_enabled!==true||
+                machine.native_preflight_passed!==true||
+                !machine.installed_projects?.length||
+                (machine.agent_platform==='linux'&&
+                    (machine.execution_capabilities?.cgroup_v2_detected!==true||
+                        !['cpu','memory'].every(c=>
+                            machine.execution_capabilities?.cgroup_controllers.includes(c))))||
+                !UUID.test(String(report?.instance_id||'')))
+                throw Error('Every armed machine needs a fresh authenticated native agent, preflight and installed project adapter.');
+            if(snapshot.jobs.some(j=>j.assigned_machine_id===id&&
+                !j.capacity_released_at&&['unverified','failed'].includes(j.status)))
+                throw Error('Resolve unverified or failed native jobs before arming this machine.');
+            agentInstances[id]=report.instance_id;
+        }
+        this.automation={
+            enabled:true,machine_ids:ids.slice(),agent_instances:agentInstances,
+            armed_at:now(),last_tick_at:null,
+            last_action:'Armed for qualified CPU-only jobs; no job dispatched yet.',
+            last_error:null,
+        };
+        return this.automationStatus();
+    }
+    // At most one durable transition per pass. Existing lifecycle methods
+    // remain the only admission, start and release authorities. Stop/failed
+    // recovery is deliberately manual; this never retries an uncertain job.
+    tickAutomation() {
+        const session=this.automation;
+        if(!session.enabled)return this.automationStatus();
+        session.last_tick_at=now();
+        try {
+            const snapshot=this.snapshot();
+            const selected=snapshot.machines.filter(m=>
+                session.machine_ids.includes(m.id));
+            for(const id of session.machine_ids) {
+                const machine=selected.find(m=>m.id===id);
+                if(!machine||machine.status!=='connected'||
+                    this.agentReports.get(id)?.instance_id!==
+                        session.agent_instances[id]||
+                    machine.native_preflight_passed!==true||
+                    machine.local_executor_enabled!==true)
+                    throw Error('Machine '+id+' lost qualified agent continuity; operator must re-arm.');
+            }
+            const unsafe=snapshot.jobs.find(j=>
+                session.machine_ids.includes(j.assigned_machine_id)&&
+                !j.capacity_released_at&&
+                ['unverified','failed'].includes(j.status));
+            if(unsafe)throw Error('Job '+unsafe.id+' requires operator review before further automatic execution.');
+            const complete=snapshot.jobs.find(j=>
+                session.machine_ids.includes(j.assigned_machine_id)&&
+                !j.capacity_released_at&&j.execution_updated_at&&
+                ['finished','stopped'].includes(j.status)&&
+                snapshot.reservations.some(l=>l.id===j.lease_id&&
+                    l.job_id===j.id&&l.project_id===j.project_id&&
+                    l.machine_id===j.assigned_machine_id&&
+                    l.issued_by==='experiment-hub'&&l.status==='acknowledged'));
+            if(complete) {
+                this.releaseLease({lease_id:complete.lease_id,confirm_release:true});
+                session.last_action='Released verified terminal capacity for '+complete.id+'.';
+                return this.automationStatus();
+            }
+            const pending=fairPending(snapshot.jobs.filter(j=>
+                j.adapter==='unconfigured'&&j.status==='waiting_adapter'&&
+                j.project_id!=='bees'));
+            const blockedMachines=new Set(snapshot.jobs.filter(j=>
+                ['stop_requested','unverified','failed'].includes(j.status)&&
+                !j.capacity_released_at).map(j=>j.assigned_machine_id));
+            for(const job of pending) {
+                if(!job.lease_id||!session.machine_ids.includes(job.assigned_machine_id)||
+                    blockedMachines.has(job.assigned_machine_id)||
+                    job.native_start_readiness?.eligible!==true)continue;
+                this.authorizeStart({job_id:job.id,confirm_start:true});
+                session.last_action='Authorized one qualified CPU-only native Start: '+job.id+'.';
+                return this.automationStatus();
+            }
+            const capable=selected.filter(m=>!blockedMachines.has(m.id)&&
+                ['linux','win32'].includes(m.agent_platform)&&
+                (m.agent_platform!=='linux'||
+                    (m.execution_capabilities?.cgroup_v2_detected===true&&
+                     ['cpu','memory'].every(c=>
+                        m.execution_capabilities?.cgroup_controllers.includes(c)))));
+            for(const job of pending) {
+                if(job.lease_id||job.resources.gpu_count!==0||
+                    (job.resources.gpus||[]).length||job.resources.ram_mb<128)
+                    continue;
+                const eligible=capable.filter(m=>
+                    m.installed_projects?.includes(job.project_id));
+                const chosen=allocationChoice(eligible,snapshot.reservations,job);
+                if(!chosen)continue;
+                const result=this.allocateJobs({
+                    all_projects:true,job_ids:[job.id],
+                    machine_id:chosen.machine_id,confirm_allocate:true,
+                });
+                if(result.results[0]?.status!=='claimed')
+                    throw Error('Selected placement did not produce an atomic claim.');
+                session.last_action='Claimed CPU/RAM budget for '+job.id+
+                    ' on '+chosen.machine_id+'; awaiting agent receipt.';
+                return this.automationStatus();
+            }
+            session.last_action='No eligible CPU-only transition; waiting for agent receipts or capacity.';
+            return this.automationStatus();
+        }catch(error) {
+            // An ambiguous state must never provoke repeated automatic
+            // dispatches. Native services and claims remain untouched.
+            session.enabled=false;
+            session.last_error=String(error.message||error).slice(0,240);
+            session.last_action='Automation disarmed; operator review required.';
+            return this.automationStatus();
+        }
     }
     progressComparison(projectId) {
         this.project(projectId);
