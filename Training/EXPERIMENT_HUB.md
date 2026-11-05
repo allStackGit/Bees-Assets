@@ -488,8 +488,11 @@ The job's historical probe outcome is durable and visible on the
 dashboard, but `gpu_qualification.current` is a computed display-only
 indicator requiring the same live agent process instance, currently
 acknowledged matching lease and physical device, and passing native
-CPU/RAM preflight. It expires if the coordinator restarts, agent
+CPU/RAM preflight. It is no longer considered current if the coordinator restarts, agent
 restarts, agent goes offline or hardware/lease evidence becomes stale.
+A disappearance or mismatched physical GPU observation permanently
+marks the previous proof stale, even if the same PCI address later
+reappears and the lease is reacknowledged.
 A fresh explicit probe is required to obtain current evidence for a
 different job; a result for one job never qualifies another.
 
