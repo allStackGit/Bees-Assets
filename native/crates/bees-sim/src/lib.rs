@@ -26,6 +26,7 @@ pub mod navigation_clearance;
 pub mod navigation_search;
 pub mod navigation_requests;
 pub mod navigation_movement;
+pub mod navigation_runtime;
 pub mod obstacle;
 pub mod physics;
 pub mod policy;
