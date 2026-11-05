@@ -451,6 +451,7 @@ pub struct CombatWorld {
     /// Reused across each native vision refresh so validating the live
     /// observer roster does not allocate for every training decision.
     vision_observer_ids: HashSet<i64>,
+    vision_measurements: VisionSweepCounts,
     projectiles: Vec<CombatProjectile>,
     obstacles: Vec<CombatObstacle>,
     free_projectile_slots: Vec<usize>,
@@ -513,6 +514,7 @@ impl CombatWorld {
             ships: Vec::new(),
             discovery: LevelDiscovery::new(),
             vision_observer_ids: HashSet::new(),
+            vision_measurements: VisionSweepCounts::default(),
             projectiles: Vec::new(),
             obstacles: Vec::new(),
             free_projectile_slots: Vec::new(),
@@ -563,6 +565,13 @@ impl CombatWorld {
     /// insertion, and removed entities retired via Level teardown.
     pub fn discovery(&self) -> &LevelDiscovery { &self.discovery }
     pub fn discovery_mut(&mut self) -> &mut LevelDiscovery { &mut self.discovery }
+
+    /// Cumulative world-local vision cost since spawn/reset. Read it at the
+    /// existing dashboard reporting cadence; the hot sweep only increments
+    /// integer counters and retains observer-validation scratch memory.
+    pub fn vision_measurements(&self) -> VisionSweepCounts {
+        self.vision_measurements
+    }
 
     /// Unity's GameState.RecordHiveMindSighting is the sole transition from
     /// a verified observer->target contact into faction-wide learned ship
@@ -656,7 +665,10 @@ impl CombatWorld {
             }
         }
         let mut counts = VisionSweepCounts::default();
+        counts.completed_sweeps = 1;
         if setup_suppressed {
+            counts.suppressed_sweeps = 1;
+            self.vision_measurements.merge(&counts);
             return Ok(counts);
         }
         for observer in observers {
@@ -732,6 +744,7 @@ impl CombatWorld {
                 }
             }
         }
+        self.vision_measurements.merge(&counts);
         Ok(counts)
     }
 
