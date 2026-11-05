@@ -51,7 +51,8 @@ class LocalExecution {
                 lease.status!=='acknowledged'||lease.receipt_fresh!==true||
                 !Array.isArray(lease.gpu_bindings)||
                 lease.gpu_bindings.length!==1||
-                lease.gpu_bindings[0].id!==job.resources.gpus?.[0]||
+                (job.resources.gpus?.length>0&&
+                    lease.gpu_bindings[0].id!==job.resources.gpus[0])||
                 lease.gpu_bindings[0].id!==lease.resources.gpus?.[0])
                 throw Error('GPU access probe requires a locally qualified, frozen exclusive Linux lease.');
             // A previously launched process cannot be silently converted
