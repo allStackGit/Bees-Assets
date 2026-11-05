@@ -1121,7 +1121,7 @@ clock or policy version decreases, or a segment changes, the graph
 breaks the line rather than fabricating uninterrupted learning.
 
 `GET /api/hub/progress?project_id=ants` is a loopback-only,
-**read-only** chart endpoint. It transmits bounded ephemeral samples
+**read-only** chart endpoint. It transmits bounded visualization samples
 only when the Compare tab requests them, instead of copying series into
 every ten-second Hub status response. No chart series is written to
 `hub-v1.json`. The separately bounded chart archive survives coordinator
