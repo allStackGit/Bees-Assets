@@ -210,10 +210,12 @@ Physics2D parity nor complete battle readiness.
 
 ## Collision asteroid prefab migration
 
-`native/assets/asteroid-colliders.json` contains the primary (layer 19)
-and proximity (layer 20) polygon colliders for all 28
-`Collision Asteroids/Asteroid N.prefab` assets. Both standalone prefabs
-and their inherited YAML overrides are decoded by a single source importer:
+`native/assets/asteroid-colliders.json` (schema 3) contains all three
+authored polygons for each of the 28 `Collision Asteroids/Asteroid N.prefab`
+variants: primary damage hull (layer 19), nearby-entity proximity trigger
+(layer 20), and separate navigation clearance mapping (layer 26).
+Standalone prefabs and inherited Unity YAML overrides are decoded by a
+single source importer:
 
 ```sh
 node native/tools/import-unity-asteroid-colliders.mjs --check
@@ -222,10 +224,20 @@ node native/tools/import-unity-asteroid-colliders.mjs --check
 Omit `--check` to regenerate. The importer uses the serialized
 `Obstacle.Collider` reference and **honors the declared path-array size**:
 serialized point overrides for inactive paths are not collision geometry.
-It rejects unsupported multiple *active* polygon paths in either collider.
-The proximity shape applies the authored child scale/offset and distinct
-layer, rather than scaling the primary hull by a guessed radius. The catalog
-stores normal `SizeClass × CollisionAsteroidHealthIncrement` durability;
+It rejects unsupported multiple *active* polygon paths in any collider.
+Proximity and clearance each apply their own authored child scale/offset
+and layer, rather than scaling the primary hull by a guessed radius.
+Navigation geometry is updated from the same obstacle pose as the combat
+hull but is never included in damage/proximity contact streams.
+`ObstacleBody.navigation_bounds`, `navigation_contains_point` and
+`navigation_closest_point` expose the data used by Unity's
+`Pathfinder.GetObstaclePoints`, and
+`CombatWorld.dynamic_navigation_asteroids` enumerates the currently
+live asteroids rather than keeping a stale pathfinder registration list.
+Full cell rasterization, moving-obstacle velocity padding, route search,
+and path refresh/ship steering have not yet been ported.
+
+The catalog stores normal `SizeClass × CollisionAsteroidHealthIncrement` durability;
 training must still pass its effective-health override when spawning, while
 collision rules retain the original authored health.
 
