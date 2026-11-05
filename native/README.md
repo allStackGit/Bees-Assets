@@ -195,8 +195,8 @@ batch before any motion or communications are applied.
 `PolicyAgentKey::is_current_for` is still required at the inference host.
 
 **Supported:** rotating turrets (LightCannon, Turret,
-RocketTurret, Eye, QueenEye), DualCannon, LaserBuilder/SplitShot, and
-FullShipTurret using their compatible projectile types.
+RocketTurret, Eye, QueenEye), DualCannon, LaserBuilder/SplitShot,
+FullShipTurret, and BeamCannon using their authored projectile types.
 `NativeFirePattern::DualCannon` requires the two authored barrel offsets;
 each volley launches two HumanSmall shots with integer `Power / 2`, both
 aimed from the ship center, each with its own shot-root ID.
@@ -208,7 +208,17 @@ cease-fire prevents actual launch. FullShipTurret never turns the hull on
 the policy's behalf and samples the current physical cannon heading at
 the Fire event, not the earlier aim command. `policy_weapon_charge`
 reports that same world-owned charge progress to a renderer.
-**Not yet implemented:** BeamCannon and Bomb firing continuations;
+BeamCannon creates just one active type-8 LaserBeam per mount. Its
+authored prefab has Speed=0, a 2x2 BoxCollider2D and initial scale
+(1, 0.5). After contact processing, each subsequent fixed update expands
+the physical local-X half-width by 2, follows the real shooter/turret
+heading and Rigidbody2D velocity, and ends once its previous half-width
+reaches Range/2 or its shooter dies. The existing piercing contact ledger
+spends half the contacted target's health as power budget, permits only
+one accepted hit per ship, and releases BeamCannon ownership through
+the common projectile-end path. A renderer and training worker both
+observe the same projectile/weapon state.
+**Not yet implemented:** Bomb delivery and firing continuations,
 real Level-to-perception snapshot collection, special abilities, GPU
 inference, and an ML-Agents-compatible learner. Unity targeting timers
 run on the Level's scaled update clock; this native implementation
