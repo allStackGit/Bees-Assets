@@ -789,6 +789,9 @@ pub struct KinematicPhysics {
     projectiles: Vec<ProjectileBody>,
     obstacles: Vec<ObstacleBody>,
     grid: SpatialGrid,
+    /// The one shared grid is rebound to obstacles later in step().
+    /// The Barge ship contact query lazily rebuilds ships only if needed.
+    grid_contains_ships: bool,
     candidates: Vec<usize>,
     overlaps_previous: Vec<TriggerEnter>,
     overlaps_current: Vec<TriggerEnter>,
@@ -822,6 +825,7 @@ impl KinematicPhysics {
             projectiles: Vec::new(),
             obstacles: Vec::new(),
             grid: SpatialGrid::new(area, cell_size)?,
+            grid_contains_ships: false,
             candidates: Vec::new(),
             overlaps_previous: Vec::new(),
             overlaps_current: Vec::new(),
@@ -883,24 +887,37 @@ impl KinematicPhysics {
             ShipHullOverlap::Contact
     }
 
-    /// Get current-physics-step ship neighbors from the existing spatial
-    /// index. Only an AABB candidate query: the caller still tests exact
-    /// hulls and layer permissions. Stable dense index order matches the
-    /// previous full-roster contact iteration and avoids callback ordering
-    /// depending on the spatial grid's cell traversal.
+    /// Ship contacts use the real current ship grid, not the last
+    /// obstacle query's grid. Since step() reuses one grid for BOTH
+    /// populations, it contains OBSTACLES when physics.step() returns.
+    /// Lazily rebuild once on the first active Barge query of the tick,
+    /// then reuse it for all other Barges. With no Barge this costs zero.
     ///
-    /// Call after step(), which refreshes the grid for current ship poses.
-    /// The caller owns/reuses the output buffer; this never allocates a
-    /// new container for a charge or physics tick.
+    /// Returns true only when a ship-grid rebuild was required, so the
+    /// gameplay profiler can compare actual rebuild overhead with saved
+    /// narrowphase collision checks. Output is caller-reused.
     pub fn ship_contact_candidates(
         &mut self, index: usize, output: &mut Vec<usize>,
-    ) {
+    ) -> bool {
         output.clear();
-        let Some(ship) = self.ships.get(index) else { return };
-        if !ship.active { return; }
-        let Some(bounds) = ship.collider.bounds else { return };
+        let Some(ship) = self.ships.get(index) else { return false };
+        if !ship.active || ship.collider.bounds.is_none() {
+            return false;
+        }
+        let mut rebuilt = false;
+        if !self.grid_contains_ships {
+            self.grid.rebuild_with(self.ships.len(), |index| {
+                let ship = &self.ships[index];
+                if ship.active { ship.collider.bounds } else { None }
+            });
+            self.grid_contains_ships = true;
+            rebuilt = true;
+        }
+        let bounds = self.ships[index].collider.bounds
+            .expect("validated active hull bounds");
         self.grid.candidates(bounds, output);
         output.sort_unstable();
+        rebuilt
     }
 
     pub fn ships(&self) -> &[ShipBody] { &self.ships }
@@ -1092,6 +1109,7 @@ impl KinematicPhysics {
             let ship = &self.ships[index];
             if ship.active { ship.collider.bounds } else { None }
         });
+        self.grid_contains_ships = true;
         self.overlaps_current.clear();
         for projectile in &self.projectiles {
             if !projectile.active { continue; }
@@ -1158,6 +1176,7 @@ impl KinematicPhysics {
             let obstacle = &self.obstacles[index];
             if obstacle.active { obstacle.collider.bounds } else { None }
         });
+        self.grid_contains_ships = false;
         // Obstacle contacts retain their own overlap history and queue.
         // A shot can contact a ship and an obstacle in the same physics tick.
         self.obstacle_overlaps_current.clear();

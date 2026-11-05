@@ -482,6 +482,7 @@ pub struct PolicySpecialMeasurements {
     pub yellow_jacket_detonations: u64,
     pub barge_charges_started: u64,
     pub barge_broadphase_candidates: u64,
+    pub barge_ship_grid_rebuilds: u64,
     pub barge_contact_checks: u64,
     pub barge_contact_hits: u64,
     pub barge_charges_stopped: u64,

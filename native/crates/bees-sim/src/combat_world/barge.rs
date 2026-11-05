@@ -184,9 +184,11 @@ impl CombatWorld {
             let side = self.ships[ship_index].side;
             // Reuse the physics step's existing ship spatial grid instead
             // of scanning every combat ship at 50 ticks per second.
-            self.physics.ship_contact_candidates(
+            if self.physics.ship_contact_candidates(
                 ship_index, &mut self.barge_contact_candidates,
-            );
+            ) {
+                self.policy_special_measurements.barge_ship_grid_rebuilds += 1;
+            }
             self.policy_special_measurements.barge_broadphase_candidates +=
                 self.barge_contact_candidates.len() as u64;
             for candidate in 0..self.barge_contact_candidates.len() {

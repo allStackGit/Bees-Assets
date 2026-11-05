@@ -283,9 +283,12 @@ Charge completion inflicts the source's 200 self-damage through normal
 unattributed health and death processing. The source's once-per-victim
 charge contact memory is world-owned and cleared on cooldown or death.
 Movement locks use the same ShipMotion, rather than a training-only
-teleport or collision model. Active contact queries now reuse the
-physics step's spatial ship grid and one buffer rather than scanning
-the entire ship roster every tick. Narrowphase checks still use exact
+teleport or collision model. Active contact queries use the
+same reusable physics grid and one buffer rather than scanning
+the entire ship roster every tick. Since physics.step ends with its
+obstacle query, the first active Barge lazily restores the ship grid
+once for the tick; subsequent Barges share it. Zero Barges incur no
+extra rebuild. A separate counter measures this rebuild overhead. Narrowphase checks still use exact
 authored hulls and collision permissions in stable index order.
 Separate broadphase/narrowphase counters measure candidate reduction;
 no throughput improvement has yet been benchmarked. Charge damage
