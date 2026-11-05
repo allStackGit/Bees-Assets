@@ -2393,6 +2393,9 @@ const server = http.createServer(async (req, res) => {
         if (route === '/api/hub/machines') {
             return json(res, 201, requireHub().addMachine(value));
         }
+        if (route === '/api/hub/machines/gpus') {
+            return json(res, 200, requireHub().bindMachineGpus(value));
+        }
         if (route === '/api/hub/machines/enroll') {
             // One-time secret returned only to the loopback dashboard caller.
             return json(res, 201, requireHub().enrollMachine(value));
