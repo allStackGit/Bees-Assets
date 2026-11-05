@@ -258,19 +258,15 @@ async function evaluateDuePeriodic(item, status) {
     return true;
 }
 
-// The manager has already verified every immutable report at the frozen
-// evaluation boundary. Recheck that identity and pin the report bytes before
-// using their integer outcome totals for optional early completion.
-function evaluatePeriodicTarget(item, checkpoint) {
-    const target=item.benchmark_target;
+// The pinned evaluator already verified each report before persisting it.
+// Recheck frozen result identity and current bytes whenever a development
+// checkpoint contributes to an automatic stopping decision.
+function targetCheckpointEvidence(item,checkpoint,target,plan) {
     const evaluation=checkpoint.evaluation;
-    if(!target||!evaluation||evaluation.status!=='completed')
+    if(!evaluation||evaluation.status!=='completed')
         throw Error('Benchmark target needs a completed frozen checkpoint evaluation.');
-    const plan=item.stage_benchmarks;
-    verifyBenchmarkPlan(plan);
     const candidate=evaluation.candidate;
-    verifyStageCandidate(candidate,Math.max(0,evaluation.boundary_step||0));
-    const result=scoreTarget(target,plan.scenarios.map((scenario,i)=>{
+    const reports=plan.scenarios.map((scenario,i)=>{
         const name=evaluation.reports?.[scenario.id];
         if(typeof name!=='string'||
             !/^\d{8}T\d{6}-[a-f0-9]{32}\.json$/.test(name))
@@ -292,22 +288,66 @@ function evaluatePeriodicTarget(item, checkpoint) {
                 (recipe.time_scale??null))
             throw Error('Benchmark target report settings differ from frozen recipe.');
         return {id:scenario.id,expected_matches:recipe.matches,report};
-    }));
-    const reportHashes=Object.fromEntries(plan.scenarios.map(scenario=>[
-        scenario.id,hashFile(path.join(BENCHMARK_REPORTS,
-            evaluation.reports[scenario.id])),
-    ]));
-    // Scheduled milestone numbers may have gaps when a slow learner
-    // overshoots more than one evaluation target. Consecutive means
-    // consecutive *performed evaluations*, never consecutive ordinals.
-    const previous=(item.checkpoint_history||[])
-        .filter(record=>record.ordinal<checkpoint.ordinal)
+    });
+    return {
+        ...scoreTarget(target,reports),
+        report_sha256:Object.fromEntries(plan.scenarios.map(scenario=>[
+            scenario.id,hashFile(path.join(BENCHMARK_REPORTS,
+                evaluation.reports[scenario.id])),
+        ])),
+    };
+}
+
+function priorCheckpoint(item,ordinal) {
+    // Skipped scheduler milestones are not performed evaluations.
+    return (item.checkpoint_history||[])
+        .filter(record=>record.ordinal<ordinal)
         .reduce((latest,record)=>!latest||record.ordinal>latest.ordinal
             ?record:latest,null);
-    const consecutive=result.passed
-        ?(previous?.benchmark_target_result?.consecutive_passes||0)+1:0;
-    const decision={...result,consecutive_passes:consecutive,
-        report_sha256:reportHashes};
+}
+
+function verifyPriorTargetPasses(item,checkpoint,target,plan) {
+    let cursor=priorCheckpoint(item,checkpoint.ordinal);
+    const priorCount=cursor?.benchmark_target_result?.consecutive_passes||0;
+    if(!Number.isSafeInteger(priorCount)||priorCount<0||
+        priorCount>target.consecutive_passes)
+        throw Error('Saved benchmark target pass count is invalid.');
+    // At most three prior evaluations (the configured target is 1–4).
+    // Verify contributing immutable reports, not just a saved pass flag.
+    for(let remaining=Math.min(priorCount,target.consecutive_passes-1);
+        remaining>0;remaining--) {
+        const saved=cursor?.benchmark_target_result;
+        if(!saved?.passed||saved.consecutive_passes!==priorCount-
+            (Math.min(priorCount,target.consecutive_passes-1)-remaining))
+            throw Error('Consecutive benchmark evidence history is inconsistent.');
+        const evidence=targetCheckpointEvidence(item,cursor,target,plan);
+        const {report_sha256,...scores}=evidence;
+        const expected={...scores,consecutive_passes:saved.consecutive_passes,
+            report_sha256};
+        if(JSON.stringify(saved)!==JSON.stringify(expected))
+            throw Error('Earlier benchmark target evidence changed.');
+        cursor=priorCheckpoint(item,cursor.ordinal);
+    }
+    return priorCount;
+}
+
+function evaluatePeriodicTarget(item, checkpoint) {
+    const target=item.benchmark_target;
+    if(!target)throw Error('Missing frozen benchmark target.');
+    const plan=item.stage_benchmarks;
+    verifyBenchmarkPlan(plan);
+    // The current candidate must still be present and match its original
+    // pinned hash. Historic already-evaluated candidates need not remain
+    // available, but their immutable verified reports must.
+    verifyStageCandidate(checkpoint.evaluation?.candidate,
+        Math.max(0,checkpoint.evaluation?.boundary_step||0));
+    const evidence=targetCheckpointEvidence(item,checkpoint,target,plan);
+    const priorCount=evidence.passed
+        ?verifyPriorTargetPasses(item,checkpoint,target,plan):0;
+    const {report_sha256,...scores}=evidence;
+    const consecutive=evidence.passed?priorCount+1:0;
+    const decision={...scores,consecutive_passes:consecutive,
+        report_sha256};
     if(checkpoint.benchmark_target_result) {
         if(JSON.stringify(checkpoint.benchmark_target_result)!==
             JSON.stringify(decision))
@@ -316,7 +356,7 @@ function evaluatePeriodicTarget(item, checkpoint) {
     if(consecutive>=target.consecutive_passes&&!item.benchmark_target_met)
         item.benchmark_target_met={
             checkpoint_ordinal:checkpoint.ordinal,at:now(),
-            actual_step:evaluation.boundary_step,
+            actual_step:checkpoint.evaluation.boundary_step,
         };
 }
 
