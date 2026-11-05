@@ -149,6 +149,9 @@ class LinuxSupervisor {
         this.lock=path.join(root,'supervisor.lock');
         this.machineId=machineId;this.adapters=adapters;this.runner=runner;
         this.fs=fsApi;this.hostOs=hostOs;this.hostInspector=hostInspector;
+        // Qualification is process-local. No persisted historical probe
+        // can authorize a launch after the agent or OS has restarted.
+        this.qualifiedAt=null;
         fsApi.mkdirSync(root,{recursive:true,mode:0o700});
         this.state=fsApi.existsSync(this.file)
             ?JSON.parse(fsApi.readFileSync(this.file,'utf8'))
@@ -181,6 +184,75 @@ class LinuxSupervisor {
         }
     }
     snapshot(){return JSON.parse(JSON.stringify(this.state.records));}
+    async qualify() {
+        if(this.qualifiedAt)return {qualified_at:this.qualifiedAt};
+        const host=this.hostInspector();
+        if(!host.cgroup_v2_detected||
+            !['cpu','memory'].every(c=>host.cgroup_controllers.includes(c)))
+            throw Error('Native preflight: Linux CPU/memory controllers unavailable.');
+        // Only an inert local sleep program is started. No project adapter,
+        // job, checkpoint, experiment artifact or network command is involved.
+        const id=crypto.randomUUID();
+        const unit='experiment-hub-preflight-'+id.replace(/-/g,'')+'.service';
+        const description='Experiment Hub local resource preflight '+id;
+        const args=['--user','--quiet','--service-type=exec',
+            '--unit='+unit,'--description='+description,
+            '--property=CPUQuota=100%',
+            '--property=MemoryMax=268435456',
+            '--property=KillMode=control-group',
+            '--property=CPUAccounting=yes','--property=MemoryAccounting=yes',
+            '--','/usr/bin/sleep','30'];
+        let error=null,verified=false;
+        try{
+            await this.runner(SYSTEMD_RUN,args,
+                {timeout:12000,maxBuffer:16384,windowsHide:true});
+            const shown=await this.runner(SYSTEMCTL,
+                ['--user','show',unit,'--no-pager',
+                 '--property=Id,Description,LoadState,ActiveState,MainPID,ControlGroup,MemoryMax,CPUQuotaPerSecUSec'],
+                {timeout:12000,maxBuffer:16384,windowsHide:true});
+            const p=parseShow(shown.stdout);
+            if(p.LoadState!=='loaded'||p.ActiveState!=='active'||
+                p.Id!==unit||p.Description!==description||
+                Number(p.MemoryMax)!==268435456||
+                quotaUsec(p.CPUQuotaPerSecUSec)!==1000000)
+                throw Error('Preflight service identity or systemd controls not verified.');
+            verifyKernelLimits(p,1,256,this.fs);
+            verified=true;
+        }catch(e){error=e;}
+        // Even an ambiguous systemd-run timeout can leave a service behind.
+        // Never auto-retry it, and never stop a service with unknown identity.
+        try{
+            const shown=await this.runner(SYSTEMCTL,
+                ['--user','show',unit,'--no-pager',
+                    '--property=Id,Description,LoadState,ActiveState'],
+                {timeout:12000,maxBuffer:16384,windowsHide:true});
+            const p=parseShow(shown.stdout);
+            if(p.LoadState!=='not-found') {
+                if(p.Id!==unit||p.Description!==description)
+                    throw Error('Preflight service ownership is ambiguous; inspect it manually.');
+                await this.runner(SYSTEMCTL,['--user','stop',unit],
+                    {timeout:12000,maxBuffer:16384,windowsHide:true});
+                const ended=await this.runner(SYSTEMCTL,
+                    ['--user','show',unit,'--no-pager',
+                        '--property=Id,Description,LoadState,ActiveState'],
+                    {timeout:12000,maxBuffer:16384,windowsHide:true});
+                const after=parseShow(ended.stdout);
+                if(!['inactive','failed'].includes(after.ActiveState)&&
+                    after.LoadState!=='not-found')
+                    throw Error('Preflight service stop was not confirmed.');
+            }
+        }catch(cleanup){
+            this.qualifiedAt=null;
+            throw Error('Native preflight cleanup not confirmed: '+
+                String(cleanup.message||cleanup).slice(0,155));
+        }
+        if(error)throw Error('Native preflight failed: '+
+            String(error.message||error).slice(0,155));
+        if(!verified)throw Error('Native preflight did not verify kernel controls.');
+        this.qualifiedAt=new Date().toISOString();
+        return {qualified_at:this.qualifiedAt};
+    }
+
     async inspectUnit(record,{requireKernel=true}={}) {
         const out=await this.runner(SYSTEMCTL,
             ['--user','show',record.unit,'--no-pager',
@@ -254,6 +326,8 @@ class LinuxSupervisor {
             process_tasks:result.process_tasks??null};
     }
     async start(job,lease) {
+        if(!this.qualifiedAt)
+            throw Error('Linux kernel resource preflight must pass before native start.');
         const host=this.hostInspector();
         if(!host.cgroup_v2_detected||
             !['cpu','memory'].every(c=>host.cgroup_controllers.includes(c)))
