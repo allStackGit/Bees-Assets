@@ -225,10 +225,9 @@ fn execute_squad_move(
         members, destination, options, navigation,
     )? else { return Ok(None) };
     for &(ship_id, _) in &plan.orders {
-        let game_ship = world.ships().iter().find(|ship| ship.entity_id == ship_id)
+        let game_ship = world.ship(ship_id)
             .ok_or(SquadOrderError::MissingShip)?;
-        let physics_ship = world.physics().ships().iter()
-            .find(|ship| ship.id == ship_id)
+        let physics_ship = world.ship_body(ship_id)
             .ok_or(SquadOrderError::MissingShip)?;
         if !physics_ship.motion.mobile || !physics_ship.active ||
             game_ship.vitals.is_dead() {
@@ -296,8 +295,7 @@ pub fn stop_squad_game_movement(
             ));
         }
         if !member.mobile { continue; }
-        let body = world.physics().ships().iter()
-            .find(|body| body.id == member.ship_id)
+        let body = world.ship_body(member.ship_id)
             .ok_or(SquadOrderError::MissingShip)?;
         if !body.motion.mobile {
             return Err(SquadOrderError::MembershipMismatch);
