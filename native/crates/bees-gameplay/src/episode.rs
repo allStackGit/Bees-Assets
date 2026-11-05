@@ -155,6 +155,10 @@ impl NativeEpisodeRewardCoordinator {
         self.terminal.result()
     }
 
+    pub fn latest_emissions(&self) -> &[RewardEmission] {
+        &self.merged_emissions
+    }
+
     pub fn is_failed(&self) -> bool {
         self.failed
     }

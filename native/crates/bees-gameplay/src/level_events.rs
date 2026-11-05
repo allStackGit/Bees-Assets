@@ -59,6 +59,7 @@ pub struct NativeLevelEventProcessor {
     episode: NativeEpisodeRewardCoordinator,
     next_tick: u64,
     failed: bool,
+    last_finalized: Option<NativeEpisodeFinal>,
     changes: Vec<SquadRosterChange>,
     finished: Vec<FinishedNativeCommand>,
 }
@@ -72,6 +73,7 @@ impl NativeLevelEventProcessor {
             episode,
             next_tick: 1,
             failed: false,
+            last_finalized: None,
             changes: Vec::new(),
             finished: Vec::new(),
         }
@@ -97,6 +99,28 @@ impl NativeLevelEventProcessor {
 
     pub fn is_failed(&self) -> bool {
         self.failed || self.roster.is_failed() || self.episode.is_failed()
+    }
+
+    pub fn completed(&self) -> bool {
+        self.episode.result().is_some()
+    }
+
+    /// Immutable view after Simulation::step_world; no per-frame copies.
+    /// Must be consumed before the next successful world step.
+    pub fn latest_squad_changes(&self) -> &[SquadRosterChange] {
+        &self.changes
+    }
+
+    pub fn latest_finished_commands(&self) -> &[FinishedNativeCommand] {
+        &self.finished
+    }
+
+    pub fn latest_reward_emissions(&self) -> &[RewardEmission] {
+        self.episode.latest_emissions()
+    }
+
+    pub fn latest_finalized_episode(&self) -> Option<NativeEpisodeFinal> {
+        self.last_finalized
     }
 
     pub fn measurements(&self) -> NativeLevelEventMeasurements {
@@ -155,7 +179,9 @@ impl NativeLevelEventProcessor {
                 return Err(NativeLevelEventError::Rewards(error));
             }
         };
-        self.next_tick += 1;
+        self.next_tick = self.next_tick.checked_add(1)
+            .expect("monotonic native Level tick exhausted");
+        self.last_finalized = reward.finalized;
         Ok(NativeLevelTick {
             squad_changes: &self.changes,
             finished_commands: &self.finished,
