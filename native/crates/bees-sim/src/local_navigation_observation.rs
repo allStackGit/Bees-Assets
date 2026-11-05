@@ -19,6 +19,7 @@ pub enum LocalNavigationError {
     InvalidMap,
     InvalidObserver,
     InvalidObstacle,
+    NotInitialized,
 }
 
 /// Reusable fixed-size occupancy values in WORLD-GRID index order.
@@ -27,6 +28,7 @@ pub struct LocalNavigationOccupancy {
     occupancy: [f32; NAV_LEN],
     grid_min: Vec2,
     grid_max: Vec2,
+    initialized: bool,
 }
 
 impl Default for LocalNavigationOccupancy {
@@ -35,6 +37,7 @@ impl Default for LocalNavigationOccupancy {
             occupancy: [0.0; NAV_LEN],
             grid_min: Vec2::ZERO,
             grid_max: Vec2::ZERO,
+            initialized: false,
         }
     }
 }
@@ -64,6 +67,7 @@ impl LocalNavigationOccupancy {
         self.grid_min = min;
         self.grid_max = min + Vec2::new(2.0 * half_span, 2.0 * half_span);
         self.occupancy.fill(0.0);
+        self.initialized = true;
         for y in 0..NAV_SIZE {
             let cell_min_y = min.y + y as f32 * NAV_CELL_SIZE;
             let cell_max_y = cell_min_y + NAV_CELL_SIZE;
@@ -89,6 +93,9 @@ impl LocalNavigationOccupancy {
         position: Vec2,
         half_extents: Vec2,
     ) -> Result<(), LocalNavigationError> {
+        if !self.initialized {
+            return Err(LocalNavigationError::NotInitialized);
+        }
         if !position.is_finite() || !half_extents.is_finite() ||
             half_extents.x < 0.0 || half_extents.y < 0.0 {
             return Err(LocalNavigationError::InvalidObstacle);
