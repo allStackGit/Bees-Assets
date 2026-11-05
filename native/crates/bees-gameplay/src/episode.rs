@@ -31,6 +31,7 @@ pub enum NativeEpisodeRewardError {
     InvalidShaping(&'static str),
     Terminal(EpisodeTerminalError),
     Economic(EconomicLedgerError),
+    TerminalEconomic(EpisodeEconomicError),
     Damage(DamageShapingError),
     Discovery(DiscoveryError),
     DiscoveryNotConfigured,
@@ -45,6 +46,11 @@ impl From<EpisodeTerminalError> for NativeEpisodeRewardError {
 impl From<EconomicLedgerError> for NativeEpisodeRewardError {
     fn from(error: EconomicLedgerError) -> Self {
         Self::Economic(error)
+    }
+}
+impl From<EpisodeEconomicError> for NativeEpisodeRewardError {
+    fn from(error: EpisodeEconomicError) -> Self {
+        Self::TerminalEconomic(error)
     }
 }
 impl From<DamageShapingError> for NativeEpisodeRewardError {
