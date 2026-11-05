@@ -37,6 +37,60 @@ function trainingFormPayload() {
     };
 }
 
+// Compare exports remain observational, not benchmark or qualification
+// evidence. Keep transformations independent of browser state.
+function hubComparisonPoints(run,level='') {
+    const points=run.points.length?run.points:
+        [run.job.live_execution?.progress||run.job.final_progress]
+            .filter(Boolean);
+    if(level==='')return points;
+    const wanted=Number(level);
+    let last=-1;
+    return points.flatMap((point,i)=>{
+        if(point.curriculum_level!==wanted)return [];
+        const item={...point,
+            break_before:Boolean(point.break_before||(last>=0&&i>last+1))};
+        last=i;
+        return [item];
+    });
+}
+function hubComparisonCsv(exported) {
+    const fields=[
+        'slot','job_id','configuration_name','configuration_sha256',
+        'assigned_machine_id','artifact_lineage_root_id',
+        'continuation_of_job_id','status','observed_at','source_modified_at',
+        'experiment_id','segment_id','break_before','episodes_completed',
+        'total_environment_steps','policy_version','curriculum_level',
+        'curriculum_window_episodes','curriculum_window_success_rate',
+        'segment_success_rate','simulation_steps_per_second',
+        'ppo_unique_samples_per_second','latest_episode_policy_updated',
+    ];
+    const encode=value=>{
+        if(value==null)return '';
+        let str=String(value);
+        // Prevent spreadsheet software from interpreting user-supplied
+        // configuration labels as formulas.
+        if(str.length&&'=+-@'.includes(str[0]))str="'"+str;
+        const quote=str.includes(',')||str.includes('"')||
+            str.includes(String.fromCharCode(10))||
+            str.includes(String.fromCharCode(13));
+        return quote?'"'+str.replaceAll('"','""')+'"':str;
+    };
+    const rows=exported.runs.flatMap(run=>run.points.map(point=>({
+        slot:run.slot,job_id:run.job_id,
+        configuration_name:run.configuration_name,
+        configuration_sha256:run.configuration_sha256,
+        assigned_machine_id:run.assigned_machine_id,
+        artifact_lineage_root_id:run.artifact_lineage_root_id,
+        continuation_of_job_id:run.continuation_of_job_id,
+        status:run.status,...point,
+    })));
+    const crlf=String.fromCharCode(13,10);
+    return String.fromCharCode(0xFEFF)+fields.join(',')+crlf+
+        rows.map(row=>fields.map(f=>encode(row[f])).join(','))
+            .join(crlf)+crlf;
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     const $ = id => document.getElementById(id);
     let project = document.documentElement.dataset.hubDefaultProject || 'bees';
