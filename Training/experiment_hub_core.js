@@ -352,6 +352,11 @@ class ExperimentHub {
                 !['waiting_adapter','finished','failed','stopped'].includes(job.status))
                 throw Error('Cannot release an unknown, active, or unverified managed job.');
             if(job.status==='waiting_adapter') {
+                if(job.gpu_qualification?.status==='requested') {
+                    job.gpu_qualification.status='cancelled';
+                    job.gpu_qualification.diagnostic=
+                        'Lease released before GPU access proof completed.';
+                }
                 job.lease_id=null;
                 job.assigned_machine_id=null;
                 job.assigned_at=null;
@@ -530,6 +535,15 @@ class ExperimentHub {
             const job=next.jobs.find(j=>j.id===report.job_id);
             const lease=next.reservations.find(l=>l.id===report.lease_id);
             const request=job?.gpu_qualification;
+            // The operator may cancel an unstarted job or release the
+            // advisory lease while a short probe is finishing. Consume
+            // that exact old proof without restoring authority.
+            if(job&&lease&&request?.status==='cancelled'&&
+                request.request_id===report.dispatch_id&&
+                request.lease_id===lease.id&&
+                request.machine_id===machine.id&&
+                lease.status==='released')
+                continue;
             if(!job||!lease||!request||request.request_id!==report.dispatch_id||
                 request.lease_id!==lease.id||request.machine_id!==machine.id||
                 job.lease_id!==lease.id||job.assigned_machine_id!==machine.id||
