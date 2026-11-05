@@ -727,7 +727,7 @@ class ExperimentHub {
                 .update(JSON.stringify(frozen)).digest('hex'),
             frozen_parameters:frozen, resources,
             status:'waiting_adapter',
-            status_reason:'No trusted execution adapter or OS-enforced allocation is installed.',
+            status_reason:'Queued; a separate machine claim and explicit native start authorization are required.',
             created_at:now(), cancelled_at:null,
         };
         const next=copy(this.state);
