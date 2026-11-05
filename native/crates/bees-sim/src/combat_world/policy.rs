@@ -8,6 +8,7 @@
 //! branches. No plausible-looking zero-damage shooting is accepted.
 
 use super::*;
+use crate::policy_batch::PolicyActionMask;
 
 #[derive(Clone, Debug)]
 pub(super) struct PolicyShipRuntime {
@@ -47,6 +48,26 @@ impl CombatWorld {
             .map(|runtime| runtime.control.communication())
     }
 
+    /// Expose only actions backed by actual native gameplay, so inference
+    /// can use the same authoritative mask as execution. Fire and special
+    /// actions remain masked while weapon and ability controls are unported.
+    pub fn policy_action_mask(
+        &self,
+        ship_id: i64,
+    ) -> Result<PolicyActionMask, CombatWorldError> {
+        let &index = self.ship_by_id.get(&ship_id)
+            .ok_or(CombatWorldError::UnknownShip)?;
+        if !self.physics.ships()[index].active ||
+            self.ships[index].vitals.is_dead() ||
+            !self.policy_ship_runtime.contains_key(&ship_id) {
+            return Err(CombatWorldError::UnknownShip);
+        }
+        Ok(PolicyActionMask {
+            fire: [false; 5],
+            special: [true, false, false, false, false],
+        })
+    }
+
     /// Apply only the subset of v26 semantics currently supported by the
     /// native gameplay world: ship movement and allied communication.
     ///
@@ -79,11 +100,13 @@ impl CombatWorld {
                 self.ships[index].vitals.is_dead() {
                 return Err(CombatWorldError::UnknownPolicyAgent(decision.agent_id));
             }
-            // No turret readiness, cooldown, ammunition or special-action
-            // execution has been imported into native CombatWorld yet.
-            // Movement and communication do not excuse silently skipping
-            // requested gameplay actions.
-            if decision.action.discrete.iter().any(|&choice| choice != 0) {
+            // Validate against the same world-owned mask supplied to
+            // inference. Future weapon implementations must update BOTH
+            // the mask and the actual firing path before enabling a branch.
+            let mask = self.policy_action_mask(id)?;
+            if decision.action.discrete[..5].iter().enumerate()
+                .any(|(slot, &choice)| choice == 1 && !mask.fire[slot]) ||
+                !mask.special[usize::from(decision.action.discrete[5])] {
                 return Err(CombatWorldError::UnsupportedPolicyActions);
             }
         }
@@ -144,6 +167,9 @@ mod tests {
     fn policy_movement_and_communication_use_shared_combat_rules() {
         let mut combat = world_with_one_ship();
         combat.bind_policy_ship(1, PolicyFrame::new(1), false).unwrap();
+        let mask = combat.policy_action_mask(1).unwrap();
+        assert_eq!(mask.fire, [false; 5]);
+        assert_eq!(mask.special, [true, false, false, false, false]);
         let mut action = Action::ZERO;
         action.continuous[0] = 1.0;
         action.continuous[12] = 0.6;
