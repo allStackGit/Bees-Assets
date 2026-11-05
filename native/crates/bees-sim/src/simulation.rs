@@ -207,8 +207,9 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
                 // A failing rules update may have partially mutated world state.
                 // Never resume the same world silently from that state.
                 world.failed = true;
-                world.measurements.failed_steps += 1;
-                self.measurements.failed_steps += 1;
+                let duration = start.map(|start| start.elapsed());
+                world.measurements.record_failure(duration);
+                self.measurements.record_failure(duration);
                 return Err(StepError::Rules { id: world.id, source });
             }
         };
