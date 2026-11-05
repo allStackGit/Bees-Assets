@@ -153,7 +153,6 @@ class LinuxSupervisor {
         // Qualification is process-local. No persisted historical probe
         // can authorize a launch after the agent or OS has restarted.
         this.qualifiedAt=null;
-        this.gpuDeviceQualifications=new Map();
         fsApi.mkdirSync(root,{recursive:true,mode:0o700});
         this.state=fsApi.existsSync(this.file)
             ?JSON.parse(fsApi.readFileSync(this.file,'utf8'))
@@ -261,6 +260,8 @@ class LinuxSupervisor {
     async qualifyGpuDeviceAccess(bindings) {
         if(!this.qualifiedAt)
             throw Error('CPU/RAM preflight must pass before GPU device checks.');
+        if(this.gpuPreflightCleanupUnconfirmed===true)
+            throw Error('Previous GPU access probe cleanup unconfirmed; inspect the local service before retry.');
         const plan=resolveRocmDevices(bindings,{fsApi:this.fs});
         // A proof of denial requires a second GPU render node that the same
         // unconfined account can open. Do not mistake a UNIX ACL failure for
@@ -275,13 +276,6 @@ class LinuxSupervisor {
             catch{throw Error('GPU probe baseline cannot open device '+node);}
             finally{if(handle!==undefined)this.fs.closeSync(handle);}
         }
-        const key=JSON.stringify({selected:plan.selected.map(g=>({
-            pci_address:g.pci_address,major:g.major,minor:g.minor
-        })),denied:denied.pci_address,minor:denied.minor,
-        kfd:plan.kfd});
-        if(this.gpuDeviceQualifications.has(key))
-            return {qualified_at:this.gpuDeviceQualifications.get(key),
-                selected:plan.selected.map(g=>g.pci_address)};
         const nonce=crypto.randomUUID(),unit=
             'experiment-hub-gpu-preflight-'+nonce.replace(/-/g,'')+'.service';
         const description='Experiment Hub GPU device preflight '+nonce;
@@ -334,6 +328,9 @@ class LinuxSupervisor {
                 }
             }
         }catch(cleanup) {
+            // Do not create more preflight services while a previous
+            // ambiguous one may still be running.
+            this.gpuPreflightCleanupUnconfirmed=true;
             throw Error('GPU device access preflight cleanup not verified: '+
                 String(cleanup.message||cleanup).slice(0,160));
         }
@@ -341,7 +338,6 @@ class LinuxSupervisor {
             throw Error('GPU device access preflight failed: '+
                 String(failure.message||failure).slice(0,160));
         const qualifiedAt=new Date().toISOString();
-        this.gpuDeviceQualifications.set(key,qualifiedAt);
         return {qualified_at:qualifiedAt,
             selected:plan.selected.map(g=>g.pci_address)};
     }
