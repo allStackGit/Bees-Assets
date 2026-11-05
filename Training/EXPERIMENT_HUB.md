@@ -156,6 +156,31 @@ An installed local trusted adapter, explicit dashboard authorization
 and verified native CPU/RAM service limits are required before a
 job can transition out of `waiting_adapter`.
 
+### Isolated transport smoke and inert Linux qualification
+
+Run `node Training/experiment_hub_smoke.js` from the checkout to exercise
+an **ephemeral, randomly ported loopback HTTP listener**, the actual Node
+agent request serialization, machine credential rejection, an advisory lease
+acknowledgement, explicit release and a coordinator reload. This script
+creates its registry beneath the OS temporary directory and removes it.
+It never imports the Bees operator, contacts the live dashboard or runs
+a native/training process. It does **not** qualify the production server
+listener, SSH forwarding, Linux systemd or Windows Job Objects. Its results
+must be reported separately from native host qualification.
+
+For an operator-controlled native Linux CPU/RAM smoke, the checked-in
+`Training/experiment_hub_smoke_adapter_linux.js` is an inert, fixed-path
+trusted adapter for project ID `smoke` only. The machine operator can
+install that module through `EXPERIMENT_HUB_LOCAL_ADAPTERS` alongside a
+separate absolute `EXPERIMENT_HUB_LOCAL_ROOT`, after enrolling the worker
+and successfully running the native systemd preflight. Queue a `smoke`
+configuration with **exactly** `{"kind":"inert"}`, request 1 CPU and
+256 MiB RAM, and explicitly authorize one Start. It launches only
+`/usr/bin/sleep 30` under the native supervisor. Observe the kernel
+limits, Stop and terminal reporting before trying automation or any real
+project adapter. Do not run it on a machine carrying unaccounted Bees or
+other active workloads.
+
 ### Opt-in native CPU-only queue automation
 
 The non-Bees Train tab can explicitly **arm 1–16 selected, enrolled native
@@ -165,7 +190,10 @@ agent instance, installed trusted project adapters, and confirmation that
 the operator has accounted for Bees and any other **untracked workloads**
 on those machines. The automation session is process-local and starts
 **disarmed**, including after every coordinator restart. Disarming does
-not stop a running service or release its capacity.
+not stop a running service or release its capacity. The Train tab
+retains the last actual scheduler transition, its timestamp and a
+separate current waiting reason instead of repeatedly overwriting
+the meaningful event during idle polling.
 
 While armed, a coordinator pass every ten seconds performs **at most one
 durable transition**: release capacity only after an authenticated native
