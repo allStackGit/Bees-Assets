@@ -12,6 +12,7 @@ const { summarize: summarizeResearch, differences: compareResearch,
 const { freezePlan: freezeEvaluator, supportsPurpose: evaluatorSupportsPurpose } =
     require('./bees_experiment_evaluator_versions');
 const { selectedRoot, copyAndSelect } = require('./bees_experiment_storage');
+const { normalizeTarget, scoreTarget } = require('./bees_experiment_benchmark_target');
 const { ExperimentHub } = require('./experiment_hub_core');
 const { createAgentServer, AGENT_PORT, AGENT_HOST } =
     require('./experiment_hub_agent_listener');
@@ -242,6 +243,7 @@ async function evaluateDuePeriodic(item, status) {
     const record = periodicCheckpointRecord(item);
     if (!record) return true;
     if (!(await evaluateStageSuite(item, record.stage_index, status, record))) return false;
+    if (item.benchmark_target) evaluatePeriodicTarget(item, record);
     record.finished_at = record.finished_at || now();
     record.actual_step = record.evaluation?.boundary_step ?? item.step;
     record.training_s = trainingSeconds(item);
@@ -254,6 +256,57 @@ async function evaluateDuePeriodic(item, status) {
     }
     save();
     return true;
+}
+
+// The manager has already verified every immutable report at the frozen
+// evaluation boundary. Recheck that identity and pin the report bytes before
+// using their integer outcome totals for optional early completion.
+function evaluatePeriodicTarget(item, checkpoint) {
+    const target=item.benchmark_target;
+    const evaluation=checkpoint.evaluation;
+    if(!target||!evaluation||evaluation.status!=='completed')
+        throw Error('Benchmark target needs a completed frozen checkpoint evaluation.');
+    const plan=item.stage_benchmarks;
+    verifyBenchmarkPlan(plan);
+    const candidate=evaluation.candidate;
+    verifyStageCandidate(candidate,Math.max(0,evaluation.boundary_step||0));
+    const result=scoreTarget(target,plan.scenarios.map((scenario,i)=>{
+        const name=evaluation.reports?.[scenario.id];
+        if(typeof name!=='string'||
+            !/^\\d{8}T\\d{6}-[a-f0-9]{32}\\.json$/.test(name))
+            throw Error('Benchmark target is missing a frozen scenario report.');
+        const identity=stageEvaluationKey(item,checkpoint.stage_index,
+            scenario,i,candidate,plan,checkpoint.target_step,'development');
+        const file=path.join(BENCHMARK_REPORTS,name);
+        const report=readJson(file);
+        if(!stageReportMatches(report,item,checkpoint.stage_index,
+            scenario,candidate,plan,identity,'development'))
+            throw Error('Benchmark target report provenance changed.');
+        const recipe=readJson(scenario.recipe);
+        if(report.benchmark?.matches!==recipe.matches)
+            throw Error('Benchmark target match count differs from frozen recipe.');
+        return {id:scenario.id,expected_matches:recipe.matches,report};
+    }));
+    const reportHashes=Object.fromEntries(plan.scenarios.map(scenario=>[
+        scenario.id,hashFile(path.join(BENCHMARK_REPORTS,
+            evaluation.reports[scenario.id])),
+    ]));
+    const previous=(item.checkpoint_history||[]).find(
+        record=>record.ordinal===checkpoint.ordinal-1);
+    const consecutive=result.passed
+        ?(previous?.benchmark_target_result?.consecutive_passes||0)+1:0;
+    const decision={...result,consecutive_passes:consecutive,
+        report_sha256:reportHashes};
+    if(checkpoint.benchmark_target_result) {
+        if(JSON.stringify(checkpoint.benchmark_target_result)!==
+            JSON.stringify(decision))
+            throw Error('Previously saved benchmark target decision or evidence changed.');
+    }else checkpoint.benchmark_target_result=decision;
+    if(consecutive>=target.consecutive_passes&&!item.benchmark_target_met)
+        item.benchmark_target_met={
+            checkpoint_ordinal:checkpoint.ordinal,at:now(),
+            actual_step:evaluation.boundary_step,
+        };
 }
 
 function stageFor(item) {
@@ -1329,6 +1382,26 @@ async function checkpointPeriodic(item, status) {
             await finalize(item, status);
             return;
         }
+        if(item.benchmark_target_met) {
+            // The native trainer has already completed its verified graceful
+            // stop and the frozen development suite passed. Do not restart
+            // the same optimizer simply to stop it again.
+            assertSameLineageCheckpoint(item);
+            const stage=stageRecord(item);
+            stage.finished_at=stage.finished_at||now();
+            stage.finished_step=item.step;
+            item.end_reason='benchmark_target';
+            item.status='completed';
+            item.finished_at=now();
+            state.active_id=null;
+            state.stop_requested=false;
+            delete item.checkpoint_active_ordinal;
+            delete item.checkpoint_resume_pending;
+            state.message='Completed '+item.name+
+                ' after meeting its frozen development benchmark target.';
+            save();
+            return;
+        }
         assertSameLineageCheckpoint(item);
         item.awaiting_resume_sample_step = item.step ?? 0;
         item.checkpoint_resume_pending = true;
@@ -1733,6 +1806,7 @@ async function definition(input, original = null) {
     const evaluationMode = input.evaluation_mode || legacyMode;
     if (!['periodic', 'each_stage', 'final', 'none'].includes(evaluationMode))
         throw Error('Unknown evaluation schedule.');
+    const benchmarkTarget=normalizeTarget(input.benchmark_target,evaluationMode);
     const config = loadConfig();
     // Edits retain the exact environment baseline frozen when the item was queued.
     // Re-reading mutable operator defaults could silently change unrelated stages.
@@ -1756,6 +1830,16 @@ async function definition(input, original = null) {
     const heldoutPlan = input.reserve_heldout === true
         ? (original?.heldout_benchmarks || benchmarkPlan(HELDOUT_BENCHMARK_SETTINGS))
         : null;
+    if(benchmarkTarget) {
+        for(const scenario of benchmark.scenarios) {
+            const recipe=readJson(scenario.recipe);
+            if(!Number.isSafeInteger(recipe.matches)||
+                recipe.matches<benchmarkTarget.min_matches)
+                throw Error('Benchmark target requires at least '+
+                    benchmarkTarget.min_matches+' frozen matches in scenario '+
+                    scenario.id+'.');
+        }
+    }
     const developmentRecipes = new Set((benchmark?.scenarios || []).map((scenario, i) =>
         benchmark.hashes['recipe_' + i]));
     const developmentSeeds = new Set((benchmark?.scenarios || [])
@@ -1771,6 +1855,7 @@ async function definition(input, original = null) {
         first_stage_steps: firstSteps, unlimited_steps: input.unlimited_steps === true,
         max_minutes: maxMinutes, stall_minutes: stallMinutes,
         evaluation_mode: evaluationMode,
+        benchmark_target:benchmarkTarget,
         checkpoint_history: [], checkpoint_next_index: 1,
         env_args, stages, stage_index: 0, stage_history: [],
         scenario_seed: (() => {
@@ -1844,6 +1929,7 @@ function editableDefinition(item) {
         })),
         evaluation_mode: item.evaluation_mode ||
             (item.stage_benchmarks ? 'each_stage' : item.benchmark ? 'final' : 'none'),
+        benchmark_target:item.benchmark_target||null,
         reserve_heldout: Boolean(item.heldout_benchmarks),
         trainer: {
             hyperparameters: Object.fromEntries(
