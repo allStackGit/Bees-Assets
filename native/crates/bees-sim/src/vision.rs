@@ -1,0 +1,57 @@
+//! Source-grounded Hive Mind vision inputs and cost measurements.
+//!
+//! Unity: HiveMindVision.CanSee and GameState.RefreshHiveMindMapObjectVision.
+//! The shared CombatWorld refreshes live ship and obstacle discoveries with
+//! its authoritative collider geometry and world-owned learned caches.
+//! MapObjects are not yet modeled in CombatWorld and remain an explicit
+//! gameplay adapter responsibility; their sightings must not be fabricated.
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct HiveMindObserver {
+    pub ship_id: i64,
+    /// Source: HiveMindVision.GetEffectiveRange(ship):
+    /// ship.Sight != 0 ? ship.Sight : ship.MaxRange.
+    pub effective_range: i32,
+    /// The actual ship's IsHiveMindControlled / GameState registration.
+    pub registered: bool,
+    /// Both component and Unity CircleCollider2D must be enabled.
+    pub enabled: bool,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct VisionSweepCounts {
+    pub active_observers: u64,
+    pub live_ship_pairs: u64,
+    pub live_obstacle_pairs: u64,
+    pub aabb_rejections: u64,
+    pub exact_collider_tests: u64,
+    pub visible_enemy_pairs: u64,
+    pub first_ship_discoveries: u64,
+    pub first_obstacle_discoveries: u64,
+    pub first_mining_discoveries: u64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum VisionError {
+    InvalidObserverId(i64),
+    InvalidEffectiveRange(i64),
+    UnknownObserver(i64),
+    DuplicatedObserver(i64),
+    StorageMismatch,
+    InvalidObserverState(i64),
+}
+
+/// Rollup throughput costs without allocations inside the combat loop.
+impl VisionSweepCounts {
+    pub fn merge(&mut self, other: &Self) {
+        self.active_observers += other.active_observers;
+        self.live_ship_pairs += other.live_ship_pairs;
+        self.live_obstacle_pairs += other.live_obstacle_pairs;
+        self.aabb_rejections += other.aabb_rejections;
+        self.exact_collider_tests += other.exact_collider_tests;
+        self.visible_enemy_pairs += other.visible_enemy_pairs;
+        self.first_ship_discoveries += other.first_ship_discoveries;
+        self.first_obstacle_discoveries += other.first_obstacle_discoveries;
+        self.first_mining_discoveries += other.first_mining_discoveries;
+    }
+}
