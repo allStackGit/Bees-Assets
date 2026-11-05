@@ -635,6 +635,14 @@ impl NativeSquadCommandDirector {
             member_ids: squad.members.iter().map(|m| m.ship_id).collect(),
             selection,
         };
+        // Guard's SetFinalize resets every live ship to its authored speed.
+        // Do this after successful activation, before replacing the prior
+        // owner, so a failed new order retains its previous reservations.
+        if let Some(previous_guard) = self.active.get(&squad.owner)
+            .and_then(|prior| prior.following.as_ref())
+            .filter(|follow| follow.guard_slot.is_some()) {
+            restore_guard_speed(world, previous_guard)?;
+        }
         let superseded = self.active.insert(squad.owner, active).map(|old| {
             FinishedNativeCommand {
                 owner: squad.owner, selection: old.selection,
@@ -675,22 +683,52 @@ impl NativeSquadCommandDirector {
             if let Some(timer) = command.command_poll.as_mut() {
                 if let Some(due) = timer.begin_update(dt) {
                     if let Some(follow) = command.following.as_ref() {
-                        let mut matching = friendlies.iter()
-                            .filter(|candidate| candidate.owner == follow.target);
-                        let target = matching.next();
-                        if matching.next().is_some() {
-                            return Err(GameCommandError::InvalidFriendlies);
-                        }
+                        let target = lookup_friendly(friendlies, follow.target)?;
                         if let Some(friend) = target.filter(|candidate|
-                            candidate.valid() && candidate.is_alive &&
-                            candidate.side == follow.side
+                            candidate.is_alive && candidate.side == follow.side
                         ) {
-                            issue_squad_tracked_move(
-                                world, navigation, &follow.members,
-                                friend.position, follow.formation,
-                            )?;
+                            if let Some(slot) = follow.guard_slot {
+                                // Guard.Timer follows the protected squad's
+                                // live bounds center plus the guarding squad's
+                                // *current* width or height and 4 units.
+                                let own = lookup_friendly(friendlies, owner)?
+                                    .filter(|entry| entry.is_alive &&
+                                        entry.side == follow.side)
+                                    .ok_or(GameCommandError::InvalidFriendlies)?;
+                                let mut point = friend.position;
+                                match slot {
+                                    0 => point.y += own.height + GUARD_PADDING,
+                                    1 => point.x -= own.width + GUARD_PADDING,
+                                    2 => point.x += own.width + GUARD_PADDING,
+                                    3 => point.y -= own.height + GUARD_PADDING,
+                                    _ => return Err(GameCommandError::InvalidFriendlies),
+                                }
+                                issue_squad_tracked_move(
+                                    world, navigation, &follow.members,
+                                    point, follow.formation,
+                                )?;
+                                if (point - own.position).length_squared() <
+                                    GUARD_SPEED_MATCH_DISTANCE_SQUARED {
+                                    // Squad.SetSquadSpeed is clamped per ship
+                                    // to immutable Ship.Speed by CombatWorld.
+                                    set_squad_game_speed(
+                                        world, &follow.members,
+                                        friend.slowest_ship_speed,
+                                    )?;
+                                }
+                            } else {
+                                issue_squad_tracked_move(
+                                    world, navigation, &follow.members,
+                                    friend.position, follow.formation,
+                                )?;
+                            }
                         } else {
-                            completed.push((owner, CommandFinishCause::FriendlyGone));
+                            let cause = if follow.guard_slot.is_some() {
+                                CommandFinishCause::GuardTargetGone
+                            } else {
+                                CommandFinishCause::FriendlyGone
+                            };
+                            completed.push((owner, cause));
                             finished_by_poll = true;
                         }
                     } else {
@@ -731,11 +769,10 @@ impl NativeSquadCommandDirector {
                 if let Some(timeout) = command.timeout.as_mut() {
                     if let Some(due) = timeout.begin_update(dt) {
                         timeout.finish_update(due);
-                        let cause = if command.selection.local_command ==
-                            LocalCommandKind::Retreat {
-                            CommandFinishCause::AlreadySafe
-                        } else {
-                            CommandFinishCause::Timeout
+                        let cause = match command.selection.local_command {
+                            LocalCommandKind::Retreat => CommandFinishCause::AlreadySafe,
+                            LocalCommandKind::Guard => CommandFinishCause::GuardFinished,
+                            _ => CommandFinishCause::Timeout,
                         };
                         completed.push((owner, cause));
                     }
@@ -745,24 +782,75 @@ impl NativeSquadCommandDirector {
         completed.sort_unstable_by_key(|(owner, _)| (
             owner.level_id, owner.squad_id, owner.lifecycle_id,
         ));
-        Ok(completed.into_iter().filter_map(|(owner, cause)| {
-            self.active.remove(&owner).map(|active| FinishedNativeCommand {
-                owner, selection: active.selection, cause,
-            })
-        }).collect())
+        let mut finished = Vec::with_capacity(completed.len());
+        for (owner, cause) in completed {
+            // Source Guard.SetFinalize must release its speed override,
+            // regardless of whether it ended normally or its target died.
+            if let Some(guard) = self.active.get(&owner)
+                .and_then(|active| active.following.as_ref())
+                .filter(|follow| follow.guard_slot.is_some()) {
+                restore_guard_speed(world, guard)?;
+            }
+            if let Some(active) = self.active.remove(&owner) {
+                finished.push(FinishedNativeCommand {
+                    owner, selection: active.selection, cause,
+                });
+            }
+        }
+        Ok(finished)
     }
 
     /// Unity command finalization queues a fresh HiveMind request when the
     /// squad is still eligible; that request scheduling belongs to the
     /// caller, because it is bound to the live authenticated WebSocket.
     pub fn retire_squad(
-        &mut self, owner: SquadLifetime,
-    ) -> Option<FinishedNativeCommand> {
-        self.active.remove(&owner).map(|active| FinishedNativeCommand {
+        &mut self,
+        world: &mut CombatWorld,
+        owner: SquadLifetime,
+    ) -> Result<Option<FinishedNativeCommand>, GameCommandError> {
+        // On squad death, missing/dead members are skipped, exactly as
+        // Unity Guard.SetFinalize does not reset a dead squad's speed.
+        if let Some(guard) = self.active.get(&owner)
+            .and_then(|active| active.following.as_ref())
+            .filter(|follow| follow.guard_slot.is_some()) {
+            restore_guard_speed(world, guard)?;
+        }
+        Ok(self.active.remove(&owner).map(|active| FinishedNativeCommand {
             owner, selection: active.selection,
             cause: CommandFinishCause::SquadRetired,
-        })
+        }))
     }
+}
+
+/// Unity Guard.SetFinalize resets surviving members to Squad.MaxSpeed,
+/// which is the highest *authored* Speed among the current live members.
+fn restore_guard_speed(
+    world: &mut CombatWorld,
+    guard: &FollowingFriendly,
+) -> Result<(), GameCommandError> {
+    let mut live = Vec::new();
+    let mut fastest = 0.0_f32;
+    for &member in &guard.members {
+        let alive = world.ships().iter().any(|ship|
+            ship.entity_id == member.ship_id && !ship.vitals.is_dead()
+        );
+        let body = world.physics().ships().iter()
+            .find(|body| body.id == member.ship_id);
+        if alive {
+            if let Some(body) = body.filter(|body| body.active) {
+                if !body.motion.base_speed.is_finite() ||
+                    body.motion.base_speed < 0.0 {
+                    return Err(GameCommandError::InvalidSquad);
+                }
+                fastest = fastest.max(body.motion.base_speed);
+                live.push(member);
+            }
+        }
+    }
+    if !live.is_empty() {
+        set_squad_game_speed(world, &live, fastest)?;
+    }
+    Ok(())
 }
 
 /// A missing or duplicated current squad must not be treated as a new
