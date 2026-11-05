@@ -12,6 +12,7 @@ use super::*;
 use crate::policy_batch::PolicyActionMask;
 use super::weapons::PolicyTurretMount;
 use super::striker::PolicyStrikerRuntime;
+use super::barge::PolicyBargeCharge;
 
 /// Exactly one authored ship special can own an agent at a time.
 #[derive(Clone, Copy, Debug)]
@@ -19,6 +20,7 @@ pub(super) enum PolicyShipSpecial {
     Striker(PolicyStrikerRuntime),
     FireBarge,
     YellowJacket { bomb_power: i32 },
+    Barge(PolicyBargeCharge),
 }
 
 #[derive(Clone, Debug)]
@@ -97,6 +99,7 @@ impl CombatWorld {
                     Some(PolicyShipSpecial::Striker(striker)) => striker.ready,
                     Some(PolicyShipSpecial::FireBarge) |
                     Some(PolicyShipSpecial::YellowJacket { .. }) => true,
+                    Some(PolicyShipSpecial::Barge(barge)) => barge.phase == 0,
                 },
                 false, false, false,
             ],
@@ -206,6 +209,8 @@ impl CombatWorld {
                     { self.try_drop_policy_striker_bomb(ship_id, collisions)?; }
                 PolicyShipSpecial::YellowJacket { .. } =>
                     { self.try_detonate_policy_yellow_jacket(ship_id, collisions)?; }
+                PolicyShipSpecial::Barge(_) =>
+                    { self.try_begin_policy_barge_charge(ship_id)?; }
             }
         }
         self.policy_pending_ship_specials.clear();

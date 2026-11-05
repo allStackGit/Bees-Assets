@@ -136,6 +136,7 @@ impl ShipVitals {
 pub enum DamageSource {
     Gun,
     Bomb,
+    Charge,
     Explosion,
     DeathExplosion,
     Unattributed,

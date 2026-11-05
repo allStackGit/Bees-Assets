@@ -74,6 +74,7 @@ mod weapons;
 mod striker;
 mod fire_barge;
 mod yellow_jacket;
+mod barge;
 use self::policy::{PolicyShipRuntime, PolicyShipSpecial};
 use self::weapons::PendingPolicyShot;
 pub use self::weapons::{NativeFirePattern, NativeTurretSpec};
@@ -115,6 +116,7 @@ pub enum CombatWorldError {
     InvalidPolicyStriker,
     InvalidPolicyFireBarge,
     InvalidPolicyYellowJacket,
+    InvalidPolicyBarge,
     UnsupportedPolicyTurret { weapon_type: u8, projectile_type: u8 },
     DuplicatePolicyTurret { ship_id: i64, slot: usize },
     MapObject(MapObjectError),
@@ -237,6 +239,9 @@ pub enum CombatEvent {
     FireBargeDetonated { ship_id: i64, projectile_id: i64 },
     /// Yellow Jacket's direct reciprocal Bomb hits have no projectile.
     YellowJacketDetonated { ship_id: i64, target_id: i64 },
+    BargeChargeStarted { ship_id: i64 },
+    BargeChargeHit { ship_id: i64, target_id: i64 },
+    BargeChargeStopped { ship_id: i64 },
     /// Emitted for projectile impacts against static geometry; the
     /// dedicated RL coordinator determines the corresponding reward.
     StaticObstacleImpact { projectile_id: i64, obstacle_id: i64 },
@@ -465,6 +470,10 @@ pub struct PolicySpecialMeasurements {
     pub yellow_jacket_distance_rejections: u64,
     pub yellow_jacket_exact_overlap_tests: u64,
     pub yellow_jacket_detonations: u64,
+    pub barge_charges_started: u64,
+    pub barge_contact_checks: u64,
+    pub barge_contact_hits: u64,
+    pub barge_charges_stopped: u64,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -574,6 +583,9 @@ pub struct CombatWorld {
     /// Commit after event clearing and before physics, in stable ship-ID order.
     policy_pending_ship_specials: Vec<i64>,
     policy_special_measurements: PolicySpecialMeasurements,
+    /// One hit per victim for each active charge; cleared when the
+    /// owning Barge starts another charge or is removed from the world.
+    barge_charge_hits: HashSet<(i64, i64)>,
     pending_game_point_orders: HashMap<i64, GamePointOrder>,
     latest_game_point_orders: HashMap<i64, GamePointOrder>,
     ship_collision_profiles: HashMap<i64, ShipCollisionProfile>,
@@ -647,6 +659,7 @@ impl CombatWorld {
             policy_pending_shots: Vec::new(),
             policy_pending_ship_specials: Vec::new(),
             policy_special_measurements: PolicySpecialMeasurements::default(),
+            barge_charge_hits: HashSet::new(),
             pending_game_point_orders: HashMap::new(),
             latest_game_point_orders: HashMap::new(),
             ship_collision_profiles: HashMap::new(),
@@ -737,6 +750,8 @@ impl CombatWorld {
         self.physics.ships_mut()[index].active = false;
         self.discovery.retire(DiscoveryKind::Ship, victim_id);
         self.policy_ship_runtime.remove(&victim_id);
+        self.barge_charge_hits.retain(|&(attacker, victim)|
+            attacker != victim_id && victim != victim_id);
         self.navigation_requests.retire_ship(victim_id);
         self.game_ship_steering.remove(&victim_id);
         self.pending_game_point_orders.remove(&victim_id);
@@ -2830,6 +2845,7 @@ impl CombatWorld {
             });
         }
         self.apply_pending_policy_ship_specials(collision_matrix)?;
+        self.advance_policy_barge_phases(dt)?;
         self.advance_asteroid_deaths(dt);
         self.advance_asteroid_pieces(dt);
         // Swap buffers instead of allocating a queue for every frame.
@@ -2932,6 +2948,7 @@ impl CombatWorld {
         self.update_explosion_timelines(dt)?;
         let new_contacts = self.physics.step(dt, collision_matrix)?;
         self.pending_contacts.extend_from_slice(new_contacts);
+        self.resolve_policy_barge_contacts(collision_matrix)?;
         // Striker.CheckCarrierReload runs on the same Level timer clock.
         // A policy can request another bomb only after a real carrier
         // proximity check has rearmed its authored bomb state.

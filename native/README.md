@@ -274,8 +274,21 @@ making unsupported combinations impossible by construction.
 Scripted auto-BombingRun behavior and full command-stat persistence are
 still separate Level integration work.
 
+**Barge v26 charge special:** a bound native Barge accepts a special only
+when ready. The shared combat tick advances the authored 2-second windup,
+1-second 80-speed forward charge and 10-second cooldown. Contact against
+real enemy hulls applies immediate authored Charge.Power damage, 75%
+reciprocal damage, and stops the active charge if the victim survives.
+Charge completion inflicts the source's 200 self-damage through normal
+unattributed health and death processing. The source's once-per-victim
+charge contact memory is world-owned and cleared on cooldown or death.
+Movement locks use the same ShipMotion, rather than a training-only
+teleport or collision model. Phase transitions, contact work, hits and
+stops have per-world counters. The rendered Level still needs animation,
+presentation and squad-command integration.
+
 **Not yet implemented:** scripted BombingRun command coordination,
-Scout and Barge ship specials, complete Level-to-perception snapshot
+Scout ship special, complete Level-to-perception snapshot
 collection, GPU inference, and an ML-Agents-compatible learner. Unity targeting timers
 run on the Level's scaled update clock; this native implementation
 currently advances the same timer semantics on the game fixed-step delta,
