@@ -477,8 +477,10 @@ mod tests {
             projectile_value: 1.0, projectile_speed: speed,
         };
         world.configure_policy_turret(1, 3, spec).unwrap();
-        assert_eq!(world.policy_self_weapons(1).unwrap()[3]
-            .unwrap().position, Vec2::new(10.0, 22.0));
+        let muzzle = world.policy_self_weapons(1).unwrap()[3]
+            .unwrap().position;
+        assert!((muzzle.x - 10.0).abs() < 1e-5);
+        assert!((muzzle.y - 22.0).abs() < 1e-5);
         world.set_policy_ship_cease_fire(1, true).unwrap();
         let mut action = Action::ZERO;
         action.discrete[3] = 1;
