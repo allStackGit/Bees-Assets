@@ -322,7 +322,7 @@ function asteroidFromVariant(name, content, base, baseGuid) {
 }
 
 function toAsset(name, value) {
-    const {sizeClass, layer, scale, offset, vertices, proximity} = value;
+    const {sizeClass, layer, scale, offset, vertices, proximity, clearance} = value;
     if (!Number.isInteger(sizeClass) || sizeClass < 1 || sizeClass > 255 ||
         !Number.isInteger(layer) || layer < 0 || layer >= 32 ||
         scale.some(x => x === 0)) {
@@ -349,11 +349,27 @@ function toAsset(name, value) {
     if (proximityVertices.some(v => v.some(c => !Number.isFinite(c)))) {
         fail(name, 'nonfinite proximity polygon vertex');
     }
+    if (!Number.isInteger(clearance.layer) || clearance.layer < 0 ||
+        clearance.layer >= 32 ||
+        clearance.scale.some(n => !Number.isFinite(n) || n === 0)) {
+        fail(name, 'invalid clearance layer or scale');
+    }
+    const clearanceVertices = clearance.vertices.map(([x,y]) => [
+        ((x + clearance.offset[0]) * clearance.scale[0] +
+            clearance.position[0]) * scale[0],
+        ((y + clearance.offset[1]) * clearance.scale[1] +
+            clearance.position[1]) * scale[1],
+    ]);
+    if (clearanceVertices.some(v => v.some(c => !Number.isFinite(c)))) {
+        fail(name, 'nonfinite clearance polygon vertex');
+    }
     return {
         name, size_class: sizeClass, layer,
         shape: {kind:'polygon', vertices:local},
         proximity_layer: proximity.layer,
         proximity_shape: {kind:'polygon', vertices:proximityVertices},
+        clearance_layer: clearance.layer,
+        clearance_shape: {kind:'polygon', vertices:clearanceVertices},
     };
 }
 
@@ -374,6 +390,11 @@ export function createAsteroidBatch(baseContent, baseGuid, otherPrefabs) {
             position: base.proximity.position, offset: base.proximity.offset,
             vertices: base.proximity.paths[0],
         },
+        clearance: {
+            layer: base.clearance.layer, scale: base.clearance.scale,
+            position: base.clearance.position, offset: base.clearance.offset,
+            vertices: base.clearance.paths[0],
+        },
     })];
     const seen = new Set([1]);
     for (const [name, text] of otherPrefabs) {
@@ -389,7 +410,8 @@ export function createAsteroidBatch(baseContent, baseGuid, otherPrefabs) {
             : (() => {
                 const standalone = baseAsteroid(name, text);
                 if (standalone.paths.length !== 1 ||
-                    standalone.proximity.paths.length !== 1) {
+                    standalone.proximity.paths.length !== 1 ||
+                    standalone.clearance.paths.length !== 1) {
                     fail(name, 'multiple active polygon paths need compound physics');
                 }
                 return {
@@ -402,6 +424,13 @@ export function createAsteroidBatch(baseContent, baseGuid, otherPrefabs) {
                         position: standalone.proximity.position,
                         offset: standalone.proximity.offset,
                         vertices: standalone.proximity.paths[0],
+                    },
+                    clearance: {
+                        layer: standalone.clearance.layer,
+                        scale: standalone.clearance.scale,
+                        position: standalone.clearance.position,
+                        offset: standalone.clearance.offset,
+                        vertices: standalone.clearance.paths[0],
                     },
                 };
             })();
@@ -421,7 +450,7 @@ export function createAsteroidManifest(baseContent, baseGuid, otherPrefabs,
         fail('Collision Asteroids', 'expected all 28 asteroid prefabs exactly once');
     }
     return {
-        schema_version: 2,
+        schema_version: 3,
         source: 'Prefabs/Entities/Obstacles/Collision Asteroids and ConfigData.Gameplay',
         collision_asteroid_health_increment: healthIncrement,
         asteroids: asteroidTypes,
