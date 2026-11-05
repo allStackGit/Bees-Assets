@@ -76,6 +76,9 @@ mod fire_barge;
 mod yellow_jacket;
 mod barge;
 mod scout;
+mod shot_outcomes;
+pub use self::shot_outcomes::{ProjectileRootOutcome, ProjectileOutcomeMeasurements};
+use self::shot_outcomes::ProjectileOutcomeTracker;
 pub use self::scout::{ScoutBeaconSpec, ScoutBeaconStatus};
 use self::policy::{PolicyShipRuntime, PolicyShipSpecial};
 pub use self::policy::PolicySpecialObservations;
@@ -321,6 +324,9 @@ pub enum CombatEvent {
     ProjectileEnded {
         projectile_id: i64,
     },
+    /// One final root outcome, after the last live split/explosion child
+    /// ends. Only policy-controlled turret shots enter this episode tracker.
+    ProjectileRootCompleted(ProjectileRootOutcome),
     ProjectileContinued {
         parent_id: i64,
         continuation_id: i64,
@@ -649,6 +655,8 @@ pub struct CombatWorld {
     /// Consumed once at Kill; no second explosion can be spawned.
     fire_barge_bomb_powers: HashMap<i64, i32>,
     projectile_by_id: HashMap<i64, usize>,
+    /// Per-world RL root-shot lifetime, not per-projectile hit telemetry.
+    shot_outcomes: ProjectileOutcomeTracker,
     reservations: DamageReservations,
     pending_contacts: Vec<TriggerEnter>,
     processing_contacts: Vec<TriggerEnter>,
@@ -720,6 +728,7 @@ impl CombatWorld {
             fleet_id_by_ship: HashMap::new(),
             fire_barge_bomb_powers: HashMap::new(),
             projectile_by_id: HashMap::new(),
+            shot_outcomes: ProjectileOutcomeTracker::default(),
             reservations: DamageReservations::new(),
             pending_contacts: Vec::new(),
             processing_contacts: Vec::new(),
@@ -1864,6 +1873,8 @@ impl CombatWorld {
             return Err(CombatWorldError::DuplicateEntity);
         }
         let next_id = body.id.checked_add(1).ok_or(CombatWorldError::EntityIdExhausted)?;
+        let body_root = body.motion.attribution.root_shot_id;
+        let projectile_id = projectile.entity_id;
         // The longest combat run must use memory proportional to maximum
         // concurrent shots, not to every shot ever fired. World IDs remain
         // monotonic even when a dormant physical/metadata slot is recycled.
@@ -1881,7 +1892,37 @@ impl CombatWorld {
             self.projectiles.push(projectile);
         }
         self.next_entity_id = next_id;
+        // Continuations join an existing tracked policy turret root before
+        // the parent ends. An ordinary game shot creates no RL root.
+        if body_root != projectile_id {
+            self.shot_outcomes.continued(body_root);
+        }
         Ok(())
+    }
+
+    /// Only an actual policy-controlled turret launch enables an RL
+    /// projectile root; explosions and other ordinary game shots are not
+    /// implicitly rewarded as misses. The projectile is already created.
+    fn track_policy_projectile_root(&mut self, projectile_id: i64)
+        -> Result<(), CombatWorldError>
+    {
+        let index = *self.projectile_by_id.get(&projectile_id)
+            .ok_or(CombatWorldError::UnknownProjectile)?;
+        let body = &self.physics.projectiles()[index];
+        if !body.active ||
+            body.motion.attribution.root_shot_id != projectile_id {
+            return Err(CombatWorldError::UnknownProjectile);
+        }
+        let owner = self.projectiles[index].owner;
+        self.shot_outcomes.launched(
+            projectile_id, owner.shooter_id, owner.shooter_side,
+        );
+        Ok(())
+    }
+
+    /// Root metrics are updated at actual launch/continuation/end.
+    pub fn projectile_outcome_measurements(&self) -> ProjectileOutcomeMeasurements {
+        self.shot_outcomes.measurements()
     }
 
     /// Bind the existing weapon's outgoing-damage reservation exactly once.
@@ -1963,6 +2004,10 @@ impl CombatWorld {
         self.reservations.release(id);
         self.free_projectile_slots.push(index);
         self.events.push(CombatEvent::ProjectileEnded { projectile_id: id });
+        let root = projectile.motion.attribution.root_shot_id;
+        if let Some(result) = self.shot_outcomes.ended(root) {
+            self.events.push(CombatEvent::ProjectileRootCompleted(result));
+        }
     }
 
     /// A rocket's explosion has a distinct native entity identity but the
@@ -2288,6 +2333,14 @@ impl CombatWorld {
             }
         }
 
+        // Source EnemyContact marks the root before a rocket's early
+        // Kill or a direct/split shot's Ended callback can finalize it.
+        if (rocket_explodes || accepted_power.is_some()) &&
+            owner.shooter_side != self.ships[ship_index].side {
+            let root = self.physics.projectiles()[shot_index]
+                .motion.attribution.root_shot_id;
+            self.shot_outcomes.enemy_contact(root);
+        }
         if rocket_explodes {
             self.spawn_rocket_explosion(shot_index)?;
             self.end_projectile(shot_index);

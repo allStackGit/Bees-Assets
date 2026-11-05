@@ -547,6 +547,7 @@ impl CombatWorld {
                         .expect("prevalidated beam cannon mount");
                     mount.active_beam_projectile_id = Some(projectile_id);
                 }
+                self.track_policy_projectile_root(projectile_id)?;
                 self.events.push(CombatEvent::PolicyWeaponFired {
                     ship_id: shot.ship_id,
                     slot: shot.slot,
