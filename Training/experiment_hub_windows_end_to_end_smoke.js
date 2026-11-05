@@ -75,8 +75,19 @@ async function qualifyQueue({hub,executor,url,token,advertisement,firstJob,
     async function until(condition,reason) {
         for(let i=0;i<100;i++) {
             const automation=hub.tickAutomation();
-            if(!automation.enabled)
-                throw Error('Native automation disarmed: '+automation.last_error);
+            if(!automation.enabled) {
+                // The temporary Windows supervisor journal holds tokens and
+                // private launch specs. Surface only the already-sanitized
+                // job states/diagnostics so a failure can be investigated
+                // without printing its credential-bearing local files.
+                const uncertain=hub.snapshot().jobs.filter(j=>
+                    ['unverified','failed'].includes(j.status));
+                const detail=uncertain.map(j=>
+                    j.project_id+' / '+j.id+' ['+j.status+']: '+
+                    (j.execution_diagnostic||'no native diagnostic')).join('; ');
+                throw Error('Native automation disarmed: '+automation.last_error+
+                    (detail?' | '+detail:''));
+            }
             const snapshot=await poll();
             if(condition(snapshot))return snapshot;
             await pause(80);
