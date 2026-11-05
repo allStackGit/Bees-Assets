@@ -71,7 +71,12 @@ allied and VisionCache projections, with Level-only weapon, map and
 economic values required from the caller. `step_batched_levels`
 combines multiple world observations into one validated model call.
 `NativePolicyInference` is the backend contract, not an implemented
-neural network. The host still must supply an actual CPU/GPU model. **This is not yet a runnable game or distributed
+neural network. `NativeLevelInferenceBatch::poca_dimension_activity`
+exports the source PPO's 22 activity weights from the *same* validated
+observations, masks and selected actions, requiring live POCA groupmate
+counts. It does not generate old log-probabilities, policy versions,
+centralized group-critic estimates or advantages; those must come from
+the real trainer/model rather than being reconstructed from actions. The host still must supply an actual CPU/GPU model. **This is not yet a runnable game or distributed
 RL training replacement.** Renderer/input, full remaining gameplay,
 model execution, policy optimization/checkpoints, transport, and
 cross-engine/Windows/Linux qualification remain outstanding. No
