@@ -142,6 +142,22 @@ pub fn normalize_signed_coordinate(value: f32, min: f32, max: f32) -> f32 {
     else { (((value - min) / range) * 2.0 - 1.0).clamp(-1.0, 1.0) }
 }
 
+/// Port of RlCombatPerception.SquashSignedDistance, shared by entity,
+/// mining, map-object and moving-asteroid slots.
+#[inline]
+pub fn squash_signed_distance(value: f32) -> f32 {
+    let absolute = value.abs();
+    if absolute <= 0.0 { 0.0 }
+    else { value.signum() * absolute / (absolute + 40.0) }
+}
+
+/// RlPolicyCoordinateFrame.TransformExtents swaps x/y on odd quarter turns.
+#[inline]
+pub fn transform_extents(value: Vec2, frame: PolicyFrame) -> Vec2 {
+    if frame.quarter_turns() & 1 == 0 { value }
+    else { Vec2::new(value.y, value.x) }
+}
+
 #[inline]
 fn flag(value: bool) -> f32 { if value { 1.0 } else { 0.0 } }
 
@@ -152,8 +168,10 @@ fn check_row(row: &[f32]) -> Result<(), PerceptionError> {
     Ok(())
 }
 
+/// Unity AddHeading uses the physical 0°=+Y forward vector before
+/// applying the team policy frame.
 #[inline]
-fn policy_heading(degrees: f32, frame: PolicyFrame) -> Vec2 {
+pub fn policy_heading(degrees: f32, frame: PolicyFrame) -> Vec2 {
     let radians = degrees.to_radians();
     frame.world_to_policy(Vec2::new(-radians.sin(), radians.cos()))
 }
@@ -191,11 +209,7 @@ pub fn write_self(
         (bounds.max.x - bounds.min.x).max(0.0),
         (bounds.max.y - bounds.min.y).max(0.0),
     );
-    let extents = if frame.quarter_turns() & 1 == 0 {
-        level_size
-    } else {
-        Vec2::new(level_size.y, level_size.x)
-    };
+    let extents = transform_extents(level_size, frame);
     let heading = policy_heading(source.rotation_degrees, frame);
     let visible_speed = if source.linear_velocity.length_squared() <= 0.0001 {
         0.0
