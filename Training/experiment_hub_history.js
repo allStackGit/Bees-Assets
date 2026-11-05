@@ -13,6 +13,7 @@ function compact(progress,receivedMs) {
         experiment_id:progress.experiment_id,
         segment_id:progress.segment_id,
         episodes_completed:progress.episodes_completed,
+        total_environment_steps:progress.total_environment_steps,
         policy_version:progress.policy_version,
         curriculum_level:progress.curriculum_level,
         curriculum_window_success_rate:progress.curriculum_window_success_rate,
@@ -58,7 +59,10 @@ class ProgressHistory {
         point.break_before=Boolean(previous&&(
             point.segment_id!==previous.segment_id||
             point.episodes_completed<previous.episodes_completed||
-            point.policy_version<previous.policy_version));
+            point.policy_version<previous.policy_version||
+            (Number.isSafeInteger(point.total_environment_steps)&&
+                Number.isSafeInteger(previous.total_environment_steps)&&
+                point.total_environment_steps<previous.total_environment_steps)));
         if(previous&&entry.points.length>1&&!point.break_before&&
             receivedMs-entry.bucket_started_ms<MIN_SAMPLE_INTERVAL_MS) {
             // Coalesce a recent sample without losing the discontinuity
