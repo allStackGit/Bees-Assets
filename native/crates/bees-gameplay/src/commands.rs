@@ -69,7 +69,7 @@ impl HiveMindCommandSettings {
         self.max_command_seconds.is_finite() &&
         self.max_command_seconds > 0.0 &&
         self.ai_random_max_distance.is_finite() &&
-        self.ai_random_max_distance > 0.0
+        self.ai_random_max_distance >= 0.0
     }
 }
 
