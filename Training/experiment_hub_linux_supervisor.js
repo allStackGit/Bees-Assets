@@ -267,7 +267,11 @@ class LinuxSupervisor {
                     job.artifact_lineage_root_id)
                 throw Error('Local predecessor is missing, unverified or not terminal.');
             const native=await this.inspectUnit(parent);
-            if(native.active||!['finished','failed'].includes(native.state))
+            // Finished user transient units may be garbage-collected by
+            // systemd. A durable terminal journal plus a truly not-found
+            // unit is acceptable; a loaded failed/unknown unit is not.
+            if(native.active||
+                !(native.unit_exists===false||native.state==='finished'))
                 throw Error('Predecessor service is not demonstrably inactive.');
         }
         if(this.state.records.length>=MAX_RECORDS)
