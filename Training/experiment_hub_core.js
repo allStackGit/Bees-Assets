@@ -7,6 +7,7 @@ const crypto = require('node:crypto');
 const {request: resourceRequest,placements: resourcePlacements} =
     require('./experiment_hub_resources');
 const ID = /^[a-z][a-z0-9_-]{0,47}$/;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const now = () => new Date().toISOString();
 const AGENT_HEARTBEAT_TTL_MS = 45000;
 function fingerprint(machineId, token) {
@@ -304,7 +305,9 @@ class ExperimentHub {
             }
             const eligible=resourcePlacements(machines,next.reservations,job.resources)
                 .filter(p=>p.capacity_fits &&
-                    (!value.machine_id||p.machine_id===value.machine_id))
+                    (!value.machine_id||p.machine_id===value.machine_id) &&
+                    (!job.continuation_machine_id||
+                        p.machine_id===job.continuation_machine_id))
                 .sort((a,b)=>a.available.cpus-b.available.cpus||
                     a.available.ram_mb-b.available.ram_mb||
                     a.machine_id.localeCompare(b.machine_id));
@@ -344,6 +347,16 @@ class ExperimentHub {
             l.issued_by==='experiment-hub'&&l.status==='acknowledged');
         const machine=snapshot.machines.find(m=>m.id===job.assigned_machine_id);
         const r=job.resources;
+        if(job.continuation_of_job_id) {
+            const parent=snapshot.jobs.find(j=>j.id===job.continuation_of_job_id);
+            if(!parent||parent.project_id!==job.project_id||
+                !['finished','stopped'].includes(parent.status)||
+                !parent.capacity_released_at||
+                parent.assigned_machine_id!==job.assigned_machine_id||
+                parent.artifact_lineage_root_id!==job.artifact_lineage_root_id||
+                job.continuation_machine_id!==job.assigned_machine_id)
+                throw Error('Continuation lineage or original machine can no longer be verified.');
+        }
         if(!lease||!lease.receipt_fresh||!machine||
             machine.status!=='connected'||machine.agent_platform!=='linux'||
             machine.local_executor_enabled!==true||
@@ -475,6 +488,8 @@ class ExperimentHub {
                     lease_id:job.lease_id,status:'waiting_adapter',
                     frozen_parameters:copy(job.frozen_parameters),
                     configuration_sha256:job.configuration_sha256,
+                    continuation_of_job_id:job.continuation_of_job_id||null,
+                    artifact_lineage_root_id:job.artifact_lineage_root_id||job.id,
                     resources:copy(job.resources),
                 },
                 lease:{
@@ -672,13 +687,38 @@ class ExperimentHub {
         // directory, or process arguments can be supplied in the job request.
         const frozen = config(selected.parameters);
         const resources = resourceRequest(value.resources);
+        const ancestorId=value.continuation_of_job_id==null
+            ?null:value.continuation_of_job_id;
+        let parent=null;
+        if(ancestorId!==null) {
+            if(typeof ancestorId!=='string'||!UUID.test(ancestorId))
+                throw Error('Select a valid predecessor job for continuation.');
+            parent=this.state.jobs.find(j=>j.id===ancestorId);
+            if(!parent||parent.project_id!==project.id||
+                !['finished','stopped'].includes(parent.status)||
+                !parent.capacity_released_at||!parent.dispatch_id||
+                !parent.assigned_machine_id||!UUID.test(
+                    String(parent.artifact_lineage_root_id||parent.id)))
+                throw Error('Continuation requires a completed, capacity-released predecessor from this project.');
+            if(this.state.jobs.some(j=>
+                j.continuation_of_job_id===parent.id&&j.status!=='cancelled'))
+                throw Error('This predecessor already has a non-cancelled continuation.');
+        }
+        if(project.id==='ants'&&
+            (frozen.mode==='resume')!==Boolean(parent))
+            throw Error('Ants resume mode requires a linked, completed predecessor job.');
         if (this.state.jobs.filter(j=>j.status==='waiting_adapter').length >= 100)
             throw Error('Too many pending jobs; cancel unused jobs first.');
         if (this.state.jobs.length >= 1000)
             throw Error('Job history limit reached. Export or archive older jobs before queueing more.');
+        const jobId=crypto.randomUUID();
         const job = {
-            id:crypto.randomUUID(),
+            id:jobId,
             project_id:project.id, adapter:project.adapter,
+            continuation_of_job_id:parent?.id||null,
+            artifact_lineage_root_id:parent
+                ?(parent.artifact_lineage_root_id||parent.id):jobId,
+            continuation_machine_id:parent?.assigned_machine_id||null,
             configuration_id:selected.id,
             configuration_revision:selected.revision,
             configuration_name:selected.name,
