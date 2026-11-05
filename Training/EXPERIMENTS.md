@@ -321,9 +321,13 @@ scenario (at least 30), and 1–4 required consecutive passing periodic
 checkpoints. The feature is disabled by default and rejects nonperiodic
 evaluation schedules or recipes with too few matches. Every development
 scenario must meet both limits from its validated integer match outcomes.
-Decisions are stored per checkpoint with the frozen report file hashes,
-candidate/build/evaluator/recipe identities are verified, and previously
-saved evidence is rechecked after a coordinator restart. When the required
+Decisions are stored per checkpoint with frozen report file hashes,
+candidate/build/evaluator/recipe identities are verified, and the
+contributing successful reports are rechecked after a coordinator restart.
+If a later milestone was skipped because the learner progressed too far,
+consecutive passes refer to evaluations actually performed, not adjacent
+milestone numbers. A conflicting external restart after target success
+disarms the queue for manual inspection rather than silently progressing. When the required
 consecutive evaluations pass, the manager completes the experiment **only
 after the usual verified graceful checkpoint stop**, without restarting or
 re-stopping the learner, and can proceed to the next independently queued
