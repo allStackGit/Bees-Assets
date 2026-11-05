@@ -7,6 +7,7 @@
 const fs=require('node:fs');
 const path=require('node:path');
 const crypto=require('node:crypto');
+const {readAntsProgress}=require('./experiment_hub_ants_metrics');
 
 const SAFE_PATH=/^[A-Za-z0-9_./:@=+\-,]+$/;
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -92,6 +93,19 @@ function createAntsProductionAdapter(options={}) {
         executable:python,
         cwd:projectRoot,
         stop_policy:'interrupt-main',
+        readProgress(context) {
+            // This is a filesystem read only. Job context is native,
+            // validated by the local bridge; no Hub-supplied path is used.
+            if(!context||context.project_id!=='ants'||
+                !UUID.test(String(context.job_id||'')))
+                throw Error('Invalid local Ants progress ownership.');
+            const rootId=context.artifact_lineage_root_id||context.job_id;
+            if(!UUID.test(String(rootId))||
+                (context.continuation_of_job_id&&
+                    !UUID.test(String(context.continuation_of_job_id))))
+                throw Error('Invalid Ants progress artifact lineage.');
+            return readAntsProgress(artifactRoot,rootId,fsApi);
+        },
         args(frozen,context) {
             if(!frozen||typeof frozen!=='object'||Array.isArray(frozen)||
                 Object.keys(frozen).some(key=>key!=='episodes'&&key!=='mode')||
