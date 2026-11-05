@@ -624,7 +624,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 ...(predecessor?{continuation_of_job_id:predecessor}:{}),
             });
             feedback('hub-job-message',
-                'Saved immutable job '+job.id+'. Waiting for a trusted execution adapter.');
+                'Queued job '+job.id+'. Coordinate capacity before explicitly authorizing native execution.');
             await reload();
         }catch(e){feedback('hub-job-message',e.message);}
     });
