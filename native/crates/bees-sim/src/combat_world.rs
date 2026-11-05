@@ -68,6 +68,7 @@ pub enum CombatWorldError {
     NavigationMap(crate::navigation::NavigationError),
     MissingGameMovementProfile,
     InvalidGameMovementProfile,
+    InvalidGameMovementOrder,
     UnknownProjectile,
     UnknownShip,
     UnknownObstacle,
@@ -127,6 +128,54 @@ impl ShipCollisionProfile {
         self.size_class.is_finite() && self.size_class >= 0.0 &&
             self.original_health > 0
     }
+}
+
+/// The Level issues one gameplay point order. Bounds and obstacle activation
+/// are supplied explicitly from the Level, rather than inferred from the
+/// broadphase grid or the RL curriculum. Coordinates must already share
+/// the native physics world's map frame.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct GamePointOrder {
+    pub destination: Vec2,
+    pub ship_clearance: i32,
+    pub map_bounds: Aabb,
+    pub has_obstacles: bool,
+    pub can_override_bounds: bool,
+    /// CollisionAsteroid proximity enter forces a fresh route even when
+    /// the endpoint is unchanged.
+    pub newly_found_obstacle: bool,
+}
+
+impl GamePointOrder {
+    pub fn valid(self) -> bool {
+        self.destination.is_finite() && self.ship_clearance >= 0 &&
+        self.map_bounds.min.is_finite() && self.map_bounds.max.is_finite() &&
+        self.map_bounds.min.x <= self.map_bounds.max.x &&
+        self.map_bounds.min.y <= self.map_bounds.max.y
+    }
+
+    pub fn bounded_destination(self) -> Vec2 {
+        if self.can_override_bounds { return self.destination; }
+        Vec2::new(
+            self.destination.x.clamp(self.map_bounds.min.x, self.map_bounds.max.x),
+            self.destination.y.clamp(self.map_bounds.min.y, self.map_bounds.max.y),
+        )
+    }
+
+    fn position_in_bounds(self, position: Vec2) -> bool {
+        position.x >= self.map_bounds.min.x &&
+        position.x <= self.map_bounds.max.x &&
+        position.y >= self.map_bounds.min.y &&
+        position.y <= self.map_bounds.max.y
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GamePointOrderResult {
+    Unchanged,
+    DeferredByMovementLock,
+    Direct,
+    Searching(NavigationRequestDisposition),
 }
 
 /// Per-projectile immutable owner information follows the shot after its
@@ -400,6 +449,7 @@ pub struct CombatWorld {
     ship_by_id: HashMap<i64, usize>,
     navigation_requests: NavigationRequests,
     game_ship_steering: HashMap<i64, GameShipSteering>,
+    pending_game_point_orders: HashMap<i64, GamePointOrder>,
     ship_collision_profiles: HashMap<i64, ShipCollisionProfile>,
     nearby_asteroid_ships: HashSet<(i64, i64)>,
     obstacle_by_id: HashMap<i64, usize>,
@@ -454,6 +504,7 @@ impl CombatWorld {
             ship_by_id: HashMap::new(),
             navigation_requests: NavigationRequests::new(),
             game_ship_steering: HashMap::new(),
+            pending_game_point_orders: HashMap::new(),
             ship_collision_profiles: HashMap::new(),
             nearby_asteroid_ships: HashSet::new(),
             obstacle_by_id: HashMap::new(),
