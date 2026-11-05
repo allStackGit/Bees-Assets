@@ -165,6 +165,10 @@ and current executable special-action masks. Missing/partial outputs are
 never silently replaced with zero actions. Both observations and output
 storage retain capacity across decisions, and all action choices must be
 provided by an actual model or explicit user control.
+`PolicyBatch::footprint` reports current observation/action payload bytes
+and retained numeric-buffer capacity without timing or extra copies. A
+backend that submits asynchronous inference work must retain the batch
+buffers until completion; `clear` is only safe once that work has finished.
 
 The exact Unity `RlPolicySchema.Signature` and ABI version are available
 through `validate_model_abi`, to reject incompatible checkpoints even
