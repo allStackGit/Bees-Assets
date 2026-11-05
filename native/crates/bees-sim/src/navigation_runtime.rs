@@ -1,0 +1,155 @@
+//! Persistent per-Level pathfinding workspace with authored map transforms.
+//!
+//! Unity Pathfinder owns its static/dynamic clearance arrays and one set of
+//! scratch buffers per search worker. The native rendering client and RL
+//! runner both use this module and the same CombatWorld route ownership.
+//! This object never owns or snapshots entities: callers supply live
+//! ObstacleBody iterators from the world whenever geometry changes.
+
+use crate::geometry::Vec2;
+use crate::navigation::{NavigationError, NavigationGrid, NavigationRasterCounts};
+use crate::navigation_clearance::NavigationClearance;
+use crate::navigation_requests::NavigationRequest;
+use crate::navigation_search::{NavigationPath, NavigationSearch};
+use crate::physics::ObstacleBody;
+
+/// The complete 2D affine portion of Level.Map.Transform.TransformPoint
+/// and InverseTransformPoint. Explicit basis columns support translation,
+/// rotation, nonuniform scale and nested-parent shear without assuming
+/// that each game Level is at the world origin.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct NavigationMapFrame {
+    pub origin_world: Vec2,
+    pub x_axis_world: Vec2,
+    pub y_axis_world: Vec2,
+}
+
+impl NavigationMapFrame {
+    pub const IDENTITY: Self = Self {
+        origin_world: Vec2::ZERO,
+        x_axis_world: Vec2::new(1.0, 0.0),
+        y_axis_world: Vec2::new(0.0, 1.0),
+    };
+
+    pub fn valid(self) -> bool {
+        self.origin_world.is_finite() &&
+        self.x_axis_world.is_finite() &&
+        self.y_axis_world.is_finite() &&
+        self.determinant().is_finite() &&
+        self.determinant().abs() > 1.0e-12
+    }
+
+    fn determinant(self) -> f32 {
+        self.x_axis_world.x * self.y_axis_world.y -
+            self.x_axis_world.y * self.y_axis_world.x
+    }
+
+    pub fn level_to_world(self, p: Vec2) -> Vec2 {
+        self.origin_world +
+            self.x_axis_world * p.x +
+            self.y_axis_world * p.y
+    }
+
+    pub fn world_to_level(self, p: Vec2) -> Vec2 {
+        let d = p - self.origin_world;
+        let det = self.determinant();
+        Vec2::new(
+            (d.x * self.y_axis_world.y - d.y * self.y_axis_world.x) / det,
+            (self.x_axis_world.x * d.y - self.x_axis_world.y * d.x) / det,
+        )
+    }
+}
+
+/// A reusable source-equivalent navigation workspace. Clearance is
+/// refreshed from actual world geometry; search arrays are reused across
+/// requests. A caller may own a workspace per arena or per Level.
+pub struct NavigationRuntime {
+    map_frame: NavigationMapFrame,
+    clearance: NavigationClearance,
+    search: NavigationSearch,
+}
+
+impl NavigationRuntime {
+    pub fn new(
+        grid: NavigationGrid,
+        frame: NavigationMapFrame,
+    ) -> Result<Self, NavigationError> {
+        if !frame.valid() {
+            return Err(NavigationError::NonFiniteMapTransform);
+        }
+        let clearance = NavigationClearance::new(
+            grid, &vec![false; grid.cell_count()],
+        )?;
+        let search = NavigationSearch::new(grid)?;
+        Ok(Self { map_frame: frame, clearance, search })
+    }
+
+    pub fn map_frame(&self) -> NavigationMapFrame { self.map_frame }
+    pub fn clearance(&self) -> &NavigationClearance { &self.clearance }
+    pub fn clearance_mut(&mut self) -> &mut NavigationClearance { &mut self.clearance }
+
+    /// Update after authored static objects are created, moved or destroyed.
+    /// Only StaticObstacle belongs here (not map borders or asteroids).
+    pub fn refresh_static<'a, I>(
+        &mut self,
+        live_static: I,
+    ) -> Result<NavigationRasterCounts, NavigationError>
+    where
+        I: IntoIterator<Item = (i64, &'a ObstacleBody)>,
+    {
+        let frame = self.map_frame;
+        self.clearance.update_static_from_obstacles(
+            live_static,
+            |point| frame.level_to_world(point),
+            |point| frame.world_to_level(point),
+        )
+    }
+
+    /// Called only when Unity would request the current fixed-frame dynamic
+    /// layer. Passing false restores static-only clearance without searching
+    /// through any asteroid bodies.
+    pub fn refresh_dynamic<'a, I>(
+        &mut self,
+        moving_asteroids_enabled: bool,
+        live_asteroids: I,
+    ) -> Result<NavigationRasterCounts, NavigationError>
+    where
+        I: IntoIterator<Item = (i64, &'a ObstacleBody)>,
+    {
+        if !moving_asteroids_enabled {
+            self.clearance.restore_static_only();
+            return Ok(NavigationRasterCounts::default());
+        }
+        let frame = self.map_frame;
+        self.clearance.update_dynamic_asteroids(
+            live_asteroids,
+            |point| frame.level_to_world(point),
+            |point| frame.world_to_level(point),
+        )
+    }
+
+    /// Unity's Path is expressed in Level-local coordinates. Convert both
+    /// request endpoints into that frame, then convert produced waypoints
+    /// back into the shared native physics frame before CombatWorld's
+    /// GameShipSteering consumes them.
+    pub fn search(
+        &mut self,
+        job: NavigationRequest,
+    ) -> Result<Option<NavigationPath>, NavigationError> {
+        let frame = self.map_frame;
+        let start_local = frame.world_to_level(job.start);
+        let end_local = frame.world_to_level(job.destination);
+        let mut path = self.search.find_level_path(
+            &self.clearance, start_local, end_local, job.ship_clearance,
+        )?;
+        if let Some(ref mut path) = path {
+            for point in &mut path.points {
+                *point = frame.level_to_world(*point);
+                if !point.is_finite() {
+                    return Err(NavigationError::NonFiniteMapTransform);
+                }
+            }
+        }
+        Ok(path)
+    }
+}
