@@ -33,6 +33,8 @@ pub mod obstacle;
 pub mod physics;
 pub mod perception;
 pub mod perception_entities;
+pub mod perception_environment;
+pub mod perception_weapons;
 pub mod policy;
 pub mod policy_batch;
 pub mod polygon_obstacle_assets;
