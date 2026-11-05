@@ -264,8 +264,15 @@ The reusable `NavigationRuntime` owns the Level map's full affine transform,
 static/dynamic clearance maps and A* arrays. It refreshes directly from
 `CombatWorld`'s live obstacles; `refresh_world_navigation` and
 `solve_next_world_navigation_job` provide the shared integration boundary.
-A future threaded scheduler may use `claim_next_path_job` and
-`complete_path_job` without changing these rules.
+For interactive native clients, `NavigationScheduler::pump` now connects
+these APIs to bounded background CPU workers. Each worker reuses its own A*
+arrays; a per-fixed-frame immutable clearance snapshot is shared by Arc.
+Results are applied only on the world-owning thread. Pending static-layer
+rebuilds wait until active searches finish, while newer dynamic-asteroid
+snapshots can coexist with older in-flight searches. Worker shutdown drains
+owned jobs without leaving the channel receiver blocked. The five-second
+Unity search deadline is enforced only for these interactive workers, not
+the deterministic synchronous/headless search API.
 
 For normal gameplay, callers supply a `GameMovementProfile` with the
 actual configured `ShipTurningRadius` and rendered ship half-extents.
@@ -282,14 +289,12 @@ do not invalidate active workers. Route waypoints, egress counts, turning
 dead bands, variable speed and StopMoving share the existing physics core.
 
 **Integration still incomplete:** squad/Hive Mind/user command
-dispatch must supply real game movement profiles and Level orders, then
-schedule per-fixed-frame navigation refreshes and CPU worker execution.
-Unity's five-second wall-clock search cap and threaded dispatch have not
-been ported. The native sweep implements continuous authored-shape geometry,
-not Box2D's exact hit-ordering or the 16-hit Unity non-alloc buffer.
-Proximity callback ordering, multi-map placement and gameplay/rendering
-parity remain unverified. As requested, these changes have not been
-compiled or executed.
+dispatch must supply authored movement profiles and Level orders, and the
+native game loop must call the path scheduler at the appropriate fixed-frame
+boundary. The native sweep uses continuous authored-shape geometry but does
+not promise Box2D's precise hit ordering or Unity's 16-hit non-alloc buffer.
+Multi-map placement and gameplay/rendering parity remain unverified.
+As requested, these changes have not been compiled or executed.
 
 The catalog stores normal `SizeClass × CollisionAsteroidHealthIncrement` durability;
 training must still pass its effective-health override when spawning, while
