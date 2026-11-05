@@ -53,6 +53,12 @@ function boundedReport(value) {
         };
     }
     const localExecutor=value.local_executor===true;
+    const preflight=value.native_preflight_passed===true;
+    const reason=value.native_preflight_reason;
+    if((preflight&&!localExecutor)||
+        (reason!=null&&
+            (typeof reason!=='string'||reason.length>180)))
+        throw Error('Invalid native execution qualification report.');
     const installed=value.installed_projects==null?[]:value.installed_projects;
     if(!Array.isArray(installed)||installed.length>32||
         installed.some(p=>typeof p!=='string'||!ID.test(p))||
@@ -62,6 +68,8 @@ function boundedReport(value) {
     return {cpus:value.cpus,ram_mb:value.ram_mb,
         platform:value.platform,execution,
         local_executor:localExecutor&&value.platform==='linux',
+        native_preflight_passed:localExecutor&&value.platform==='linux'&&preflight,
+        native_preflight_reason:reason||null,
         installed_projects:value.platform==='linux'&&localExecutor?installed.slice():[]};
 }
 
@@ -150,6 +158,8 @@ class ExperimentHub {
                 machine.agent_platform = report.platform;
                 machine.execution_capabilities = copy(report.execution);
                 machine.local_executor_enabled = report.local_executor;
+                machine.native_preflight_passed = report.native_preflight_passed;
+                machine.native_preflight_reason = report.native_preflight_reason;
                 machine.installed_projects = report.installed_projects.slice();
             }
             return machine;
@@ -368,6 +378,7 @@ class ExperimentHub {
         if(!lease||!lease.receipt_fresh||!machine||
             machine.status!=='connected'||machine.agent_platform!=='linux'||
             machine.local_executor_enabled!==true||
+            machine.native_preflight_passed!==true||
             machine.execution_capabilities?.cgroup_v2_detected!==true||
             !['cpu','memory'].every(c=>
                 machine.execution_capabilities?.cgroup_controllers.includes(c))||
@@ -502,6 +513,8 @@ class ExperimentHub {
             if(!lease||!machine.installed_projects.includes(job.project_id))continue;
             const action=job.status==='stop_requested'?'stop':
                 job.status==='start_requested'?'start':'inspect';
+            if(action==='start'&&machine.native_preflight_passed!==true)
+                continue;
             this.executionOrderCursor.set(machineId,job.id);
             return [{
                 action,dispatch_id:job.dispatch_id,
