@@ -29,9 +29,24 @@ impl CombatWorld {
         }
         if object.entity_id <= 0 || object.max_health <= 0 ||
             object.health != object.max_health ||
-            object.entity_id != body.id ||
+            object.entity_id != body.id || !body.active ||
             self.map_objects.contains_key(&object.entity_id) {
             return Err(CombatWorldError::InvalidObstacle);
+        }
+        // Validate at the world boundary as well as in the constructor:
+        // canonical object records expose their fields for snapshots.
+        if let Some(config) = object.fire_tank {
+            if config.explosion_power < 0 {
+                return Err(CombatWorldError::MapObject(
+                    MapObjectError::InvalidFireTankPower,
+                ));
+            }
+            if config.target_obstacle_id.is_some_and(|id|
+                id <= 0 || id == object.entity_id) {
+                return Err(CombatWorldError::MapObject(
+                    MapObjectError::InvalidFireTankTarget,
+                ));
+            }
         }
         let entity_id = object.entity_id;
         self.add_obstacle(
