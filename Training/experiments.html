@@ -354,6 +354,12 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
         <option value="ppo_unique_samples_per_second">Last-episode PPO unique samples/s</option>
       </select>
     </label>
+    <label>Horizontal axis
+      <select id="hub-compare-x-axis">
+        <option value="episodes_completed">Cumulative training episodes</option>
+        <option value="total_environment_steps">Cumulative environment steps</option>
+      </select>
+    </label>
     <label>Run A<select id="hub-compare-a"></select></label>
     <label>Run B<select id="hub-compare-b"></select></label>
     <label>Run C<select id="hub-compare-c"></select></label>
@@ -369,7 +375,7 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
     <thead><tr><th>Run</th><th>Status / host</th><th>Episodes / level</th><th>Window success</th><th>Segment success</th><th>Policy</th><th>Latest summary</th></tr></thead>
     <tbody id="hub-compare-rows"></tbody>
   </table></div>
-  <p class="muted">The chart uses cumulative episodes from each Ants experiment on the horizontal axis. Window success and segment success have different denominators. Continuation jobs share a checkpoint, experiment ID, and episode history with their predecessor, so they are not independent replicates. Comparisons are descriptive; matching configurations, seeds, scenarios, hardware and evaluation cohorts are required before drawing learning-quality conclusions.</p>
+  <p class="muted">Choose cumulative episodes or environment steps from each Ants experiment on the horizontal axis. Environment steps account for different episode lengths, but do not normalize curriculum, scenarios, hardware or experimental conditions. Runs without published environment-step counts cannot be plotted on that axis. Window success and segment success have different denominators. Continuation jobs share a checkpoint, experiment ID, and episode history with their predecessor, so they are not independent replicates. Comparisons are descriptive; matching configurations, seeds, scenarios, hardware and evaluation cohorts are required before drawing learning-quality conclusions.</p>
 </section>
 <section data-hub-tab="machines">
   <h2>Machine inventory and resource admission</h2>
