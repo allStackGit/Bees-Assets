@@ -192,6 +192,13 @@ impl NavigationRequests {
         })
     }
 
+    /// True when the pending queue includes a claimable request.
+    pub fn has_waiting_jobs(&self) -> bool {
+        self.waiting_ship_ids.iter().any(|id|
+            self.ships.get(id).is_some_and(|owner|
+                owner.waiting.is_some() && owner.running.is_none()))
+    }
+
     /// Worker claims the next still-current job. At most one queue slot per
     /// ship is present; coalescing never creates an obsolete worker tail.
     pub fn next(&mut self) -> Option<NavigationRequest> {
