@@ -671,7 +671,7 @@ class ExperimentHub {
     }
     // The report is authenticated by the machine-token heartbeat. A second
     // machine, retired dispatch ID or unrelated lease cannot update the job.
-    recordExecution(next,machine,items,installedProjects=[],accepted=new Set()) {
+    recordExecution(next,machine,items,installedProjects=[],accepted=new Map()) {
         if(!Array.isArray(items)||items.length>50)
             throw Error('Invalid execution reports.');
         const seen=new Set();
@@ -727,7 +727,7 @@ class ExperimentHub {
             // Only reports accepted into the lifecycle may update live
             // telemetry and comparison samples. A delayed older report
             // must not make a terminal job appear to be running again.
-            accepted.add(report.job_id);
+            accepted.set(report.job_id,progress);
             if(job.status!==state||
                 (job.execution_diagnostic||null)!==(report.diagnostic||null)) {
                 job.status=state;
@@ -967,7 +967,7 @@ class ExperimentHub {
         if(reports.length&&(!report.local_executor||
             !['linux','win32'].includes(report.platform)))
             throw Error('Native lifecycle reports require a locally enabled supported executor.');
-        const acceptedReports=new Set();
+        const acceptedReports=new Map();
         if(this.recordExecution(next,machine,reports,
             report.installed_projects,acceptedReports))
             changed=true;
@@ -1013,21 +1013,22 @@ class ExperimentHub {
         }
         for(const item of reports) {
             if(!acceptedReports.has(item.job_id))continue;
+            const progress=acceptedReports.get(item.job_id);
+            const previousProgress=this.executionTelemetry.get(item.job_id)?.progress||null;
+            const job=this.state.jobs.find(j=>j.id===item.job_id);
+            // Comparison history rejects duplicate, out-of-order and
+            // unrelated experiment snapshots. Keep the last accepted
+            // progress visible while fresh native process metrics arrive.
+            const progressAccepted=progress&&this.progressHistory.record(
+                job.id,job.project_id,progress,received);
             this.executionTelemetry.set(item.job_id,{
                 at:new Date(received).toISOString(),state:item.state,
                 memory_current_mb:item.memory_current_mb??null,
                 cpu_time_ns:item.cpu_time_ns??null,
                 process_tasks:item.process_tasks??null,
-                progress:item.progress==null?null:
-                    validateProgress(item.progress,
-                        this.state.jobs.find(j=>j.id===item.job_id).project_id),
+                progress:progressAccepted?progress:previousProgress,
                 progress_issue:item.progress_issue||null,
             });
-            if(item.progress) {
-                const job=this.state.jobs.find(j=>j.id===item.job_id);
-                this.progressHistory.record(job.id,job.project_id,
-                    validateProgress(item.progress,job.project_id),received);
-            }
         }
         return {machine_id:machine.id,status:'connected',
             heartbeat_ttl_seconds:Math.floor(AGENT_HEARTBEAT_TTL_MS/1000),
