@@ -22,7 +22,7 @@ pub enum NavigationError {
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct NavigationRasterCounts {
-    pub active_asteroids: u64,
+    pub active_obstacles: u64,
     pub candidate_cells: u64,
     pub blocked_cells: u64,
 }
@@ -80,16 +80,12 @@ impl NavigationGrid {
         )
     }
 
-    /// Rebuild only dynamic obstacle occupancy. Unity initializes the full
-    /// clearance buffer from its static base and sets blocked dynamic cells
-    /// to zero before recalculating clearance distances. Thus this returns
-    /// the moving-asteroid *mask*, not a substitute A* clearance array.
-    ///
-    /// The input should be CombatWorld.dynamic_navigation_asteroids(), which
-    /// excludes dead entities but includes delayed-kill asteroids until their
-    /// actual removal. All scratch is caller-owned, and no world registry is
-    /// duplicated in this module.
-    pub fn rasterize_dynamic_asteroids<'a, I, ToWorld, ToLevel>(
+    /// Unity Pathfinder.GetObstaclePoints and FillObstaclePointIndexes share
+    /// the same collider-to-cell method for static and dynamic obstacles.
+    /// Static bodies have zero velocity; moving asteroids use the authored
+    /// 2.5-second lookahead. The caller chooses which live world entities
+    /// participate. No obstacle identity registry is kept here.
+    pub fn rasterize_obstacles<'a, I, ToWorld, ToLevel>(
         self,
         asteroids: I,
         level_to_world: ToWorld,
@@ -109,7 +105,7 @@ impl NavigationGrid {
         for (_, asteroid) in asteroids {
             if !asteroid.active { continue; }
             let Some(bounds) = asteroid.navigation_bounds() else { continue };
-            counts.active_asteroids += 1;
+            counts.active_obstacles += 1;
             let padding = Vec2::new(
                 asteroid.linear_velocity.x.abs() * MOVING_OBSTACLE_LOOKAHEAD_SECONDS,
                 asteroid.linear_velocity.y.abs() * MOVING_OBSTACLE_LOOKAHEAD_SECONDS,
