@@ -90,10 +90,16 @@ select its eligible predecessor in Train, and queue with
 `continuation_of_job_id` in `POST /api/hub/jobs`. The Hub will keep
 its original machine affinity and artifact lineage. Completion alone
 does not schedule another stage or launch a process.
-Read-only placement previews use the existing planner but never create leases
-or launch programs. These are *possible* capacity assignments, not scheduling
-decisions. Jobs with UUIDs use short ephemeral planner labels internally and
-return their original UUIDs to the UI. The Bees project is deliberately
+The read-only queued-job placement preview now rehearses the **same
+round-robin project fairness, FIFO ordering, connected-agent requirement,
+continuation host affinity and best-fit resource selection** as the actual
+Hub lease allocator. It accounts for simulated earlier claims in the pass,
+but creates no leases, changes no job state and launches no programs.
+A later live allocation can differ when machine health or capacity has
+changed. The separate general what-if planner at POST /api/hub/plan
+continues to use a GPU-first greedy ordering, which is useful for capacity
+exploration but is not a prediction of queue scheduling.
+The Bees project is deliberately
 rejected by this generic queue and continues to use its existing coordinator.
 
 The API is `POST /api/hub/jobs` with
