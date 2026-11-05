@@ -42,6 +42,26 @@ client retry storage, the native squad-command executor, and the server-side
 learning/persistence implementation remain separate work. **The existing
 BeesServer production behavior has not been replaced in this increment.**
 
+## Game command integration
+
+`bees-gameplay` connects validated `bees-hivemind` selections to the
+`bees-sim` combat world's single native movement implementation. It
+preserves the server's learned strategy ID separately from the executable
+Unity command (e.g., Aggressive/Circle/Swipe/In-and-Out become BombingRun
+for bomber-only squads or Charge for barge-only squads). Ordinary squad
+Move and Stop use authored ship offsets, 20-step formation compression,
+nearest walkable-center fallback and each ship's shared A* path queue.
+
+The source-matched movement phases of HiveMind **Hold** and **Random** are
+now wired with their command timeout and 3-second recurring arrival check.
+The game must supply real squad bounds, membership, configured speeds,
+shooting/targeting state and scaled update time; the director does not
+invent missing game state. Unported command types return an explicit
+Unsupported result with their server reservations intact. Command reward
+totals and unused shooting/targeting settlement still belong to gameplay
+attribution, then the separate HiveMind durable StoreCommands pipeline.
+No native full-game client, server adapter or executable loop is wired yet.
+
 ## Current status
 
 The portable `bees-sim` crate currently contains:
