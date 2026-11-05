@@ -335,6 +335,12 @@ impl NativeLevelEventProcessor {
         self.episode.sides()
     }
 
+    /// The same elapsed/timeout value used for terminal and exploration
+    /// observations. No separately maintained training timer.
+    pub fn normalized_episode_progress(&self) -> f32 {
+        self.episode.normalized_episode_progress()
+    }
+
     /// Immutable view after Simulation::step_world; no per-frame copies.
     /// Must be consumed before the next successful world step.
     pub fn latest_squad_changes(&self) -> &[SquadRosterChange] {

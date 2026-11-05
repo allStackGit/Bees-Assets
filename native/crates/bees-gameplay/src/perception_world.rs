@@ -54,7 +54,6 @@ pub struct NativeLevelPerceptionInputs<'a> {
     pub level_bounds: Aabb,
     pub controller: ControlledShipPerception,
     pub capability: CapabilitySource,
-    pub normalized_episode_progress: f32,
     /// Original living carrier, if the observer is its child. Its
     /// episode-scoped identity is assigned before ordinary ally slots.
     pub parent_carrier_id: Option<i64>,
@@ -223,7 +222,8 @@ impl NativeWorldPerceptionAssembler {
             capability,
             side,
             bee_side: side == sides[0],
-            normalized_episode_progress: inputs.normalized_episode_progress,
+            normalized_episode_progress:
+                owning_world.state.events.normalized_episode_progress(),
             parent_carrier,
             same_side_ships: &self.allies,
             vision_cache_enemies: &self.enemies,

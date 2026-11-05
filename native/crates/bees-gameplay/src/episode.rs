@@ -159,6 +159,10 @@ impl NativeEpisodeRewardCoordinator {
         [self.bee_side, self.human_side]
     }
 
+    pub fn normalized_episode_progress(&self) -> f32 {
+        self.terminal.normalized_episode_progress()
+    }
+
     pub fn latest_emissions(&self) -> &[RewardEmission] {
         &self.merged_emissions
     }

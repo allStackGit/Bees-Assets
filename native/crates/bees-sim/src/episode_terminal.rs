@@ -196,6 +196,13 @@ impl NativeEpisodeTerminal {
         self.elapsed_seconds
     }
 
+    /// Source Level.GetNormalizedRlEpisodeProgress: timeout timer
+    /// elapsed / length, clamped to [0,1]. This native controller is
+    /// constructed when the timeout is armed, starting at elapsed=0.
+    pub fn normalized_episode_progress(&self) -> f32 {
+        (self.elapsed_seconds / self.timeout_seconds).clamp(0.0, 1.0)
+    }
+
     pub fn measurements(&self) -> EpisodeTerminalMeasurements {
         self.measurements
     }
