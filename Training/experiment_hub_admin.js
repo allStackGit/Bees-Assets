@@ -50,6 +50,7 @@ function route(hub,method,pathname,query,value,bees) {
         '/api/hub/projects':[201,'addProject'],
         '/api/hub/configurations':[200,'saveConfiguration'],
         '/api/hub/machines':[201,'addMachine'],
+        '/api/hub/machines/budget':[200,'updateMachineBudget'],
         '/api/hub/machines/gpus':[200,'bindMachineGpus'],
         '/api/hub/machines/enroll':[201,'enrollMachine'],
         '/api/hub/machines/revoke':[200,'revokeMachine'],
