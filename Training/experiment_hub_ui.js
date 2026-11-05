@@ -436,19 +436,24 @@ document.addEventListener('DOMContentLoaded', () => {
             .filter(j=>j.continuation_of_job_id&&j.status!=='cancelled')
             .map(j=>j.continuation_of_job_id));
         const availableParents=(state.jobs||[]).filter(j=>
-            j.project_id===project&&j.assigned_machine_id&&j.dispatch_id&&
-            !successors.has(j.id)&&(
-                ['finished','stopped'].includes(j.status)&&j.capacity_released_at||
-                project==='ants'&&(
-                    ['start_requested','launch_requested','running'].includes(j.status)||
-                    j.status==='finished'&&!j.capacity_released_at)));
+            j.project_id===project&&!successors.has(j.id)&&(
+                j.assigned_machine_id&&j.dispatch_id&&(
+                    ['finished','stopped'].includes(j.status)&&j.capacity_released_at||
+                    project==='ants'&&(
+                        ['start_requested','launch_requested','running'].includes(j.status)||
+                        j.status==='finished'&&!j.capacity_released_at))||
+                project==='ants'&&j.continuation_of_job_id&&
+                    j.continuation_machine_id&&
+                    ['waiting_adapter','waiting_predecessor'].includes(j.status)));
         predecessorSelect.replaceChildren(
             new Option('New experiment (no predecessor)',''),
             ...availableParents.map(j=>new Option(
                 j.configuration_name+' · '+j.status+
                 (!j.capacity_released_at?' · stage will wait':'')+' on '+
-                (state.machines.find(m=>m.id===j.assigned_machine_id)?.name||
-                    j.assigned_machine_id)+' · '+j.id.slice(-8),j.id)));
+                (state.machines.find(m=>m.id===(j.assigned_machine_id||
+                    j.continuation_machine_id))?.name||
+                    j.assigned_machine_id||j.continuation_machine_id)+
+                ' · '+j.id.slice(-8),j.id)));
         if(availableParents.some(j=>j.id===previousParent))
             predecessorSelect.value=previousParent;
         $('hub-job-queue').disabled=project==='bees'||!configs.length;
@@ -563,7 +568,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     ?' · Ready for explicit CPU-only Start'
                     :' · Start blocked: '+readiness.reason
                 :'';
-            const statusCell=cell(tr,status+lineage+gpuProof+readinessText);
+            const hasSuccessor=records.some(x=>x.continuation_of_job_id===j.id&&
+                x.status!=='cancelled');
+            const statusCell=cell(tr,status+lineage+gpuProof+readinessText+
+                (hasSuccessor&&['waiting_adapter','waiting_predecessor'].includes(j.status)
+                    ?' · Cancel downstream stage first':''));
+
             statusCell.title=readiness?.reason||
                 proof?.diagnostic||detail||j.status_reason||status;
             cell(tr,j.resources.cpus+' CPU / '+j.resources.ram_mb+' MiB / '+
@@ -655,8 +665,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         await reload();
                     }catch(e){feedback('hub-job-allocate-message',e.message);}
                 }));
-            if(['waiting_adapter','waiting_predecessor'].includes(j.status))
-                actions.append(button('Cancel',async()=>{
+            if(['waiting_adapter','waiting_predecessor'].includes(j.status)&&
+                !hasSuccessor)actions.append(button('Cancel',async()=>{
                 if(!confirm('Cancel this unstarted '+j.project_id+' job? No process is running.'))return;
                 try{
                     await action('hub/jobs/cancel',{job_id:j.id,confirm_cancel:true});
