@@ -130,9 +130,10 @@ async function qualifyQueue({hub,executor,url,token,advertisement,firstJob,
 
 
 async function main(argv=process.argv.slice(2),env=process.env) {
-    if(argv.length!==1||!['--run-inert','--run-queue'].includes(argv[0]))
-        throw Error('Specify --run-inert or --run-queue for isolated Windows qualification.');
+    if(argv.length!==1||!['--run-inert','--run-queue','--run-recovery'].includes(argv[0]))
+        throw Error('Specify --run-inert, --run-queue or --run-recovery for isolated Windows qualification.');
     const queueMode=argv[0]==='--run-queue';
+    const recoveryMode=argv[0]==='--run-recovery';
     if(os.platform()!=='win32')
         throw Error('This controlled end-to-end smoke requires Windows.');
     const helper=env.EXPERIMENT_HUB_WINDOWS_HELPER;
@@ -164,7 +165,7 @@ async function main(argv=process.argv.slice(2),env=process.env) {
             machineId:'smoke',supervisor,
             projects:queueMode?['smoke','smokeextra']:['smoke'],
         });
-        const hub=new ExperimentHub(path.join(root,'hub'));
+        let hub=new ExperimentHub(path.join(root,'hub'));
         hub.addProject({id:'smoke',name:'Isolated Windows qualification'});
         const available=observations('smoke');
         if(queueMode&&(available.cpus<2||available.ram_mb<512))
@@ -236,6 +237,28 @@ async function main(argv=process.argv.slice(2),env=process.env) {
         assert.equal(hub.snapshot().jobs[0].status,runningReport.state);
         console.log('PASS: authenticated worker accepted lease and dispatched');
         console.log('      exactly one locally verified native Windows Start.');
+
+        if(recoveryMode) {
+            assert.equal(runningReport.state,'running',
+                'The inert child must still be running for mid-flight recovery.');
+            // Restart only the disposable coordinator. The native owner
+            // remains alive, and the authenticated agent keeps its instance
+            // identity and local ownership journal throughout this probe.
+            hub=new ExperimentHub(path.join(root,'hub'));
+            assert.equal(hub.automationStatus().enabled,false);
+            assert.equal(hub.snapshot().machines[0].status,'offline');
+            const reacquired=await send(receipts);
+            assert.equal(reacquired.execution_orders?.length,1);
+            assert.equal(reacquired.execution_orders[0].action,'inspect');
+            const observed=await executor.handle(
+                reacquired.execution_orders[0]);
+            assert.equal(observed.state,'running');
+            await send(receipts,[observed]);
+            assert.equal(hub.snapshot().jobs[0].status,'running');
+            assert.equal(supervisor.snapshot().length,1);
+            console.log('PASS: restarted coordinator reauthenticated worker');
+            console.log('      and inspected existing native ownership without relaunch.');
+        }
 
         const shutdownBegan=Date.now();
         if(runningReport.state==='running') {
