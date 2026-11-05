@@ -216,6 +216,154 @@ mod tests {
     use crate::vision::HiveMindObserver;
 
     #[test]
+    fn fire_tank_death_spawns_attributed_friendly_fire_explosion_and_breaks_linked_wall() {
+        let assets = Arc::new(ProjectileAssetCatalog::embedded().unwrap());
+        let hulls = ShipAssetCatalog::embedded().unwrap();
+        let mut world = CombatWorld::new(
+            Aabb {
+                min: Vec2::new(-100.0, -100.0),
+                max: Vec2::new(100.0, 100.0),
+            },
+            8.0,
+            Arc::clone(&assets),
+        ).unwrap();
+
+        let wall_id = 1;
+        world.add_obstacle(
+            CombatObstacle {
+                entity_id: wall_id,
+                kind: ObstacleKind::StaticObstacle,
+                vitals: None,
+                size_class: 0,
+            },
+            ObstacleBody::new(
+                wall_id,
+                Pose {
+                    position: Vec2::new(20.0, 0.0),
+                    rotation_degrees: 0.0,
+                },
+                0,
+                ShipShape::Box {
+                    offset: Vec2::ZERO,
+                    half_extents: Vec2::new(8.0, 5.0),
+                },
+                Vec2::ZERO,
+                0.0,
+            ).unwrap(),
+        ).unwrap();
+        let tank_id = 2;
+        let tank_position = Vec2::new(5.0, 0.0);
+        world.add_map_object(
+            CombatMapObject::new_fire_tank(
+                tank_id, 100, 40, Some(wall_id),
+            ).unwrap(),
+            ObstacleBody::new(
+                tank_id,
+                Pose {
+                    position: tank_position,
+                    rotation_degrees: 0.0,
+                },
+                0,
+                ShipShape::Box {
+                    offset: Vec2::ZERO,
+                    half_extents: Vec2::new(2.0, 2.0),
+                },
+                Vec2::ZERO,
+                0.0,
+            ).unwrap(),
+        ).unwrap();
+        let shooter_id = 3;
+        world.spawn_ship(
+            hulls.by_type(21).unwrap(), shooter_id, 1,
+            ShipVitals::new(100, 100, 1000, 0).unwrap(),
+            ShipMotion::new(Vec2::ZERO, 0.0, 90.0, 0.0, 3.0),
+        ).unwrap();
+        world.discovery_mut().record(
+            1, DiscoveryKind::MapObject, tank_id,
+        ).unwrap();
+        world.discovery_mut().record(
+            1, DiscoveryKind::Obstacle, wall_id,
+        ).unwrap();
+
+        let shot_id = 4;
+        world.spawn_projectile(
+            assets.by_type(1).unwrap(), shot_id,
+            ShotOwner {
+                shooter_id,
+                shooter_side: 1,
+                shooter_is_fire_barge: false,
+                self_detonation: false,
+            },
+            120,
+            ProjectileMotion::new(
+                Vec2::ZERO, 10.0, 0.0, 100.0, 900, 501,
+            ),
+            0.0,
+        ).unwrap();
+        world.resolve_obstacle_contact(ObstacleTriggerEnter {
+            projectile_id: shot_id, obstacle_id: tank_id,
+        }).unwrap();
+
+        assert!(world.map_object(tank_id).is_none());
+        assert!(!world.obstacle_by_id.contains_key(&wall_id));
+        assert!(!world.discovery().has(
+            1, DiscoveryKind::MapObject, tank_id,
+        ));
+        assert!(!world.discovery().has(
+            1, DiscoveryKind::Obstacle, wall_id,
+        ));
+        let blast_id = 5;
+        let blast_index = *world.projectile_by_id.get(&blast_id).unwrap();
+        let blast = &world.projectiles()[blast_index];
+        assert_eq!(blast.projectile_type, FIRE_TANK_EXPLOSION_TYPE);
+        assert_eq!(blast.power, 40);
+        assert_eq!(blast.owner.shooter_id, shooter_id);
+        assert_eq!(
+            world.physics.projectiles()[blast_index].motion.attribution,
+            crate::projectile::ShotAttribution {
+                root_shot_id: 900,
+                command_outcome_id: 501,
+            },
+        );
+        assert_eq!(
+            world.physics.projectiles()[blast_index].motion.position,
+            tank_position,
+        );
+        assert!(world.physics.projectiles()[blast_index].active);
+        assert!(!world.physics.projectiles()[
+            *world.projectile_by_id.get(&shot_id).unwrap()
+        ].active);
+        assert!(world.events().iter().any(|event| matches!(
+            event,
+            CombatEvent::FireTankExploded {
+                object_id: 2,
+                triggering_projectile_id: 4,
+                explosion_projectile_id: 5,
+            }
+        )));
+        assert!(world.events().iter().any(|event| matches!(
+            event,
+            CombatEvent::FireTankObstacleBrokenApart {
+                object_id: 2, obstacle_id: 1,
+            }
+        )));
+
+        // Type 15 explicitly permits same-side damage, unlike ordinary
+        // explosions; the original shooter's attribution survives.
+        world.resolve_contact(TriggerEnter {
+            projectile_id: blast_id,
+            ship_id: shooter_id,
+        }).unwrap();
+        assert_eq!(world.ship(shooter_id).unwrap().vitals.health(), 60);
+        assert!(world.events().iter().any(|event| matches!(
+            event,
+            CombatEvent::Hit(hit)
+                if hit.root_shot_id == 900 &&
+                   hit.command_outcome_id == 501
+        )));
+    }
+
+    #[test]
     fn real_map_object_collider_is_seen_by_edge_and_projected_from_world() {
         let assets = Arc::new(ProjectileAssetCatalog::embedded().unwrap());
         let ships = ShipAssetCatalog::embedded().unwrap();
