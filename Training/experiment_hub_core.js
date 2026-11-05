@@ -671,7 +671,7 @@ class ExperimentHub {
     }
     // The report is authenticated by the machine-token heartbeat. A second
     // machine, retired dispatch ID or unrelated lease cannot update the job.
-    recordExecution(next,machine,items,installedProjects=[]) {
+    recordExecution(next,machine,items,installedProjects=[],accepted=new Set()) {
         if(!Array.isArray(items)||items.length>50)
             throw Error('Invalid execution reports.');
         const seen=new Set();
@@ -724,6 +724,10 @@ class ExperimentHub {
                 ?'stop_requested':report.state;
             if(state==='launch_requested'&&job.status!=='start_requested')continue;
             if(job.status==='stop_requested'&&report.state==='launch_requested')continue;
+            // Only reports accepted into the lifecycle may update live
+            // telemetry and comparison samples. A delayed older report
+            // must not make a terminal job appear to be running again.
+            accepted.add(report.job_id);
             if(job.status!==state||
                 (job.execution_diagnostic||null)!==(report.diagnostic||null)) {
                 job.status=state;
@@ -963,7 +967,9 @@ class ExperimentHub {
         if(reports.length&&(!report.local_executor||
             !['linux','win32'].includes(report.platform)))
             throw Error('Native lifecycle reports require a locally enabled supported executor.');
-        if(this.recordExecution(next,machine,reports,report.installed_projects))
+        const acceptedReports=new Set();
+        if(this.recordExecution(next,machine,reports,
+            report.installed_projects,acceptedReports))
             changed=true;
         const gpuReports=value.gpu_qualification_reports==null
             ?[]:value.gpu_qualification_reports;
@@ -1006,12 +1012,7 @@ class ExperimentHub {
                 this.leaseReceipts.set(lease.id,received);
         }
         for(const item of reports) {
-            const job=this.state.jobs.find(j=>j.id===item.job_id);
-            const lease=this.state.reservations.find(l=>l.id===item.lease_id);
-            // A late duplicate acknowledged above must not reintroduce
-            // live telemetry or chart points after capacity was released.
-            if(job?.capacity_released_at&&lease?.status==='released')
-                continue;
+            if(!acceptedReports.has(item.job_id))continue;
             this.executionTelemetry.set(item.job_id,{
                 at:new Date(received).toISOString(),state:item.state,
                 memory_current_mb:item.memory_current_mb??null,
