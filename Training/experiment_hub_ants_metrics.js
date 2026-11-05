@@ -45,10 +45,12 @@ function readAntsProgress(artifactRoot,rootId,fsApi=fs) {
         throw Error('Ants production summary is not a bounded regular file.');
     let data;
     try{
+        const lineageRoot=fsApi.realpathSync(path.join(artifactRoot,rootId));
         const canonicalRoot=fsApi.realpathSync(experiments);
         const canonical=fsApi.realpathSync(summary);
-        if(!canonical.startsWith(canonicalRoot+path.sep))
-            throw Error('Ants metrics escaped the approved experiment root.');
+        if(!canonicalRoot.startsWith(lineageRoot+path.sep)||
+            !canonical.startsWith(canonicalRoot+path.sep))
+            throw Error('Ants metrics escaped the approved artifact lineage.');
         data=JSON.parse(fsApi.readFileSync(summary,'utf8'));
     }catch{
         throw Error('Ants production summary is unreadable, incomplete or outside the approved root.');
