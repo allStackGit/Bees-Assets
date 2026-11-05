@@ -159,18 +159,40 @@ job can transition out of `waiting_adapter`.
 ### Isolated transport smoke and inert Linux qualification
 
 Run `node Training/experiment_hub_smoke.js` from the checkout to exercise
-an **ephemeral, randomly ported loopback HTTP listener**, the actual Node
-agent request serialization, machine credential rejection, an advisory lease
-acknowledgement, explicit release and a coordinator reload. This script
-creates its registry beneath the OS temporary directory and removes it.
-It never imports the Bees operator, contacts the live dashboard or runs
-a native/training process. It does **not** qualify the production server
-listener, SSH forwarding, Linux systemd or Windows Job Objects. Its results
-must be reported separately from native host qualification.
+an **ephemeral, randomly ported loopback HTTP listener**, using the same
+restricted worker HTTP handler as the production coordinator and the real
+Node agent's request serialization. It checks rejected administrator
+routes, invalid host/origin/content-type, malformed/oversized requests,
+machine credential rejection, lease acknowledgements, explicit release
+and coordinator reload. This script creates its registry beneath the OS
+temporary directory and removes it. It never imports the Bees operator,
+contacts the live dashboard or runs a native/training process. It does
+**not** qualify the administrator listener, SSH forwarding, Linux systemd,
+Windows Job Objects or remote-worker deployment.
 
-For an operator-controlled native Linux CPU/RAM smoke, the checked-in
-`Training/experiment_hub_smoke_adapter_linux.js` is an inert, fixed-path
-trusted adapter for project ID `smoke` only. The machine operator can
+On an isolated Linux machine with a working **user systemd instance**
+and cgroup v2 `cpu` and `memory` delegation, the next local qualification
+can run without enrolling any agent or starting the Bees manager:
+
+```bash
+node Training/experiment_hub_native_smoke_linux.js --preflight
+node Training/experiment_hub_native_smoke_linux.js --run-inert
+```
+
+`--preflight` launches then stops the supervisor's fixed inert sleep
+service and verifies the effective kernel CPU/RAM cgroup limits.
+`--run-inert` also starts and stops one 30-second `/usr/bin/sleep`
+job under the native supervisor, verifies ownership, and reconciles its
+terminal result. Both use a separate private temporary supervisor
+ledger; only a verified clean result deletes it. An ambiguous failure
+preserves the ledger and prints its path for manual inspection; **do not
+retry blindly**. This is an operator-initiated, local service test,
+not training or proof of multi-machine readiness.
+
+For a separate operator-controlled end-to-end dashboard/agent smoke,
+the checked-in `Training/experiment_hub_smoke_adapter_linux.js` is an
+inert, fixed-path trusted adapter for project ID `smoke` only. After
+the standalone preflight succeeds, the machine operator can
 install that module through `EXPERIMENT_HUB_LOCAL_ADAPTERS` alongside a
 separate absolute `EXPERIMENT_HUB_LOCAL_ROOT`, after enrolling the worker
 and successfully running the native systemd preflight. Queue a `smoke`
@@ -189,7 +211,9 @@ Arming requires a passing local CPU/RAM preflight, a current authenticated
 agent instance, installed trusted project adapters, and confirmation that
 the operator has accounted for Bees and any other **untracked workloads**
 on those machines. The automation session is process-local and starts
-**disarmed**, including after every coordinator restart. Disarming does
+**disarmed**, including after every coordinator restart. A second Arm
+request is rejected while an automation session is active; otherwise it
+could abandon ownership of running jobs. Disarming does
 not stop a running service or release its capacity. Automatic Start
 requests are tagged with the ephemeral arming session and agent instance:
 after disarm, restart, or replacement, the coordinator will **not issue a
