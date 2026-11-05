@@ -444,11 +444,13 @@ document.addEventListener('DOMContentLoaded', () => {
                         ?proof.current
                             ?' · GPU device allow/deny probe passed this agent session (no GPU Start)'
                             :' · GPU device probe previously passed, now stale'
-                        :' · GPU device access probe rejected'
+                        :proof.status==='cancelled'
+                            ?' · GPU device probe cancelled when claim released'
+                            :' · GPU device access probe rejected'
                 :'';
             const detail=j.execution_diagnostic?' · '+j.execution_diagnostic:'';
             const statusCell=cell(tr,status+lineage+gpuProof);
-            statusCell.title=detail||j.status_reason||status;
+            statusCell.title=proof?.diagnostic||detail||j.status_reason||status;
             cell(tr,j.resources.cpus+' CPU / '+j.resources.ram_mb+' MiB / '+
                 j.resources.gpu_count+' GPUs');
             cell(tr,learningSummary(j));
