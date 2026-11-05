@@ -392,10 +392,24 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
         <label>Name<input id="hub-machine-name" required placeholder="Halifax"></label>
         <label>CPU slots<input id="hub-machine-cpus" type="number" min="1" max="4096" value="16" required></label>
         <label>RAM MiB<input id="hub-machine-ram" type="number" min="128" value="98304" required></label>
-        <label class="wide">GPU devices (JSON array of IDs and VRAM MiB)<textarea id="hub-machine-gpus" rows="3">[]</textarea></label>
+        <label class="wide">GPU devices (JSON array: ID, nominal VRAM MiB, optional PCI address)<textarea id="hub-machine-gpus" rows="3">[]</textarea></label>
       </div>
       <button type="submit">Register unverified machine</button>
     </form>
+  </div>
+  <div class="hub-standalone">
+    <h3>Bind physical AMD GPUs</h3>
+    <p class="muted">Only a connected Linux agent with fresh AMDGPU sysfs observations can bind a logical GPU ID to a PCI address. Bindings must match the observed devices. Existing GPU coordination leases must be released first. Binding improves identity-aware capacity planning; it does not enable GPU execution, VRAM enforcement or device isolation.</p>
+    <form id="hub-gpu-bind-form">
+      <div class="formgrid">
+        <label>Connected Linux machine<select id="hub-gpu-bind-machine"></select></label>
+        <label class="wide">Logical GPU IDs, nominal VRAM MiB and exact observed PCI addresses (JSON)
+          <textarea id="hub-gpu-bind-json" rows="4">[]</textarea>
+        </label>
+      </div>
+      <button type="submit">Save GPU identity bindings</button>
+    </form>
+    <p id="hub-gpu-bind-message" class="hub-notice"></p>
   </div>
   <div class="tablewrap hub-table"><table>
     <thead><tr><th>Machine</th><th>Agent</th><th>CPU slots</th><th>RAM MiB</th><th>GPUs</th><th>Native controls</th><th>Last seen</th><th>Credentials</th></tr></thead>
