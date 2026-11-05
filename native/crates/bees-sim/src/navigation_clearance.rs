@@ -61,6 +61,37 @@ impl NavigationClearance {
         Ok(())
     }
 
+    /// Rebuild Unity's static clearance from live StaticObstacle geometry,
+    /// excluding map-border triggers and moving asteroids. Map-specific
+    /// placement stays in the owning CombatWorld and never gets copied into
+    /// a long-lived second obstacle registry.
+    pub fn update_static_from_obstacles<'a, I, ToWorld, ToLevel>(
+        &mut self,
+        obstacles: I,
+        to_world: ToWorld,
+        to_level: ToLevel,
+    ) -> Result<NavigationRasterCounts, NavigationError>
+    where
+        I: IntoIterator<Item = (i64, &'a ObstacleBody)>,
+        ToWorld: Fn(Vec2) -> Vec2,
+        ToLevel: Fn(Vec2) -> Vec2,
+    {
+        let counts = self.grid.rasterize_obstacles(
+            obstacles, to_world, to_level, &mut self.moving_blocked,
+        )?;
+        // The raster mask is the exact static blocking input; setting it
+        // refreshes the base, signed static and dynamic clearance maps.
+        // set_static_blocked clears the scratch only after reading the mask.
+        for (base, &blocked) in self.base.iter_mut().zip(&self.moving_blocked) {
+            *base = if blocked { 0 } else { 1 };
+        }
+        calculate_clearance(self.grid, &mut self.base);
+        build_signed_static(self.grid, &self.base, &mut self.signed_static);
+        self.dynamic.copy_from_slice(&self.base);
+        self.moving_blocked.fill(false);
+        Ok(counts)
+    }
+
     /// Unity's UpdateDynamicObstacleLayer: start from the static base,
     /// overlay live collision asteroids, then recompute clearance. No
     /// asteroid lifetime history is duplicated in the navigation system.
@@ -75,7 +106,7 @@ impl NavigationClearance {
         ToWorld: Fn(Vec2) -> Vec2,
         ToLevel: Fn(Vec2) -> Vec2,
     {
-        let counts = self.grid.rasterize_dynamic_asteroids(
+        let counts = self.grid.rasterize_obstacles(
             asteroids, to_world, to_level, &mut self.moving_blocked,
         )?;
         self.dynamic.copy_from_slice(&self.base);
