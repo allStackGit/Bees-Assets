@@ -9,7 +9,7 @@ use crate::control::PolicyFrame;
 use crate::geometry::Vec2;
 use crate::perception::{
     PerceptionError, SELF_WEAPONS_START, SELF_WEAPON_LEN, WEAPON_SLOTS,
-    normalize_positive, weapon_type_scalar,
+    normalize_positive, weapon_type_scalar, policy_heading,
 };
 use crate::policy::OBSERVATION_FLOATS;
 
@@ -45,8 +45,8 @@ fn valid(weapon: &SelfWeapon) -> bool {
         [weapon.range, weapon.power, weapon.rate_of_fire,
             weapon.rotation_rate, weapon.projectile_value]
             .iter().all(|value| value.is_finite()) &&
-        weapon.projectile_speed.is_none_or(|speed| speed.is_finite()) &&
-        weapon.turret.is_none_or(|turret| turret.rotation_degrees.is_finite())
+        weapon.projectile_speed.map_or(true, |speed| speed.is_finite()) &&
+        weapon.turret.map_or(true, |turret| turret.rotation_degrees.is_finite())
 }
 
 /// Each index is an actual Unity ship.Weapons slot. Missing entries (even
@@ -78,10 +78,7 @@ pub fn write_self_weapons(
             |speed| ((speed as f32) / 200.0).clamp(0.0, 1.0));
         let (turret_flag, heading_x, heading_y, ready, aligned) =
             if let Some(turret) = weapon.turret {
-                let angle = turret.rotation_degrees.to_radians();
-                let direction = frame.world_to_policy(
-                    Vec2::new(-angle.sin(), angle.cos())
-                );
+                let direction = policy_heading(turret.rotation_degrees, frame);
                 (1.0, direction.x, direction.y,
                     if turret.ready_to_fire { 1.0 } else { 0.0 },
                     if turret.aligned_with_target { 1.0 } else { 0.0 })
