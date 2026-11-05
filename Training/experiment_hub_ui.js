@@ -44,6 +44,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let comparisonRequest = 0,selectionProject = null;
     let comparisonDefaultsApplied = false;
     let envArgsTouched = false;
+    let lastGpuBindingMachine = null;
     const action = async (route, payload) => {
         const r = await fetch('/api/'+route,{
             method:'POST',
@@ -558,13 +559,51 @@ document.addEventListener('DOMContentLoaded', () => {
             cell(tr,'No project jobs yet.').colSpan=5;
             $('hub-monitor-rows').append(tr);
         }
+        const physical=$('hub-gpu-bind-machine');
+        const previousGpuMachine=physical.value;
+        const candidates=state.machines.filter(m=>
+            m.status==='connected'&&m.agent_platform==='linux'&&
+            m.gpu_inventory_source==='amdgpu-sysfs-v1');
+        physical.replaceChildren(new Option('Select Linux machine',''),
+            ...candidates.map(m=>new Option(m.name+' ('+m.id+')',m.id)));
+        if(candidates.some(m=>m.id===previousGpuMachine))
+            physical.value=previousGpuMachine;
+        else if(candidates.length===1)physical.value=candidates[0].id;
+        if(lastGpuBindingMachine!==physical.value) {
+            const selected=candidates.find(m=>m.id===physical.value);
+            const inventory=selected?.gpus?.length
+                ?selected.gpus.map(g=>({
+                    id:g.id,vram_mb:g.vram_mb,
+                    pci_address:g.pci_address||'',
+                }))
+                :(selected?.observed_gpus||[]).map((g,index)=>({
+                    id:'gpu'+index,vram_mb:g.vram_mb,
+                    pci_address:g.pci_address,
+                }));
+            $('hub-gpu-bind-json').value=JSON.stringify(inventory,null,2);
+            lastGpuBindingMachine=physical.value;
+        }
         $('hub-machine-rows').replaceChildren();
         for(const m of state.machines) {
             const tr=document.createElement('tr');
             cell(tr,m.name+' ('+m.id+')');cell(tr,m.status);
             cell(tr,m.cpus+(m.reported_cpus!=null?' / agent '+m.reported_cpus:''));
             cell(tr,m.ram_mb+(m.reported_ram_mb!=null?' / agent '+m.reported_ram_mb:''));
-            cell(tr,(m.gpus||[]).map(g=>g.id+' ('+g.vram_mb+' MiB)').join(', ')||'None');
+            const verified=new Map((m.verified_gpus||[]).map(g=>[g.id,g]));
+            const configured=(m.gpus||[]).map(g=>{
+                const matched=verified.get(g.id);
+                return g.id+' ('+g.vram_mb+' MiB configured) · '+
+                    (matched?'PCI '+matched.pci_address+' verified, '+
+                        matched.vram_mb+' MiB available for advisory claims'
+                        :g.pci_address?'PCI '+g.pci_address+' not observed':
+                            'No PCI binding');
+            });
+            const discovered=(m.observed_gpus||[]).map(g=>
+                g.pci_address+' ('+g.vram_mb+' MiB'+
+                (g.used_vram_mb==null?'':', '+g.used_vram_mb+' MiB used')+')');
+            cell(tr,(configured.join(' / ')||'No configured GPUs')+
+                (discovered.length?' · Detected AMD GPUs: '+
+                    discovered.join(', '):''));
             const capability=m.execution_capabilities;
             const control=cell(tr,m.status==='connected'
                 ?m.local_executor_enabled
@@ -776,6 +815,35 @@ document.addEventListener('DOMContentLoaded', () => {
             feedback('hub-placements','Machine registered as unverified. An agent must establish resource ownership before execution.');
             await reload();
         }catch(err){feedback('hub-placements',err.message);}
+    });
+    $('hub-gpu-bind-machine').addEventListener('change',()=>{
+        lastGpuBindingMachine=null;
+        display();
+    });
+    $('hub-gpu-bind-form').addEventListener('submit',async e=>{
+        e.preventDefault();
+        const machineId=$('hub-gpu-bind-machine').value;
+        const machine=state?.machines.find(m=>m.id===machineId);
+        if(!machine){
+            feedback('hub-gpu-bind-message',
+                'Select a connected Linux machine with a fresh physical AMDGPU report.');
+            return;
+        }
+        let desired;
+        try{desired=JSON.parse($('hub-gpu-bind-json').value);}
+        catch(error){feedback('hub-gpu-bind-message',error.message);return;}
+        if(!confirm('Replace logical GPU bindings on '+machine.name+
+            '? Each PCI address must match the connected agent. '+
+            'Any outstanding GPU leases block this change. '+
+            'This does not enable GPU execution or hardware isolation.'))return;
+        try{
+            await action('hub/machines/gpus',{
+                machine_id:machineId,gpus:desired,confirm_bind:true,
+            });
+            feedback('hub-gpu-bind-message',
+                'Physical GPU bindings saved. This is identity-aware advisory scheduling only.');
+            await reload();
+        }catch(error){feedback('hub-gpu-bind-message',error.message);}
     });
     const shareMode=$('hub-request-gpu-mode');
     shareMode.addEventListener('change',()=>{
