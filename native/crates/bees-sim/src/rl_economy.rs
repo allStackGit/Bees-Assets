@@ -34,6 +34,8 @@ pub struct EpisodeEconomicLedger {
     starting_tsv: [i32; 2],
     mined_by_ship: HashMap<i64, (i32, i32)>,
     forfeited: HashSet<i64>,
+    /// Reused for source-order EndKill returns during this combat tick.
+    returned_this_tick: HashSet<i64>,
     destroyed_mined_tsv: [i64; 2],
     measurements: EconomicLedgerMeasurements,
 }
@@ -54,6 +56,7 @@ impl EpisodeEconomicLedger {
             starting_tsv: [bee_starting_tsv, human_starting_tsv],
             mined_by_ship: HashMap::new(),
             forfeited: HashSet::new(),
+            returned_this_tick: HashSet::new(),
             destroyed_mined_tsv: [0, 0],
             measurements: EconomicLedgerMeasurements::default(),
         })
@@ -177,18 +180,26 @@ impl EpisodeEconomicLedger {
         output: &mut Vec<RewardEmission>,
     ) -> Result<(), EconomicLedgerError> {
         output.clear();
+        self.returned_this_tick.clear();
         for event in events {
-            if let CombatEvent::ShipDied { victim_id, killer_id, .. } = event {
-                let value = current_mined_tsv(*victim_id).ok_or(
-                    EconomicLedgerError::MissingAuthoredMinedValue(*victim_id),
-                )?;
-                if let Some(emission) = self.exit_ship(
-                    world, *victim_id, *killer_id, false, value,
-                )? {
-                    if emission.amount != 0.0 {
-                        output.push(emission);
+            match event {
+                CombatEvent::ShipWarped { ship_id, .. } => {
+                    self.returned_this_tick.insert(*ship_id);
+                }
+                CombatEvent::ShipDied { victim_id, killer_id, .. } => {
+                    let value = current_mined_tsv(*victim_id).ok_or(
+                        EconomicLedgerError::MissingAuthoredMinedValue(*victim_id),
+                    )?;
+                    let returned = self.returned_this_tick.contains(victim_id);
+                    if let Some(emission) = self.exit_ship(
+                        world, *victim_id, *killer_id, returned, value,
+                    )? {
+                        if emission.amount != 0.0 {
+                            output.push(emission);
+                        }
                     }
                 }
+                _ => {}
             }
         }
         Ok(())

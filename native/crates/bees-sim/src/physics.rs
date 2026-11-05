@@ -397,6 +397,8 @@ pub struct ShipBody {
     /// authored child trigger. The primary hull is NEVER enlarged to
     /// approximate its area.
     healing_zone: Option<WorldCollider>,
+    /// Authored WarpGate.WarpCollider child trigger.
+    warp_zone: Option<WorldCollider>,
 }
 
 impl ShipBody {
@@ -419,6 +421,7 @@ impl ShipBody {
             hull_radius_bound: radius * 1.0001 + 0.001,
             collider,
             healing_zone: None,
+            warp_zone: None,
         })
     }
 
@@ -443,6 +446,25 @@ impl ShipBody {
     pub fn healing_zone_touches(&self, other: &ShipBody) -> bool {
         self.active && other.active &&
             self.healing_zone.as_ref().is_some_and(|zone|
+                zone.overlaps(&other.collider),
+            )
+    }
+
+    pub fn set_warp_zone(&mut self, shape: ShipShape)
+        -> Result<(), PhysicsError>
+    {
+        let mut zone = WorldCollider::new(shape)?;
+        zone.update(Pose {
+            position: self.motion.position,
+            rotation_degrees: self.motion.rotation_degrees,
+        });
+        self.warp_zone = Some(zone);
+        Ok(())
+    }
+
+    pub fn warp_zone_touches(&self, other: &ShipBody) -> bool {
+        self.active && other.active &&
+            self.warp_zone.as_ref().is_some_and(|zone|
                 zone.overlaps(&other.collider),
             )
     }
@@ -475,6 +497,9 @@ impl ShipBody {
         };
         self.collider.update(pose);
         if let Some(zone) = self.healing_zone.as_mut() {
+            zone.update(pose);
+        }
+        if let Some(zone) = self.warp_zone.as_mut() {
             zone.update(pose);
         }
     }

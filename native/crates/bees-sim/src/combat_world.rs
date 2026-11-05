@@ -127,6 +127,7 @@ pub enum CombatWorldError {
     InvalidPolicyBarge,
     InvalidPolicyScout,
     InvalidPolicyHealing,
+    InvalidPolicyWarp,
     UnsupportedPolicyTurret { weapon_type: u8, projectile_type: u8 },
     DuplicatePolicyTurret { ship_id: i64, slot: usize },
     MapObject(MapObjectError),
@@ -262,6 +263,12 @@ pub enum CombatEvent {
     CapabilityHealed {
         ship_id: i64, beehive_id: i64, side: i32,
         healed_health: i32, tsv_gain: i32,
+    },
+    /// A safe EndKill via actual WarpGate child collider. Must precede
+    /// ShipDied to preserve mined TSV at the economic event consumer.
+    ShipWarped {
+        ship_id: i64, gate_id: i64, side: i32,
+        preserved_tsv: i32,
     },
     /// Emitted for projectile impacts against static geometry; the
     /// dedicated RL coordinator determines the corresponding reward.
@@ -505,6 +512,8 @@ pub struct PolicySpecialMeasurements {
     pub healing_requests: u64,
     pub healing_touch_checks: u64,
     pub healing_actions_completed: u64,
+    pub warp_requests: u64,
+    pub warp_actions_completed: u64,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -632,6 +641,7 @@ pub struct CombatWorld {
     /// v26 SpecialAction.Healing (branch choice 3) is distinct from
     /// ship-class specials (choice 1); both remain in the one world.
     policy_pending_healing: Vec<i64>,
+    policy_pending_warp: Vec<i64>,
     policy_special_measurements: PolicySpecialMeasurements,
     /// One hit per victim for each active charge; cleared when the
     /// owning Barge starts another charge or is removed from the world.
@@ -721,6 +731,7 @@ impl CombatWorld {
             policy_pending_shots: Vec::new(),
             policy_pending_ship_specials: Vec::new(),
             policy_pending_healing: Vec::new(),
+            policy_pending_warp: Vec::new(),
             policy_special_measurements: PolicySpecialMeasurements::default(),
             barge_charge_hits: HashSet::new(),
             barge_contact_candidates: Vec::new(),
@@ -801,6 +812,15 @@ impl CombatWorld {
     fn retire_dead_ship(
         &mut self, index: usize, killer_id: i64, command_outcome_id: i64,
     ) -> Result<(), CombatWorldError> {
+        self.retire_dead_ship_with_mode(index, killer_id, command_outcome_id, false)
+    }
+
+    /// EndKill skips combat death/explosion accounting but still removes
+    /// the same physical ship, controller, vision and squad memberships.
+    fn retire_dead_ship_with_mode(
+        &mut self, index: usize, killer_id: i64, command_outcome_id: i64,
+        end_kill: bool,
+    ) -> Result<(), CombatWorldError> {
         debug_assert!(self.ships[index].vitals.is_dead());
         if !self.physics.ships()[index].active {
             return Ok(());
@@ -809,7 +829,7 @@ impl CombatWorld {
         // death came from its special, projectile fire or a collision.
         // Explicit self-detonations consume their bomb first, so this is
         // strictly once even when both paths reach this retirement.
-        if self.ships[index].ship_type == 10 {
+        if !end_kill && self.ships[index].ship_type == 10 {
             self.spawn_fire_barge_explosion(index, false)?;
         }
         let victim_id = self.ships[index].entity_id;
@@ -3068,6 +3088,7 @@ impl CombatWorld {
         self.advance_policy_healing_cooldowns(dt);
         self.apply_pending_policy_ship_specials(collision_matrix)?;
         self.apply_pending_policy_healing()?;
+        self.apply_pending_policy_warp()?;
         self.advance_policy_scout_cooldowns(dt);
         self.advance_policy_barge_phases(dt)?;
         self.advance_asteroid_deaths(dt);
