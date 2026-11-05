@@ -285,10 +285,14 @@ impl CombatWorld {
             if projectile_id == i64::MAX {
                 return Err(CombatWorldError::EntityIdExhausted);
             }
-            let asset = self.projectile_assets.by_type(shot.spec.projectile_type)
+            // Retain the immutable catalog with a cheap Arc clone: cloning
+            // ProjectileAsset itself would copy its name and other authored
+            // payloads for every fired shot in the hot simulation loop.
+            let catalog = Arc::clone(&self.projectile_assets);
+            let asset = catalog.by_type(shot.spec.projectile_type)
                 .ok_or(CombatWorldError::InvalidProjectileType(
                     shot.spec.projectile_type,
-                ))?.clone();
+                ))?;
             // Unity Utilities.AngleBetweenPoints(start, target) =
             // atan2(start.x - target.x, start.y - target.y). This angle
             // is NOT the normal ship heading: Projectile.SetMovement
@@ -304,7 +308,7 @@ impl CombatWorld {
                 0, // RL agent has no Hive Mind command outcome
             );
             self.spawn_projectile(
-                &asset, projectile_id,
+                asset, projectile_id,
                 ShotOwner {
                     shooter_id: shot.ship_id,
                     shooter_side: shot.shooter_side,
