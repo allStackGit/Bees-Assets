@@ -374,9 +374,10 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
       <h3>Independent sequences across projects</h3>
       <p class="muted">Read-only overview of recent independent-job chains. A finished job is native process completion, not benchmark qualification. Stages never inherit checkpoint or machine state.</p>
       <div class="tablewrap hub-table"><table>
-        <thead><tr><th>Sequence root</th><th>Projects / jobs</th><th>Current stage</th><th>Progress</th><th>Waiting reason</th></tr></thead>
+        <thead><tr><th>Sequence root</th><th>Projects / jobs</th><th>Current stage</th><th>Progress</th><th>Waiting reason</th><th>Action</th></tr></thead>
         <tbody id="hub-sequence-overview-rows"></tbody>
       </table></div>
+      <p id="hub-sequence-message" class="hub-notice" role="status">Cancel only unstarted future jobs. The current native process remains untouched.</p>
     </div>
     <div class="hub-standalone">
       <h3>Coordinate queued workload capacity</h3>
