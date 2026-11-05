@@ -4,8 +4,9 @@
 //!
 //! Unity's RlCombatPerception also depends on fields the native combat
 //! simulation has not yet modeled: sprite LongestSide, effective vision,
-//! authored weapon stats, fleet MineralsMinedThisLevel, specials and allied
-//! communications. These MUST be supplied by the Level/episode adapter.
+//! authored weapon stats, fleet MineralsMinedThisLevel and external
+//! gameplay specials. Bound native policy specials instead read the actual
+//! CombatWorld runtime state; remaining metadata is supplied by the adapter.
 //! Never fill them from defaults, hull guesses or a training-only simulator.
 
 use crate::collision::Aabb;
@@ -14,7 +15,7 @@ use crate::episode_ship_identity::{EpisodeShipIdentities, ShipIdentityError};
 use crate::geometry::Vec2;
 use crate::local_navigation_observation::{LocalNavigationError, LocalNavigationOccupancy};
 use crate::obstacle::ObstacleKind;
-use crate::perception::{SelfSource, ship_type_scalar};
+use crate::perception::{CapabilitySource, SelfSource, ship_type_scalar};
 use crate::perception_environment::{CollisionAsteroid, MapObject as MapObjectObservation};
 use crate::team_exploration::{Explorer, ExplorationError, TeamExplorationGrid};
 use crate::perception_entities::{ObservedShip, ObservedWeapon};
@@ -230,6 +231,7 @@ pub fn self_source_from_world(
     }
     let counts = live_ship_counts(world, ship.side)?;
     let identity = identities.get_or_assign(entity_id)?;
+    let native_special = world.policy_special_observations(entity_id);
     Ok(SelfSource {
         identity,
         ship_type: ship.ship_type,
@@ -251,11 +253,30 @@ pub fn self_source_from_world(
         is_carrier: metadata.is_carrier_ship,
         has_weapons: controller.has_weapons,
         has_turrets: controller.has_turrets,
-        has_special: controller.has_special_action,
-        special_ready: controller.special_ready,
+        has_special: native_special.map_or(
+            controller.has_special_action, |special| special.has_special,
+        ),
+        special_ready: native_special.map_or(
+            controller.special_ready, |special| special.ready,
+        ),
         live_allies_including_self: counts.same_side,
         live_enemies: counts.opponents,
     })
+}
+
+/// Populate the three extra v26 capability channels from the very same
+/// native runtime that produces the special action mask. Non-policy ships
+/// retain the Level's authored controller values unmodified.
+pub fn capability_source_from_world(
+    world: &CombatWorld, entity_id: i64,
+    mut capability: CapabilitySource,
+) -> CapabilitySource {
+    if let Some(special) = world.policy_special_observations(entity_id) {
+        capability.special_resource_fraction = special.resource_fraction;
+        capability.special_cooldown_fraction = special.cooldown_fraction;
+        capability.special_phase = special.phase;
+    }
+    capability
 }
 
 /// Extract a ship's true physical position without placing observation-only

@@ -290,7 +290,14 @@ authored hulls and collision permissions in stable index order.
 Separate broadphase/narrowphase counters measure candidate reduction;
 no throughput improvement has yet been benchmarked. Charge damage
 respects MakeShotsHarmless, matching Unity LogAttackingDamage.
-The authored 13s cycle has a normalized time-until-ready observation. The rendered Level still needs animation,
+The authored 13s cycle has a normalized time-until-ready observation.
+Native Scout, Barge, Striker, Fire Barge and Yellow Jacket specials
+now expose source-defined readiness, resource, cooldown and phase through
+one world-owned observation snapshot. The self and capability projection
+prefer this live state for native policy-bound agents, while non-policy
+game controllers still supply their own authored fallback data. An
+unconfigured native special remains masked instead of advertising
+fictitious readiness. The rendered Level still needs animation,
 presentation and squad-command integration.
 
 **Scout Beacon policy special:** the native policy Scout now supports

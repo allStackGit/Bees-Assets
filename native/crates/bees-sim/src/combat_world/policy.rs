@@ -15,6 +15,24 @@ use super::striker::PolicyStrikerRuntime;
 use super::barge::PolicyBargeCharge;
 use super::scout::PolicyScoutRuntime;
 
+/// One source of truth for v26's readiness, resource, cooldown and
+/// phase observation channels. A missing special yields all zeros.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PolicySpecialObservations {
+    pub has_special: bool,
+    pub ready: bool,
+    pub resource_fraction: f32,
+    pub cooldown_fraction: f32,
+    pub phase: f32,
+}
+
+impl PolicySpecialObservations {
+    const NONE: Self = Self {
+        has_special: false, ready: false,
+        resource_fraction: 0.0, cooldown_fraction: 0.0, phase: 0.0,
+    };
+}
+
 /// Exactly one authored ship special can own an agent at a time.
 #[derive(Clone, Copy, Debug)]
 pub(super) enum PolicyShipSpecial {
@@ -65,6 +83,58 @@ impl CombatWorld {
             special: None,
         });
         Ok(())
+    }
+
+    /// Source RlCombatPerception.GetSpecialReadiness,
+    /// GetSpecialResourceFraction, GetSpecialCooldownFraction and
+    /// GetSpecialPhase. This owns the same state as policy_action_mask,
+    /// so observation encoding cannot silently use a stale training-only
+    /// notion of special readiness.
+    ///
+    /// None means that no native policy controller is bound. Some(NONE)
+    /// means that a native controller exists but no supported special is
+    /// currently registered; this must not advertise a fake capability.
+    pub fn policy_special_observations(
+        &self, ship_id: i64,
+    ) -> Option<PolicySpecialObservations> {
+        let runtime = self.policy_ship_runtime.get(&ship_id)?;
+        let result = match runtime.special {
+            None => PolicySpecialObservations::NONE,
+            Some(PolicyShipSpecial::Striker(striker)) =>
+                PolicySpecialObservations {
+                    has_special: true, ready: striker.ready,
+                    resource_fraction: if striker.ready { 1.0 } else { 0.0 },
+                    cooldown_fraction: 0.0,
+                    phase: if striker.ready { 0.0 } else { 0.75 },
+                },
+            Some(PolicyShipSpecial::FireBarge) |
+            Some(PolicyShipSpecial::YellowJacket { .. }) =>
+                PolicySpecialObservations {
+                    has_special: true, ready: true,
+                    resource_fraction: 1.0,
+                    cooldown_fraction: 0.0, phase: 0.0,
+                },
+            Some(PolicyShipSpecial::Barge(barge)) => {
+                let ready = barge.phase == 0;
+                PolicySpecialObservations {
+                    has_special: true, ready,
+                    resource_fraction: if ready { 1.0 } else { 0.0 },
+                    cooldown_fraction:
+                        self.policy_barge_charge_cooldown_fraction(ship_id)?,
+                    phase: f32::from(barge.phase.min(3)) / 3.0,
+                }
+            }
+            Some(PolicyShipSpecial::Scout(_)) => {
+                let scout = self.policy_scout_beacon_status(ship_id)?;
+                PolicySpecialObservations {
+                    has_special: true, ready: scout.ready,
+                    resource_fraction: scout.resource_fraction,
+                    cooldown_fraction: scout.cooldown_fraction,
+                    phase: scout.phase,
+                }
+            }
+        };
+        Some(result)
     }
 
     /// Same 4 clamped continuous action channels as Unity's private allied

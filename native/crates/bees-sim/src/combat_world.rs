@@ -78,6 +78,7 @@ mod barge;
 mod scout;
 pub use self::scout::{ScoutBeaconSpec, ScoutBeaconStatus};
 use self::policy::{PolicyShipRuntime, PolicyShipSpecial};
+pub use self::policy::PolicySpecialObservations;
 use self::weapons::PendingPolicyShot;
 pub use self::weapons::{NativeFirePattern, NativeTurretSpec};
 
