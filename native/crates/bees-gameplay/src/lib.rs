@@ -13,3 +13,4 @@
 
 pub mod commands;
 pub mod squads;
+pub mod squad_geometry;
