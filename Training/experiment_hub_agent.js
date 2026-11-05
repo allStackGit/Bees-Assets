@@ -8,6 +8,7 @@ const http = require('node:http');
 const os = require('node:os');
 const crypto=require('node:crypto');
 const {inspectHost}=require('./experiment_hub_host');
+const {discoverAmdGpus}=require('./experiment_hub_gpu_inventory');
 const {fromEnvironment}=require('./experiment_hub_execution');
 
 const ID = /^[a-z][a-z0-9_-]{0,47}$/;
@@ -36,6 +37,10 @@ function observations(machineId) {
         ram_mb:Math.max(128,Math.floor(os.totalmem()/1048576)),
         platform:os.platform(),
         execution:inspectHost(),
+        // Physical PCI identity observed through AMDGPU sysfs only.
+        // Discovery alone neither authorizes GPU execution nor enforces VRAM.
+        gpu_inventory_source:os.platform()==='linux'?'amdgpu-sysfs-v1':'none',
+        gpu_devices:os.platform()==='linux'?discoverAmdGpus():[],
     };
 }
 
