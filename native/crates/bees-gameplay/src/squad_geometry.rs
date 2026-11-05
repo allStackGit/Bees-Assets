@@ -94,7 +94,7 @@ pub fn live_squad_geometry(
         (bounds.min.x + bounds.max.x) * 0.5,
         (bounds.min.y + bounds.max.y) * 0.5,
     );
-    offsets.reserve(squad.members.len().saturating_sub(offsets.capacity()));
+    offsets.reserve(squad.members.len());
     for &ship_id in &squad.members {
         let body = world.ship_body(ship_id)
             .expect("validated live squad member");

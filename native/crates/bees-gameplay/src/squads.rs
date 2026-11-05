@@ -23,6 +23,7 @@ pub enum SquadRosterError {
     InvalidOwner,
     InvalidMembers,
     DuplicateSquad,
+    MissingSquad,
     DuplicateShip(i64),
     MissingScout(i64),
     MissingBeacon(i64),
@@ -38,6 +39,13 @@ pub enum SquadRosterChange {
         squad: SquadLifetime,
         ship_id: i64,
         remaining: usize,
+    },
+    /// Unity Squad.AddShip -> RefreshCompositionCommandBans and
+    /// HasAddedShips. Existing membership is never implicitly moved.
+    MemberAdded {
+        squad: SquadLifetime,
+        ship_id: i64,
+        count: usize,
     },
     /// Unity Squad.Kill after its final ship dies. The caller MUST retire
     /// this lifecycle in both NativeSquadCommandDirector and HiveMindSession,
@@ -58,6 +66,7 @@ pub struct SquadRosterMeasurements {
     pub squads_registered: u64,
     pub minion_squads_registered: u64,
     pub ships_removed: u64,
+    pub ships_added_to_existing: u64,
     pub squads_retired: u64,
     pub peak_squads: usize,
 }
@@ -142,6 +151,38 @@ impl NativeSquadRoster {
         self.measurements.peak_squads =
             self.measurements.peak_squads.max(self.active.len());
         Ok(())
+    }
+
+    /// Add an actual living ship to an existing Squad, matching the source
+    /// Squad.AddShip. The Level caller must then refresh composition-specific
+    /// command bans and mark its formation for recalculation. A ship already
+    /// owned by another squad is an error, never an implicit transfer.
+    pub fn add_member(
+        &mut self,
+        world: &CombatWorld,
+        owner: SquadLifetime,
+        ship_id: i64,
+    ) -> Result<SquadRosterChange, SquadRosterError> {
+        let side = self.active.get(&owner)
+            .ok_or(SquadRosterError::MissingSquad)?.side;
+        if self.owner_by_ship.contains_key(&ship_id) {
+            return Err(SquadRosterError::DuplicateShip(ship_id));
+        }
+        if ship_id <= 0 ||
+            !world.ship(ship_id).is_some_and(|ship|
+                ship.side == side && !ship.vitals.is_dead()) ||
+            !world.ship_body(ship_id).is_some_and(|body| body.active)
+        {
+            return Err(SquadRosterError::InvalidMembers);
+        }
+        let squad = self.active.get_mut(&owner)
+            .expect("prevalidated live squad");
+        squad.members.push(ship_id);
+        self.owner_by_ship.insert(ship_id, owner);
+        self.measurements.ships_added_to_existing += 1;
+        Ok(SquadRosterChange::MemberAdded {
+            squad: owner, ship_id, count: squad.members.len(),
+        })
     }
 
     /// Translate the already-executed CombatWorld::ScoutBeaconDropped into
