@@ -14,7 +14,7 @@ use crate::protocol::{
     ValidatedTargetingSelection,
 };
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct SquadLifetime {
     pub level_id: i64,
     pub squad_id: i64,
