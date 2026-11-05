@@ -699,8 +699,19 @@ class ExperimentHub {
                 job.dispatch_id!==report.dispatch_id||
                 job.lease_id!==lease.id||lease.job_id!==job.id||
                 lease.machine_id!==machine.id||job.assigned_machine_id!==machine.id||
-                lease.status!=='acknowledged'||lease.project_id!==job.project_id)
+                lease.project_id!==job.project_id)
                 throw Error('Native execution report does not match its job and machine.');
+            // An agent can lose the HTTP acknowledgement after the Hub has
+            // committed a terminal report and an operator has released its
+            // capacity. Accept only the identical terminal state and exact
+            // former ownership; never restore the lease or update the job.
+            if(lease.status==='released'&&lease.released_at&&
+                job.capacity_released_at&&
+                ['finished','failed','stopped'].includes(job.status)&&
+                report.state===job.status)
+                continue;
+            if(lease.status!=='acknowledged')
+                throw Error('Native execution report requires an acknowledged lease.');
             // Metrics cannot grant authority or change status: they are
             // validated only after machine/job/dispatch ownership checks.
             const progress=report.progress==null?null:
@@ -983,6 +994,12 @@ class ExperimentHub {
                 this.leaseReceipts.set(id,received);
         }
         for(const item of reports) {
+            const job=this.state.jobs.find(j=>j.id===item.job_id);
+            const lease=this.state.reservations.find(l=>l.id===item.lease_id);
+            // A late duplicate acknowledged above must not reintroduce
+            // live telemetry or chart points after capacity was released.
+            if(job?.capacity_released_at&&lease?.status==='released')
+                continue;
             this.executionTelemetry.set(item.job_id,{
                 at:new Date(received).toISOString(),state:item.state,
                 memory_current_mb:item.memory_current_mb??null,
