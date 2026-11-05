@@ -342,8 +342,7 @@ impl NativeSquadCommandDirector {
         }
         let mut ship_types = Vec::with_capacity(squad.members.len());
         for member in squad.members {
-            let Some(ship) = world.ships().iter()
-                .find(|ship| ship.entity_id == member.ship_id) else {
+            let Some(ship) = world.ship(member.ship_id) else {
                 return Err(StrategyReceiptFailure {
                     selection,
                     cause: StrategyReceiptFailureCause::InvalidSquad(
@@ -461,9 +460,8 @@ impl NativeSquadCommandDirector {
                         .map_err(|err| GameCommandError::Squad(
                             SquadOrderError::Ship(err),
                         ))?;
-                    let ship = world.ships().iter().find(
-                        |ship| ship.entity_id == member.ship_id,
-                    ).ok_or(GameCommandError::InvalidSquad)?;
+                    let ship = world.ship(member.ship_id)
+                        .ok_or(GameCommandError::InvalidSquad)?;
                     if side.is_some_and(|existing| existing != ship.side) {
                         return Err(GameCommandError::InvalidSquad);
                     }
@@ -512,9 +510,8 @@ impl NativeSquadCommandDirector {
                         .map_err(|err| GameCommandError::Squad(
                             SquadOrderError::Ship(err),
                         ))?;
-                    let ship = world.ships().iter().find(
-                        |ship| ship.entity_id == member.ship_id,
-                    ).ok_or(GameCommandError::InvalidSquad)?;
+                    let ship = world.ship(member.ship_id)
+                        .ok_or(GameCommandError::InvalidSquad)?;
                     if side.is_some_and(|existing| existing != ship.side) {
                         return Err(GameCommandError::InvalidSquad);
                     }
@@ -735,8 +732,7 @@ impl NativeSquadCommandDirector {
                         // Unity Ship.HasReachedDestination means exactly
                         // !HasTargetCoordinates (not "velocity nearly zero").
                         let all_arrived = command.member_ids.iter().all(|id| {
-                            world.physics().ships().iter()
-                                .find(|ship| ship.id == *id)
+                            world.ship_body(*id)
                                 .is_some_and(|ship| ship.active &&
                                     !ship.motion.has_target_coordinates)
                         });
@@ -831,11 +827,9 @@ fn restore_guard_speed(
     let mut live = Vec::new();
     let mut fastest = 0.0_f32;
     for &member in &guard.members {
-        let alive = world.ships().iter().any(|ship|
-            ship.entity_id == member.ship_id && !ship.vitals.is_dead()
-        );
-        let body = world.physics().ships().iter()
-            .find(|body| body.id == member.ship_id);
+        let alive = world.ship(member.ship_id)
+            .is_some_and(|ship| !ship.vitals.is_dead());
+        let body = world.ship_body(member.ship_id);
         if alive {
             if let Some(body) = body.filter(|body| body.active) {
                 if !body.motion.base_speed.is_finite() ||
