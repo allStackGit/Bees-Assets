@@ -770,9 +770,13 @@ in reported cumulative environment steps break chart lines, including
 after one-minute sample coalescing and bounded decimation. The PPO chart does not treat a non-updating episode as a
 measured zero-throughput optimizer update. Jobs sharing the original
 Ants artifact lineage are labeled as continuations, not independent
-replicates. **The curves do not normalize differing level, seed,
-scenario, hardware, or configuration conditions** and are not
-qualification, promotion, benchmark or superiority evidence.
+replicates. The chart calls out differences in frozen configuration
+fingerprints (with a short list of differing top-level fields), assigned
+machine identity, and currently reported curriculum level. Matching
+fingerprints do not prove equal seeds, evaluation scenarios or
+environment/runtime identity. **The curves do not normalize differing
+level, seed, scenario, hardware, or configuration conditions** and are
+not qualification, promotion, benchmark or superiority evidence.
 No new Ants metric meaning or production behavior is introduced.
 
 The adapter/native lifecycle has been exercised only with bounded
