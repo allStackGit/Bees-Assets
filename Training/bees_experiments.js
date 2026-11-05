@@ -314,11 +314,10 @@ function verifyPriorTargetPasses(item,checkpoint,target,plan) {
         throw Error('Saved benchmark target pass count is invalid.');
     // At most three prior evaluations (the configured target is 1–4).
     // Verify contributing immutable reports, not just a saved pass flag.
-    for(let remaining=Math.min(priorCount,target.consecutive_passes-1);
-        remaining>0;remaining--) {
+    const required=Math.min(priorCount,target.consecutive_passes-1);
+    for(let offset=0;offset<required;offset++) {
         const saved=cursor?.benchmark_target_result;
-        if(!saved?.passed||saved.consecutive_passes!==priorCount-
-            (Math.min(priorCount,target.consecutive_passes-1)-remaining))
+        if(!saved?.passed||saved.consecutive_passes!==priorCount-offset)
             throw Error('Consecutive benchmark evidence history is inconsistent.');
         const evidence=targetCheckpointEvidence(item,cursor,target,plan);
         const {report_sha256,...scores}=evidence;
