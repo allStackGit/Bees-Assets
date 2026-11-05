@@ -63,6 +63,22 @@ impl ShipVitals {
     pub fn is_dead(&self) -> bool { self.health <= 0 }
     pub fn mined_cargo(&self) -> i32 { self.mined_cargo }
 
+    /// Unity RL Beehive healing changes Health, recomputes TSV and
+    /// credits only that exact value increase. It does not create a
+    /// damage hit, reverse kill attribution or revive a dead ship.
+    /// Returns zero for an already-full or dead ship.
+    pub fn heal(&mut self, amount: i32) -> Result<i32, CombatError> {
+        if amount < 0 { return Err(CombatError::NegativeDamage); }
+        if self.is_dead() || amount == 0 || self.health == self.max_health {
+            return Ok(0);
+        }
+        let before = self.tsv;
+        self.health = self.health.saturating_add(amount)
+            .min(self.max_health);
+        self.tsv = self.calculate_tsv();
+        Ok(self.tsv.saturating_sub(before))
+    }
+
     /// End a ship's lifecycle without inventing another attributed hit.
     /// Unity's YellowJacket.Detonate calls Ship.Kill unconditionally after
     /// recording its two direct Bomb.Power hits. Native alive membership is

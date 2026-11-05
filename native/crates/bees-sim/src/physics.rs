@@ -393,6 +393,10 @@ pub struct ShipBody {
     /// Authored shape extent, recomputed only when the hull changes.
     hull_radius_bound: f32,
     collider: WorldCollider,
+    /// Optional Beehive.HealCollider, explicitly imported from the
+    /// authored child trigger. The primary hull is NEVER enlarged to
+    /// approximate its area.
+    healing_zone: Option<WorldCollider>,
 }
 
 impl ShipBody {
@@ -414,11 +418,33 @@ impl ShipBody {
             id, motion, layer, active: true,
             hull_radius_bound: radius * 1.0001 + 0.001,
             collider,
+            healing_zone: None,
         })
     }
 
     pub fn shape(&self) -> &ShipShape {
         &self.collider.shape
+    }
+
+    /// Beehive.HealCollider must be provided by the real ship asset.
+    /// The child trigger follows the same transform as its owner.
+    pub fn set_healing_zone(
+        &mut self, shape: ShipShape,
+    ) -> Result<(), PhysicsError> {
+        let mut zone = WorldCollider::new(shape)?;
+        zone.update(Pose {
+            position: self.motion.position,
+            rotation_degrees: self.motion.rotation_degrees,
+        });
+        self.healing_zone = Some(zone);
+        Ok(())
+    }
+
+    pub fn healing_zone_touches(&self, other: &ShipBody) -> bool {
+        self.active && other.active &&
+            self.healing_zone.as_ref().is_some_and(|zone|
+                zone.overlaps(&other.collider),
+            )
     }
 
     /// Exact Unity ship-collider sight test. Updating the cached hull here
@@ -443,10 +469,14 @@ impl ShipBody {
     }
 
     fn update_hull(&mut self) {
-        self.collider.update(Pose {
+        let pose = Pose {
             position: self.motion.position,
             rotation_degrees: self.motion.rotation_degrees,
-        });
+        };
+        self.collider.update(pose);
+        if let Some(zone) = self.healing_zone.as_mut() {
+            zone.update(pose);
+        }
     }
 }
 
