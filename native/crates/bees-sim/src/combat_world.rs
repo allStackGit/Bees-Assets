@@ -785,6 +785,25 @@ impl CombatWorld {
         }
     }
 
+    /// The equivalent of Unity's WaitingTargetCoordinates release after a
+    /// movement lock. Resolve at most one (latest) command per unlocked ship.
+    /// Sorting by immutable ship ID keeps re-issued orders deterministic.
+    fn apply_unlocked_game_point_orders(&mut self) -> Result<(), CombatWorldError> {
+        let mut ready = Vec::new();
+        for (&ship_id, &order) in &self.pending_game_point_orders {
+            let Some(&index) = self.ship_by_id.get(&ship_id) else { continue };
+            let body = &self.physics.ships()[index];
+            if body.active && !body.motion.cannot_change_movement_orders {
+                ready.push((ship_id, order));
+            }
+        }
+        ready.sort_unstable_by_key(|(ship_id, _)| *ship_id);
+        for (ship_id, order) in ready {
+            self.move_ship_to_point(ship_id, order)?;
+        }
+        Ok(())
+    }
+
     pub fn move_ship_direct(
         &mut self,
         ship_id: i64,
@@ -2300,6 +2319,7 @@ impl CombatWorld {
             }
         }
 
+        self.apply_unlocked_game_point_orders()?;
         for ship in self.physics.ships_mut() {
             if !ship.active { continue; }
             // A switch to neural-policy ownership must drop stale gameplay
