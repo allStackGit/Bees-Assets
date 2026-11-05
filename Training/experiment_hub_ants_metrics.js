@@ -89,6 +89,9 @@ function readAntsProgress(artifactRoot,rootId,fsApi=fs) {
             numberOrNull(performance.simulation_steps_per_second,rate),
         ppo_unique_samples_per_second:
             numberOrNull(performance.ppo_unique_samples_per_second,rate),
+        latest_episode_policy_updated:
+            typeof performance.policy_updated==='boolean'
+                ?performance.policy_updated:null,
     };
 }
 module.exports={readAntsProgress};
