@@ -22,6 +22,7 @@ pub mod explosion_lifecycle;
 pub mod episode_ship_identity;
 pub mod geometry;
 pub mod movement;
+pub mod local_navigation_observation;
 pub mod navigation;
 pub mod navigation_clearance;
 pub mod navigation_search;
