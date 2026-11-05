@@ -689,14 +689,17 @@ binary becomes part of a commit. From the checkout root in PowerShell:
 
 ```powershell
 $ErrorActionPreference = 'Stop'
+
+# This first check needs Node only, not the .NET SDK.
+node .\Training\experiment_hub_smoke.js
+if ($LASTEXITCODE -ne 0) { throw 'Worker HTTP qualification failed.' }
+
+# The remaining Windows-native checks use a reviewed, locally built helper.
 $publish = Join-Path $env:TEMP ('experiment-hub-owner-' + [guid]::NewGuid().ToString('N'))
 dotnet publish .\Training\experiment_hub_windows_owner\ExperimentHubWindowsOwner.csproj -c Release -r win-x64 --self-contained true -o $publish
 if ($LASTEXITCODE -ne 0) { throw 'Windows helper build failed.' }
 $env:EXPERIMENT_HUB_WINDOWS_HELPER = Join-Path $publish 'ExperimentHubWindowsOwner.exe'
 $env:EXPERIMENT_HUB_WINDOWS_HELPER_SHA256 = (Get-FileHash $env:EXPERIMENT_HUB_WINDOWS_HELPER -Algorithm SHA256).Hash.ToLowerInvariant()
-
-node .\Training\experiment_hub_smoke.js
-if ($LASTEXITCODE -ne 0) { throw 'Worker HTTP qualification failed.' }
 node .\Training\experiment_hub_native_smoke_windows.js --preflight
 if ($LASTEXITCODE -ne 0) { throw 'Windows Job Object preflight failed.' }
 node .\Training\experiment_hub_native_smoke_windows.js --run-inert
