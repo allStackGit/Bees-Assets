@@ -37,7 +37,9 @@ impl OutcomeSettlement {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct FinalizedCommand {
     pub command: OutcomeSettlement,
-    pub shooting: Option<OutcomeSettlement>,
+    /// GetStrategy always reserves shooting as well as command learning.
+    /// The caller must explicitly credit or discard that second reservation.
+    pub shooting: OutcomeSettlement,
     pub targeting: Option<OutcomeSettlement>,
 }
 
@@ -63,7 +65,7 @@ impl OutcomeBatch {
         command: FinalizedCommand,
     ) -> Result<(), HiveMindProtocolError> {
         let mut incoming = HashSet::new();
-        for settlement in [Some(command.command), command.shooting, command.targeting]
+        for settlement in [Some(command.command), Some(command.shooting), command.targeting]
             .into_iter().flatten() {
             let id = settlement.outcome_id();
             if id <= 0 {
@@ -75,9 +77,7 @@ impl OutcomeBatch {
         }
         self.seen.extend(incoming);
         self.push(command.command, OutcomeCategory::Strategic);
-        if let Some(shooting) = command.shooting {
-            self.push(shooting, OutcomeCategory::Shooting);
-        }
+        self.push(command.shooting, OutcomeCategory::Shooting);
         if let Some(targeting) = command.targeting {
             self.push(targeting, OutcomeCategory::Targeting);
         }
