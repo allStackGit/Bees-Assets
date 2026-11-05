@@ -82,6 +82,11 @@ revision rather than silently freezing a newer draft.
 
 The UI can explicitly cancel a waiting job; its status and cancellation time
 are retained. It cannot cancel running or unknown jobs through this route.
+To continue a completed experiment, save a resume-mode configuration,
+select its eligible predecessor in Train, and queue with
+`continuation_of_job_id` in `POST /api/hub/jobs`. The Hub will keep
+its original machine affinity and artifact lineage. Completion alone
+does not schedule another stage or launch a process.
 Read-only placement previews use the existing planner but never create leases
 or launch programs. These are *possible* capacity assignments, not scheduling
 decisions. Jobs with UUIDs use short ephemeral planner labels internally and
@@ -416,15 +421,44 @@ environment variables described above, including
 `gpu_count:0`, coordinate a connected Linux machine, wait for the
 fresh lease receipt and explicitly authorize **Start on Linux**.
 
-The adapter permits only `mode:"new"` (or omitted mode) and
-an integer `episodes` between 1 and 100,000,000. It intentionally
-does **not** implement checkpoint resume, policy initialization or
-optimizer-regime continuation: those have distinct provenance,
-artifact lineage and rollback semantics and must not be silently
-interchangeable. Each new job receives its own
-`--artifact-root <configured-parent>/<job-uuid>`, preventing different
-jobs from writing the same experiment files. The CLI uses the pinned
-config, original qualification report and `--checkpoint-on-exit`.
+The adapter accepts `mode:"new"` (or omitted mode) for a fresh run
+and `mode:"resume"` for an explicitly linked, completed predecessor.
+Both require an integer `episodes` between 1 and 100,000,000.
+For resume, this number is the *additional* number of episodes that
+Ants' own production CLI permits, subject to its lifetime limit;
+it is not an alternative curriculum or a replacement qualification.
+
+The Hub stores `continuation_of_job_id`,
+`artifact_lineage_root_id`, and an immutable original-machine
+affinity. The parent must be terminal (`finished` or `stopped`),
+have a verified native dispatch, and have its Hub capacity explicitly
+released. Only one non-cancelled continuation may descend from a
+parent, and the continuation must run on the original machine.
+The local supervisor independently checks its own durable parent
+service journal for an inactive, completed predecessor.
+
+The trusted adapter resolves `checkpoints/latest.json` beneath the
+original job's artifact root, rejects an invalid or external pointer
+and `REGRESSION` forensic checkpoints, and passes the resolved
+checkpoint directory to `--resume-from-checkpoint`. Ants then checks
+the complete checkpoint manifest, persisted policy/optimizer/curriculum
+state, writer/source lineage, qualification report and resolved runtime
+device compatibility. A missing, stale or incompatible checkpoint
+fails closed; the Hub does **not** manufacture a resume checkpoint,
+automatically retry, or downgrade to policy-only initialization.
+
+For a fresh run, artifacts live at
+`<configured-parent>/<job-uuid>`. All subsequent generations use
+the **same original artifact root**, preserving rollback references
+and metrics lineage rather than copying partial checkpoints into a
+new experiment. Each generation has a distinct Hub job ID and
+systemd unit for process ownership and history. The CLI always uses
+the pinned configuration/report and `--checkpoint-on-exit`.
+
+Policy-only initialization and optimizer-regime continuation remain
+unsupported: they intentionally have different learning, optimizer,
+curriculum and rollback semantics and must never be confused with
+full-state resume.
 
 For Ants the trusted adapter selects `stop_policy:'interrupt-main'`:
 the Linux supervisor configures `KillSignal=SIGINT`,
