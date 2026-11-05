@@ -770,6 +770,41 @@ do not issue repeated native Starts or delete the printed private
 journal path. This exercises the browser/agent integration on real
 Windows but is **not** production deployment or GPU qualification.
 
+### Linux isolated browser qualification (native systemd)
+
+The same `experiment_hub_dashboard_qualification.js --run-inert-ui`
+command now supports Linux without any Windows helper. First qualify a
+**dedicated, idle Linux host** with an active user systemd instance,
+delegated cgroup v2 CPU/memory controllers, at least two logical CPUs
+and 512 MiB RAM:
+
+```bash
+node Training/experiment_hub_native_smoke_linux.js --preflight
+node Training/experiment_hub_native_smoke_linux.js --run-inert
+node Training/experiment_hub_dashboard_qualification.js --run-inert-ui
+```
+
+Open the printed **ephemeral loopback URL**, not port 7148. The
+qualification dashboard/worker use the real Linux supervisor and the
+checked-in fixed `smoke` adapter, which only launches
+`/usr/bin/sleep 30` under a transient user-systemd service; there
+is no arbitrary command or production Bees/Ants adapter installed.
+The temporary coordinator registry and supervisor journal remain
+separate from production. The browser's project/machine names say
+**Linux qualification** and **Isolated local Linux agent**.
+
+Perform the same **three CPU-only queued jobs** and optional
+**heartbeat loss/reconnection** procedures as the Windows isolated
+dashboard qualification above. The registered claim ceiling remains
+2 CPUs / 512 MiB; native CPUQuota and MemoryMax must be checked for
+each launched Linux service. Windows helper environment variables are
+not read on Linux. Leave automation disarmed and release only verified
+terminal claims before closing the launcher. Any uncertain service
+state requires local journal and exact systemd unit inspection, not
+restarting the job. A passing Windows test does not establish Linux
+kernel-limit enforcement, and the Linux path remains **unverified on
+a real Linux machine** until the above commands complete.
+
 ### Windows-first isolated qualification (no Halifax or Linux required)
 
 Use a checkout of this PR branch on a Windows machine with Node.js 18+
