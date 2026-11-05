@@ -5,7 +5,9 @@
 //! Optional RL/episode controller over the SAME CombatWorld as gameplay.
 //! Terminal rewards and group delivery are separate later integration.
 
-use crate::combat_world::CombatWorld;
+use std::collections::{HashMap, HashSet};
+
+use crate::combat_world::{CombatEvent, CombatWorld};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EpisodeTerminalError {
@@ -41,6 +43,107 @@ pub struct EpisodeTerminalMeasurements {
     pub eliminations: u64,
     pub timeouts: u64,
     pub draws: u64,
+}
+
+/// Per-side RecordShipDeathAttribution from the Unity coordinator.
+/// The last death on a side is authoritative when that side is eliminated.
+/// A same-side explosive can inherit an opposing original killer through
+/// up to 16 killer links, while a Yellow Jacket's own detonation is always
+/// a non-opponent loss even if its historical gameplay killer is an enemy.
+pub struct EpisodeDeathAttribution {
+    sides: [i32; 2],
+    /// Historical owner links for every dead ship this episode.
+    killer_by_ship: HashMap<i64, i64>,
+    explicit_self_detonations: HashSet<i64>,
+    last_opponent_caused: [Option<bool>; 2],
+    deaths_recorded: u64,
+    ancestry_links_followed: u64,
+}
+
+impl EpisodeDeathAttribution {
+    pub fn new(
+        bee_side: i32, human_side: i32,
+    ) -> Result<Self, EpisodeTerminalError> {
+        if bee_side <= 0 || human_side <= 0 || bee_side == human_side {
+            return Err(EpisodeTerminalError::InvalidSides);
+        }
+        Ok(Self {
+            sides: [bee_side, human_side],
+            killer_by_ship: HashMap::new(),
+            explicit_self_detonations: HashSet::new(),
+            last_opponent_caused: [None, None],
+            deaths_recorded: 0,
+            ancestry_links_followed: 0,
+        })
+    }
+
+    pub fn last_opponent_caused(&self, side: i32) -> Option<bool> {
+        self.sides.iter().position(|&entry| entry == side)
+            .and_then(|i| self.last_opponent_caused[i])
+    }
+
+    pub fn deaths_recorded(&self) -> u64 {
+        self.deaths_recorded
+    }
+
+    pub fn ancestry_links_followed(&self) -> u64 {
+        self.ancestry_links_followed
+    }
+
+    /// Consume each authoritative combat event once, in source order,
+    /// after the fixed tick and BEFORE the next tick clears its events.
+    /// No training-only damage or death reason is inferred here.
+    pub fn record_combat_events(
+        &mut self, world: &CombatWorld, events: &[CombatEvent],
+    ) {
+        for event in events {
+            match event {
+                CombatEvent::YellowJacketDetonated { ship_id, .. } => {
+                    self.explicit_self_detonations.insert(*ship_id);
+                }
+                CombatEvent::ShipDied { victim_id, killer_id, .. } => {
+                    let Some(victim) = world.ship(*victim_id) else {
+                        continue;
+                    };
+                    let explicitly_self = self.explicit_self_detonations
+                        .remove(victim_id);
+                    let mut effective_killer = *killer_id;
+                    if !explicitly_self {
+                        // Source follows same-side killer ancestry at most
+                        // 16 links. External enemy ownership wins over a
+                        // same-side chain; cyclic/self links terminate.
+                        for _ in 0..16 {
+                            let Some(killer) = world.ship(effective_killer)
+                            else { break };
+                            if killer.side != victim.side { break; }
+                            let Some(&parent_killer) =
+                                self.killer_by_ship.get(&effective_killer)
+                            else { break };
+                            if parent_killer <= 0 ||
+                                parent_killer == effective_killer {
+                                break;
+                            }
+                            effective_killer = parent_killer;
+                            self.ancestry_links_followed += 1;
+                        }
+                    }
+                    let opponent_caused = !explicitly_self &&
+                        world.ship(effective_killer).is_some_and(|killer|
+                            killer.side != victim.side &&
+                            self.sides.contains(&killer.side)
+                        );
+                    if let Some(index) = self.sides.iter()
+                        .position(|&side| side == victim.side) {
+                        self.last_opponent_caused[index] =
+                            Some(opponent_caused);
+                        self.deaths_recorded += 1;
+                    }
+                    self.killer_by_ship.insert(*victim_id, *killer_id);
+                }
+                _ => {}
+            }
+        }
+    }
 }
 
 pub struct NativeEpisodeTerminal {
@@ -128,6 +231,27 @@ impl NativeEpisodeTerminal {
                 time_penalty
             } else { 0.0 },
         })
+    }
+
+    /// Apply the exact source's "last death non-opponent caused" condition
+    /// without asking a Level caller to guess a Boolean. Full reward
+    /// delivery still belongs to the MA-POCA/game episode adapter.
+    pub fn terminal_rewards_from_attribution(
+        &self, attribution: &EpisodeDeathAttribution,
+    ) -> Option<EpisodeTerminalRewards> {
+        let result = self.completed?;
+        if attribution.sides != [self.bee_side, self.human_side] {
+            return None;
+        }
+        let non_opponent_loss = |side: i32, eliminated: bool| {
+            !result.timed_out && result.winner_side != 0 &&
+            result.winner_side != side && eliminated &&
+            attribution.last_opponent_caused(side) == Some(false)
+        };
+        self.terminal_rewards(
+            non_opponent_loss(self.bee_side, result.bee_side_eliminated),
+            non_opponent_loss(self.human_side, result.human_side_eliminated),
+        )
     }
 
     /// Call at the end of each authoritative fixed gameplay tick after
