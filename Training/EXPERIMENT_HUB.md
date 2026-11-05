@@ -680,6 +680,50 @@ hash. The existing machine-local execution opt-in, adapter module
 and private journal root settings remain required. There is **no
 PowerShell dependency** in the Windows process supervisor.
 
+### Browser dashboard + local Windows agent qualification
+
+After the isolated Windows `--run-queue` and `--run-recovery` modes
+pass, use the same PowerShell session that holds the built/pinned
+`EXPERIMENT_HUB_WINDOWS_HELPER` and
+`EXPERIMENT_HUB_WINDOWS_HELPER_SHA256` values. From the repository
+root (`B:\\Bees\\Assets` on the current Windows checkout):
+
+```powershell
+node .\\Training\\experiment_hub_dashboard_qualification.js --run-inert-ui
+```
+
+Open the **ephemeral loopback URL printed by the program**, **not**
+`127.0.0.1:7148`. This is an isolated instance serving the same Hub
+HTML/CSS and `experiment_hub_ui.js`, but without the embedded legacy
+Bees browser script or any Bees operator routes. It uses a disposable
+registry, a pre-enrolled Windows agent `smoke`, the real worker-only
+loopback heartbeat listener, and a locally pinned native helper.
+The only approved adapter executes the fixed 30-second
+`--smoke-child`; it never runs Bees, Ants or user-supplied commands.
+The registered coordination budget is **2 CPUs / 512 MiB RAM**.
+
+In the **Windows qualification** project, use **Machines** to confirm
+`smoke` is connected with native preflight passed. In **Design**, save
+a draft such as `Inert browser run` with parameters
+`{"kind":"inert"}`. In **Train**, replace the default resources with
+`{"cpus":1,"ram_mb":256,"gpu_count":0}`, then select **Queue job**,
+**Coordinate capacity**, wait for the fresh agent receipt, and select
+**Start native job**. Use **Monitor** to inspect the running service.
+Before 30 seconds elapse, choose **Stop managed job** in **Train**;
+otherwise allow the inert child to finish naturally. After a verified
+`stopped` or `finished` result, select **Release completed capacity**
+and confirm **Machines** has zero outstanding reservations. The
+browser's explicit **Arm** control can separately exercise isolated
+automatic scheduling; it is disabled by default. Do not rotate or
+revoke `smoke`'s session-managed credential.
+
+Press **Ctrl+C** in the launching PowerShell window once claims are
+released. The temporary private registry is intentionally preserved for
+inspection. If native status becomes `unverified` or a listener fails,
+do not issue repeated native Starts or delete the printed private
+journal path. This exercises the browser/agent integration on real
+Windows but is **not** production deployment or GPU qualification.
+
 ### Windows-first isolated qualification (no Halifax or Linux required)
 
 Use a checkout of this PR branch on a Windows machine with Node.js 18+
