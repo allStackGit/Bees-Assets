@@ -62,6 +62,9 @@ pub struct World<S> {
     pub state: S,
     pub random: RandomStream,
     tick: u64,
+    /// Monotonic episode identity for rejecting delayed policy inference
+    /// after a world is reset with the same WorldId and agent identifiers.
+    episode_revision: u64,
     failed: bool,
     /// Episode-local counts and sampled timings, independent for each arena.
     /// The Simulation also retains cumulative totals across all episodes.
@@ -75,6 +78,7 @@ impl<S> World<S> {
             state,
             random: RandomStream::new(seed),
             tick: 0,
+            episode_revision: 0,
             failed: false,
             measurements: Measurements::default(),
         }
@@ -82,6 +86,10 @@ impl<S> World<S> {
 
     pub fn tick(&self) -> u64 {
         self.tick
+    }
+
+    pub fn episode_revision(&self) -> u64 {
+        self.episode_revision
     }
 
     pub fn is_failed(&self) -> bool {
@@ -98,6 +106,8 @@ impl<S> World<S> {
         self.state = state;
         self.random = RandomStream::new(seed);
         self.tick = 0;
+        self.episode_revision = self.episode_revision.checked_add(1)
+            .expect("native world episode identity exhausted");
         self.failed = false;
         self.measurements = Measurements::default();
     }
