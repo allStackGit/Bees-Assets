@@ -295,8 +295,11 @@ the nominal recipe size as effective.
 
 The default is periodic evaluation; choose **Every curriculum stage** in the
 queue form to retain the earlier per-stage evaluation behavior. Stage
-transitions remain controlled by **cumulative learner steps**, never
-benchmark results. At each boundary (including the last), the manager:
+transitions remain controlled by **cumulative learner steps**, not
+benchmark results. An optional periodic-evaluation benchmark target can
+**end the entire run early**, but it does not skip curriculum stages or
+use training metrics as qualification evidence. At each boundary
+(including the last), the manager:
 
 1. Coordinates the existing graceful distributed stop; training and worker
    rollout must be fully stopped before evaluation.
@@ -311,6 +314,25 @@ benchmark results. At each boundary (including the last), the manager:
 4. After all reports are verified, resumes the **same optimizer lineage** in
    the next stage, or marks the final stage completed and advances to the next
    experiment.
+
+**Optional verified benchmark completion:** The Bees queue form can freeze a
+minimum win rate, maximum timeout rate, minimum evaluated matches per
+scenario (at least 30), and 1–4 required consecutive passing periodic
+checkpoints. The feature is disabled by default and rejects nonperiodic
+evaluation schedules or recipes with too few matches. Every development
+scenario must meet both limits from its validated integer match outcomes.
+Decisions are stored per checkpoint with the frozen report file hashes,
+candidate/build/evaluator/recipe identities are verified, and previously
+saved evidence is rechecked after a coordinator restart. When the required
+consecutive evaluations pass, the manager completes the experiment **only
+after the usual verified graceful checkpoint stop**, without restarting or
+re-stopping the learner, and can proceed to the next independently queued
+experiment. A failed scenario resets the consecutive count. Evaluation
+errors disarm the queue with training stopped. The separately reserved
+held-out benchmark suite is never used for stopping decisions. Repeated
+screening against fixed development seeds is susceptible to selection
+bias; passing this target is a development screening result, **not**
+independent held-out validation or evidence of statistical superiority.
 
 The manager writes each completed scenario's report filename to the experiment
 record. If interrupted after a report was atomically written but before that
