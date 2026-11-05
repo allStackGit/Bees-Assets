@@ -139,6 +139,7 @@ impl GameShipSteering {
         self.next_waypoints.clear();
         self.target_direction = None;
         self.deferred_direct_destination = None;
+        self.failed_path_retry_timer = None;
         self.final_destination = None;
         self.remaining_egress_waypoints = 0;
         self.is_following_path = false;
