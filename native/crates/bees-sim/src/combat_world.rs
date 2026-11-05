@@ -2948,6 +2948,31 @@ mod tests {
                 ShipMotion::new(Vec2::new(x, 0.0), 0.0, 100.0, 0.0, 4.0),
             ).unwrap();
         }
+        // Collider closest-point visibility: this distant center belongs
+        // to a wide static obstacle whose left edge is within sight.
+        world.add_obstacle(
+            CombatObstacle {
+                entity_id: 4,
+                kind: ObstacleKind::StaticObstacle,
+                vitals: None,
+                size_class: 0,
+            },
+            ObstacleBody::new(
+                4,
+                Pose {
+                    position: Vec2::new(40.0, 0.0),
+                    rotation_degrees: 0.0,
+                },
+                0,
+                ShipShape::Box {
+                    offset: Vec2::ZERO,
+                    half_extents: Vec2::new(45.0, 2.0),
+                },
+                Vec2::ZERO,
+                0.0,
+            ).unwrap(),
+        ).unwrap();
+
         let seen = [
             HiveMindObserver {
                 ship_id: 1, effective_range: 1,
@@ -2965,8 +2990,10 @@ mod tests {
         let first = world.refresh_hivemind_vision(&seen, false).unwrap();
         assert_eq!(first.active_observers, 2);
         assert_eq!(first.first_ship_discoveries, 1);
+        assert_eq!(first.first_obstacle_discoveries, 1);
         assert!(first.visible_enemy_pairs >= 1);
         assert!(first.aabb_rejections >= 1);
+        assert!(world.discovery().has(1, DiscoveryKind::Obstacle, 4));
         assert!(world.discovery().has(1, DiscoveryKind::Ship, 2));
 
         // Leaving range, disabling or retiring the observer never removes
