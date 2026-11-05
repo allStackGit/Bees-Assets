@@ -76,6 +76,33 @@ impl Measurements {
         }
     }
 
+    /// Aggregate independent world/worker windows in a deterministic order.
+    /// This has no hot-path overhead: callers merge once per rollout window.
+    /// A snapshot's last active counts describe the final contributing
+    /// successful step, not the sum of all currently live worlds.
+    pub fn merge(&mut self, other: &Self) {
+        self.ticks += other.ticks;
+        self.decisions += other.decisions;
+        self.events += other.events;
+        self.integrated_bodies += other.integrated_bodies;
+        self.broadphase_candidates += other.broadphase_candidates;
+        self.narrowphase_tests += other.narrowphase_tests;
+        self.trigger_enters += other.trigger_enters;
+        self.failed_steps += other.failed_steps;
+        self.sampled_failed_steps += other.sampled_failed_steps;
+        self.sampled_failed_wall_nanos += other.sampled_failed_wall_nanos;
+        self.sampled_ticks += other.sampled_ticks;
+        self.sampled_wall_nanos += other.sampled_wall_nanos;
+        for (total, &count) in self.sampled_step_latency_log2_ns.iter_mut()
+            .zip(other.sampled_step_latency_log2_ns.iter()) {
+            *total += count;
+        }
+        if other.ticks > 0 {
+            self.last_active_ships = other.last_active_ships;
+            self.last_active_projectiles = other.last_active_projectiles;
+        }
+    }
+
     pub fn sampled_ticks_per_second(&self) -> Option<f64> {
         if self.sampled_wall_nanos == 0 {
             return None;
