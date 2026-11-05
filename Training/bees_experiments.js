@@ -15,7 +15,7 @@ const { selectedRoot, copyAndSelect } = require('./bees_experiment_storage');
 const { ExperimentHub } = require('./experiment_hub_core');
 const { createAgentServer, AGENT_PORT, AGENT_HOST } =
     require('./experiment_hub_agent_listener');
-const { placements: hubPlacements, plan: hubPlan } = require('./experiment_hub_resources');
+const { route: hubAdminRoute } = require('./experiment_hub_admin');
 const { append: appendMetricSample, plot: archivedMetricsChart,
     filename: metricArchivePath } = require('./bees_experiment_metrics');
 const { getStatus } = require('./operator/control');
@@ -2130,28 +2130,18 @@ const server = http.createServer(async (req, res) => {
             }
             return await exportExperimentLogs(item, res, percent);
         }
-        if (req.method === 'GET' && route === '/api/hub/jobs/plan') {
-            return json(res, 200, requireHub().plannedJobs());
-        }
-        if (req.method === 'GET' && route === '/api/hub/automation') {
-            return json(res, 200, requireHub().automationStatus());
-        }
-        if (req.method === 'GET' && route === '/api/hub/progress') {
-            const projectId=url.searchParams.get('project_id');
-            return json(res, 200, requireHub().progressComparison(projectId));
-        }
-        if (req.method === 'GET' && route === '/api/hub/state') {
-            const data = requireHub().snapshot();
-            // Existing Bees state is exposed, not imported or rewritten. The Hub
-            // never assumes ownership of these live runs.
-            return json(res, 200, {
-                ...data, bees: {
+        if(req.method==='GET'&&route.startsWith('/api/hub/')&&
+            !route.startsWith('/api/hub/bees/')) {
+            const result=hubAdminRoute(requireHub(),'GET',route,
+                url.searchParams,null,{
                     active_id:state.active_id,
                     queue_armed:state.armed,
-                    runs:state.items.map(x=>({id:x.id, name:x.name, status:x.status,
-                        run_id:x.run_id, step:x.step, group:x.group})),
-                },
-            });
+                    runs:state.items.map(x=>({
+                        id:x.id,name:x.name,status:x.status,
+                        run_id:x.run_id,step:x.step,group:x.group,
+                    })),
+                });
+            if(result)return json(res,result.status,result.data);
         }
         if (req.method === 'GET' && route === '/api/hub/bees/workers') {
             // This is a view of Bees' authoritative control plane, not a second
@@ -2182,26 +2172,6 @@ const server = http.createServer(async (req, res) => {
                 operator_operation:hubOperatorOperation,
                 initial_build_required:false,
                 // The CLI and UI share the same Bees control plane.
-            });
-        }
-        if (req.method === 'GET' && route === '/api/hub/placements') {
-            const data = requireHub().snapshot();
-            const gpus = (url.searchParams.get('gpus') || '').split(',').filter(Boolean);
-            return json(res, 200, {
-                placements:hubPlacements(data.machines, data.reservations, {
-                    cpus:Number(url.searchParams.get('cpus')),
-                    ram_mb:Number(url.searchParams.get('ram_mb')), gpus,
-                    gpu_count:url.searchParams.has('gpu_count')
-                        ?Number(url.searchParams.get('gpu_count')):undefined,
-                    min_gpu_vram_mb:url.searchParams.has('min_gpu_vram_mb')
-                        ?Number(url.searchParams.get('min_gpu_vram_mb')):undefined,
-                    gpu_mode:url.searchParams.get('gpu_mode') || 'exclusive',
-                    gpu_vram_mb:url.searchParams.has('gpu_vram_mb')
-                        ?Number(url.searchParams.get('gpu_vram_mb')):undefined,
-                    gpu_compute_pct:url.searchParams.has('gpu_compute_pct')
-                        ?Number(url.searchParams.get('gpu_compute_pct')):undefined,
-                }),
-                note:'Inventory and reservations are advisory until authenticated agents enforce isolation.',
             });
         }
         if (req.method === 'GET' && route === '/api/state') {
@@ -2302,15 +2272,13 @@ const server = http.createServer(async (req, res) => {
         if (storageMigrationPending) {
             return json(res, 409, { error: 'Data-location switch prepared. Restart this manager before making other changes.' });
         }
-        if (route === '/api/hub/plan') {
-            // Planning is a read-only what-if calculation. It cannot create
-            // reservations, infer physical ownership, or execute a job.
-            const registry = requireHub().snapshot();
-            return json(res, 200, {
-                placements:hubPlan(registry.machines, registry.reservations, value.jobs),
-                note:'Advisory only: neither scheduling nor GPU compute isolation is enforced.',
-            });
+        if(route.startsWith('/api/hub/')&&
+            !route.startsWith('/api/hub/bees/')) {
+            const result=hubAdminRoute(requireHub(),'POST',route,
+                url.searchParams,value);
+            if(result)return json(res,result.status,result.data);
         }
+
         if (route === '/api/hub/bees/start' ||
             route === '/api/hub/bees/stop' ||
             route === '/api/hub/bees/build' ||
@@ -2387,53 +2355,6 @@ const server = http.createServer(async (req, res) => {
                     async()=>invokeStart({newRun:value.mode==='new',envArgs:args}),
                 ),
             });
-        }
-        if (route === '/api/hub/projects') {
-            return json(res, 201, requireHub().addProject(value));
-        }
-        if (route === '/api/hub/configurations') {
-            return json(res, 200, requireHub().saveConfiguration(value));
-        }
-        if (route === '/api/hub/machines') {
-            return json(res, 201, requireHub().addMachine(value));
-        }
-        if (route === '/api/hub/machines/gpus') {
-            return json(res, 200, requireHub().bindMachineGpus(value));
-        }
-        if (route === '/api/hub/machines/enroll') {
-            // One-time secret returned only to the loopback dashboard caller.
-            return json(res, 201, requireHub().enrollMachine(value));
-        }
-        if (route === '/api/hub/machines/revoke') {
-            return json(res, 200, requireHub().revokeMachine(value));
-        }
-        if (route === '/api/hub/leases') {
-            // Claim admission budget only; no remote program may be launched.
-            return json(res, 201, requireHub().requestLease(value));
-        }
-        if (route === '/api/hub/leases/release') {
-            return json(res, 200, requireHub().releaseLease(value));
-        }
-        if (route === '/api/hub/jobs') {
-            return json(res, 201, requireHub().queueConfiguration(value));
-        }
-        if (route === '/api/hub/jobs/cancel') {
-            return json(res, 200, requireHub().cancelJob(value));
-        }
-        if (route === '/api/hub/jobs/allocate') {
-            return json(res, 200, requireHub().allocateJobs(value));
-        }
-        if (route === '/api/hub/automation') {
-            return json(res, 200, requireHub().configureAutomation(value));
-        }
-        if (route === '/api/hub/jobs/qualify-gpu') {
-            return json(res, 200, requireHub().requestGpuQualification(value));
-        }
-        if (route === '/api/hub/jobs/start') {
-            return json(res, 200, requireHub().authorizeStart(value));
-        }
-        if (route === '/api/hub/jobs/stop') {
-            return json(res, 200, requireHub().authorizeStop(value));
         }
         if (route === '/api/storage') {
             if (busy || state.active_id || state.armed || state.stop_requested ||
