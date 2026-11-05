@@ -714,6 +714,77 @@ impl CombatWorld {
         )?)
     }
 
+    /// Unity Ship.MoveToPoint's order-selection boundary. The authored
+    /// BoxCast selects the current closest live obstacle; an obstructed
+    /// destination uses the shared A* queue, otherwise it moves directly.
+    /// Recurring same-destination commands do not restart an active search.
+    /// Movement locks retain only the latest complete order, so an unlocked
+    /// ship rechecks obstacles rather than blindly using a deferred straight
+    /// line (which could cross an asteroid that moved in the meantime).
+    pub fn move_ship_to_point(
+        &mut self,
+        ship_id: i64,
+        order: GamePointOrder,
+    ) -> Result<GamePointOrderResult, CombatWorldError> {
+        if !order.valid() {
+            return Err(CombatWorldError::InvalidGameMovementOrder);
+        }
+        let &index = self.ship_by_id.get(&ship_id)
+            .ok_or(CombatWorldError::UnknownShip)?;
+        if self.ships[index].vitals.is_dead() ||
+            !self.physics.ships()[index].active {
+            return Err(CombatWorldError::UnknownShip);
+        }
+        if !self.game_ship_steering.contains_key(&ship_id) {
+            return Err(CombatWorldError::MissingGameMovementProfile);
+        }
+        let motion = &self.physics.ships()[index].motion;
+        if motion.is_policy_controlled && !motion.user_controlled {
+            return Err(CombatWorldError::UnsupportedPolicyActions);
+        }
+        if motion.cannot_change_movement_orders {
+            self.pending_game_point_orders.insert(ship_id, order);
+            return Ok(GamePointOrderResult::DeferredByMovementLock);
+        }
+        self.pending_game_point_orders.remove(&ship_id);
+        let destination = order.bounded_destination();
+        if !self.physics.ships()[index].motion.mobile {
+            return Ok(GamePointOrderResult::Unchanged);
+        }
+        if self.navigation_requests.is_pathfinding(ship_id) {
+            // Unity does not raycast while an active worker owns the
+            // request. Changed destinations are deferred until it settles.
+            let disposition = self.request_ship_path(
+                ship_id, destination, order.ship_clearance,
+                order.newly_found_obstacle,
+            )?;
+            return Ok(GamePointOrderResult::Searching(disposition));
+        }
+
+        let origin = self.physics.ships()[index].motion.position;
+        if order.has_obstacles && order.position_in_bounds(origin) {
+            let target = self.physics.ships()[index].motion.target_coordinates;
+            if !order.newly_found_obstacle &&
+                (destination - target).length_squared() < 1.5 * 1.5 {
+                return Ok(GamePointOrderResult::Unchanged);
+            }
+            if order.newly_found_obstacle ||
+                self.ship_movement_obstacle(ship_id, destination)?.is_some() {
+                let disposition = self.request_ship_path(
+                    ship_id, destination, order.ship_clearance,
+                    order.newly_found_obstacle,
+                )?;
+                return Ok(GamePointOrderResult::Searching(disposition));
+            }
+        }
+
+        if self.move_ship_direct(ship_id, destination)? {
+            Ok(GamePointOrderResult::Direct)
+        } else {
+            Ok(GamePointOrderResult::Unchanged)
+        }
+    }
+
     pub fn move_ship_direct(
         &mut self,
         ship_id: i64,
