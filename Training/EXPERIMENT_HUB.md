@@ -285,8 +285,14 @@ privileged shell, no `sudo` and no Windows process fallback.
 Before dispatch, the supervisor atomically writes a local launch-intent
 record to a separate restricted-permission `supervisor-v1.json` ledger.
 After dispatch it checks the exact unit name, description and reported
-CPU/memory properties using `systemctl --user show`. A service is not
-reported as running until those controls have been inspected. Read-only
+CPU/memory properties using `systemctl --user show`. **It also checks
+the real kernel cgroup v2 `cpu.max` and `memory.max` limits and confirms
+that the running main PID belongs to that cgroup.** Merely setting
+systemd properties is insufficient to report a service as running.
+If the kernel limits are missing or mismatched, the native service
+becomes `unverified` and cannot be silently relaunched or have
+its allocation released. The recorded service remains stoppable through
+its exact systemd identity, even if its kernel limits are wrong. Read-only
 native status includes bounded current RAM, accumulated CPU time and task
 count when the unit reports them. These are live observations returned by
 the local API, **not** a high-volume metrics archive. Identical
@@ -311,8 +317,8 @@ process listings can expose them.
 The manager accepts `POST /api/hub/jobs/start` with
 `{job_id,confirm_start:true}` only for a frozen non-Bees job holding a
 fresh acknowledged lease on a connected Linux agent that has explicitly
-advertised the matching *local* installed adapter and CPU/memory cgroup
-controllers. It atomically records `start_requested` and a unique
+advertised the matching *local* installed adapter, CPU/memory cgroup
+controllers, **and a passing current-process native preflight**. It atomically records `start_requested` and a unique
 dispatch identity before returning a typed directive through the
 restricted authenticated agent heartbeat on port 7149.
 
@@ -322,6 +328,21 @@ administrator must configure **all three local settings**:
 - `EXPERIMENT_HUB_ENABLE_EXECUTION=1`
 - `EXPERIMENT_HUB_LOCAL_ADAPTERS=/absolute/path/to/approved-adapters.js`
 - `EXPERIMENT_HUB_LOCAL_ROOT=/absolute/path/to/private-supervisor-state`
+
+On starting the opted-in agent, the local supervisor first runs an
+**inert 30-second /usr/bin/sleep** in a uniquely named transient user
+service with a 100% CPU quota and 256-MiB memory cap, reads the
+corresponding kernel cgroup limits and process membership, and
+requests a blocking systemd stop before reporting readiness.
+It uses **no training process**, does not touch Bees or Ants artifacts,
+and never runs until the host administrator explicitly enables native
+execution. A failure leaves native starts blocked; the agent still
+reports machine status and may stop or inspect previously owned jobs.
+A failed cleanup requires operator inspection of the named preflight
+unit. Qualification is deliberately **not persisted across agent
+restarts**. It only verifies the local session; each real service is
+separately checked against kernel controls. The coordinator trusts
+this authenticated agent report, not independent remote attestation.
 
 The adapter file must export an object keyed by registered non-Bees
 project IDs. Each project has an absolute `executable`, optional
@@ -341,7 +362,8 @@ the deterministic systemd unit and local ownership ledger. The
 worker-only endpoint also enforces a 32-KiB request byte limit.
 
 The agent sends a native report only after its local systemd supervisor
-inspects the exact service identity and `CPUQuota`/`MemoryMax` limits.
+inspects exact service identity, systemd `CPUQuota`/`MemoryMax`
+properties, kernel `cpu.max`/`memory.max` limits, and process membership.
 Repeated launch instructions are reconciled against the durable local
 journal, never executed twice. One directive is delivered per heartbeat:
 stops take priority, then starts, then round-robin inspections. The
@@ -553,10 +575,10 @@ status. **No real Ants training or Linux service qualification has run here.**
 
 ## Not yet implemented
 
-Preinstalled trusted project adapters, Windows Job Objects, production
-qualification of native Linux systemd control, GPU device verification
-and isolation, automatic multi-project job scheduling,
-cross-project run history and metrics ingestion, safe live rebalancing, and
+Preinstalled and deployed project-specific adapters, Windows Job Objects,
+real-machine qualification of Linux systemd execution, GPU device
+verification and isolation, automatic multi-project job scheduling,
+metrics ingestion for additional projects, safe live rebalancing, and
 comprehensive CLI parity for all runtime configuration controls remain
 future work. These
 must not create a second owner of the Bees training lifecycle or treat
