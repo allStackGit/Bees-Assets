@@ -80,6 +80,8 @@ function sendHeartbeat(url,machineId,token,observedLeaseIds=[],
         execution_reports:executionReports,
         local_executor:advertisement.local_executor===true,
         installed_projects:advertisement.installed_projects||[],
+        native_preflight_passed:advertisement.native_preflight_passed===true,
+        native_preflight_reason:advertisement.native_preflight_reason||null,
         agent_instance_id:advertisement.instance_id||null,
     });
     return new Promise((resolve,reject)=>{
@@ -125,8 +127,20 @@ async function main() {
     // Disabled unless the operator explicitly configures local adapter code,
     // a private supervisor ledger and the opt-in execution environment flag.
     const executor=fromEnvironment(process.env);
+    let nativePreflightReason=null;
+    if(executor) {
+        try {
+            await executor.supervisor.qualify();
+        }catch(error) {
+            nativePreflightReason=String(error.message||error).slice(0,180);
+            console.error('[experiment-hub-agent] Native resource preflight: '+
+                nativePreflightReason);
+        }
+    }
     const advertisement={
         ...(executor?executor.advertisement():{}),
+        native_preflight_passed:Boolean(executor?.supervisor.qualifiedAt),
+        native_preflight_reason:nativePreflightReason,
         instance_id:crypto.randomUUID(),
     };
     let active=false,last='initial',receipts=[],pendingReports=[];
@@ -149,8 +163,11 @@ async function main() {
             }
             if(last!=='connected')
                 console.log('[experiment-hub-agent] connected ('+id+
-                    (executor?'; locally approved Linux execution enabled':
-                        '; observation only, no job execution')+').');
+                    (executor
+                        ?advertisement.native_preflight_passed
+                            ?'; Linux CPU/memory preflight passed'
+                            :'; native starts blocked (preflight failed)'
+                        :'; observation only, no job execution')+').');
             last='connected';
         }catch(error){
             const message=String(error.message||error);
