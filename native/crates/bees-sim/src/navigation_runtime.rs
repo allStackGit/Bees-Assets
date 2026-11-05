@@ -77,10 +77,10 @@ impl NavigationRuntime {
         if !frame.valid() {
             return Err(NavigationError::NonFiniteMapTransform);
         }
-        let clearance = NavigationClearance::new(
-            grid, &vec![false; grid.cell_count()],
-        )?;
         let search = NavigationSearch::new(grid)?;
+        let n = grid.width.checked_mul(grid.height)
+            .ok_or(NavigationError::InvalidMap)?;
+        let clearance = NavigationClearance::new(grid, &vec![false; n])?;
         Ok(Self { map_frame: frame, clearance, search })
     }
 
