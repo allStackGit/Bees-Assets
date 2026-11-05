@@ -211,7 +211,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     function renderPipelineStages() {
         const rows=[...$('hub-pipeline-rows').children];
-        const configs=(state?.configurations||[]).filter(c=>c.project_id==='ants');
+        const configs=(state?.configurations||[]).filter(c=>
+            project==='ants'?c.project_id==='ants':
+                c.project_id!=='bees'&&
+                (c.project_id!=='ants'||c.parameters?.mode==='new'));
         const hasPredecessor=Boolean($('hub-pipeline-predecessor').value);
         for(const [i,row] of rows.entries()) {
             const label=row.firstElementChild;
@@ -220,16 +223,18 @@ document.addEventListener('DOMContentLoaded', () => {
             label.append(select);
             const old=select.value;
             select.replaceChildren(...configs.map(c=>new Option(
-                c.name+' · revision '+c.revision,c.id)));
+                (project==='ants'?'':c.project_id+' · ')+
+                    c.name+' · revision '+c.revision,c.id)));
             const expectedResume=i>0||hasPredecessor;
-            const suggested=configs.find(c=>
-                (c.parameters?.mode==='resume')===expectedResume);
+            const suggested=configs.find(c=>project==='ants'
+                ?(c.parameters?.mode==='resume')===expectedResume
+                :c.project_id===project);
             if(configs.some(c=>c.id===old))select.value=old;
             else if(suggested)select.value=suggested.id;
             row.querySelector('button').disabled=rows.length<=2;
         }
-        $('hub-pipeline-add').disabled=project!=='ants'||rows.length>=16;
-        $('hub-pipeline-queue').disabled=project!=='ants'||
+        $('hub-pipeline-add').disabled=project==='bees'||rows.length>=16;
+        $('hub-pipeline-queue').disabled=project==='bees'||
             rows.length<2||!configs.length;
     }
     // Only a fresh, authenticated native report can distinguish a Stop
@@ -767,8 +772,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const predecessorSelect=$('hub-job-predecessor');
         const previousParent=predecessorSelect.value;
         const successors=new Set((state.jobs||[])
-            .filter(j=>j.continuation_of_job_id&&j.status!=='cancelled')
-            .map(j=>j.continuation_of_job_id));
+            .filter(j=>j.status!=='cancelled'&&
+                (j.continuation_of_job_id||j.after_job_id))
+            .map(j=>j.continuation_of_job_id||j.after_job_id));
         const availableParents=(state.jobs||[]).filter(j=>
             j.project_id===project&&!successors.has(j.id)&&(
                 j.assigned_machine_id&&j.dispatch_id&&(
@@ -791,17 +797,36 @@ document.addEventListener('DOMContentLoaded', () => {
         if(availableParents.some(j=>j.id===previousParent))
             predecessorSelect.value=previousParent;
         const pipeline=$('hub-pipeline-panel');
-        pipeline.hidden=project!=='ants';
+        pipeline.hidden=project==='bees';
+        const antsPipeline=project==='ants';
+        $('hub-pipeline-title').textContent=antsPipeline
+            ?'Prequeue Ants checkpoint-continuation stages'
+            :'Queue independent project jobs in sequence';
+        $('hub-pipeline-description').textContent=antsPipeline
+            ?'Two to sixteen saved Ants configurations; new first stage and resume-only successors. One frozen checkpoint lineage and original machine. A verified finished predecessor and capacity release unlock each next stage. Stopped predecessors need explicit review. Queueing never starts training.'
+            :'Two to sixteen fresh, independent jobs from any non-Bees project. Each job gets its own artifact lineage and may use a different machine. No checkpoint, optimizer or qualification result is inherited. A verified finished predecessor and capacity release unlock the next job. Stopped and failed jobs do not advance. Queueing never starts training.';
+        $('hub-pipeline-predecessor-label').textContent=antsPipeline
+            ?'Continue an existing Ants job (optional)'
+            :'Run after an existing native job (optional)';
         const pipelinePredecessor=$('hub-pipeline-predecessor');
         const formerPipelineParent=pipelinePredecessor.value;
+        const sequenceParents=antsPipeline?availableParents:
+            (state.jobs||[]).filter(j=>j.project_id!=='bees'&&
+                !successors.has(j.id)&&
+                ['waiting_adapter','waiting_predecessor','start_requested',
+                    'launch_requested','running','finished'].includes(j.status)&&
+                (j.status!=='finished'||Boolean(j.dispatch_id&&
+                    j.assigned_machine_id&&j.execution_updated_at)));
         pipelinePredecessor.replaceChildren(
-            new Option('New experiment (no predecessor)',''),
-            ...availableParents.map(j=>new Option(
-                j.configuration_name+' · '+j.status+' · '+j.id.slice(-8),
+            new Option(antsPipeline?'New experiment (no predecessor)':
+                'New independent sequence (no predecessor)',''),
+            ...sequenceParents.map(j=>new Option(
+                (antsPipeline?'':j.project_id+' · ')+
+                    j.configuration_name+' · '+j.status+' · '+j.id.slice(-8),
                 j.id)));
-        if(availableParents.some(j=>j.id===formerPipelineParent))
+        if(sequenceParents.some(j=>j.id===formerPipelineParent))
             pipelinePredecessor.value=formerPipelineParent;
-        if(project==='ants') {
+        if(project!=='bees') {
             if(!$('hub-pipeline-rows').children.length) {
                 addPipelineStage();
                 addPipelineStage();
@@ -883,8 +908,13 @@ document.addEventListener('DOMContentLoaded', () => {
             const lineage=j.continuation_of_job_id
                 ?' · Resumes '+(state.jobs.find(p=>
                     p.id===j.continuation_of_job_id)?.configuration_name||
-                    'prior experiment')+' on original machine':'';
-            const parent=state.jobs.find(p=>p.id===j.continuation_of_job_id);
+                    'prior experiment')+' on original machine'
+                :j.after_job_id
+                    ?' · Runs independently after '+(state.jobs.find(p=>
+                        p.id===j.after_job_id)?.configuration_name||'prior job')
+                    :'';
+            const parent=state.jobs.find(p=>
+                p.id===(j.continuation_of_job_id||j.after_job_id));
             const waitingOnParent=j.status==='waiting_predecessor'
                 ?'Prequeued · No capacity claim · '+
                     (j.predecessor_wait?.reason||
@@ -920,7 +950,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     ?' · Ready for explicit CPU-only Start'
                     :' · Start blocked: '+readiness.reason
                 :'';
-            const hasSuccessor=records.some(x=>x.continuation_of_job_id===j.id&&
+            const hasSuccessor=(state.jobs||[]).some(x=>
+                (x.continuation_of_job_id===j.id||x.after_job_id===j.id)&&
                 x.status!=='cancelled');
             const statusCell=cell(tr,status+lineage+gpuProof+readinessText+
                 (hasSuccessor&&['waiting_adapter','waiting_predecessor'].includes(j.status)
