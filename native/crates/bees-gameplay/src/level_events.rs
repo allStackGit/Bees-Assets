@@ -292,6 +292,25 @@ impl NativeLevelEventProcessor {
         self.queue_immediate_emission(emission)
     }
 
+    /// Called after the authoritative FleetShip.MineralsMinedThisLevel
+    /// update and before the episode consumes combat events this tick.
+    /// Only the real persistent value may enter the economic ledger;
+    /// no duplicate tactical capability reward is emitted for mining.
+    pub fn record_mined_value(
+        &mut self, world: &CombatWorld, ship_id: i64, mined_total: i32,
+    ) -> Result<(), NativeLevelEventError> {
+        if self.is_failed() || self.completed() {
+            return Err(NativeLevelEventError::FailedLevel);
+        }
+        if let Err(error) = self.episode.update_mined_value(
+            world, ship_id, mined_total,
+        ) {
+            self.failed = true;
+            return Err(NativeLevelEventError::Rewards(error));
+        }
+        Ok(())
+    }
+
     /// Only a completed, source-observed native mining/healing/warp
     /// gameplay action may call this. The TSV value is an authoritative
     /// post-action delta/preserved ship value, not a policy prediction.
