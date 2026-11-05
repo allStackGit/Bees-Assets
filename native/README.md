@@ -234,8 +234,14 @@ hull but is never included in damage/proximity contact streams.
 `Pathfinder.GetObstaclePoints`, and
 `CombatWorld.dynamic_navigation_asteroids` enumerates the currently
 live asteroids rather than keeping a stale pathfinder registration list.
-Full cell rasterization, moving-obstacle velocity padding, route search,
-and path refresh/ship steering have not yet been ported.
+The separate `NavigationGrid` now rasterizes live dynamic asteroids into
+a caller-owned blocked-cell mask using Unity's four-unit grid scale,
+2.5-second absolute-velocity bounds padding, five point-overlap probes,
+closest-point contact and projected-velocity probe. Its explicit map-space
+conversion callbacks preserve the Level's local/world transform boundary.
+This is not the complete pathfinder: merging the dynamic mask with static
+clearance, clearance-distance propagation, A* route search, path refresh
+and ship steering remain to be ported.
 
 The catalog stores normal `SizeClass × CollisionAsteroidHealthIncrement` durability;
 training must still pass its effective-health override when spawning, while
