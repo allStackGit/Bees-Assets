@@ -24,6 +24,16 @@ pub struct EpisodeTerminalResult {
     pub human_side_eliminated: bool,
 }
 
+/// Exactly RlOneVsOneReward.CalculateTerminalReward and
+/// CalculateTimePenalty, before economic or tactical shaping.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct EpisodeTerminalRewards {
+    pub bee_terminal: f32,
+    pub human_terminal: f32,
+    pub bee_time: f32,
+    pub human_time: f32,
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct EpisodeTerminalMeasurements {
     pub ticks_observed: u64,
@@ -69,6 +79,55 @@ impl NativeEpisodeTerminal {
 
     pub fn measurements(&self) -> EpisodeTerminalMeasurements {
         self.measurements
+    }
+
+    /// Reward arithmetic only: the full RL coordinator still owns ship
+    /// death-cause attribution, economic rewards, tactical shaping and
+    /// group reward delivery. The two booleans must be supplied from the
+    /// actual RecordShipDeathAttribution equivalent, including recursive
+    /// Fire Barge chain ownership and explicit self-detonations.
+    ///
+    /// Do not infer them from CombatEvent::ShipDied.killer_id alone.
+    pub fn terminal_rewards(
+        &self,
+        bee_non_opponent_elimination: bool,
+        human_non_opponent_elimination: bool,
+    ) -> Option<EpisodeTerminalRewards> {
+        let outcome = self.completed?;
+        const WIN: f32 = 1.0;
+        const LOSS: f32 = -1.0;
+        const TIMEOUT: f32 = -1.1;
+        const MAX_TIME_PENALTY: f32 = 0.01;
+
+        let terminal = |side: i32, non_opponent: bool| {
+            let non_opponent_loss = !outcome.timed_out &&
+                outcome.winner_side != 0 &&
+                outcome.winner_side != side && non_opponent;
+            if outcome.timed_out || non_opponent_loss {
+                TIMEOUT
+            } else if outcome.winner_side == 0 {
+                0.0
+            } else if outcome.winner_side == side {
+                WIN
+            } else {
+                LOSS
+            }
+        };
+        let time_penalty = -(outcome.duration_seconds /
+            self.timeout_seconds.max(1.0)).clamp(0.0, 1.0)
+            * MAX_TIME_PENALTY;
+        Some(EpisodeTerminalRewards {
+            bee_terminal: terminal(self.bee_side,
+                bee_non_opponent_elimination),
+            human_terminal: terminal(self.human_side,
+                human_non_opponent_elimination),
+            bee_time: if outcome.winner_side == self.bee_side {
+                time_penalty
+            } else { 0.0 },
+            human_time: if outcome.winner_side == self.human_side {
+                time_penalty
+            } else { 0.0 },
+        })
     }
 
     /// Call at the end of each authoritative fixed gameplay tick after
