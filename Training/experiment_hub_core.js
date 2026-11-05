@@ -6,6 +6,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const {request: resourceRequest,placements: resourcePlacements} =
     require('./experiment_hub_resources');
+const {validateProgress}=require('./experiment_hub_progress');
 const ID = /^[a-z][a-z0-9_-]{0,47}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const now = () => new Date().toISOString();
@@ -412,6 +413,9 @@ class ExperimentHub {
                 seen.has(report.job_id)||
                 (report.diagnostic!=null&&
                     (typeof report.diagnostic!=='string'||report.diagnostic.length>220))||
+                (report.progress_issue!=null&&
+                    (typeof report.progress_issue!=='string'||
+                        report.progress_issue.length>160))||
                 ['memory_current_mb','cpu_time_ns','process_tasks'].some(k=>
                     report[k]!=null&&
                     (!Number.isSafeInteger(report[k])||report[k]<0)))
@@ -425,6 +429,10 @@ class ExperimentHub {
                 lease.machine_id!==machine.id||job.assigned_machine_id!==machine.id||
                 lease.status!=='acknowledged'||lease.project_id!==job.project_id)
                 throw Error('Native execution report does not match its job and machine.');
+            // Metrics cannot grant authority or change status: they are
+            // validated only after machine/job/dispatch ownership checks.
+            const progress=report.progress==null?null:
+                validateProgress(report.progress,job.project_id);
             if(['finished','failed','stopped'].includes(job.status))continue;
             if(!['start_requested','launch_requested','running',
                     'stop_requested','unverified'].includes(job.status))
@@ -445,6 +453,13 @@ class ExperimentHub {
                     :'Native service state reported by its machine-local supervisor.';
                 job.execution_diagnostic=report.diagnostic||null;
                 job.execution_updated_at=now();
+                changed=true;
+            }
+            // A single terminal progress projection survives a coordinator
+            // restart. No per-heartbeat/history archive is persisted.
+            if(['finished','failed','stopped'].includes(job.status)&&progress&&
+                !job.final_progress) {
+                job.final_progress=progress;
                 changed=true;
             }
         }
@@ -618,6 +633,10 @@ class ExperimentHub {
                 memory_current_mb:item.memory_current_mb??null,
                 cpu_time_ns:item.cpu_time_ns??null,
                 process_tasks:item.process_tasks??null,
+                progress:item.progress==null?null:
+                    validateProgress(item.progress,
+                        this.state.jobs.find(j=>j.id===item.job_id).project_id),
+                progress_issue:item.progress_issue||null,
             });
         }
         return {machine_id:machine.id,status:'connected',
