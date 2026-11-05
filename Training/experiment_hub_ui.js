@@ -719,6 +719,7 @@ document.addEventListener('DOMContentLoaded', () => {
         editing=null;
         $('hub-config-name').value='';
         $('hub-config-json').value='{}';
+        $('hub-config-evaluation').value='';
         $('hub-config-save').textContent='Save draft';
         feedback('hub-config-message','');
     }
@@ -774,6 +775,7 @@ document.addEventListener('DOMContentLoaded', () => {
         project=state.projects.some(p=>p.id===current)?current:'bees';
         $('hub-project').value=project;
         $('hub-copy-bees-form').hidden=project!=='bees';
+        $('hub-config-evaluation-label').hidden=project==='bees';
         $('hub-config-rows').replaceChildren();
         const configs=state.configurations.filter(c=>c.project_id===project);
         for(const c of configs.slice().reverse()) {
@@ -785,6 +787,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 editing={id:c.id,revision:c.revision};
                 $('hub-config-name').value=c.name;
                 $('hub-config-json').value=JSON.stringify(c.parameters,null,2);
+                $('hub-config-evaluation').value=c.evaluation_stop
+                    ?JSON.stringify(c.evaluation_stop,null,2):'';
                 $('hub-config-save').textContent='Save revision';
                 feedback('hub-config-message','Editing revision '+c.revision);
             }));
@@ -792,6 +796,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 resetEditor();
                 $('hub-config-name').value=(c.name+' copy').slice(0,100);
                 $('hub-config-json').value=JSON.stringify(c.parameters,null,2);
+                $('hub-config-evaluation').value=c.evaluation_stop
+                    ?JSON.stringify(c.evaluation_stop,null,2):'';
                 feedback('hub-config-message','Duplicated into a new unsaved draft. Select Save draft to retain it.');
             }));
             if(project==='bees') {
@@ -1074,7 +1080,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 proof?.diagnostic||detail||j.status_reason||status;
             cell(tr,j.resources.cpus+' CPU / '+j.resources.ram_mb+' MiB / '+
                 j.resources.gpu_count+' GPUs');
-            cell(tr,learningSummary(j));
+            const policy=j.evaluation_stop;
+            const evidence=j.evaluation_stop_evidence||j.live_execution?.evaluation;
+            const evaluation=policy
+                ?' · Evaluation '+policy.suite_id+': '+(evidence
+                    ?evidence.successes+'/'+evidence.trials+' successes'+
+                        (j.evaluation_stop_evidence?' · stop target met':'')
+                    :j.live_execution?.evaluation_issue||'awaiting evidence')
+                :'';
+            cell(tr,learningSummary(j)+evaluation);
             const actions=cell(tr,'');
             if(j.status==='waiting_adapter'&&!j.lease_id)
                 actions.append(button('Coordinate capacity',()=>allocateJob([j.id])));
@@ -1510,11 +1524,13 @@ document.addEventListener('DOMContentLoaded', () => {
     $('hub-config-form').addEventListener('submit',async e=>{
         e.preventDefault();
         try {
+            const stop=$('hub-config-evaluation').value.trim();
             const saved=await action('hub/configurations',{
                 ...(editing||{}),
                 project_id:project,
                 name:$('hub-config-name').value,
                 parameters:JSON.parse($('hub-config-json').value),
+                ...(project!=='bees'?{evaluation_stop:stop?JSON.parse(stop):null}:{}),
             });
             editing={id:saved.id,revision:saved.revision};
             feedback('hub-config-message','Saved revision '+saved.revision+'. No training scheduled.');

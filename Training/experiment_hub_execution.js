@@ -8,6 +8,7 @@ const {LinuxSupervisor}=require('./experiment_hub_linux_supervisor');
 const {WindowsSupervisor}=require('./experiment_hub_windows_supervisor');
 const {inspectHost}=require('./experiment_hub_host');
 const {validateProgress}=require('./experiment_hub_progress');
+const {evaluationEvidence}=require('./experiment_hub_evaluation');
 const ID=/^[a-z][a-z0-9_-]{0,47}$/;
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
@@ -23,7 +24,9 @@ class LocalExecution {
         this.projects=projects.slice();
     }
     advertisement(){
-        return {local_executor:true,installed_projects:this.projects.slice()};
+        return {local_executor:true,installed_projects:this.projects.slice(),
+            evaluation_projects:this.projects.filter(project=>
+                typeof this.supervisor.adapters?.[project]?.readEvaluation==='function')};
     }
     async handle(order) {
         if(!order||!['start','stop','inspect','qualify_gpu'].includes(order.action)||
@@ -38,6 +41,10 @@ class LocalExecution {
             !this.projects.includes(order.job.project_id))
             throw Error('Rejected invalid or unauthorized local dispatch instruction.');
         const {job,lease}=order;
+        const localAdapter=this.supervisor.adapters?.[job.project_id];
+        if(order.action==='start'&&job.evaluation_stop&&
+            typeof localAdapter?.readEvaluation!=='function')
+            throw Error('Local adapter cannot evaluate this job’s stopping rule.');
         if(order.action==='qualify_gpu') {
             // This is not a job launch. Linux device access is tested using
             // a fixed inert helper; the native Start gate remains CPU-only.
@@ -132,11 +139,10 @@ class LocalExecution {
         // unavailable summary must never turn verified service state into
         // an unverified start/stop or influence the policy/checkpoint.
         const owned=this.supervisor.snapshot().find(r=>r.job_id===job.id);
-        const localAdapter=this.supervisor.adapters?.[job.project_id];
-        if(owned&&owned.lease_id===lease.id&&
+        const ownsArtifacts=owned&&owned.lease_id===lease.id&&
             (owned.artifact_lineage_root_id||owned.job_id)===
-                (job.artifact_lineage_root_id||job.id)&&
-            typeof localAdapter?.readProgress==='function'&&
+                (job.artifact_lineage_root_id||job.id);
+        if(ownsArtifacts&&typeof localAdapter?.readProgress==='function'&&
             ['running','stop_requested','finished','failed','stopped']
                 .includes(state)) {
             try {
@@ -149,6 +155,20 @@ class LocalExecution {
                     report.progress=validateProgress(result,job.project_id);
             }catch(error) {
                 report.progress_issue=String(error.message||error).slice(0,160);
+            }
+        }
+        if(ownsArtifacts&&state==='running'&&job.evaluation_stop&&
+            typeof localAdapter?.readEvaluation==='function') {
+            try {
+                const result=localAdapter.readEvaluation(Object.freeze({
+                    job_id:job.id,project_id:job.project_id,
+                    artifact_lineage_root_id:job.artifact_lineage_root_id||job.id,
+                    dispatch_id:order.dispatch_id,suite_id:job.evaluation_stop.suite_id,
+                }));
+                if(result!=null)
+                    report.evaluation=evaluationEvidence(result,job.evaluation_stop,order.dispatch_id);
+            }catch(error) {
+                report.evaluation_issue=String(error.message||error).slice(0,160);
             }
         }
         return report;
