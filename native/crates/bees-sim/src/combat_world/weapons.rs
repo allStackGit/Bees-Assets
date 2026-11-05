@@ -168,6 +168,15 @@ impl PolicyTurretMount {
     }
 }
 
+/// Exact Utilities.RotatePointAroundPoint(ship, muzzle, turret rotation).
+/// Rotation is around Ship.GetPosition(), not the turret or muzzle center.
+fn rotate_around_ship(pivot: Vec2, muzzle: Vec2, degrees: f32) -> Vec2 {
+    let delta = muzzle - pivot;
+    let (sin, cos) = degrees.to_radians().sin_cos();
+    pivot + Vec2::new(delta.x * cos - delta.y * sin,
+                      delta.x * sin + delta.y * cos)
+}
+
 /// A scheduled shot is snapshot before mutating projectile storage. This
 /// permits the turret timer to reuse its per-ship state while all projectiles
 /// are spawned in deterministic ship-ID and exact weapon-slot order.
@@ -305,52 +314,90 @@ impl CombatWorld {
             }
         }
 
-        // All currently available assets and numeric fields were validated
-        // at mount registration. A failure from the real projectile subsystem
-        // propagates as a world-step failure; it is never a fake shot.
-        for index in 0..self.policy_pending_shots.len() {
-            let shot = self.policy_pending_shots[index];
-            let projectile_id = self.next_entity_id;
-            if projectile_id == i64::MAX {
-                return Err(CombatWorldError::EntityIdExhausted);
-            }
-            // Retain the immutable catalog with a cheap Arc clone: cloning
-            // ProjectileAsset itself would copy its name and other authored
-            // payloads for every fired shot in the hot simulation loop.
-            let catalog = Arc::clone(&self.projectile_assets);
+        // Reserve enough monotonic entity IDs for complete volleys before
+        // creating any projectiles. DualCannon must not spawn only its first
+        // barrel if the shared ID space is exhausted.
+        let shot_count: usize = self.policy_pending_shots.iter()
+            .map(|shot| match shot.spec.fire_pattern {
+                NativeFirePattern::Single => 1,
+                NativeFirePattern::DualCannon { .. } => 2,
+            }).sum();
+        let count_i64 = i64::try_from(shot_count)
+            .map_err(|_| CombatWorldError::EntityIdExhausted)?;
+        self.next_entity_id.checked_add(count_i64)
+            .ok_or(CombatWorldError::EntityIdExhausted)?;
+
+        // Every projectile uses the SAME catalog, entity allocator and
+        // collision/damage path as ordinary native gameplay.
+        let catalog = Arc::clone(&self.projectile_assets);
+        for &shot in &self.policy_pending_shots {
             let asset = catalog.by_type(shot.spec.projectile_type)
                 .ok_or(CombatWorldError::InvalidProjectileType(
                     shot.spec.projectile_type,
                 ))?;
-            // Unity Utilities.AngleBetweenPoints(start, target) =
-            // atan2(start.x - target.x, start.y - target.y). This angle
-            // is NOT the normal ship heading: Projectile.SetMovement
-            // negates the sine and cosine for its velocity.
-            let angle = (shot.turret_position.x - shot.target_world.x)
-                .atan2(shot.turret_position.y - shot.target_world.y);
-            let motion = ProjectileMotion::new(
-                shot.turret_position,
-                shot.spec.projectile_speed,
-                angle,
-                shot.spec.range,
-                projectile_id, // original RL turret shot, not a continuation
-                0, // RL agent has no Hive Mind command outcome
-            );
-            self.spawn_projectile(
-                asset, projectile_id,
-                ShotOwner {
-                    shooter_id: shot.ship_id,
-                    shooter_side: shot.shooter_side,
-                    shooter_is_fire_barge: shot.shooter_is_fire_barge,
-                    self_detonation: false,
-                },
-                shot.spec.power, motion, -angle.to_degrees(),
-            )?;
-            self.events.push(CombatEvent::PolicyWeaponFired {
-                ship_id: shot.ship_id,
-                slot: shot.slot,
-                projectile_id,
-            });
+            // Unity Utilities.AngleBetweenPoints(start,target) =
+            // atan2(start.x-target.x, start.y-target.y).
+            // DualCannon.SendProjectile uses Ship.AngleToPoint(TargetPoint)
+            // for BOTH muzzles; ordinary Turret uses GetPosition().
+            let (positions, barrels, origin, power) =
+                match shot.spec.fire_pattern {
+                    NativeFirePattern::Single => (
+                        [shot.turret_position, Vec2::ZERO],
+                        1usize,
+                        shot.turret_position,
+                        shot.spec.power,
+                    ),
+                    NativeFirePattern::DualCannon {
+                        left_offset, right_offset,
+                    } => (
+                        [
+                            rotate_around_ship(
+                                shot.ship_position,
+                                shot.turret_position + left_offset,
+                                shot.turret_rotation,
+                            ),
+                            rotate_around_ship(
+                                shot.ship_position,
+                                shot.turret_position + right_offset,
+                                shot.turret_rotation,
+                            ),
+                        ],
+                        2usize,
+                        shot.ship_position,
+                        shot.spec.power / 2,
+                    ),
+                };
+            let angle = (origin.x - shot.target_world.x)
+                .atan2(origin.y - shot.target_world.y);
+            for &position in positions[..barrels].iter() {
+                let projectile_id = self.next_entity_id;
+                let motion = ProjectileMotion::new(
+                    position,
+                    shot.spec.projectile_speed,
+                    angle,
+                    shot.spec.range,
+                    projectile_id, // each shot is its own RL root
+                    0, // policy shot has no Hive Mind command outcome
+                );
+                self.spawn_projectile(
+                    asset, projectile_id,
+                    ShotOwner {
+                        shooter_id: shot.ship_id,
+                        shooter_side: shot.shooter_side,
+                        shooter_is_fire_barge: shot.shooter_is_fire_barge,
+                        self_detonation: false,
+                    },
+                    power, motion, -angle.to_degrees(),
+                )?;
+                // Source DualCannon increments FleetShip.ShotsFired twice.
+                // Emit once per actual shot so reward and telemetry counts
+                // match the physical projectiles, not timer passes.
+                self.events.push(CombatEvent::PolicyWeaponFired {
+                    ship_id: shot.ship_id,
+                    slot: shot.slot,
+                    projectile_id,
+                });
+            }
         }
         self.policy_pending_shots.clear();
         Ok(())
